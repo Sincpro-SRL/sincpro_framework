@@ -27,7 +27,7 @@ from sincpro_framework import (
   UseFramework, 
   ApplicationService, 
   DataTransferObject,
-  Feature
+  Feature as _Feature
 )
 
 # Define exceptions this is optional but is a good practice
@@ -84,6 +84,19 @@ framework_sp.add_dependency("andres", call_print)
 framework_sp.add_global_error_handler(global_error_handler)
 framework_sp.add_app_service_error_handler(app_error_handler)
 framework_sp.add_feature_error_handler(feat_error_handler)
+
+# -------------------------------------------- #
+# Buena practica en caso de querer tipar las injecciones de dependiencias
+# se sugiere crear una clase `Feature` o `ApplicationService` que hereden de las abtracciones
+# por ejemplo estamos importando `Feature` original pero como `_Feature` para no confundir
+from typing import TypeAlias
+class Feature(_Feature, ABC):
+    andres: TypeAlias = call_print
+    
+# de esta forma el IDE o editor nos ayudara a ver los tipos de las injecciones de dependencias
+# Recordar utilizar la clase Feature de este modulo en lugar de `sincpro_framework.Feature` ya que este contiene 
+# los tipos de las injecciones de dependencias y normalmente este contiene toda la configuracion 
+    
 ```
 
 once you initialize the bus, you will be able to import the framework in your application layer
