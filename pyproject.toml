@@ -1,0 +1,41 @@
+[tool.poetry]
+name = "sincpro-framework"
+version = "1.0.0rc"
+description = "Sincpro framework to use DDD, Clean architecture, Hexagonal architecture"
+authors = ["Gutierrez Andres <andru1236@gmail.com>"]
+readme = "README.md"
+packages = [{include = "sincpro_framework"}]
+license = "Copyright (c) 2023 Sincpro S.R.L"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+logzero = "^1.7.0"
+dependency-injector = "^4.41.0"
+
+
+[tool.poetry.group.dev.dependencies]
+isort = "^5.12.0"
+black = "^23.9.1"
+pytest = "^7.4.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pylint]
+disable = [
+    "missing-docstring",
+    "fixme",
+    "C0103",
+    "C0301",
+    "R0903",
+    "C0413",
+    "W1203",
+    "I1101",
+    "W1309",
+    "R0902",
+    "C0415",
+]
+
+[tool.black]
+line-length = 94
