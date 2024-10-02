@@ -6,8 +6,6 @@ class DataTransferObject:
     Abstraction that represent a object that will travel through to any layer
     """
 
-    pass
-
 
 class Bus(ABC):
     @abstractmethod
@@ -16,7 +14,6 @@ class Bus(ABC):
         :param dto:
         :return:
         """
-        pass
 
 
 class Feature(ABC):
@@ -29,7 +26,6 @@ class Feature(ABC):
         :param dto: Any command or event
         :return:
         """
-        pass
 
 
 class ApplicationService(ABC):
@@ -45,4 +41,3 @@ class ApplicationService(ABC):
         :param dto: Any command or event
         :return: Any response
         """
-        pass

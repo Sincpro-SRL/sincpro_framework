@@ -5,6 +5,8 @@ ipython:
 	poetry run ipython
 
 format:
+	poetry run autoflake --in-place --remove-unused-variables --remove-all-unused-imports -r sincpro_framework
+	poetry run autoflake --in-place --remove-unused-variables --remove-all-unused-imports -r tests
 	poetry run isort sincpro_framework
 	poetry run isort tests
 	poetry run black sincpro_framework
