@@ -1,0 +1,3 @@
+# Default types can be checked here
+# https://github.com/commitizen/conventional-commit-types/blob/v3.0.0/index.json
+titleOnly: true
