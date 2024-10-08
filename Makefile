@@ -19,6 +19,9 @@ clean-pyc:
 build:
 	poetry build
 
+publish:
+	poetry publish --build
+
 test:
 	poetry run pytest tests
 
