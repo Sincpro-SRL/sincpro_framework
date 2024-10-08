@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Type
 
 from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 from .sincpro_abstractions import ApplicationService, Bus, DataTransferObject, Feature
@@ -10,7 +10,7 @@ class FeatureBus(Bus):
         self.feature_registry = dict()
         self.handle_error: Optional[Callable] = None
 
-    def register_feature(self, dto: DataTransferObject, feature: Feature) -> bool:
+    def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         if dto.__name__ in self.feature_registry:
             raise DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
@@ -43,7 +43,7 @@ class ApplicationServiceBus(Bus):
         self.handle_error: Optional[Callable] = None
 
     def register_app_service(
-        self, dto: DataTransferObject, app_service: ApplicationService
+        self, dto: Type[DataTransferObject], app_service: ApplicationService
     ) -> bool:
         if dto.__name__ in self.app_service_registry:
             raise DTOAlreadyRegistered(

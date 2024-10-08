@@ -1,5 +1,3 @@
-import dataclasses
-
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, bus
@@ -10,7 +8,10 @@ from .fixtures import TestDTO, TestDTO2
 
 def test_feature_bus(feature_bus_instance, feature_instance_test):
     assert feature_bus_instance.feature_registry[TestDTO.__name__] == feature_instance_test
-    assert feature_bus_instance.execute(TestDTO(to_print="Hello World")).to_print == "Hello World"
+    assert (
+        feature_bus_instance.execute(TestDTO(to_print="Hello World")).to_print
+        == "Hello World"
+    )
 
 
 def test_application_service_bus(app_service_bus_instance, app_service_instance_test):
@@ -18,7 +19,10 @@ def test_application_service_bus(app_service_bus_instance, app_service_instance_
         app_service_bus_instance.app_service_registry[TestDTO2.__name__]
         == app_service_instance_test
     )
-    assert app_service_bus_instance.execute(TestDTO2(to_print="Hello World")).to_print == "Hello World"
+    assert (
+        app_service_bus_instance.execute(TestDTO2(to_print="Hello World")).to_print
+        == "Hello World"
+    )
 
 
 def test_framework_bus(feature_bus_instance, app_service_bus_instance):
@@ -29,7 +33,9 @@ def test_framework_bus(feature_bus_instance, app_service_bus_instance):
         == "Executed in Feature bus"
     )
     assert (
-        framework_bus.execute(TestDTO2(to_print="Executed in Application service bus")).to_print
+        framework_bus.execute(
+            TestDTO2(to_print="Executed in Application service bus")
+        ).to_print
         == "Executed in Application service bus"
     )
 

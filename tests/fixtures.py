@@ -1,5 +1,3 @@
-import dataclasses
-
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, bus
