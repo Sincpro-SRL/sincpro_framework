@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 
+from pydantic import BaseModel
 
-class DataTransferObject:
+
+class DataTransferObject(BaseModel):
     """
     Abstraction that represent a object that will travel through to any layer
     """

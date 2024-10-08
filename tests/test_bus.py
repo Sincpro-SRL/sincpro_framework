@@ -10,7 +10,7 @@ from .fixtures import TestDTO, TestDTO2
 
 def test_feature_bus(feature_bus_instance, feature_instance_test):
     assert feature_bus_instance.feature_registry[TestDTO.__name__] == feature_instance_test
-    assert feature_bus_instance.execute(TestDTO("Hello World")).to_print == "Hello World"
+    assert feature_bus_instance.execute(TestDTO(to_print="Hello World")).to_print == "Hello World"
 
 
 def test_application_service_bus(app_service_bus_instance, app_service_instance_test):
@@ -18,18 +18,18 @@ def test_application_service_bus(app_service_bus_instance, app_service_instance_
         app_service_bus_instance.app_service_registry[TestDTO2.__name__]
         == app_service_instance_test
     )
-    assert app_service_bus_instance.execute(TestDTO2("Hello World")).to_print == "Hello World"
+    assert app_service_bus_instance.execute(TestDTO2(to_print="Hello World")).to_print == "Hello World"
 
 
 def test_framework_bus(feature_bus_instance, app_service_bus_instance):
     framework_bus = bus.FrameworkBus(feature_bus_instance, app_service_bus_instance)
 
     assert (
-        framework_bus.execute(TestDTO("Executed in Feature bus")).to_print
+        framework_bus.execute(TestDTO(to_print="Executed in Feature bus")).to_print
         == "Executed in Feature bus"
     )
     assert (
-        framework_bus.execute(TestDTO2("Executed in Application service bus")).to_print
+        framework_bus.execute(TestDTO2(to_print="Executed in Application service bus")).to_print
         == "Executed in Application service bus"
     )
 
@@ -37,14 +37,13 @@ def test_framework_bus(feature_bus_instance, app_service_bus_instance):
 def test_framework_bus_raise_exception_unknown_dto_executed(
     feature_bus_instance, app_service_bus_instance
 ):
-    @dataclasses.dataclass
     class TestDTO3(DataTransferObject):
         something: str
 
     framework_bus = bus.FrameworkBus(feature_bus_instance, app_service_bus_instance)
 
     with pytest.raises(UnknownDTOToExecute):
-        framework_bus.execute(TestDTO3("Executed in Application service bus"))
+        framework_bus.execute(TestDTO3(something="Executed in Application service bus"))
 
 
 def test_build_framework_bus_with_same_dtos_in_feat_bus_and_app_ser_bus(
@@ -53,7 +52,6 @@ def test_build_framework_bus_with_same_dtos_in_feat_bus_and_app_ser_bus(
     feature_instance_test,
     app_service_instance_test,
 ):
-    @dataclasses.dataclass
     class AnyDTO(DataTransferObject):
         any_reponse: str
 
@@ -88,7 +86,6 @@ def test_error_handlers_bus(
     # ---------------------------------------------------------------------------------------------
     # Feature level
     # ---------------------------------------------------------------------------------------------
-    @dataclasses.dataclass
     class AnyDTOFeature(DataTransferObject):
         pass
 
@@ -104,7 +101,6 @@ def test_error_handlers_bus(
     # ---------------------------------------------------------------------------------------------
     # App service level
     # ---------------------------------------------------------------------------------------------
-    @dataclasses.dataclass
     class AnyDTOFAppServices(DataTransferObject):
         pass
 
@@ -141,7 +137,6 @@ def test_error_handlers_bus(
         if isinstance(error, Exception):
             return error
 
-    @dataclasses.dataclass
     class DTOToPropagate(DataTransferObject):
         pass
 
@@ -152,7 +147,6 @@ def test_error_handlers_bus(
     feature_bus_instance.handle_error = error_handler_propagate
     feature_bus_instance.register_feature(DTOToPropagate, FeatureWithExceptionToPropagate())
 
-    @dataclasses.dataclass
     class DTOHandledError(DataTransferObject):
         pass
 

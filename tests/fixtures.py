@@ -5,7 +5,6 @@ import pytest
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, bus
 
 
-@dataclasses.dataclass
 class TestDTO(DataTransferObject):
     to_print: str
 
@@ -27,14 +26,13 @@ def feature_bus_instance(feature_instance_test) -> bus.FeatureBus:
     return feat_bus
 
 
-@dataclasses.dataclass
 class TestDTO2(DataTransferObject):
     to_print: str
 
 
 class TestApplicationService(ApplicationService):
     def execute(self, dto: TestDTO):
-        res = self.feature_bus.execute(TestDTO(dto.to_print))
+        res = self.feature_bus.execute(TestDTO(to_print=dto.to_print))
         return res
 
 
