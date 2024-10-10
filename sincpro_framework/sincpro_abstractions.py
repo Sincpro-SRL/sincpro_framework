@@ -8,6 +8,9 @@ class DataTransferObject(BaseModel):
     Abstraction that represent a object that will travel through to any layer
     """
 
+    class Config:
+        arbitrary_types_allowed = True
+
 
 class Bus(ABC):
     @abstractmethod
