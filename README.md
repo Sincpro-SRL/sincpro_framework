@@ -35,7 +35,7 @@ if __name__ == "__main__":
     # Create an instance of the parameter DTO
     greeting_dto = GreetingParams(name="Alice")
     # Execute the feature
-    result = framework.feature_bus.execute(greeting_dto)
+    result = framework(greeting_dto)
     print(result)  # Output: Hello, Alice!
 ```
 
@@ -340,7 +340,7 @@ service_dto = PaymentServiceParams(
 )
 
 # Execute the application service
-service_result = cybersource.feature_bus.execute(service_dto)
+service_result = cybersource(service_dto)
 print(f"Payment Status: {service_result.status}, Transaction ID: {service_result.transaction_id}")
 ```
 
