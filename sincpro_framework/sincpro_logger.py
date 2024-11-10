@@ -51,7 +51,7 @@ configure_global_logging()
 
 def create_logger(name: str) -> Any:
     """Create a logger with the specified name and level."""
-    new_instance_logger = structlog.get_logger(name)
+    new_instance_logger = structlog.get_logger(name).bind(app_name=name)
     return new_instance_logger
 
 
