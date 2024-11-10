@@ -79,7 +79,7 @@ def test_error_handler_framework_layer__handled_error(
     assert framework_bus.execute(CommandAnyDTOFeature()) == expected_message
 
 
-def test_error_handler_framework_layer__propagated_error(
+def test_error_handler_framework_layer__propagated_error_from_feature_layer(
     feature_bus_instance: bus.FeatureBus,
     app_service_bus_instance: bus.ApplicationServiceBus,
 ):
@@ -101,13 +101,10 @@ def test_error_handler_framework_layer__propagated_error(
 
     def feat_error_handler(error):
         if isinstance(error, FeatureExceptionLayer):
-            raise ApplicationExceptionLayer("Error at applciation layer")
+            raise FrameworkExceptionLayer("Error at applciation layer")
 
     feature_bus_instance.handle_error = feat_error_handler
     feature_bus_instance.register_feature(CommandAnyDTOFeature, FeatureWithException())
-
-    with pytest.raises(ApplicationExceptionLayer):
-        feature_bus_instance.execute(CommandAnyDTOFeature())
 
     # ---------------------------------------------------------------------------------------------
     # App service level
@@ -117,15 +114,11 @@ def test_error_handler_framework_layer__propagated_error(
 
     class AppServicesWithException(ApplicationService):
         def execute(self, dto: CommandAnyDTOAppServices) -> CommandAnyDTOAppServices:
+            """Execute the feature layer"""
             return cast(
                 self.feature_bus.execute(CommandAnyDTOFeature()), CommandAnyDTOAppServices
             )
 
-    def app_error_handler(error):
-        if isinstance(error, ApplicationExceptionLayer):
-            raise FrameworkExceptionLayer("Error at framework layer")
-
-    app_service_bus_instance.handle_error = app_error_handler
     app_service_bus_instance.register_app_service(
         CommandAnyDTOAppServices, AppServicesWithException(feature_bus_instance)
     )
@@ -136,13 +129,7 @@ def test_error_handler_framework_layer__propagated_error(
     # ---------------------------------------------------------------------------------------------
     # Framework level
     # ---------------------------------------------------------------------------------------------
-    expected_message = "Error handled"
-
-    def framework_error_handler(error):
-        if isinstance(error, FrameworkExceptionLayer):
-            return expected_message
-
     framework_bus = bus.FrameworkBus(feature_bus_instance, app_service_bus_instance)
-    framework_bus.handle_error = framework_error_handler
 
-    assert framework_bus.execute(CommandAnyDTOAppServices()) == expected_message
+    with pytest.raises(FrameworkExceptionLayer):
+        framework_bus.execute(CommandAnyDTOFeature())
