@@ -6,11 +6,14 @@ from .sincpro_logger import logger
 
 
 class FeatureBus(Bus):
+    """First layer of the framework, atomic features"""
+
     def __init__(self):
         self.feature_registry = dict()
         self.handle_error: Optional[Callable] = None
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
+        """Register a feature to the bus"""
         if dto.__name__ in self.feature_registry:
             raise DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
@@ -21,6 +24,7 @@ class FeatureBus(Bus):
         return True
 
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
+        """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
         logger.info(f"Executing feature dto: [{dto_name}]")
         logger.debug(f"{dto_name}({dto})")
@@ -38,6 +42,10 @@ class FeatureBus(Bus):
 
 
 class ApplicationServiceBus(Bus):
+    """Second layer of the framework, orchestration of features
+    This object contains the feature bus internally
+    """
+
     def __init__(self):
         self.app_service_registry = dict()
         self.handle_error: Optional[Callable] = None
@@ -45,6 +53,7 @@ class ApplicationServiceBus(Bus):
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
     ) -> bool:
+        """Register an application service to the bus"""
         if dto.__name__ in self.app_service_registry:
             raise DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
@@ -55,6 +64,7 @@ class ApplicationServiceBus(Bus):
         return True
 
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
+        """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
         logger.info(f"Executing app service dto: [{dto_name}]")
         logger.debug(f"{dto_name}({dto})")
@@ -75,6 +85,13 @@ class ApplicationServiceBus(Bus):
 # Pattern Facade bus
 # ---------------------------------------------------------------------------------------------
 class FrameworkBus(Bus):
+    """Facade bus to orchestrate the feature bus and app service bus
+    This component contains the following buses:
+
+    - Feature bus
+    - App service bus (This contain the feature bus internally)
+    """
+
     def __init__(self, feature_bus: FeatureBus, app_service_bus: ApplicationServiceBus):
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
@@ -97,6 +114,12 @@ class FrameworkBus(Bus):
             )
 
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
+        """Main method to execute the framework
+
+        This method will execute the DTO in the app service bus
+        if the DTO is present in the app service bus
+        otherwise will execute the DTO in the feature bus
+        """
         dto_name = dto.__class__.__name__
         try:
             if (
