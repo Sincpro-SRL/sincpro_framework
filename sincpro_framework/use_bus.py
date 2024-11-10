@@ -5,6 +5,7 @@ from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .sincpro_abstractions import DataTransferObject
+from .sincpro_logger import create_logger
 
 
 class UseFramework:
@@ -12,7 +13,7 @@ class UseFramework:
     Main class to use the framework, this is the main entry point to configure the framework
     """
 
-    def __init__(self):
+    def __init__(self, logger_name: str = "sincpro_framework"):
         self._sp_container = ioc.FrameworkContainer()
         # Decorators
         self.feature = partial(ioc.inject_feature_to_bus, self._sp_container)
@@ -28,6 +29,11 @@ class UseFramework:
 
         self.was_initialized: bool = False
         self.bus: Optional[FrameworkBus] = None
+
+        # Logger
+        self._is_logger_configured = False
+        self._logger_name = logger_name
+        self._logger = None
 
     def __call__(self, dto: DataTransferObject) -> Optional[DataTransferObject]:
         """
@@ -101,3 +107,15 @@ class UseFramework:
             self._sp_container.app_service_bus.add_attributes(
                 handle_error=self.app_service_error_handler
             )
+
+    def set_logger_name(self, name: str) -> None:
+        """Set logger name"""
+        self._logger_name = name
+
+    @property
+    def logger(self) -> Any:
+        """Get bundle context logger"""
+        if not self._is_logger_configured:
+            self._logger = create_logger(self._logger_name)
+            self._is_logger_configured = True
+        return self._logger

@@ -10,12 +10,12 @@ Here's a quick example to get you started with the Sincpro Framework:
 from sincpro_framework import UseFramework, Feature, DataTransferObject
 
 # 1. Initialize the framework
-framework = UseFramework()
+framework = UseFramework(logger_name="cybersource")
 
 # 2. Add Dependencies (Example dependencies)
-from sincpro_framework import Logger
-logger = Logger()
-framework.add_dependency("logger", logger)
+from sincpro_framework import Database
+db = Database()
+framework.add_dependency("db", db)
 
 # 3. Error Handler (Optional, use the built-in error handling feature)
 framework.set_global_error_handler(lambda e: print(f"Error: {e}"))
@@ -27,7 +27,7 @@ class GreetingParams(DataTransferObject):
 @framework.feature(GreetingParams)
 class GreetingFeature(Feature):
     def execute(self, dto: GreetingParams) -> str:
-        self.logger.info(f"Greeting {dto.name}")
+        self.db.store(f"Greeting {dto.name}")
         return f"Hello, {dto.name}!"
 
 # 5. Execute the Use Case
@@ -194,7 +194,6 @@ from sincpro_payments_sdk.apps.cybersource.adapters.cybersource_rest_api_adapter
 )
 from sincpro_payments_sdk.infrastructure.orm import with_transaction as db_session
 from sincpro_payments_sdk.infrastructure.aws_services import AwsService as aws_service
-from sincpro_payments_sdk.infrastructure.logger import cybersource_logger as logger
 
 # Create an instance of the framework
 cybersource = _UseFramework()
@@ -204,7 +203,6 @@ cybersource.add_dependency("token_adapter", TokenizationAdapter())
 cybersource.add_dependency("ECardType", ESupportedCardType)
 cybersource.add_dependency("db_session", db_session)
 cybersource.add_dependency("aws_service", aws_service)
-cybersource.add_dependency("logger", logger)
 
 # Define a custom Feature class to access the dependencies
 class Feature(_Feature):
@@ -259,7 +257,7 @@ class TokenizationResponse(DataTransferObject):
 class NewTokenizationFeature(Feature):
     def execute(self, dto: TokenizationParams) -> TokenizationResponse:
         # Example usage of dependencies
-        self.logger.info("Starting tokenization process")
+        cybersource.logger.info("Starting tokenization process")
         token = self.token_adapter.create_token(
             card_number=dto.card_number,
             expiration_date=dto.expiration_date,
@@ -303,7 +301,7 @@ class PaymentOrchestrationService(ApplicationService):
         tokenization_result = self.feature_bus.execute(tokenization_command)
         
         # Example usage of dependencies
-        self.logger.info("Proceeding with payment after tokenization")
+        cybersource.logger.info("Proceeding with payment after tokenization")
         # Proceed with payment using the token (pseudo code for payment processing)
         transaction_id = "12345"  # Simulated transaction ID
         return PaymentServiceResponse(status="success", transaction_id=transaction_id)
