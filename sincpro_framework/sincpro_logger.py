@@ -21,12 +21,6 @@ def configure_global_logging(level: Literal["INFO", "DEBUG"] = "DEBUG") -> None:
         case _:
             raise ValueError(f"Invalid log level: {level}")
 
-    logging.basicConfig(level=log_level)
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-    )
-
     processors = [
         structlog.processors.CallsiteParameterAdder(
             parameters=[
@@ -41,7 +35,6 @@ def configure_global_logging(level: Literal["INFO", "DEBUG"] = "DEBUG") -> None:
 
     structlog.configure(
         processors=processors,
-        logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
     )
 

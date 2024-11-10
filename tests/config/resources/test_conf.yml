@@ -1,0 +1,17 @@
+first_conf:
+  # Basic configuration
+  log_level: INFO
+  list_of_values:
+    - value1
+    - value2
+    - value3
+  database:
+    user: postgres
+    password: password
+    port: 5432
+
+second_conf:
+  digital_ocean:
+    droplet: hostname_server_digital_ocean
+    password: password
+    token: $ENV:ANY_TOKEN
