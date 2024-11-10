@@ -9,7 +9,6 @@ license = "Copyright (c) 2023 Sincpro S.R.L"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-logzero = "^1.7.0"
 dependency-injector = "^4.42.0"
 pydantic = "^2.9.2"
 structlog = "^24.4.0"
