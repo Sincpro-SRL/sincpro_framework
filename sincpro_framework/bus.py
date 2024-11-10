@@ -16,24 +16,24 @@ class FeatureBus(Bus):
                 f"Data transfer object {dto.__name__} is already registered"
             )
 
-        logger.info("Registering feature")
+        logger.info(f"Registering feature [{dto.__name__}]")
         self.feature_registry[dto.__name__] = feature
         return True
 
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
-        logger.info(f"Executing feature dto: [{dto.__class__.__name__}]")
-        logger.debug(f"{dto}")
+        dto_name = dto.__class__.__name__
+        logger.info(f"Executing feature dto: [{dto_name}]")
+        logger.debug(f"{dto_name}({dto})")
 
         try:
             response = self.feature_registry[dto.__class__.__name__].execute(dto)
-            logger.debug(f"{response}")
+            if response:
+                logger.debug(f"{response.__class__.__name__}({response})")
             return response
 
         except Exception as error:
             if self.handle_error:
                 return self.handle_error(error)
-
-            logger.error(str(error), exc_info=True)
             raise error
 
 
@@ -50,23 +50,24 @@ class ApplicationServiceBus(Bus):
                 f"Data transfer object {dto.__name__} is already registered"
             )
 
-        logger.info("Registering application service")
+        logger.info(f"Registering application service [{dto.__name__}]")
         self.app_service_registry[dto.__name__] = app_service
         return True
 
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
-        logger.info(f"Executing app service dto: [{dto.__class__.__name__}]")
-        logger.debug(f"{dto}")
+        dto_name = dto.__class__.__name__
+        logger.info(f"Executing app service dto: [{dto_name}]")
+        logger.debug(f"{dto_name}({dto})")
         try:
             response = self.app_service_registry[dto.__class__.__name__].execute(dto)
-            logger.debug(f"{response}")
+            if response:
+                logger.debug(f"{response.__class__.__name__}({response})")
+
             return response
 
         except Exception as error:
             if self.handle_error:
                 return self.handle_error(error)
-
-            logger.error(str(error), exc_info=True)
             raise error
 
 
@@ -96,9 +97,8 @@ class FrameworkBus(Bus):
             )
 
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
+        dto_name = dto.__class__.__name__
         try:
-            dto_name = dto.__class__.__name__
-
             if (
                 dto_name in self.app_service_bus.app_service_registry
                 and dto_name in self.feature_bus.feature_registry
@@ -124,5 +124,5 @@ class FrameworkBus(Bus):
             if self.handle_error:
                 return self.handle_error(error)
 
-            logger.error(str(error), exc_info=True)
+            logger.exception(f"Error with DTO [{dto_name}]")
             raise error
