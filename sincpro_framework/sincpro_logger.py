@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 import structlog
 
+from .sincpro_conf import settings
+
 
 def configure_global_logging(level: Literal["INFO", "DEBUG"] = "DEBUG") -> None:
     """Global configuration logging shared by all loggers."""
@@ -39,7 +41,7 @@ def configure_global_logging(level: Literal["INFO", "DEBUG"] = "DEBUG") -> None:
     )
 
 
-configure_global_logging()
+configure_global_logging(settings.sincpro_framework_log_level)
 
 
 def create_logger(name: str) -> Any:

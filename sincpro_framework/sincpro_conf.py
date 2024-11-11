@@ -1,10 +1,15 @@
 """Module to handle configuration based on yaml or init"""
 
 import os
-from typing import Type, TypeVar
+from typing import Literal, Type, TypeVar
 
 import yaml
 from pydantic import BaseModel, model_validator
+
+DEFAULT_CONFIG_FILE_PATH = (
+    os.getenv("SINCPRO_FRAMEWORK_CONFIG_FILE", default=None)
+    or os.path.dirname(__file__) + "/conf/sincpro_framework_conf.yml"
+)
 
 
 def load_yaml_file(file_path: str) -> dict:
@@ -37,8 +42,17 @@ class SincproConfig(BaseModel):
 TypeSincproConfigModel = TypeVar("TypeSincproConfigModel", bound=SincproConfig)
 
 
+class DefaultFrameworkConfig(SincproConfig):
+    """Default configuration for the framework"""
+
+    sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "DEBUG"
+
+
 def build_config_obj(
     class_config_obj: Type[TypeSincproConfigModel], config_dict: dict
 ) -> TypeSincproConfigModel:
     """Build a config object from a dictionary"""
     return class_config_obj(**config_dict)
+
+
+settings = build_config_obj(DefaultFrameworkConfig, load_yaml_file(DEFAULT_CONFIG_FILE_PATH))
