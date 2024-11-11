@@ -429,7 +429,7 @@ for that you will require use the following funciton `build_config_obj`
 from sincpro_framework.sincpro_conf import build_config_obj
 from .my_config import MyConfig
 
-config = build_config_obj(MyConfig)
+config = build_config_obj(MyConfig, '/path/to/your/config.yml')
 
 assert isinstance(config.log_level, str)
 assert isinstance(config.postgresql, PostgresConf)

@@ -49,10 +49,11 @@ class DefaultFrameworkConfig(SincproConfig):
 
 
 def build_config_obj(
-    class_config_obj: Type[TypeSincproConfigModel], config_dict: dict
+    class_config_obj: Type[TypeSincproConfigModel], config_path: str
 ) -> TypeSincproConfigModel:
     """Build a config object from a dictionary"""
+    config_dict = load_yaml_file(config_path)
     return class_config_obj(**config_dict)
 
 
-settings = build_config_obj(DefaultFrameworkConfig, load_yaml_file(DEFAULT_CONFIG_FILE_PATH))
+settings = build_config_obj(DefaultFrameworkConfig, DEFAULT_CONFIG_FILE_PATH)
