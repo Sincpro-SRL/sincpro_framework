@@ -5,7 +5,7 @@ description = "Sincpro framework to use DDD, Clean architecture, Hexagonal archi
 authors = ["Gutierrez Andres <andru1236@gmail.com>"]
 readme = "README.md"
 packages = [{include = "sincpro_framework"}]
-license = "Copyright (c) 2023 Sincpro S.R.L"
+license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.10"
