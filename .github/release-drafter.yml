@@ -31,7 +31,7 @@ autolabeler:
       - '/^feat.+/i'
   - label: 'major'
     title:
-      - '/^[a-zA-Z]+(\(.*?\))?!:.+/i'
+      - '/^major.+/i'
 template: |
   ## What's Changed
   $CHANGES
