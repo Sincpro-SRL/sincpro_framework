@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sincpro-framework"
-version = "1.4.0"
+version = "1.4.1"
 description = "Sincpro framework to use DDD, Clean architecture, Hexagonal architecture"
 authors = ["Gutierrez Andres <andru1236@gmail.com>"]
 readme = "README.md"
@@ -12,7 +12,7 @@ python = "^3.10"
 dependency-injector = "^4.43.0"
 pydantic = "^2.9.2"
 structlog = "^24.4.0"
-pyyaml = "^6.0.2"
+pyyaml = "6.0.1"
 
 
 [tool.poetry.group.dev.dependencies]
