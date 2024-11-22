@@ -20,7 +20,7 @@ build:
 	poetry build
 
 publish:
-	poetry publish --build
+	poetry publish -u __token__ -p $(POETRY_PYPI_TOKEN) --build
 
 test:
 	poetry run pytest tests
