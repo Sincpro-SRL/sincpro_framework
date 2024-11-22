@@ -57,7 +57,7 @@ jobs:
             git config user.email "actions@github.com"
             git add pyproject.toml
             git commit -m "chore: Actualización de versión a ${{ steps.get-latest-release.outputs.tag_name }}"
-            git push origin main
+            git push -f origin main
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
