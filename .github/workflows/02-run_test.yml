@@ -1,10 +1,10 @@
-name: Run_test
+name: Run tests
 
 # Run this workflow every time a new commit pushed to your repository
 on: push
 
 jobs:
-  run-tests:
+  run_tests:
     name: Run test
 
     runs-on: ubuntu-24.04
