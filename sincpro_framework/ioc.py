@@ -12,8 +12,16 @@ from .sincpro_logger import logger
 # ---------------------------------------------------------------------------------------------
 
 
-class FrameworkContainer(containers.DynamicContainer):
-    injected_dependencies = providers.Dict()
+class FrameworkContainer(containers.DeclarativeContainer):
+    """Main container for the framework
+
+    This container will initialize the
+    main components of the framework at runtime.
+    """
+
+    bundled_context_name: str = providers.Object()
+
+    injected_dependencies: dict = providers.Dict()
 
     # atomic layer
     feature_registry: Dict[str, Feature] = providers.Dict({})
@@ -27,7 +35,10 @@ class FrameworkContainer(containers.DynamicContainer):
 
     # Facade
     framework_bus: FrameworkBus = providers.Factory(
-        FrameworkBus, feature_bus, app_service_bus
+        FrameworkBus,
+        feature_bus=feature_bus,
+        app_service_bus=app_service_bus,
+        bundled_context_name=bundled_context_name,
     )
 
 
@@ -44,9 +55,13 @@ def inject_feature_to_bus(framework_container: FrameworkContainer, dto: Union[st
             if data_transfer_object.__name__ in framework_container.feature_registry.kwargs:
                 raise DTOAlreadyRegistered(
                     f"The DTO: [{data_transfer_object.__name__} from {data_transfer_object.__module__}] is already registered"
+                    f" in the FEATURE LAYER, bundle context: [{framework_container.bundled_context_name}]"
                 )
 
-            logger.info(f"Registering feature: [{data_transfer_object.__name__}]")
+            logger.info(
+                f"Registering feature: [{data_transfer_object.__name__}]",
+                bundled_context=framework_container.bundled_context_name,
+            )
 
             # --------------------------------------------------------------------
             # Register DTO to fn builder that will return the feature instance
@@ -83,9 +98,13 @@ def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Unio
             ):
                 raise DTOAlreadyRegistered(
                     f"The DTO: [{data_transfer_object.__name__} from {data_transfer_object.__module__}] is already registered"
+                    f" in the APP SERVICE LAYER, bundle context: [{framework_container.bundled_context_name}]"
                 )
 
-            logger.info(f"Registering application service: [{data_transfer_object.__name__}]")
+            logger.info(
+                f"Registering application service: [{data_transfer_object.__name__}]",
+                bundled_context=framework_container.bundled_context_name,
+            )
 
             # --------------------------------------------------------------------
             # Register DTO to fn builder that will return the service instance
