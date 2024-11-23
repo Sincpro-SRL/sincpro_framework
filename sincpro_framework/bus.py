@@ -8,7 +8,8 @@ from .sincpro_logger import logger
 class FeatureBus(Bus):
     """First layer of the framework, atomic features"""
 
-    def __init__(self):
+    def __init__(self, name: str = "FeatureBus"):
+        self.name = name
         self.feature_registry = dict()
         self.handle_error: Optional[Callable] = None
 
@@ -26,13 +27,15 @@ class FeatureBus(Bus):
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
         """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
-        logger.info(f"Executing feature dto: [{dto_name}]")
-        logger.debug(f"{dto_name}({dto})")
+        logger.info(f"Executing feature dto: [{dto_name}]", bundled_context=self.name)
+        logger.debug(f"{dto_name}({dto})", bundled_context=self.name)
 
         try:
             response = self.feature_registry[dto.__class__.__name__].execute(dto)
             if response:
-                logger.debug(f"{response.__class__.__name__}({response})")
+                logger.debug(
+                    f"{response.__class__.__name__}({response})", bundled_context=self.name
+                )
             return response
 
         except Exception as error:
@@ -46,14 +49,17 @@ class ApplicationServiceBus(Bus):
     This object contains the feature bus internally
     """
 
-    def __init__(self):
+    def __init__(self, name: str = "ApplicationServiceBus"):
+        self.name = name
         self.app_service_registry = dict()
         self.handle_error: Optional[Callable] = None
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
     ) -> bool:
-        """Register an application service to the bus"""
+        """Register an application service to the bus
+        This method is not used directly, the decorator inject_app_service_to_bus is used
+        """
         if dto.__name__ in self.app_service_registry:
             raise DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
@@ -66,8 +72,11 @@ class ApplicationServiceBus(Bus):
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
         """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
-        logger.info(f"Executing app service dto: [{dto_name}]")
-        logger.debug(f"{dto_name}({dto})")
+        logger.info(
+            f"Executing app service ({self.name}) dto: [{dto_name}]",
+            bundled_context=self.name,
+        )
+        logger.debug(f"{dto_name}({dto})", bundled_context=self.name)
         try:
             response = self.app_service_registry[dto.__class__.__name__].execute(dto)
             if response:
@@ -92,21 +101,34 @@ class FrameworkBus(Bus):
     - App service bus (This contain the feature bus internally)
     """
 
-    def __init__(self, feature_bus: FeatureBus, app_service_bus: ApplicationServiceBus):
+    def __init__(
+        self,
+        feature_bus: FeatureBus,
+        app_service_bus: ApplicationServiceBus,
+        bundled_context_name: str,
+    ):
+        self.bundled_context_name = bundled_context_name
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
         self.handle_error: Optional[Callable] = None
 
         registered_features = set(self.feature_bus.feature_registry.keys())
         registered_app_services = set(self.app_service_bus.app_service_registry.keys())
-        logger.debug("Framework bus created")
-        logger.debug(f"Registered features: {registered_features}")
-        logger.debug(f"Registered app services: {registered_app_services}")
+        logger.debug("Framework bus created", bundled_context=self.bundled_context_name)
+        logger.debug(
+            f"Registered features: {registered_features}",
+            bundled_context=self.bundled_context_name,
+        )
+        logger.debug(
+            f"Registered app services: {registered_app_services}",
+            bundled_context=self.bundled_context_name,
+        )
 
         intersection_dtos = registered_features.intersection(registered_app_services)
         if intersection_dtos:
             logger.error(
-                f"Features and app services have the same name: {registered_features.intersection(registered_app_services)}"
+                f"Features and app services have the same name: {registered_features.intersection(registered_app_services)}",
+                bundled_context=self.bundled_context_name,
             )
             raise DTOAlreadyRegistered(
                 f"Data transfer object {intersection_dtos} is present in application services and features, Change "
@@ -147,5 +169,7 @@ class FrameworkBus(Bus):
             if self.handle_error:
                 return self.handle_error(error)
 
-            logger.exception(f"Error with DTO [{dto_name}]")
+            logger.exception(
+                f"Error with DTO [{dto_name}]", bundled_context=self.bundled_context_name
+            )
             raise error

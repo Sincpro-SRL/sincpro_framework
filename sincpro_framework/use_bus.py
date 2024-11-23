@@ -13,8 +13,10 @@ class UseFramework:
     Main class to use the framework, this is the main entry point to configure the framework
     """
 
-    def __init__(self, logger_name: str = "sincpro_framework"):
-        self._sp_container = ioc.FrameworkContainer()
+    def __init__(self, bundled_context_name: str = "sincpro_framework"):
+        self._sp_container = ioc.FrameworkContainer(bundled_context_name=bundled_context_name)
+        self._sp_container.bundled_context_name = bundled_context_name
+
         # Decorators
         self.feature = partial(ioc.inject_feature_to_bus, self._sp_container)
         self.app_service = partial(ioc.inject_app_service_to_bus, self._sp_container)
@@ -32,7 +34,7 @@ class UseFramework:
 
         # Logger
         self._is_logger_configured = False
-        self._logger_name = logger_name
+        self._logger_name = bundled_context_name
         self._logger = None
 
     def __call__(self, dto: DataTransferObject) -> Optional[DataTransferObject]:
@@ -42,10 +44,7 @@ class UseFramework:
         :return: Any response
         """
         if not self.was_initialized:
-            self._add_dependencies_provided_by_user()
-            self._add_error_handlers_provided_by_user()
-            self.was_initialized = True
-            self.bus: FrameworkBus = self._sp_container.framework_bus()
+            self.build_root_bus()
 
         if self.bus is None:
             raise SincproFrameworkNotBuilt(
@@ -55,7 +54,18 @@ class UseFramework:
 
         return self.bus.execute(dto)
 
+    def build_root_bus(self):
+        """Build the root bus with the dependencies provided by the user"""
+        self._add_dependencies_provided_by_user()
+        self._add_error_handlers_provided_by_user()
+        self.was_initialized = True
+        self.bus: FrameworkBus = self._sp_container.framework_bus()
+
     def add_dependency(self, name, dep: Any):
+        """
+        Add a dependency to the framework where
+        The Feature and App Service have as attribute
+        """
         if name in self.dynamic_dep_registry:
             raise DependencyAlreadyRegistered(f"The dependency {name} is already injected")
         self.dynamic_dep_registry[name] = dep

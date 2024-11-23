@@ -10,7 +10,7 @@ Here's a quick example to get you started with the Sincpro Framework:
 from sincpro_framework import UseFramework, Feature, DataTransferObject
 
 # 1. Initialize the framework
-framework = UseFramework(logger_name="cybersource")
+framework = UseFramework("cybersource")
 
 # 2. Add Dependencies (Example dependencies)
 from sincpro_framework import Database
