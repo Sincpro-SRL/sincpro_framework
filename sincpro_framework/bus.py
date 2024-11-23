@@ -8,8 +8,8 @@ from .sincpro_logger import logger
 class FeatureBus(Bus):
     """First layer of the framework, atomic features"""
 
-    def __init__(self, name: str = "FeatureBus"):
-        self.name = name
+    def __init__(self, bundled_context_name: str = "FeatureBus"):
+        self.bundled_context = bundled_context_name
         self.feature_registry = dict()
         self.handle_error: Optional[Callable] = None
 
@@ -27,14 +27,17 @@ class FeatureBus(Bus):
     def execute(self, dto: DataTransferObject) -> DataTransferObject:
         """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
-        logger.info(f"Executing feature dto: [{dto_name}]", bundled_context=self.name)
-        logger.debug(f"{dto_name}({dto})", bundled_context=self.name)
+        logger.info(
+            f"Executing feature dto: [{dto_name}]", bundled_context=self.bundled_context
+        )
+        logger.debug(f"{dto_name}({dto})", bundled_context=self.bundled_context)
 
         try:
             response = self.feature_registry[dto.__class__.__name__].execute(dto)
             if response:
                 logger.debug(
-                    f"{response.__class__.__name__}({response})", bundled_context=self.name
+                    f"{response.__class__.__name__}({response})",
+                    bundled_context=self.bundled_context,
                 )
             return response
 
@@ -49,8 +52,8 @@ class ApplicationServiceBus(Bus):
     This object contains the feature bus internally
     """
 
-    def __init__(self, name: str = "ApplicationServiceBus"):
-        self.name = name
+    def __init__(self, bundled_context_name: str = "ApplicationServiceBus"):
+        self.bundled_context = bundled_context_name
         self.app_service_registry = dict()
         self.handle_error: Optional[Callable] = None
 
@@ -73,10 +76,10 @@ class ApplicationServiceBus(Bus):
         """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
         logger.info(
-            f"Executing app service ({self.name}) dto: [{dto_name}]",
-            bundled_context=self.name,
+            f"Executing app service ({self.bundled_context}) dto: [{dto_name}]",
+            bundled_context=self.bundled_context,
         )
-        logger.debug(f"{dto_name}({dto})", bundled_context=self.name)
+        logger.debug(f"{dto_name}({dto})", bundled_context=self.bundled_context)
         try:
             response = self.app_service_registry[dto.__class__.__name__].execute(dto)
             if response:
@@ -105,7 +108,7 @@ class FrameworkBus(Bus):
         self,
         feature_bus: FeatureBus,
         app_service_bus: ApplicationServiceBus,
-        bundled_context_name: str,
+        bundled_context_name: str = "FrameworkBus",
     ):
         self.bundled_context_name = bundled_context_name
         self.feature_bus = feature_bus
