@@ -25,12 +25,12 @@ class FrameworkContainer(containers.DeclarativeContainer):
 
     # atomic layer
     feature_registry: Dict[str, Feature] = providers.Dict({})
-    feature_bus: FeatureBus = providers.Factory(FeatureBus)
+    feature_bus: FeatureBus = providers.Factory(FeatureBus, bundled_context_name)
 
     # orchestration layer
     app_service_registry: Dict[str, ApplicationService] = providers.Dict({})
     app_service_bus: ApplicationServiceBus = providers.Factory(
-        ApplicationServiceBus,
+        ApplicationServiceBus, bundled_context_name
     )
 
     # Facade
