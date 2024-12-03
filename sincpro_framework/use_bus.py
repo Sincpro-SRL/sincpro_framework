@@ -1,4 +1,5 @@
 from functools import partial
+from logging import Logger
 from typing import Any, Callable, Optional
 
 from . import ioc
@@ -14,8 +15,15 @@ class UseFramework:
     """
 
     def __init__(self, bundled_context_name: str = "sincpro_framework"):
-        self._sp_container = ioc.FrameworkContainer(bundled_context_name=bundled_context_name)
-        self._sp_container.bundled_context_name = bundled_context_name
+
+        # Logger
+        self._is_logger_configured: bool = False
+        self._logger_name: str = bundled_context_name
+        self._logger: Logger | None = None
+
+        # Container
+        self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
+        self._sp_container.logger_bus = self.logger
 
         # Decorators
         self.feature = partial(ioc.inject_feature_to_bus, self._sp_container)
@@ -31,11 +39,6 @@ class UseFramework:
 
         self.was_initialized: bool = False
         self.bus: Optional[FrameworkBus] = None
-
-        # Logger
-        self._is_logger_configured = False
-        self._logger_name = bundled_context_name
-        self._logger = None
 
     def __call__(self, dto: DataTransferObject) -> Optional[DataTransferObject]:
         """
@@ -117,10 +120,6 @@ class UseFramework:
             self._sp_container.app_service_bus.add_attributes(
                 handle_error=self.app_service_error_handler
             )
-
-    def set_logger_name(self, name: str) -> None:
-        """Set logger name"""
-        self._logger_name = name
 
     @property
     def logger(self) -> Any:
