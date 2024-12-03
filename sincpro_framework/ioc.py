@@ -1,3 +1,6 @@
+"""Inversion of Control (IoC) container for the SincPro Framework"""
+
+from logging import Logger
 from typing import Dict, Union
 
 from dependency_injector import containers, providers
@@ -5,7 +8,6 @@ from dependency_injector import containers, providers
 from .bus import ApplicationServiceBus, FeatureBus, FrameworkBus
 from .exceptions import DTOAlreadyRegistered
 from .sincpro_abstractions import ApplicationService, Feature
-from .sincpro_logger import logger
 
 # ---------------------------------------------------------------------------------------------
 # Container Definition
@@ -19,18 +21,18 @@ class FrameworkContainer(containers.DeclarativeContainer):
     main components of the framework at runtime.
     """
 
-    bundled_context_name: str = providers.Object()
+    logger_bus: Logger = providers.Object()
 
     injected_dependencies: dict = providers.Dict()
 
     # atomic layer
     feature_registry: Dict[str, Feature] = providers.Dict({})
-    feature_bus: FeatureBus = providers.Factory(FeatureBus, bundled_context_name)
+    feature_bus: FeatureBus = providers.Factory(FeatureBus, logger_bus)
 
     # orchestration layer
     app_service_registry: Dict[str, ApplicationService] = providers.Dict({})
     app_service_bus: ApplicationServiceBus = providers.Factory(
-        ApplicationServiceBus, bundled_context_name
+        ApplicationServiceBus, logger_bus
     )
 
     # Facade
@@ -38,7 +40,7 @@ class FrameworkContainer(containers.DeclarativeContainer):
         FrameworkBus,
         feature_bus=feature_bus,
         app_service_bus=app_service_bus,
-        bundled_context_name=bundled_context_name,
+        logger_bus=logger_bus,
     )
 
 
@@ -55,12 +57,10 @@ def inject_feature_to_bus(framework_container: FrameworkContainer, dto: Union[st
             if data_transfer_object.__name__ in framework_container.feature_registry.kwargs:
                 raise DTOAlreadyRegistered(
                     f"The DTO: [{data_transfer_object.__name__} from {data_transfer_object.__module__}] is already registered"
-                    f" in the FEATURE LAYER, bundle context: [{framework_container.bundled_context_name}]"
                 )
 
-            logger.info(
+            framework_container.logger_bus.info(
                 f"Registering feature: [{data_transfer_object.__name__}]",
-                bundled_context=framework_container.bundled_context_name,
             )
 
             # --------------------------------------------------------------------
@@ -98,12 +98,10 @@ def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Unio
             ):
                 raise DTOAlreadyRegistered(
                     f"The DTO: [{data_transfer_object.__name__} from {data_transfer_object.__module__}] is already registered"
-                    f" in the APP SERVICE LAYER, bundle context: [{framework_container.bundled_context_name}]"
                 )
 
-            logger.info(
-                f"Registering application service: [{data_transfer_object.__name__}]",
-                bundled_context=framework_container.bundled_context_name,
+            framework_container.logger_bus.info(
+                f"Registering application service: [{data_transfer_object.__name__}]"
             )
 
             # --------------------------------------------------------------------
