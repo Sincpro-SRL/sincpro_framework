@@ -80,7 +80,7 @@ def inject_feature_to_bus(framework_container: FrameworkContainer, dto: Union[st
                 feature_registry=framework_container.feature_registry
             )
 
-            return decorated_class
+        return decorated_class
 
     return inner_fn
 
@@ -121,6 +121,6 @@ def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Unio
                 app_service_registry=framework_container.app_service_registry
             )
 
-            return decorated_class
+        return decorated_class
 
     return inner_fn
