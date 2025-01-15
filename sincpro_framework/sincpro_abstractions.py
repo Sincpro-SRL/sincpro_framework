@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -17,19 +17,28 @@ TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
 
 
 class Bus(ABC):
+
     @abstractmethod
-    def execute(self, dto: TypeDTO) -> TypeDTO | TypeDTOResponse | Any | None:
-        """Main method to execute a dto"""
+    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
+        """
+        Main method to execute a DTO.
+        If return_type is provided, returns an instance of return_type.
+        Otherwise, returns None.
+        """
 
 
-class Feature(Bus):
+class Feature(ABC):
     """Feature is the first layer of the framework, it is the main abstraction to execute a business logic"""
 
     def __init__(self, *args, **kwargs):
         pass
 
+    @abstractmethod
+    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
+        pass
 
-class ApplicationService(Bus):
+
+class ApplicationService(ABC):
     """Second layer of the framework, orchestration of features"""
 
     feature_bus: Bus
@@ -38,5 +47,5 @@ class ApplicationService(Bus):
         self.feature_bus = feature_bus
 
     @abstractmethod
-    def execute(self, dto: TypeDTO) -> TypeDTO | None:
-        """Main difference between Feature and ApplicationService can execute features internally"""
+    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
+        pass
