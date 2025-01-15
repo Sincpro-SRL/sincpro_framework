@@ -1,11 +1,11 @@
 from functools import partial
 from logging import Logger
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Type
 
 from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
-from .sincpro_abstractions import DataTransferObject
+from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 from .sincpro_logger import create_logger
 
 
@@ -40,7 +40,9 @@ class UseFramework:
         self.was_initialized: bool = False
         self.bus: Optional[FrameworkBus] = None
 
-    def __call__(self, dto: DataTransferObject) -> Optional[DataTransferObject]:
+    def __call__(
+        self, dto: TypeDTO, class_response: Type[TypeDTOResponse] | None = None
+    ) -> TypeDTOResponse | None:
         """
         Main function to execute the framework
         :param dto:

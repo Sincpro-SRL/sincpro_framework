@@ -1,13 +1,13 @@
 """Inversion of Control (IoC) container for the SincPro Framework"""
 
 from logging import Logger
-from typing import Dict, Union
+from typing import Any, Dict, Union
 
 from dependency_injector import containers, providers
 
 from .bus import ApplicationServiceBus, FeatureBus, FrameworkBus
 from .exceptions import DTOAlreadyRegistered
-from .sincpro_abstractions import ApplicationService, Feature
+from .sincpro_abstractions import ApplicationService, Feature, TypeDTO
 
 # ---------------------------------------------------------------------------------------------
 # Container Definition
@@ -47,7 +47,9 @@ class FrameworkContainer(containers.DeclarativeContainer):
 # ---------------------------------------------------------------------------------------------
 # Build processes
 # ---------------------------------------------------------------------------------------------
-def inject_feature_to_bus(framework_container: FrameworkContainer, dto: Union[str, list]):
+def inject_feature_to_bus(
+    framework_container: FrameworkContainer, dto: Union[str, list, TypeDTO, Any]
+):
     def inner_fn(decorated_class):
         dtos = dto
         if not isinstance(dto, list):
