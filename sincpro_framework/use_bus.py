@@ -38,10 +38,10 @@ class UseFramework:
         self.app_service_error_handler: Optional[Callable] = None
 
         self.was_initialized: bool = False
-        self.bus: Optional[FrameworkBus] = None
+        self.bus: FrameworkBus | None = None
 
     def __call__(
-        self, dto: TypeDTO, class_response: Type[TypeDTOResponse] | None = None
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """
         Main function to execute the framework
@@ -57,7 +57,11 @@ class UseFramework:
                 "feature and app service"
             )
 
-        return self.bus.execute(dto)
+        res: TypeDTOResponse | None = self.bus.execute(dto)
+        if res is None:
+            return None
+
+        return res
 
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user"""

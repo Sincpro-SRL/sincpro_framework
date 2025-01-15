@@ -1,8 +1,15 @@
 from logging import Logger
-from typing import Callable, Optional, Type
+from typing import Callable, Dict, Optional, Type
 
 from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
-from .sincpro_abstractions import ApplicationService, Bus, DataTransferObject, Feature
+from .sincpro_abstractions import (
+    ApplicationService,
+    Bus,
+    DataTransferObject,
+    Feature,
+    TypeDTO,
+    TypeDTOResponse,
+)
 from .sincpro_logger import logger
 
 
@@ -10,7 +17,7 @@ class FeatureBus(Bus):
     """First layer of the framework, atomic features"""
 
     def __init__(self, logger_bus: Logger = logger):
-        self.feature_registry = dict()
+        self.feature_registry: Dict[str, Feature] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
 
@@ -25,7 +32,7 @@ class FeatureBus(Bus):
         self.feature_registry[dto.__name__] = feature
         return True
 
-    def execute(self, dto: DataTransferObject) -> DataTransferObject:
+    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
         """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
         self.logger.info(
@@ -53,7 +60,7 @@ class ApplicationServiceBus(Bus):
     """
 
     def __init__(self, logger_bus: Logger = logger):
-        self.app_service_registry = dict()
+        self.app_service_registry: Dict[str, ApplicationService] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
 
@@ -72,7 +79,7 @@ class ApplicationServiceBus(Bus):
         self.app_service_registry[dto.__name__] = app_service
         return True
 
-    def execute(self, dto: DataTransferObject) -> DataTransferObject:
+    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
         """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
         self.logger.info(
@@ -134,7 +141,7 @@ class FrameworkBus(Bus):
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
 
-    def execute(self, dto: DataTransferObject) -> DataTransferObject:
+    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
         """Main method to execute the framework
 
         This method will execute the DTO in the app service bus

@@ -12,7 +12,7 @@ class ResponseFeatureTest1(DataTransferObject):
 
 
 class TestFeature(Feature):
-    def execute(self, dto: CommandFeatureTest1):
+    def execute(self, dto: CommandFeatureTest1, **kwargs) -> ResponseFeatureTest1:
         return ResponseFeatureTest1(**dto.model_dump())
 
 
@@ -37,7 +37,7 @@ class ResponseApplicationService1(DataTransferObject):
 
 
 class TestApplicationService(ApplicationService):
-    def execute(self, dto: CommandFeatureTest1):
+    def execute(self, dto: CommandFeatureTest1, **kwargs) -> ResponseApplicationService1:
         res = self.feature_bus.execute(CommandFeatureTest1(to_print=dto.to_print))
         return ResponseApplicationService1(**res.model_dump())
 

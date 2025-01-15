@@ -62,10 +62,12 @@ class ResFeature(DataTransferObject):
 @fake_bundle_context.feature(CmdExecuteFeature)
 class ExecuteFeature(Feature):
 
-    def execute(self, dto: CmdExecuteFeature) -> ResFeature | None:
+    def execute(self, dto: CmdExecuteFeature, **kwargs) -> ResFeature | None:
         client = self.any_client("client_name")
         return ResFeature(result=f"Result from {client}")
 
 
 cmd = CmdExecuteFeature(param_1="param_1", param_2=2)
 res = fake_bundle_context(cmd, ResFeature)
+
+print(res.result)
