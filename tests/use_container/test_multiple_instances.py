@@ -11,20 +11,24 @@ class Command2(DataTransferObject):
     pass
 
 
+f1 = UseFramework("app-1")
+f2 = UseFramework("app-2")
+
+
+@f1.feature(Command1)
+class FeatApp1(Feature):
+    def execute(self, dto):
+        pass
+
+
+@f2.feature(Command2)
+class FeatApp2(Feature):
+    def execute(self, dto):
+        pass
+
+
 def test_multiple_instances():
     """Multiples"""
-    f1 = UseFramework("app-1")
-    f2 = UseFramework("app-2")
-
-    @f1.feature(Command1)
-    class FeatApp1(Feature):
-        def execute(self, dto):
-            pass
-
-    @f2.feature(Command2)
-    class FeatApp2(Feature):
-        def execute(self, dto):
-            pass
 
     f1.build_root_bus()
     f2.build_root_bus()

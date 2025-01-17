@@ -28,7 +28,7 @@ class FeatureBus(Bus):
 
 class ApplicationServiceBus(Bus):
     log_after_execution: bool
-    app_service_registry: Dict[str, Feature]
+    app_service_registry: Dict[str, ApplicationService]
     handle_error: Optional[Callable]
     logger: Logger
     def __init__(self, logger_bus: Logger = ...) -> None: ...

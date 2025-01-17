@@ -40,12 +40,6 @@ class UseFramework:
         # Container
         self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
         self._sp_container.logger_bus = self.logger
-        self._sp_container.feature_bus.add_attributes(
-            log_after_execution=self.log_after_execution and self.log_features
-        )
-        self._sp_container.app_service_bus.add_attributes(
-            log_after_execution=self.log_after_execution and self.log_app_services
-        )
 
         # Decorators
         self.feature = partial(ioc.inject_feature_to_bus, self._sp_container)
@@ -91,15 +85,15 @@ class UseFramework:
         self._add_error_handlers_provided_by_user()
         self.was_initialized = True
         self.bus: FrameworkBus = self._sp_container.framework_bus()
-        #
-        # # Set the loggers
-        # self.bus.log_after_execution = self.log_after_execution
-        # self.bus.feature_bus.log_after_execution = (
-        #     self.log_after_execution and self.log_features
-        # )
-        # self.bus.app_service_bus.log_after_execution = (
-        #     self.log_after_execution and self.log_app_services
-        # )
+
+        # Set the loggers
+        self.bus.log_after_execution = self.log_after_execution
+        self.bus.feature_bus.log_after_execution = (
+            self.log_after_execution and self.log_features
+        )
+        self.bus.app_service_bus.log_after_execution = (
+            self.log_after_execution and self.log_app_services
+        )
 
     def add_dependency(self, name, dep: Any):
         """
