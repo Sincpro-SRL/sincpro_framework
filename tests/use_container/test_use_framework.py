@@ -33,7 +33,7 @@ class DependencyContextType:
         return self.proxy_services.get_client(client_name)
 
 
-fake_bundle_context = _UseFramework("fake-bundle-context")
+fake_bundle_context = _UseFramework("fake-bundle-context", log_after_execution=False)
 fake_bundle_context.add_dependency("proxy_services", proxy_service_instance)
 
 
@@ -50,6 +50,7 @@ class ApplicationService(_ApplicationService, DependencyContextType):
 # ----------------------------------------------------------------------
 
 
+#: Feature case
 class CmdExecuteFeature(DataTransferObject):
     param_1: str
     param_2: int
@@ -57,6 +58,7 @@ class CmdExecuteFeature(DataTransferObject):
 
 class ResFeature(DataTransferObject):
     result: str
+    client: FakeClient
 
 
 @fake_bundle_context.feature(CmdExecuteFeature)
@@ -64,10 +66,37 @@ class ExecuteFeature(Feature):
 
     def execute(self, dto: CmdExecuteFeature, **kwargs) -> ResFeature | None:
         client = self.any_client("client_name")
-        return ResFeature(result=f"Result from {client}")
+        return ResFeature(
+            result=f"Feature Result getting the Client: {client}", client=client
+        )
 
 
-cmd = CmdExecuteFeature(param_1="param_1", param_2=2)
-res = fake_bundle_context(cmd, ResFeature)
+#: Application Service case
+class CmdExecuteAppService(DataTransferObject):
+    app_param_1: str
+    app_param_2: int
 
-print(res.result)
+
+class ResAppService(DataTransferObject):
+    app_result: str
+
+
+@fake_bundle_context.app_service(CmdExecuteAppService)
+class ExecuteAppService(ApplicationService):
+
+    def execute(self, dto: CmdExecuteAppService, **kwargs) -> ResAppService | None:
+        res = self.feature_bus.execute(
+            CmdExecuteFeature(param_1=dto.app_param_1, param_2=dto.app_param_2), ResFeature
+        )
+        assert self.any_client("client_name") == res.client
+
+        return ResAppService(app_result=f"App service result from {res.client}")
+
+
+#: Start test
+
+
+def test_use_framework():
+    cmd = CmdExecuteAppService(app_param_1="param1", app_param_2=2)
+    res = fake_bundle_context(cmd, ResAppService)
+    assert res.app_result.startswith("App service result from")

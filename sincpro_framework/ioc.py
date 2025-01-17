@@ -27,11 +27,11 @@ class FrameworkContainer(containers.DeclarativeContainer):
 
     # atomic layer
     feature_registry: Dict[str, Feature] = providers.Dict({})
-    feature_bus: FeatureBus = providers.Factory(FeatureBus, logger_bus)
+    feature_bus: FeatureBus = providers.Singleton(FeatureBus, logger_bus)
 
     # orchestration layer
     app_service_registry: Dict[str, ApplicationService] = providers.Dict({})
-    app_service_bus: ApplicationServiceBus = providers.Factory(
+    app_service_bus: ApplicationServiceBus = providers.Singleton(
         ApplicationServiceBus, logger_bus
     )
 
