@@ -16,6 +16,7 @@ class DataTransferObject(BaseModel):
 
 
 class Bus(ABC):
+    log_after_execution: bool = True
 
     @abstractmethod
     def execute(

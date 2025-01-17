@@ -10,6 +10,8 @@ TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
 TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
 
 class Bus(ABC, metaclass=abc.ABCMeta):
+    log_after_execution: bool
+
     @abstractmethod
     @overload
     def execute(

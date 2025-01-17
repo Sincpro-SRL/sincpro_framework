@@ -50,4 +50,9 @@ def create_logger(name: str) -> Any:
     return new_instance_logger
 
 
+def is_logger_in_debug() -> bool:
+    """Check if the logger is in debug mode."""
+    return settings.sincpro_framework_log_level == "DEBUG"
+
+
 logger = create_logger("sincpro_framework")
