@@ -2,7 +2,7 @@
 
 from sincpro_framework import ApplicationService, bus
 
-from ..fixtures import CommandApplicationService1
+from ..fixtures import CommandApplicationService1, ResponseApplicationService1
 
 
 def test_application_service_bus(
@@ -15,7 +15,7 @@ def test_application_service_bus(
     )
     assert (
         app_service_bus_instance.execute(
-            CommandApplicationService1(to_print="Hello World")
+            CommandApplicationService1(to_print="Hello World"), ResponseApplicationService1
         ).to_print
         == "Hello World"
     )

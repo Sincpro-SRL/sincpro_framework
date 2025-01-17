@@ -5,7 +5,12 @@ import pytest
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, bus
 from sincpro_framework.exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 
-from ..fixtures import CommandApplicationService1, CommandFeatureTest1
+from ..fixtures import (
+    CommandApplicationService1,
+    CommandFeatureTest1,
+    ResponseApplicationService1,
+    ResponseFeatureTest1,
+)
 
 
 def test_framework_bus(
@@ -15,13 +20,14 @@ def test_framework_bus(
 
     assert (
         framework_bus.execute(
-            CommandFeatureTest1(to_print="Executed in Feature bus")
+            CommandFeatureTest1(to_print="Executed in Feature bus"), ResponseFeatureTest1
         ).to_print
         == "Executed in Feature bus"
     )
     assert (
         framework_bus.execute(
-            CommandApplicationService1(to_print="Executed in Application service bus")
+            CommandApplicationService1(to_print="Executed in Application service bus"),
+            ResponseApplicationService1,
         ).to_print
         == "Executed in Application service bus"
     )

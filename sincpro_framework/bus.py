@@ -32,7 +32,9 @@ class FeatureBus(Bus):
         self.feature_registry[dto.__name__] = feature
         return True
 
-    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
+    def execute(
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+    ) -> TypeDTOResponse | None:
         """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
         self.logger.info(
@@ -79,7 +81,9 @@ class ApplicationServiceBus(Bus):
         self.app_service_registry[dto.__name__] = app_service
         return True
 
-    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
+    def execute(
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+    ) -> TypeDTOResponse | None:
         """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
         self.logger.info(
@@ -141,7 +145,9 @@ class FrameworkBus(Bus):
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
 
-    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
+    def execute(
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+    ) -> TypeDTOResponse | None:
         """Main method to execute the framework
 
         This method will execute the DTO in the app service bus

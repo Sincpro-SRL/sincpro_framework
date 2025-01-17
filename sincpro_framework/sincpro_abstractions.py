@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import TypeVar
+from typing import Type, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
+TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
 
 
 class DataTransferObject(BaseModel):
@@ -9,17 +12,15 @@ class DataTransferObject(BaseModel):
     Abstraction that represent a object that will travel through to any layer
     """
 
-    model_config = {"arbitrary_types_allowed": True}
-
-
-TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
-TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Bus(ABC):
 
     @abstractmethod
-    def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
+    def execute(
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+    ) -> TypeDTOResponse | None:
         """
         Main method to execute a DTO.
         If return_type is provided, returns an instance of return_type.
