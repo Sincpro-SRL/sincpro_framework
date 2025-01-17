@@ -2,7 +2,7 @@
 
 from sincpro_framework import Feature, bus
 
-from ..fixtures import CommandFeatureTest1
+from ..fixtures import CommandFeatureTest1, ResponseFeatureTest1
 
 
 def test_feature_bus(feature_bus_instance: bus.FeatureBus, feature_instance_test: Feature):
@@ -11,6 +11,8 @@ def test_feature_bus(feature_bus_instance: bus.FeatureBus, feature_instance_test
         == feature_instance_test
     )
     assert (
-        feature_bus_instance.execute(CommandFeatureTest1(to_print="Hello World")).to_print
+        feature_bus_instance.execute(
+            CommandFeatureTest1(to_print="Hello World"), ResponseFeatureTest1
+        ).to_print
         == "Hello World"
     )
