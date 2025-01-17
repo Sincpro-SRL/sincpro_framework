@@ -1,6 +1,6 @@
 from functools import partial
 from logging import Logger
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Dict, Optional, Type
 
 from . import ioc
 from .bus import FrameworkBus
@@ -14,23 +14,45 @@ class UseFramework:
     Main class to use the framework, this is the main entry point to configure the framework
     """
 
-    def __init__(self, bundled_context_name: str = "sincpro_framework"):
+    def __init__(
+        self,
+        bundled_context_name: str = "sincpro_framework",
+        log_after_execution: bool = True,
+        log_app_services: bool = True,
+        log_features: bool = True,
+    ):
+        """Initialize the framework
 
+        Args:
+            bundled_context_name (str): Name of the logger
+            log_after_execution (bool): Log after execution if False, All logs will be disabled
+            log_app_services (bool): Log app services, If log_after_execution is False, this will be disabled
+            log_features (bool): Log features, If log_after_execution is False, this will be disabled
+        """
         # Logger
         self._is_logger_configured: bool = False
         self._logger_name: str = bundled_context_name
         self._logger: Logger | None = None
+        self.log_after_execution: bool = log_after_execution
+        self.log_app_services: bool = log_app_services
+        self.log_features: bool = log_features
 
         # Container
         self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
         self._sp_container.logger_bus = self.logger
+        self._sp_container.feature_bus.add_attributes(
+            log_after_execution=self.log_after_execution and self.log_features
+        )
+        self._sp_container.app_service_bus.add_attributes(
+            log_after_execution=self.log_after_execution and self.log_app_services
+        )
 
         # Decorators
         self.feature = partial(ioc.inject_feature_to_bus, self._sp_container)
         self.app_service = partial(ioc.inject_app_service_to_bus, self._sp_container)
 
         # Registry for dynamic dep injection
-        self.dynamic_dep_registry = dict()
+        self.dynamic_dep_registry: Dict[str, Any] = dict()
 
         # Error handlers
         self.global_error_handler: Optional[Callable] = None
@@ -69,6 +91,15 @@ class UseFramework:
         self._add_error_handlers_provided_by_user()
         self.was_initialized = True
         self.bus: FrameworkBus = self._sp_container.framework_bus()
+        #
+        # # Set the loggers
+        # self.bus.log_after_execution = self.log_after_execution
+        # self.bus.feature_bus.log_after_execution = (
+        #     self.log_after_execution and self.log_features
+        # )
+        # self.bus.app_service_bus.log_after_execution = (
+        #     self.log_after_execution and self.log_app_services
+        # )
 
     def add_dependency(self, name, dep: Any):
         """

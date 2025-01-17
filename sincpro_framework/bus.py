@@ -10,7 +10,7 @@ from .sincpro_abstractions import (
     TypeDTO,
     TypeDTOResponse,
 )
-from .sincpro_logger import logger
+from .sincpro_logger import is_logger_in_debug, logger
 
 
 class FeatureBus(Bus):
@@ -19,7 +19,7 @@ class FeatureBus(Bus):
     def __init__(self, logger_bus: Logger = logger):
         self.feature_registry: Dict[str, Feature] = dict()
         self.handle_error: Optional[Callable] = None
-        self.logger = logger_bus or logger
+        self.logger: Logger = logger_bus or logger
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -37,9 +37,12 @@ class FeatureBus(Bus):
     ) -> TypeDTOResponse | None:
         """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
-        self.logger.info(
-            f"Executing feature dto: [{dto_name}]",
-        )
+
+        if is_logger_in_debug() or self.log_after_execution:
+            self.logger.info(
+                f"Executing feature dto: [{dto_name}]",
+            )
+
         self.logger.debug(f"{dto_name}({dto})")
 
         try:
@@ -86,10 +89,12 @@ class ApplicationServiceBus(Bus):
     ) -> TypeDTOResponse | None:
         """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
-        self.logger.info(
-            f"Executing app service dto: [{dto_name}]",
-        )
+        if is_logger_in_debug() or self.log_after_execution:
+            self.logger.info(
+                f"Executing app service dto: [{dto_name}]",
+            )
         self.logger.debug(f"{dto_name}({dto})")
+
         try:
             response = self.app_service_registry[dto.__class__.__name__].execute(dto)
             if response:
