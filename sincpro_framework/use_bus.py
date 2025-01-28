@@ -153,7 +153,7 @@ class UseFramework:
             )
 
     @property
-    def logger(self) -> Any:
+    def logger(self) -> Logger:
         """Get bundle context logger"""
         if not self._is_logger_configured:
             self._logger = create_logger(self._logger_name)

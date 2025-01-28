@@ -49,7 +49,7 @@ class FeatureBus(Bus):
             response = self.feature_registry[dto.__class__.__name__].execute(dto)
             if response:
                 self.logger.debug(
-                    f"{response.__class__.__name__}({response})",
+                    f"Feature response {response.__class__.__name__}({response})",
                 )
             return response
 
@@ -98,7 +98,9 @@ class ApplicationServiceBus(Bus):
         try:
             response = self.app_service_registry[dto.__class__.__name__].execute(dto)
             if response:
-                self.logger.debug(f"{response.__class__.__name__}({response})")
+                self.logger.debug(
+                    f"Application service response {response.__class__.__name__}({response})"
+                )
 
             return response
 
@@ -186,5 +188,5 @@ class FrameworkBus(Bus):
             if self.handle_error:
                 return self.handle_error(error)
 
-            self.logger.exception(f"Error with DTO [{dto_name}]")
+            self.logger.exception(f"Error with DTO {dto_name}({dto})")
             raise error

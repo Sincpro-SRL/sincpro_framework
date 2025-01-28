@@ -4,7 +4,7 @@ import os
 from typing import Literal, Type, TypeVar
 
 import yaml
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 DEFAULT_CONFIG_FILE_PATH = (
     os.getenv("SINCPRO_FRAMEWORK_CONFIG_FILE", default=None)
@@ -21,7 +21,7 @@ def load_yaml_file(file_path: str) -> dict:
 class SincproConfig(BaseModel):
     """Base config model"""
 
-    model_config = {"arbitrary_types_allowed": True, "allow_mutations": False}
+    model_config = ConfigDict(arbitrary_types_allowed=True, use_enum_values=True)
 
     @model_validator(mode="before")
     def resolve_env_variables(cls, values):
