@@ -1,12 +1,11 @@
 from functools import partial
-from logging import Logger
 from typing import Any, Callable, Dict, Optional, Type
 
 from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .sincpro_logger import create_logger
+from .sincpro_logger import LoggerProxy, create_logger
 
 
 class UseFramework:
@@ -32,7 +31,7 @@ class UseFramework:
         # Logger
         self._is_logger_configured: bool = False
         self._logger_name: str = bundled_context_name
-        self._logger: Logger | None = None
+        self._logger: LoggerProxy | None = None
         self.log_after_execution: bool = log_after_execution
         self.log_app_services: bool = log_app_services
         self.log_features: bool = log_features
@@ -153,7 +152,7 @@ class UseFramework:
             )
 
     @property
-    def logger(self) -> Logger:
+    def logger(self) -> LoggerProxy:
         """Get bundle context logger"""
         if not self._is_logger_configured:
             self._logger = create_logger(self._logger_name)
