@@ -61,7 +61,7 @@ def inject_feature_to_bus(
                     f"The DTO: [{data_transfer_object.__name__} from {data_transfer_object.__module__}] is already registered"
                 )
 
-            framework_container.logger_bus.info(
+            framework_container.logger_bus.debug(
                 f"Registering feature: [{data_transfer_object.__name__}]",
             )
 
@@ -102,7 +102,7 @@ def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Unio
                     f"The DTO: [{data_transfer_object.__name__} from {data_transfer_object.__module__}] is already registered"
                 )
 
-            framework_container.logger_bus.info(
+            framework_container.logger_bus.debug(
                 f"Registering application service: [{data_transfer_object.__name__}]"
             )
 
