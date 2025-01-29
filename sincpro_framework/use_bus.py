@@ -1,5 +1,5 @@
 from functools import partial
-from logging import Logger
+
 from typing import Any, Callable, Dict, Optional, Type
 
 from . import ioc
@@ -32,7 +32,7 @@ class UseFramework:
         # Logger
         self._is_logger_configured: bool = False
         self._logger_name: str = bundled_context_name
-        self._logger: Logger | None = None
+        self._logger: LoggerProxy | None = None
         self.log_after_execution: bool = log_after_execution
         self.log_app_services: bool = log_app_services
         self.log_features: bool = log_features
