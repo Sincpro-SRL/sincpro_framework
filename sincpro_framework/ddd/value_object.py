@@ -2,23 +2,21 @@
 
 from typing import Callable, NewType, Type, TypeVar
 
-AllPrimitiveType = int | float | str | bool | list | dict | set | tuple | bytes | bytearray
-
 PrimitiveType = TypeVar(
     "PrimitiveType", int, float, str, bool, list, dict, set, tuple, bytes, bytearray
 )
 
 
 def new_value_object(
-    new_type: Type[AllPrimitiveType] | Type[NewType],
-    validate_fn: Callable[[AllPrimitiveType], None] | None,
-) -> Type[AllPrimitiveType]:
+    new_type: Type[PrimitiveType] | Type[NewType],
+    validate_fn: Callable[[PrimitiveType], None] | None,
+) -> Type[PrimitiveType]:
     """Create a new value object."""
     name = new_type.__name__
     base_type = new_type.__supertype__
 
     class ValueObjectType(base_type):
-        def __new__(cls, value: AllPrimitiveType) -> AllPrimitiveType:
+        def __new__(cls, value: PrimitiveType) -> PrimitiveType:
             if validate_fn:
                 validate_fn(value)
             return super().__new__(cls, value)
