@@ -6,7 +6,7 @@ from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .sincpro_logger import create_logger
+from .sincpro_logger import LoggerProxy, create_logger
 
 
 class UseFramework:
@@ -153,7 +153,7 @@ class UseFramework:
             )
 
     @property
-    def logger(self) -> Logger:
+    def logger(self) -> LoggerProxy:
         """Get bundle context logger"""
         if not self._is_logger_configured:
             self._logger = create_logger(self._logger_name)
