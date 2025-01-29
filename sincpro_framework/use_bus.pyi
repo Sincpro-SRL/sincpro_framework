@@ -1,4 +1,3 @@
-from logging import Logger
 from typing import Any, Callable, Dict, overload
 
 from _typeshed import Incomplete
@@ -9,6 +8,7 @@ from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegister
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
+from .sincpro_logger import LoggerProxy
 from .sincpro_logger import create_logger as create_logger
 
 class UseFramework:
@@ -42,4 +42,4 @@ class UseFramework:
     def add_feature_error_handler(self, handler: Callable): ...
     def add_app_service_error_handler(self, handler: Callable): ...
     @property
-    def logger(self) -> Logger: ...
+    def logger(self) -> LoggerProxy: ...
