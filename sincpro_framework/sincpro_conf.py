@@ -49,10 +49,22 @@ class DefaultFrameworkConfig(SincproConfig):
 
 
 def build_config_obj(
-    class_config_obj: Type[TypeSincproConfigModel], config_path: str
+    class_config_obj: Type[TypeSincproConfigModel],
+    config_path: str,
+    sub_key: str | None = None,
 ) -> TypeSincproConfigModel:
-    """Build a config object from a dictionary"""
+    """Build a config object from a dictionary
+    if sub_key is provided, it will return the sub_key of the config
+    """
     config_dict = load_yaml_file(config_path)
+
+    if sub_key:
+        config_section = config_dict.get(sub_key, None)
+        if config_section is None:
+            raise ValueError(f"Config section {sub_key} not found in {config_path}")
+        config_dict = config_dict[sub_key]
+
+    print(f"read yaml file {config_path} for config {class_config_obj.__name__}")
     return class_config_obj(**config_dict)
 
 
