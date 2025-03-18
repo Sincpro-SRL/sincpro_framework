@@ -4,6 +4,20 @@ install:
 ipython:
 	poetry run ipython
 
+format-yaml:
+	@if command -v prettier > /dev/null; then \
+		echo "Formatting YAML files with prettier..."; \
+		prettier --write "**/*.yml" "**/*.yaml"; \
+	else \
+		echo "prettier not found. Install with: npm install -g prettier"; \
+	fi
+	@if command -v yamllint > /dev/null; then \
+		echo "Linting YAML files with yamllint..."; \
+		yamllint -f parsable sincpro_framework/conf/*.yml tests/config/resources/*.yml; \
+	else \
+		echo "yamllint not found. Install with: pip install yamllint"; \
+	fi
+
 format:
 	poetry run autoflake --in-place --remove-unused-variables --remove-all-unused-imports --ignore-init-module-imports  -r sincpro_framework
 	poetry run autoflake --in-place --remove-unused-variables --remove-all-unused-imports --ignore-init-module-imports  -r tests
@@ -11,6 +25,9 @@ format:
 	poetry run isort tests
 	poetry run black sincpro_framework
 	poetry run black tests
+	make format-yaml
+
+format-all: format format-yaml
 
 clean-pyc:
 	find . -type d -name '__pycache__' -exec rm -rf {} \; || exit 0
@@ -31,4 +48,4 @@ test_debug:
 test_one:
 	poetry run pytest ${t} -vvs
 
-.PHONY: install start clean test build
+.PHONY: install start clean test build format format-yaml format-all
