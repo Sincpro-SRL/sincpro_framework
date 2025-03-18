@@ -1,0 +1,5 @@
+# Configuration file for testing environment variable replacement
+# This file contains values that reference environment variables
+
+string_value: "$ENV:TEST_STRING"
+int_value: "$ENV:TEST_INT" 

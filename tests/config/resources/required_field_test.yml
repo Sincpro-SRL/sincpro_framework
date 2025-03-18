@@ -1,0 +1,4 @@
+# Configuration file for testing required fields with missing environment variables
+# This file sets a required field to a non-existent environment variable
+
+required_value: "$ENV:NON_EXISTENT_VAR" 

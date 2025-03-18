@@ -1,0 +1,4 @@
+# Configuration file for testing missing environment variables
+# This file references an environment variable that doesn't exist
+
+string_value: "$ENV:NON_EXISTENT_VAR" 
