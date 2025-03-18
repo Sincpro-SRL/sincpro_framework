@@ -1,6 +1,7 @@
 """Module to handle configuration based on yaml or init"""
 
 import os
+import warnings
 from typing import Literal, Type, TypeVar
 
 import yaml
@@ -25,17 +26,31 @@ class SincproConfig(BaseModel):
 
     @model_validator(mode="before")
     def resolve_env_variables(cls, values):
-        """Load all environment variables that start with $ENV:"""
+        """Load all environment variables that start with $ENV:
+        If the environment variable is not set, a warning is emitted and the default value is used
+        """
         for field_name, value in values.items():
             if isinstance(value, str) and value.startswith("$ENV:"):
                 env_var_name = value.split("$ENV:")[1]
                 env_value = os.getenv(env_var_name)
+
                 if env_value is not None:
                     values[field_name] = env_value
                 else:
-                    raise ValueError(
-                        f"The Environment variable [{env_var_name}] is not set for field [{field_name}]"
-                    )
+                    # Get default value if available in model field definition
+                    field_info = cls.model_fields.get(field_name, None)
+                    if field_info and field_info.default is not None:
+                        default_value = field_info.default
+                        warnings.warn(
+                            f"Environment variable [{env_var_name}] is not set for field [{field_name}]. "
+                            f"Using default value: {default_value}"
+                        )
+                        values[field_name] = default_value
+                    else:
+                        warnings.warn(
+                            f"Environment variable [{env_var_name}] is not set for field [{field_name}] "
+                            f"and no default value was provided. This might cause issues."
+                        )
         return values
 
 

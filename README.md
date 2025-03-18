@@ -422,6 +422,35 @@ postgresql:
   user: custom_user
 ```
 
+### Environment Variable Handling
+
+When using `$ENV:` prefix in your configuration files, the framework will:
+
+1. Look for the environment variable specified after `$ENV:`
+2. If the environment variable exists, use its value
+3. If the environment variable doesn't exist:
+   - Use the default value defined in your configuration class
+   - Issue a warning indicating that the environment variable is missing
+   - Proceed with execution rather than raising an error
+
+This behavior allows applications to run with partial configurations in development environments or when not all environment variables are available, while still logging appropriate warnings.
+
+Example of fallback to default values:
+
+```python
+# Configuration class with default
+class ApiConfig(SincproConfig):
+    api_key: str = "dev_default_key"  # Default value as fallback
+
+# In config.yml
+api_key: "$ENV:API_KEY"  # References environment variable
+
+# If API_KEY environment variable is not set, the framework will:
+# 1. Log a warning: "Environment variable [API_KEY] is not set for field [api_key]. Using default value: dev_default_key"
+# 2. Use the default value "dev_default_key" 
+# 3. Continue execution without error
+```
+
 Then you can use the config object in your code where it will be loaded all the settings from the yaml file
 for that you will require use the following funciton `build_config_obj`
 
@@ -434,9 +463,6 @@ config = build_config_obj(MyConfig, '/path/to/your/config.yml')
 assert isinstance(config.log_level, str)
 assert isinstance(config.postgresql, PostgresConf)
 ```
-
-
-
 
 ## 📦 Variables
 
