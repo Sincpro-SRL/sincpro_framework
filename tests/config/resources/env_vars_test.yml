@@ -2,4 +2,4 @@
 # This file contains values that reference environment variables
 
 string_value: "$ENV:TEST_STRING"
-int_value: "$ENV:TEST_INT" 
+int_value: "$ENV:TEST_INT"

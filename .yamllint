@@ -1,0 +1,27 @@
+---
+# Configuración para yamllint
+# https://yamllint.readthedocs.io/en/stable/configuration.html
+
+extends: default
+
+rules:
+  # 80 chars should be enough, but don't fail if a line is longer
+  line-length:
+    max: 100
+    level: warning
+  
+  # Configuración específica de Sincpro Framework
+  # Permitir valores vacíos para propiedades opcionales
+  empty-values: disable
+  
+  # No requerir documentos separados dentro de un archivo
+  document-start: disable
+  
+  # Los siguientes estándares son estrictamente aplicados:
+  trailing-spaces: enable
+  truthy: enable
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: 2
+    indent-sequences: consistent 

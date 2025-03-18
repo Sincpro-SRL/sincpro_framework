@@ -24,6 +24,7 @@ autoflake = "^2.3.1"
 pyright = "^1.1.391"
 jupyterlab = "^4.3.4"
 mypy = "^1.14.1"
+yamllint = "^1.35.1"
 
 [build-system]
 requires = ["poetry-core"]
