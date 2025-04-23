@@ -8,23 +8,29 @@ packages = [{include = "sincpro_framework"}]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.10"
-dependency-injector = "^4.43.0"
+python = "^3.12"
+dependency-injector = "^4.46.0"
 pydantic = "^2.9.2"
-structlog = "^24.4.0"
+structlog = "^25.2.0"
 pyyaml = "6.0.1"
 
 
 [tool.poetry.group.dev.dependencies]
-isort = "^5.13.2"
-black = "^24.10.0"
-pytest = "^8.3.4"
-ipython = "^8.28.0"
+isort = "^6.0.1"
+black = "^25.1.0"
+pytest = "^8.3.5"
+ipython = "^9.1.0"
 autoflake = "^2.3.1"
-pyright = "^1.1.391"
+pyright = "^1.1.399"
 jupyterlab = "^4.3.4"
 mypy = "^1.14.1"
-yamllint = "^1.35.1"
+yamllint = "^1.37.0"
+
+
+[[tool.poetry.source]]
+name = "fury"
+url = "https://pypi.fury.io/sincpro/"
+priority = "supplemental"
 
 [build-system]
 requires = ["poetry-core"]
