@@ -1,13 +1,15 @@
 GEMFURY_PUSH_TOKEN ?= DEFAULT_TOKEN
 
-.SILENT: configure-gemfury
+.SILENT: add-gemfury-repo
 
-configure-gemfury:
+add-gemfury-repo:
 	poetry config repositories.fury https://pypi.fury.io/sincpro/
+
+configure-gemfury: add-gemfury-repo
 	poetry config http-basic.fury $(GEMFURY_PUSH_TOKEN) NOPASS
 
 
-install: configure-gemfury
+install: add-gemfury-repo
 	poetry install
 
 ipython:
