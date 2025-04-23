@@ -1,4 +1,11 @@
-install:
+.SILENT: configure-gemfury
+
+configure-gemfury:
+	poetry config repositories.fury https://pypi.fury.io/sincpro/
+	poetry config http-basic.fury $(GEMFURY_PUSH_TOKEN) NOPASS
+
+
+install: configure-gemfury
 	poetry install
 
 ipython:
@@ -33,10 +40,10 @@ clean-pyc:
 	find . -type d -name '__pycache__' -exec rm -rf {} \; || exit 0
 	find . -type f -iname '*.pyc' -delete || exit 0
 
-build:
+build: configure-gemfury
 	poetry build
 
-publish:
+publish: configure-gemfury
 	poetry publish -u __token__ -p $(POETRY_PYPI_TOKEN) --build
 
 test:
