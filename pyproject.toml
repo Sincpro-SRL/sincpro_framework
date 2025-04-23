@@ -14,6 +14,7 @@ pydantic = "^2.9.2"
 structlog = "^25.2.0"
 pyyaml = "6.0.1"
 sincpro-async-worker = { version="^0.1.3", source = 'fury' }
+yamllint = "^1.37.0"
 
 
 [tool.poetry.group.dev.dependencies]

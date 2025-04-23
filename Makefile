@@ -1,3 +1,5 @@
+GEMFURY_PUSH_TOKEN ?= DEFAULT_TOKEN
+
 .SILENT: configure-gemfury
 
 configure-gemfury:
