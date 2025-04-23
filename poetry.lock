@@ -2423,6 +2423,23 @@ test = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "ini2toml[lite] (>=
 type = ["importlib_metadata (>=7.0.2) ; python_version < \"3.10\"", "jaraco.develop (>=7.21) ; sys_platform != \"cygwin\"", "mypy (==1.14.*)", "pytest-mypy"]
 
 [[package]]
+name = "sincpro-async-worker"
+version = "0.1.3"
+description = "Componente asíncrono para sincpro_framework que permite ejecutar tareas asíncronas en un entorno mayoritariamente sincrónico"
+optional = false
+python-versions = ">=3.12,<4.0"
+groups = ["main"]
+files = [
+    {file = "sincpro-async-worker-0.1.3.tar.gz", hash = "sha256:e3facb25e057e17841efdac13c5cf3e4c29cb244fa63ebb1f47bf78bc0b82d6a"},
+    {file = "sincpro_async_worker-0.1.3-py3-none-any.whl", hash = "sha256:74bd27135d4c48761436bd5dc8b7ade630120c157cc44dcf3c5f5530e361b2b9"},
+]
+
+[package.source]
+type = "legacy"
+url = "https://pypi.fury.io/sincpro"
+reference = "fury"
+
+[[package]]
 name = "six"
 version = "1.17.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -2721,4 +2738,4 @@ dev = ["doc8", "flake8", "flake8-import-order", "rstcheck[sphinx]", "sphinx"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "b94da668124df27563c3812322c16a4ef4c71a83977d662557a62dc8cf34037a"
+content-hash = "ae0b84dee40649e2866fc8694f7e2e737cbb2e91753aff11c8be35de4b913f5c"
