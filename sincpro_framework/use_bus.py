@@ -1,11 +1,12 @@
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Type
 
+from sincpro_log.logger import LoggerProxy, create_logger
+
 from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .sincpro_logger import LoggerProxy, create_logger
 
 
 class UseFramework:

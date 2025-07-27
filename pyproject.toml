@@ -16,8 +16,8 @@ priority = "supplemental"
 python = "^3.12"
 dependency-injector = "^4.46.0"
 pydantic = "^2.9.2"
-structlog = "^25.2.0"
 pyyaml = "6.0.1"
+sincpro-log = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
 isort = "^6.0.1"

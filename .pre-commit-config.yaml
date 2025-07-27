@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: make-format
+        name: Format code with Makefile
+        entry: make verify-format
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
