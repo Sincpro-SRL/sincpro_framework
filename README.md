@@ -477,3 +477,120 @@ Override the config file using another
 ```bash
 export SINCPRO_FRAMEWORK_CONFIG_FILE = /path/to/your/config.yml
 ```
+
+## 📚 Auto-Documentation
+
+The Sincpro Framework includes a powerful auto-documentation system that can introspect your framework instances and generate comprehensive documentation automatically.
+
+### 🚀 Quick Documentation Generation
+
+```python
+# generate_docs.py (create this in your project)
+from my_app import framework  # Your configured framework
+from sincpro_framework.auto_docs import generate_framework_documentation
+
+# Generate complete API documentation
+generate_framework_documentation(
+    framework_instance=framework,
+    output_path="docs/api_reference.md",
+    include_examples=True,
+    include_dependencies=True
+)
+
+print("📚 Documentation generated!")
+```
+
+### 📋 Available Auto-Documentation Functions
+
+```python
+from sincpro_framework.auto_docs import (
+    generate_framework_documentation,  # Generate full docs to file
+    print_framework_summary,          # Print summary to console
+    get_framework_documentation_content # Get docs as string
+)
+
+# Generate documentation file
+docs_path = generate_framework_documentation(
+    framework_instance=my_framework,
+    output_path="docs/my_service_api.md",
+    include_examples=True,
+    include_dependencies=True,
+    include_type_details=True,
+    include_source_links=False
+)
+
+# Print framework summary
+print_framework_summary(my_framework)
+
+# Get documentation content as string
+content = get_framework_documentation_content(
+    my_framework, 
+    format_type="markdown"
+)
+```
+
+### 🔄 Integration Examples
+
+**Makefile Integration:**
+
+```makefile
+docs:
+    python generate_docs.py
+
+docs-watch:
+    python generate_docs.py --watch
+
+.PHONY: docs
+```
+
+**CI/CD Integration:**
+
+```yaml
+# .github/workflows/docs.yml
+name: Update Documentation
+on: [push]
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: python generate_docs.py
+      - run: git add docs/ && git commit -m "Update API docs" && git push
+```
+
+**Multiple Services:**
+
+```python
+# generate_all_docs.py
+frameworks = {
+    'payment': payment_framework,
+    'user': user_framework,
+    'notification': notification_framework
+}
+
+for service_name, framework in frameworks.items():
+    generate_framework_documentation(
+        framework,
+        f"docs/api/{service_name}_api.md"
+    )
+```
+
+### 📖 Generated Documentation Features
+
+The auto-generated documentation includes:
+
+- **Framework Overview**: Summary statistics and architecture info
+- **Features Documentation**: All registered Features with input/output DTOs
+- **Application Services**: Complex workflows and their dependencies  
+- **DTO Reference**: Complete Data Transfer Object specifications
+- **Dependencies**: Global dependencies and injection details
+- **Usage Examples**: Code examples for each component
+- **Type Information**: Detailed type annotations and validation rules
+
+### 💡 Best Practices
+
+1. **Separate Documentation Script**: Keep documentation generation separate from business logic
+2. **Regular Updates**: Run documentation generation as part of your build process
+3. **Version Control**: Include generated docs in version control for easy access
+4. **CI Integration**: Automate documentation updates on code changes
+5. **Multiple Outputs**: Generate different documentation for different audiences
