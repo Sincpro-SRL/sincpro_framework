@@ -7,7 +7,7 @@ from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .middleware.base import Middleware, MiddlewarePipeline
+from .middleware import Middleware, MiddlewarePipeline
 
 
 class UseFramework:
