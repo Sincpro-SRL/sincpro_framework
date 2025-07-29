@@ -477,3 +477,96 @@ Override the config file using another
 ```bash
 export SINCPRO_FRAMEWORK_CONFIG_FILE = /path/to/your/config.yml
 ```
+
+## 📚 Auto-Documentation
+
+The Sincpro Framework includes a powerful auto-documentation system that can introspect your framework instances and generate comprehensive documentation automatically.
+
+### 🚀 Quick Documentation Generation
+
+```python
+# En tu proyecto, desde la instancia del framework
+from my_app import framework  # Tu framework configurado
+
+# ¡Es así de simple! Directamente desde la instancia
+framework.generate_documentation("docs/api_reference.md")
+framework.print_framework_summary()
+
+print("📚 Documentation generated!")
+```
+
+### 📋 Available Auto-Documentation Functions
+
+```python
+# Solo necesitas tu instancia del framework
+from my_app import my_framework  # Tu framework configurado
+
+# Métodos directos del framework
+my_framework.generate_documentation("docs/my_service_api.md")
+my_framework.print_framework_summary()
+
+# ¡Así de fácil! No imports adicionales necesarios
+```
+
+### 🔄 Integration Examples
+
+**Makefile Integration:**
+
+```makefile
+docs:
+    python -c "from my_app import framework; framework.generate_documentation()"
+
+docs-summary:
+    python -c "from my_app import framework; framework.print_framework_summary()"
+
+.PHONY: docs
+```
+
+**CI/CD Integration:**
+
+```yaml
+# .github/workflows/docs.yml
+name: Update Documentation
+on: [push]
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: python -c "from my_app import framework; framework.generate_documentation()"
+      - run: git add docs/ && git commit -m "Update API docs" && git push
+```
+
+**Multiple Services:**
+
+```python
+# generate_all_docs.py
+from payment_service import payment_framework
+from user_service import user_framework
+from notification_service import notification_framework
+
+# Cada framework se documenta a sí mismo
+payment_framework.generate_documentation("docs/api/payment_api.md")
+user_framework.generate_documentation("docs/api/user_api.md")
+notification_framework.generate_documentation("docs/api/notification_api.md")
+```
+
+### 📖 Generated Documentation Features
+
+The auto-generated documentation includes:
+
+- **Framework Overview**: Summary statistics and architecture info
+- **Features Documentation**: All registered Features with input/output DTOs
+- **Application Services**: Complex workflows and their dependencies  
+- **DTO Reference**: Complete Data Transfer Object specifications
+- **Dependencies**: Global dependencies and injection details
+- **Usage Examples**: Code examples for each component
+- **Type Information**: Detailed type annotations and validation rules
+
+### 💡 Best Practices
+
+1. **Separate Documentation Script**: Keep documentation generation separate from business logic
+2. **Regular Updates**: Run documentation generation as part of your build process
+3. **Version Control**: Include generated docs in version control for easy access
+4. **CI Integration**: Automate documentation updates on code changes
+5. **Multiple Outputs**: Generate different documentation for different audiences
