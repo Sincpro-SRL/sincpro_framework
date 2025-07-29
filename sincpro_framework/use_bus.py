@@ -6,8 +6,8 @@ from sincpro_log.logger import LoggerProxy, create_logger
 from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
-from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 from .middleware import Middleware, MiddlewarePipeline
+from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
 class UseFramework:
@@ -83,7 +83,7 @@ class UseFramework:
             if res is None:
                 return None
             return res
-        
+
         return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
 
     def build_root_bus(self):
