@@ -1200,6 +1200,22 @@ nearley = ["js2py"]
 regex = ["regex"]
 
 [[package]]
+name = "markdown"
+version = "3.8.2"
+description = "Python implementation of John Gruber's Markdown."
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+files = [
+    {file = "markdown-3.8.2-py3-none-any.whl", hash = "sha256:5c83764dbd4e00bdd94d85a19b8d55ccca20fe35b2e678a1422b380324dd5f24"},
+    {file = "markdown-3.8.2.tar.gz", hash = "sha256:247b9a70dd12e27f67431ce62523e675b866d254f900c4fe75ce3dda62237c45"},
+]
+
+[package.extras]
+docs = ["mdx_gh_links (>=0.2)", "mkdocs (>=1.6)", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-nature (>=0.6)", "mkdocs-section-index", "mkdocstrings[python]"]
+testing = ["coverage", "pyyaml"]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.2"
 description = "Safely add untrusted strings to HTML/XML markup."
@@ -2712,7 +2728,10 @@ pyyaml = "*"
 [package.extras]
 dev = ["doc8", "flake8", "flake8-import-order", "rstcheck[sphinx]", "sphinx"]
 
+[extras]
+auto-docs = []
+
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "93d944eea324bf806f1ba2d35343a5ea0a7319a7e6a082355be3b9a3beac07f2"
+content-hash = "cf2cf0965b50a67e3ea37803706ba0d9ac56be9ac69b804d626118521791fcb3"

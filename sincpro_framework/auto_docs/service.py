@@ -1,18 +1,18 @@
 """
-Auto-Documentation Service Implementation
+Auto-Documentation Service - Main Entry Point
 
-Implementación concreta del servicio principal de auto-documentación.
+Punto de entrada principal del sistema de auto-documentación.
 """
 
 from typing import Any, Dict
 
-from .markdown_generator import MarkdownDocumentationGenerator
-from .sincpro_introspector import SincproFrameworkIntrospector
+from .infrastructure.markdown_generator import MarkdownDocumentationGenerator
+from .infrastructure.sincpro_introspector import SincproFrameworkIntrospector
 
 
 class AutoDocumentationService:
     """
-    Implementación concreta del servicio de auto-documentación
+    Servicio principal de auto-documentación - Entry Point
     """
 
     def __init__(self):
@@ -95,3 +95,62 @@ class AutoDocumentationService:
         """Lista todos los componentes registrados en el framework"""
         summary_data = self.get_framework_summary(framework_instance)
         return summary_data["components"]
+
+
+# API de conveniencia para uso externo
+def generate_framework_documentation(
+    framework_instance, output_path: str = "docs/framework_api_reference.md", **config
+) -> str:
+    """
+    Función de conveniencia para generar documentación del framework
+
+    Args:
+        framework_instance: Instancia construida del framework
+        output_path: Ruta donde guardar la documentación
+        **config: Opciones de configuración
+
+    Returns:
+        Ruta donde se guardó la documentación
+    """
+    if not hasattr(framework_instance, "bus") or framework_instance.bus is None:
+        raise Exception(
+            "Framework must be built before generating documentation. Call framework.build_root_bus() first."
+        )
+
+    service = AutoDocumentationService()
+    return service.generate_documentation(framework_instance, output_path, **config)
+
+
+def print_framework_summary(framework_instance) -> None:
+    """Imprime un resumen del framework en consola"""
+    if not hasattr(framework_instance, "bus") or framework_instance.bus is None:
+        raise Exception(
+            "Framework must be built before showing summary. Call framework.build_root_bus() first."
+        )
+
+    service = AutoDocumentationService()
+    service.print_framework_summary(framework_instance)
+
+
+def get_framework_components(framework_instance) -> dict:
+    """Obtiene lista de componentes registrados en el framework"""
+    if not hasattr(framework_instance, "bus") or framework_instance.bus is None:
+        raise Exception(
+            "Framework must be built before listing components. Call framework.build_root_bus() first."
+        )
+
+    service = AutoDocumentationService()
+    return service.list_registered_components(framework_instance)
+
+
+def get_documentation_content(
+    framework_instance, format_type: str = "markdown", **config
+) -> str:
+    """Genera contenido de documentación sin guardar en archivo"""
+    if not hasattr(framework_instance, "bus") or framework_instance.bus is None:
+        raise Exception(
+            "Framework must be built before generating documentation. Call framework.build_root_bus() first."
+        )
+
+    service = AutoDocumentationService()
+    return service.generate_documentation_content(framework_instance, format_type, **config)

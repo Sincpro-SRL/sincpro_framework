@@ -173,24 +173,20 @@ class UseFramework:
         Returns:
             Path where documentation was saved
         """
-        if not hasattr(self, "bus") or self.bus is None:
-            raise SincproFrameworkNotBuilt(
-                "Framework must be built before generating documentation"
-            )
+        if not self.was_initialized:
+            self.build_root_bus()
 
         # Late import to avoid circular dependencies
-        from .auto_docs import AutoDocumentationService
+        from .auto_docs import generate_framework_documentation
 
-        service = AutoDocumentationService()
-        return service.generate_documentation(self, output_path, **config)
+        return generate_framework_documentation(self, output_path, **config)
 
     def print_framework_summary(self) -> None:
         """Print a quick summary of the framework components to console"""
-        if not hasattr(self, "bus") or self.bus is None:
-            raise SincproFrameworkNotBuilt("Framework must be built before showing summary")
+        if not self.was_initialized:
+            self.build_root_bus()
 
         # Late import to avoid circular dependencies
-        from .auto_docs import AutoDocumentationService
+        from .auto_docs import print_framework_summary
 
-        service = AutoDocumentationService()
-        service.print_framework_summary(self)
+        print_framework_summary(self)

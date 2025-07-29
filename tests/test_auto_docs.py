@@ -55,15 +55,14 @@ def test_framework_basic_functionality(test_framework):
 
 
 def test_generate_documentation(test_framework):
-    """Test para generar documentación en archivo"""
-    from sincpro_framework.auto_docs import generate_framework_documentation
+    """Test para generar documentación usando el método directo del framework"""
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
         output_path = f.name
 
     try:
-        # Generar documentación
-        result_path = generate_framework_documentation(test_framework, output_path)
+        # Generar documentación usando el método del framework directamente
+        result_path = test_framework.generate_documentation(output_path)
 
         # Verificar que se creó el archivo
         assert os.path.exists(result_path)
@@ -83,10 +82,10 @@ def test_generate_documentation(test_framework):
 
 
 def test_print_framework_summary(test_framework, capsys):
-    """Test para imprimir resumen del framework"""
-    from sincpro_framework.auto_docs import print_framework_summary
+    """Test para imprimir resumen usando el método directo del framework"""
 
-    print_framework_summary(test_framework)
+    # Usar el método directo del framework
+    test_framework.print_framework_summary()
 
     captured = capsys.readouterr()
     output = captured.out
@@ -98,15 +97,23 @@ def test_print_framework_summary(test_framework, capsys):
 
 
 def test_framework_not_built_error():
-    """Test para verificar error cuando framework no está construido"""
-    from sincpro_framework.auto_docs import generate_framework_documentation
+    """Test para verificar que el framework se construye automáticamente si es necesario"""
 
     framework = UseFramework("test_framework")
 
-    with pytest.raises(Exception) as exc_info:
-        generate_framework_documentation(framework, "test.md")
+    # Ahora no debería dar error porque se construye automáticamente
+    # Solo verificamos que funciona sin features registrados
+    try:
+        result_path = framework.generate_documentation("test.md")
+        # Limpiar el archivo creado
+        if os.path.exists(result_path):
+            os.unlink(result_path)
 
-    assert "must be built" in str(exc_info.value).lower()
+        # Si llegamos aquí, significa que funcionó correctamente
+        assert True
+    except Exception as e:
+        # Solo debería fallar si hay un problema real
+        pytest.fail(f"Framework should auto-build, but got error: {e}")
 
 
 if __name__ == "__main__":
@@ -115,7 +122,7 @@ if __name__ == "__main__":
 
     @framework.feature(ExampleDTO)
     class ExampleFeature(Feature):
-        def execute(self, dto: ExampleDTO) -> ExampleResponseDTO:
+        def execute(self, dto) -> ExampleResponseDTO:
             return ExampleResponseDTO(message=f"Hello {dto.name}")
 
     framework.build_root_bus()
@@ -126,8 +133,7 @@ if __name__ == "__main__":
     print(f"✅ Result: {result}")
 
     print("\n📊 Framework Summary:")
-    from sincpro_framework.auto_docs import print_framework_summary
-
-    print_framework_summary(framework)
+    # Usar el método directo del framework
+    framework.print_framework_summary()
 
     print("\n🎉 All basic tests passed!")
