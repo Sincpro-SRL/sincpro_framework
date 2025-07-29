@@ -159,3 +159,34 @@ class UseFramework:
             self._logger = create_logger(self._logger_name)
             self._is_logger_configured = True
         return self._logger
+
+    # Auto-Documentation Methods
+
+    def generate_documentation(self, output_path: str = "FRAMEWORK_DOCS.md", **config) -> str:
+        """
+        Generate comprehensive documentation for this framework instance
+
+        Args:
+            output_path: Path where to save the documentation
+            **config: Configuration options for generation
+
+        Returns:
+            Path where documentation was saved
+        """
+        if not self.was_initialized:
+            self.build_root_bus()
+
+        # Late import to avoid circular dependencies
+        from .generate_documentation import generate_framework_documentation
+
+        return generate_framework_documentation(self, output_path, **config)
+
+    def print_framework_summary(self) -> None:
+        """Print a quick summary of the framework components to console"""
+        if not self.was_initialized:
+            self.build_root_bus()
+
+        # Late import to avoid circular dependencies
+        from .generate_documentation import print_framework_summary
+
+        print_framework_summary(self)
