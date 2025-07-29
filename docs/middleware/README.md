@@ -1,222 +1,124 @@
-# 🔧 Sincpro Framework Middleware System
+# Middleware System
 
-The Sincpro Framework now includes a powerful middleware system that allows you to add cross-cutting concerns like validation, authorization, and caching to your application without modifying existing business logic.
+The Sincpro Framework provides a simple and flexible middleware system that allows you to add custom processing logic before your Features and ApplicationServices are executed.
 
-## ✨ Key Features
+## Philosophy
 
-- **🚀 No Breaking Changes**: Existing code works without modification
-- **🔧 Easy Integration**: Add middleware with a single method call
-- **⚡ Priority-Based Execution**: Control middleware execution order
-- **🛡️ Comprehensive Error Handling**: Middleware can handle and recover from errors
-- **🎯 Type-Safe**: Full type hints and IDE support
+The middleware system follows the framework's core principles:
+- **Simple**: Middleware is just a function that processes DTOs
+- **Agnostic**: The framework doesn't dictate how you implement middleware
+- **Developer Control**: You have complete control over what your middleware does
 
-## 🧩 Available Middleware
+## How It Works
 
-### ValidationMiddleware
-Add business rule validation beyond Pydantic validation.
+Middleware are simple functions that:
+1. Receive a DTO as input
+2. Can validate, transform, or enhance the DTO
+3. Return the (possibly modified) DTO
+4. Can raise exceptions if validation fails
 
 ```python
-from sincpro_framework.middleware import ValidationMiddleware, ValidationRule
+from typing import Any
 
-validation = ValidationMiddleware(strict_mode=True)
-validation.add_validation_rule(
-    "PaymentDTO",
-    ValidationRule(
-        name="positive_amount",
-        validator=lambda dto: dto.amount > 0,
-        error_message="Payment amount must be positive"
-    )
-)
-framework.add_middleware(validation)
+def my_middleware(dto: Any) -> Any:
+    """Simple middleware that validates or transforms a DTO"""
+    # Your custom logic here
+    if hasattr(dto, 'amount') and dto.amount <= 0:
+        raise ValueError("Amount must be positive")
+    
+    # Return the DTO (modified or unchanged)
+    return dto
 ```
 
-### AuthorizationMiddleware (ABAC)
-Implement Attribute-Based Access Control with flexible policies.
+## Usage Example
 
 ```python
-from sincpro_framework.middleware import (
-    AuthorizationMiddleware, AuthorizationPolicy, 
-    PermissionAction, has_role, owns_resource
-)
+from sincpro_framework import UseFramework
 
-auth = AuthorizationMiddleware()
-auth.set_user_context_provider(lambda dto: get_user_context(dto.user_id))
+# Create your middleware function
+def validate_payment(dto):
+    if hasattr(dto, 'amount') and dto.amount <= 0:
+        raise ValueError("Amount must be positive")
+    return dto
 
-policy = AuthorizationPolicy(
-    name="payment_access",
-    resource="payment",
-    action=PermissionAction.CREATE,
-    conditions=[has_role("payment_processor"), owns_resource()]
-)
-auth.add_policy("PaymentDTO", policy)
-framework.add_middleware(auth)
-```
+def add_timestamp(dto):
+    if hasattr(dto, '__dict__'):
+        dto.timestamp = time.time()
+    return dto
 
-### CachingMiddleware
-Add intelligent caching with TTL and tag-based invalidation.
-
-```python
-from sincpro_framework.middleware import (
-    CachingMiddleware, CacheConfig, InMemoryCacheProvider
-)
-
-cache = CachingMiddleware(InMemoryCacheProvider())
-cache.configure_caching(
-    "UserProfileDTO",
-    CacheConfig(
-        ttl_seconds=300,
-        cache_key_generator=lambda dto: f"profile:{dto.user_id}",
-        invalidation_tags=["user_profiles"]
-    )
-)
-framework.add_middleware(cache)
-```
-
-## 🚀 Quick Start
-
-```python
-from sincpro_framework import UseFramework, Feature, DataTransferObject
-from sincpro_framework.middleware import ValidationMiddleware, ValidationRule
-
-# Create framework
+# Add middleware to your framework
 framework = UseFramework("my_app")
+framework.add_middleware(validate_payment)
+framework.add_middleware(add_timestamp)
 
-# Add validation middleware
-validation = ValidationMiddleware()
-validation.add_validation_rule(
-    "PaymentDTO", 
-    ValidationRule(
-        "positive_amount", 
-        lambda dto: dto.amount > 0, 
-        "Amount must be positive"
-    )
-)
-framework.add_middleware(validation)
-
-# Define your DTOs and Features as usual
-class PaymentDTO(DataTransferObject):
-    amount: float
-    user_id: str
-
-@framework.feature(PaymentDTO)
-class ProcessPaymentFeature(Feature):
-    def execute(self, dto: PaymentDTO):
-        # Business logic here - validation happens automatically
-        return {"status": "success", "amount": dto.amount}
-
-# Use the framework - middleware runs automatically
-result = framework(PaymentDTO(amount=100.0, user_id="user123"))
+# Now all DTOs will be processed by your middleware first
+result = framework(my_dto)
 ```
 
-## 🔄 Middleware Pipeline
+## Middleware Execution Order
 
-Middleware executes in priority order:
+Middleware execute in the order they are added:
+1. First middleware processes the original DTO
+2. Second middleware processes the result from first middleware
+3. And so on...
+4. Finally, your Feature or ApplicationService receives the processed DTO
 
-1. **Pre-execution**: All middleware run in priority order (lower numbers first)
-2. **Business Logic**: Your Feature or ApplicationService executes
-3. **Post-execution**: All middleware run in reverse priority order
-4. **Error Handling**: If any step fails, middleware can handle the error
+## Common Use Cases
+
+### Validation
+```python
+def validate_user_input(dto):
+    if hasattr(dto, 'email') and '@' not in dto.email:
+        raise ValueError("Invalid email format")
+    return dto
+```
+
+### Authentication
+```python
+def check_authentication(dto):
+    if hasattr(dto, 'user_id') and not is_authenticated(dto.user_id):
+        raise PermissionError("User not authenticated")
+    return dto
+```
+
+### Data Enrichment
+```python
+def enrich_user_data(dto):
+    if hasattr(dto, 'user_id'):
+        dto.user_profile = get_user_profile(dto.user_id)
+    return dto
+```
+
+### Logging
+```python
+import logging
+
+def log_requests(dto):
+    logging.info(f"Processing DTO: {type(dto).__name__}")
+    return dto
+```
+
+## Best Practices
+
+1. **Keep It Simple**: Middleware should do one thing well
+2. **Fail Fast**: Raise exceptions early if validation fails
+3. **Be Safe**: Always check if attributes exist before accessing them
+4. **Return the DTO**: Always return the DTO (modified or unchanged)
+5. **Don't Break the Chain**: Ensure your middleware doesn't prevent other middleware from running
+
+## Error Handling
+
+If any middleware raises an exception, the entire pipeline stops and the exception is propagated to the caller:
 
 ```python
-# Priority examples (lower = higher priority)
-validation_middleware = ValidationMiddleware()  # priority=10
-auth_middleware = AuthorizationMiddleware()     # priority=20  
-cache_middleware = CachingMiddleware(...)       # priority=30
+def strict_validation(dto):
+    if not hasattr(dto, 'required_field'):
+        raise ValueError("required_field is missing")
+    return dto
 
-# Execution order: validation → auth → cache → business logic → cache → auth → validation
+# This will raise ValueError if required_field is missing
+framework.add_middleware(strict_validation)
+result = framework(my_dto)  # May raise ValueError
 ```
 
-## 🎛️ Advanced Features
-
-### Conditional Middleware
-```python
-# Only cache for specific conditions
-cache_config = CacheConfig(
-    ttl_seconds=300,
-    cache_condition=lambda ctx: ctx.dto.user_id.startswith("premium_")
-)
-```
-
-### Error Recovery
-```python
-class ErrorHandlingMiddleware(BaseMiddleware):
-    def on_error(self, context, error):
-        if isinstance(error, ValidationError):
-            return {"error": "validation_failed", "details": str(error)}
-        return None  # Re-raise other errors
-```
-
-### Dynamic Control
-```python
-# Disable middleware for testing
-framework.disable_middleware()
-result = framework(dto)  # Runs without middleware
-
-# Re-enable
-framework.enable_middleware()
-```
-
-## 📁 Examples
-
-- **Basic Example**: `examples/middleware_example.py`
-- **Complete System**: `examples/complete_middleware_example.py`
-- **ApplicationServices**: `examples/application_service_middleware_example.py`
-
-## 🧪 Testing
-
-The middleware system includes comprehensive tests:
-- 47 middleware-specific tests
-- Full integration tests with UseFramework
-- Backwards compatibility tests (all existing tests still pass)
-
-```bash
-# Run middleware tests
-python -m pytest tests/middleware/ -v
-
-# Run all tests
-python -m pytest tests/ -v
-```
-
-## 🔧 Creating Custom Middleware
-
-```python
-from sincpro_framework.middleware import BaseMiddleware, MiddlewareContext
-
-class CustomMiddleware(BaseMiddleware):
-    def __init__(self):
-        super().__init__("custom", priority=50)
-    
-    def pre_execute(self, context: MiddlewareContext) -> MiddlewareContext:
-        # Run before business logic
-        print(f"Processing: {type(context.dto).__name__}")
-        context.add_metadata("start_time", time.time())
-        return context
-    
-    def post_execute(self, context: MiddlewareContext, result) -> any:
-        # Run after business logic
-        duration = time.time() - context.get_metadata("start_time")
-        print(f"Completed in {duration:.2f}s")
-        return result
-    
-    def on_error(self, context: MiddlewareContext, error: Exception):
-        # Handle errors
-        print(f"Error occurred: {error}")
-        return None  # Re-raise error
-
-# Add to framework
-framework.add_middleware(CustomMiddleware())
-```
-
-## 📋 Best Practices
-
-1. **Use appropriate priorities**: Validation (10), Authorization (20), Caching (30)
-2. **Keep middleware focused**: Each middleware should handle one concern
-3. **Handle errors gracefully**: Use `on_error` for recovery strategies
-4. **Test thoroughly**: Ensure middleware works with all your DTOs
-5. **Document policies**: Clearly document authorization policies and validation rules
-
-## 🔄 Migration
-
-**No migration needed!** The middleware system is fully backward compatible. Your existing code will work without any changes. Simply add middleware as needed.
-
-The middleware system enhances the Sincpro Framework's existing capabilities while maintaining the clean, simple API you're already using.
+This simple approach gives you complete control over how you want to process your DTOs while maintaining the framework's philosophy of simplicity and developer control.

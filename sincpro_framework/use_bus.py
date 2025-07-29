@@ -7,7 +7,7 @@ from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .middleware.base import BaseMiddleware, MiddlewarePipeline
+from .middleware.base import Middleware, MiddlewarePipeline
 
 
 class UseFramework:
@@ -56,7 +56,6 @@ class UseFramework:
 
         # Middleware pipeline
         self.middleware_pipeline = MiddlewarePipeline()
-        self._middleware_enabled: bool = True
 
         self.was_initialized: bool = False
         self.bus: FrameworkBus | None = None
@@ -78,24 +77,14 @@ class UseFramework:
                 "feature and app service"
             )
 
-        if not self._middleware_enabled:
-            return self._execute_without_middleware(dto, return_type)
-        
         # Execute with middleware pipeline
         def executor(processed_dto, **exec_kwargs):
-            return self._execute_without_middleware(processed_dto, exec_kwargs.get('return_type'))
+            res: TypeDTOResponse | None = self.bus.execute(processed_dto)
+            if res is None:
+                return None
+            return res
         
         return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
-
-    def _execute_without_middleware(
-        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
-    ) -> TypeDTOResponse | None:
-        """Original execution logic without middleware"""
-        res: TypeDTOResponse | None = self.bus.execute(dto)
-        if res is None:
-            return None
-
-        return res
 
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user"""
@@ -122,17 +111,9 @@ class UseFramework:
             raise DependencyAlreadyRegistered(f"The dependency {name} is already injected")
         self.dynamic_dep_registry[name] = dep
 
-    def add_middleware(self, middleware: BaseMiddleware):
-        """Add middleware to the execution pipeline"""
+    def add_middleware(self, middleware: Middleware):
+        """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)
-
-    def disable_middleware(self):
-        """Disable middleware pipeline for testing/debugging"""
-        self._middleware_enabled = False
-
-    def enable_middleware(self):
-        """Enable middleware pipeline"""
-        self._middleware_enabled = True
 
     def add_global_error_handler(self, handler: Callable):
         if not callable(handler):
