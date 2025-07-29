@@ -177,7 +177,7 @@ class UseFramework:
             self.build_root_bus()
 
         # Late import to avoid circular dependencies
-        from .auto_docs import generate_framework_documentation
+        from .generate_documentation import generate_framework_documentation
 
         return generate_framework_documentation(self, output_path, **config)
 
@@ -187,6 +187,6 @@ class UseFramework:
             self.build_root_bus()
 
         # Late import to avoid circular dependencies
-        from .auto_docs import print_framework_summary
+        from .generate_documentation import print_framework_summary
 
         print_framework_summary(self)

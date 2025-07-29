@@ -485,17 +485,12 @@ The Sincpro Framework includes a powerful auto-documentation system that can int
 ### 🚀 Quick Documentation Generation
 
 ```python
-# generate_docs.py (create this in your project)
-from my_app import framework  # Your configured framework
-from sincpro_framework.auto_docs import generate_framework_documentation
+# En tu proyecto, desde la instancia del framework
+from my_app import framework  # Tu framework configurado
 
-# Generate complete API documentation
-generate_framework_documentation(
-    framework_instance=framework,
-    output_path="docs/api_reference.md",
-    include_examples=True,
-    include_dependencies=True
-)
+# ¡Es así de simple! Directamente desde la instancia
+framework.generate_documentation("docs/api_reference.md")
+framework.print_framework_summary()
 
 print("📚 Documentation generated!")
 ```
@@ -503,30 +498,14 @@ print("📚 Documentation generated!")
 ### 📋 Available Auto-Documentation Functions
 
 ```python
-from sincpro_framework.auto_docs import (
-    generate_framework_documentation,  # Generate full docs to file
-    print_framework_summary,          # Print summary to console
-    get_framework_documentation_content # Get docs as string
-)
+# Solo necesitas tu instancia del framework
+from my_app import my_framework  # Tu framework configurado
 
-# Generate documentation file
-docs_path = generate_framework_documentation(
-    framework_instance=my_framework,
-    output_path="docs/my_service_api.md",
-    include_examples=True,
-    include_dependencies=True,
-    include_type_details=True,
-    include_source_links=False
-)
+# Métodos directos del framework
+my_framework.generate_documentation("docs/my_service_api.md")
+my_framework.print_framework_summary()
 
-# Print framework summary
-print_framework_summary(my_framework)
-
-# Get documentation content as string
-content = get_framework_documentation_content(
-    my_framework, 
-    format_type="markdown"
-)
+# ¡Así de fácil! No imports adicionales necesarios
 ```
 
 ### 🔄 Integration Examples
@@ -535,10 +514,10 @@ content = get_framework_documentation_content(
 
 ```makefile
 docs:
-    python generate_docs.py
+    python -c "from my_app import framework; framework.generate_documentation()"
 
-docs-watch:
-    python generate_docs.py --watch
+docs-summary:
+    python -c "from my_app import framework; framework.print_framework_summary()"
 
 .PHONY: docs
 ```
@@ -554,7 +533,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - run: python generate_docs.py
+      - run: python -c "from my_app import framework; framework.generate_documentation()"
       - run: git add docs/ && git commit -m "Update API docs" && git push
 ```
 
@@ -562,17 +541,14 @@ jobs:
 
 ```python
 # generate_all_docs.py
-frameworks = {
-    'payment': payment_framework,
-    'user': user_framework,
-    'notification': notification_framework
-}
+from payment_service import payment_framework
+from user_service import user_framework
+from notification_service import notification_framework
 
-for service_name, framework in frameworks.items():
-    generate_framework_documentation(
-        framework,
-        f"docs/api/{service_name}_api.md"
-    )
+# Cada framework se documenta a sí mismo
+payment_framework.generate_documentation("docs/api/payment_api.md")
+user_framework.generate_documentation("docs/api/user_api.md")
+notification_framework.generate_documentation("docs/api/notification_api.md")
 ```
 
 ### 📖 Generated Documentation Features
