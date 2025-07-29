@@ -25,6 +25,9 @@ class FrameworkContainer(containers.DeclarativeContainer):
 
     injected_dependencies: dict = providers.Dict()
 
+    # DTO registry - NEW: Mantiene referencias a las clases DTO para introspección
+    dto_registry: Dict[str, Any] = providers.Dict({})
+
     # atomic layer
     feature_registry: Dict[str, Feature] = providers.Dict({})
     feature_bus: FeatureBus = providers.Singleton(FeatureBus, logger_bus)
@@ -66,6 +69,15 @@ def inject_feature_to_bus(
             )
 
             # --------------------------------------------------------------------
+            # NEW: Register DTO class reference for introspection
+            framework_container.dto_registry = providers.Dict(
+                {
+                    **{data_transfer_object.__name__: data_transfer_object},
+                    **framework_container.dto_registry.kwargs,
+                }
+            )
+
+            # --------------------------------------------------------------------
             # Register DTO to fn builder that will return the feature instance
             framework_container.feature_registry = providers.Dict(
                 {
@@ -104,6 +116,15 @@ def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Unio
 
             framework_container.logger_bus.debug(
                 f"Registering application service: [{data_transfer_object.__name__}]"
+            )
+
+            # --------------------------------------------------------------------
+            # NEW: Register DTO class reference for introspection
+            framework_container.dto_registry = providers.Dict(
+                {
+                    **{data_transfer_object.__name__: data_transfer_object},
+                    **framework_container.dto_registry.kwargs,
+                }
             )
 
             # --------------------------------------------------------------------
