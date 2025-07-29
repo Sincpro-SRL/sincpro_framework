@@ -6,6 +6,7 @@ from sincpro_log.logger import LoggerProxy, create_logger
 from . import ioc
 from .bus import FrameworkBus
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
+from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
@@ -53,6 +54,9 @@ class UseFramework:
         self.feature_error_handler: Optional[Callable] = None
         self.app_service_error_handler: Optional[Callable] = None
 
+        # Middleware pipeline
+        self.middleware_pipeline = MiddlewarePipeline()
+
         self.was_initialized: bool = False
         self.bus: FrameworkBus | None = None
 
@@ -73,11 +77,14 @@ class UseFramework:
                 "feature and app service"
             )
 
-        res: TypeDTOResponse | None = self.bus.execute(dto)
-        if res is None:
-            return None
+        # Execute with middleware pipeline
+        def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
+            res: TypeDTOResponse | None = self.bus.execute(processed_dto)
+            if res is None:
+                return None
+            return res
 
-        return res
+        return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
 
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user"""
@@ -103,6 +110,10 @@ class UseFramework:
         if name in self.dynamic_dep_registry:
             raise DependencyAlreadyRegistered(f"The dependency {name} is already injected")
         self.dynamic_dep_registry[name] = dep
+
+    def add_middleware(self, middleware: Middleware):
+        """Add middleware function to the execution pipeline"""
+        self.middleware_pipeline.add_middleware(middleware)
 
     def add_global_error_handler(self, handler: Callable):
         if not callable(handler):
