@@ -32,11 +32,22 @@ class MiddlewarePipeline:
         self.middlewares.append(middleware)
 
     def execute(self, dto: Any, executor: Callable, **kwargs) -> Any:
-        """Execute the middleware pipeline and then the main executor"""
-        # Process DTO through all middleware
+        """
+        Execute the middleware pipeline and then the main executor.
+
+        Preserves registry compatibility by monkey patching transformed DTOs
+        to maintain the original DTO class for registry lookup.
+        """
+        # Store original class for registry compatibility
+        original_dto_class = dto.__class__
+
         processed_dto = dto
         for middleware in self.middlewares:
             processed_dto = middleware(processed_dto)
+
+        # If DTO type changed, monkey patch to preserve registry compatibility
+        if processed_dto.__class__ != original_dto_class:
+            processed_dto.__class__ = original_dto_class
 
         # Execute main operation with processed DTO
         return executor(processed_dto, **kwargs)

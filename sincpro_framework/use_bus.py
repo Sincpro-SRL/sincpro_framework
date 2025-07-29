@@ -78,7 +78,7 @@ class UseFramework:
             )
 
         # Execute with middleware pipeline
-        def executor(processed_dto, **exec_kwargs):
+        def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
             res: TypeDTOResponse | None = self.bus.execute(processed_dto)
             if res is None:
                 return None
