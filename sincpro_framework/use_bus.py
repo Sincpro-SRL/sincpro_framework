@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Type
+import time
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -57,15 +58,47 @@ class UseFramework:
         # Middleware pipeline
         self.middleware_pipeline = MiddlewarePipeline()
 
+        # Observability
+        self.observability_enabled: bool = False
+        self._tracer = None
+        
         self.was_initialized: bool = False
         self.bus: FrameworkBus | None = None
 
+    def enable_observability(self, service_name: str = None, jaeger_endpoint: str = None):
+        """Enable comprehensive observability for the framework.
+        
+        Args:
+            service_name (str): Name of the service for tracing. Defaults to logger name.
+            jaeger_endpoint (str): Jaeger collector endpoint. If None, uses console exporter.
+        """
+        try:
+            from .observability.tracing import configure_observability, get_tracer
+            from .observability.correlation import correlation_manager
+            
+            service_name = service_name or self._logger_name
+            configure_observability(service_name, jaeger_endpoint)
+            self._tracer = get_tracer()
+            self.observability_enabled = True
+            
+            self.logger.info(f"Observability enabled for service: {service_name}")
+        except ImportError as e:
+            self.logger.warning(f"Observability dependencies not available: {e}")
+            self.observability_enabled = False
+
     def __call__(
-        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+        self, 
+        dto: TypeDTO, 
+        return_type: Type[TypeDTOResponse] | None = None,
+        correlation_id: str = None,
+        trace_context: Dict = None
     ) -> TypeDTOResponse | None:
         """
         Main function to execute the framework
-        :param dto:
+        :param dto: The data transfer object to execute
+        :param return_type: Expected return type
+        :param correlation_id: Optional correlation ID for request tracking
+        :param trace_context: Optional trace context for distributed tracing
         :return: Any response
         """
         if not self.was_initialized:
@@ -77,14 +110,136 @@ class UseFramework:
                 "feature and app service"
             )
 
-        # Execute with middleware pipeline
-        def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
-            res: TypeDTOResponse | None = self.bus.execute(processed_dto)
-            if res is None:
-                return None
-            return res
+        # If observability is enabled, execute with tracing
+        if self.observability_enabled and self._tracer:
+            return self._execute_with_observability(dto, return_type, correlation_id, trace_context)
+        else:
+            # Execute with middleware pipeline (original behavior)
+            def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
+                res: TypeDTOResponse | None = self.bus.execute(processed_dto)
+                if res is None:
+                    return None
+                return res
 
-        return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+            return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+
+    def _execute_with_observability(
+        self, 
+        dto: TypeDTO, 
+        return_type: Type[TypeDTOResponse] | None = None,
+        correlation_id: str = None,
+        trace_context: Dict = None
+    ) -> TypeDTOResponse | None:
+        """Execute with full observability tracking."""
+        from .observability.correlation import correlation_manager
+        
+        # Set up correlation
+        if correlation_id:
+            correlation_manager.set_correlation_id(correlation_id)
+        else:
+            correlation_manager.get_or_create_correlation_id()
+        
+        # Start tracing
+        operation_name = f"framework.execute.{type(dto).__name__}"
+        span = self._tracer.start_span(operation_name, trace_context)
+        
+        try:
+            # Add span attributes
+            self._tracer.set_attributes(span, {
+                "framework.version": "2.5.0",
+                "dto.type": type(dto).__name__,
+                "service.name": self._logger_name,
+                "correlation_id": correlation_manager.get_correlation_id()
+            })
+            
+            # Check if this DTO has traceability enabled
+            dto_name = type(dto).__name__
+            observability_config = self._get_observability_config(dto_name)
+            
+            if observability_config.get('traceability', False):
+                self._tracer.add_event(span, "framework.execution.start", {
+                    "dto_name": dto_name,
+                    "traceability_enabled": True
+                })
+            
+            # Track execution time
+            start_time = time.time()
+            
+            # Execute with middleware pipeline
+            def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
+                return self._execute_bus_with_tracing(processed_dto, span)
+
+            result = self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+            
+            # Record successful execution
+            duration = time.time() - start_time
+            self._tracer.set_attributes(span, {
+                "execution.duration_ms": duration * 1000,
+                "execution.status": "success"
+            })
+            
+            return result
+            
+        except Exception as e:
+            # Record error
+            duration = time.time() - start_time
+            self._tracer.record_exception(span, e)
+            self._tracer.set_attributes(span, {
+                "execution.duration_ms": duration * 1000,
+                "execution.status": "error",
+                "error.type": type(e).__name__,
+                "error.message": str(e)
+            })
+            raise
+        finally:
+            span.end()
+
+    def _execute_bus_with_tracing(self, dto: TypeDTO, parent_span) -> TypeDTOResponse | None:
+        """Execute bus operations with tracing."""
+        dto_name = type(dto).__name__
+        observability_config = self._get_observability_config(dto_name)
+        
+        # Create child span if span=True is configured for this DTO
+        if observability_config.get('span', False):
+            child_span = self._tracer.tracer.start_span(
+                f"bus.execute.{dto_name}",
+                context=parent_span.get_span_context()
+            )
+            try:
+                self._tracer.set_attributes(child_span, {
+                    "bus.operation": "execute",
+                    "dto.name": dto_name,
+                    "span_enabled": True
+                })
+                
+                result = self.bus.execute(dto)
+                return result
+            finally:
+                child_span.end()
+        else:
+            # Execute without additional span
+            return self.bus.execute(dto)
+
+    def _get_observability_config(self, dto_name: str) -> Dict[str, bool]:
+        """Get observability configuration for a DTO."""
+        # Check feature bus metadata
+        if hasattr(self._sp_container.feature_bus, 'observability_metadata'):
+            feature_metadata = getattr(self._sp_container.feature_bus, 'observability_metadata', {})
+            if hasattr(feature_metadata, 'kwargs'):
+                feature_metadata = feature_metadata.kwargs
+            if dto_name in feature_metadata:
+                return feature_metadata[dto_name]
+        
+        # Check app service bus metadata
+        if hasattr(self._sp_container.app_service_bus, 'observability_metadata'):
+            app_metadata = getattr(self._sp_container.app_service_bus, 'observability_metadata', {})
+            if hasattr(app_metadata, 'kwargs'):
+                app_metadata = app_metadata.kwargs
+            if dto_name in app_metadata:
+                return app_metadata[dto_name]
+        
+        # Default configuration
+        return {'traceability': False, 'span': False}
 
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user"""

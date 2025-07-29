@@ -48,7 +48,10 @@ class FrameworkContainer(containers.DeclarativeContainer):
 # Build processes
 # ---------------------------------------------------------------------------------------------
 def inject_feature_to_bus(
-    framework_container: FrameworkContainer, dto: Union[str, list, TypeDTO, Any]
+    framework_container: FrameworkContainer, 
+    dto: Union[str, list, TypeDTO, Any],
+    traceability: bool = False,
+    span: bool = False
 ):
     def inner_fn(decorated_class):
         dtos = dto
@@ -62,7 +65,7 @@ def inject_feature_to_bus(
                 )
 
             framework_container.logger_bus.debug(
-                f"Registering feature: [{data_transfer_object.__name__}]",
+                f"Registering feature: [{data_transfer_object.__name__}] with traceability={traceability}, span={span}",
             )
 
             # --------------------------------------------------------------------
@@ -82,12 +85,41 @@ def inject_feature_to_bus(
                 feature_registry=framework_container.feature_registry
             )
 
+            # Store observability metadata for the feature
+            if not hasattr(framework_container.feature_bus, 'observability_metadata'):
+                framework_container.feature_bus.add_attributes(
+                    observability_metadata={}
+                )
+            
+            # Get current metadata or initialize
+            current_metadata = getattr(framework_container.feature_bus, 'observability_metadata', {})
+            if hasattr(current_metadata, 'kwargs'):
+                current_metadata = current_metadata.kwargs
+            
+            # Add observability metadata for this DTO
+            updated_metadata = {
+                **current_metadata,
+                data_transfer_object.__name__: {
+                    'traceability': traceability,
+                    'span': span
+                }
+            }
+            
+            framework_container.feature_bus.add_attributes(
+                observability_metadata=updated_metadata
+            )
+
         return decorated_class
 
     return inner_fn
 
 
-def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Union[str, list]):
+def inject_app_service_to_bus(
+    framework_container: FrameworkContainer, 
+    dto: Union[str, list],
+    traceability: bool = False,
+    span: bool = False
+):
     def inner_fn(decorated_class):
         dtos = dto
         if not isinstance(dto, list):
@@ -103,7 +135,7 @@ def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Unio
                 )
 
             framework_container.logger_bus.debug(
-                f"Registering application service: [{data_transfer_object.__name__}]"
+                f"Registering application service: [{data_transfer_object.__name__}] with traceability={traceability}, span={span}"
             )
 
             # --------------------------------------------------------------------
@@ -121,6 +153,30 @@ def inject_app_service_to_bus(framework_container: FrameworkContainer, dto: Unio
 
             framework_container.app_service_bus.add_attributes(
                 app_service_registry=framework_container.app_service_registry
+            )
+
+            # Store observability metadata for the app service
+            if not hasattr(framework_container.app_service_bus, 'observability_metadata'):
+                framework_container.app_service_bus.add_attributes(
+                    observability_metadata={}
+                )
+            
+            # Get current metadata or initialize
+            current_metadata = getattr(framework_container.app_service_bus, 'observability_metadata', {})
+            if hasattr(current_metadata, 'kwargs'):
+                current_metadata = current_metadata.kwargs
+            
+            # Add observability metadata for this DTO
+            updated_metadata = {
+                **current_metadata,
+                data_transfer_object.__name__: {
+                    'traceability': traceability,
+                    'span': span
+                }
+            }
+            
+            framework_container.app_service_bus.add_attributes(
+                observability_metadata=updated_metadata
             )
 
         return decorated_class
