@@ -33,7 +33,7 @@ class Bus(ABC):
         """
 
 
-class Feature(ABC):
+class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
     """
     Feature is the first layer of the framework, it is the main abstraction to execute a business logic.
     
@@ -43,16 +43,26 @@ class Feature(ABC):
     Features automatically receive injected dependencies as attributes through the framework's
     dependency injection system. These dependencies can be accessed via self.dependency_name.
     
+    For better IDE support with typed dependencies, inherit with specific DTO types:
+    
     Example:
         @framework.feature(MyInputDTO)
-        class MyFeature(Feature):
-            # Injected dependencies are available as attributes
-            # self.database_adapter: DatabaseAdapter
-            # self.external_service: ExternalService
+        class MyFeature(Feature[MyInputDTO, MyResponseDTO]):
+            # Type your injected dependencies for IDE autocomplete
+            database_adapter: DatabaseAdapter
+            external_service: ExternalService
             
             def execute(self, dto: MyInputDTO) -> MyResponseDTO:
                 result = self.database_adapter.query(dto.param)
                 return MyResponseDTO(result=result)
+                
+    For backward compatibility, you can also use untyped Feature:
+    
+        @framework.feature(MyInputDTO)
+        class MyFeature(Feature):
+            def execute(self, dto: MyInputDTO) -> MyResponseDTO:
+                # This still works but with less IDE support
+                return MyResponseDTO(result="example")
     """
 
     def __init__(self, *args, **kwargs):
@@ -75,7 +85,7 @@ class Feature(ABC):
         pass
 
 
-class ApplicationService(ABC):
+class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
     """
     Second layer of the framework, orchestration of features.
     
@@ -89,20 +99,30 @@ class ApplicationService(ABC):
     - Complex business workflows with multiple decision points
     - Aggregating data from multiple sources
     
+    For better IDE support with typed dependencies, inherit with specific DTO types:
+    
     Example:
         @framework.app_service(MyOrchestrationDTO)
-        class MyApplicationService(ApplicationService):
-            # All Feature dependencies PLUS:
-            # self.feature_bus: Bus  # For executing Features
+        class MyApplicationService(ApplicationService[MyOrchestrationDTO, MyResponseDTO]):
+            # Type your injected dependencies for IDE autocomplete
+            external_service: ExternalService
             
             def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
-                # Execute Features through feature_bus
-                step1_result = self.feature_bus.execute(Step1DTO(...))
-                step2_result = self.feature_bus.execute(Step2DTO(...))
+                # Execute Features through feature_bus with proper typing
+                step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)
+                step2_result = self.feature_bus.execute(Step2DTO(...), Step2ResponseDTO)
                 
                 # Use injected dependencies for additional operations
                 final_result = self.external_service.combine(step1_result, step2_result)
                 return MyResponseDTO(result=final_result)
+                
+    For backward compatibility, you can also use untyped ApplicationService:
+    
+        @framework.app_service(MyOrchestrationDTO)
+        class MyApplicationService(ApplicationService):
+            def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
+                # This still works but with less IDE support
+                return MyResponseDTO(result="example")
     """
 
     feature_bus: Bus
