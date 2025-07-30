@@ -1,0 +1,48 @@
+
+/* Sincpro Framework Documentation - Corporate Theme */
+:root {
+  --sincpro-primary: #6B46C1;
+  --sincpro-primary-light: #8B5CF6;
+  --sincpro-primary-dark: #553C9A;
+  --sincpro-accent: #A78BFA;
+  --sincpro-white: #FFFFFF;
+}
+
+.md-header {
+  background: linear-gradient(135deg, var(--sincpro-primary) 0%, var(--sincpro-primary-light) 100%);
+  box-shadow: 0 4px 12px rgba(107, 70, 193, 0.15);
+}
+
+.md-header__title {
+  color: var(--sincpro-white);
+  font-weight: 600;
+}
+
+.md-tabs {
+  background: var(--sincpro-primary-dark);
+}
+
+.md-nav__item .md-nav__link--active {
+  color: var(--sincpro-primary);
+  font-weight: 600;
+}
+
+.md-typeset a {
+  color: var(--sincpro-primary);
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--sincpro-primary);
+  color: var(--sincpro-white);
+}
+
+.sincpro-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, var(--sincpro-primary) 0%, var(--sincpro-primary-light) 100%);
+  color: var(--sincpro-white);
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+}

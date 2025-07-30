@@ -116,10 +116,7 @@ class UseFramework:
         else:
             # Execute with middleware pipeline (original behavior)
             def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
-                res: TypeDTOResponse | None = self.bus.execute(processed_dto)
-                if res is None:
-                    return None
-                return res
+                return self.bus.execute(processed_dto)
 
             return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
 
@@ -246,6 +243,8 @@ class UseFramework:
         self._add_dependencies_provided_by_user()
         self._add_error_handlers_provided_by_user()
         self.was_initialized = True
+        dto_registry = self._sp_container.dto_registry()
+
         self.bus: FrameworkBus = self._sp_container.framework_bus()
 
         # Set the loggers
@@ -256,6 +255,9 @@ class UseFramework:
         self.bus.app_service_bus.log_after_execution = (
             self.log_after_execution and self.log_app_services
         )
+
+        # Set the DTO registry Tricky way but it works
+        self.bus.dto_registry = dto_registry
 
     def add_dependency(self, name, dep: Any):
         """
@@ -318,6 +320,17 @@ class UseFramework:
                 handle_error=self.app_service_error_handler
             )
 
+    def _execute_with_middleware(
+        self,
+        dto: TypeDTO,
+        executor: Callable,
+        return_type: Type[TypeDTOResponse] | None = None,
+    ) -> TypeDTOResponse | None:
+        """
+        Execute the DTO with the middleware pipeline
+        """
+        return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+
     @property
     def logger(self) -> LoggerProxy:
         """Get bundle context logger"""
@@ -325,34 +338,3 @@ class UseFramework:
             self._logger = create_logger(self._logger_name)
             self._is_logger_configured = True
         return self._logger
-
-    # Auto-Documentation Methods
-
-    def generate_documentation(self, output_path: str = "FRAMEWORK_DOCS.md", **config) -> str:
-        """
-        Generate comprehensive documentation for this framework instance
-
-        Args:
-            output_path: Path where to save the documentation
-            **config: Configuration options for generation
-
-        Returns:
-            Path where documentation was saved
-        """
-        if not self.was_initialized:
-            self.build_root_bus()
-
-        # Late import to avoid circular dependencies
-        from .generate_documentation import generate_framework_documentation
-
-        return generate_framework_documentation(self, output_path, **config)
-
-    def print_framework_summary(self) -> None:
-        """Print a quick summary of the framework components to console"""
-        if not self.was_initialized:
-            self.build_root_bus()
-
-        # Late import to avoid circular dependencies
-        from .generate_documentation import print_framework_summary
-
-        print_framework_summary(self)
