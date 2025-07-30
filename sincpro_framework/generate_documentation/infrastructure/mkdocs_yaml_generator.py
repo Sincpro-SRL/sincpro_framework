@@ -202,9 +202,6 @@ class MkDocsYamlGenerator:
                     "  font:",
                     "    text: 'Inter'",
                     "    code: 'JetBrains Mono'",
-                    "  logo: 'assets/images/logo.png'",
-                    "  favicon: 'assets/images/favicon.ico'",
-                    "  custom_dir: 'docs/overrides'",
                 ]
             )
 

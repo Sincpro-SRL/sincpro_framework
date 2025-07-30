@@ -12,23 +12,24 @@ def build_documentation(
 ) -> str:
     """
     Build complete documentation ready for use with MkDocs.
+    Optionally builds static HTML automatically.
 
     Args:
         framework_instances: Framework instance(s) to document.
         output_dir: Output directory for documentation.
 
     Returns:
-        str: Path to the generated documentation directory.
+        str: Path to the generated directory.
 
     Example:
         ```python
         from sincpro_framework.generate_documentation import build_documentation
 
-        # Generate documentation
+        # Generate documentation only
         docs_path = build_documentation(framework_instance)
 
-        # Then simply:
-        # cd generated_docs && mkdocs serve
+        # Generate documentation AND build static HTML
+        site_path = build_documentation(framework_instance)
         ```
     """
     from sincpro_framework.generate_documentation.infrastructure.framework_docs_extractor import (
@@ -56,4 +57,6 @@ def build_documentation(
 
     consolidated_docs = markdown_generator.generate_complete_documentation(framework_docs)
 
-    return site_generator.generate_site(consolidated_docs, output_dir)
+    return site_generator.generate_site(
+        consolidated_docs, output_dir=output_dir, build_static=True
+    )

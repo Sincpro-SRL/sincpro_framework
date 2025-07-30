@@ -6,6 +6,8 @@ Single API that generates everything needed for `mkdocs build` directly.
 """
 
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from sincpro_framework.generate_documentation.domain.models import MkDocsCompleteDocumentation
@@ -21,17 +23,22 @@ class StaticSiteGenerator:
     """
 
     def generate_site(
-        self, documentation: MkDocsCompleteDocumentation, output_dir: str = "generated_docs"
+        self,
+        documentation: MkDocsCompleteDocumentation,
+        output_dir: str = "generated_docs",
+        build_static: bool = False,
     ) -> str:
         """
         Generate a complete static site ready for MkDocs.
+        Optionally builds static HTML automatically.
 
         Args:
             documentation: Complete framework documentation
             output_dir: Output directory
+            build_static: If True, runs mkdocs build automatically
 
         Returns:
-            str: Path to the generated directory
+            str: Path to the generated directory (or site/ if build_static=True)
         """
         # Prepare directory
         output_path = self._prepare_output_directory(output_dir)
@@ -48,9 +55,79 @@ class StaticSiteGenerator:
         self._write_sincpro_assets(output_path)
 
         print(f"✅ Complete static site generated at: {output_path}")
-        print(f"📝 Run: cd {output_path} && mkdocs serve")
 
-        return output_path
+        if not build_static:
+            print(f"📝 Run: cd {output_path} && mkdocs serve")
+            return output_path
+
+        # Build static HTML automatically
+        site_path = self._build_static_site(output_path)
+        print(f"🚀 Static HTML site built at: {site_path}")
+        print(f"📂 Ready to serve or deploy the 'site' directory")
+
+        return site_path
+
+    def _build_static_site(self, source_path: str, site_dir: str = "site") -> str:
+        """
+        Execute mkdocs build using subprocess to generate static HTML.
+
+        Args:
+            source_path: Path to the directory containing mkdocs.yml
+            site_dir: Directory name for the built site
+
+        Returns:
+            str: Path to the built site directory
+        """
+        source_path = Path(source_path).resolve()
+        mkdocs_yml = source_path / "mkdocs.yml"
+        site_path = source_path / site_dir
+
+        # Verify mkdocs.yml exists
+        if not mkdocs_yml.exists():
+            raise FileNotFoundError(f"mkdocs.yml not found at {mkdocs_yml}")
+
+        print(f"🔨 Building static site with mkdocs...")
+
+        try:
+            # Get the Python executable from current environment
+            python_executable = sys.executable
+
+            # Build the mkdocs command
+            cmd = [
+                python_executable,
+                "-m",
+                "mkdocs",
+                "build",
+                "-f",
+                str(mkdocs_yml),
+                "-d",
+                str(site_path),
+                "--clean",
+            ]
+
+            # Execute mkdocs build
+            result = subprocess.run(
+                cmd, cwd=source_path, capture_output=True, text=True, check=True
+            )
+
+            print(f"✅ MkDocs build completed successfully")
+            if result.stdout:
+                print(f"📋 Build output: {result.stdout.strip()}")
+
+        except subprocess.CalledProcessError as e:
+            print(f"❌ MkDocs build failed with exit code {e.returncode}")
+            if e.stderr:
+                print(f"🔥 Error: {e.stderr.strip()}")
+            if e.stdout:
+                print(f"📋 Output: {e.stdout.strip()}")
+            raise RuntimeError(f"MkDocs build failed: {e.stderr}") from e
+        except FileNotFoundError as e:
+            print(f"❌ MkDocs not found. Make sure it's installed in your environment.")
+            raise RuntimeError(
+                "MkDocs executable not found. Install with: pip install mkdocs mkdocs-material"
+            ) from e
+
+        return str(site_path)
 
     def _prepare_output_directory(self, output_dir: str) -> str:
         """Prepare clean output directory"""
@@ -68,21 +145,44 @@ class StaticSiteGenerator:
     def _write_content_files(
         self, documentation: MkDocsCompleteDocumentation, output_path: str
     ) -> None:
-        """Write all markdown content files"""
-        files = documentation.get_all_files()
+        """Write all markdown content files in correct MkDocs structure"""
+        # Create docs directory for MkDocs standard structure
+        docs_dir = Path(output_path) / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Remove old navigation file if exists
-        files.pop("mkdocs_nav.yml", None)
+        # Write main index if exists
+        if documentation.main_index_content:
+            index_path = docs_dir / "index.md"
+            with open(index_path, "w", encoding="utf-8") as f:
+                f.write(documentation.main_index_content)
+            print(f"✅ Content: docs/index.md")
 
-        for filepath, content in files.items():
-            full_path = Path(output_path) / filepath
+        # Write framework pages
+        for framework in documentation.frameworks:
+            # Create framework directory if multi-framework
+            if documentation.is_multi_framework and framework.framework_dir:
+                framework_dir = docs_dir / framework.framework_dir
+                framework_dir.mkdir(parents=True, exist_ok=True)
+                base_path = framework_dir
+                path_prefix = f"docs/{framework.framework_dir}"
+            else:
+                base_path = docs_dir
+                path_prefix = "docs"
 
-            # Create subdirectories if needed
-            full_path.parent.mkdir(parents=True, exist_ok=True)
+            # Write all pages for this framework
+            for page in framework.pages:
+                page_path = base_path / page.filename
 
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            print(f"✅ Content: {filepath}")
+                # Create subdirectories if needed
+                page_path.parent.mkdir(parents=True, exist_ok=True)
+
+                with open(page_path, "w", encoding="utf-8") as f:
+                    f.write(page.content)
+
+                if documentation.is_multi_framework and framework.framework_dir:
+                    print(f"✅ Content: {path_prefix}/{page.filename}")
+                else:
+                    print(f"✅ Content: docs/{page.filename}")
 
     def _write_mkdocs_config(
         self, documentation: MkDocsCompleteDocumentation, output_path: str
@@ -163,7 +263,8 @@ Uses Material theme for MkDocs with Sincpro corporate colors (violet).
         print(f"✅ Instructions: README.md")
 
     def _write_sincpro_assets(self, output_path: str) -> None:
-        """Generate Sincpro CSS and JS assets"""
+        """Generate Sincpro CSS and JS assets in correct MkDocs structure"""
+        # Assets go inside docs/assets/ for MkDocs standard structure
         docs_dir = Path(output_path) / "docs"
         assets_dir = docs_dir / "assets"
         css_dir = assets_dir / "css"
