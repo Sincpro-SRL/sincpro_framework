@@ -143,31 +143,43 @@ def test_generate_json_schema(test_framework):
 
         result_path = build_documentation(test_framework, output_dir=temp_dir, format="json")
 
-        # Verify that the JSON schema was created
+        # Verify that the JSON schema was created in ai_context subdirectory
         assert os.path.exists(result_path)
         assert result_path.endswith("_schema.json")
+        assert "ai_context" in result_path
 
         # Load and verify JSON schema content
         with open(result_path, "r") as f:
             schema = json.load(f)
 
-        # Verify schema structure
+        # Verify schema structure - new format includes framework context and repository analysis
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-        assert schema["title"] == "test_framework Framework Schema"
+        assert schema["title"] == "test_framework Repository Schema"  # Updated title format
         assert schema["version"] == "1.0.0"
-        assert "metadata" in schema
-        assert "components" in schema
-        assert "ai_metadata" in schema
+        assert "framework_context" in schema
+        assert "repository_analysis" in schema
+        assert "ai_integration" in schema
 
-        # Verify metadata
-        metadata = schema["metadata"]
-        assert metadata["name"] == "test_framework"
-        assert metadata["type"] == "sincpro_framework"
+        # Verify framework context (from hardcoded guide)
+        framework_context = schema["framework_context"]
+        assert framework_context["framework_name"] == "Sincpro Framework"
+        assert "core_principles" in framework_context
+        assert "key_features" in framework_context
+
+        # Verify repository analysis (from code inspection)
+        repository_analysis = schema["repository_analysis"]
+        assert "metadata" in repository_analysis
+        assert "components" in repository_analysis
+
+        # Verify metadata (now under repository_analysis)
+        metadata = repository_analysis["metadata"]
+        assert metadata["repository_name"] == "test_framework"  # Changed from 'name' to 'repository_name'
+        assert metadata["uses_framework"] == "sincpro_framework"  # Updated field
         assert "architecture_patterns" in metadata
         assert "component_summary" in metadata
 
-        # Verify components
-        components = schema["components"]
+        # Verify components (now under repository_analysis)
+        components = repository_analysis["components"]
         assert "dtos" in components
         assert "features" in components
         assert "application_services" in components
@@ -211,20 +223,20 @@ def test_generate_json_schema(test_framework):
         assert processor["type"] == "application_service"
         assert processor["purpose"] == "orchestration_coordination"
 
-        # Verify AI metadata
-        ai_metadata = schema["ai_metadata"]
-        assert "embedding_suggestions" in ai_metadata
-        assert "code_generation_hints" in ai_metadata
-        assert "complexity_analysis" in ai_metadata
+        # Verify AI integration (enhanced metadata combining framework and repository knowledge)
+        ai_integration = schema["ai_integration"]
+        assert "embedding_suggestions" in ai_integration
+        assert "code_generation_hints" in ai_integration
+        assert "complexity_analysis" in ai_integration
 
         # Verify embedding suggestions
-        embedding = ai_metadata["embedding_suggestions"]
+        embedding = ai_integration["embedding_suggestions"]
         assert "primary_entities" in embedding
         assert "business_capabilities" in embedding
         assert len(embedding["primary_entities"]) >= 2
 
         # Verify code generation hints
-        code_hints = ai_metadata["code_generation_hints"]
+        code_hints = ai_integration["code_generation_hints"]
         assert "framework_patterns" in code_hints
         assert "common_imports" in code_hints
         assert "naming_conventions" in code_hints
@@ -247,16 +259,18 @@ def test_generate_both_formats(test_framework):
         assert os.path.exists(os.path.join(temp_dir, "docs", "index.md"))
         assert os.path.exists(os.path.join(temp_dir, "site"))  # Built site
 
-        # Check for JSON schema
-        json_files = [f for f in os.listdir(temp_dir) if f.endswith("_schema.json")]
+        # Check for JSON schema in ai_context subdirectory
+        ai_context_dir = os.path.join(temp_dir, "ai_context")
+        assert os.path.exists(ai_context_dir)
+        json_files = [f for f in os.listdir(ai_context_dir) if f.endswith("_schema.json")]
         assert len(json_files) >= 1
 
         # Verify JSON schema content
-        json_path = os.path.join(temp_dir, json_files[0])
+        json_path = os.path.join(ai_context_dir, json_files[0])
         with open(json_path, "r") as f:
             schema = json.load(f)
 
-        assert schema["title"] == "test_framework Framework Schema"
+        assert schema["title"] == "test_framework Repository Schema"  # Updated title format
 
 
 def test_direct_json_schema_generation():
@@ -288,16 +302,18 @@ def test_direct_json_schema_generation():
         # Generate JSON schema directly
         result_path = generate_json_schema([doc], temp_dir)
 
-        # Verify result
+        # Verify result is in ai_context subdirectory
         assert os.path.exists(result_path)
         assert "direct_test_schema.json" in result_path
+        assert "ai_context" in result_path
 
         # Verify content
         with open(result_path, "r") as f:
             schema = json.load(f)
 
-        assert schema["metadata"]["name"] == "direct_test"
-        assert len(schema["components"]["features"]) == 1
+        # Check the new structure with repository_analysis containing metadata
+        assert schema["repository_analysis"]["metadata"]["repository_name"] == "direct_test"  # Changed from 'name' to 'repository_name'
+        assert len(schema["repository_analysis"]["components"]["features"]) == 1
 
 
 def test_json_schema_ai_optimization(test_framework):
@@ -311,29 +327,29 @@ def test_json_schema_ai_optimization(test_framework):
         with open(result_path, "r") as f:
             schema = json.load(f)
 
-        # Verify AI-specific optimizations
-        ai_metadata = schema["ai_metadata"]
+        # Verify AI-specific optimizations (now under ai_integration)
+        ai_integration = schema["ai_integration"]
 
         # Check embedding suggestions
-        embedding = ai_metadata["embedding_suggestions"]
+        embedding = ai_integration["embedding_suggestions"]
         assert isinstance(embedding["primary_entities"], list)
         assert isinstance(embedding["business_capabilities"], list)
         assert isinstance(embedding["data_flow_patterns"], list)
 
         # Check code generation hints
-        code_hints = ai_metadata["code_generation_hints"]
+        code_hints = ai_integration["code_generation_hints"]
         assert "decorator_based_registration" in code_hints["framework_patterns"]
         assert "dependency_injection" in code_hints["framework_patterns"]
         assert any("sincpro_framework" in imp for imp in code_hints["common_imports"])
 
         # Check complexity analysis
-        complexity = ai_metadata["complexity_analysis"]
+        complexity = ai_integration["complexity_analysis"]
         assert complexity["overall_complexity"] in ["simple", "medium", "complex"]
         assert isinstance(complexity["most_complex_components"], list)
         assert isinstance(complexity["simplest_components"], list)
 
-        # Verify DTO AI hints
-        dtos = schema["components"]["dtos"]
+        # Verify DTO AI hints (now under repository_analysis)
+        dtos = schema["repository_analysis"]["components"]["dtos"]
         for dto in dtos:
             ai_hints = dto["ai_hints"]
             assert "is_input_type" in ai_hints
@@ -341,8 +357,8 @@ def test_json_schema_ai_optimization(test_framework):
             assert "complexity_level" in ai_hints
             assert "validation_rules" in ai_hints
 
-        # Verify Feature AI hints
-        features = schema["components"]["features"]
+        # Verify Feature AI hints (now under repository_analysis)
+        features = schema["repository_analysis"]["components"]["features"]
         for feature in features:
             ai_hints = feature["ai_hints"]
             assert "is_synchronous" in ai_hints
@@ -377,7 +393,7 @@ if __name__ == "__main__":
         with open(json_path, "r") as f:
             schema = json.load(f)
         print(
-            f"✅ Schema contains {len(schema['components']['dtos'])} DTOs and {len(schema['components']['features'])} Features"
+            f"✅ Schema contains {len(schema['repository_analysis']['components']['dtos'])} DTOs and {len(schema['repository_analysis']['components']['features'])} Features"
         )
 
     print("\n🎉 All basic tests passed!")
