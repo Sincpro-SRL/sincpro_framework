@@ -39,6 +39,22 @@ class Feature(ABC):
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
         pass
 
+    def get_context_value(self, key: str, default=None):
+        """Get a value from the current framework context"""
+        framework_context = getattr(self, 'framework_context', None)
+        if callable(framework_context):
+            context = framework_context()
+            return context.get(key, default)
+        return default
+
+    @property
+    def context(self):
+        """Get the current framework context"""
+        framework_context = getattr(self, 'framework_context', None)
+        if callable(framework_context):
+            return framework_context()
+        return {}
+
 
 class ApplicationService(ABC):
     """Second layer of the framework, orchestration of features"""
@@ -51,3 +67,19 @@ class ApplicationService(ABC):
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
         pass
+
+    def get_context_value(self, key: str, default=None):
+        """Get a value from the current framework context"""
+        framework_context = getattr(self, 'framework_context', None)
+        if callable(framework_context):
+            context = framework_context()
+            return context.get(key, default)
+        return default
+
+    @property
+    def context(self):
+        """Get the current framework context"""
+        framework_context = getattr(self, 'framework_context', None)
+        if callable(framework_context):
+            return framework_context()
+        return {}

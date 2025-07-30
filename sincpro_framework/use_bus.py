@@ -5,6 +5,7 @@ from sincpro_log.logger import LoggerProxy, create_logger
 
 from . import ioc
 from .bus import FrameworkBus
+from .context_manager import ContextManager, ContextConfig, create_context_manager
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
@@ -56,6 +57,10 @@ class UseFramework:
 
         # Middleware pipeline
         self.middleware_pipeline = MiddlewarePipeline()
+
+        # Context manager support
+        self._context_manager_instance: Optional[ContextManager] = None
+        self._context_config: Optional[ContextConfig] = None
 
         self.was_initialized: bool = False
         self.bus: FrameworkBus | None = None
@@ -117,6 +122,60 @@ class UseFramework:
         """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)
 
+    def configure_context_manager(
+        self,
+        default_attrs: Optional[Dict[str, Any]] = None,
+        allowed_keys: Optional[set] = None,
+        validate_types: bool = True,
+        max_key_length: int = 100,
+        max_value_length: int = 1000
+    ):
+        """
+        Configure the context manager for this framework instance
+        
+        Args:
+            default_attrs: Default attributes to include in every context
+            allowed_keys: Set of allowed context keys (None means all keys allowed)
+            validate_types: Whether to validate context value types
+            max_key_length: Maximum length for context keys
+            max_value_length: Maximum length for string context values
+        """
+        self._context_config = ContextConfig(
+            default_attrs=default_attrs,
+            allowed_keys=set(allowed_keys) if allowed_keys else None,
+            validate_types=validate_types,
+            max_key_length=max_key_length,
+            max_value_length=max_value_length
+        )
+
+    def context(self, context_attrs: Dict[str, Any]) -> ContextManager:
+        """
+        Create a context manager with the specified attributes
+        
+        Args:
+            context_attrs: Dictionary of context attributes to set
+            
+        Returns:
+            ContextManager instance ready to be used with 'with' statement
+            
+        Example:
+            with framework.context({"correlation_id": "123", "user_id": "456"}):
+                result = framework(some_dto)
+        """
+        return create_context_manager(context_attrs, self._context_config)
+
+    @property
+    def context_manager(self) -> Optional[ContextManager]:
+        """Get the current context manager instance (for advanced usage)"""
+        return self._context_manager_instance
+
+    @context_manager.setter
+    def context_manager(self, manager: ContextManager):
+        """Set a custom context manager instance"""
+        if not isinstance(manager, ContextManager):
+            raise TypeError("context_manager must be an instance of ContextManager")
+        self._context_manager_instance = manager
+
     def add_global_error_handler(self, handler: Callable):
         if not callable(handler):
             raise TypeError("The handler must be a callable")
@@ -133,6 +192,10 @@ class UseFramework:
         self.app_service_error_handler = handler
 
     def _add_dependencies_provided_by_user(self):
+        # Add current context to dynamic dependencies
+        from .context_manager import get_current_context
+        self.dynamic_dep_registry['framework_context'] = get_current_context
+
         if "feature_registry" in self._sp_container.feature_bus.attributes:
             feature_registry = self._sp_container.feature_bus.attributes[
                 "feature_registry"
