@@ -61,13 +61,13 @@ class UseFramework:
         # Observability
         self.observability_enabled: bool = False
         self._tracer = None
-        
+
         self.was_initialized: bool = False
         self.bus: FrameworkBus | None = None
 
     def enable_observability(self, service_name: str = None, jaeger_endpoint: str = None):
         """Enable comprehensive observability for the framework.
-        
+
         Args:
             service_name (str): Name of the service for tracing. Defaults to logger name.
             jaeger_endpoint (str): Jaeger collector endpoint. If None, uses console exporter.
@@ -75,23 +75,23 @@ class UseFramework:
         try:
             from .observability.tracing import configure_observability, get_tracer
             from .observability.correlation import correlation_manager
-            
+
             service_name = service_name or self._logger_name
             configure_observability(service_name, jaeger_endpoint)
             self._tracer = get_tracer()
             self.observability_enabled = True
-            
+
             self.logger.info(f"Observability enabled for service: {service_name}")
         except ImportError as e:
             self.logger.warning(f"Observability dependencies not available: {e}")
             self.observability_enabled = False
 
     def __call__(
-        self, 
-        dto: TypeDTO, 
+        self,
+        dto: TypeDTO,
         return_type: Type[TypeDTOResponse] | None = None,
         correlation_id: str = None,
-        trace_context: Dict = None
+        trace_context: Dict = None,
     ) -> TypeDTOResponse | None:
         """
         Main function to execute the framework
@@ -114,6 +114,7 @@ class UseFramework:
         if correlation_id and self.observability_enabled:
             try:
                 from .observability.correlation import correlation_manager
+
                 correlation_manager.set_correlation_id(correlation_id)
             except ImportError:
                 pass  # Graceful degradation

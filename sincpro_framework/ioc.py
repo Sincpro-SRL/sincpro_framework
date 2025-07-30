@@ -132,29 +132,24 @@ def _register_service(
         target_bus.add_attributes(**{registry_attribute_name: updated_service_registry})
 
         # Store observability metadata for the service
-        if not hasattr(target_bus, 'observability_metadata'):
+        if not hasattr(target_bus, "observability_metadata"):
             target_bus.add_attributes(observability_metadata={})
-        
+
         # Get current metadata or initialize
-        current_metadata = getattr(target_bus, 'observability_metadata', {})
-        if hasattr(current_metadata, 'kwargs'):
+        current_metadata = getattr(target_bus, "observability_metadata", {})
+        if hasattr(current_metadata, "kwargs"):
             current_metadata = current_metadata.kwargs
-        
+
         # Add observability metadata for this DTO
-        updated_metadata = {
-            **current_metadata,
-            dto_name: {
-                'observability': observability
-            }
-        }
-        
+        updated_metadata = {**current_metadata, dto_name: {"observability": observability}}
+
         target_bus.add_attributes(observability_metadata=updated_metadata)
 
 
 def inject_feature_to_bus(
-    framework_container: FrameworkContainer, 
+    framework_container: FrameworkContainer,
     dto: Union[str, list, TypeDTO, Any],
-    observability: bool = False
+    observability: bool = False,
 ) -> Callable[[T], T]:
     """Decorator to register a feature to the framework bus
 
@@ -169,16 +164,18 @@ def inject_feature_to_bus(
 
     @wraps(inject_feature_to_bus)
     def decorator(decorated_class: T) -> T:
-        _register_service(framework_container, ServiceType.FEATURE, dto, decorated_class, observability)
+        _register_service(
+            framework_container, ServiceType.FEATURE, dto, decorated_class, observability
+        )
         return decorated_class
 
     return decorator
 
 
 def inject_app_service_to_bus(
-    framework_container: FrameworkContainer, 
+    framework_container: FrameworkContainer,
     dto: Union[str, list],
-    observability: bool = False
+    observability: bool = False,
 ) -> Callable[[T], T]:
     """Decorator to register an application service to the framework bus
 
@@ -193,7 +190,9 @@ def inject_app_service_to_bus(
 
     @wraps(inject_app_service_to_bus)
     def decorator(decorated_class: T) -> T:
-        _register_service(framework_container, ServiceType.APP_SERVICE, dto, decorated_class, observability)
+        _register_service(
+            framework_container, ServiceType.APP_SERVICE, dto, decorated_class, observability
+        )
         return decorated_class
 
     return decorator
