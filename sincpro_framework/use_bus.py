@@ -88,6 +88,8 @@ class UseFramework:
         self._add_dependencies_provided_by_user()
         self._add_error_handlers_provided_by_user()
         self.was_initialized = True
+        dto_registry = self._sp_container.dto_registry()
+
         self.bus: FrameworkBus = self._sp_container.framework_bus()
 
         # Set the loggers
@@ -98,6 +100,9 @@ class UseFramework:
         self.bus.app_service_bus.log_after_execution = (
             self.log_after_execution and self.log_app_services
         )
+
+        # Set the DTO registry Tricky way but it works
+        self.bus.dto_registry = dto_registry
 
     def add_dependency(self, name, dep: Any):
         """
