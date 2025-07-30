@@ -105,13 +105,13 @@ extra:
   generator: false # Hide 'Made with Material for MkDocs'
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/sincpro
+      link: https://github.com/Sincpro-SRL
       name: Sincpro on GitHub
     - icon: fontawesome/solid/globe
       link: https://sincpro.com.bo
       name: Sincpro website
     - icon: fontawesome/solid/code
-      link: https://developers.sincpro.com.bo
+      link: https://sincpro.com.bo
       name: Developer portal
 
 # Custom CSS for Sincpro colors

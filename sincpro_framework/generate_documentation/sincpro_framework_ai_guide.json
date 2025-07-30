@@ -1,6 +1,6 @@
 {
   "framework_name": "Sincpro Framework",
-  "version": "1.0.0",
+  "version": "2.5.0",
   "description": "Application Layer Framework within Hexagonal Architecture",
   "architecture_pattern": "Hexagonal Architecture (Ports and Adapters)",
   "primary_purpose": "Manages the application layer within hexagonal architecture, promoting modularity, scalability, and development efficiency",
