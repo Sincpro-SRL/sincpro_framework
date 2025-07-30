@@ -1,8 +1,0 @@
-# MkDocs Navigation Configuration for payment-system
-nav:
-  - Home: index.md
-  - Dependencies: dependencies.md
-  - Middlewares: middlewares.md
-  - Application Services: application-services.md
-  - Features: features.md
-  - DTOs: dtos.md
