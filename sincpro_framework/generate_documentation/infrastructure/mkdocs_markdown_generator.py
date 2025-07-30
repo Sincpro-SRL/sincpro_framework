@@ -1049,15 +1049,19 @@ class MkDocsMarkdownGenerator:
             for field_name, field_info in dto.fields.items():
                 field_type = field_info.get("type", "Any")
                 if "str" in field_type:
-                    example_fields.append(f'        {field_name}="example_value"')
+                    example_fields.append(f'        {field_name}="example_value",')
                 elif "int" in field_type:
-                    example_fields.append(f'        {field_name}=123')
+                    example_fields.append(f'        {field_name}=123,')
                 elif "float" in field_type:
-                    example_fields.append(f'        {field_name}=123.45')
+                    example_fields.append(f'        {field_name}=123.45,')
                 elif "bool" in field_type:
-                    example_fields.append(f'        {field_name}=True')
+                    example_fields.append(f'        {field_name}=True,')
                 else:
-                    example_fields.append(f'        {field_name}="value"')
+                    example_fields.append(f'        {field_name}="value",')
+            
+            # Remove comma from last field
+            if example_fields:
+                example_fields[-1] = example_fields[-1].rstrip(',')
             
             lines.extend(example_fields)
             lines.extend([

@@ -196,12 +196,15 @@ class StaticSiteGenerator:
         print(f"✅ Configuration: mkdocs.yml")
 
     def _write_requirements_file(self, output_path: str) -> None:
-        """Generate requirements.txt for MkDocs"""
+        """Generate requirements.txt for MkDocs with enhanced plugins"""
         requirements = [
             "mkdocs>=1.6.1",
             "mkdocs-material>=9.6.16",
             "mkdocstrings[python]>=0.30.0",
             "pymdown-extensions>=10.16.1",
+            "mkdocs-glightbox>=0.4.0",
+            "pillow>=10.0.0",  # For image processing
+            "cairosvg>=2.5.2",  # For SVG support
         ]
 
         requirements_path = Path(output_path) / "requirements.txt"

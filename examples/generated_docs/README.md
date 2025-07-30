@@ -1,4 +1,4 @@
-# Frameworks Documentation
+# sincpro_example_system
 
 Auto-generated documentation with Sincpro Framework.
 
@@ -21,10 +21,9 @@ Auto-generated documentation with Sincpro Framework.
 
 ## 📁 Structure
 
-This site documents multiple frameworks:
+This site documents a single framework:
 
-- **payment-system**: `payment-system/`
-- **sincpro_framework**: `sincpro-framework/`
+- **sincpro_example_system**: `/`
 
 ## 🎨 Theme
 
