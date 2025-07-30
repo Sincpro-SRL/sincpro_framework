@@ -8,7 +8,7 @@ This example shows how to use the new context manager to:
 4. Handle errors with context enrichment
 """
 
-from sincpro_framework import UseFramework, ContextConfig, DataTransferObject, Feature, ApplicationService
+from sincpro_framework import UseFramework, DataTransferObject, Feature, ApplicationService
 
 
 # Define DTOs
@@ -100,19 +100,6 @@ def main():
     # Initialize framework
     framework = UseFramework("order-service")
     
-    # Configure context manager with validation
-    framework.configure_context_manager(
-        default_attrs={
-            "service.name": "order-service",
-            "service.version": "1.0.0"
-        },
-        allowed_keys={
-            "correlation_id", "user.id", "session.id", "service.name", 
-            "service.version", "feature_flag", "environment"
-        },
-        validate_types=True
-    )
-    
     # Add some dependencies
     framework.add_dependency("payment_gateway", "mock_payment_gateway")
     framework.add_dependency("database", "mock_database")
@@ -144,9 +131,9 @@ def main():
         "user.id": "admin@company.com",
         "session.id": "SESSION-ABC123",
         "environment": "production"
-    }):
+    }) as app_with_context:
         order_dto = ProcessOrderDTO(order_id="ORD-002", customer_id="CUST-456", amount=149.99)
-        result_with_context = framework(order_dto)
+        result_with_context = app_with_context(order_dto)
         print(f"   Result: {result_with_context.status}")
         print(f"   Service correlation_id: {result_with_context.context_info['service_correlation_id']}")
         print(f"   Payment correlation_id: {result_with_context.context_info['payment_context']['correlation_id']}")
@@ -160,16 +147,16 @@ def main():
         "correlation_id": "OUTER-CONTEXT",
         "user.id": "manager@company.com",
         "environment": "staging"
-    }):
+    }) as outer_app:
         print("   Outer context established...")
         
-        with framework.context({
+        with outer_app.context({
             "correlation_id": "INNER-CONTEXT",  # Override
             "feature_flag": "beta_payments"     # New attribute
-        }):
+        }) as inner_app:
             print("   Inner context with overrides...")
             order_dto = ProcessOrderDTO(order_id="ORD-003", customer_id="CUST-789", amount=199.99)
-            result_nested = framework(order_dto)
+            result_nested = inner_app(order_dto)
             print(f"   Result: {result_nested.status}")
             print(f"   Correlation ID (overridden): {result_nested.context_info['service_correlation_id']}")
             print(f"   User (inherited): {result_nested.context_info['payment_context']['processed_by']}")
@@ -181,9 +168,6 @@ def main():
     
     # Create a separate framework instance for the error test to avoid DTO conflicts
     error_framework = UseFramework("error-test-service")
-    error_framework.configure_context_manager(
-        default_attrs={"service.name": "error-test-service"}
-    )
     
     @error_framework.feature(PaymentDTO)
     class FailingPaymentFeature(Feature):
@@ -194,9 +178,9 @@ def main():
         with error_framework.context({
             "correlation_id": "ERROR-TEST",
             "user.id": "test@company.com"
-        }):
+        }) as error_app:
             payment_dto = PaymentDTO(amount=50.0, customer_id="CUST-ERROR")
-            error_framework(payment_dto)
+            error_app(payment_dto)
     except ValueError as e:
         print(f"   Caught exception: {e}")
         if hasattr(e, 'context_info'):

@@ -11,8 +11,7 @@ import time
 
 from sincpro_framework import (
     UseFramework, 
-    ContextManager, 
-    ContextConfig, 
+    FrameworkContext, 
     get_current_context,
     DataTransferObject,
     Feature,
@@ -85,103 +84,55 @@ class ContextAwareApplicationService(ApplicationService):
         )
 
 
-class TestContextManager:
-    """Test the basic ContextManager functionality"""
+class TestFrameworkContext:
+    """Test the framework context functionality"""
     
-    def test_context_manager_basic_functionality(self):
-        """Test basic context manager enter/exit"""
-        config = ContextConfig(default_attrs={"service": "test"})
-        manager = ContextManager(config)
-        manager.context_attrs = {"correlation_id": "123", "user.id": "456"}
+    def test_context_basic_functionality(self):
+        """Test basic framework context functionality"""
+        framework = UseFramework("test-service")
         
         # Before entering context
         assert get_current_context() == {}
         
-        with manager as ctx:
+        test_context = {"correlation_id": "123", "user.id": "456"}
+        with framework.context(test_context) as app_with_context:
             # Inside context
             current = get_current_context()
             assert current["correlation_id"] == "123"
             assert current["user.id"] == "456"
-            assert current["service"] == "test"
             
-            # Test set/get/clear operations
-            ctx.set("temp_key", "temp_value")
-            assert ctx.get("temp_key") == "temp_value"
-            assert ctx.clear("temp_key") is True
-            assert ctx.get("temp_key") is None
+            # Test that we got back the framework instance
+            assert app_with_context is framework
         
         # After exiting context
         assert get_current_context() == {}
 
-    def test_nested_context_managers(self):
-        """Test nested context managers with override support"""
-        config = ContextConfig()
+    def test_nested_contexts(self):
+        """Test nested contexts with override support"""
+        framework = UseFramework("test-service")
         
-        outer_manager = ContextManager(config)
-        outer_manager.context_attrs = {"level": "outer", "shared": "outer_value"}
-        
-        inner_manager = ContextManager(config)
-        inner_manager.context_attrs = {"level": "inner", "inner_only": "inner_value"}
-        
-        with outer_manager:
+        with framework.context({"level": "outer", "shared": "outer_value"}) as outer_app:
             outer_context = get_current_context()
             assert outer_context["level"] == "outer"
             assert outer_context["shared"] == "outer_value"
             
-            with inner_manager:
+            with outer_app.context({"level": "inner", "new_key": "inner_value"}) as inner_app:
                 inner_context = get_current_context()
-                assert inner_context["level"] == "inner"  # Override
+                assert inner_context["level"] == "inner"  # Overridden
                 assert inner_context["shared"] == "outer_value"  # Inherited
-                assert inner_context["inner_only"] == "inner_value"  # New
+                assert inner_context["new_key"] == "inner_value"  # New
             
             # Back to outer context
             restored_context = get_current_context()
             assert restored_context["level"] == "outer"
             assert restored_context["shared"] == "outer_value"
-            assert "inner_only" not in restored_context
-
-    def test_context_validation(self):
-        """Test context validation with allowed keys and type checking"""
-        config = ContextConfig(
-            allowed_keys={"correlation_id", "user.id"},
-            validate_types=True,
-            max_key_length=20,
-            max_value_length=50
-        )
-        
-        manager = ContextManager(config)
-        
-        # Test allowed keys
-        manager.context_attrs = {"correlation_id": "123"}
-        with manager:
-            pass  # Should work
-        
-        # Test disallowed key
-        manager.context_attrs = {"invalid_key": "value"}
-        with pytest.raises(ValueError, match="not in allowed keys"):
-            with manager:
-                pass
-        
-        # Test key length validation
-        manager.context_attrs = {"a" * 25: "value"}
-        with pytest.raises(ValueError, match="exceeds maximum length"):
-            with manager:
-                pass
-        
-        # Test value length validation
-        manager.context_attrs = {"correlation_id": "a" * 100}
-        with pytest.raises(ValueError, match="exceeds maximum length"):
-            with manager:
-                pass
-
+            assert "new_key" not in restored_context
     def test_context_exception_handling(self):
         """Test that exceptions are properly handled and enriched with context"""
-        config = ContextConfig()
-        manager = ContextManager(config)
-        manager.context_attrs = {"correlation_id": "error-test", "user.id": "test-user"}
+        framework = UseFramework("test-service")
         
         with pytest.raises(ValueError) as exc_info:
-            with manager:
+            with framework.context({"correlation_id": "error-test", "user.id": "test-user"}) as app_with_context:
                 current_context = get_current_context()
                 assert current_context["correlation_id"] == "error-test"
                 raise ValueError("Test exception")
@@ -194,14 +145,12 @@ class TestContextManager:
 
     def test_thread_safety(self):
         """Test that context is properly isolated between threads"""
-        config = ContextConfig()
         results = {}
         
         def worker(thread_id):
-            manager = ContextManager(config)
-            manager.context_attrs = {"thread_id": thread_id, "worker": f"worker-{thread_id}"}
+            framework = UseFramework(f"test-service-{thread_id}")
             
-            with manager:
+            with framework.context({"thread_id": thread_id, "worker": f"worker-{thread_id}"}) as app_with_context:
                 time.sleep(0.1)  # Simulate some work
                 context = get_current_context()
                 results[thread_id] = context
@@ -220,29 +169,19 @@ class TestContextManager:
 
 
 class TestFrameworkIntegration:
-    """Test context manager integration with UseFramework"""
+    """Test context integration with UseFramework"""
     
-    def test_framework_context_configuration(self):
-        """Test framework context configuration"""
+    def test_framework_context_creation(self):
+        """Test framework context creation"""
         framework = UseFramework("test-service")
-        
-        # Configure context manager
-        framework.configure_context_manager(
-            default_attrs={"service.name": "test-service"},
-            allowed_keys={"correlation_id", "user.id", "feature_flag"},
-            validate_types=True
-        )
         
         # Test context creation
         context_manager = framework.context({"correlation_id": "123", "user.id": "test-user"})
-        assert isinstance(context_manager, ContextManager)
+        assert isinstance(context_manager, FrameworkContext)
 
     def test_framework_execution_with_context(self):
         """Test framework execution within context manager"""
         framework = UseFramework("test-service")
-        framework.configure_context_manager(
-            default_attrs={"service.name": "test-service"}
-        )
         
         # Register a test feature
         @framework.feature(ContextTestDTO)
@@ -254,19 +193,15 @@ class TestFrameworkIntegration:
         assert result_no_context.context_data["correlation_id"] == "no-correlation"
         
         # Execute with context
-        with framework.context({"correlation_id": "test-123", "user.id": "user-456"}):
-            result_with_context = framework(ContextTestDTO(message="test with context"))
+        with framework.context({"correlation_id": "test-123", "user.id": "user-456"}) as app_with_context:
+            result_with_context = app_with_context(ContextTestDTO(message="test with context"))
             
             assert result_with_context.context_data["correlation_id"] == "test-123"
             assert result_with_context.context_data["user_id"] == "user-456"
-            assert result_with_context.context_data["full_context"]["service.name"] == "test-service"
 
     def test_application_service_context_inheritance(self):
         """Test that ApplicationServices inherit context properly"""
         framework = UseFramework("test-service")
-        framework.configure_context_manager(
-            default_attrs={"service.name": "test-service"}
-        )
         
         # Register feature and application service with different DTOs
         @framework.feature(ContextTestDTO)
@@ -278,13 +213,12 @@ class TestFrameworkIntegration:
             pass
         
         # Execute application service with context
-        with framework.context({"correlation_id": "app-service-test", "user.id": "app-user"}):
-            result = framework(TestAppServiceDTO(message="app service test"))
+        with framework.context({"correlation_id": "app-service-test", "user.id": "app-user"}) as app_with_context:
+            result = app_with_context(TestAppServiceDTO(message="app service test"))
             
             # Check that both service and feature received the context
             assert result.context_data["service_correlation_id"] == "app-service-test"
             assert result.context_data["feature_context"]["correlation_id"] == "app-service-test"
-            assert result.context_data["service_context"]["service.name"] == "test-service"
 
     def test_context_with_multiple_executions(self):
         """Test that context persists across multiple executions in the same scope"""
@@ -294,10 +228,10 @@ class TestFrameworkIntegration:
         class TestFeature(ContextAwareFeature):
             pass
         
-        with framework.context({"correlation_id": "multi-exec", "session": "session-123"}):
+        with framework.context({"correlation_id": "multi-exec", "session": "session-123"}) as app_with_context:
             # Execute multiple times in the same context
-            result1 = framework(ContextTestDTO(message="first execution"))
-            result2 = framework(ContextTestDTO(message="second execution"))
+            result1 = app_with_context(ContextTestDTO(message="first execution"))
+            result2 = app_with_context(ContextTestDTO(message="second execution"))
             
             # Both should have the same context
             assert result1.context_data["correlation_id"] == "multi-exec"
@@ -315,8 +249,8 @@ class TestFrameworkIntegration:
                 raise ValueError("Feature failed")
         
         with pytest.raises(ValueError) as exc_info:
-            with framework.context({"correlation_id": "error-context", "user.id": "error-user"}):
-                framework(ContextTestDTO(message="this will fail"))
+            with framework.context({"correlation_id": "error-context", "user.id": "error-user"}) as app_with_context:
+                app_with_context(ContextTestDTO(message="this will fail"))
         
         # Exception should be enriched with context
         exception = exc_info.value
@@ -337,11 +271,11 @@ class TestFrameworkIntegration:
             pass
         
         # Use different contexts for each framework
-        with framework1.context({"service": "service-1", "correlation_id": "ctx-1"}):
-            result1 = framework1(ContextTestDTO(message="framework 1"))
+        with framework1.context({"service": "service-1", "correlation_id": "ctx-1"}) as app1:
+            result1 = app1(ContextTestDTO(message="framework 1"))
             
-            with framework2.context({"service": "service-2", "correlation_id": "ctx-2"}):
-                result2 = framework2(ContextTestDTO(message="framework 2"))
+            with framework2.context({"service": "service-2", "correlation_id": "ctx-2"}) as app2:
+                result2 = app2(ContextTestDTO(message="framework 2"))
                 
                 # Verify isolation
                 assert result1.context_data["correlation_id"] == "ctx-1"

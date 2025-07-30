@@ -1,6 +1,6 @@
 # Context Manager for Sincpro Framework
 
-The Context Manager provides automatic metadata propagation, scope encapsulation, and uniform error handling for the Sincpro Framework using Python's `contextvars` for thread-safe context storage.
+The Context Manager provides automatic metadata propagation and scope management for the Sincpro Framework using Python's `contextvars` for thread-safe context storage.
 
 ## Key Features
 
@@ -24,49 +24,26 @@ The Context Manager provides automatic metadata propagation, scope encapsulation
 - Provides better debugging and tracing capabilities
 - Maintains context information in error logs
 
-### 5. Validation & Configuration
-- Configure allowed context keys for security
-- Type validation for context values
-- Length limits for keys and values
-- Default attributes that are always present
-
 ## Quick Start
 
-### 1. Configure the Context Manager
+### 1. Simple Context Usage
 
 ```python
 from sincpro_framework import UseFramework
 
-framework = UseFramework("my-service")
+app = UseFramework("my-service")
 
-# Configure context manager with validation
-framework.configure_context_manager(
-    default_attrs={
-        "service.name": "my-service",
-        "service.version": "1.0.0"
-    },
-    allowed_keys={
-        "correlation_id", "user.id", "session.id", 
-        "feature_flag", "environment"
-    },
-    validate_types=True,
-    max_key_length=50,
-    max_value_length=1000
-)
+# Use context with the new simplified API
+with app.context({"correlation_id": "123", "user.id": "admin"}) as app_with_context:
+    result = app_with_context(some_dto)
 ```
-
-### 2. Use Context in Your Code
+### 2. Nested Contexts
 
 ```python
-# Basic usage
-with framework.context({"correlation_id": "123", "user.id": "admin"}):
-    result = framework(some_dto)
-    # Context automatically propagated to all handlers
-
 # Nested contexts with overrides
-with framework.context({"correlation_id": "outer", "environment": "prod"}):
-    with framework.context({"correlation_id": "inner"}):  # Override
-        result = framework(dto)  # correlation_id="inner", environment="prod"
+with app.context({"correlation_id": "outer", "environment": "prod"}) as outer_app:
+    with outer_app.context({"correlation_id": "inner"}) as inner_app:  # Override
+        result = inner_app(dto)  # correlation_id="inner", environment="prod"
 ```
 
 ### 3. Access Context in Features and ApplicationServices
@@ -99,31 +76,22 @@ class MyApplicationService(ApplicationService):
 
 ## Advanced Usage
 
-### Context Validation
+### Multiple Executions in Same Context
 
 ```python
-# Configure strict validation
-framework.configure_context_manager(
-    allowed_keys={"correlation_id", "user.id"},  # Only these keys allowed
-    validate_types=True,  # Validate value types
-    max_key_length=20,    # Max key length
-    max_value_length=100  # Max string value length
-)
-
-# This will raise ValueError due to validation
-with framework.context({"invalid_key": "value"}):  # Not in allowed_keys
-    pass
-
-with framework.context({"correlation_id": "x" * 200}):  # Too long
-    pass
+# Context persists across multiple executions
+with app.context({"correlation_id": "batch-001", "batch_id": "B123"}) as app_with_context:
+    result1 = app_with_context(dto1)
+    result2 = app_with_context(dto2)
+    # Both executions share the same context
 ```
 
 ### Error Handling with Context
 
 ```python
 try:
-    with framework.context({"correlation_id": "error-test", "user.id": "admin"}):
-        result = framework(dto_that_causes_error)
+    with app.context({"correlation_id": "error-test", "user.id": "admin"}) as app_with_context:
+        result = app_with_context(dto_that_causes_error)
 except Exception as e:
     # Exception is automatically enriched with context
     if hasattr(e, 'context_info'):
@@ -150,50 +118,16 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 def worker(thread_id):
-    with framework.context({"thread_id": thread_id}):
+    app = UseFramework(f"worker-{thread_id}")
+    with app.context({"thread_id": thread_id}) as app_with_context:
         # Each thread has its own isolated context
-        result = framework(SomeDTO(data=f"thread-{thread_id}"))
+        result = app_with_context(SomeDTO(data=f"thread-{thread_id}"))
         return result
 
 # Run multiple threads - contexts are properly isolated
 with ThreadPoolExecutor(max_workers=5) as executor:
     futures = [executor.submit(worker, i) for i in range(5)]
     results = [f.result() for f in futures]
-```
-
-## Context Configuration Options
-
-### ContextConfig Parameters
-
-- **`default_attrs`**: Dictionary of attributes always present in context
-- **`allowed_keys`**: Set of allowed context keys (None = all keys allowed)
-- **`validate_types`**: Whether to validate context value types
-- **`max_key_length`**: Maximum length for context keys
-- **`max_value_length`**: Maximum length for string context values
-
-### Example Configuration
-
-```python
-framework.configure_context_manager(
-    default_attrs={
-        "service.name": "payment-service",
-        "service.version": "2.1.0",
-        "environment": "production"
-    },
-    allowed_keys={
-        "correlation_id",
-        "user.id", 
-        "session.id",
-        "request.id",
-        "feature_flag",
-        "service.name",
-        "service.version",
-        "environment"
-    },
-    validate_types=True,
-    max_key_length=50,
-    max_value_length=500
-)
 ```
 
 ## Best Practices
@@ -216,12 +150,7 @@ framework.configure_context_manager(
 ### 4. Performance Considerations
 - Context lookup is fast but not free - cache values if used frequently
 - Avoid storing large objects in context
-- Use validation judiciously in high-performance scenarios
-
-### 5. Security
-- Use `allowed_keys` to prevent injection of unwanted context
-- Validate sensitive context values
-- Don't store secrets in context - use proper secret management
+- Keep context data simple and lightweight
 
 ## Integration with Distributed Systems
 
@@ -230,8 +159,8 @@ The context manager is designed to work seamlessly with distributed tracing syst
 ```python
 # HTTP Middleware example (conceptual)
 class ContextMiddleware:
-    def __init__(self, framework):
-        self.framework = framework
+    def __init__(self, app):
+        self.app = app
     
     def process_request(self, request):
         # Extract context from HTTP headers
@@ -242,8 +171,8 @@ class ContextMiddleware:
         }
         
         # Execute request within context
-        with self.framework.context(context_attrs):
-            return self.framework(request_dto)
+        with self.app.context(context_attrs) as app_with_context:
+            return app_with_context(request_dto)
 ```
 
 ## Migration Guide
@@ -270,11 +199,10 @@ class MyFeature(Feature):
 
 ### Integration Steps
 
-1. **Configure the context manager** in your framework initialization
-2. **Remove manual context passing** from DTOs
-3. **Update handlers** to use `self.get_context_value()` and `self.context`
-4. **Add context scope** around your main execution flows
-5. **Update error handling** to use enriched exception information
+1. **Remove manual context passing** from DTOs
+2. **Update handlers** to use `self.get_context_value()` and `self.context`
+3. **Add context scope** around your main execution flows using `with app.context({}) as app_with_context:`
+4. **Update error handling** to use enriched exception information
 
 ## Examples
 
