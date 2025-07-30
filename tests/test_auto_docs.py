@@ -173,7 +173,9 @@ def test_generate_json_schema(test_framework):
 
         # Verify metadata (now under repository_analysis)
         metadata = repository_analysis["metadata"]
-        assert metadata["repository_name"] == "test_framework"  # Changed from 'name' to 'repository_name'
+        assert (
+            metadata["repository_name"] == "test_framework"
+        )  # Changed from 'name' to 'repository_name'
         assert metadata["uses_framework"] == "sincpro_framework"  # Updated field
         assert "architecture_patterns" in metadata
         assert "component_summary" in metadata
@@ -312,7 +314,9 @@ def test_direct_json_schema_generation():
             schema = json.load(f)
 
         # Check the new structure with repository_analysis containing metadata
-        assert schema["repository_analysis"]["metadata"]["repository_name"] == "direct_test"  # Changed from 'name' to 'repository_name'
+        assert (
+            schema["repository_analysis"]["metadata"]["repository_name"] == "direct_test"
+        )  # Changed from 'name' to 'repository_name'
         assert len(schema["repository_analysis"]["components"]["features"]) == 1
 
 
