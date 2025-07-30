@@ -70,8 +70,7 @@ def _register_service(
     service_type: ServiceType,
     dto: Union[str, list, TypeDTO, Any],
     decorated_class: type,
-    traceability: bool = False,
-    span: bool = False,
+    observability: bool = False,
 ) -> None:
     """Register a service (feature or app_service) to the framework container"""
 
@@ -81,14 +80,14 @@ def _register_service(
     match service_type:
         case ServiceType.FEATURE:
             current_service_registry = framework_container.feature_registry
-            target_bus = framework_container.feature_bus
+            target_bus: Singleton[FeatureBus] = framework_container.feature_bus
             service_name = "feature"
             factory_dependencies = []
             registry_attribute_name = "feature_registry"
 
         case ServiceType.APP_SERVICE:
             current_service_registry = framework_container.app_service_registry
-            target_bus = framework_container.app_service_bus
+            target_bus: Singleton[ApplicationServiceBus] = framework_container.app_service_bus
             service_name = "application service"
             factory_dependencies = [framework_container.feature_bus]
             registry_attribute_name = "app_service_registry"
@@ -104,7 +103,7 @@ def _register_service(
 
         # Log registration with observability info
         framework_container.logger_bus.debug(
-            f"Registering {service_name}: [{dto_name}] with traceability={traceability}, span={span}"
+            f"Registering {service_name}: [{dto_name}] with observability={observability}"
         )
 
         dto_registry = framework_container.dto_registry.kwargs
@@ -145,8 +144,7 @@ def _register_service(
         updated_metadata = {
             **current_metadata,
             dto_name: {
-                'traceability': traceability,
-                'span': span
+                'observability': observability
             }
         }
         
@@ -156,16 +154,14 @@ def _register_service(
 def inject_feature_to_bus(
     framework_container: FrameworkContainer, 
     dto: Union[str, list, TypeDTO, Any],
-    traceability: bool = False,
-    span: bool = False
+    observability: bool = False
 ) -> Callable[[T], T]:
     """Decorator to register a feature to the framework bus
 
     Args:
         framework_container: The IoC container instance
         dto: DTO or list of DTOs to register with the feature
-        traceability: Enable traceability for this feature
-        span: Enable span creation for this feature
+        observability: Enable observability for this feature
 
     Returns:
         Decorated class with feature registration functionality
@@ -173,7 +169,7 @@ def inject_feature_to_bus(
 
     @wraps(inject_feature_to_bus)
     def decorator(decorated_class: T) -> T:
-        _register_service(framework_container, ServiceType.FEATURE, dto, decorated_class, traceability, span)
+        _register_service(framework_container, ServiceType.FEATURE, dto, decorated_class, observability)
         return decorated_class
 
     return decorator
@@ -182,16 +178,14 @@ def inject_feature_to_bus(
 def inject_app_service_to_bus(
     framework_container: FrameworkContainer, 
     dto: Union[str, list],
-    traceability: bool = False,
-    span: bool = False
+    observability: bool = False
 ) -> Callable[[T], T]:
     """Decorator to register an application service to the framework bus
 
     Args:
         framework_container: The IoC container instance
         dto: DTO or list of DTOs to register with the application service
-        traceability: Enable traceability for this application service
-        span: Enable span creation for this application service
+        observability: Enable observability for this application service
 
     Returns:
         Decorated class with app service registration functionality
@@ -199,7 +193,7 @@ def inject_app_service_to_bus(
 
     @wraps(inject_app_service_to_bus)
     def decorator(decorated_class: T) -> T:
-        _register_service(framework_container, ServiceType.APP_SERVICE, dto, decorated_class, traceability, span)
+        _register_service(framework_container, ServiceType.APP_SERVICE, dto, decorated_class, observability)
         return decorated_class
 
     return decorator

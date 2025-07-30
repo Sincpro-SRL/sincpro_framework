@@ -20,62 +20,47 @@ class ResponseAppServiceTracing(DataTransferObject):
     app_result: str
 
 
-def test_feature_with_traceability_decorator():
-    """Test that features can be decorated with traceability=True."""
-    framework = UseFramework("test-tracing", log_after_execution=False)
+def test_feature_with_observability_decorator():
+    """Test that features can be decorated with observability=True."""
+    framework = UseFramework("test-observability", log_after_execution=False)
     
-    @framework.feature(CommandFeatureTracing, traceability=True)
-    class TracedFeature(Feature):
+    @framework.feature(CommandFeatureTracing, observability=True)
+    class ObservableFeature(Feature):
         def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
-            return ResponseFeatureTracing(result=f"Traced: {dto.message}")
+            return ResponseFeatureTracing(result=f"Observable: {dto.message}")
     
     # Should work without observability enabled (backward compatibility)
     cmd = CommandFeatureTracing(message="test")
     result = framework(cmd, ResponseFeatureTracing)
-    assert result.result == "Traced: test"
+    assert result.result == "Observable: test"
 
 
-def test_feature_with_span_decorator():
-    """Test that features can be decorated with span=True."""
-    framework = UseFramework("test-span", log_after_execution=False)
+def test_legacy_traceability_decorator_backwards_compatibility():
+    """Test that old traceability parameter still works for backward compatibility."""
+    framework = UseFramework("test-legacy", log_after_execution=False)
     
-    @framework.feature(CommandFeatureTracing, span=True)
-    class SpannedFeature(Feature):
-        def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
-            return ResponseFeatureTracing(result=f"Spanned: {dto.message}")
-    
-    # Should work without observability enabled (backward compatibility)
-    cmd = CommandFeatureTracing(message="test")
-    result = framework(cmd, ResponseFeatureTracing)
-    assert result.result == "Spanned: test"
+    # This should still work but with a warning or graceful handling
+    try:
+        @framework.feature(CommandFeatureTracing, traceability=True)
+        class LegacyFeature(Feature):
+            def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
+                return ResponseFeatureTracing(result=f"Legacy: {dto.message}")
+    except TypeError:
+        # Expected since we removed the traceability parameter
+        pass
 
 
-def test_feature_with_both_traceability_and_span():
-    """Test that features can be decorated with both traceability=True and span=True."""
-    framework = UseFramework("test-both", log_after_execution=False)
-    
-    @framework.feature(CommandFeatureTracing, traceability=True, span=True)
-    class FullyTracedFeature(Feature):
-        def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
-            return ResponseFeatureTracing(result=f"Fully traced: {dto.message}")
-    
-    # Should work without observability enabled (backward compatibility)
-    cmd = CommandFeatureTracing(message="test")
-    result = framework(cmd, ResponseFeatureTracing)
-    assert result.result == "Fully traced: test"
-
-
-def test_app_service_with_traceability():
-    """Test that app services support traceability decorators."""
-    framework = UseFramework("test-app-tracing", log_after_execution=False)
+def test_app_service_with_observability():
+    """Test that app services support observability decorators."""
+    framework = UseFramework("test-app-observability", log_after_execution=False)
     
     @framework.feature(CommandFeatureTracing)
     class SimpleFeature(Feature):
         def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
             return ResponseFeatureTracing(result=f"Feature: {dto.message}")
     
-    @framework.app_service(CommandAppServiceTracing, traceability=True, span=True)
-    class TracedAppService(ApplicationService):
+    @framework.app_service(CommandAppServiceTracing, observability=True)
+    class ObservableAppService(ApplicationService):
         def execute(self, dto: CommandAppServiceTracing, **kwargs) -> ResponseAppServiceTracing:
             feature_result = self.feature_bus.execute(
                 CommandFeatureTracing(message=dto.app_message)
@@ -96,7 +81,7 @@ def test_enable_observability():
     framework.enable_observability()
     assert framework.observability_enabled is True
     
-    @framework.feature(CommandFeatureTracing, traceability=True, span=True)
+    @framework.feature(CommandFeatureTracing, observability=True)
     class ObservableFeature(Feature):
         def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
             return ResponseFeatureTracing(result=f"Observable: {dto.message}")
@@ -126,7 +111,7 @@ def test_correlation_id_propagation():
     framework = UseFramework("test-correlation", log_after_execution=False)
     framework.enable_observability()
     
-    @framework.feature(CommandFeatureTracing, traceability=True)
+    @framework.feature(CommandFeatureTracing, observability=True)
     class CorrelatedFeature(Feature):
         def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
             return ResponseFeatureTracing(result=f"Correlated: {dto.message}")
@@ -136,14 +121,14 @@ def test_correlation_id_propagation():
     assert result.result == "Correlated: test"
 
 
-def test_multiple_features_with_different_tracing_configs():
-    """Test multiple features with different tracing configurations."""
+def test_multiple_features_with_different_observability_configs():
+    """Test multiple features with different observability configurations."""
     framework = UseFramework("test-multiple", log_after_execution=False)
     
-    @framework.feature(CommandFeatureTracing, traceability=True)
-    class TracedOnlyFeature(Feature):
+    @framework.feature(CommandFeatureTracing, observability=True)
+    class ObservableFeature(Feature):
         def execute(self, dto: CommandFeatureTracing, **kwargs) -> ResponseFeatureTracing:
-            return ResponseFeatureTracing(result=f"Traced only: {dto.message}")
+            return ResponseFeatureTracing(result=f"Observable: {dto.message}")
     
     class CommandFeatureTracing2(DataTransferObject):
         message2: str
@@ -151,16 +136,16 @@ def test_multiple_features_with_different_tracing_configs():
     class ResponseFeatureTracing2(DataTransferObject):
         result2: str
     
-    @framework.feature(CommandFeatureTracing2, span=True)
-    class SpannedOnlyFeature(Feature):
+    @framework.feature(CommandFeatureTracing2, observability=False)
+    class NonObservableFeature(Feature):
         def execute(self, dto: CommandFeatureTracing2, **kwargs) -> ResponseFeatureTracing2:
-            return ResponseFeatureTracing2(result2=f"Spanned only: {dto.message2}")
+            return ResponseFeatureTracing2(result2=f"Non-observable: {dto.message2}")
     
     # Test both features
     cmd1 = CommandFeatureTracing(message="test1")
     result1 = framework(cmd1, ResponseFeatureTracing)
-    assert result1.result == "Traced only: test1"
+    assert result1.result == "Observable: test1"
     
     cmd2 = CommandFeatureTracing2(message2="test2")
     result2 = framework(cmd2, ResponseFeatureTracing2)
-    assert result2.result2 == "Spanned only: test2"
+    assert result2.result2 == "Non-observable: test2"

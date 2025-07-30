@@ -20,6 +20,8 @@ class FeatureBus(Bus):
         self.feature_registry: Dict[str, Feature] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger
+        self.observability_enabled: bool = False
+        self._tracer = None
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -31,6 +33,20 @@ class FeatureBus(Bus):
         self.logger.info(f"Registering feature [{dto.__name__}]")
         self.feature_registry[dto.__name__] = feature
         return True
+
+    def enable_observability(self, tracer=None):
+        """Enable observability for this bus."""
+        self.observability_enabled = True
+        self._tracer = tracer
+    
+    def _get_observability_config(self, dto_name: str) -> bool:
+        """Get observability configuration for a DTO."""
+        if hasattr(self, 'observability_metadata'):
+            metadata = getattr(self, 'observability_metadata', {})
+            if hasattr(metadata, 'kwargs'):
+                metadata = metadata.kwargs
+            return metadata.get(dto_name, {}).get('observability', False)
+        return False
 
     def execute(
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
@@ -45,6 +61,71 @@ class FeatureBus(Bus):
 
         self.logger.debug(f"{dto_name}({dto})")
 
+        # Check if observability is enabled for this DTO
+        if self.observability_enabled and self._tracer and self._get_observability_config(dto_name):
+            return self._execute_with_observability(dto, dto_name)
+        else:
+            return self._execute_without_observability(dto, dto_name)
+
+    def _execute_with_observability(self, dto: TypeDTO, dto_name: str) -> TypeDTOResponse | None:
+        """Execute feature with observability tracking."""
+        import time
+        
+        # Generate trace/request ID if needed
+        try:
+            from .observability.correlation import correlation_manager
+            correlation_manager.get_or_create_correlation_id()
+        except ImportError:
+            pass  # Graceful degradation
+        
+        # Start span for feature execution
+        span = self._tracer.start_span(f"feature.execute.{dto_name}")
+        
+        try:
+            # Add span attributes
+            self._tracer.set_attributes(span, {
+                "feature.name": dto_name,
+                "bus.type": "feature",
+                "observability.enabled": True
+            })
+            
+            # Track execution time
+            start_time = time.time()
+            
+            # Execute feature
+            response = self.feature_registry[dto.__class__.__name__].execute(dto)
+            
+            # Record successful execution
+            duration = time.time() - start_time
+            self._tracer.set_attributes(span, {
+                "execution.duration_ms": duration * 1000,
+                "execution.status": "success"
+            })
+            
+            if response:
+                self.logger.debug(
+                    f"Feature response {response.__class__.__name__}({response})",
+                )
+            return response
+            
+        except Exception as error:
+            # Record error in span
+            duration = time.time() - start_time
+            self._tracer.record_exception(span, error)
+            self._tracer.set_attributes(span, {
+                "execution.duration_ms": duration * 1000,
+                "execution.status": "error",
+                "error.type": type(error).__name__
+            })
+            
+            if self.handle_error:
+                return self.handle_error(error)
+            raise error
+        finally:
+            span.end()
+
+    def _execute_without_observability(self, dto: TypeDTO, dto_name: str) -> TypeDTOResponse | None:
+        """Execute feature without observability (original behavior)."""
         try:
             response = self.feature_registry[dto.__class__.__name__].execute(dto)
             if response:
@@ -68,6 +149,8 @@ class ApplicationServiceBus(Bus):
         self.app_service_registry: Dict[str, ApplicationService] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
+        self.observability_enabled: bool = False
+        self._tracer = None
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -84,6 +167,20 @@ class ApplicationServiceBus(Bus):
         self.app_service_registry[dto.__name__] = app_service
         return True
 
+    def enable_observability(self, tracer=None):
+        """Enable observability for this bus."""
+        self.observability_enabled = True
+        self._tracer = tracer
+    
+    def _get_observability_config(self, dto_name: str) -> bool:
+        """Get observability configuration for a DTO."""
+        if hasattr(self, 'observability_metadata'):
+            metadata = getattr(self, 'observability_metadata', {})
+            if hasattr(metadata, 'kwargs'):
+                metadata = metadata.kwargs
+            return metadata.get(dto_name, {}).get('observability', False)
+        return False
+
     def execute(
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
@@ -95,6 +192,72 @@ class ApplicationServiceBus(Bus):
             )
         self.logger.debug(f"{dto_name}({dto})")
 
+        # Check if observability is enabled for this DTO
+        if self.observability_enabled and self._tracer and self._get_observability_config(dto_name):
+            return self._execute_with_observability(dto, dto_name)
+        else:
+            return self._execute_without_observability(dto, dto_name)
+
+    def _execute_with_observability(self, dto: TypeDTO, dto_name: str) -> TypeDTOResponse | None:
+        """Execute application service with observability tracking."""
+        import time
+        
+        # Generate trace/request ID if needed
+        try:
+            from .observability.correlation import correlation_manager
+            correlation_manager.get_or_create_correlation_id()
+        except ImportError:
+            pass  # Graceful degradation
+        
+        # Start span for application service execution
+        span = self._tracer.start_span(f"app_service.execute.{dto_name}")
+        
+        try:
+            # Add span attributes
+            self._tracer.set_attributes(span, {
+                "app_service.name": dto_name,
+                "bus.type": "app_service",
+                "observability.enabled": True
+            })
+            
+            # Track execution time
+            start_time = time.time()
+            
+            # Execute application service
+            response = self.app_service_registry[dto.__class__.__name__].execute(dto)
+            
+            # Record successful execution
+            duration = time.time() - start_time
+            self._tracer.set_attributes(span, {
+                "execution.duration_ms": duration * 1000,
+                "execution.status": "success"
+            })
+            
+            if response:
+                self.logger.debug(
+                    f"Application service response {response.__class__.__name__}({response})"
+                )
+
+            return response
+            
+        except Exception as error:
+            # Record error in span
+            duration = time.time() - start_time
+            self._tracer.record_exception(span, error)
+            self._tracer.set_attributes(span, {
+                "execution.duration_ms": duration * 1000,
+                "execution.status": "error",
+                "error.type": type(error).__name__
+            })
+            
+            if self.handle_error:
+                return self.handle_error(error)
+            raise error
+        finally:
+            span.end()
+
+    def _execute_without_observability(self, dto: TypeDTO, dto_name: str) -> TypeDTOResponse | None:
+        """Execute application service without observability (original behavior)."""
         try:
             response = self.app_service_registry[dto.__class__.__name__].execute(dto)
             if response:

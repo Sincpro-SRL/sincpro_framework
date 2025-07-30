@@ -1,9 +1,9 @@
 """
-POC (Proof of Concept) for Sincpro Framework Traceability Feature
+POC (Proof of Concept) for Sincpro Framework Observability Feature
 
-This example demonstrates the new traceability capabilities including:
-- Basic traceability with traceability=True
-- Span creation with span=True
+This example demonstrates the new observability capabilities including:
+- Basic observability with observability=True
+- Automatic trace and request ID generation
 - Correlation ID propagation
 - OpenTelemetry integration
 """
@@ -62,11 +62,11 @@ app.enable_observability(
 )
 
 
-# Features with different traceability configurations
+# Features with observability enabled
 
-@app.feature(ValidateUserCommand, traceability=True)
+@app.feature(ValidateUserCommand, observability=True)
 class ValidateUserFeature(Feature):
-    """Validates user email with basic traceability."""
+    """Validates user email with observability enabled."""
     
     def execute(self, dto: ValidateUserCommand) -> ValidationResult:
         # Simple validation logic
@@ -78,9 +78,9 @@ class ValidateUserFeature(Feature):
         )
 
 
-@app.feature(CreateUserCommand, traceability=True, span=True)
+@app.feature(CreateUserCommand, observability=True)
 class CreateUserFeature(Feature):
-    """Creates user with full tracing and span creation."""
+    """Creates user with full observability."""
     
     def execute(self, dto: CreateUserCommand) -> UserCreatedResponse:
         # Simulate user creation
@@ -92,9 +92,9 @@ class CreateUserFeature(Feature):
         )
 
 
-@app.feature(SendWelcomeEmailCommand, span=True)
+@app.feature(SendWelcomeEmailCommand, observability=True)
 class SendWelcomeEmailFeature(Feature):
-    """Sends welcome email with span tracking."""
+    """Sends welcome email with observability enabled."""
     
     def execute(self, dto: SendWelcomeEmailCommand) -> EmailSentResponse:
         # Simulate email sending
@@ -106,8 +106,8 @@ class SendWelcomeEmailFeature(Feature):
         )
 
 
-# Application Service with orchestration and traceability
-@app.app_service(ProcessUserRegistrationCommand, traceability=True, span=True)
+# Application Service with orchestration and observability
+@app.app_service(ProcessUserRegistrationCommand, observability=True)
 class UserRegistrationService(ApplicationService):
     """Orchestrates the complete user registration process with full observability."""
     
