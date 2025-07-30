@@ -79,6 +79,9 @@ class UseFramework:
 
         # Execute with middleware pipeline
         def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
+            assert (
+                self.bus is not None
+            )  # Help mypy understand this is safe after the check above
             return self.bus.execute(processed_dto)
 
         return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
