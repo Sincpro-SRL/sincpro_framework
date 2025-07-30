@@ -1,22 +1,25 @@
 """
 Auto-Documentation Service - Main Entry Point
 
-Single API for generating complete MkDocs-ready documentation.
+Single API for generating complete MkDocs-ready documentation and AI-optimized JSON schemas.
 """
 
+from typing import Literal, Union
 from sincpro_framework import UseFramework
 
 
 def build_documentation(
-    framework_instances: UseFramework | list[UseFramework], output_dir: str = "generated_docs"
+    framework_instances: UseFramework | list[UseFramework], 
+    output_dir: str = "generated_docs",
+    format: Literal["markdown", "json", "both"] = "markdown"
 ) -> str:
     """
-    Build complete documentation ready for use with MkDocs.
-    Optionally builds static HTML automatically.
+    Build complete documentation ready for use with MkDocs and/or AI-optimized JSON schemas.
 
     Args:
         framework_instances: Framework instance(s) to document.
         output_dir: Output directory for documentation.
+        format: Output format - "markdown" for MkDocs, "json" for AI schemas, "both" for both.
 
     Returns:
         str: Path to the generated directory.
@@ -25,11 +28,14 @@ def build_documentation(
         ```python
         from sincpro_framework.generate_documentation import build_documentation
 
-        # Generate documentation only
+        # Generate markdown documentation only (default)
         docs_path = build_documentation(framework_instance)
 
-        # Generate documentation AND build static HTML
-        site_path = build_documentation(framework_instance)
+        # Generate JSON schema for AI consumption
+        schema_path = build_documentation(framework_instance, format="json")
+        
+        # Generate both markdown and JSON
+        both_path = build_documentation(framework_instance, format="both")
         ```
     """
     from sincpro_framework.generate_documentation.infrastructure.framework_docs_extractor import (
@@ -55,8 +61,84 @@ def build_documentation(
         doc = doc_extractor.extract_framework_docs(introspector_instance)
         framework_docs.append(doc)
 
-    consolidated_docs = markdown_generator.generate_complete_documentation(framework_docs)
+    if format in ["markdown", "both"]:
+        # Generate markdown documentation
+        consolidated_docs = markdown_generator.generate_complete_documentation(framework_docs)
+        markdown_output = site_generator.generate_site(
+            consolidated_docs, output_dir=output_dir, build_static=True
+        )
+        
+        if format == "markdown":
+            return markdown_output
 
-    return site_generator.generate_site(
-        consolidated_docs, output_dir=output_dir, build_static=True
+    if format in ["json", "both"]:
+        # Generate JSON schema for AI consumption
+        json_output = generate_json_schema(framework_docs, output_dir)
+        
+        if format == "json":
+            return json_output
+
+    # Return the main output directory when generating both
+    return output_dir
+
+
+def generate_json_schema(
+    framework_docs: list, 
+    output_dir: str = "generated_docs"
+) -> str:
+    """
+    Generate AI-optimized JSON schema from framework documentation.
+    
+    Args:
+        framework_docs: List of FrameworkDocs instances
+        output_dir: Output directory for JSON schema files
+        
+    Returns:
+        str: Path to the generated JSON schema file(s)
+    """
+    import os
+    import json
+    from sincpro_framework.generate_documentation.infrastructure.json_schema_generator import (
+        AIOptimizedJSONSchemaGenerator,
     )
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    if len(framework_docs) == 1:
+        # Single framework - generate single schema file
+        generator = AIOptimizedJSONSchemaGenerator(framework_docs[0])
+        schema_path = os.path.join(output_dir, f"{framework_docs[0].framework_name}_schema.json")
+        generator.save_to_file(schema_path)
+        
+        print(f"✅ AI-optimized JSON schema generated: {schema_path}")
+        return schema_path
+    else:
+        # Multiple frameworks - generate consolidated schema
+        consolidated_schema = {
+            "schema_version": "1.0.0",
+            "generated_at": framework_docs[0].generated_at,
+            "generated_by": "sincpro_framework",
+            "type": "multi_framework_schema",
+            "frameworks": []
+        }
+        
+        schema_files = []
+        for doc in framework_docs:
+            generator = AIOptimizedJSONSchemaGenerator(doc)
+            individual_schema = generator.generate_complete_schema()
+            consolidated_schema["frameworks"].append(individual_schema)
+            
+            # Also save individual schemas
+            individual_path = os.path.join(output_dir, f"{doc.framework_name}_schema.json")
+            generator.save_to_file(individual_path)
+            schema_files.append(individual_path)
+        
+        # Save consolidated schema
+        consolidated_path = os.path.join(output_dir, "consolidated_frameworks_schema.json")
+        with open(consolidated_path, 'w', encoding='utf-8') as f:
+            json.dump(consolidated_schema, f, indent=2, ensure_ascii=False, default=str)
+        
+        print(f"✅ Consolidated AI-optimized JSON schema generated: {consolidated_path}")
+        print(f"✅ Individual schemas: {', '.join(schema_files)}")
+        return consolidated_path
