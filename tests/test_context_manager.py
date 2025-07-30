@@ -12,7 +12,6 @@ import time
 from sincpro_framework import (
     UseFramework, 
     FrameworkContext, 
-    get_current_context,
     DataTransferObject,
     Feature,
     ApplicationService
@@ -35,10 +34,10 @@ class ContextAwareFeature(Feature):
     """Test feature that uses context"""
     
     def execute(self, dto: ContextTestDTO) -> ContextTestResponseDTO:
-        # Access context through the injected framework_context function
-        current_context = self.context
-        correlation_id = self.get_context_value("correlation_id", "no-correlation")
-        user_id = self.get_context_value("user.id", "unknown-user")
+        # Access context through the new API
+        current_context = self.context.all()
+        correlation_id = self.context.get("correlation_id", "no-correlation")
+        user_id = self.context.get("user.id", "unknown-user")
         
         return ContextTestResponseDTO(
             result=f"Processed: {dto.message}",
@@ -70,9 +69,9 @@ class ContextAwareApplicationService(ApplicationService):
         feature_dto = ContextTestDTO(message=dto.message, user_id=dto.user_id)
         feature_result = self.feature_bus.execute(feature_dto)
         
-        # Access context in the application service
-        correlation_id = self.get_context_value("correlation_id", "no-correlation")
-        service_context = self.context
+        # Access context in the application service using new API
+        correlation_id = self.context.get("correlation_id", "no-correlation")
+        service_context = self.context.all()
         
         return TestAppServiceResponseDTO(
             result=f"Service processed: {feature_result.result}",
@@ -91,39 +90,56 @@ class TestFrameworkContext:
         """Test basic framework context functionality"""
         framework = UseFramework("test-service")
         
-        # Before entering context
-        assert get_current_context() == {}
+        # Register a test feature that will capture context
+        @framework.feature(ContextTestDTO)
+        class TestFeature(ContextAwareFeature):
+            pass
         
+        # Execute without context - should get empty context
+        result_no_context = framework(ContextTestDTO(message="test without context"))
+        assert result_no_context.context_data["correlation_id"] == "no-correlation"
+        
+        # Execute with context
         test_context = {"correlation_id": "123", "user.id": "456"}
         with framework.context(test_context) as app_with_context:
-            # Inside context
-            current = get_current_context()
-            assert current["correlation_id"] == "123"
-            assert current["user.id"] == "456"
+            result_with_context = app_with_context(ContextTestDTO(message="test with context"))
+            
+            # Verify context was accessible inside the feature
+            assert result_with_context.context_data["correlation_id"] == "123"
+            assert result_with_context.context_data["user_id"] == "456"
+            assert result_with_context.context_data["full_context"]["correlation_id"] == "123"
+            assert result_with_context.context_data["full_context"]["user.id"] == "456"
             
             # Test that we got back the framework instance
             assert app_with_context is framework
-        
-        # After exiting context
-        assert get_current_context() == {}
 
     def test_nested_contexts(self):
         """Test nested contexts with override support"""
         framework = UseFramework("test-service")
         
+        # Register a test feature that will capture context
+        @framework.feature(ContextTestDTO)
+        class TestFeature(ContextAwareFeature):
+            pass
+        
         with framework.context({"level": "outer", "shared": "outer_value"}) as outer_app:
-            outer_context = get_current_context()
+            # Test outer context
+            result_outer = outer_app(ContextTestDTO(message="outer test"))
+            outer_context = result_outer.context_data["full_context"]
             assert outer_context["level"] == "outer"
             assert outer_context["shared"] == "outer_value"
             
             with outer_app.context({"level": "inner", "new_key": "inner_value"}) as inner_app:
-                inner_context = get_current_context()
+                # Test inner context
+                result_inner = inner_app(ContextTestDTO(message="inner test"))
+                inner_context = result_inner.context_data["full_context"]
                 assert inner_context["level"] == "inner"  # Overridden
                 assert inner_context["shared"] == "outer_value"  # Inherited
                 assert inner_context["new_key"] == "inner_value"  # New
             
-            # Back to outer context
-            restored_context = get_current_context()
+            # Back to outer context - test that it's restored
+            result_restored = outer_app(ContextTestDTO(message="restored test"))
+            restored_context = result_restored.context_data["full_context"]
             assert restored_context["level"] == "outer"
             assert restored_context["shared"] == "outer_value"
             assert "new_key" not in restored_context
@@ -131,11 +147,18 @@ class TestFrameworkContext:
         """Test that exceptions are properly handled and enriched with context"""
         framework = UseFramework("test-service")
         
+        # Register a feature that throws an exception
+        @framework.feature(ContextTestDTO)
+        class FailingFeature(Feature):
+            def execute(self, dto: ContextTestDTO) -> None:
+                # Verify context is available before throwing
+                correlation_id = self.context.get("correlation_id")
+                assert correlation_id == "error-test"
+                raise ValueError("Test exception")
+        
         with pytest.raises(ValueError) as exc_info:
             with framework.context({"correlation_id": "error-test", "user.id": "test-user"}) as app_with_context:
-                current_context = get_current_context()
-                assert current_context["correlation_id"] == "error-test"
-                raise ValueError("Test exception")
+                app_with_context(ContextTestDTO(message="test"))
         
         # Check that exception was enriched with context info
         exception = exc_info.value
@@ -150,10 +173,15 @@ class TestFrameworkContext:
         def worker(thread_id):
             framework = UseFramework(f"test-service-{thread_id}")
             
+            # Register a test feature for this framework instance
+            @framework.feature(ContextTestDTO)  
+            class TestFeature(ContextAwareFeature):
+                pass
+            
             with framework.context({"thread_id": thread_id, "worker": f"worker-{thread_id}"}) as app_with_context:
                 time.sleep(0.1)  # Simulate some work
-                context = get_current_context()
-                results[thread_id] = context
+                result = app_with_context(ContextTestDTO(message=f"thread-{thread_id}"))
+                results[thread_id] = result.context_data["full_context"]
         
         # Run multiple threads
         with ThreadPoolExecutor(max_workers=3) as executor:

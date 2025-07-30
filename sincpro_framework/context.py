@@ -2,12 +2,10 @@
 Context implementation for Sincpro Framework
 
 Provides automatic metadata propagation and scope management
-using Python's contextvars for thread-safe context storage.
+with instance-based context storage for proper isolation.
 """
 
-import sys
 import traceback
-from contextvars import ContextVar, copy_context
 from typing import Any, Dict, Optional, Type, TYPE_CHECKING
 from datetime import datetime
 
@@ -16,16 +14,62 @@ from .sincpro_logger import logger
 if TYPE_CHECKING:
     from .use_bus import UseFramework
 
-# Global context variable for framework context storage
-_framework_context: ContextVar[Dict[str, Any]] = ContextVar(
-    'framework_context', default={}
-)
+
+class ContextObject:
+    """
+    Context object that provides access to framework context data
+    """
+    
+    def __init__(self, context_data: Dict[str, Any]):
+        self._data = context_data
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a specific value from the context"""
+        return self._data.get(key, default)
+    
+    def set(self, key: str, value: Any) -> None:
+        """Set a value in the context"""
+        self._data[key] = value
+    
+    def update(self, data: Dict[str, Any]) -> None:
+        """Update context with new data"""
+        self._data.update(data)
+    
+    def all(self) -> Dict[str, Any]:
+        """Get all context data"""
+        return self._data.copy()
+    
+    def clear(self) -> None:
+        """Clear all context data"""
+        self._data.clear()
+
+
+class ContextMixin:
+    """
+    Mixin to provide context access to Features and ApplicationServices
+    """
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._context_object: Optional[ContextObject] = None
+    
+    @property
+    def context(self) -> ContextObject:
+        """Get the current framework context object"""
+        if self._context_object is None:
+            # Return empty context if no context is set
+            self._context_object = ContextObject({})
+        return self._context_object
+    
+    def _set_context_object(self, context_obj: ContextObject) -> None:
+        """Internal method to set the context object (used by framework)"""
+        self._context_object = context_obj
 
 
 class FrameworkContext:
     """
     Framework context manager that provides automatic metadata propagation
-    and scope management using contextvars.
+    and scope management with instance-based storage.
     """
     
     def __init__(self, framework_instance: 'UseFramework', context_attrs: Dict[str, Any]):
@@ -39,16 +83,16 @@ class FrameworkContext:
         if self._is_entered:
             raise RuntimeError("Context manager is already entered")
         
-        # Get current context (if any) for nesting support
-        current_context = _framework_context.get({})
+        # Get current context from framework instance (if any) for nesting support
+        current_context = self.framework._get_current_context()
         self._parent_context = current_context.copy() if current_context else {}
         
         # Merge parent context with new attributes (new attrs take precedence)
         merged_context = self._parent_context.copy()
         merged_context.update(self.context_attrs)
         
-        # Set the new context
-        _framework_context.set(merged_context)
+        # Set the new context on the framework instance
+        self.framework._set_current_context(merged_context)
         self._is_entered = True
         
         # Log context establishment
@@ -68,8 +112,8 @@ class FrameworkContext:
             if exc_type is not None:
                 self._handle_context_exception(exc_type, exc_val, exc_tb)
             
-            # Restore parent context
-            _framework_context.set(self._parent_context or {})
+            # Restore parent context on the framework instance
+            self.framework._set_current_context(self._parent_context or {})
             
             # Log context restoration
             logger.debug("Framework context restored to parent scope")
@@ -83,7 +127,7 @@ class FrameworkContext:
 
     def _handle_context_exception(self, exc_type: Type[Exception], exc_val: Exception, exc_tb) -> None:
         """Handle exceptions that occur within the context"""
-        current_context = _framework_context.get({})
+        current_context = self.framework._get_current_context()
         
         # Enrich exception with context information
         context_info = {
@@ -108,33 +152,3 @@ class FrameworkContext:
         except (AttributeError, TypeError):
             # Some built-in exceptions don't allow setting attributes
             pass
-
-    @classmethod
-    def get_current_context(cls) -> Dict[str, Any]:
-        """Get the current context data (class method for external access)"""
-        return _framework_context.get({}).copy()
-
-    @classmethod
-    def copy_current_context(cls):
-        """Copy the current context for use in async operations"""
-        return copy_context()
-
-
-# Convenience function to access current context from anywhere
-def get_current_context() -> Dict[str, Any]:
-    """Get the current framework context (convenience function)"""
-    return FrameworkContext.get_current_context()
-
-
-# Context-aware dependency injection mixin
-class ContextAwareMixin:
-    """Mixin to automatically inject current context into objects"""
-    
-    @property
-    def context(self) -> Dict[str, Any]:
-        """Get the current framework context"""
-        return get_current_context()
-    
-    def get_context_value(self, key: str, default: Any = None) -> Any:
-        """Get a specific value from the current context"""
-        return self.context.get(key, default)

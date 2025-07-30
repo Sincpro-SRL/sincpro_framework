@@ -1,4 +1,4 @@
-from .context import FrameworkContext, get_current_context
+from .context import FrameworkContext
 from .middleware import Middleware
 from .sincpro_abstractions import ApplicationService, DataTransferObject, Feature, TypeDTO, TypeDTOResponse
 from .sincpro_logger import logger
@@ -10,7 +10,6 @@ __all__ = [
     "Feature",
     "FrameworkContext",
     "UseFramework",
-    "get_current_context",
     "logger",
     "Middleware",
     # Type variables for better typing

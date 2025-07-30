@@ -39,6 +39,9 @@ class UseFramework:
         self.log_app_services: bool = log_app_services
         self.log_features: bool = log_features
 
+        # Instance-based context storage
+        self._current_context: Dict[str, Any] = {}
+
         # Container
         self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
         self._sp_container.logger_bus = self.logger
@@ -83,6 +86,10 @@ class UseFramework:
             assert (
                 self.bus is not None
             )  # Help mypy understand this is safe after the check above
+            
+            # Update context in all services before execution
+            self._update_context_in_services()
+            
             return self.bus.execute(processed_dto)
 
         return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
@@ -152,17 +159,25 @@ class UseFramework:
             raise TypeError("The handler must be a callable")
         self.app_service_error_handler = handler
 
-    def _add_dependencies_provided_by_user(self):
-        # Add current context to dynamic dependencies
-        from .context import get_current_context
-        self.dynamic_dep_registry['framework_context'] = get_current_context
+    def _get_current_context(self) -> Dict[str, Any]:
+        """Get the current context for this framework instance"""
+        return self._current_context.copy()
+    
+    def _set_current_context(self, context: Dict[str, Any]) -> None:
+        """Set the current context for this framework instance"""
+        self._current_context = context.copy()
 
+    def _add_dependencies_provided_by_user(self):
+        # No longer inject global context function - context is injected per service instance
+        
         if "feature_registry" in self._sp_container.feature_bus.attributes:
             feature_registry = self._sp_container.feature_bus.attributes[
                 "feature_registry"
             ].kwargs
 
             for dto, feature in feature_registry.items():
+                # Inject context object into each feature instance
+                self._inject_context_into_service(feature)
                 feature.add_attributes(**self.dynamic_dep_registry)
 
         if "app_service_registry" in self._sp_container.app_service_bus.attributes:
@@ -171,7 +186,37 @@ class UseFramework:
             ].kwargs
 
             for dto, app_service in app_service_registry.items():
+                # Inject context object into each app service instance
+                self._inject_context_into_service(app_service)
                 app_service.add_attributes(**self.dynamic_dep_registry)
+
+    def _inject_context_into_service(self, service):
+        """Inject context object into a service instance"""
+        from .context import ContextObject
+        
+        context_obj = ContextObject(self._current_context)
+        if hasattr(service, '_set_context_object'):
+            service._set_context_object(context_obj)
+
+    def _update_context_in_services(self):
+        """Update context in all registered services with current context"""
+        if not self.was_initialized or self.bus is None:
+            return
+            
+        from .context import ContextObject
+        current_context_obj = ContextObject(self._current_context)
+        
+        # Update context in features
+        if hasattr(self.bus, 'feature_bus') and hasattr(self.bus.feature_bus, 'feature_registry'):
+            for feature in self.bus.feature_bus.feature_registry.values():
+                if hasattr(feature, '_set_context_object'):
+                    feature._set_context_object(current_context_obj)
+        
+        # Update context in app services  
+        if hasattr(self.bus, 'app_service_bus') and hasattr(self.bus.app_service_bus, 'app_service_registry'):
+            for app_service in self.bus.app_service_bus.app_service_registry.values():
+                if hasattr(app_service, '_set_context_object'):
+                    app_service._set_context_object(current_context_obj)
 
     def _add_error_handlers_provided_by_user(self):
         if self.global_error_handler:

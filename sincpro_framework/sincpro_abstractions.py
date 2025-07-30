@@ -52,6 +52,10 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
             external_service: ExternalService
 
             def execute(self, dto: MyInputDTO) -> MyResponseDTO:
+                # Access context with the new API
+                correlation_id = self.context.get("correlation_id")
+                user_id = self.context.get("user.id")
+                
                 result = self.database_adapter.query(dto.param)
                 return MyResponseDTO(result=result)
 
@@ -68,6 +72,24 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
         """
         Initialize the Feature. Dependencies are injected automatically by the framework.
         """
+        super().__init__()
+        # Context object will be injected by the framework
+        self._context_object = None
+
+    @property
+    def context(self):
+        """Get the current framework context object"""
+        # Import here to avoid circular imports
+        from .context import ContextObject
+        
+        if self._context_object is None:
+            # Return empty context if no context is set
+            self._context_object = ContextObject({})
+        return self._context_object
+    
+    def _set_context_object(self, context_obj):
+        """Internal method to set the context object (used by framework)"""
+        self._context_object = context_obj
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
@@ -80,22 +102,6 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
         Returns:
             A response DTO containing the operation result, or None
         """
-
-    def get_context_value(self, key: str, default=None):
-        """Get a value from the current framework context"""
-        framework_context = getattr(self, 'framework_context', None)
-        if callable(framework_context):
-            context = framework_context()
-            return context.get(key, default)
-        return default
-
-    @property
-    def context(self):
-        """Get the current framework context"""
-        framework_context = getattr(self, 'framework_context', None)
-        if callable(framework_context):
-            return framework_context()
-        return {}
 
 class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
     """
@@ -120,6 +126,10 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
             external_service: ExternalService
 
             def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
+                # Access context with the new API
+                correlation_id = self.context.get("correlation_id")
+                user_id = self.context.get("user.id")
+                
                 # Execute Features through feature_bus with proper typing
                 step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)
                 step2_result = self.feature_bus.execute(Step2DTO(...), Step2ResponseDTO)
@@ -144,7 +154,25 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
         Initialize the ApplicationService with feature_bus for orchestration.
         Additional dependencies are injected automatically by the framework.
         """
+        super().__init__()
         self.feature_bus = feature_bus
+        # Context object will be injected by the framework
+        self._context_object = None
+
+    @property
+    def context(self):
+        """Get the current framework context object"""
+        # Import here to avoid circular imports
+        from .context import ContextObject
+        
+        if self._context_object is None:
+            # Return empty context if no context is set
+            self._context_object = ContextObject({})
+        return self._context_object
+    
+    def _set_context_object(self, context_obj):
+        """Internal method to set the context object (used by framework)"""
+        self._context_object = context_obj
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
@@ -157,19 +185,3 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
         Returns:
             A response DTO containing the orchestration result, or None
         """
-
-    def get_context_value(self, key: str, default=None):
-        """Get a value from the current framework context"""
-        framework_context = getattr(self, 'framework_context', None)
-        if callable(framework_context):
-            context = framework_context()
-            return context.get(key, default)
-        return default
-
-    @property
-    def context(self):
-        """Get the current framework context"""
-        framework_context = getattr(self, 'framework_context', None)
-        if callable(framework_context):
-            return framework_context()
-        return {}
