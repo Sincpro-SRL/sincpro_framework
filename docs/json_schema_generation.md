@@ -1,24 +1,37 @@
 # AI-Optimized JSON Schema Generation
 
-This document describes the new AI-optimized JSON schema generation feature that extends the Sincpro Framework's auto-documentation system.
+This document describes the enhanced AI-optimized JSON schema generation feature that combines framework context with repository analysis to provide complete AI understanding.
 
 ## Overview
 
-The framework now supports generating structured JSON schemas optimized for AI consumption and embedding processes alongside the existing markdown documentation. This enables AI systems to better understand framework components, generate code, and provide intelligent assistance.
+The framework now generates structured JSON schemas that merge:
 
-## Features
+1. **Framework Context**: How to use the Sincpro Framework (loaded from hardcoded guide)
+2. **Repository Analysis**: What components exist in your specific codebase (from code inspection)
 
-### 1. AI-Optimized Schema Structure
+This combination enables AI systems to have complete understanding for code generation, semantic search, and intelligent assistance.
 
-The JSON schema includes:
+## Enhanced Features
 
-- **Component Metadata**: Detailed information about DTOs, Features, Application Services, Dependencies, and Middlewares
-- **AI Hints**: Specific metadata for AI understanding (complexity levels, business domains, patterns)
-- **Relationship Mappings**: Component relationships and data flow patterns
-- **Code Generation Hints**: Common patterns, imports, and naming conventions
-- **Embedding Suggestions**: Primary entities and business capabilities for semantic search
+### 1. Complete AI Understanding
 
-### 2. Rich Component Analysis
+The JSON schema combines:
+
+- **Framework Context**: Usage patterns, execution examples, and best practices from the Sincpro Framework
+- **Repository Analysis**: Specific components found in your codebase
+- **AI Integration**: Enhanced metadata that synthesizes framework knowledge with repository components
+- **Usage Synthesis**: Real examples showing how to use framework patterns with your specific components
+
+### 2. Framework Context Integration
+
+Automatically loaded from the framework's AI guide:
+
+- **Core Principles**: Framework architecture and design patterns
+- **Execution Patterns**: How to properly execute features and services
+- **Best Practices**: What to do and what to avoid
+- **Usage Examples**: Real code examples and patterns
+
+### 3. Rich Component Analysis
 
 Each component includes:
 
@@ -26,9 +39,16 @@ Each component includes:
 - **Pattern Recognition**: Identification of architectural patterns (Command, DDD, etc.)
 - **Complexity Assessment**: Automatic complexity level analysis
 - **Business Domain Inference**: Automatic categorization by business domain
-- **Usage Patterns**: Common usage scenarios and patterns
+- **Framework Integration**: How each component fits with framework patterns
 
-### 3. Multiple Output Formats
+### 4. Enhanced AI Metadata
+
+- **Complete Understanding**: Framework knowledge + repository knowledge
+- **Code Generation**: Comprehensive hints combining framework patterns with repository components
+- **Execution Guidance**: How to execute your specific features and services
+- **Best Practices**: Framework best practices applied to your codebase
+
+### 5. Multiple Output Formats
 
 - **JSON Schema Only**: Generate just the AI-optimized schema
 - **Markdown Only**: Generate traditional MkDocs documentation (existing functionality)
@@ -86,18 +106,39 @@ schema = generator.generate_complete_schema()
 generator.save_to_file("framework_schema.json")
 ```
 
-## Schema Structure
+## Enhanced Schema Structure
 
 ### Top-Level Structure
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Framework Schema",
-  "description": "AI-optimized schema for framework components",
+  "title": "Repository Schema with Framework Context",
+  "description": "AI-optimized schema combining framework context and repository analysis",
   "version": "1.0.0",
   "generated_at": "2025-07-30 16:00:00",
   "generated_by": "sincpro_framework",
+  "schema_type": "ai_optimized_complete",
+  
+  "framework_context": {
+    "framework_name": "Sincpro Framework",
+    "version": "1.0.0",
+    "core_principles": { /* Framework usage patterns */ },
+    "key_features": { /* Framework capabilities */ },
+    "framework_execution_patterns": { /* How to execute features/services */ }
+  },
+  
+  "repository_analysis": {
+    "metadata": { /* Repository-specific metadata */ },
+    "components": { /* DTOs, Features, Services, etc. */ },
+    "relationships": { /* Component relationships */ }
+  },
+  
+  "ai_integration": {
+    "framework_integration": { /* How framework works with repository */ },
+    "complete_understanding": { /* AI capabilities description */ },
+    "usage_synthesis": { /* Combined examples and patterns */ }
+  }
   "metadata": { /* Framework metadata */ },
   "components": { /* Component schemas */ },
   "relationships": { /* Component relationships */ },

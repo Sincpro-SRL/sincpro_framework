@@ -89,6 +89,14 @@ def generate_json_schema(
     """
     Generate AI-optimized JSON schema from framework documentation.
     
+    This function now combines framework context (how to use the Sincpro Framework)
+    with repository-specific component analysis to provide complete AI understanding.
+    
+    The generated schema includes:
+    - Framework context: Usage patterns, examples, and best practices
+    - Repository analysis: Specific components found in the codebase
+    - AI integration: Enhanced metadata for code generation and semantic search
+    
     Args:
         framework_docs: List of FrameworkDocs instances
         output_dir: Output directory for JSON schema files
@@ -111,7 +119,7 @@ def generate_json_schema(
         schema_path = os.path.join(output_dir, f"{framework_docs[0].framework_name}_schema.json")
         generator.save_to_file(schema_path)
         
-        print(f"✅ AI-optimized JSON schema generated: {schema_path}")
+        print(f"✅ AI-optimized JSON schema with framework context generated: {schema_path}")
         return schema_path
     else:
         # Multiple frameworks - generate consolidated schema
@@ -139,6 +147,6 @@ def generate_json_schema(
         with open(consolidated_path, 'w', encoding='utf-8') as f:
             json.dump(consolidated_schema, f, indent=2, ensure_ascii=False, default=str)
         
-        print(f"✅ Consolidated AI-optimized JSON schema generated: {consolidated_path}")
-        print(f"✅ Individual schemas: {', '.join(schema_files)}")
+        print(f"✅ Consolidated AI-optimized JSON schema with framework context generated: {consolidated_path}")
+        print(f"✅ Individual schemas with framework context: {', '.join(schema_files)}")
         return consolidated_path

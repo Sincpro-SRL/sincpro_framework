@@ -430,11 +430,14 @@ build_documentation(
 - **Human-readable**: Beautiful, professional documentation for developers
 - **Interactive**: Searchable content with cross-references
 
-#### 🤖 AI-Optimized JSON Schema (New!)
-- **AI Consumption**: Structured data optimized for AI understanding
-- **Rich Metadata**: Business domains, complexity analysis, patterns
-- **Code Generation**: Hints for AI-powered code generation
-- **Embedding Support**: Optimized for semantic search and embeddings
+#### 🤖 AI-Optimized JSON Schema (Enhanced!)
+- **Complete AI Understanding**: Combines framework context with repository analysis
+- **Framework Context**: How to use the Sincpro Framework (patterns, examples, best practices)
+- **Repository Analysis**: What components exist in your specific codebase
+- **Rich Metadata**: Business domains, complexity analysis, architectural patterns
+- **Code Generation**: Comprehensive hints for AI-powered code generation
+- **Embedding Support**: Optimized for semantic search and AI embeddings
+- **Usage Synthesis**: Real examples combining framework knowledge with repository components
 
 ### 📁 Generated Documentation Structure
 
@@ -442,7 +445,7 @@ build_documentation(
 docs/generated/
 ├── mkdocs.yml                    # MkDocs configuration
 ├── requirements.txt              # Dependencies
-├── framework_schema.json         # AI-optimized JSON schema
+├── framework_schema.json         # AI-optimized JSON with framework context
 ├── site/                        # Built HTML documentation
 └── docs/                        # Markdown content
     ├── index.md                 # Overview
@@ -453,22 +456,47 @@ docs/generated/
 
 ### 🤖 AI-Optimized JSON Schema Features
 
-The JSON schema includes rich metadata for AI systems:
+The enhanced JSON schema combines framework context with repository analysis for complete AI understanding:
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Framework Schema",
-  "metadata": {
-    "architecture_patterns": ["DDD", "Clean Architecture"],
-    "component_summary": { /* counts and statistics */ }
+  "title": "Repository Schema with Framework Context",
+  "schema_type": "ai_optimized_complete",
+  
+  "framework_context": {
+    "framework_name": "Sincpro Framework",
+    "core_principles": {/* Framework usage patterns and principles */},
+    "key_features": {/* Framework capabilities and features */},
+    "framework_execution_patterns": {/* How to execute features/services */}
   },
-  "components": {
-    "dtos": [/* with AI hints for type classification */],
-    "features": [/* with business domain inference */],
-    "application_services": [/* with orchestration patterns */]
+  
+  "repository_analysis": {
+    "metadata": {
+      "architecture_patterns": ["DDD", "Clean Architecture"],
+      "component_summary": { /* counts and statistics */ }
+    },
+    "components": {
+      "dtos": [/* with AI hints for type classification */],
+      "features": [/* with business domain inference */],
+      "application_services": [/* with orchestration patterns */]
+    }
   },
-  "ai_metadata": {
+  
+  "ai_integration": {
+    "framework_integration": {
+      "execution_patterns": {/* How to use framework with repository components */},
+      "available_features": {/* Framework capabilities */}
+    },
+    "complete_understanding": {
+      "framework_knowledge": "Loaded from hardcoded guide",
+      "repository_knowledge": "Generated from code analysis",
+      "ai_capability": "Complete understanding of framework usage + repository components"
+    },
+    "usage_synthesis": {
+      "how_to_execute_features": {/* Real examples combining framework + repo */},
+      "how_to_execute_services": {/* Real examples combining framework + repo */}
+    },
     "embedding_suggestions": {
       "primary_entities": ["PaymentCommand", "UserCommand"],
       "business_capabilities": ["PaymentFeature", "UserFeature"]

@@ -4,9 +4,14 @@ JSON Schema Generator for AI Consumption
 Generates JSON Schema optimized for AI consumption and embedding processes.
 This generator creates structured data that can be easily consumed by AI models
 for understanding framework components and generating code.
+
+The generator merges framework context (how to use the framework) with 
+repository-specific components (what exists in a specific codebase) to provide
+complete AI understanding.
 """
 
 import json
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
@@ -23,48 +28,94 @@ class AIOptimizedJSONSchemaGenerator:
     Generates JSON Schema optimized for AI consumption and embedding processes.
     
     The output is structured to be easily parsed by AI models and contains
-    rich metadata for understanding framework components.
+    rich metadata for understanding framework components. This generator combines:
+    
+    1. Framework context (how to use the Sincpro Framework) - from hardcoded guide
+    2. Repository components (what exists in specific codebase) - from inspection
+    
+    This provides complete AI understanding of both framework usage and specific implementations.
     """
     
     def __init__(self, framework_docs: FrameworkDocs):
         self.framework_docs = framework_docs
         self.schema_version = "1.0.0"
+        self.framework_context = self._load_framework_context()
+        
+    def _load_framework_context(self) -> Dict[str, Any]:
+        """
+        Load the framework context from the hardcoded AI guide JSON.
+        
+        This provides AI with knowledge about how to use the Sincpro Framework,
+        complementing the repository-specific component analysis.
+        """
+        try:
+            # Get the path to the framework AI guide
+            current_dir = os.path.dirname(__file__)
+            guide_path = os.path.join(current_dir, "..", "sincpro_framework_ai_guide.json")
+            guide_path = os.path.abspath(guide_path)
+            
+            with open(guide_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            # Fallback to minimal context if guide is not available
+            print(f"Warning: Could not load framework AI guide: {e}")
+            return {
+                "framework_name": "Sincpro Framework",
+                "description": "Application Layer Framework within Hexagonal Architecture",
+                "note": "Framework context not available - using minimal fallback"
+            }
         
     def generate_complete_schema(self) -> Dict[str, Any]:
         """
         Generate complete JSON schema optimized for AI consumption.
         
+        Combines framework context (how to use Sincpro Framework) with 
+        repository-specific components (what exists in this codebase) to provide
+        complete understanding for AI systems.
+        
         Returns:
-            Dict[str, Any]: Complete JSON schema with framework metadata
+            Dict[str, Any]: Complete JSON schema with framework context and components
         """
-        schema = {
+        # Generate repository-specific component schema
+        repository_schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "title": f"{self.framework_docs.framework_name} Framework Schema",
-            "description": f"AI-optimized schema for {self.framework_docs.framework_name} framework components",
+            "title": f"{self.framework_docs.framework_name} Repository Schema",
+            "description": f"AI-optimized schema combining framework context and repository components for {self.framework_docs.framework_name}",
             "version": self.schema_version,
             "generated_at": self.framework_docs.generated_at,
             "generated_by": self.framework_docs.generated_by,
-            "metadata": self._generate_framework_metadata(),
-            "components": {
-                "dtos": self._generate_dto_schemas(),
-                "features": self._generate_feature_schemas(),
-                "application_services": self._generate_application_service_schemas(),
-                "dependencies": self._generate_dependency_schemas(),
-                "middlewares": self._generate_middleware_schemas()
+            "schema_type": "ai_optimized_complete",
+            
+            # Framework context provides "how to use the framework"
+            "framework_context": self.framework_context,
+            
+            # Repository analysis provides "what exists in this specific codebase"
+            "repository_analysis": {
+                "metadata": self._generate_repository_metadata(),
+                "components": {
+                    "dtos": self._generate_dto_schemas(),
+                    "features": self._generate_feature_schemas(),
+                    "application_services": self._generate_application_service_schemas(),
+                    "dependencies": self._generate_dependency_schemas(),
+                    "middlewares": self._generate_middleware_schemas()
+                },
+                "relationships": self._generate_component_relationships()
             },
-            "relationships": self._generate_component_relationships(),
-            "ai_metadata": self._generate_ai_metadata()
+            
+            # AI-specific metadata for both framework and repository
+            "ai_integration": self._generate_enhanced_ai_metadata()
         }
         
-        return schema
+        return repository_schema
     
-    def _generate_framework_metadata(self) -> Dict[str, Any]:
-        """Generate framework-level metadata for AI understanding"""
+    def _generate_repository_metadata(self) -> Dict[str, Any]:
+        """Generate repository-specific metadata for AI understanding"""
         summary = self.framework_docs.summary
         
         return {
-            "name": self.framework_docs.framework_name,
-            "type": "sincpro_framework",
+            "repository_name": self.framework_docs.framework_name,
+            "uses_framework": "sincpro_framework",
+            "repository_type": "framework_implementation",
             "architecture_patterns": [
                 "Domain-Driven Design",
                 "Clean Architecture", 
@@ -79,7 +130,7 @@ class AIOptimizedJSONSchemaGenerator:
                 "middlewares_count": summary.middlewares_count if summary else 0,
                 "dependencies_count": summary.dependencies_count if summary else 0
             },
-            "capabilities": self._extract_framework_capabilities()
+            "capabilities": self._extract_repository_capabilities()
         }
     
     def _generate_dto_schemas(self) -> List[Dict[str, Any]]:
@@ -259,8 +310,46 @@ class AIOptimizedJSONSchemaGenerator:
             "dependency_injection": self._map_dependency_injection()
         }
     
+    def _generate_enhanced_ai_metadata(self) -> Dict[str, Any]:
+        """
+        Generate enhanced AI metadata that combines framework context with repository analysis.
+        
+        This provides AI with complete understanding by merging:
+        1. Framework usage patterns and examples from the context
+        2. Repository-specific components and their relationships
+        """
+        base_ai_metadata = self._generate_ai_metadata()
+        
+        # Enhance with framework context integration
+        enhanced_metadata = {
+            **base_ai_metadata,
+            
+            "framework_integration": {
+                "framework_version": self.framework_context.get("version", "unknown"),
+                "architecture_pattern": self.framework_context.get("architecture_pattern", "unknown"),
+                "execution_patterns": self._extract_execution_patterns_from_context(),
+                "available_features": self._extract_framework_features_from_context()
+            },
+            
+            "complete_understanding": {
+                "framework_knowledge": "Loaded from hardcoded guide - provides usage patterns and examples",
+                "repository_knowledge": "Generated from code analysis - provides specific components",
+                "ai_capability": "Can understand both how to use framework AND what exists in this repository",
+                "code_generation_ready": True,
+                "semantic_search_optimized": True
+            },
+            
+            "usage_synthesis": {
+                "how_to_execute_features": self._synthesize_feature_execution(),
+                "how_to_execute_services": self._synthesize_service_execution(),
+                "common_patterns_in_repository": self._identify_repository_patterns(),
+                "framework_best_practices": self._extract_best_practices_from_context()
+            }
+        }
+        
+        return enhanced_metadata
     def _generate_ai_metadata(self) -> Dict[str, Any]:
-        """Generate metadata specifically for AI consumption"""
+        """Generate base metadata specifically for AI consumption (backward compatibility)"""
         return {
             "embedding_suggestions": {
                 "primary_entities": [dto.name for dto in self.framework_docs.dtos],
@@ -285,7 +374,112 @@ class AIOptimizedJSONSchemaGenerator:
             }
         }
     
-    # Helper methods for AI-specific analysis
+    def _extract_repository_capabilities(self) -> List[str]:
+        """Extract repository-specific capabilities for AI understanding"""
+        capabilities = ["dependency_injection", "command_execution"]
+        
+        if self.framework_docs.middlewares:
+            capabilities.append("middleware_pipeline")
+        if self.framework_docs.application_services:
+            capabilities.append("service_orchestration")
+        if any("async" in str(method) for feature in self.framework_docs.features for method in feature.methods.values()):
+            capabilities.append("async_processing")
+            
+        return capabilities
+    
+    def _extract_execution_patterns_from_context(self) -> Dict[str, Any]:
+        """Extract execution patterns from framework context"""
+        execution_info = self.framework_context.get("framework_execution_patterns", {})
+        return {
+            "unified_execution": execution_info.get("unified_execution_pattern", "Use framework(dto, ResponseClass) for all executions"),
+            "feature_execution": execution_info.get("feature_execution_example", {}),
+            "service_execution": execution_info.get("application_service_execution_example", {}),
+            "anti_patterns": execution_info.get("anti_patterns", {}).get("forbidden_patterns", [])
+        }
+    
+    def _extract_framework_features_from_context(self) -> Dict[str, Any]:
+        """Extract framework features from context"""
+        features = self.framework_context.get("key_features", {})
+        return {
+            "dto_validation": features.get("dto_validation", {}),
+            "dependency_injection": features.get("dependency_injection", {}),
+            "error_handling": features.get("multi_level_error_handling", {}),
+            "inversion_of_control": features.get("inversion_of_control", {})
+        }
+    
+    def _synthesize_feature_execution(self) -> Dict[str, Any]:
+        """Synthesize how to execute features based on context + repository components"""
+        execution_guidance = self.framework_context.get("framework_execution_patterns", {})
+        feature_example = execution_guidance.get("feature_execution_example", {})
+        
+        repository_features = [f.name for f in self.framework_docs.features]
+        
+        return {
+            "execution_pattern": execution_guidance.get("unified_execution_pattern", "framework_instance(dto, ResponseClass)"),
+            "example_from_context": feature_example.get("code", []),
+            "features_in_repository": repository_features,
+            "note": "Use framework_instance(dto, ResponseClass) to execute any feature listed in features_in_repository"
+        }
+    
+    def _synthesize_service_execution(self) -> Dict[str, Any]:
+        """Synthesize how to execute application services based on context + repository components"""
+        execution_guidance = self.framework_context.get("framework_execution_patterns", {})
+        service_example = execution_guidance.get("application_service_execution_example", {})
+        
+        repository_services = [s.name for s in self.framework_docs.application_services]
+        
+        return {
+            "execution_pattern": execution_guidance.get("unified_execution_pattern", "framework_instance(dto, ResponseClass)"),
+            "example_from_context": service_example.get("code", []),
+            "services_in_repository": repository_services,
+            "note": "Use framework_instance(dto, ResponseClass) to execute any service listed in services_in_repository"
+        }
+    
+    def _identify_repository_patterns(self) -> List[str]:
+        """Identify common patterns used in this repository"""
+        patterns = []
+        
+        # Analyze DTOs for patterns
+        dto_names = [dto.name.lower() for dto in self.framework_docs.dtos]
+        if any("command" in name for name in dto_names):
+            patterns.append("command_pattern")
+        if any("query" in name for name in dto_names):
+            patterns.append("query_pattern")
+        if any("response" in name for name in dto_names):
+            patterns.append("response_pattern")
+        
+        # Analyze features and services
+        if self.framework_docs.features:
+            patterns.append("feature_based_architecture")
+        if self.framework_docs.application_services:
+            patterns.append("service_layer_pattern")
+        if self.framework_docs.middlewares:
+            patterns.append("middleware_pipeline")
+            
+        return patterns
+    
+    def _extract_best_practices_from_context(self) -> List[str]:
+        """Extract best practices from framework context"""
+        execution_patterns = self.framework_context.get("framework_execution_patterns", {})
+        anti_patterns = execution_patterns.get("anti_patterns", {})
+        ai_guidance = self.framework_context.get("ai_guidance", {})
+        
+        practices = []
+        
+        # Extract from anti-patterns (what NOT to do)
+        forbidden = anti_patterns.get("forbidden_patterns", [])
+        if forbidden:
+            practices.append("Never use internal buses directly - always use framework(dto, ResponseClass)")
+        
+        # Extract from AI guidance
+        if ai_guidance.get("execution_principles"):
+            practices.append("Use unified execution pattern: framework(dto, ResponseClass)")
+        
+        # Extract from execution patterns
+        if execution_patterns.get("execution_principles"):
+            practices.append("Let framework handle automatic DTO to handler resolution")
+            
+        return practices
     
     def _convert_pydantic_fields_to_ai_schema(self, fields: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Convert Pydantic fields to AI-friendly schema"""
