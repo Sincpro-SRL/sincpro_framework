@@ -1,11 +1,10 @@
 """
 MkDocs Material Markdown Generator
 
-Generates complete MkDocs documentation model and provides simple API for file generation.
-Creates structured documentation with automatic navigation for single or multiple frameworks.
+Generates structured markdown content for MkDocs documentation.
+Focused solely on content generation, leaving YAML and site generation to specialized components.
 """
 
-import os
 from typing import List
 
 from sincpro_framework.generate_documentation.domain.models import (
@@ -19,20 +18,23 @@ from sincpro_framework.generate_documentation.domain.models import (
 
 
 class MkDocsMarkdownGenerator:
-    """Generates complete MkDocs documentation model for frameworks"""
+    """
+    Generates markdown content for MkDocs documentation.
+    Focused on content generation with clean separation of concerns.
+    """
 
     def generate_complete_documentation(
         self, frameworks: List[FrameworkDocs]
     ) -> MkDocsCompleteDocumentation:
         """
         Generate complete MkDocs documentation model.
-        This is the single public interface that creates the full documentation structure.
+        Creates the full documentation structure with markdown content.
 
         Args:
             frameworks: List of FrameworkDocs to generate documentation for
 
         Returns:
-            MkDocsCompleteDocumentation: Complete documentation model with all pages and navigation
+            MkDocsCompleteDocumentation: Complete documentation model with all pages
         """
         is_multi = len(frameworks) > 1
 
@@ -53,51 +55,23 @@ class MkDocsMarkdownGenerator:
             framework_docs = self._generate_framework_documentation(framework, is_multi)
             complete_docs.frameworks.append(framework_docs)
 
-        # Generate navigation config
-        complete_docs.nav_config = self._generate_nav_config(complete_docs)
-
         return complete_docs
 
     def write_documentation_files(
         self, documentation: MkDocsCompleteDocumentation, output_dir: str = "generated_docs"
     ) -> str:
         """
-        Write all documentation files to disk.
-        Simple API that takes the documentation model and writes all files.
-
-        Args:
-            documentation: Complete documentation model
-            output_dir: Directory where files will be written
-
-        Returns:
-            str: Path to output directory
+        Legacy method for backward compatibility.
+        Use StaticSiteGenerator for better control over site generation.
         """
-        import shutil
+        from sincpro_framework.generate_documentation.infrastructure.static_site_generator import (
+            site_generator,
+        )
 
-        # Remove existing directory if it exists and recreate it
-        if os.path.exists(output_dir):
-            print(f"🗑️ Removing existing directory: {output_dir}")
-            shutil.rmtree(output_dir)
-
-        print(f"📁 Creating fresh directory: {output_dir}")
-        os.makedirs(output_dir, exist_ok=True)
-
-        files = documentation.get_all_files()
-
-        for filepath, content in files.items():
-            full_path = os.path.join(output_dir, filepath)
-
-            # Create subdirectories if needed
-            dir_path = os.path.dirname(full_path)
-            if dir_path and dir_path != output_dir:
-                os.makedirs(dir_path, exist_ok=True)
-
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            print(f"✅ Generated: {full_path}")
-
-        print(f"✅ All documentation files saved to: {output_dir}/")
-        return output_dir
+        print(
+            "⚠️  Using legacy write_documentation_files. Consider using StaticSiteGenerator directly."
+        )
+        return site_generator.generate_site(documentation, output_dir)
 
     def _sanitize_module_name(self, module_name: str) -> str:
         """Sanitize module name for better display"""

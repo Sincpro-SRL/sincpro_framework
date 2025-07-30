@@ -1,23 +1,35 @@
 """
 Auto-Documentation Service - Main Entry Point
 
-Punto de entrada principal del sistema de auto-documentación.
+Single API for generating complete MkDocs-ready documentation.
 """
 
 from sincpro_framework import UseFramework
 
 
 def build_documentation(
-    framework_instances: UseFramework | list[UseFramework], out_put_dir="generated_docs"
-) -> None:
+    framework_instances: UseFramework | list[UseFramework], output_dir: str = "generated_docs"
+) -> str:
     """
-    Construye la documentación del framework dado.
+    Build complete documentation ready for use with MkDocs.
 
     Args:
-        framework_instance: Instancia del framework a documentar.
+        framework_instances: Framework instance(s) to document.
+        output_dir: Output directory for documentation.
 
     Returns:
-        Contenido de la documentación generada.
+        str: Path to the generated documentation directory.
+
+    Example:
+        ```python
+        from sincpro_framework.generate_documentation import build_documentation
+
+        # Generate documentation
+        docs_path = build_documentation(framework_instance)
+
+        # Then simply:
+        # cd generated_docs && mkdocs serve
+        ```
     """
     from sincpro_framework.generate_documentation.infrastructure.framework_docs_extractor import (
         doc_extractor,
@@ -27,6 +39,9 @@ def build_documentation(
     )
     from sincpro_framework.generate_documentation.infrastructure.sincpro_introspector import (
         component_finder,
+    )
+    from sincpro_framework.generate_documentation.infrastructure.static_site_generator import (
+        site_generator,
     )
 
     _framework_instances = framework_instances
@@ -40,4 +55,5 @@ def build_documentation(
         framework_docs.append(doc)
 
     consolidated_docs = markdown_generator.generate_complete_documentation(framework_docs)
-    markdown_generator.write_documentation_files(consolidated_docs, out_put_dir)
+
+    return site_generator.generate_site(consolidated_docs, output_dir)
