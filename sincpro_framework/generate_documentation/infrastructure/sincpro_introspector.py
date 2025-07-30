@@ -1,12 +1,5 @@
-"""
-Framework Introspector Implementation
-
-Implementación concreta del protocol FrameworkIntrospector para Sincpro Framework.
-"""
-
 import types
 
-from sincpro_framework.generate_documentation.domain.introspector import FrameworkIntrospector
 from sincpro_framework.generate_documentation.domain.models import (
     ApplicationServiceMetadata,
     DependencyMetadata,
@@ -18,7 +11,7 @@ from sincpro_framework.generate_documentation.domain.models import (
 from sincpro_framework.use_bus import FrameworkBus, UseFramework
 
 
-class SincproFrameworkIntrospector(FrameworkIntrospector):
+class SincproComponentFinder:
     """Introspector específico para Sincpro Framework"""
 
     def introspect(self, framework_instance: UseFramework) -> IntrospectionResult:
@@ -81,4 +74,4 @@ class SincproFrameworkIntrospector(FrameworkIntrospector):
         )
 
 
-introspector = SincproFrameworkIntrospector()
+component_finder = SincproComponentFinder()
