@@ -349,8 +349,8 @@ Once a **Feature** or **ApplicationService** is defined, it can be executed by p
 
 ```python
 from sincpro_payments_sdk.apps.cybersource import cybersource
-from sincpro_payments_sdk.apps.cybersource.use_cases.tokenization import TokenizationParams
-from sincpro_payments_sdk.apps.cybersource.use_cases.payments import PaymentServiceParams
+from sincpro_payments_sdk.apps.cybersource.use_cases.tokenization import TokenizationParams, TokenizationResponse
+from sincpro_payments_sdk.apps.cybersource.use_cases.payments import PaymentServiceParams, PaymentServiceResponse
 
 # Example of executing a Feature
 feature_dto = TokenizationParams(
@@ -360,7 +360,7 @@ feature_dto = TokenizationParams(
 )
 
 # Execute the feature
-feature_result = cybersource.feature_bus.execute(feature_dto)
+feature_result = cybersource.feature_bus.execute(feature_dto, TokenizationResponse)
 print(f"Tokenization Result: {feature_result.token}, Status: {feature_result.status}")
 
 # Example of executing an Application Service
@@ -372,7 +372,7 @@ service_dto = PaymentServiceParams(
 )
 
 # Execute the application service
-service_result = cybersource(service_dto)
+service_result = cybersource(service_dto, PaymentServiceResponse)
 print(f"Payment Status: {service_result.status}, Transaction ID: {service_result.transaction_id}")
 ```
 
