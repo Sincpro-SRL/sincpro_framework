@@ -360,7 +360,7 @@ feature_dto = TokenizationParams(
 )
 
 # Execute the feature
-feature_result = cybersource.feature_bus.execute(feature_dto, TokenizationResponse)
+feature_result = cybersource(feature_dto, TokenizationResponse)
 print(f"Tokenization Result: {feature_result.token}, Status: {feature_result.status}")
 
 # Example of executing an Application Service
