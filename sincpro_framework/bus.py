@@ -125,12 +125,14 @@ class FrameworkBus(Bus):
         self,
         feature_bus: FeatureBus,
         app_service_bus: ApplicationServiceBus,
+        dto_registry: Dict[str, TypeDTO],
         logger_bus: Logger = logger,
     ):
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
+        self.dto_registry: Dict[str, TypeDTO] = dto_registry
 
         registered_features = set(self.feature_bus.feature_registry.keys())
         registered_app_services = set(self.app_service_bus.app_service_registry.keys())

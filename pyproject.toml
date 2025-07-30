@@ -18,6 +18,10 @@ dependency-injector = "^4.46.0"
 pydantic = "^2.9.2"
 pyyaml = "6.0.1"
 sincpro-log = "^1.0.1"
+mkdocs = "^1.6.1"
+mkdocs-material = "^9.6.16"
+mkdocstrings = {extras = ["python"], version = "^0.30.0"}
+pymdown-extensions = "^10.16.1"
 
 [tool.poetry.group.dev.dependencies]
 isort = "^6.0.1"

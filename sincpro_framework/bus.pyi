@@ -48,6 +48,7 @@ class FrameworkBus(Bus):
     app_service_bus: ApplicationServiceBus
     handle_error: Optional[Callable]
     logger: Logger
+    dto_registry: Dict[str, TypeDTO]
 
     def __init__(
         self,

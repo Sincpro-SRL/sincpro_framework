@@ -1,13 +1,14 @@
 """Inversion of Control (IoC) container for the SincPro Framework"""
 
-from logging import Logger
-from typing import Any, Dict, Union
+from typing import Any, Union
 
 from dependency_injector import containers, providers
+from dependency_injector.providers import Dict, Factory, Object, Singleton
+from sincpro_log.logger import LoggerProxy
 
 from .bus import ApplicationServiceBus, FeatureBus, FrameworkBus
 from .exceptions import DTOAlreadyRegistered
-from .sincpro_abstractions import ApplicationService, Feature, TypeDTO
+from .sincpro_abstractions import TypeDTO
 
 # ---------------------------------------------------------------------------------------------
 # Container Definition
@@ -21,28 +22,29 @@ class FrameworkContainer(containers.DeclarativeContainer):
     main components of the framework at runtime.
     """
 
-    logger_bus: Logger = providers.Object()
+    logger_bus: Object[LoggerProxy] = providers.Object()
 
-    injected_dependencies: dict = providers.Dict()
+    injected_dependencies: Dict = providers.Dict()
 
-    # DTO registry - NEW: Mantiene referencias a las clases DTO para introspección
-    dto_registry: Dict[str, Any] = providers.Dict({})
+    # DTO registry
+    dto_registry: Dict = providers.Dict({})
 
     # atomic layer
-    feature_registry: Dict[str, Feature] = providers.Dict({})
-    feature_bus: FeatureBus = providers.Singleton(FeatureBus, logger_bus)
+    feature_registry: Dict = providers.Dict({})
+    feature_bus: Singleton[FeatureBus] = providers.Singleton(FeatureBus, logger_bus)
 
     # orchestration layer
-    app_service_registry: Dict[str, ApplicationService] = providers.Dict({})
-    app_service_bus: ApplicationServiceBus = providers.Singleton(
+    app_service_registry: Dict = providers.Dict({})
+    app_service_bus: Singleton[ApplicationServiceBus] = providers.Singleton(
         ApplicationServiceBus, logger_bus
     )
 
     # Facade
-    framework_bus: FrameworkBus = providers.Factory(
+    framework_bus: Factory[FrameworkBus] = providers.Factory(
         FrameworkBus,
         feature_bus=feature_bus,
         app_service_bus=app_service_bus,
+        dto_registry=dto_registry,
         logger_bus=logger_bus,
     )
 
@@ -76,6 +78,8 @@ def inject_feature_to_bus(
                     **framework_container.dto_registry.kwargs,
                 }
             )
+
+            framework_container.logger_bus.debug(framework_container.dto_registry)
 
             # --------------------------------------------------------------------
             # Register DTO to fn builder that will return the feature instance

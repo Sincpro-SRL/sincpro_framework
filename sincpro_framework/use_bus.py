@@ -79,10 +79,7 @@ class UseFramework:
 
         # Execute with middleware pipeline
         def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
-            res: TypeDTOResponse | None = self.bus.execute(processed_dto)
-            if res is None:
-                return None
-            return res
+            return self.bus.execute(processed_dto)
 
         return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
 
@@ -163,6 +160,17 @@ class UseFramework:
                 handle_error=self.app_service_error_handler
             )
 
+    def _execute_with_middleware(
+        self,
+        dto: TypeDTO,
+        executor: Callable,
+        return_type: Type[TypeDTOResponse] | None = None,
+    ) -> TypeDTOResponse | None:
+        """
+        Execute the DTO with the middleware pipeline
+        """
+        return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+
     @property
     def logger(self) -> LoggerProxy:
         """Get bundle context logger"""
@@ -170,142 +178,3 @@ class UseFramework:
             self._logger = create_logger(self._logger_name)
             self._is_logger_configured = True
         return self._logger
-
-    # Auto-Documentation Methods
-
-    def generate_documentation(self, output_path: str = "FRAMEWORK_DOCS.md", **config) -> str:
-        """
-        Generate comprehensive documentation for this framework instance
-
-        Args:
-            output_path: Path where to save the documentation
-            **config: Configuration options for generation
-
-        Returns:
-            Path where documentation was saved
-        """
-        if not self.was_initialized:
-            self.build_root_bus()
-
-        # Late import to avoid circular dependencies
-        from .generate_documentation import generate_framework_documentation
-
-        return generate_framework_documentation(self, output_path, **config)
-
-    def print_framework_summary(self) -> None:
-        """Print a quick summary of the framework components to console"""
-        if not self.was_initialized:
-            self.build_root_bus()
-
-        # Late import to avoid circular dependencies
-        from .generate_documentation import print_framework_summary
-
-        print_framework_summary(self)
-
-    def generate_mkdocs_site(self, output_dir: str = "docs/") -> str:
-        """
-        Generate a complete MkDocs site for this framework
-
-        Args:
-            output_dir: Directory where to generate the MkDocs site
-
-        Returns:
-            Path to the generated mkdocs.yml file
-        """
-        if not self.was_initialized:
-            self.build_root_bus()
-
-        # Late import to avoid circular dependencies
-        from .generate_documentation.infrastructure.mkdocs_generator import MkDocsGenerator
-
-        generator = MkDocsGenerator()
-        return generator.generate_mkdocs_site(self, output_dir)
-
-    def serve_docs(self, port: int = 8000, output_dir: str = "docs/"):
-        """
-        Generate and serve documentation with MkDocs dev server
-
-        Args:
-            port: Port to serve on
-            output_dir: Directory to generate docs in
-        """
-        import os
-        import subprocess
-
-        mkdocs_path = self.generate_mkdocs_site(output_dir)
-        mkdocs_dir = os.path.dirname(mkdocs_path)
-
-        print(f"🚀 Starting documentation server on http://127.0.0.1:{port}")
-        print(f"📚 Serving docs from: {mkdocs_dir}")
-
-        try:
-            subprocess.run(
-                ["mkdocs", "serve", "-f", mkdocs_path, "-a", f"127.0.0.1:{port}"],
-                cwd=mkdocs_dir,
-            )
-        except FileNotFoundError:
-            print("❌ MkDocs not found. Install with: pip install mkdocs mkdocs-material")
-        except KeyboardInterrupt:
-            print("\n📚 Documentation server stopped.")
-
-    def get_registered_dtos(self) -> Dict[str, Any]:
-        """
-        Get all registered DTO classes for introspection
-
-        Returns:
-            Dictionary mapping DTO names to DTO classes
-
-        Example:
-            dtos = framework.get_registered_dtos()
-            for dto_name, dto_class in dtos.items():
-                print(f"DTO: {dto_name}, Class: {dto_class}")
-                if hasattr(dto_class, 'model_fields'):
-                    print(f"  Pydantic fields: {list(dto_class.model_fields.keys())}")
-        """
-        if not self.was_initialized:
-            self.build_root_bus()
-
-        # Access the DTO registry from the container
-        if hasattr(self._sp_container, "dto_registry"):
-            return self._sp_container.dto_registry.kwargs
-        else:
-            return {}
-
-    def get_framework_introspection_data(self) -> Dict[str, Any]:
-        """
-        Get complete introspection data including DTOs, Features, AppServices, and Middleware
-
-        Returns:
-            Complete framework introspection data
-        """
-        if not self.was_initialized:
-            self.build_root_bus()
-
-        introspection_data = {
-            "framework_name": self._logger_name,
-            "dtos": self.get_registered_dtos(),
-            "features": {},
-            "app_services": {},
-            "middlewares": [],
-            "dependencies": list(self.dynamic_dep_registry.keys()),
-        }
-
-        # Get feature instances
-        if hasattr(self.bus, "feature_bus") and hasattr(
-            self.bus.feature_bus, "feature_registry"
-        ):
-            introspection_data["features"] = self.bus.feature_bus.feature_registry
-
-        # Get app service instances
-        if hasattr(self.bus, "app_service_bus") and hasattr(
-            self.bus.app_service_bus, "app_service_registry"
-        ):
-            introspection_data["app_services"] = self.bus.app_service_bus.app_service_registry
-
-        # Get middleware instances
-        if hasattr(self, "middleware_pipeline") and hasattr(
-            self.middleware_pipeline, "middlewares"
-        ):
-            introspection_data["middlewares"] = self.middleware_pipeline.middlewares
-
-        return introspection_data
