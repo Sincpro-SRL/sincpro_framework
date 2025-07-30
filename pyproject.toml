@@ -18,10 +18,6 @@ dependency-injector = "^4.46.0"
 pydantic = "^2.9.2"
 pyyaml = "6.0.1"
 sincpro-log = "^1.0.1"
-mkdocs = "^1.6.1"
-mkdocs-material = "^9.6.16"
-mkdocstrings = {extras = ["python"], version = "^0.30.0"}
-pymdown-extensions = "^10.16.1"
 
 [tool.poetry.group.dev.dependencies]
 isort = "^6.0.1"
@@ -32,12 +28,11 @@ autoflake = "^2.3.1"
 pyright = "^1.1.399"
 jupyterlab = "^4.3.4"
 mypy = "^1.14.1"
-mkdocs = "^1.6"
-mkdocs-material = "^9.5"
+mkdocs = "^1.6.1"
+mkdocs-material = "^9.6.16"
 mkdocstrings = {extras = ["python"], version = "^0.30.0"}
 pymdown-extensions = "^10.16.1"
-mkdocs-git-revision-date-localized-plugin = "^1.2.0"
-mkdocs-minify-plugin = "^0.7.0"
+
 
 [build-system]
 requires = ["poetry-core"]

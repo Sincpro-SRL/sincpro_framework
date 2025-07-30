@@ -198,12 +198,10 @@ class StaticSiteGenerator:
     def _write_requirements_file(self, output_path: str) -> None:
         """Generate requirements.txt for MkDocs"""
         requirements = [
-            "mkdocs>=1.5.0",
-            "mkdocs-material>=9.0.0",
-            "mkdocstrings[python]>=0.20.0",
-            "pymdown-extensions>=10.0.0",
-            "mkdocs-git-revision-date-localized-plugin>=1.2.0",
-            "mkdocs-minify-plugin>=0.7.0",
+            "mkdocs>=1.6.1",
+            "mkdocs-material>=9.6.16",
+            "mkdocstrings[python]>=0.30.0",
+            "pymdown-extensions>=10.16.1",
         ]
 
         requirements_path = Path(output_path) / "requirements.txt"
