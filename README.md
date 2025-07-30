@@ -387,6 +387,106 @@ maintainability.
 
 This structured approach ensures high-quality, maintainable software that can adapt to evolving business needs. 🚀
 
+## 📖 Auto-Documentation
+
+The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in a beautiful, searchable format.
+
+### 🚀 Quick Documentation Generation
+
+The easiest way to generate documentation for your project is using a simple script:
+
+```python
+from sincpro_framework.generate_documentation import build_documentation
+
+# Import your framework instances from their respective modules
+from apps.payment_gateway import payment_framework
+from apps.user_management import user_framework
+from apps.notification_system import notification_framework
+
+# Pass them to the documentation builder
+build_documentation(
+    [payment_framework, user_framework, notification_framework],
+    output_dir="docs/generated"
+)
+```
+
+That's it! Your documentation will be generated in the `docs/generated` directory.
+
+### 📁 Generated Documentation Structure
+
+The generated documentation includes:
+
+```
+docs/generated/
+├── mkdocs.yml              # Complete MkDocs configuration
+├── requirements.txt        # Dependencies for serving the site
+├── README.md              # Instructions for usage
+└── docs/                  # Documentation content
+    ├── index.md           # Main page with overview
+    ├── assets/            # Sincpro theme assets (CSS/JS)
+    ├── framework-name/    # Each framework gets its own section
+    │   ├── index.md       # Framework overview
+    │   ├── dependencies.md # Dependency injection components
+    │   ├── middlewares.md  # Middleware documentation
+    │   ├── features.md     # Feature use cases
+    │   ├── application-services.md # Application services
+    │   └── dtos.md        # Data Transfer Objects
+    └── ...
+```
+
+### ✨ Documentation Features
+
+- **🎨 Sincpro Theme**: Beautiful violet corporate colors and professional styling
+- **📱 Responsive Design**: Works perfectly on desktop and mobile devices
+- **🔍 Full-Text Search**: Find any component, method, or parameter instantly
+- **📊 Component Overview**: Summary tables with component counts and descriptions
+- **🔗 Cross-References**: Easy navigation between related components
+- **📋 API Documentation**: Complete method signatures, parameters, and return types
+- **🏷️ Type Information**: Full type hints and Pydantic model schemas
+
+### 🎯 Best Practices
+
+1. **Document your DTOs**: Add clear docstrings to your Data Transfer Objects
+2. **Describe your Features**: Include comprehensive docstrings for execute methods
+3. **Name components clearly**: Use descriptive names for better auto-generated docs
+4. **Organize by domain**: Group related features and services logically
+
+Example of well-documented code:
+
+```python
+class PaymentCommand(DataTransferObject):
+    """Command for processing credit card payments.
+
+    This DTO contains all necessary information to process
+    a payment transaction through the payment gateway.
+    """
+    card_number: str  # Credit card number (PCI compliant)
+    amount: float     # Payment amount in USD
+    merchant_id: str  # Unique merchant identifier
+
+@framework.feature(PaymentCommand)
+class PaymentFeature(Feature):
+    """Process payment transactions through external gateway.
+
+    This feature handles the complete payment flow including
+    validation, gateway communication, and response processing.
+    """
+
+    def execute(self, dto: PaymentCommand) -> PaymentResponse:
+        """Execute payment processing.
+
+        Args:
+            dto: Payment command with card and amount information
+
+        Returns:
+            PaymentResponse: Transaction result with ID and status
+
+        Raises:
+            PaymentError: When payment fails or card is invalid
+        """
+        # Implementation here...
+```
+
 ## Configuration or settings
 
 The framework comes with a module or component to allow us to create configuratio or settings based on files or
@@ -447,7 +547,7 @@ api_key: "$ENV:API_KEY"  # References environment variable
 
 # If API_KEY environment variable is not set, the framework will:
 # 1. Log a warning: "Environment variable [API_KEY] is not set for field [api_key]. Using default value: dev_default_key"
-# 2. Use the default value "dev_default_key" 
+# 2. Use the default value "dev_default_key"
 # 3. Continue execution without error
 ```
 
@@ -477,96 +577,3 @@ Override the config file using another
 ```bash
 export SINCPRO_FRAMEWORK_CONFIG_FILE = /path/to/your/config.yml
 ```
-
-## 📚 Auto-Documentation
-
-The Sincpro Framework includes a powerful auto-documentation system that can introspect your framework instances and generate comprehensive documentation automatically.
-
-### 🚀 Quick Documentation Generation
-
-```python
-# En tu proyecto, desde la instancia del framework
-from my_app import framework  # Tu framework configurado
-
-# ¡Es así de simple! Directamente desde la instancia
-framework.generate_documentation("docs/api_reference.md")
-framework.print_framework_summary()
-
-print("📚 Documentation generated!")
-```
-
-### 📋 Available Auto-Documentation Functions
-
-```python
-# Solo necesitas tu instancia del framework
-from my_app import my_framework  # Tu framework configurado
-
-# Métodos directos del framework
-my_framework.generate_documentation("docs/my_service_api.md")
-my_framework.print_framework_summary()
-
-# ¡Así de fácil! No imports adicionales necesarios
-```
-
-### 🔄 Integration Examples
-
-**Makefile Integration:**
-
-```makefile
-docs:
-    python -c "from my_app import framework; framework.generate_documentation()"
-
-docs-summary:
-    python -c "from my_app import framework; framework.print_framework_summary()"
-
-.PHONY: docs
-```
-
-**CI/CD Integration:**
-
-```yaml
-# .github/workflows/docs.yml
-name: Update Documentation
-on: [push]
-jobs:
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - run: python -c "from my_app import framework; framework.generate_documentation()"
-      - run: git add docs/ && git commit -m "Update API docs" && git push
-```
-
-**Multiple Services:**
-
-```python
-# generate_all_docs.py
-from payment_service import payment_framework
-from user_service import user_framework
-from notification_service import notification_framework
-
-# Cada framework se documenta a sí mismo
-payment_framework.generate_documentation("docs/api/payment_api.md")
-user_framework.generate_documentation("docs/api/user_api.md")
-notification_framework.generate_documentation("docs/api/notification_api.md")
-```
-
-### 📖 Generated Documentation Features
-
-The auto-generated documentation includes:
-
-- **Framework Overview**: Summary statistics and architecture info
-- **Features Documentation**: All registered Features with input/output DTOs
-- **Application Services**: Complex workflows and their dependencies  
-- **DTO Reference**: Complete Data Transfer Object specifications
-- **Dependencies**: Global dependencies and injection details
-- **Usage Examples**: Code examples for each component
-- **Type Information**: Detailed type annotations and validation rules
-
-### 💡 Best Practices
-
-1. **Separate Documentation Script**: Keep documentation generation separate from business logic
-2. **Regular Updates**: Run documentation generation as part of your build process
-3. **Version Control**: Include generated docs in version control for easy access
-4. **CI Integration**: Automate documentation updates on code changes
-5. **Multiple Outputs**: Generate different documentation for different audiences
