@@ -1,6 +1,6 @@
 import abc
 from abc import ABC, abstractmethod
-from typing import Any, Type, TypeVar, overload, Generic
+from typing import Any, Generic, Type, TypeVar, overload
 
 from pydantic import BaseModel
 
@@ -28,22 +28,23 @@ class Bus(ABC, metaclass=abc.ABCMeta):
 class Feature(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
     """
     Feature is the first layer of the framework, it is the main abstraction to execute a business logic.
-    
+
     Features automatically receive injected dependencies as attributes through the framework's
     dependency injection system. These dependencies can be accessed via self.dependency_name.
-    
+
     For better IDE support with typed dependencies, inherit with specific DTO types:
-    
+
         class MyFeature(Feature[MyInputDTO, MyResponseDTO]):
             # Type your injected dependencies for IDE autocomplete
             database_adapter: DatabaseAdapter
-            
+
             def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
     """
+
     def __init__(self, *args, **kwargs) -> None: ...
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None: ...
-    
+
     # Note: Injected dependencies become available as attributes at runtime
     # The actual dependency attributes are added dynamically by the framework
     # Custom Feature classes should define typed attributes for IDE support
@@ -52,23 +53,24 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
 class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
     """
     Second layer of the framework, orchestration of features.
-    
-    ApplicationServices have access to all injected dependencies (same as Features) 
+
+    ApplicationServices have access to all injected dependencies (same as Features)
     plus an exclusive feature_bus for executing other Features.
-    
+
     For better IDE support with typed dependencies, inherit with specific DTO types:
-    
+
         class MyService(ApplicationService[MyInputDTO, MyResponseDTO]):
             # Type your injected dependencies for IDE autocomplete
             external_service: ExternalService
-            
+
             def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
     """
+
     feature_bus: Bus
     def __init__(self, feature_bus: Bus, *args, **kwargs) -> None: ...
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None: ...
-    
+
     # Note: Injected dependencies become available as attributes at runtime
     # The actual dependency attributes are added dynamically by the framework
     # Custom ApplicationService classes should define typed attributes for IDE support
