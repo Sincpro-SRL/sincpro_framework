@@ -389,11 +389,11 @@ This structured approach ensures high-quality, maintainable software that can ad
 
 ## 📖 Auto-Documentation
 
-The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in a beautiful, searchable format.
+The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in multiple formats optimized for different use cases.
 
 ### 🚀 Quick Documentation Generation
 
-The easiest way to generate documentation for your project is using a simple script:
+The easiest way to generate documentation for your project:
 
 ```python
 from sincpro_framework.generate_documentation import build_documentation
@@ -401,48 +401,103 @@ from sincpro_framework.generate_documentation import build_documentation
 # Import your framework instances from their respective modules
 from apps.payment_gateway import payment_framework
 from apps.user_management import user_framework
-from apps.notification_system import notification_framework
 
-# Pass them to the documentation builder
+# Generate traditional markdown documentation (default)
 build_documentation(
-    [payment_framework, user_framework, notification_framework],
+    [payment_framework, user_framework],
     output_dir="docs/generated"
+)
+
+# Generate AI-optimized JSON schema
+build_documentation(
+    [payment_framework, user_framework],
+    output_dir="docs/generated",
+    format="json"
+)
+
+# Generate both formats
+build_documentation(
+    [payment_framework, user_framework],
+    output_dir="docs/generated", 
+    format="both"
 )
 ```
 
-That's it! Your documentation will be generated in the `docs/generated` directory.
+### 📋 Output Formats
+
+#### 📝 Markdown Documentation (Traditional)
+- **MkDocs-ready**: Complete documentation website with search
+- **Human-readable**: Beautiful, professional documentation for developers
+- **Interactive**: Searchable content with cross-references
+
+#### 🤖 AI-Optimized JSON Schema (New!)
+- **AI Consumption**: Structured data optimized for AI understanding
+- **Rich Metadata**: Business domains, complexity analysis, patterns
+- **Code Generation**: Hints for AI-powered code generation
+- **Embedding Support**: Optimized for semantic search and embeddings
 
 ### 📁 Generated Documentation Structure
 
-The generated documentation includes:
-
 ```
 docs/generated/
-├── mkdocs.yml              # Complete MkDocs configuration
-├── requirements.txt        # Dependencies for serving the site
-├── README.md              # Instructions for usage
-└── docs/                  # Documentation content
-    ├── index.md           # Main page with overview
-    ├── assets/            # Sincpro theme assets (CSS/JS)
-    ├── framework-name/    # Each framework gets its own section
-    │   ├── index.md       # Framework overview
-    │   ├── dependencies.md # Dependency injection components
-    │   ├── middlewares.md  # Middleware documentation
-    │   ├── features.md     # Feature use cases
-    │   ├── application-services.md # Application services
-    │   └── dtos.md        # Data Transfer Objects
-    └── ...
+├── mkdocs.yml                    # MkDocs configuration
+├── requirements.txt              # Dependencies
+├── framework_schema.json         # AI-optimized JSON schema
+├── site/                        # Built HTML documentation
+└── docs/                        # Markdown content
+    ├── index.md                 # Overview
+    ├── features.md              # Features documentation
+    ├── dtos.md                  # DTOs documentation
+    └── application-services.md  # Services documentation
+```
+
+### 🤖 AI-Optimized JSON Schema Features
+
+The JSON schema includes rich metadata for AI systems:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Framework Schema",
+  "metadata": {
+    "architecture_patterns": ["DDD", "Clean Architecture"],
+    "component_summary": { /* counts and statistics */ }
+  },
+  "components": {
+    "dtos": [/* with AI hints for type classification */],
+    "features": [/* with business domain inference */],
+    "application_services": [/* with orchestration patterns */]
+  },
+  "ai_metadata": {
+    "embedding_suggestions": {
+      "primary_entities": ["PaymentCommand", "UserCommand"],
+      "business_capabilities": ["PaymentFeature", "UserFeature"]
+    },
+    "code_generation_hints": {
+      "framework_patterns": ["command_pattern", "dependency_injection"],
+      "common_imports": ["from sincpro_framework import..."]
+    },
+    "complexity_analysis": {
+      "overall_complexity": "medium",
+      "most_complex_components": ["ComplexService"]
+    }
+  }
+}
 ```
 
 ### ✨ Documentation Features
 
+#### Traditional Markdown
 - **🎨 Sincpro Theme**: Beautiful violet corporate colors and professional styling
 - **📱 Responsive Design**: Works perfectly on desktop and mobile devices
 - **🔍 Full-Text Search**: Find any component, method, or parameter instantly
 - **📊 Component Overview**: Summary tables with component counts and descriptions
-- **🔗 Cross-References**: Easy navigation between related components
-- **📋 API Documentation**: Complete method signatures, parameters, and return types
-- **🏷️ Type Information**: Full type hints and Pydantic model schemas
+
+#### AI-Optimized JSON
+- **🧠 Business Domain Inference**: Automatic categorization (payments, users, orders)
+- **📈 Complexity Assessment**: Automatic complexity analysis for optimization
+- **🔍 Pattern Recognition**: Identification of architectural patterns
+- **🤖 AI Hints**: Rich metadata for AI understanding and code generation
 
 ### 🎯 Best Practices
 
@@ -486,6 +541,15 @@ class PaymentFeature(Feature):
         """
         # Implementation here...
 ```
+
+### 🚀 Integration with AI Systems
+
+The JSON schema format enables powerful AI integrations:
+
+- **Code Generation**: AI can understand patterns and generate similar code
+- **Documentation**: AI can explain components and their relationships  
+- **Analysis**: AI can identify optimization opportunities and suggest improvements
+- **Migration**: AI can understand dependencies for migration planning
 
 ## Configuration or settings
 
