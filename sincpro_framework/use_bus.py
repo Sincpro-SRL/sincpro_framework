@@ -1,17 +1,18 @@
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Type
-import time
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
 from . import ioc
 from .bus import FrameworkBus
+from .context.framework_context import FrameworkContext
+from .context.mixin import ContextMixin
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
-class UseFramework:
+class UseFramework(ContextMixin):
     """
     Main class to use the framework, this is the main entry point to configure the framework
     """
@@ -38,6 +39,9 @@ class UseFramework:
         self.log_after_execution: bool = log_after_execution
         self.log_app_services: bool = log_app_services
         self.log_features: bool = log_features
+
+        # Instance-based context storage
+        self._current_context: Dict[str, Any] = {}
 
         # Container
         self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
@@ -119,8 +123,17 @@ class UseFramework:
             except ImportError:
                 pass  # Graceful degradation
 
+        # Inject current context to services before execution
+        current_context = self._get_context()
+        if current_context:
+            self._inject_context_to_services_and_features(current_context)
+
         # Execute with middleware pipeline
         def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
+            assert (
+                self.bus is not None
+            )  # Help mypy understand this is safe after the check above
+
             return self.bus.execute(processed_dto)
 
         return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
@@ -164,6 +177,22 @@ class UseFramework:
         """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)
 
+    def context(self, context_to_set: Dict[str, Any]) -> FrameworkContext:
+        """
+        Create a context manager with the specified attributes
+
+        Args:
+            context_to_set: Dictionary of context attributes to set
+
+        Returns:
+            FrameworkContext instance ready to be used with 'with' statement
+
+        Example:
+            with app.context({"correlation_id": "123", "user_id": "456"}) as app_with_context:
+                result = app_with_context(some_dto)
+        """
+        return FrameworkContext(self, context_to_set)
+
     def add_global_error_handler(self, handler: Callable):
         if not callable(handler):
             raise TypeError("The handler must be a callable")
@@ -185,7 +214,7 @@ class UseFramework:
                 "feature_registry"
             ].kwargs
 
-            for dto, feature in feature_registry.items():
+            for _, feature in feature_registry.items():
                 feature.add_attributes(**self.dynamic_dep_registry)
 
         if "app_service_registry" in self._sp_container.app_service_bus.attributes:
@@ -193,7 +222,7 @@ class UseFramework:
                 "app_service_registry"
             ].kwargs
 
-            for dto, app_service in app_service_registry.items():
+            for _, app_service in app_service_registry.items():
                 app_service.add_attributes(**self.dynamic_dep_registry)
 
     def _add_error_handlers_provided_by_user(self):

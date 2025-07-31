@@ -54,6 +54,7 @@ Now you are ready to explore more complex use cases! 🚀
     - [DTO Validation with Pydantic](#dto-validation-with-pydantic)
     - [Dependency Injection](#dependency-injection)
     - [Inversion of Control (IoC)](#inversion-of-control-ioc)
+    - [Context Manager for Metadata Propagation](#context-manager-for-metadata-propagation)
     - [Error Handling at Different Levels](#error-handling-at-different-levels)
     - [Bus Pattern for Component Communication](#bus-pattern-for-component-communication)
     - [Decoupled Logic Execution](#decoupled-logic-execution)
@@ -119,6 +120,31 @@ efficiency. Here are its core features:
 
 - Automates the instantiation and configuration of components, reducing boilerplate code.
 - Encourages loose coupling, making systems more adaptable and maintainable.
+
+### 📡 Context Manager for Metadata Propagation
+
+- Provides automatic metadata propagation across Features and ApplicationServices without manual parameter passing.
+- Uses Python's `contextvars` for thread-safe context storage and isolation.
+- Supports nested contexts with override capabilities for complex workflows.
+- Enriches exceptions with context information for better debugging and observability.
+
+```python
+# Simple context usage
+with app.context({"correlation_id": "123", "user.id": "admin"}) as app_with_context:
+    result = app_with_context(some_dto)  # Context automatically available in handlers
+
+# Nested contexts with overrides
+with app.context({"env": "prod", "user": "admin"}) as outer_app:
+    with outer_app.context({"env": "staging"}) as inner_app:  # Override env, inherit user
+        inner_app(dto)  # env="staging", user="admin"
+
+# Access context in Features and ApplicationServices
+class PaymentFeature(Feature):
+    def execute(self, dto: PaymentDTO) -> PaymentResponse:
+        correlation_id = self.get_context_value("correlation_id")
+        user_id = self.get_context_value("user.id")
+        # Use context in business logic...
+```
 
 ### ⚠️ Error Handling at Different Levels
 
@@ -349,8 +375,8 @@ Once a **Feature** or **ApplicationService** is defined, it can be executed by p
 
 ```python
 from sincpro_payments_sdk.apps.cybersource import cybersource
-from sincpro_payments_sdk.apps.cybersource.use_cases.tokenization import TokenizationParams
-from sincpro_payments_sdk.apps.cybersource.use_cases.payments import PaymentServiceParams
+from sincpro_payments_sdk.apps.cybersource.use_cases.tokenization import TokenizationParams, TokenizationResponse
+from sincpro_payments_sdk.apps.cybersource.use_cases.payments import PaymentServiceParams, PaymentServiceResponse
 
 # Example of executing a Feature
 feature_dto = TokenizationParams(
@@ -360,7 +386,7 @@ feature_dto = TokenizationParams(
 )
 
 # Execute the feature
-feature_result = cybersource.feature_bus.execute(feature_dto)
+feature_result = cybersource(feature_dto, TokenizationResponse)
 print(f"Tokenization Result: {feature_result.token}, Status: {feature_result.status}")
 
 # Example of executing an Application Service
@@ -372,7 +398,7 @@ service_dto = PaymentServiceParams(
 )
 
 # Execute the application service
-service_result = cybersource(service_dto)
+service_result = cybersource(service_dto, PaymentServiceResponse)
 print(f"Payment Status: {service_result.status}, Transaction ID: {service_result.transaction_id}")
 ```
 
@@ -389,11 +415,11 @@ This structured approach ensures high-quality, maintainable software that can ad
 
 ## 📖 Auto-Documentation
 
-The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in a beautiful, searchable format.
+The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in multiple formats optimized for different use cases.
 
 ### 🚀 Quick Documentation Generation
 
-The easiest way to generate documentation for your project is using a simple script:
+The easiest way to generate documentation for your project:
 
 ```python
 from sincpro_framework.generate_documentation import build_documentation
@@ -401,48 +427,131 @@ from sincpro_framework.generate_documentation import build_documentation
 # Import your framework instances from their respective modules
 from apps.payment_gateway import payment_framework
 from apps.user_management import user_framework
-from apps.notification_system import notification_framework
 
-# Pass them to the documentation builder
+# Generate traditional markdown documentation (default)
 build_documentation(
-    [payment_framework, user_framework, notification_framework],
+    [payment_framework, user_framework],
     output_dir="docs/generated"
+)
+
+# Generate AI-optimized JSON schema
+build_documentation(
+    [payment_framework, user_framework],
+    output_dir="docs/generated",
+    format="json"
+)
+
+# Generate both formats
+build_documentation(
+    [payment_framework, user_framework],
+    output_dir="docs/generated", 
+    format="both"
 )
 ```
 
-That's it! Your documentation will be generated in the `docs/generated` directory.
+### 📋 Output Formats
+
+#### 📝 Markdown Documentation (Traditional)
+- **MkDocs-ready**: Complete documentation website with search
+- **Human-readable**: Beautiful, professional documentation for developers
+- **Interactive**: Searchable content with cross-references
+
+#### 🤖 AI-Optimized JSON Schema (Enhanced!)
+- **Complete AI Understanding**: Combines framework context with repository analysis
+- **Framework Context**: How to use the Sincpro Framework (patterns, examples, best practices)
+- **Repository Analysis**: What components exist in your specific codebase
+- **Rich Metadata**: Business domains, complexity analysis, architectural patterns
+- **Code Generation**: Comprehensive hints for AI-powered code generation
+- **Embedding Support**: Optimized for semantic search and AI embeddings
+- **Usage Synthesis**: Real examples combining framework knowledge with repository components
 
 ### 📁 Generated Documentation Structure
 
-The generated documentation includes:
-
 ```
 docs/generated/
-├── mkdocs.yml              # Complete MkDocs configuration
-├── requirements.txt        # Dependencies for serving the site
-├── README.md              # Instructions for usage
-└── docs/                  # Documentation content
-    ├── index.md           # Main page with overview
-    ├── assets/            # Sincpro theme assets (CSS/JS)
-    ├── framework-name/    # Each framework gets its own section
-    │   ├── index.md       # Framework overview
-    │   ├── dependencies.md # Dependency injection components
-    │   ├── middlewares.md  # Middleware documentation
-    │   ├── features.md     # Feature use cases
-    │   ├── application-services.md # Application services
-    │   └── dtos.md        # Data Transfer Objects
-    └── ...
+├── mkdocs.yml                    # MkDocs configuration
+├── requirements.txt              # Dependencies
+├── framework_schema.json         # AI-optimized JSON with framework context
+├── site/                        # Built HTML documentation
+└── docs/                        # Markdown content
+    ├── index.md                 # Overview
+    ├── features.md              # Features documentation
+    ├── dtos.md                  # DTOs documentation
+    └── application-services.md  # Services documentation
+```
+
+### 🤖 AI-Optimized JSON Schema Features
+
+The enhanced JSON schema combines framework context with repository analysis for complete AI understanding:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Repository Schema with Framework Context",
+  "schema_type": "ai_optimized_complete",
+  
+  "framework_context": {
+    "framework_name": "Sincpro Framework",
+    "core_principles": {/* Framework usage patterns and principles */},
+    "key_features": {/* Framework capabilities and features */},
+    "framework_execution_patterns": {/* How to execute features/services */}
+  },
+  
+  "repository_analysis": {
+    "metadata": {
+      "architecture_patterns": ["DDD", "Clean Architecture"],
+      "component_summary": { /* counts and statistics */ }
+    },
+    "components": {
+      "dtos": [/* with AI hints for type classification */],
+      "features": [/* with business domain inference */],
+      "application_services": [/* with orchestration patterns */]
+    }
+  },
+  
+  "ai_integration": {
+    "framework_integration": {
+      "execution_patterns": {/* How to use framework with repository components */},
+      "available_features": {/* Framework capabilities */}
+    },
+    "complete_understanding": {
+      "framework_knowledge": "Loaded from hardcoded guide",
+      "repository_knowledge": "Generated from code analysis",
+      "ai_capability": "Complete understanding of framework usage + repository components"
+    },
+    "usage_synthesis": {
+      "how_to_execute_features": {/* Real examples combining framework + repo */},
+      "how_to_execute_services": {/* Real examples combining framework + repo */}
+    },
+    "embedding_suggestions": {
+      "primary_entities": ["PaymentCommand", "UserCommand"],
+      "business_capabilities": ["PaymentFeature", "UserFeature"]
+    },
+    "code_generation_hints": {
+      "framework_patterns": ["command_pattern", "dependency_injection"],
+      "common_imports": ["from sincpro_framework import..."]
+    },
+    "complexity_analysis": {
+      "overall_complexity": "medium",
+      "most_complex_components": ["ComplexService"]
+    }
+  }
+}
 ```
 
 ### ✨ Documentation Features
 
+#### Traditional Markdown
 - **🎨 Sincpro Theme**: Beautiful violet corporate colors and professional styling
 - **📱 Responsive Design**: Works perfectly on desktop and mobile devices
 - **🔍 Full-Text Search**: Find any component, method, or parameter instantly
 - **📊 Component Overview**: Summary tables with component counts and descriptions
-- **🔗 Cross-References**: Easy navigation between related components
-- **📋 API Documentation**: Complete method signatures, parameters, and return types
-- **🏷️ Type Information**: Full type hints and Pydantic model schemas
+
+#### AI-Optimized JSON
+- **🧠 Business Domain Inference**: Automatic categorization (payments, users, orders)
+- **📈 Complexity Assessment**: Automatic complexity analysis for optimization
+- **🔍 Pattern Recognition**: Identification of architectural patterns
+- **🤖 AI Hints**: Rich metadata for AI understanding and code generation
 
 ### 🎯 Best Practices
 
@@ -486,6 +595,15 @@ class PaymentFeature(Feature):
         """
         # Implementation here...
 ```
+
+### 🚀 Integration with AI Systems
+
+The JSON schema format enables powerful AI integrations:
+
+- **Code Generation**: AI can understand patterns and generate similar code
+- **Documentation**: AI can explain components and their relationships  
+- **Analysis**: AI can identify optimization opportunities and suggest improvements
+- **Migration**: AI can understand dependencies for migration planning
 
 ## Configuration or settings
 

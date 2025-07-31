@@ -1,0 +1,2035 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "payment-system Repository Schema",
+  "description": "AI-optimized schema combining framework context and repository components for payment-system",
+  "version": "1.0.0",
+  "generated_at": "2025-07-30 15:02:41",
+  "generated_by": "sincpro_framework",
+  "schema_type": "ai_optimized_complete",
+  "framework_context": {
+    "framework_name": "Sincpro Framework",
+    "version": "2.5.0",
+    "description": "Application Layer Framework within Hexagonal Architecture",
+    "architecture_pattern": "Hexagonal Architecture (Ports and Adapters)",
+    "primary_purpose": "Manages the application layer within hexagonal architecture, promoting modularity, scalability, and development efficiency",
+    "core_principles": {
+      "unified_bus_pattern": {
+        "description": "Single point of entry for managing use cases, dependencies, and services within a bounded context",
+        "benefits": [
+          "Eliminates need for repeated imports or initialization",
+          "Ensures each bounded context is self-sufficient",
+          "Minimizes coupling while enhancing modularity",
+          "Provides independently scalable components"
+        ]
+      },
+      "hexagonal_architecture": {
+        "layers": {
+          "core_domain": "Essential entities, value objects, and domain services representing core business rules",
+          "application_layer": "Orchestrates user requests, processes domain responses, and mediates interactions",
+          "infrastructure_layer": "Contains adapters for databases, APIs, messaging systems, and other services"
+        }
+      }
+    },
+    "key_features": {
+      "dto_validation": {
+        "technology": "Pydantic",
+        "description": "Validates Data Transfer Objects (DTOs) to ensure only well-structured data enters core business logic",
+        "benefits": [
+          "Reduces errors and maintains data integrity",
+          "Automatic validation of input parameters",
+          "Type safety and runtime validation"
+        ],
+        "usage_context": "All data entering and leaving use cases must be validated through DTOs"
+      },
+      "dependency_injection": {
+        "description": "Facilitates integration of user-defined dependencies promoting modular design",
+        "benefits": [
+          "Promotes modular design",
+          "Enhances unit testing through easy mocking",
+          "Allows replacement of dependencies",
+          "Reduces coupling between components"
+        ],
+        "usage_context": "Dependencies are injected automatically into Features and ApplicationServices"
+      },
+      "inversion_of_control": {
+        "description": "Automates instantiation and configuration of components",
+        "benefits": [
+          "Reduces boilerplate code",
+          "Encourages loose coupling",
+          "Makes systems more adaptable and maintainable",
+          "Automatic component lifecycle management"
+        ],
+        "usage_context": "Framework handles object creation and dependency resolution automatically"
+      },
+      "multi_level_error_handling": {
+        "levels": [
+          "global",
+          "application_service",
+          "feature"
+        ],
+        "description": "Provides centralized error handling at multiple levels",
+        "benefits": [
+          "Consistent error management",
+          "Improved overall reliability",
+          "Granular error handling control",
+          "Centralized error logging and monitoring"
+        ],
+        "usage_context": "Errors can be handled at the most appropriate level for the specific use case"
+      },
+      "bus_pattern_communication": {
+        "description": "Implements a bus mechanism to facilitate communication between Feature and ApplicationService components",
+        "benefits": [
+          "Decouples component interactions",
+          "Results in more flexible and scalable business logic",
+          "Enables loose coupling between use cases",
+          "Facilitates testing and maintenance"
+        ],
+        "usage_context": "Components communicate through the bus rather than direct references"
+      },
+      "decoupled_logic_execution": {
+        "description": "Supports independent execution of use cases through the Feature component",
+        "benefits": [
+          "Promotes separation of concerns",
+          "Enables independent testing of use cases",
+          "Facilitates code reusability",
+          "Simplifies maintenance and debugging"
+        ],
+        "example_use_case": "User registration workflow broken down into steps like input validation, profile creation, and email notification",
+        "usage_context": "Each Feature represents a discrete, self-contained use case"
+      },
+      "application_service_orchestration": {
+        "description": "Uses a feature bus to orchestrate multiple features into complex business workflows",
+        "benefits": [
+          "Integrates smaller use cases into cohesive flows",
+          "Manages entire business processes effectively",
+          "Enables complex workflow composition",
+          "Promotes reusability of individual features"
+        ],
+        "example_use_case": "Customer onboarding process that combines multiple individual features",
+        "usage_context": "ApplicationServices coordinate multiple Features to accomplish broader business objectives"
+      }
+    },
+    "component_types": {
+      "feature": {
+        "definition": "Represents a discrete, self-contained use case focused on specific functionality",
+        "characteristics": [
+          "Easy to develop and maintain",
+          "Independent execution capability",
+          "Single responsibility principle",
+          "Testable in isolation"
+        ]
+      },
+      "application_service": {
+        "definition": "Orchestrates multiple features for broader business objectives",
+        "characteristics": [
+          "Provides reusable components and workflows",
+          "Coordinates complex business processes",
+          "Manages feature composition",
+          "Handles cross-cutting concerns"
+        ]
+      }
+    },
+    "ai_guidance": {
+      "when_to_use": [
+        "Building applications following hexagonal architecture",
+        "Need for clean separation between business logic and infrastructure",
+        "Requirement for modular and testable code",
+        "Complex business workflows requiring orchestration",
+        "Applications requiring dependency injection and IoC"
+      ],
+      "best_practices": [
+        "Use Features for single, focused use cases",
+        "Use ApplicationServices for orchestrating multiple Features",
+        "Always validate input/output through DTOs",
+        "Leverage dependency injection for external dependencies",
+        "Implement proper error handling at appropriate levels"
+      ],
+      "avoid_patterns": [
+        "Direct coupling between Features",
+        "Bypassing DTO validation",
+        "Manual dependency management",
+        "Mixing business logic with infrastructure concerns"
+      ]
+    },
+    "framework_initialization": {
+      "mandatory_pattern": {
+        "description": "ALWAYS follow this exact import and initialization pattern. Do not import classes directly for use.",
+        "rationale": "Classes imported with underscore prefix are considered private. The framework instance acts as a proxy/facade providing all necessary functionality.",
+        "required_imports": [
+          "from sincpro_framework import Feature as _Feature",
+          "from sincpro_framework import UseFramework as _UseFramework",
+          "from sincpro_framework import ApplicationService as _ApplicationService"
+        ],
+        "instantiation_pattern": {
+          "code": "framework_instance = _UseFramework()",
+          "naming_convention": "Use a descriptive name that represents the bounded context (e.g., 'cybersource', 'payment_gateway', 'user_management')",
+          "example": "cybersource = _UseFramework()"
+        }
+      },
+      "project_structure_requirements": {
+        "description": "Recommended project structure for bounded contexts",
+        "pattern": {
+          "root_structure": [
+            "project_root/",
+            "├── apps/",
+            "│   ├── bounded_context_1/",
+            "│   │   ├── adapters/",
+            "│   │   ├── domain/",
+            "│   │   ├── infrastructure/",
+            "│   │   └── use_cases/",
+            "│   │       ├── __init__.py  # Framework configuration goes here",
+            "│   │       ├── feature_group_1/",
+            "│   │       └── feature_group_2/",
+            "│   └── bounded_context_2/",
+            "└── tests/"
+          ],
+          "configuration_location": "Framework configuration MUST be in use_cases/__init__.py"
+        }
+      },
+      "complete_initialization_example": {
+        "description": "Complete example of framework initialization in use_cases/__init__.py",
+        "code": [
+          "from typing import Type",
+          "",
+          "# MANDATORY: Import with underscore prefix (private imports)",
+          "from sincpro_framework import Feature as _Feature",
+          "from sincpro_framework import UseFramework as _UseFramework",
+          "from sincpro_framework import ApplicationService as _ApplicationService",
+          "",
+          "# 1. Create framework instance (use descriptive name for bounded context)",
+          "cybersource = _UseFramework()",
+          "",
+          "# 2. Export only what's needed",
+          "__all__ = ['cybersource']"
+        ]
+      }
+    },
+    "import_best_practices": {
+      "mandatory_rules": [
+        "NEVER import Feature, UseFramework, or ApplicationService directly without underscore prefix",
+        "ALWAYS use the framework instance as the primary interface",
+        "Import DTOs with descriptive names for both input and output",
+        "Use custom Feature/ApplicationService classes defined in use_cases/__init__.py"
+      ],
+      "recommended_import_pattern_for_features": [
+        "from project.apps.bounded_context import framework_instance, Feature, DataTransferObject",
+        "# Then define your DTOs and Feature implementation"
+      ]
+    },
+    "dependency_injection_system": {
+      "description": "Framework provides a centralized dependency injection system that acts as a bus/facade encapsulating all dependencies in a single component",
+      "purpose": "Injects dependencies into all actors (handlers) that execute code, making them accessible throughout the bounded context",
+      "clarification": "This is NOT specifically for hexagonal architecture compliance, but rather a bus/facade pattern that encapsulates everything in one component for easy import and usage",
+      "registration_method": {
+        "function": "framework_instance.add_dependency(name: str, dependency: Any)",
+        "description": "Register dependencies immediately after framework instantiation",
+        "supported_types": [
+          "Instances (most common)",
+          "Functions (common)",
+          "Classes (less common)",
+          "Configuration objects",
+          "External service adapters"
+        ]
+      },
+      "registration_pattern": {
+        "description": "Standard pattern for registering dependencies",
+        "mandatory_order": [
+          "1. Create framework instance",
+          "2. Register all dependencies immediately",
+          "3. Define custom classes (if needed)",
+          "4. Import and export modules"
+        ],
+        "example_code": [
+          "# After framework instantiation",
+          "cybersource = _UseFramework()",
+          "",
+          "# Register dependencies immediately",
+          "cybersource.add_dependency('token_adapter', TokenizationAdapter())",
+          "cybersource.add_dependency('ECardType', ESupportedCardType)",
+          "cybersource.add_dependency('db_session', db_session)",
+          "cybersource.add_dependency('aws_service', aws_service)"
+        ]
+      },
+      "dependency_types_examples": {
+        "instances": {
+          "description": "Most common type - instantiated objects ready for use",
+          "examples": [
+            "cybersource.add_dependency('token_adapter', TokenizationAdapter())",
+            "cybersource.add_dependency('aws_service', AwsService())",
+            "cybersource.add_dependency('db_connection', DatabaseConnection())"
+          ]
+        },
+        "functions": {
+          "description": "Callable functions that can be invoked by handlers",
+          "examples": [
+            "cybersource.add_dependency('db_session', with_transaction)",
+            "cybersource.add_dependency('send_email', email_sender_function)",
+            "cybersource.add_dependency('validate_input', validation_function)"
+          ]
+        },
+        "classes": {
+          "description": "Class references (less common, usually instances are preferred)",
+          "examples": [
+            "cybersource.add_dependency('ECardType', ESupportedCardType)",
+            "cybersource.add_dependency('PaymentStatus', PaymentStatusEnum)"
+          ]
+        }
+      },
+      "injection_mechanism": {
+        "description": "How dependencies become available to handlers (Features and ApplicationServices)",
+        "automatic_injection": "All registered dependencies are automatically injected as attributes into Feature and ApplicationService instances",
+        "access_pattern": "self.dependency_name",
+        "built_in_dependencies": [
+          "feature_bus: Built-in bus for Feature orchestration (ApplicationServices only)"
+        ]
+      },
+      "bus_facade_benefits": {
+        "description": "Benefits of the bus/facade pattern for dependency management",
+        "single_import_point": "All dependencies available through single framework instance import",
+        "centralized_configuration": "All dependencies configured in one place (use_cases/__init__.py)",
+        "consistent_access": "Same access pattern across all handlers in the bounded context",
+        "easy_testing": "Simple mocking and replacement of dependencies for testing",
+        "context_isolation": "Each bounded context has its own isolated dependency container"
+      },
+      "best_practices": {
+        "naming_conventions": [
+          "Use descriptive names that clearly indicate the dependency purpose",
+          "Use snake_case for dependency names",
+          "Avoid generic names like 'service' or 'adapter'"
+        ],
+        "registration_order": [
+          "Register most fundamental dependencies first (database, external APIs)",
+          "Register business-specific adapters and services",
+          "Register configuration and utility functions last"
+        ],
+        "avoid_patterns": [
+          "Don't register dependencies inside Features or ApplicationServices",
+          "Don't register dependencies conditionally based on runtime logic",
+          "Avoid circular dependencies between registered components"
+        ]
+      },
+      "ai_guidance_for_dependency_injection": {
+        "when_to_register": [
+          "External API clients and adapters",
+          "Database connections and session managers",
+          "Configuration objects and settings",
+          "Utility functions used across multiple handlers",
+          "Business service instances",
+          "Enum classes and constant definitions"
+        ],
+        "registration_checklist": [
+          "1. Identify all external dependencies needed by Features/ApplicationServices",
+          "2. Create or import the dependency instances/functions",
+          "3. Register them immediately after framework instantiation",
+          "4. Use descriptive names that indicate their purpose",
+          "5. Ensure dependencies are registered before defining custom classes"
+        ]
+      }
+    },
+    "custom_typing_classes": {
+      "description": "Create custom Feature and ApplicationService classes with dependency type annotations for IDE support and type safety",
+      "purpose": "Provides type context since dependency injection occurs at runtime, but IDEs and Python need compile-time type information",
+      "rationale": "The abstract base classes (Feature and ApplicationService) don't know about specific dependencies, so custom classes bridge this gap",
+      "runtime_vs_compile_time": {
+        "runtime_injection": "Dependencies are injected automatically at runtime by the framework",
+        "compile_time_typing": "Type annotations provide IDE support, autocompletion, and static type checking",
+        "bridge_solution": "Custom classes inherit from abstract bases and add dependency type annotations"
+      },
+      "custom_feature_class": {
+        "description": "Custom Feature class that inherits from _Feature and adds dependency type annotations",
+        "purpose": "All Feature implementations will inherit from this custom class instead of directly from _Feature",
+        "pattern": {
+          "code": [
+            "# Define a custom Feature class to access the dependencies",
+            "class Feature(_Feature):",
+            "    token_adapter: TokenizationAdapter",
+            "    ECardType: Type[ESupportedCardType]",
+            "    db_session: ...",
+            "    aws_service: ..."
+          ],
+          "annotation_rules": [
+            "Use exact type for instances (e.g., TokenizationAdapter)",
+            "Use Type[ClassName] for class references",
+            "Use ... (Ellipsis) for complex or unknown types"
+          ]
+        }
+      },
+      "custom_application_service_class": {
+        "description": "Custom ApplicationService class that inherits from _ApplicationService and adds dependency type annotations",
+        "purpose": "All ApplicationService implementations will inherit from this custom class",
+        "dependency_access": "ApplicationServices have access to ALL the same dependencies as Features PLUS the feature_bus",
+        "pattern": {
+          "code": [
+            "# Define a custom Application Service class to access dependencies",
+            "class ApplicationService(_ApplicationService):",
+            "    # SAME dependencies as Features:",
+            "    token_adapter: TokenizationAdapter",
+            "    ECardType: Type[ESupportedCardType]",
+            "    db_session: ...",
+            "    aws_service: ...",
+            "    # ADDITIONAL dependency exclusive to ApplicationServices:",
+            "    feature_bus: ...  # Built-in feature bus for orchestration (EXCLUSIVE)"
+          ],
+          "dependency_inheritance": "ApplicationServices inherit ALL Feature dependencies and ADD feature_bus",
+          "additional_built_ins": [
+            "feature_bus: Built-in bus for executing Features from ApplicationServices (EXCLUSIVE to ApplicationServices)"
+          ]
+        }
+      },
+      "inheritance_chain": {
+        "description": "How the inheritance and typing chain works",
+        "framework_classes": "_Feature and _ApplicationService (imported with underscore)",
+        "custom_classes": "Feature and ApplicationService (defined in use_cases/__init__.py)",
+        "implementation_classes": "Specific Features and ApplicationServices (inherit from custom classes)",
+        "flow": [
+          "1. Framework provides abstract base classes (_Feature, _ApplicationService)",
+          "2. Developer creates custom classes with dependency typing (Feature, ApplicationService)",
+          "3. Specific implementations inherit from custom classes",
+          "4. Runtime injection provides actual dependencies",
+          "5. IDE gets type information from custom class annotations"
+        ]
+      },
+      "ide_benefits": {
+        "autocompletion": "IDEs can provide autocomplete for dependency methods and properties",
+        "type_checking": "Static type checkers (mypy, pylance) can validate dependency usage",
+        "refactoring_support": "IDEs can safely refactor dependency method names and signatures",
+        "error_detection": "IDEs can detect incorrect dependency usage before runtime",
+        "documentation": "IDEs show dependency types and available methods in tooltips"
+      },
+      "annotation_best_practices": {
+        "match_registered_dependencies": "Type annotations must match the types of registered dependencies",
+        "use_concrete_types": "Prefer concrete types over generic ones when possible",
+        "ellipsis_for_complex": "Use ... for complex types that are hard to import or define",
+        "consistent_naming": "Annotation names must exactly match dependency registration names",
+        "include_built_ins": "Always include built-in dependencies (feature_bus for ApplicationServices)",
+        "order_logically": "Order annotations logically (external dependencies, then built-ins)"
+      },
+      "implementation_usage": {
+        "description": "How Features and ApplicationServices use the custom typed classes",
+        "feature_example": [
+          "from project.apps.cybersource import cybersource, Feature, DataTransferObject",
+          "",
+          "class MyFeature(Feature):  # Inherits from custom Feature class",
+          "    def execute(self, dto: MyDTO) -> MyResponse:",
+          "        # self.token_adapter is now typed and has IDE support",
+          "        result = self.token_adapter.create_token(...)",
+          "        return MyResponse(...)"
+        ],
+        "application_service_example": [
+          "from project.apps.cybersource import cybersource, ApplicationService, DataTransferObject",
+          "",
+          "class MyApplicationService(ApplicationService):  # Inherits from custom ApplicationService class",
+          "    def execute(self, dto: MyDTO) -> MyResponse:",
+          "        # Both dependencies and feature_bus are typed",
+          "        feature_result = self.feature_bus.execute(SomeFeatureDTO(...))",
+          "        adapter_result = self.token_adapter.process(...)",
+          "        return MyResponse(...)"
+        ]
+      },
+      "ai_guidance_for_typing": {
+        "mandatory_steps": [
+          "1. Register all dependencies with add_dependency()",
+          "2. Create custom Feature class with exact type annotations for all registered dependencies",
+          "3. Create custom ApplicationService class with same annotations plus feature_bus",
+          "4. Ensure annotation names exactly match dependency registration names",
+          "5. All Feature implementations must inherit from custom Feature class",
+          "6. All ApplicationService implementations must inherit from custom ApplicationService class"
+        ],
+        "common_mistakes": [
+          "Forgetting to include built-in dependencies (feature_bus for ApplicationServices)",
+          "Mismatching annotation names with registered dependency names",
+          "Using wrong types in annotations vs actual registered instances",
+          "Inheriting directly from _Feature/_ApplicationService instead of custom classes"
+        ]
+      }
+    },
+    "middleware_system": {
+      "description": "Framework supports middleware system that allows pre-execution operations and payload modifications",
+      "purpose": "Execute cross-cutting concerns before the main execution logic, such as validation, logging, authentication, payload transformation",
+      "execution_timing": "Middlewares are executed BEFORE the main Feature or ApplicationService execution",
+      "registration_method": {
+        "function": "framework_instance.add_middleware(middleware_function)",
+        "description": "Register middleware functions that will be executed in order before any use case execution",
+        "registration_timing": "Register middlewares after framework instantiation and dependency registration"
+      },
+      "middleware_characteristics": {
+        "execution_order": "Middlewares are executed in the order they were registered",
+        "payload_access": "Middlewares can read and modify the incoming DTO payload",
+        "pre_execution_only": "Middlewares run BEFORE the main use case logic, not after",
+        "shared_execution": "Same middlewares apply to all Features and ApplicationServices in the framework instance"
+      },
+      "registration_pattern": {
+        "description": "Standard pattern for registering middlewares",
+        "order_in_setup": [
+          "1. Create framework instance",
+          "2. Register dependencies",
+          "3. Register middlewares",
+          "4. Define custom classes",
+          "5. Import and export modules"
+        ],
+        "example_code": [
+          "# After dependencies registration",
+          "cybersource.add_dependency('token_adapter', TokenizationAdapter())",
+          "cybersource.add_dependency('db_session', db_session)",
+          "",
+          "# Setup framework with middleware",
+          "cybersource.add_middleware(validate_payment)",
+          "cybersource.add_middleware(add_timestamp_and_validation)"
+        ]
+      },
+      "middleware_use_cases": {
+        "validation": {
+          "description": "Validate incoming data before it reaches business logic",
+          "examples": [
+            "Credit card format validation",
+            "Required fields validation",
+            "Business rule validation",
+            "Schema validation beyond DTO validation"
+          ]
+        },
+        "payload_transformation": {
+          "description": "Modify or enrich the incoming payload",
+          "examples": [
+            "Add timestamp to requests",
+            "Add correlation IDs",
+            "Normalize data formats",
+            "Add computed fields"
+          ]
+        },
+        "logging_and_monitoring": {
+          "description": "Log requests and monitor execution",
+          "examples": [
+            "Request logging",
+            "Performance monitoring",
+            "Audit trail creation",
+            "Security monitoring"
+          ]
+        },
+        "authentication_authorization": {
+          "description": "Security checks before execution",
+          "examples": [
+            "User authentication",
+            "Permission validation",
+            "Rate limiting",
+            "IP whitelisting"
+          ]
+        }
+      },
+      "middleware_function_signature": {
+        "description": "Expected signature for middleware functions",
+        "basic_pattern": "def middleware_function(dto: DataTransferObject) -> DataTransferObject",
+        "parameters": {
+          "dto": "The incoming DTO object that will be passed to the use case"
+        },
+        "return_value": {
+          "modified_dto": "Must return a DTO object (can be the same or modified version)",
+          "mutation_allowed": "Can modify the original DTO or return a new one"
+        }
+      },
+      "middleware_examples": {
+        "validation_middleware": {
+          "description": "Example of validation middleware",
+          "code": [
+            "def validate_payment(dto: DataTransferObject) -> DataTransferObject:",
+            "    # Perform validation logic",
+            "    if hasattr(dto, 'amount') and dto.amount <= 0:",
+            "        raise ValueError('Amount must be positive')",
+            "    if hasattr(dto, 'card_number') and not dto.card_number:",
+            "        raise ValueError('Card number is required')",
+            "    return dto"
+          ]
+        },
+        "timestamp_middleware": {
+          "description": "Example of payload transformation middleware",
+          "code": [
+            "def add_timestamp_and_validation(dto: DataTransferObject) -> DataTransferObject:",
+            "    # Add timestamp to the DTO if it has the attribute",
+            "    if hasattr(dto, 'timestamp'):",
+            "        dto.timestamp = datetime.now()",
+            "    # Add correlation ID",
+            "    if hasattr(dto, 'correlation_id'):",
+            "        dto.correlation_id = str(uuid.uuid4())",
+            "    return dto"
+          ]
+        },
+        "logging_middleware": {
+          "description": "Example of logging middleware",
+          "code": [
+            "def log_request(dto: DataTransferObject) -> DataTransferObject:",
+            "    # Log the incoming request",
+            "    logger.info(f'Processing request: {dto.__class__.__name__}')",
+            "    # Add request ID for tracking",
+            "    if hasattr(dto, 'request_id'):",
+            "        dto.request_id = generate_request_id()",
+            "    return dto"
+          ]
+        }
+      },
+      "middleware_execution_flow": {
+        "description": "How middlewares are executed in the framework",
+        "flow_steps": [
+          "1. User calls framework with DTO",
+          "2. Framework executes middlewares in registration order",
+          "3. Each middleware receives and can modify the DTO",
+          "4. Final modified DTO is passed to the Feature/ApplicationService",
+          "5. Use case executes with the processed DTO"
+        ],
+        "error_handling": "If any middleware throws an exception, the execution chain stops and the error is propagated"
+      },
+      "best_practices": {
+        "middleware_design": [
+          "Keep middlewares focused on single responsibility",
+          "Make middlewares stateless when possible",
+          "Avoid heavy processing in middlewares",
+          "Return the DTO object (modified or original)"
+        ],
+        "registration_order": [
+          "Register validation middlewares first",
+          "Register transformation middlewares second",
+          "Register logging/monitoring middlewares last"
+        ],
+        "error_handling": [
+          "Use descriptive error messages in validation middlewares",
+          "Consider whether to fail fast or collect all validation errors",
+          "Log errors appropriately in monitoring middlewares"
+        ]
+      },
+      "ai_guidance_for_middlewares": {
+        "when_to_use_middlewares": [
+          "Cross-cutting concerns that apply to multiple use cases",
+          "Pre-processing that needs to happen before all executions",
+          "Validation that goes beyond basic DTO validation",
+          "Logging, monitoring, or audit requirements",
+          "Authentication or authorization checks",
+          "Payload transformation or enrichment"
+        ],
+        "when_not_to_use": [
+          "Business logic specific to one use case",
+          "Post-processing after use case execution",
+          "Complex computations that belong in the use case",
+          "Database operations that are part of business logic"
+        ],
+        "common_patterns": [
+          "Validation middleware for input sanitization",
+          "Timestamp middleware for audit trails",
+          "Correlation ID middleware for request tracking",
+          "Authentication middleware for security",
+          "Logging middleware for monitoring"
+        ]
+      }
+    },
+    "internal_architecture_buses_and_registries": {
+      "description": "Framework internal architecture based on buses and registries inspired by CQRS pattern",
+      "core_principle": "Tell Don't Ask - developers only need to know the DTO (Command), not specific services or methods",
+      "inversion_benefit": "Instead of knowing which service and method to call, just pass the DTO instance and framework handles the routing",
+      "buses_and_registries_concept": {
+        "inspiration": "CQRS (Command Query Responsibility Segregation) buses",
+        "registry_system": "Framework maintains internal registries that map DTOs to their corresponding handlers",
+        "automatic_routing": "When a DTO is passed to framework, it searches registries to find the appropriate handler",
+        "handler_interface": "All handlers implement the same execute interface with dependency injection"
+      },
+      "execution_flow": {
+        "description": "Complete execution flow from DTO to response",
+        "steps": [
+          "1. Developer passes DTO instance to framework",
+          "2. Framework searches internal registry for handler mapped to DTO type",
+          "3. Framework executes registered middlewares in order",
+          "4. Framework instantiates handler with injected dependencies",
+          "5. Framework calls handler's execute method with processed DTO",
+          "6. Handler executes business logic and returns response",
+          "7. Framework returns response to caller"
+        ]
+      },
+      "tell_dont_ask_principle": {
+        "traditional_approach": "developer needs to know: which service, which method, how to instantiate, how to inject dependencies",
+        "framework_approach": "developer only needs to know: which DTO to create and pass to framework",
+        "benefits": [
+          "Reduced coupling between caller and implementation",
+          "Simplified interface for executing use cases",
+          "Automatic dependency resolution",
+          "Consistent execution pattern across all use cases"
+        ]
+      },
+      "registry_mapping": {
+        "description": "How DTOs are mapped to handlers in internal registries",
+        "feature_registry": "Maps DTO classes to Feature handler classes",
+        "application_service_registry": "Maps DTO classes to ApplicationService handler classes",
+        "automatic_registration": "Handlers are automatically registered when decorated with @framework.feature() or @framework.app_service()",
+        "type_safety": "Registry ensures type safety between DTO and handler execute method signature"
+      }
+    },
+    "feature_implementation": {
+      "description": "Features represent the minimal unit of business logic execution in the framework",
+      "definition": "A Feature is a discrete, self-contained use case that handles a specific business operation",
+      "handler_interface": "All Features must implement the execute method with dependency injection",
+      "dto_first_approach": {
+        "description": "ALWAYS start by defining DTOs before implementing the Feature",
+        "mandatory_dtos": [
+          "Input DTO (Command): Inherits from DataTransferObject, contains all input parameters",
+          "Output DTO (Response): Inherits from DataTransferObject, contains all response data"
+        ],
+        "dto_validation": "Input DTOs are automatically validated by Pydantic before reaching execute method"
+      },
+      "feature_creation_steps": {
+        "description": "Step-by-step process for creating a Feature",
+        "steps": [
+          "1. Define input DTO (Command) inheriting from DataTransferObject",
+          "2. Define output DTO (Response) inheriting from DataTransferObject",
+          "3. Create Feature class inheriting from custom Feature class (with typing)",
+          "4. Decorate Feature class with @framework.feature(InputDTO)",
+          "5. Implement execute method with proper signature",
+          "6. Use injected dependencies within execute method"
+        ]
+      },
+      "dto_pattern": {
+        "description": "Standard pattern for defining DTOs",
+        "input_dto_pattern": {
+          "code": [
+            "# Define parameter DTO (Command)",
+            "class TokenizationParams(DataTransferObject):",
+            "    card_number: str",
+            "    expiration_date: str",
+            "    cardholder_name: str"
+          ],
+          "naming_convention": "Use descriptive names ending with 'Params', 'Command', or 'Request'"
+        },
+        "output_dto_pattern": {
+          "code": [
+            "# Define response DTO",
+            "class TokenizationResponse(DataTransferObject):",
+            "    token: str",
+            "    status: str"
+          ],
+          "naming_convention": "Use descriptive names ending with 'Response', 'Result', or 'Output'"
+        }
+      },
+      "feature_decorator_and_implementation": {
+        "description": "How to register and implement Features using the decorator pattern",
+        "decorator_usage": {
+          "syntax": "@framework_instance.feature(InputDTOClass)",
+          "purpose": "Registers the Feature in the internal registry, mapping InputDTO to Feature handler",
+          "automatic_registration": "Framework automatically creates the mapping when decorator is applied"
+        },
+        "implementation_pattern": {
+          "code": [
+            "# Create the Feature class",
+            "@cybersource.feature(TokenizationParams)",
+            "class NewTokenizationFeature(Feature):",
+            "    def execute(self, dto: TokenizationParams) -> TokenizationResponse:",
+            "        # Use injected dependencies",
+            "        token = self.token_adapter.create_token(",
+            "            card_number=dto.card_number,",
+            "            expiration_date=dto.expiration_date,",
+            "            cardholder_name=dto.cardholder_name",
+            "        )",
+            "        return TokenizationResponse(token=token, status='success')"
+          ]
+        }
+      },
+      "execute_method_signature": {
+        "description": "Mandatory signature for the execute method in Features",
+        "signature": "def execute(self, dto: InputDTOType) -> OutputDTOType:",
+        "parameters": {
+          "self": "Feature instance with all injected dependencies as attributes",
+          "dto": "Input DTO instance, already validated by Pydantic"
+        },
+        "return_value": {
+          "type": "Must return an instance of the output DTO",
+          "validation": "Return value should match the declared return type"
+        }
+      },
+      "dependency_access_in_features": {
+        "description": "How to access injected dependencies within Feature execute method",
+        "access_pattern": "self.dependency_name",
+        "available_dependencies": [
+          "All registered dependencies via add_dependency()",
+          "Custom dependencies defined in typing class"
+        ],
+        "examples": [
+          "self.token_adapter.create_token(...)",
+          "self.db_session.commit()",
+          "self.aws_service.upload_file(...)"
+        ]
+      },
+      "feature_best_practices": {
+        "single_responsibility": "Each Feature should handle only one specific business operation",
+        "stateless_execution": "Features should be stateless, all state should come from DTO or dependencies",
+        "error_handling": "Handle specific business errors, let framework handle infrastructure errors",
+        "return_dto": "Always return a properly structured DTO, never return primitive types or None",
+        "dependency_usage": "Use injected dependencies, never import or instantiate dependencies directly"
+      },
+      "ai_guidance_for_features": {
+        "implementation_checklist": [
+          "1. Define input DTO with all required parameters",
+          "2. Define output DTO with all response data",
+          "3. Inherit from custom Feature class (with dependency typing)",
+          "4. Use @framework.feature(InputDTO) decorator",
+          "5. Implement execute method with correct signature",
+          "6. Access dependencies via self.dependency_name",
+          "7. Return properly structured output DTO"
+        ],
+        "common_mistakes": [
+          "Forgetting to define output DTO",
+          "Not inheriting from custom Feature class",
+          "Incorrect execute method signature",
+          "Accessing dependencies incorrectly",
+          "Returning primitive types instead of DTO",
+          "Handling infrastructure concerns in business logic"
+        ]
+      }
+    },
+    "application_service_implementation": {
+      "description": "ApplicationServices are orchestration handlers that coordinate multiple Features to accomplish complex business workflows",
+      "definition": "An ApplicationService handles non-atomic operations by composing and coordinating multiple Features",
+      "key_difference_from_features": "ApplicationServices have access to ALL injected dependencies (same as Features) PLUS an additional feature_bus for executing other Features, while Features are atomic and self-contained",
+      "dependency_access_comparison": {
+        "features_have": [
+          "All registered dependencies via self.dependency_name"
+        ],
+        "application_services_have": [
+          "All registered dependencies via self.dependency_name (SAME as Features)",
+          "ADDITIONAL: Built-in feature_bus via self.feature_bus (EXCLUSIVE to ApplicationServices)"
+        ],
+        "key_insight": "ApplicationServices = Features + feature_bus for orchestration"
+      },
+      "orchestration_principle": {
+        "description": "ApplicationServices follow the same pattern as Features but with orchestration capabilities",
+        "golden_rule": "If operation is ATOMIC → use Feature. If operation ORCHESTRATES other Features → use ApplicationService",
+        "reflexive_pattern": "ApplicationServices can execute Features through feature_bus, creating a hierarchical execution model"
+      },
+      "built_in_feature_bus": {
+        "injection": "feature_bus is automatically injected by framework during instantiation",
+        "type": "Bus abstract class that provides execute method for routing Features",
+        "access_pattern": "self.feature_bus.execute(feature_dto)"
+      },
+      "inheritance_chain": "_ApplicationService (abstract) → ApplicationService (custom with typing) → Specific implementations",
+      "application_service_creation_steps": {
+        "description": "Step-by-step process for creating ApplicationServices (same pattern as Features)",
+        "steps": [
+          "1. Define input DTO (Command) inheriting from DataTransferObject",
+          "2. Define output DTO (Response) inheriting from DataTransferObject",
+          "3. Create ApplicationService class inheriting from custom ApplicationService class (with typing)",
+          "4. Decorate ApplicationService class with @framework.app_service(InputDTO)",
+          "5. Implement execute method with proper signature",
+          "6. Use injected dependencies AND feature_bus within execute method"
+        ]
+      },
+      "dto_pattern_for_application_services": {
+        "description": "Same DTO pattern as Features - always define input and output DTOs first",
+        "input_dto_example": {
+          "code": [
+            "# Define parameter DTO for orchestration",
+            "class PaymentServiceParams(DataTransferObject):",
+            "    card_number: str",
+            "    expiration_date: str",
+            "    cardholder_name: str",
+            "    amount: float"
+          ]
+        },
+        "output_dto_example": {
+          "code": [
+            "# Define response DTO for orchestration result",
+            "class PaymentServiceResponse(DataTransferObject):",
+            "    status: str",
+            "    transaction_id: str"
+          ]
+        }
+      },
+      "application_service_decorator_and_implementation": {
+        "description": "How to register and implement ApplicationServices using the decorator pattern",
+        "decorator_usage": {
+          "syntax": "@framework_instance.app_service(InputDTOClass)",
+          "purpose": "Registers the ApplicationService in the internal registry, mapping InputDTO to ApplicationService handler",
+          "automatic_registration": "Framework automatically creates the mapping when decorator is applied"
+        },
+        "implementation_pattern": {
+          "code": [
+            "# Create the Application Service class",
+            "@cybersource.app_service(PaymentServiceParams)",
+            "class PaymentOrchestrationService(ApplicationService):",
+            "    def execute(self, dto: PaymentServiceParams) -> PaymentServiceResponse:",
+            "        # Create command DTO for feature execution",
+            "        tokenization_command = TokenizationParams(",
+            "            card_number=dto.card_number,",
+            "            expiration_date=dto.expiration_date,",
+            "            cardholder_name=dto.cardholder_name",
+            "        )",
+            "        # Execute Feature through feature_bus",
+            "        tokenization_result = self.feature_bus.execute(tokenization_command)",
+            "        ",
+            "        # Use injected dependencies for additional operations",
+            "        transaction_id = self.payment_processor.process_payment(dto.amount)",
+            "        return PaymentServiceResponse(status='success', transaction_id=transaction_id)"
+          ]
+        }
+      },
+      "feature_bus_usage": {
+        "description": "How to use feature_bus to execute Features from within ApplicationServices",
+        "access_pattern": "self.feature_bus.execute(feature_dto_instance)",
+        "execution_flow": [
+          "1. Create DTO instance for the Feature you want to execute",
+          "2. Call self.feature_bus.execute(dto_instance)",
+          "3. Framework routes the DTO to appropriate Feature handler",
+          "4. Feature executes and returns response DTO",
+          "5. ApplicationService receives the response and continues orchestration"
+        ],
+        "example_usage": [
+          "# Execute a Feature from ApplicationService",
+          "tokenization_command = TokenizationParams(...)",
+          "tokenization_result = self.feature_bus.execute(tokenization_command)",
+          "# tokenization_result is now the response DTO from the Feature"
+        ]
+      },
+      "orchestration_patterns": {
+        "sequential_execution": {
+          "description": "Execute Features one after another, using results from previous Features",
+          "example": [
+            "validation_result = self.feature_bus.execute(ValidationCommand(...))",
+            "if validation_result.is_valid:",
+            "    tokenization_result = self.feature_bus.execute(TokenizationCommand(...))",
+            "    payment_result = self.feature_bus.execute(PaymentCommand(token=tokenization_result.token))"
+          ]
+        },
+        "conditional_execution": {
+          "description": "Execute different Features based on business logic conditions",
+          "example": [
+            "if dto.payment_method == 'credit_card':",
+            "    result = self.feature_bus.execute(CreditCardCommand(...))",
+            "else:",
+            "    result = self.feature_bus.execute(BankTransferCommand(...))"
+          ]
+        },
+        "data_aggregation": {
+          "description": "Execute multiple Features and combine their results",
+          "example": [
+            "user_data = self.feature_bus.execute(GetUserCommand(...))",
+            "payment_data = self.feature_bus.execute(ProcessPaymentCommand(...))",
+            "audit_data = self.feature_bus.execute(CreateAuditCommand(...))",
+            "return CombinedResponse(user=user_data, payment=payment_data, audit=audit_data)"
+          ]
+        }
+      },
+      "execute_method_signature_for_application_services": {
+        "description": "Same signature as Features but with access to ALL dependencies PLUS feature_bus",
+        "signature": "def execute(self, dto: InputDTOType) -> OutputDTOType:",
+        "available_resources": [
+          "self.feature_bus: EXCLUSIVE to ApplicationServices - For executing other Features",
+          "All registered dependencies via self.dependency_name (SAME as Features)"
+        ],
+        "resource_inheritance": "ApplicationServices inherit ALL Feature capabilities and ADD feature_bus orchestration"
+      },
+      "application_service_best_practices": {
+        "orchestration_focus": "Focus on orchestration logic, delegate atomic operations to Features",
+        "stateless_coordination": "ApplicationServices should be stateless coordinators, not data processors",
+        "error_handling": "Handle orchestration errors and Feature failures appropriately",
+        "return_dto": "Always return a properly structured DTO that represents the orchestration result",
+        "feature_composition": "Compose complex workflows by combining simpler Features"
+      },
+      "atomic_vs_orchestration_decision_guide": {
+        "use_feature_when": [
+          "Operation is atomic and self-contained",
+          "Single business rule or validation",
+          "Direct interaction with external service",
+          "Data transformation or calculation",
+          "No need to coordinate with other use cases"
+        ],
+        "use_application_service_when": [
+          "Operation requires multiple steps",
+          "Need to coordinate between different Features",
+          "Complex business workflow with multiple decision points",
+          "Aggregating data from multiple sources",
+          "Implementing business processes that span multiple domains"
+        ]
+      },
+      "ai_guidance_for_application_services": {
+        "implementation_checklist": [
+          "1. Define input DTO with all orchestration parameters",
+          "2. Define output DTO with aggregated results",
+          "3. Inherit from custom ApplicationService class (with dependency typing)",
+          "4. Use @framework.app_service(InputDTO) decorator",
+          "5. Implement execute method with orchestration logic",
+          "6. Use self.feature_bus.execute() to call Features",
+          "7. Handle errors and return proper response DTO"
+        ],
+        "common_mistakes": [
+          "Implementing atomic operations in ApplicationServices instead of Features",
+          "Not using feature_bus and implementing business logic directly",
+          "Forgetting to handle Feature execution errors",
+          "Returning primitive types instead of DTOs",
+          "Creating ApplicationServices when a simple Feature would suffice"
+        ]
+      }
+    },
+    "framework_execution_patterns": {
+      "description": "How to execute use cases after all Features and ApplicationServices are registered",
+      "golden_rule": "NEVER call internal methods or search for buses. Use the framework instance as a callable object or function",
+      "principle": "Tell Don't Ask - just pass the DTO and let the framework resolve everything automatically",
+      "main_entry_point": {
+        "description": "Import the framework instance that was configured at the beginning",
+        "purpose": "The same instance used to register Features and ApplicationServices becomes the execution entry point",
+        "import_pattern": "from project.apps.bounded_context import framework_instance"
+      },
+      "execution_methods": {
+        "unified_execution": {
+          "method": "framework_instance(dto_instance)",
+          "alternative_with_typing": "framework_instance(dto_instance, ResponseDTOClass)",
+          "description": "Execute BOTH Features and ApplicationServices by calling the framework instance directly as a callable",
+          "critical_note": "feature_bus.execute() is ONLY for internal use within ApplicationServices, NEVER for external execution"
+        }
+      },
+      "type_annotation_benefits": {
+        "description": "Passing the Response DTO class as second argument helps IDEs with type inference",
+        "without_response_class": "framework_instance(dto_instance) # Valid but no IDE type help",
+        "with_response_class": "framework_instance(dto_instance, ResponseClass) # Valid AND IDE gets type information",
+        "recommendation": "Always pass the Response DTO class as second argument for better IDE support"
+      },
+      "complete_usage_example": {
+        "description": "Complete example showing proper framework usage",
+        "imports": [
+          "from sincpro_payments_sdk.apps.cybersource import cybersource",
+          "from sincpro_payments_sdk.apps.cybersource.use_cases.tokenization import TokenizationParams, TokenizationResponse",
+          "from sincpro_payments_sdk.apps.cybersource.use_cases.payments import PaymentServiceParams, PaymentServiceResponse"
+        ],
+        "feature_execution_example": {
+          "description": "How to execute a Feature",
+          "code": [
+            "# Create the input DTO",
+            "feature_dto = TokenizationParams(",
+            "    card_number='4111111111111111',",
+            "    expiration_date='12/25',",
+            "    cardholder_name='John Doe'",
+            ")",
+            "",
+            "# Execute the feature (framework instance as callable)",
+            "feature_result = cybersource(feature_dto, TokenizationResponse)",
+            "print(f'Tokenization Result: {feature_result.token}, Status: {feature_result.status}')"
+          ]
+        },
+        "application_service_execution_example": {
+          "description": "How to execute an ApplicationService",
+          "code": [
+            "# Create the input DTO",
+            "service_dto = PaymentServiceParams(",
+            "    card_number='4111111111111111',",
+            "    expiration_date='12/25',",
+            "    cardholder_name='John Doe',",
+            "    amount=100.00",
+            ")",
+            "",
+            "# Execute the application service (framework instance as callable)",
+            "service_result = cybersource(service_dto, PaymentServiceResponse)",
+            "print(f'Payment Status: {service_result.status}, Transaction ID: {service_result.transaction_id}')"
+          ]
+        }
+      },
+      "execution_principles": {
+        "unified_execution_pattern": "BOTH Features and ApplicationServices are executed by calling the framework instance directly as a function",
+        "internal_feature_bus": "feature_bus.execute() is ONLY for ApplicationServices to call Features internally",
+        "external_interface": "External code ALWAYS uses framework_instance(dto, ResponseClass) regardless of handler type",
+        "automatic_resolution": "Framework automatically resolves DTO to handler mapping and executes the appropriate use case",
+        "no_internal_access": "NEVER access internal buses, registries, or methods - let the framework handle everything",
+        "simple_interface": "Just import, create DTO, and call - the framework does the rest"
+      },
+      "anti_patterns": {
+        "description": "What NOT to do when using the framework",
+        "forbidden_patterns": [
+          "Don't use framework_instance.feature_bus.execute() for external execution",
+          "Don't access internal buses or registries directly",
+          "Don't try to find or search for specific handlers",
+          "Don't call internal framework methods",
+          "Don't instantiate handlers manually",
+          "Don't bypass the framework's execution methods"
+        ],
+        "correct_approach": "Always use framework_instance(dto, ResponseClass) as the single entry point for execution",
+        "critical_note": "feature_bus.execute() is EXCLUSIVELY for internal use within ApplicationServices"
+      },
+      "ai_guidance_for_execution": {
+        "step_by_step_usage": [
+          "1. Import the configured framework instance from the bounded context",
+          "2. Import the required DTO classes (both input and response)",
+          "3. Create an instance of the input DTO with required data",
+          "4. For BOTH Features and ApplicationServices: use framework(dto, ResponseClass)",
+          "5. Always include ResponseClass for better IDE type support",
+          "6. NEVER use feature_bus.execute() for external execution"
+        ],
+        "common_mistakes": [
+          "Using framework_instance.feature_bus.execute() for external execution",
+          "Trying to access internal framework components",
+          "Not importing response DTOs for type hints",
+          "Attempting to instantiate handlers directly",
+          "Forgetting to pass Response DTO for IDE support"
+        ],
+        "key_insight": "The framework instance is your single entry point - use framework(dto, ResponseClass) for ALL executions"
+      }
+    },
+    "handlers_summary": {
+      "description": "Summary of the two main handler types in the framework",
+      "feature_handler": {
+        "purpose": "Atomic business operations",
+        "decorator": "@framework.feature(InputDTO)",
+        "inheritance": "Inherits from custom Feature class",
+        "capabilities": [
+          "Access to ALL injected dependencies via self.dependency_name",
+          "Execute single business operation"
+        ]
+      },
+      "application_service_handler": {
+        "purpose": "Orchestration of multiple Features",
+        "decorator": "@framework.app_service(InputDTO)",
+        "inheritance": "Inherits from custom ApplicationService class",
+        "capabilities": [
+          "Access to ALL injected dependencies via self.dependency_name (SAME as Features)",
+          "ADDITIONAL: feature_bus via self.feature_bus for Feature orchestration (EXCLUSIVE)",
+          "Complex workflow coordination"
+        ]
+      },
+      "dependency_access_summary": {
+        "both_handlers_share": "All registered dependencies",
+        "application_service_exclusive": "feature_bus for executing Features from within ApplicationServices",
+        "inheritance_model": "ApplicationServices = Features + orchestration capabilities"
+      },
+      "golden_rule": "ATOMIC operations → Feature. ORCHESTRATION operations → ApplicationService",
+      "reflexive_pattern": "ApplicationServices can execute Features, but Features cannot execute other Features directly"
+    }
+  },
+  "repository_analysis": {
+    "metadata": {
+      "repository_name": "payment-system",
+      "uses_framework": "sincpro_framework",
+      "repository_type": "framework_implementation",
+      "architecture_patterns": [
+        "Domain-Driven Design",
+        "Clean Architecture",
+        "Hexagonal Architecture",
+        "Command Query Separation"
+      ],
+      "component_summary": {
+        "total_components": 12,
+        "dtos_count": 4,
+        "features_count": 3,
+        "application_services_count": 1,
+        "middlewares_count": 1,
+        "dependencies_count": 3
+      },
+      "capabilities": [
+        "dependency_injection",
+        "command_execution",
+        "middleware_pipeline",
+        "service_orchestration",
+        "async_processing"
+      ]
+    },
+    "components": {
+      "dtos": [
+        {
+          "type": "data_transfer_object",
+          "name": "MakeTransactionCommand",
+          "module": "dynamic.MakeTransactionCommand",
+          "description": "MakeTransactionCommand",
+          "purpose": "data_validation_serialization",
+          "validation_framework": "pydantic",
+          "fields": {
+            "card_number": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            },
+            "amount": {
+              "type": "<class 'float'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": true,
+                "is_text": false,
+                "is_status": false
+              }
+            },
+            "merchant_id": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": true,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            }
+          },
+          "json_schema": {
+            "description": "MakeTransactionCommand",
+            "properties": {
+              "card_number": {
+                "title": "Card Number",
+                "type": "string"
+              },
+              "amount": {
+                "title": "Amount",
+                "type": "number"
+              },
+              "merchant_id": {
+                "title": "Merchant Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "card_number",
+              "amount",
+              "merchant_id"
+            ],
+            "title": "MakeTransactionCommand",
+            "type": "object"
+          },
+          "usage_patterns": [
+            "command_input",
+            "query_input",
+            "response_output",
+            "event_payload"
+          ],
+          "ai_hints": {
+            "is_input_type": true,
+            "is_output_type": false,
+            "complexity_level": "simple",
+            "validation_rules": [
+              "card_number_required",
+              "card_number_has_default",
+              "amount_required",
+              "amount_has_default",
+              "merchant_id_required",
+              "merchant_id_has_default"
+            ]
+          }
+        },
+        {
+          "type": "data_transfer_object",
+          "name": "ValidateCommand",
+          "module": "dynamic.ValidateCommand",
+          "description": "ValidateCommand",
+          "purpose": "data_validation_serialization",
+          "validation_framework": "pydantic",
+          "fields": {
+            "card_number": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            },
+            "cvv": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            }
+          },
+          "json_schema": {
+            "description": "ValidateCommand",
+            "properties": {
+              "card_number": {
+                "title": "Card Number",
+                "type": "string"
+              },
+              "cvv": {
+                "title": "Cvv",
+                "type": "string"
+              }
+            },
+            "required": [
+              "card_number",
+              "cvv"
+            ],
+            "title": "ValidateCommand",
+            "type": "object"
+          },
+          "usage_patterns": [
+            "command_input",
+            "query_input",
+            "response_output",
+            "event_payload"
+          ],
+          "ai_hints": {
+            "is_input_type": true,
+            "is_output_type": false,
+            "complexity_level": "simple",
+            "validation_rules": [
+              "card_number_required",
+              "card_number_has_default",
+              "cvv_required",
+              "cvv_has_default"
+            ]
+          }
+        },
+        {
+          "type": "data_transfer_object",
+          "name": "RefundCommand",
+          "module": "dynamic.RefundCommand",
+          "description": "RefundCommand",
+          "purpose": "data_validation_serialization",
+          "validation_framework": "pydantic",
+          "fields": {
+            "transaction_id": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": true,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            },
+            "amount": {
+              "type": "<class 'float'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": true,
+                "is_text": false,
+                "is_status": false
+              }
+            },
+            "reason": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            }
+          },
+          "json_schema": {
+            "description": "RefundCommand",
+            "properties": {
+              "transaction_id": {
+                "title": "Transaction Id",
+                "type": "string"
+              },
+              "amount": {
+                "title": "Amount",
+                "type": "number"
+              },
+              "reason": {
+                "title": "Reason",
+                "type": "string"
+              }
+            },
+            "required": [
+              "transaction_id",
+              "amount",
+              "reason"
+            ],
+            "title": "RefundCommand",
+            "type": "object"
+          },
+          "usage_patterns": [
+            "command_input",
+            "query_input",
+            "response_output",
+            "event_payload"
+          ],
+          "ai_hints": {
+            "is_input_type": true,
+            "is_output_type": false,
+            "complexity_level": "simple",
+            "validation_rules": [
+              "transaction_id_required",
+              "transaction_id_has_default",
+              "amount_required",
+              "amount_has_default",
+              "reason_required",
+              "reason_has_default"
+            ]
+          }
+        },
+        {
+          "type": "data_transfer_object",
+          "name": "PaymentCommand",
+          "module": "dynamic.PaymentCommand",
+          "description": "PaymentCommand",
+          "purpose": "data_validation_serialization",
+          "validation_framework": "pydantic",
+          "fields": {
+            "card_number": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            },
+            "amount": {
+              "type": "<class 'float'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": false,
+                "is_amount": true,
+                "is_text": false,
+                "is_status": false
+              }
+            },
+            "merchant_id": {
+              "type": "<class 'str'>",
+              "required": true,
+              "default": "PydanticUndefined",
+              "description": null,
+              "ai_hints": {
+                "is_identifier": true,
+                "is_amount": false,
+                "is_text": false,
+                "is_status": false
+              }
+            }
+          },
+          "json_schema": {
+            "description": "PaymentCommand",
+            "properties": {
+              "card_number": {
+                "title": "Card Number",
+                "type": "string"
+              },
+              "amount": {
+                "title": "Amount",
+                "type": "number"
+              },
+              "merchant_id": {
+                "title": "Merchant Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "card_number",
+              "amount",
+              "merchant_id"
+            ],
+            "title": "PaymentCommand",
+            "type": "object"
+          },
+          "usage_patterns": [
+            "command_input",
+            "query_input",
+            "response_output",
+            "event_payload"
+          ],
+          "ai_hints": {
+            "is_input_type": true,
+            "is_output_type": false,
+            "complexity_level": "simple",
+            "validation_rules": [
+              "card_number_required",
+              "card_number_has_default",
+              "amount_required",
+              "amount_has_default",
+              "merchant_id_required",
+              "merchant_id_has_default"
+            ]
+          }
+        }
+      ],
+      "features": [
+        {
+          "type": "feature",
+          "name": "ValidateFeature",
+          "module": "dynamic.ValidateFeature",
+          "description": "Feature to validate payment card details",
+          "purpose": "business_logic_execution",
+          "pattern": "command_pattern",
+          "methods": {
+            "execute": {
+              "signature": "(self, dto: __main__.ValidateCommand) -> __main__.ValidateResponse",
+              "description": "Execute card validation\nArgs:\n    dto (ValidateCommand): Data transfer object containing card details\nReturns:\n    ValidateResponse: Response indicating if the card is valid",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "dto": {
+                  "type": "<class '__main__.ValidateCommand'>",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "<class '__main__.ValidateResponse'>",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": true,
+                "is_property": false,
+                "is_action": false
+              }
+            }
+          },
+          "execute_method": {
+            "signature": "(self, dto: __main__.ValidateCommand) -> __main__.ValidateResponse",
+            "description": "Execute card validation\nArgs:\n    dto (ValidateCommand): Data transfer object containing card details\nReturns:\n    ValidateResponse: Response indicating if the card is valid",
+            "parameters": {
+              "self": {
+                "type": "Any",
+                "default": null,
+                "required": true
+              },
+              "dto": {
+                "type": "<class '__main__.ValidateCommand'>",
+                "default": null,
+                "required": true
+              }
+            },
+            "return_type": "<class '__main__.ValidateResponse'>",
+            "ai_hints": {
+              "is_main_entry_point": true,
+              "follows_command_pattern": true,
+              "processes_dto": true
+            }
+          },
+          "dependencies": [],
+          "ai_hints": {
+            "is_synchronous": true,
+            "has_side_effects": true,
+            "input_types": [
+              "Any",
+              "<class '__main__.ValidateCommand'>"
+            ],
+            "output_types": [
+              "<class '__main__.ValidateResponse'>"
+            ],
+            "complexity_level": "simple",
+            "business_domain": "general"
+          }
+        },
+        {
+          "type": "feature",
+          "name": "RefundFeature",
+          "module": "dynamic.RefundFeature",
+          "description": "Feature to handle refund processing",
+          "purpose": "business_logic_execution",
+          "pattern": "command_pattern",
+          "methods": {
+            "execute": {
+              "signature": "(self, dto: __main__.RefundCommand) -> __main__.RefundResponse",
+              "description": "Execute refund processing\nArgs:\n    dto (RefundCommand): Data transfer object containing refund details\nReturns:\n    RefundResponse: Response containing refund details",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "dto": {
+                  "type": "<class '__main__.RefundCommand'>",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "<class '__main__.RefundResponse'>",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": true,
+                "is_property": false,
+                "is_action": false
+              }
+            }
+          },
+          "execute_method": {
+            "signature": "(self, dto: __main__.RefundCommand) -> __main__.RefundResponse",
+            "description": "Execute refund processing\nArgs:\n    dto (RefundCommand): Data transfer object containing refund details\nReturns:\n    RefundResponse: Response containing refund details",
+            "parameters": {
+              "self": {
+                "type": "Any",
+                "default": null,
+                "required": true
+              },
+              "dto": {
+                "type": "<class '__main__.RefundCommand'>",
+                "default": null,
+                "required": true
+              }
+            },
+            "return_type": "<class '__main__.RefundResponse'>",
+            "ai_hints": {
+              "is_main_entry_point": true,
+              "follows_command_pattern": true,
+              "processes_dto": true
+            }
+          },
+          "dependencies": [],
+          "ai_hints": {
+            "is_synchronous": true,
+            "has_side_effects": true,
+            "input_types": [
+              "Any",
+              "<class '__main__.RefundCommand'>"
+            ],
+            "output_types": [
+              "<class '__main__.RefundResponse'>"
+            ],
+            "complexity_level": "simple",
+            "business_domain": "general"
+          }
+        },
+        {
+          "type": "feature",
+          "name": "PaymentFeature",
+          "module": "dynamic.PaymentFeature",
+          "description": "Feature to handle payment processing",
+          "purpose": "business_logic_execution",
+          "pattern": "command_pattern",
+          "methods": {
+            "execute": {
+              "signature": "(self, dto: __main__.PaymentCommand) -> __main__.PaymentResponse",
+              "description": "Execute payment processing\nArgs:\n    dto (PaymentCommand): Data transfer object containing payment details\nReturns:\n    PaymentResponse: Response containing transaction details",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "dto": {
+                  "type": "<class '__main__.PaymentCommand'>",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "<class '__main__.PaymentResponse'>",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": true,
+                "is_property": false,
+                "is_action": false
+              }
+            }
+          },
+          "execute_method": {
+            "signature": "(self, dto: __main__.PaymentCommand) -> __main__.PaymentResponse",
+            "description": "Execute payment processing\nArgs:\n    dto (PaymentCommand): Data transfer object containing payment details\nReturns:\n    PaymentResponse: Response containing transaction details",
+            "parameters": {
+              "self": {
+                "type": "Any",
+                "default": null,
+                "required": true
+              },
+              "dto": {
+                "type": "<class '__main__.PaymentCommand'>",
+                "default": null,
+                "required": true
+              }
+            },
+            "return_type": "<class '__main__.PaymentResponse'>",
+            "ai_hints": {
+              "is_main_entry_point": true,
+              "follows_command_pattern": true,
+              "processes_dto": true
+            }
+          },
+          "dependencies": [],
+          "ai_hints": {
+            "is_synchronous": true,
+            "has_side_effects": true,
+            "input_types": [
+              "Any",
+              "<class '__main__.PaymentCommand'>"
+            ],
+            "output_types": [
+              "<class '__main__.PaymentResponse'>"
+            ],
+            "complexity_level": "simple",
+            "business_domain": "payments"
+          }
+        }
+      ],
+      "application_services": [
+        {
+          "type": "application_service",
+          "name": "MakeTransaction",
+          "module": "dynamic.MakeTransaction",
+          "description": "Second layer of the framework, orchestration of features",
+          "purpose": "orchestration_coordination",
+          "pattern": "service_layer_pattern",
+          "methods": {
+            "execute": {
+              "signature": "(self, dto: __main__.MakeTransactionCommand) -> __main__.MakeTransactionResponse",
+              "description": "Execute transaction processing\nArgs:\n    dto (MakeTransactionCommand): Data transfer object containing transaction details\nReturns:\n    MakeTransactionResponse: Response containing transaction details",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "dto": {
+                  "type": "<class '__main__.MakeTransactionCommand'>",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "<class '__main__.MakeTransactionResponse'>",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": true,
+                "is_property": false,
+                "is_action": false
+              }
+            }
+          },
+          "orchestration_capabilities": true,
+          "ai_hints": {
+            "orchestrates_features": true,
+            "handles_transactions": true,
+            "coordinates_external_services": true,
+            "complexity_level": "simple",
+            "business_domain": "general"
+          }
+        }
+      ],
+      "dependencies": [
+        {
+          "type": "dependency_function",
+          "name": "check_health",
+          "module": "ipykernel_97871.875856287",
+          "description": "Health check function for the framework",
+          "purpose": "utility_service_provision",
+          "signature": "()",
+          "parameters": {},
+          "return_type": "Any",
+          "is_async": false,
+          "ai_hints": {
+            "is_pure_function": true,
+            "has_side_effects": false,
+            "complexity_level": "low"
+          }
+        },
+        {
+          "type": "dependency_class",
+          "name": "Database",
+          "module": "dynamic.Database",
+          "description": "Database class to handle transactions",
+          "purpose": "service_provision",
+          "methods": {
+            "get_transaction": {
+              "signature": "(self, tx_id)",
+              "description": "",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "tx_id": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "Any",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": false,
+                "is_property": true,
+                "is_action": false
+              }
+            },
+            "save_transaction": {
+              "signature": "(self, data)",
+              "description": "",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "data": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "Any",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": false,
+                "is_property": false,
+                "is_action": false
+              }
+            }
+          },
+          "attributes": {},
+          "ai_hints": {
+            "is_stateful": false,
+            "provides_external_integration": false,
+            "complexity_level": "simple"
+          }
+        },
+        {
+          "type": "dependency_class",
+          "name": "VisaAdapter",
+          "module": "dynamic.VisaAdapter",
+          "description": "Adapter for Visa payment processing",
+          "purpose": "service_provision",
+          "methods": {
+            "check_status": {
+              "signature": "(self, tx_id)",
+              "description": "",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "tx_id": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "Any",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": false,
+                "is_property": false,
+                "is_action": false
+              }
+            },
+            "make_request": {
+              "signature": "(self, card_data)",
+              "description": "",
+              "parameters": {
+                "self": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                },
+                "card_data": {
+                  "type": "Any",
+                  "default": null,
+                  "required": true
+                }
+              },
+              "return_type": "Any",
+              "is_async": false,
+              "ai_hints": {
+                "is_entry_point": false,
+                "is_property": false,
+                "is_action": false
+              }
+            }
+          },
+          "attributes": {},
+          "ai_hints": {
+            "is_stateful": false,
+            "provides_external_integration": true,
+            "complexity_level": "simple"
+          }
+        }
+      ],
+      "middlewares": [
+        {
+          "type": "middleware_class",
+          "name": "ValidatePayment",
+          "module": "dynamic.ValidatePayment",
+          "description": "Middleware to validate payment data",
+          "purpose": "cross_cutting_concerns",
+          "pattern": "middleware_pattern",
+          "methods": {},
+          "ai_hints": {
+            "is_stateful": false,
+            "complexity_level": "simple"
+          }
+        }
+      ]
+    },
+    "relationships": {
+      "dto_usage": {},
+      "feature_dependencies": {},
+      "service_orchestration": {},
+      "middleware_chain": [
+        "ValidatePayment"
+      ],
+      "dependency_injection": {}
+    }
+  },
+  "ai_integration": {
+    "embedding_suggestions": {
+      "primary_entities": [
+        "MakeTransactionCommand",
+        "ValidateCommand",
+        "RefundCommand",
+        "PaymentCommand"
+      ],
+      "business_capabilities": [
+        "ValidateFeature",
+        "RefundFeature",
+        "PaymentFeature"
+      ],
+      "integration_points": [
+        "VisaAdapter"
+      ],
+      "data_flow_patterns": [
+        "command_input",
+        "service_orchestration",
+        "middleware_processing"
+      ]
+    },
+    "code_generation_hints": {
+      "framework_patterns": [
+        "decorator_based_registration",
+        "dependency_injection",
+        "command_pattern",
+        "middleware_pipeline"
+      ],
+      "common_imports": [
+        "from sincpro_framework import UseFramework, Feature, DataTransferObject",
+        "from typing import Any",
+        "from sincpro_framework import ApplicationService",
+        "from sincpro_framework import Middleware"
+      ],
+      "naming_conventions": {
+        "dtos": "PascalCase ending with Command/Query/Response",
+        "features": "PascalCase ending with Feature",
+        "services": "PascalCase ending with Service",
+        "dependencies": "camelCase or snake_case",
+        "methods": "snake_case"
+      }
+    },
+    "complexity_analysis": {
+      "overall_complexity": "medium",
+      "most_complex_components": [],
+      "simplest_components": [
+        "dto:MakeTransactionCommand",
+        "dto:ValidateCommand",
+        "dto:RefundCommand",
+        "dto:PaymentCommand"
+      ]
+    },
+    "framework_integration": {
+      "framework_version": "2.5.0",
+      "architecture_pattern": "Hexagonal Architecture (Ports and Adapters)",
+      "execution_patterns": {
+        "unified_execution": "Use framework(dto, ResponseClass) for all executions",
+        "feature_execution": {},
+        "service_execution": {},
+        "anti_patterns": [
+          "Don't use framework_instance.feature_bus.execute() for external execution",
+          "Don't access internal buses or registries directly",
+          "Don't try to find or search for specific handlers",
+          "Don't call internal framework methods",
+          "Don't instantiate handlers manually",
+          "Don't bypass the framework's execution methods"
+        ]
+      },
+      "available_features": {
+        "dto_validation": {
+          "technology": "Pydantic",
+          "description": "Validates Data Transfer Objects (DTOs) to ensure only well-structured data enters core business logic",
+          "benefits": [
+            "Reduces errors and maintains data integrity",
+            "Automatic validation of input parameters",
+            "Type safety and runtime validation"
+          ],
+          "usage_context": "All data entering and leaving use cases must be validated through DTOs"
+        },
+        "dependency_injection": {
+          "description": "Facilitates integration of user-defined dependencies promoting modular design",
+          "benefits": [
+            "Promotes modular design",
+            "Enhances unit testing through easy mocking",
+            "Allows replacement of dependencies",
+            "Reduces coupling between components"
+          ],
+          "usage_context": "Dependencies are injected automatically into Features and ApplicationServices"
+        },
+        "error_handling": {
+          "levels": [
+            "global",
+            "application_service",
+            "feature"
+          ],
+          "description": "Provides centralized error handling at multiple levels",
+          "benefits": [
+            "Consistent error management",
+            "Improved overall reliability",
+            "Granular error handling control",
+            "Centralized error logging and monitoring"
+          ],
+          "usage_context": "Errors can be handled at the most appropriate level for the specific use case"
+        },
+        "inversion_of_control": {
+          "description": "Automates instantiation and configuration of components",
+          "benefits": [
+            "Reduces boilerplate code",
+            "Encourages loose coupling",
+            "Makes systems more adaptable and maintainable",
+            "Automatic component lifecycle management"
+          ],
+          "usage_context": "Framework handles object creation and dependency resolution automatically"
+        }
+      }
+    },
+    "complete_understanding": {
+      "framework_knowledge": "Loaded from hardcoded guide - provides usage patterns and examples",
+      "repository_knowledge": "Generated from code analysis - provides specific components",
+      "ai_capability": "Can understand both how to use framework AND what exists in this repository",
+      "code_generation_ready": true,
+      "semantic_search_optimized": true
+    },
+    "usage_synthesis": {
+      "how_to_execute_features": {
+        "execution_pattern": "framework_instance(dto, ResponseClass)",
+        "example_from_context": [],
+        "features_in_repository": [
+          "ValidateFeature",
+          "RefundFeature",
+          "PaymentFeature"
+        ],
+        "note": "Use framework_instance(dto, ResponseClass) to execute any feature listed in features_in_repository"
+      },
+      "how_to_execute_services": {
+        "execution_pattern": "framework_instance(dto, ResponseClass)",
+        "example_from_context": [],
+        "services_in_repository": [
+          "MakeTransaction"
+        ],
+        "note": "Use framework_instance(dto, ResponseClass) to execute any service listed in services_in_repository"
+      },
+      "common_patterns_in_repository": [
+        "command_pattern",
+        "feature_based_architecture",
+        "service_layer_pattern",
+        "middleware_pipeline"
+      ],
+      "framework_best_practices": [
+        "Never use internal buses directly - always use framework(dto, ResponseClass)",
+        "Let framework handle automatic DTO to handler resolution"
+      ]
+    }
+  }
+}
