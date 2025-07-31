@@ -71,6 +71,11 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
 
     context: dict
 
+    def __init__(self, *args, **kwargs):
+        """
+        Initialize the Feature. Dependencies are injected automatically by the framework.
+        """
+
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
         """
@@ -130,6 +135,13 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
 
     context: dict
     feature_bus: Bus
+
+    def __init__(self, feature_bus: Bus, *args, **kwargs):
+        """
+        Initialize the ApplicationService with feature_bus for orchestration.
+        Additional dependencies are injected automatically by the framework.
+        """
+        self.feature_bus = feature_bus
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
