@@ -30,14 +30,17 @@ class FrameworkContext:
             raise RuntimeError("Context manager is already entered")
 
         self._is_entered = True
-        self.framework._set_context({**self.context, **self.parent_context})
+        # Merge contexts: parent context first, then new context overrides
+        merged_context = {**self.parent_context, **self.context}
+        self.framework._set_context(merged_context)
         self.framework.logger.debug(f"with context: {self.context}")
-        self.framework._inject_context_to_services_and_features(self.context)
+        self.framework._inject_context_to_services_and_features(merged_context)
 
         return self.framework
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager and restore previous context"""
-        self.framework._clean_context()
         self.framework._set_context(self.parent_context)
+        # Inject the restored context to services
+        self.framework._inject_context_to_services_and_features(self.parent_context)
         return False

@@ -25,6 +25,10 @@ class ContextMixin:
 
     def _inject_context_to_services_and_features(self, context: Dict[str, Any]) -> None:
         """Update context in all registered services with current context"""
+        
+        # Only inject if bus is built and available
+        if self.bus is None:
+            return
 
         for feature in self.bus.feature_bus.feature_registry.values():
             feature.context = context.copy()

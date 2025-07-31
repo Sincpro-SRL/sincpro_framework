@@ -82,6 +82,11 @@ class UseFramework(ContextMixin):
                 "feature and app service"
             )
 
+        # Inject current context to services before execution
+        current_context = self._get_context()
+        if current_context:
+            self._inject_context_to_services_and_features(current_context)
+
         # Execute with middleware pipeline
         def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
             assert (
