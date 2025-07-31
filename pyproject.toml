@@ -18,6 +18,10 @@ dependency-injector = "^4.46.0"
 pydantic = "^2.9.2"
 pyyaml = "6.0.1"
 sincpro-log = "^1.0.1"
+opentelemetry-api = "^1.28.0"
+opentelemetry-sdk = "^1.28.0"
+opentelemetry-exporter-jaeger = "^1.21.0"
+opentelemetry-instrumentation = "^0.51b0"
 
 [tool.poetry.group.dev.dependencies]
 isort = "^6.0.1"
