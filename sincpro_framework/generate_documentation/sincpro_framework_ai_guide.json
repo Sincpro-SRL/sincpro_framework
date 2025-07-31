@@ -58,6 +58,24 @@
       "usage_context": "Framework handles object creation and dependency resolution automatically"
     },
     
+    "context_manager_metadata_propagation": {
+      "description": "Provides automatic metadata propagation across Features and ApplicationServices without manual parameter passing",
+      "technology": "Python contextvars",
+      "benefits": [
+        "Thread-safe context storage and isolation",
+        "Supports nested contexts with override capabilities",
+        "Enriches exceptions with context information for better debugging",
+        "Automatic metadata propagation without manual parameter passing",
+        "Complex workflow support"
+      ],
+      "usage_context": "Cross-cutting concerns like correlation IDs, user context, request metadata",
+      "patterns": {
+        "simple_context": "with app.context({'correlation_id': '123'}) as app_with_context: result = app_with_context(dto)",
+        "nested_contexts": "Supports nested contexts with override capabilities for complex workflows",
+        "context_access": "Access via self.context.get('correlation_id') in Features and ApplicationServices"
+      }
+    },
+    
     "multi_level_error_handling": {
       "levels": [
         "global",
@@ -107,6 +125,131 @@
       ],
       "example_use_case": "Customer onboarding process that combines multiple individual features",
       "usage_context": "ApplicationServices coordinate multiple Features to accomplish broader business objectives"
+    }
+  },
+
+  "configuration_management_system": {
+    "description": "Built-in configuration and settings management system for applications using the framework",
+    "module": "sincpro_framework.sincpro_conf",
+    "purpose": "Create configuration or settings based on files or environment variables with type safety and validation",
+    
+    "core_components": {
+      "sincpro_config_base": {
+        "class": "SincproConfig", 
+        "description": "Base class that must be inherited for all configuration classes",
+        "features": [
+          "Type safety with Pydantic validation",
+          "Environment variable support with fallback",
+          "YAML file mapping",
+          "Nested configuration objects",
+          "Default value handling"
+        ]
+      },
+      "config_builder": {
+        "function": "build_config_obj(ConfigClass, yaml_file_path)",
+        "description": "Function to build configuration objects from YAML files",
+        "parameters": {
+          "ConfigClass": "Your custom configuration class inheriting from SincproConfig",
+          "yaml_file_path": "Path to YAML configuration file"
+        }
+      }
+    },
+    
+    "environment_variable_handling": {
+      "syntax": "$ENV:VARIABLE_NAME",
+      "description": "Use environment variables in YAML files with automatic fallback to defaults",
+      "behavior": [
+        "Look for the environment variable specified after $ENV:",
+        "If environment variable exists, use its value",
+        "If environment variable doesn't exist, use default value from config class",
+        "Issue warning for missing environment variables",
+        "Continue execution with defaults rather than raising errors"
+      ],
+      "benefits": [
+        "Flexible configuration for different environments",
+        "Graceful degradation when environment variables are missing",
+        "Development-friendly with automatic fallbacks",
+        "Production-ready with environment variable support"
+      ]
+    },
+    
+    "configuration_patterns": {
+      "basic_config_class": {
+        "description": "Define configuration classes with default values",
+        "example": [
+          "from sincpro_framework.sincpro_conf import SincproConfig",
+          "",
+          "class PostgresConf(SincproConfig):",
+          "    host: str = 'localhost'",
+          "    port: int = 5432", 
+          "    user: str = 'my_user'",
+          "",
+          "class MyConfig(SincproConfig):",
+          "    log_level: str = 'DEBUG'",
+          "    token: str = 'default_my_token'",
+          "    postgresql: PostgresConf = PostgresConf()"
+        ]
+      },
+      "yaml_configuration": {
+        "description": "Map configuration classes to YAML files with environment variable support",
+        "example": [
+          "# config.yml",
+          "log_level: 'INFO'",
+          "token: '$ENV:MY_SECRET_TOKEN'  # Uses env var or defaults to 'default_my_token'",
+          "postgresql:",
+          "  host: localhost",
+          "  port: 12345",
+          "  user: custom_user"
+        ]
+      },
+      "config_object_usage": {
+        "description": "Load and use configuration objects in application code",
+        "example": [
+          "from sincpro_framework.sincpro_conf import build_config_obj",
+          "from .my_config import MyConfig",
+          "",
+          "config = build_config_obj(MyConfig, '/path/to/your/config.yml')",
+          "",
+          "assert isinstance(config.log_level, str)",
+          "assert isinstance(config.postgresql, PostgresConf)",
+          "# Use config.postgresql.host, config.token, etc."
+        ]
+      }
+    },
+    
+    "framework_configuration": {
+      "default_config_file": "sincpro_framework/conf/sincpro_framework_conf.yml",
+      "supported_settings": [
+        "log_level (sincpro_framework_log_level): Define log level for framework logger, default is DEBUG"
+      ],
+      "override_mechanism": {
+        "environment_variable": "SINCPRO_FRAMEWORK_CONFIG_FILE",
+        "description": "Override default framework config file using environment variable",
+        "usage": "export SINCPRO_FRAMEWORK_CONFIG_FILE=/path/to/your/config.yml"
+      }
+    },
+    
+    "ai_guidance_for_configuration": {
+      "when_to_use": [
+        "Application requires different settings per environment",
+        "Need type-safe configuration with validation",
+        "Want to use environment variables with fallback defaults",
+        "Complex nested configuration structures",
+        "YAML-based configuration management"
+      ],
+      "best_practices": [
+        "Always provide sensible defaults in config classes",
+        "Use descriptive names for configuration properties",
+        "Group related configuration into nested classes",
+        "Use environment variables for sensitive data",
+        "Document configuration options clearly"
+      ],
+      "integration_patterns": [
+        "Register configuration objects as framework dependencies",
+        "Use configuration in Features and ApplicationServices",
+        "Separate configuration per bounded context",
+        "Environment-specific configuration files"
+      ]
     }
   },
 
@@ -1162,5 +1305,123 @@
     },
     "golden_rule": "ATOMIC operations → Feature. ORCHESTRATION operations → ApplicationService",
     "reflexive_pattern": "ApplicationServices can execute Features, but Features cannot execute other Features directly"
+  },
+
+  "auto_documentation_system": {
+    "description": "Powerful auto-documentation feature that automatically generates comprehensive documentation for framework instances",
+    "purpose": "Generate both traditional human-readable documentation and AI-optimized JSON schemas for complete framework understanding",
+    "supported_formats": ["markdown", "json", "both"],
+    
+    "main_function": {
+      "function": "build_documentation(framework_instances, output_dir, format)",
+      "description": "Single API for generating complete MkDocs-ready documentation and AI-optimized JSON schemas",
+      "parameters": {
+        "framework_instances": "UseFramework instance(s) to document",
+        "output_dir": "Output directory for documentation (default: 'generated_docs')",
+        "format": "Output format: 'markdown', 'json', or 'both' (default: 'both')"
+      }
+    },
+    
+    "output_formats": {
+      "markdown_documentation": {
+        "description": "Traditional MkDocs-ready documentation for human consumption",
+        "features": [
+          "MkDocs-ready: Complete documentation website with search",
+          "Human-readable: Beautiful, professional documentation for developers", 
+          "Interactive: Searchable content with cross-references",
+          "Sincpro Theme: Beautiful violet corporate colors and professional styling",
+          "Responsive Design: Works perfectly on desktop and mobile devices",
+          "Full-Text Search: Find any component, method, or parameter instantly",
+          "Component Overview: Summary tables with component counts and descriptions"
+        ],
+        "output_structure": [
+          "mkdocs.yml - MkDocs configuration",
+          "requirements.txt - Dependencies",
+          "site/ - Built HTML documentation",
+          "docs/ - Markdown content with index.md, features.md, dtos.md, application-services.md"
+        ]
+      },
+      "ai_optimized_json_schema": {
+        "description": "Enhanced JSON schema that combines framework context with repository analysis for complete AI understanding",
+        "key_enhancement": "Combines framework context (how to use Sincpro Framework) with repository analysis (what components exist in codebase)",
+        "features": [
+          "Complete AI Understanding: Framework context + repository analysis",
+          "Framework Context: Usage patterns, examples, best practices", 
+          "Repository Analysis: Specific components in the codebase",
+          "Rich Metadata: Business domains, complexity analysis, architectural patterns",
+          "Code Generation: Comprehensive hints for AI-powered code generation",
+          "Embedding Support: Optimized for semantic search and AI embeddings",
+          "Usage Synthesis: Real examples combining framework knowledge with repository components"
+        ],
+        "schema_structure": {
+          "framework_context": "Framework usage patterns, principles, key features, execution patterns",
+          "repository_analysis": "Architecture patterns, component summary, DTOs, features, application services with AI hints",
+          "ai_integration": "Framework integration patterns, complete understanding capabilities, usage synthesis, embedding suggestions, code generation hints, complexity analysis"
+        }
+      }
+    },
+    
+    "generated_documentation_capabilities": {
+      "automatic_component_discovery": "Automatically discovers all DTOs, Features, Application Services, Dependencies, and Middlewares",
+      "business_domain_inference": "Automatic categorization by business domain (payments, users, orders, etc.)",
+      "complexity_assessment": "Automatic complexity analysis for optimization recommendations",
+      "pattern_recognition": "Identification of architectural patterns and framework usage",
+      "ai_hints_generation": "Rich metadata generation for AI understanding and code generation"
+    },
+    
+    "usage_examples": {
+      "simple_markdown_generation": [
+        "from sincpro_framework.generate_documentation import build_documentation",
+        "build_documentation(framework_instance, output_dir='docs/generated')"
+      ],
+      "ai_json_schema_generation": [
+        "from sincpro_framework.generate_documentation import build_documentation", 
+        "build_documentation(framework_instance, output_dir='docs/generated', format='json')"
+      ],
+      "multiple_frameworks": [
+        "from apps.payment_gateway import payment_framework",
+        "from apps.user_management import user_framework",
+        "build_documentation([payment_framework, user_framework], format='both')"
+      ]
+    },
+    
+    "ai_integration_benefits": {
+      "code_generation": "AI can understand patterns and generate similar code",
+      "documentation": "AI can explain components and their relationships", 
+      "analysis": "AI can identify optimization opportunities and suggest improvements",
+      "migration": "AI can understand dependencies for migration planning",
+      "semantic_search": "Optimized schema enables powerful semantic search capabilities",
+      "complete_understanding": "Combines framework knowledge with repository-specific components for full context"
+    },
+    
+    "best_practices_for_documentation": [
+      "Document DTOs with clear docstrings for better auto-generated docs",
+      "Describe Features with comprehensive docstrings for execute methods",
+      "Use descriptive names for components for better auto-generated documentation",
+      "Organize related features and services logically by business domain",
+      "Include meaningful examples in docstrings for AI understanding"
+    ],
+    
+    "ai_guidance_for_auto_documentation": {
+      "when_to_use": [
+        "Creating comprehensive project documentation",
+        "Generating AI-optimized schemas for semantic search",
+        "Documenting complex framework instances for team onboarding",
+        "Creating machine-readable documentation for AI code generation",
+        "Building searchable component catalogs"
+      ],
+      "integration_patterns": [
+        "CI/CD pipeline integration for automatic documentation updates",
+        "AI system integration for code generation and analysis",
+        "Developer documentation workflows",
+        "Architecture documentation maintenance"
+      ],
+      "output_usage": [
+        "Use markdown output for developer documentation websites",
+        "Use JSON schema output for AI system integration",
+        "Use both formats for complete documentation coverage",
+        "Integrate schemas with embedding systems for semantic search"
+      ]
+    }
   }
 }

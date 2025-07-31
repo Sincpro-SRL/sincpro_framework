@@ -141,8 +141,8 @@ with app.context({"env": "prod", "user": "admin"}) as outer_app:
 # Access context in Features and ApplicationServices
 class PaymentFeature(Feature):
     def execute(self, dto: PaymentDTO) -> PaymentResponse:
-        correlation_id = self.get_context_value("correlation_id")
-        user_id = self.get_context_value("user.id")
+        correlation_id = self.context.get("correlation_id")
+        user_id = self.context.get("user.id")
         # Use context in business logic...
 ```
 
