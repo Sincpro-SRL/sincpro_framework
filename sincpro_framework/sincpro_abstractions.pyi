@@ -41,6 +41,8 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
             def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
     """
 
+    context: dict
+
     def __init__(self, *args, **kwargs) -> None: ...
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None: ...
@@ -66,6 +68,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.A
             def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
     """
 
+    context: dict
     feature_bus: Bus
     def __init__(self, feature_bus: Bus, *args, **kwargs) -> None: ...
     @abstractmethod

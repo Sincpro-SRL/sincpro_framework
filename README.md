@@ -54,6 +54,7 @@ Now you are ready to explore more complex use cases! 🚀
     - [DTO Validation with Pydantic](#dto-validation-with-pydantic)
     - [Dependency Injection](#dependency-injection)
     - [Inversion of Control (IoC)](#inversion-of-control-ioc)
+    - [Context Manager for Metadata Propagation](#context-manager-for-metadata-propagation)
     - [Error Handling at Different Levels](#error-handling-at-different-levels)
     - [Bus Pattern for Component Communication](#bus-pattern-for-component-communication)
     - [Decoupled Logic Execution](#decoupled-logic-execution)
@@ -119,6 +120,31 @@ efficiency. Here are its core features:
 
 - Automates the instantiation and configuration of components, reducing boilerplate code.
 - Encourages loose coupling, making systems more adaptable and maintainable.
+
+### 📡 Context Manager for Metadata Propagation
+
+- Provides automatic metadata propagation across Features and ApplicationServices without manual parameter passing.
+- Uses Python's `contextvars` for thread-safe context storage and isolation.
+- Supports nested contexts with override capabilities for complex workflows.
+- Enriches exceptions with context information for better debugging and observability.
+
+```python
+# Simple context usage
+with app.context({"correlation_id": "123", "user.id": "admin"}) as app_with_context:
+    result = app_with_context(some_dto)  # Context automatically available in handlers
+
+# Nested contexts with overrides
+with app.context({"env": "prod", "user": "admin"}) as outer_app:
+    with outer_app.context({"env": "staging"}) as inner_app:  # Override env, inherit user
+        inner_app(dto)  # env="staging", user="admin"
+
+# Access context in Features and ApplicationServices
+class PaymentFeature(Feature):
+    def execute(self, dto: PaymentDTO) -> PaymentResponse:
+        correlation_id = self.get_context_value("correlation_id")
+        user_id = self.get_context_value("user.id")
+        # Use context in business logic...
+```
 
 ### ⚠️ Error Handling at Different Levels
 

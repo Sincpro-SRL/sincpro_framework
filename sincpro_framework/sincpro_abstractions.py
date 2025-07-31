@@ -53,6 +53,10 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
             external_service: ExternalService
 
             def execute(self, dto: MyInputDTO) -> MyResponseDTO:
+                # Access context with the new API
+                correlation_id = self.context.get("correlation_id")
+                user_id = self.context.get("user.id")
+
                 result = self.database_adapter.query(dto.param)
                 return MyResponseDTO(result=result)
 
@@ -64,6 +68,8 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
                 # This still works but with less IDE support
                 return MyResponseDTO(result="example")
     """
+
+    context: dict
 
     def __init__(self, *args, **kwargs):
         """
@@ -106,6 +112,10 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
             external_service: ExternalService
 
             def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
+                # Access context with the new API
+                correlation_id = self.context.get("correlation_id")
+                user_id = self.context.get("user.id")
+
                 # Execute Features through feature_bus with proper typing
                 step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)
                 step2_result = self.feature_bus.execute(Step2DTO(...), Step2ResponseDTO)
@@ -123,6 +133,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
                 return MyResponseDTO(result="example")
     """
 
+    context: dict
     feature_bus: Bus
 
     def __init__(self, feature_bus: Bus, *args, **kwargs):
