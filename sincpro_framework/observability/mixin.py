@@ -38,10 +38,20 @@ class ObservabilityMixin:
             and self._get_observability_config(dto_name)
         )
 
+    def _execute(self, dto: "TypeDTO", dto_name: str) -> "TypeDTOResponse | None":
+        """Template method for executing business logic with optional observability."""
+        if self._should_trace(dto_name):
+            return self._execute_with_observability(dto, dto_name)
+        else:
+            return self._execute_business_logic_with_logging(dto, dto_name)
+
     def _execute_with_observability(
-        self, dto: "TypeDTO", dto_name: str, bus_type: str
+        self, dto: "TypeDTO", dto_name: str
     ) -> "TypeDTOResponse | None":
         """Execute with observability tracking."""
+        # Get bus type for tracing
+        bus_type = getattr(self, "_get_bus_type", lambda: "unknown")()
+        
         # Generate trace/request ID if needed
         try:
             from .correlation import correlation_manager
@@ -78,13 +88,7 @@ class ObservabilityMixin:
             )
 
             # Log response if available
-            if response and hasattr(self, "logger"):
-                response_type = getattr(
-                    self, "_get_response_log_type", lambda: bus_type.replace("_", " ").title()
-                )()
-                self.logger.debug(
-                    f"{response_type} response {response.__class__.__name__}({response})"
-                )
+            self._log_response(response)
 
             return response
 
@@ -108,24 +112,15 @@ class ObservabilityMixin:
         finally:
             span.end()
 
-    @abstractmethod
-    def _execute_business_logic(self, dto: "TypeDTO") -> "TypeDTOResponse | None":
-        """Execute the actual business logic. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement _execute_business_logic method")
-
-    def _execute_without_observability(
+    def _execute_business_logic_with_logging(
         self, dto: "TypeDTO", dto_name: str
     ) -> "TypeDTOResponse | None":
-        """Execute without observability (original behavior)."""
+        """Execute business logic with standard logging (no observability)."""
         try:
             response = self._execute_business_logic(dto)
 
             # Log response if available
-            if response and hasattr(self, "logger"):
-                response_type = getattr(self, "_get_response_log_type", lambda: "Service")()
-                self.logger.debug(
-                    f"{response_type} response {response.__class__.__name__}({response})"
-                )
+            self._log_response(response)
 
             return response
 
@@ -134,3 +129,20 @@ class ObservabilityMixin:
             if hasattr(self, "handle_error") and self.handle_error:
                 return self.handle_error(error)
             raise error
+
+    def _log_response(self, response: "TypeDTOResponse | None") -> None:
+        """Log the response if available."""
+        if response and hasattr(self, "logger"):
+            response_type = getattr(self, "_get_response_log_type", lambda: "Service")()
+            self.logger.debug(
+                f"{response_type} response {response.__class__.__name__}({response})"
+            )
+
+    def _get_bus_type(self) -> str:
+        """Get the bus type for tracing. Override in subclasses."""
+        return "unknown"
+
+    @abstractmethod
+    def _execute_business_logic(self, dto: "TypeDTO") -> "TypeDTOResponse | None":
+        """Execute the actual business logic. Must be implemented by subclasses."""
+        raise NotImplementedError("Subclasses must implement _execute_business_logic method")

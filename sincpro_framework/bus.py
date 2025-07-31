@@ -39,6 +39,10 @@ class FeatureBus(Bus, ObservabilityMixin):
         """Get the response log type for this bus."""
         return "Feature"
 
+    def _get_bus_type(self) -> str:
+        """Get the bus type for tracing."""
+        return "feature"
+
     def _execute_business_logic(self, dto: TypeDTO) -> TypeDTOResponse | None:
         """Execute the actual feature business logic."""
         return self.feature_registry[dto.__class__.__name__].execute(dto)
@@ -56,11 +60,8 @@ class FeatureBus(Bus, ObservabilityMixin):
 
         self.logger.debug(f"{dto_name}({dto})")
 
-        # Use mixin to handle observability
-        if self._should_trace(dto_name):
-            return self._execute_with_observability(dto, dto_name, "feature")
-        else:
-            return self._execute_without_observability(dto, dto_name)
+        # Use template method from mixin
+        return self._execute(dto, dto_name)
 
 
 class ApplicationServiceBus(Bus, ObservabilityMixin):
@@ -94,6 +95,10 @@ class ApplicationServiceBus(Bus, ObservabilityMixin):
         """Get the response log type for this bus."""
         return "Application service"
 
+    def _get_bus_type(self) -> str:
+        """Get the bus type for tracing."""
+        return "app_service"
+
     def _execute_business_logic(self, dto: TypeDTO) -> TypeDTOResponse | None:
         """Execute the actual application service business logic."""
         return self.app_service_registry[dto.__class__.__name__].execute(dto)
@@ -109,11 +114,8 @@ class ApplicationServiceBus(Bus, ObservabilityMixin):
             )
         self.logger.debug(f"{dto_name}({dto})")
 
-        # Use mixin to handle observability
-        if self._should_trace(dto_name):
-            return self._execute_with_observability(dto, dto_name, "app_service")
-        else:
-            return self._execute_without_observability(dto, dto_name)
+        # Use template method from mixin
+        return self._execute(dto, dto_name)
 
 
 # ---------------------------------------------------------------------------------------------
