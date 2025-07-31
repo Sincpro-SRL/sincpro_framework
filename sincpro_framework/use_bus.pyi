@@ -5,6 +5,7 @@ from sincpro_log.logger import LoggerProxy
 
 from . import ioc as ioc
 from .bus import FrameworkBus as FrameworkBus
+from .context.mixin import ContextMixin
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
@@ -16,7 +17,7 @@ from .sincpro_logger import create_logger as create_logger
 # Type alias for decorator functions
 DecoratorFunction = Callable[[Type], Type]
 
-class UseFramework:
+class UseFramework(ContextMixin):
     """
     Main class to use the framework, this is the main entry point to configure the framework.
 

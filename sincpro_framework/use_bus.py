@@ -5,13 +5,14 @@ from sincpro_log.logger import LoggerProxy, create_logger
 
 from . import ioc
 from .bus import FrameworkBus
-from .context import FrameworkContext
+from .context.framework_context import FrameworkContext
+from .context.mixin import ContextMixin
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
-class UseFramework:
+class UseFramework(ContextMixin):
     """
     Main class to use the framework, this is the main entry point to configure the framework
     """
@@ -86,10 +87,7 @@ class UseFramework:
             assert (
                 self.bus is not None
             )  # Help mypy understand this is safe after the check above
-            
-            # Update context in all services before execution
-            self._update_context_in_services()
-            
+
             return self.bus.execute(processed_dto)
 
         return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
@@ -128,21 +126,21 @@ class UseFramework:
         """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)
 
-    def context(self, context_attrs: Dict[str, Any]) -> FrameworkContext:
+    def context(self, context_to_set: Dict[str, Any]) -> FrameworkContext:
         """
         Create a context manager with the specified attributes
-        
+
         Args:
-            context_attrs: Dictionary of context attributes to set
-            
+            context_to_set: Dictionary of context attributes to set
+
         Returns:
             FrameworkContext instance ready to be used with 'with' statement
-            
+
         Example:
             with app.context({"correlation_id": "123", "user_id": "456"}) as app_with_context:
                 result = app_with_context(some_dto)
         """
-        return FrameworkContext(self, context_attrs)
+        return FrameworkContext(self, context_to_set)
 
     def add_global_error_handler(self, handler: Callable):
         if not callable(handler):
@@ -159,25 +157,13 @@ class UseFramework:
             raise TypeError("The handler must be a callable")
         self.app_service_error_handler = handler
 
-    def _get_current_context(self) -> Dict[str, Any]:
-        """Get the current context for this framework instance"""
-        return self._current_context.copy()
-    
-    def _set_current_context(self, context: Dict[str, Any]) -> None:
-        """Set the current context for this framework instance"""
-        self._current_context = context.copy()
-
     def _add_dependencies_provided_by_user(self):
-        # No longer inject global context function - context is injected per service instance
-        
         if "feature_registry" in self._sp_container.feature_bus.attributes:
             feature_registry = self._sp_container.feature_bus.attributes[
                 "feature_registry"
             ].kwargs
 
-            for dto, feature in feature_registry.items():
-                # Inject context object into each feature instance
-                self._inject_context_into_service(feature)
+            for _, feature in feature_registry.items():
                 feature.add_attributes(**self.dynamic_dep_registry)
 
         if "app_service_registry" in self._sp_container.app_service_bus.attributes:
@@ -185,38 +171,8 @@ class UseFramework:
                 "app_service_registry"
             ].kwargs
 
-            for dto, app_service in app_service_registry.items():
-                # Inject context object into each app service instance
-                self._inject_context_into_service(app_service)
+            for _, app_service in app_service_registry.items():
                 app_service.add_attributes(**self.dynamic_dep_registry)
-
-    def _inject_context_into_service(self, service):
-        """Inject context object into a service instance"""
-        from .context import ContextObject
-        
-        context_obj = ContextObject(self._current_context)
-        if hasattr(service, '_set_context_object'):
-            service._set_context_object(context_obj)
-
-    def _update_context_in_services(self):
-        """Update context in all registered services with current context"""
-        if not self.was_initialized or self.bus is None:
-            return
-            
-        from .context import ContextObject
-        current_context_obj = ContextObject(self._current_context)
-        
-        # Update context in features
-        if hasattr(self.bus, 'feature_bus') and hasattr(self.bus.feature_bus, 'feature_registry'):
-            for feature in self.bus.feature_bus.feature_registry.values():
-                if hasattr(feature, '_set_context_object'):
-                    feature._set_context_object(current_context_obj)
-        
-        # Update context in app services  
-        if hasattr(self.bus, 'app_service_bus') and hasattr(self.bus.app_service_bus, 'app_service_registry'):
-            for app_service in self.bus.app_service_bus.app_service_registry.values():
-                if hasattr(app_service, '_set_context_object'):
-                    app_service._set_context_object(current_context_obj)
 
     def _add_error_handlers_provided_by_user(self):
         if self.global_error_handler:
