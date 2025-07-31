@@ -72,7 +72,7 @@
       "patterns": {
         "simple_context": "with app.context({'correlation_id': '123'}) as app_with_context: result = app_with_context(dto)",
         "nested_contexts": "Supports nested contexts with override capabilities for complex workflows",
-        "context_access": "Access via self.get_context_value('correlation_id') in Features and ApplicationServices"
+        "context_access": "Access via self.context.get('correlation_id') in Features and ApplicationServices"
       }
     },
     

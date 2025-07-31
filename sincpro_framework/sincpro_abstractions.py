@@ -75,6 +75,7 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
         """
         Initialize the Feature. Dependencies are injected automatically by the framework.
         """
+        self.context = {}
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
@@ -142,6 +143,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
         Additional dependencies are injected automatically by the framework.
         """
         self.feature_bus = feature_bus
+        self.context = {}
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
