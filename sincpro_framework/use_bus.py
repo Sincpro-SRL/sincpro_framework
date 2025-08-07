@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -11,8 +11,11 @@ from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
+# Context type variable for framework generics
+TContext = TypeVar("TContext", bound=Dict[str, Any])
 
-class UseFramework(ContextMixin):
+
+class UseFramework(ContextMixin, Generic[TContext]):
     """
     Main class to use the framework, this is the main entry point to configure the framework
     """
