@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Generic, Type, TypeVar
+from typing import Any, Dict, Generic, Type, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -9,6 +9,9 @@ TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
 # Additional TypeVars for better dependency injection typing
 TFeature = TypeVar("TFeature", bound="Feature")
 TApplicationService = TypeVar("TApplicationService", bound="ApplicationService")
+
+# Context typing support
+TContext = TypeVar("TContext", bound=Dict[str, Any])
 
 
 class DataTransferObject(BaseModel):
@@ -43,7 +46,7 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
     Features automatically receive injected dependencies as attributes through the framework's
     dependency injection system. These dependencies can be accessed via self.dependency_name.
 
-    For better IDE support with typed dependencies, inherit with specific DTO types:
+    For better IDE support with typed dependencies and context, inherit with specific DTO types:
 
     Example:
         @framework.feature(MyInputDTO)
@@ -53,12 +56,31 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
             external_service: ExternalService
 
             def execute(self, dto: MyInputDTO) -> MyResponseDTO:
-                # Access context with the new API
-                correlation_id = self.context.get("correlation_id")
-                user_id = self.context.get("user.id")
+                # Access context with type safety using helper methods
+                correlation_id = self.get_context_value("correlation_id")
+                user_id = self.get_context_value("user.id")
 
                 result = self.database_adapter.query(dto.param)
                 return MyResponseDTO(result=result)
+
+    For typed context support, use the mixin pattern:
+
+        from typing_extensions import TypedDict, NotRequired
+        from sincpro_framework.typed_context import ContextTypeMixin
+
+        class MyContextKeys(TypedDict, total=False):
+            TOKEN: NotRequired[str]
+            USER_ID: NotRequired[str]
+
+        class MyContextType(ContextTypeMixin):
+            context: MyContextKeys
+
+        class MyFeature(Feature[MyInputDTO, MyResponseDTO], MyContextType):
+            def execute(self, dto: MyInputDTO) -> MyResponseDTO:
+                # Type-safe context access
+                token = self.get_context_value("TOKEN")  # Typed as str | None
+                user_id = self.context.get("USER_ID")    # Direct access also works
+                return MyResponseDTO(token=token, user_id=user_id)
 
     For backward compatibility, you can also use untyped Feature:
 
@@ -69,13 +91,45 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
                 return MyResponseDTO(result="example")
     """
 
-    context: dict
+    context: Dict[str, Any]
 
     def __init__(self, *args, **kwargs):
         """
         Initialize the Feature. Dependencies are injected automatically by the framework.
         """
         self.context = {}
+
+    def get_context_value(self, key: str, default: Any = None) -> Any:
+        """
+        Type-safe method to get a context value.
+        
+        This method provides a convenient way to access context values
+        with proper type hints when used with typed context mixins.
+        
+        Args:
+            key: The context key to retrieve
+            default: Default value if key not found
+            
+        Returns:
+            The value for the key or the default
+        """
+        if hasattr(self, 'context') and self.context:
+            return self.context.get(key, default)
+        return default
+
+    def has_context_key(self, key: str) -> bool:
+        """
+        Check if a context key exists.
+        
+        Args:
+            key: The context key to check
+            
+        Returns:
+            True if the key exists, False otherwise
+        """
+        if hasattr(self, 'context') and self.context:
+            return key in self.context
+        return False
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
@@ -104,7 +158,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
     - Complex business workflows with multiple decision points
     - Aggregating data from multiple sources
 
-    For better IDE support with typed dependencies, inherit with specific DTO types:
+    For better IDE support with typed dependencies and context, inherit with specific DTO types:
 
     Example:
         @framework.app_service(MyOrchestrationDTO)
@@ -113,9 +167,9 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
             external_service: ExternalService
 
             def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
-                # Access context with the new API
-                correlation_id = self.context.get("correlation_id")
-                user_id = self.context.get("user.id")
+                # Access context with type safety using helper methods
+                correlation_id = self.get_context_value("correlation_id")
+                user_id = self.get_context_value("user.id")
 
                 # Execute Features through feature_bus with proper typing
                 step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)
@@ -124,6 +178,28 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
                 # Use injected dependencies for additional operations
                 final_result = self.external_service.combine(step1_result, step2_result)
                 return MyResponseDTO(result=final_result)
+
+    For typed context support, use the mixin pattern:
+
+        from typing_extensions import TypedDict, NotRequired
+        from sincpro_framework.typed_context import ContextTypeMixin
+
+        class MyContextKeys(TypedDict, total=False):
+            TOKEN: NotRequired[str]
+            USER_ID: NotRequired[str]
+
+        class MyContextType(ContextTypeMixin):
+            context: MyContextKeys
+
+        class MyApplicationService(ApplicationService[MyOrchestrationDTO, MyResponseDTO], MyContextType):
+            def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
+                # Type-safe context access
+                token = self.get_context_value("TOKEN")  # Typed as str | None
+                user_id = self.context.get("USER_ID")    # Direct access also works
+                
+                # Execute features with context
+                result = self.feature_bus.execute(SomeDTO(token=token))
+                return MyResponseDTO(result=result)
 
     For backward compatibility, you can also use untyped ApplicationService:
 
@@ -134,7 +210,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
                 return MyResponseDTO(result="example")
     """
 
-    context: dict
+    context: Dict[str, Any]
     feature_bus: Bus
 
     def __init__(self, feature_bus: Bus, *args, **kwargs):
@@ -144,6 +220,38 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
         """
         self.feature_bus = feature_bus
         self.context = {}
+
+    def get_context_value(self, key: str, default: Any = None) -> Any:
+        """
+        Type-safe method to get a context value.
+        
+        This method provides a convenient way to access context values
+        with proper type hints when used with typed context mixins.
+        
+        Args:
+            key: The context key to retrieve
+            default: Default value if key not found
+            
+        Returns:
+            The value for the key or the default
+        """
+        if hasattr(self, 'context') and self.context:
+            return self.context.get(key, default)
+        return default
+
+    def has_context_key(self, key: str) -> bool:
+        """
+        Check if a context key exists.
+        
+        Args:
+            key: The context key to check
+            
+        Returns:
+            True if the key exists, False otherwise
+        """
+        if hasattr(self, 'context') and self.context:
+            return key in self.context
+        return False
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
