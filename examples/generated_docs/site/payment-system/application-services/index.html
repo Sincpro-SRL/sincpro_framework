@@ -904,7 +904,41 @@ that handle business logic and orchestrate domain operations.</p>
 <h2 id="available-services">💼 Available Services<a class="headerlink" href="#available-services" title="Permanent link">🔗</a></h2>
 <h3 id="maketransaction">MakeTransaction<a class="headerlink" href="#maketransaction" title="Permanent link">🔗</a></h3>
 <p><strong>Module:</strong> <code>dynamic.MakeTransaction</code></p>
-<p>Second layer of the framework, orchestration of features</p>
+<p>Second layer of the framework, orchestration of features.</p>
+<p>ApplicationServices coordinate multiple Features to accomplish complex business workflows.
+They have access to all injected dependencies (same as Features) plus an exclusive
+feature_bus for executing other Features.</p>
+<p>ApplicationServices are ideal for:
+- Non-atomic operations requiring multiple steps
+- Coordinating between different Features
+- Complex business workflows with multiple decision points
+- Aggregating data from multiple sources</p>
+<p>For better IDE support with typed dependencies, inherit with specific DTO types:</p>
+<p>Example:
+    @framework.app_service(MyOrchestrationDTO)
+    class MyApplicationService(ApplicationService[MyOrchestrationDTO, MyResponseDTO]):
+        # Type your injected dependencies for IDE autocomplete
+        external_service: ExternalService</p>
+<div class="language-text highlight"><pre><span></span><code>    def execute(self, dto: MyOrchestrationDTO) -&gt; MyResponseDTO:
+        # Access context with the new API
+        correlation_id = self.context.get(&quot;correlation_id&quot;)
+        user_id = self.context.get(&quot;user.id&quot;)
+
+        # Execute Features through feature_bus with proper typing
+        step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)
+        step2_result = self.feature_bus.execute(Step2DTO(...), Step2ResponseDTO)
+
+        # Use injected dependencies for additional operations
+        final_result = self.external_service.combine(step1_result, step2_result)
+        return MyResponseDTO(result=final_result)
+</code></pre></div>
+<p>For backward compatibility, you can also use untyped ApplicationService:</p>
+<div class="language-text highlight"><pre><span></span><code>@framework.app_service(MyOrchestrationDTO)
+class MyApplicationService(ApplicationService):
+    def execute(self, dto: MyOrchestrationDTO) -&gt; MyResponseDTO:
+        # This still works but with less IDE support
+        return MyResponseDTO(result=&quot;example&quot;)
+</code></pre></div>
 <p><strong>Methods:</strong></p>
 <h4 id="execute">execute<a class="headerlink" href="#execute" title="Permanent link">🔗</a></h4>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dto</span><span class="p">:</span> <span class="n">MakeTransactionCommand</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MakeTransactionResponse</span>

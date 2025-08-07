@@ -736,6 +736,30 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#validatefeaturesincpro" class="md-nav__link">
+    <span class="md-ellipsis">
+      ValidateFeatureSincpro
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ValidateFeatureSincpro">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      execute
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#paymentfeaturesincpro" class="md-nav__link">
     <span class="md-ellipsis">
       PaymentFeatureSincpro
@@ -746,7 +770,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#execute" class="md-nav__link">
+  <a href="#execute_1" class="md-nav__link">
     <span class="md-ellipsis">
       execute
     </span>
@@ -851,6 +875,30 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#validatefeaturesincpro" class="md-nav__link">
+    <span class="md-ellipsis">
+      ValidateFeatureSincpro
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ValidateFeatureSincpro">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      execute
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#paymentfeaturesincpro" class="md-nav__link">
     <span class="md-ellipsis">
       PaymentFeatureSincpro
@@ -861,7 +909,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#execute" class="md-nav__link">
+  <a href="#execute_1" class="md-nav__link">
     <span class="md-ellipsis">
       execute
     </span>
@@ -898,16 +946,29 @@
 <h1 id="features">⚡ Features<a class="headerlink" href="#features" title="Permanent link">🔗</a></h1>
 <p>Framework features and capabilities.</p>
 <h2 id="overview">📋 Overview<a class="headerlink" href="#overview" title="Permanent link">🔗</a></h2>
-<p>This framework includes <strong>1</strong> feature components that provide
+<p>This framework includes <strong>2</strong> feature components that provide
 core functionality and capabilities.</p>
 <hr />
 <h2 id="available-features">🎯 Available Features<a class="headerlink" href="#available-features" title="Permanent link">🔗</a></h2>
+<h3 id="validatefeaturesincpro">ValidateFeatureSincpro<a class="headerlink" href="#validatefeaturesincpro" title="Permanent link">🔗</a></h3>
+<p><strong>Module:</strong> <code>dynamic.ValidateFeatureSincpro</code></p>
+<p>Feature to validate payment card details</p>
+<p><strong>Methods:</strong></p>
+<h4 id="execute">execute<a class="headerlink" href="#execute" title="Permanent link">🔗</a></h4>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dto</span><span class="p">:</span> <span class="n">ValidateCommand</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ValidateResponse</span>
+</span></code></pre></div>
+<p>Execute card validation
+Args:
+    dto (ValidateCommand): Data transfer object containing card details
+Returns:
+    ValidateResponse: Response indicating if the card is valid</p>
+<hr />
 <h3 id="paymentfeaturesincpro">PaymentFeatureSincpro<a class="headerlink" href="#paymentfeaturesincpro" title="Permanent link">🔗</a></h3>
 <p><strong>Module:</strong> <code>dynamic.PaymentFeatureSincpro</code></p>
 <p>Feature to handle payment processing in Sincpro Framework</p>
 <p><strong>Methods:</strong></p>
-<h4 id="execute">execute<a class="headerlink" href="#execute" title="Permanent link">🔗</a></h4>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dto</span><span class="p">:</span> <span class="n">PaymentCommand</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PaymentResponse</span>
+<h4 id="execute_1">execute<a class="headerlink" href="#execute_1" title="Permanent link">🔗</a></h4>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dto</span><span class="p">:</span> <span class="n">PaymentCommand</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PaymentResponse</span>
 </span></code></pre></div>
 <p>Execute payment processing
 Args:

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "payment-system Instance Overview",
+  "description": "Lightweight overview of payment-system components",
+  "version": "1.0.0",
+  "instance_number": 1,
+  "schema_type": "instance_overview",
+  "content_type": "component_overview",
+  "ai_usage": {
+    "purpose": "Quick understanding of available components without full details",
+    "token_efficiency": "Summary-level information for rapid comprehension",
+    "next_steps": "Load specific component detail files when needed"
+  },
+  "framework_instance": {
+    "name": "payment-system",
+    "generated_at": "2025-08-07 16:31:59",
+    "component_summary": {
+      "dtos": {
+        "count": 4,
+        "names": [
+          "MakeTransactionCommand",
+          "ValidateCommand",
+          "RefundCommand",
+          "PaymentCommand"
+        ]
+      },
+      "features": {
+        "count": 3,
+        "names": [
+          "ValidateFeature",
+          "RefundFeature",
+          "PaymentFeature"
+        ]
+      },
+      "application_services": {
+        "count": 1,
+        "names": [
+          "MakeTransaction"
+        ]
+      },
+      "dependencies": {
+        "count": 3,
+        "names": [
+          "check_health",
+          "Database",
+          "VisaAdapter"
+        ]
+      }
+    },
+    "available_detail_files": [
+      "01_payment-system_dtos.json",
+      "01_payment-system_features.json",
+      "01_payment-system_services.json"
+    ]
+  }
+}

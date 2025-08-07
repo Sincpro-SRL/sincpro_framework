@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "payment-system Application Services",
+  "description": "Application Services (orchestrators) for payment-system",
+  "version": "1.0.0",
+  "instance_number": 1,
+  "schema_type": "service_chunk",
+  "content_type": "summary_information",
+  "ai_usage": {
+    "purpose": "Summary Service information for understanding orchestration",
+    "token_efficiency": "Overview and patterns for optimal consumption"
+  },
+  "application_services": [
+    {
+      "name": "MakeTransaction",
+      "docstring": "Second layer of the framework, orchestration of features.\n\nApplicationServices coordinate multiple Features to accomplish complex business workflows.\nThey have access to all injected dependencies (same as Features) plus an exclusive\nfeature_bus for executing other Features.\n\nApplicationServices are ideal for:\n- Non-atomic operations requiring multiple steps\n- Coordinating between different Features\n- Complex business workflows with multiple decision points\n- Aggregating data from multiple sources\n\nFor better IDE support with typed dependencies, inherit with specific DTO types:\n\nExample:\n    @framework.app_service(MyOrchestrationDTO)\n    class MyApplicationService(ApplicationService[MyOrchestrationDTO, MyResponseDTO]):\n        # Type your injected dependencies for IDE autocomplete\n        external_service: ExternalService\n\n        def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:\n            # Access context with the new API\n            correlation_id = self.context.get(\"correlation_id\")\n            user_id = self.context.get(\"user.id\")\n\n            # Execute Features through feature_bus with proper typing\n            step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)\n            step2_result = self.feature_bus.execute(Step2DTO(...), Step2ResponseDTO)\n\n            # Use injected dependencies for additional operations\n            final_result = self.external_service.combine(step1_result, step2_result)\n            return MyResponseDTO(result=final_result)\n\nFor backward compatibility, you can also use untyped ApplicationService:\n\n    @framework.app_service(MyOrchestrationDTO)\n    class MyApplicationService(ApplicationService):\n        def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:\n            # This still works but with less IDE support\n            return MyResponseDTO(result=\"example\")",
+      "input_dto": null,
+      "method_count": 1,
+      "business_domain": "payments"
+    }
+  ]
+}

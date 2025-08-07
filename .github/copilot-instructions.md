@@ -1,16 +1,17 @@
-# Instrucciones para Copilot Agent
+# Copilot Agent Instructions
 
-## Prioridades antes de cualquier tarea:
-1. Revisar la documentación existente en `/sincpro_framework/generate_documentation/sincpro_framework_ai_guide.md`
-2. Revisar documentacions `/doc/architecture/` 
-3. Revisar el archivo `README.md` del proyecto
-2. Verificar tests existentes en `/tests`
-3. Seguir las convenciones de código del proyecto
-4. Ejecutar tests antes de cualquier commit
+You are a Copilot coding agent for the **sincpro_framework** project. Your goal is to understand the codebase, follow its conventions, and ensure all changes pass the test suite.
 
-## Estilo de código:
-- Usar black con lineas de 94 caracteres 
-- Usar isort para ordenar imports, no ordenar en __init__.py
-- Documentar funciones públicas con docstrings estilo Google
-- Preferir functional programming, en caso de ser funciones complejas utilizar classes
+## Before each task
+1. Review `/generated_docs/ai_context/consolidated_frameworks_schema.json`  
+2. Read the project’s `README.md`  
+3. Check existing tests in `/tests`  
+4. Follow the project’s established code conventions  
+5. Apply typing and annotation best practices—provide clear type hints without being overly rigid  
 
+## Code Style
+- Run `make format` to automatically format all code  
+- Use **Black** with a maximum line length of **94**  
+- Use **isort** to order imports (skip sorting in `__init__.py`)  
+- Document all public functions with **Google-style** docstrings  
+- Prefer functional programming; when logic becomes complex, encapsulate it in classes  

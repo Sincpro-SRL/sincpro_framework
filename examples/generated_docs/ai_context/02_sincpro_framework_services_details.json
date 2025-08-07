@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sincpro_framework Application Services (Detailed)",
+  "description": "Application Services (orchestrators) for sincpro_framework",
+  "version": "1.0.0",
+  "instance_number": 2,
+  "schema_type": "service_chunk_details",
+  "content_type": "detailed_information",
+  "ai_usage": {
+    "purpose": "Complete Service information for understanding orchestration",
+    "token_efficiency": "Full orchestration details for optimal consumption"
+  },
+  "application_services": [
+    {
+      "name": "MakeTransactionSincpro",
+      "docstring": "MakeTransactionSincpro",
+      "input_dto": null,
+      "methods": [
+        {
+          "name": "execute",
+          "docstring": "Execute transaction processing in Sincpro Framework",
+          "parameters": {
+            "self": {
+              "type": "Any",
+              "default": null,
+              "required": true
+            },
+            "dto": {
+              "type": "<class '__main__.MakeTransactionCommand'>",
+              "default": null,
+              "required": true
+            }
+          },
+          "return_type": "<class '__main__.MakeTransactionResponse'>"
+        }
+      ],
+      "ai_hints": {
+        "business_domain": "payments",
+        "complexity": "simple",
+        "orchestration_pattern": "feature_bus"
+      }
+    }
+  ]
+}

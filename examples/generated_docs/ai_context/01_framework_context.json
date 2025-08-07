@@ -1,11 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "payment-system Repository Schema",
-  "description": "AI-optimized schema combining framework context and repository components for payment-system",
+  "title": "Sincpro Framework Context",
+  "description": "General framework knowledge for understanding how to use Sincpro Framework",
   "version": "1.0.0",
-  "generated_at": "2025-07-30 15:02:41",
-  "generated_by": "sincpro_framework",
-  "schema_type": "ai_optimized_complete",
+  "schema_type": "framework_context",
+  "content_type": "framework_knowledge",
+  "ai_usage": {
+    "purpose": "Provides foundational understanding of Sincpro Framework patterns and usage",
+    "token_efficiency": "Shared across all instances to avoid duplication",
+    "next_steps": "Load specific instance context files for implementation details"
+  },
   "framework_context": {
     "framework_name": "Sincpro Framework",
     "version": "2.5.0",
@@ -61,6 +65,23 @@
         ],
         "usage_context": "Framework handles object creation and dependency resolution automatically"
       },
+      "context_manager_metadata_propagation": {
+        "description": "Provides automatic metadata propagation across Features and ApplicationServices without manual parameter passing",
+        "technology": "Python contextvars",
+        "benefits": [
+          "Thread-safe context storage and isolation",
+          "Supports nested contexts with override capabilities",
+          "Enriches exceptions with context information for better debugging",
+          "Automatic metadata propagation without manual parameter passing",
+          "Complex workflow support"
+        ],
+        "usage_context": "Cross-cutting concerns like correlation IDs, user context, request metadata",
+        "patterns": {
+          "simple_context": "with app.context({'correlation_id': '123'}) as app_with_context: result = app_with_context(dto)",
+          "nested_contexts": "Supports nested contexts with override capabilities for complex workflows",
+          "context_access": "Access via self.context.get('correlation_id') in Features and ApplicationServices"
+        }
+      },
       "multi_level_error_handling": {
         "levels": [
           "global",
@@ -107,6 +128,125 @@
         ],
         "example_use_case": "Customer onboarding process that combines multiple individual features",
         "usage_context": "ApplicationServices coordinate multiple Features to accomplish broader business objectives"
+      }
+    },
+    "configuration_management_system": {
+      "description": "Built-in configuration and settings management system for applications using the framework",
+      "module": "sincpro_framework.sincpro_conf",
+      "purpose": "Create configuration or settings based on files or environment variables with type safety and validation",
+      "core_components": {
+        "sincpro_config_base": {
+          "class": "SincproConfig",
+          "description": "Base class that must be inherited for all configuration classes",
+          "features": [
+            "Type safety with Pydantic validation",
+            "Environment variable support with fallback",
+            "YAML file mapping",
+            "Nested configuration objects",
+            "Default value handling"
+          ]
+        },
+        "config_builder": {
+          "function": "build_config_obj(ConfigClass, yaml_file_path)",
+          "description": "Function to build configuration objects from YAML files",
+          "parameters": {
+            "ConfigClass": "Your custom configuration class inheriting from SincproConfig",
+            "yaml_file_path": "Path to YAML configuration file"
+          }
+        }
+      },
+      "environment_variable_handling": {
+        "syntax": "$ENV:VARIABLE_NAME",
+        "description": "Use environment variables in YAML files with automatic fallback to defaults",
+        "behavior": [
+          "Look for the environment variable specified after $ENV:",
+          "If environment variable exists, use its value",
+          "If environment variable doesn't exist, use default value from config class",
+          "Issue warning for missing environment variables",
+          "Continue execution with defaults rather than raising errors"
+        ],
+        "benefits": [
+          "Flexible configuration for different environments",
+          "Graceful degradation when environment variables are missing",
+          "Development-friendly with automatic fallbacks",
+          "Production-ready with environment variable support"
+        ]
+      },
+      "configuration_patterns": {
+        "basic_config_class": {
+          "description": "Define configuration classes with default values",
+          "example": [
+            "from sincpro_framework.sincpro_conf import SincproConfig",
+            "",
+            "class PostgresConf(SincproConfig):",
+            "    host: str = 'localhost'",
+            "    port: int = 5432",
+            "    user: str = 'my_user'",
+            "",
+            "class MyConfig(SincproConfig):",
+            "    log_level: str = 'DEBUG'",
+            "    token: str = 'default_my_token'",
+            "    postgresql: PostgresConf = PostgresConf()"
+          ]
+        },
+        "yaml_configuration": {
+          "description": "Map configuration classes to YAML files with environment variable support",
+          "example": [
+            "# config.yml",
+            "log_level: 'INFO'",
+            "token: '$ENV:MY_SECRET_TOKEN'  # Uses env var or defaults to 'default_my_token'",
+            "postgresql:",
+            "  host: localhost",
+            "  port: 12345",
+            "  user: custom_user"
+          ]
+        },
+        "config_object_usage": {
+          "description": "Load and use configuration objects in application code",
+          "example": [
+            "from sincpro_framework.sincpro_conf import build_config_obj",
+            "from .my_config import MyConfig",
+            "",
+            "config = build_config_obj(MyConfig, '/path/to/your/config.yml')",
+            "",
+            "assert isinstance(config.log_level, str)",
+            "assert isinstance(config.postgresql, PostgresConf)",
+            "# Use config.postgresql.host, config.token, etc."
+          ]
+        }
+      },
+      "framework_configuration": {
+        "default_config_file": "sincpro_framework/conf/sincpro_framework_conf.yml",
+        "supported_settings": [
+          "log_level (sincpro_framework_log_level): Define log level for framework logger, default is DEBUG"
+        ],
+        "override_mechanism": {
+          "environment_variable": "SINCPRO_FRAMEWORK_CONFIG_FILE",
+          "description": "Override default framework config file using environment variable",
+          "usage": "export SINCPRO_FRAMEWORK_CONFIG_FILE=/path/to/your/config.yml"
+        }
+      },
+      "ai_guidance_for_configuration": {
+        "when_to_use": [
+          "Application requires different settings per environment",
+          "Need type-safe configuration with validation",
+          "Want to use environment variables with fallback defaults",
+          "Complex nested configuration structures",
+          "YAML-based configuration management"
+        ],
+        "best_practices": [
+          "Always provide sensible defaults in config classes",
+          "Use descriptive names for configuration properties",
+          "Group related configuration into nested classes",
+          "Use environment variables for sensitive data",
+          "Document configuration options clearly"
+        ],
+        "integration_patterns": [
+          "Register configuration objects as framework dependencies",
+          "Use configuration in Features and ApplicationServices",
+          "Separate configuration per bounded context",
+          "Environment-specific configuration files"
+        ]
       }
     },
     "component_types": {
@@ -1090,946 +1230,120 @@
       },
       "golden_rule": "ATOMIC operations → Feature. ORCHESTRATION operations → ApplicationService",
       "reflexive_pattern": "ApplicationServices can execute Features, but Features cannot execute other Features directly"
-    }
-  },
-  "repository_analysis": {
-    "metadata": {
-      "repository_name": "payment-system",
-      "uses_framework": "sincpro_framework",
-      "repository_type": "framework_implementation",
-      "architecture_patterns": [
-        "Domain-Driven Design",
-        "Clean Architecture",
-        "Hexagonal Architecture",
-        "Command Query Separation"
+    },
+    "auto_documentation_system": {
+      "description": "Powerful auto-documentation feature that automatically generates comprehensive documentation for framework instances",
+      "purpose": "Generate both traditional human-readable documentation and AI-optimized JSON schemas for complete framework understanding",
+      "supported_formats": [
+        "markdown",
+        "json",
+        "both"
       ],
-      "component_summary": {
-        "total_components": 12,
-        "dtos_count": 4,
-        "features_count": 3,
-        "application_services_count": 1,
-        "middlewares_count": 1,
-        "dependencies_count": 3
+      "main_function": {
+        "function": "build_documentation(framework_instances, output_dir, format)",
+        "description": "Single API for generating complete MkDocs-ready documentation and AI-optimized JSON schemas",
+        "parameters": {
+          "framework_instances": "UseFramework instance(s) to document",
+          "output_dir": "Output directory for documentation (default: 'generated_docs')",
+          "format": "Output format: 'markdown', 'json', or 'both' (default: 'both')"
+        }
       },
-      "capabilities": [
-        "dependency_injection",
-        "command_execution",
-        "middleware_pipeline",
-        "service_orchestration",
-        "async_processing"
-      ]
-    },
-    "components": {
-      "dtos": [
-        {
-          "type": "data_transfer_object",
-          "name": "MakeTransactionCommand",
-          "module": "dynamic.MakeTransactionCommand",
-          "description": "MakeTransactionCommand",
-          "purpose": "data_validation_serialization",
-          "validation_framework": "pydantic",
-          "fields": {
-            "card_number": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            },
-            "amount": {
-              "type": "<class 'float'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": true,
-                "is_text": false,
-                "is_status": false
-              }
-            },
-            "merchant_id": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": true,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            }
-          },
-          "json_schema": {
-            "description": "MakeTransactionCommand",
-            "properties": {
-              "card_number": {
-                "title": "Card Number",
-                "type": "string"
-              },
-              "amount": {
-                "title": "Amount",
-                "type": "number"
-              },
-              "merchant_id": {
-                "title": "Merchant Id",
-                "type": "string"
-              }
-            },
-            "required": [
-              "card_number",
-              "amount",
-              "merchant_id"
-            ],
-            "title": "MakeTransactionCommand",
-            "type": "object"
-          },
-          "usage_patterns": [
-            "command_input",
-            "query_input",
-            "response_output",
-            "event_payload"
+      "output_formats": {
+        "markdown_documentation": {
+          "description": "Traditional MkDocs-ready documentation for human consumption",
+          "features": [
+            "MkDocs-ready: Complete documentation website with search",
+            "Human-readable: Beautiful, professional documentation for developers",
+            "Interactive: Searchable content with cross-references",
+            "Sincpro Theme: Beautiful violet corporate colors and professional styling",
+            "Responsive Design: Works perfectly on desktop and mobile devices",
+            "Full-Text Search: Find any component, method, or parameter instantly",
+            "Component Overview: Summary tables with component counts and descriptions"
           ],
-          "ai_hints": {
-            "is_input_type": true,
-            "is_output_type": false,
-            "complexity_level": "simple",
-            "validation_rules": [
-              "card_number_required",
-              "card_number_has_default",
-              "amount_required",
-              "amount_has_default",
-              "merchant_id_required",
-              "merchant_id_has_default"
-            ]
-          }
+          "output_structure": [
+            "mkdocs.yml - MkDocs configuration",
+            "requirements.txt - Dependencies",
+            "site/ - Built HTML documentation",
+            "docs/ - Markdown content with index.md, features.md, dtos.md, application-services.md"
+          ]
         },
-        {
-          "type": "data_transfer_object",
-          "name": "ValidateCommand",
-          "module": "dynamic.ValidateCommand",
-          "description": "ValidateCommand",
-          "purpose": "data_validation_serialization",
-          "validation_framework": "pydantic",
-          "fields": {
-            "card_number": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            },
-            "cvv": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            }
-          },
-          "json_schema": {
-            "description": "ValidateCommand",
-            "properties": {
-              "card_number": {
-                "title": "Card Number",
-                "type": "string"
-              },
-              "cvv": {
-                "title": "Cvv",
-                "type": "string"
-              }
-            },
-            "required": [
-              "card_number",
-              "cvv"
-            ],
-            "title": "ValidateCommand",
-            "type": "object"
-          },
-          "usage_patterns": [
-            "command_input",
-            "query_input",
-            "response_output",
-            "event_payload"
+        "ai_optimized_json_schema": {
+          "description": "Enhanced JSON schema that combines framework context with repository analysis for complete AI understanding",
+          "key_enhancement": "Combines framework context (how to use Sincpro Framework) with repository analysis (what components exist in codebase)",
+          "features": [
+            "Complete AI Understanding: Framework context + repository analysis",
+            "Framework Context: Usage patterns, examples, best practices",
+            "Repository Analysis: Specific components in the codebase",
+            "Rich Metadata: Business domains, complexity analysis, architectural patterns",
+            "Code Generation: Comprehensive hints for AI-powered code generation",
+            "Embedding Support: Optimized for semantic search and AI embeddings",
+            "Usage Synthesis: Real examples combining framework knowledge with repository components"
           ],
-          "ai_hints": {
-            "is_input_type": true,
-            "is_output_type": false,
-            "complexity_level": "simple",
-            "validation_rules": [
-              "card_number_required",
-              "card_number_has_default",
-              "cvv_required",
-              "cvv_has_default"
-            ]
-          }
-        },
-        {
-          "type": "data_transfer_object",
-          "name": "RefundCommand",
-          "module": "dynamic.RefundCommand",
-          "description": "RefundCommand",
-          "purpose": "data_validation_serialization",
-          "validation_framework": "pydantic",
-          "fields": {
-            "transaction_id": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": true,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            },
-            "amount": {
-              "type": "<class 'float'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": true,
-                "is_text": false,
-                "is_status": false
-              }
-            },
-            "reason": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            }
-          },
-          "json_schema": {
-            "description": "RefundCommand",
-            "properties": {
-              "transaction_id": {
-                "title": "Transaction Id",
-                "type": "string"
-              },
-              "amount": {
-                "title": "Amount",
-                "type": "number"
-              },
-              "reason": {
-                "title": "Reason",
-                "type": "string"
-              }
-            },
-            "required": [
-              "transaction_id",
-              "amount",
-              "reason"
-            ],
-            "title": "RefundCommand",
-            "type": "object"
-          },
-          "usage_patterns": [
-            "command_input",
-            "query_input",
-            "response_output",
-            "event_payload"
-          ],
-          "ai_hints": {
-            "is_input_type": true,
-            "is_output_type": false,
-            "complexity_level": "simple",
-            "validation_rules": [
-              "transaction_id_required",
-              "transaction_id_has_default",
-              "amount_required",
-              "amount_has_default",
-              "reason_required",
-              "reason_has_default"
-            ]
-          }
-        },
-        {
-          "type": "data_transfer_object",
-          "name": "PaymentCommand",
-          "module": "dynamic.PaymentCommand",
-          "description": "PaymentCommand",
-          "purpose": "data_validation_serialization",
-          "validation_framework": "pydantic",
-          "fields": {
-            "card_number": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            },
-            "amount": {
-              "type": "<class 'float'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": false,
-                "is_amount": true,
-                "is_text": false,
-                "is_status": false
-              }
-            },
-            "merchant_id": {
-              "type": "<class 'str'>",
-              "required": true,
-              "default": "PydanticUndefined",
-              "description": null,
-              "ai_hints": {
-                "is_identifier": true,
-                "is_amount": false,
-                "is_text": false,
-                "is_status": false
-              }
-            }
-          },
-          "json_schema": {
-            "description": "PaymentCommand",
-            "properties": {
-              "card_number": {
-                "title": "Card Number",
-                "type": "string"
-              },
-              "amount": {
-                "title": "Amount",
-                "type": "number"
-              },
-              "merchant_id": {
-                "title": "Merchant Id",
-                "type": "string"
-              }
-            },
-            "required": [
-              "card_number",
-              "amount",
-              "merchant_id"
-            ],
-            "title": "PaymentCommand",
-            "type": "object"
-          },
-          "usage_patterns": [
-            "command_input",
-            "query_input",
-            "response_output",
-            "event_payload"
-          ],
-          "ai_hints": {
-            "is_input_type": true,
-            "is_output_type": false,
-            "complexity_level": "simple",
-            "validation_rules": [
-              "card_number_required",
-              "card_number_has_default",
-              "amount_required",
-              "amount_has_default",
-              "merchant_id_required",
-              "merchant_id_has_default"
-            ]
+          "schema_structure": {
+            "framework_context": "Framework usage patterns, principles, key features, execution patterns",
+            "repository_analysis": "Architecture patterns, component summary, DTOs, features, application services with AI hints",
+            "ai_integration": "Framework integration patterns, complete understanding capabilities, usage synthesis, embedding suggestions, code generation hints, complexity analysis"
           }
         }
-      ],
-      "features": [
-        {
-          "type": "feature",
-          "name": "ValidateFeature",
-          "module": "dynamic.ValidateFeature",
-          "description": "Feature to validate payment card details",
-          "purpose": "business_logic_execution",
-          "pattern": "command_pattern",
-          "methods": {
-            "execute": {
-              "signature": "(self, dto: __main__.ValidateCommand) -> __main__.ValidateResponse",
-              "description": "Execute card validation\nArgs:\n    dto (ValidateCommand): Data transfer object containing card details\nReturns:\n    ValidateResponse: Response indicating if the card is valid",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "dto": {
-                  "type": "<class '__main__.ValidateCommand'>",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "<class '__main__.ValidateResponse'>",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": true,
-                "is_property": false,
-                "is_action": false
-              }
-            }
-          },
-          "execute_method": {
-            "signature": "(self, dto: __main__.ValidateCommand) -> __main__.ValidateResponse",
-            "description": "Execute card validation\nArgs:\n    dto (ValidateCommand): Data transfer object containing card details\nReturns:\n    ValidateResponse: Response indicating if the card is valid",
-            "parameters": {
-              "self": {
-                "type": "Any",
-                "default": null,
-                "required": true
-              },
-              "dto": {
-                "type": "<class '__main__.ValidateCommand'>",
-                "default": null,
-                "required": true
-              }
-            },
-            "return_type": "<class '__main__.ValidateResponse'>",
-            "ai_hints": {
-              "is_main_entry_point": true,
-              "follows_command_pattern": true,
-              "processes_dto": true
-            }
-          },
-          "dependencies": [],
-          "ai_hints": {
-            "is_synchronous": true,
-            "has_side_effects": true,
-            "input_types": [
-              "Any",
-              "<class '__main__.ValidateCommand'>"
-            ],
-            "output_types": [
-              "<class '__main__.ValidateResponse'>"
-            ],
-            "complexity_level": "simple",
-            "business_domain": "general"
-          }
-        },
-        {
-          "type": "feature",
-          "name": "RefundFeature",
-          "module": "dynamic.RefundFeature",
-          "description": "Feature to handle refund processing",
-          "purpose": "business_logic_execution",
-          "pattern": "command_pattern",
-          "methods": {
-            "execute": {
-              "signature": "(self, dto: __main__.RefundCommand) -> __main__.RefundResponse",
-              "description": "Execute refund processing\nArgs:\n    dto (RefundCommand): Data transfer object containing refund details\nReturns:\n    RefundResponse: Response containing refund details",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "dto": {
-                  "type": "<class '__main__.RefundCommand'>",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "<class '__main__.RefundResponse'>",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": true,
-                "is_property": false,
-                "is_action": false
-              }
-            }
-          },
-          "execute_method": {
-            "signature": "(self, dto: __main__.RefundCommand) -> __main__.RefundResponse",
-            "description": "Execute refund processing\nArgs:\n    dto (RefundCommand): Data transfer object containing refund details\nReturns:\n    RefundResponse: Response containing refund details",
-            "parameters": {
-              "self": {
-                "type": "Any",
-                "default": null,
-                "required": true
-              },
-              "dto": {
-                "type": "<class '__main__.RefundCommand'>",
-                "default": null,
-                "required": true
-              }
-            },
-            "return_type": "<class '__main__.RefundResponse'>",
-            "ai_hints": {
-              "is_main_entry_point": true,
-              "follows_command_pattern": true,
-              "processes_dto": true
-            }
-          },
-          "dependencies": [],
-          "ai_hints": {
-            "is_synchronous": true,
-            "has_side_effects": true,
-            "input_types": [
-              "Any",
-              "<class '__main__.RefundCommand'>"
-            ],
-            "output_types": [
-              "<class '__main__.RefundResponse'>"
-            ],
-            "complexity_level": "simple",
-            "business_domain": "general"
-          }
-        },
-        {
-          "type": "feature",
-          "name": "PaymentFeature",
-          "module": "dynamic.PaymentFeature",
-          "description": "Feature to handle payment processing",
-          "purpose": "business_logic_execution",
-          "pattern": "command_pattern",
-          "methods": {
-            "execute": {
-              "signature": "(self, dto: __main__.PaymentCommand) -> __main__.PaymentResponse",
-              "description": "Execute payment processing\nArgs:\n    dto (PaymentCommand): Data transfer object containing payment details\nReturns:\n    PaymentResponse: Response containing transaction details",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "dto": {
-                  "type": "<class '__main__.PaymentCommand'>",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "<class '__main__.PaymentResponse'>",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": true,
-                "is_property": false,
-                "is_action": false
-              }
-            }
-          },
-          "execute_method": {
-            "signature": "(self, dto: __main__.PaymentCommand) -> __main__.PaymentResponse",
-            "description": "Execute payment processing\nArgs:\n    dto (PaymentCommand): Data transfer object containing payment details\nReturns:\n    PaymentResponse: Response containing transaction details",
-            "parameters": {
-              "self": {
-                "type": "Any",
-                "default": null,
-                "required": true
-              },
-              "dto": {
-                "type": "<class '__main__.PaymentCommand'>",
-                "default": null,
-                "required": true
-              }
-            },
-            "return_type": "<class '__main__.PaymentResponse'>",
-            "ai_hints": {
-              "is_main_entry_point": true,
-              "follows_command_pattern": true,
-              "processes_dto": true
-            }
-          },
-          "dependencies": [],
-          "ai_hints": {
-            "is_synchronous": true,
-            "has_side_effects": true,
-            "input_types": [
-              "Any",
-              "<class '__main__.PaymentCommand'>"
-            ],
-            "output_types": [
-              "<class '__main__.PaymentResponse'>"
-            ],
-            "complexity_level": "simple",
-            "business_domain": "payments"
-          }
-        }
-      ],
-      "application_services": [
-        {
-          "type": "application_service",
-          "name": "MakeTransaction",
-          "module": "dynamic.MakeTransaction",
-          "description": "Second layer of the framework, orchestration of features",
-          "purpose": "orchestration_coordination",
-          "pattern": "service_layer_pattern",
-          "methods": {
-            "execute": {
-              "signature": "(self, dto: __main__.MakeTransactionCommand) -> __main__.MakeTransactionResponse",
-              "description": "Execute transaction processing\nArgs:\n    dto (MakeTransactionCommand): Data transfer object containing transaction details\nReturns:\n    MakeTransactionResponse: Response containing transaction details",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "dto": {
-                  "type": "<class '__main__.MakeTransactionCommand'>",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "<class '__main__.MakeTransactionResponse'>",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": true,
-                "is_property": false,
-                "is_action": false
-              }
-            }
-          },
-          "orchestration_capabilities": true,
-          "ai_hints": {
-            "orchestrates_features": true,
-            "handles_transactions": true,
-            "coordinates_external_services": true,
-            "complexity_level": "simple",
-            "business_domain": "general"
-          }
-        }
-      ],
-      "dependencies": [
-        {
-          "type": "dependency_function",
-          "name": "check_health",
-          "module": "ipykernel_97871.875856287",
-          "description": "Health check function for the framework",
-          "purpose": "utility_service_provision",
-          "signature": "()",
-          "parameters": {},
-          "return_type": "Any",
-          "is_async": false,
-          "ai_hints": {
-            "is_pure_function": true,
-            "has_side_effects": false,
-            "complexity_level": "low"
-          }
-        },
-        {
-          "type": "dependency_class",
-          "name": "Database",
-          "module": "dynamic.Database",
-          "description": "Database class to handle transactions",
-          "purpose": "service_provision",
-          "methods": {
-            "get_transaction": {
-              "signature": "(self, tx_id)",
-              "description": "",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "tx_id": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "Any",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": false,
-                "is_property": true,
-                "is_action": false
-              }
-            },
-            "save_transaction": {
-              "signature": "(self, data)",
-              "description": "",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "data": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "Any",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": false,
-                "is_property": false,
-                "is_action": false
-              }
-            }
-          },
-          "attributes": {},
-          "ai_hints": {
-            "is_stateful": false,
-            "provides_external_integration": false,
-            "complexity_level": "simple"
-          }
-        },
-        {
-          "type": "dependency_class",
-          "name": "VisaAdapter",
-          "module": "dynamic.VisaAdapter",
-          "description": "Adapter for Visa payment processing",
-          "purpose": "service_provision",
-          "methods": {
-            "check_status": {
-              "signature": "(self, tx_id)",
-              "description": "",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "tx_id": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "Any",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": false,
-                "is_property": false,
-                "is_action": false
-              }
-            },
-            "make_request": {
-              "signature": "(self, card_data)",
-              "description": "",
-              "parameters": {
-                "self": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                },
-                "card_data": {
-                  "type": "Any",
-                  "default": null,
-                  "required": true
-                }
-              },
-              "return_type": "Any",
-              "is_async": false,
-              "ai_hints": {
-                "is_entry_point": false,
-                "is_property": false,
-                "is_action": false
-              }
-            }
-          },
-          "attributes": {},
-          "ai_hints": {
-            "is_stateful": false,
-            "provides_external_integration": true,
-            "complexity_level": "simple"
-          }
-        }
-      ],
-      "middlewares": [
-        {
-          "type": "middleware_class",
-          "name": "ValidatePayment",
-          "module": "dynamic.ValidatePayment",
-          "description": "Middleware to validate payment data",
-          "purpose": "cross_cutting_concerns",
-          "pattern": "middleware_pattern",
-          "methods": {},
-          "ai_hints": {
-            "is_stateful": false,
-            "complexity_level": "simple"
-          }
-        }
-      ]
-    },
-    "relationships": {
-      "dto_usage": {},
-      "feature_dependencies": {},
-      "service_orchestration": {},
-      "middleware_chain": [
-        "ValidatePayment"
-      ],
-      "dependency_injection": {}
-    }
-  },
-  "ai_integration": {
-    "embedding_suggestions": {
-      "primary_entities": [
-        "MakeTransactionCommand",
-        "ValidateCommand",
-        "RefundCommand",
-        "PaymentCommand"
-      ],
-      "business_capabilities": [
-        "ValidateFeature",
-        "RefundFeature",
-        "PaymentFeature"
-      ],
-      "integration_points": [
-        "VisaAdapter"
-      ],
-      "data_flow_patterns": [
-        "command_input",
-        "service_orchestration",
-        "middleware_processing"
-      ]
-    },
-    "code_generation_hints": {
-      "framework_patterns": [
-        "decorator_based_registration",
-        "dependency_injection",
-        "command_pattern",
-        "middleware_pipeline"
-      ],
-      "common_imports": [
-        "from sincpro_framework import UseFramework, Feature, DataTransferObject",
-        "from typing import Any",
-        "from sincpro_framework import ApplicationService",
-        "from sincpro_framework import Middleware"
-      ],
-      "naming_conventions": {
-        "dtos": "PascalCase ending with Command/Query/Response",
-        "features": "PascalCase ending with Feature",
-        "services": "PascalCase ending with Service",
-        "dependencies": "camelCase or snake_case",
-        "methods": "snake_case"
-      }
-    },
-    "complexity_analysis": {
-      "overall_complexity": "medium",
-      "most_complex_components": [],
-      "simplest_components": [
-        "dto:MakeTransactionCommand",
-        "dto:ValidateCommand",
-        "dto:RefundCommand",
-        "dto:PaymentCommand"
-      ]
-    },
-    "framework_integration": {
-      "framework_version": "2.5.0",
-      "architecture_pattern": "Hexagonal Architecture (Ports and Adapters)",
-      "execution_patterns": {
-        "unified_execution": "Use framework(dto, ResponseClass) for all executions",
-        "feature_execution": {},
-        "service_execution": {},
-        "anti_patterns": [
-          "Don't use framework_instance.feature_bus.execute() for external execution",
-          "Don't access internal buses or registries directly",
-          "Don't try to find or search for specific handlers",
-          "Don't call internal framework methods",
-          "Don't instantiate handlers manually",
-          "Don't bypass the framework's execution methods"
+      },
+      "generated_documentation_capabilities": {
+        "automatic_component_discovery": "Automatically discovers all DTOs, Features, Application Services, Dependencies, and Middlewares",
+        "business_domain_inference": "Automatic categorization by business domain (payments, users, orders, etc.)",
+        "complexity_assessment": "Automatic complexity analysis for optimization recommendations",
+        "pattern_recognition": "Identification of architectural patterns and framework usage",
+        "ai_hints_generation": "Rich metadata generation for AI understanding and code generation"
+      },
+      "usage_examples": {
+        "simple_markdown_generation": [
+          "from sincpro_framework.generate_documentation import build_documentation",
+          "build_documentation(framework_instance, output_dir='docs/generated')"
+        ],
+        "ai_json_schema_generation": [
+          "from sincpro_framework.generate_documentation import build_documentation",
+          "build_documentation(framework_instance, output_dir='docs/generated', format='json')"
+        ],
+        "multiple_frameworks": [
+          "from apps.payment_gateway import payment_framework",
+          "from apps.user_management import user_framework",
+          "build_documentation([payment_framework, user_framework], format='both')"
         ]
       },
-      "available_features": {
-        "dto_validation": {
-          "technology": "Pydantic",
-          "description": "Validates Data Transfer Objects (DTOs) to ensure only well-structured data enters core business logic",
-          "benefits": [
-            "Reduces errors and maintains data integrity",
-            "Automatic validation of input parameters",
-            "Type safety and runtime validation"
-          ],
-          "usage_context": "All data entering and leaving use cases must be validated through DTOs"
-        },
-        "dependency_injection": {
-          "description": "Facilitates integration of user-defined dependencies promoting modular design",
-          "benefits": [
-            "Promotes modular design",
-            "Enhances unit testing through easy mocking",
-            "Allows replacement of dependencies",
-            "Reduces coupling between components"
-          ],
-          "usage_context": "Dependencies are injected automatically into Features and ApplicationServices"
-        },
-        "error_handling": {
-          "levels": [
-            "global",
-            "application_service",
-            "feature"
-          ],
-          "description": "Provides centralized error handling at multiple levels",
-          "benefits": [
-            "Consistent error management",
-            "Improved overall reliability",
-            "Granular error handling control",
-            "Centralized error logging and monitoring"
-          ],
-          "usage_context": "Errors can be handled at the most appropriate level for the specific use case"
-        },
-        "inversion_of_control": {
-          "description": "Automates instantiation and configuration of components",
-          "benefits": [
-            "Reduces boilerplate code",
-            "Encourages loose coupling",
-            "Makes systems more adaptable and maintainable",
-            "Automatic component lifecycle management"
-          ],
-          "usage_context": "Framework handles object creation and dependency resolution automatically"
-        }
-      }
-    },
-    "complete_understanding": {
-      "framework_knowledge": "Loaded from hardcoded guide - provides usage patterns and examples",
-      "repository_knowledge": "Generated from code analysis - provides specific components",
-      "ai_capability": "Can understand both how to use framework AND what exists in this repository",
-      "code_generation_ready": true,
-      "semantic_search_optimized": true
-    },
-    "usage_synthesis": {
-      "how_to_execute_features": {
-        "execution_pattern": "framework_instance(dto, ResponseClass)",
-        "example_from_context": [],
-        "features_in_repository": [
-          "ValidateFeature",
-          "RefundFeature",
-          "PaymentFeature"
-        ],
-        "note": "Use framework_instance(dto, ResponseClass) to execute any feature listed in features_in_repository"
+      "ai_integration_benefits": {
+        "code_generation": "AI can understand patterns and generate similar code",
+        "documentation": "AI can explain components and their relationships",
+        "analysis": "AI can identify optimization opportunities and suggest improvements",
+        "migration": "AI can understand dependencies for migration planning",
+        "semantic_search": "Optimized schema enables powerful semantic search capabilities",
+        "complete_understanding": "Combines framework knowledge with repository-specific components for full context"
       },
-      "how_to_execute_services": {
-        "execution_pattern": "framework_instance(dto, ResponseClass)",
-        "example_from_context": [],
-        "services_in_repository": [
-          "MakeTransaction"
-        ],
-        "note": "Use framework_instance(dto, ResponseClass) to execute any service listed in services_in_repository"
-      },
-      "common_patterns_in_repository": [
-        "command_pattern",
-        "feature_based_architecture",
-        "service_layer_pattern",
-        "middleware_pipeline"
+      "best_practices_for_documentation": [
+        "Document DTOs with clear docstrings for better auto-generated docs",
+        "Describe Features with comprehensive docstrings for execute methods",
+        "Use descriptive names for components for better auto-generated documentation",
+        "Organize related features and services logically by business domain",
+        "Include meaningful examples in docstrings for AI understanding"
       ],
-      "framework_best_practices": [
-        "Never use internal buses directly - always use framework(dto, ResponseClass)",
-        "Let framework handle automatic DTO to handler resolution"
-      ]
+      "ai_guidance_for_auto_documentation": {
+        "when_to_use": [
+          "Creating comprehensive project documentation",
+          "Generating AI-optimized schemas for semantic search",
+          "Documenting complex framework instances for team onboarding",
+          "Creating machine-readable documentation for AI code generation",
+          "Building searchable component catalogs"
+        ],
+        "integration_patterns": [
+          "CI/CD pipeline integration for automatic documentation updates",
+          "AI system integration for code generation and analysis",
+          "Developer documentation workflows",
+          "Architecture documentation maintenance"
+        ],
+        "output_usage": [
+          "Use markdown output for developer documentation websites",
+          "Use JSON schema output for AI system integration",
+          "Use both formats for complete documentation coverage",
+          "Integrate schemas with embedding systems for semantic search"
+        ]
+      }
     }
   }
 }

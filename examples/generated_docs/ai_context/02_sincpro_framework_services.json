@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sincpro_framework Application Services",
+  "description": "Application Services (orchestrators) for sincpro_framework",
+  "version": "1.0.0",
+  "instance_number": 2,
+  "schema_type": "service_chunk",
+  "content_type": "summary_information",
+  "ai_usage": {
+    "purpose": "Summary Service information for understanding orchestration",
+    "token_efficiency": "Overview and patterns for optimal consumption"
+  },
+  "application_services": [
+    {
+      "name": "MakeTransactionSincpro",
+      "docstring": "MakeTransactionSincpro",
+      "input_dto": null,
+      "method_count": 1,
+      "business_domain": "payments"
+    }
+  ]
+}

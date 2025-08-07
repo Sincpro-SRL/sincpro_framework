@@ -4,12 +4,34 @@ Framework features and capabilities.
 
 ## 📋 Overview
 
-This framework includes **1** feature components that provide
+This framework includes **2** feature components that provide
 core functionality and capabilities.
 
 ---
 
 ## 🎯 Available Features
+
+### ValidateFeatureSincpro
+
+**Module:** `dynamic.ValidateFeatureSincpro`
+
+Feature to validate payment card details
+
+**Methods:**
+
+#### execute
+
+```python
+(self, dto: ValidateCommand) -> ValidateResponse
+```
+
+Execute card validation
+Args:
+    dto (ValidateCommand): Data transfer object containing card details
+Returns:
+    ValidateResponse: Response indicating if the card is valid
+
+---
 
 ### PaymentFeatureSincpro
 

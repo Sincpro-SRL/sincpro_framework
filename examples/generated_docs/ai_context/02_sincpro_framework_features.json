@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sincpro_framework Features",
+  "description": "Features (use cases) for sincpro_framework",
+  "version": "1.0.0",
+  "instance_number": 2,
+  "schema_type": "feature_chunk",
+  "content_type": "summary_information",
+  "ai_usage": {
+    "purpose": "Summary Feature information for understanding business logic",
+    "token_efficiency": "Overview and patterns for optimal consumption"
+  },
+  "features": [
+    {
+      "name": "ValidateFeatureSincpro",
+      "docstring": "Feature to validate payment card details",
+      "input_dto": null,
+      "method_count": 1,
+      "business_domain": "general"
+    },
+    {
+      "name": "PaymentFeatureSincpro",
+      "docstring": "Feature to handle payment processing in Sincpro Framework",
+      "input_dto": null,
+      "method_count": 1,
+      "business_domain": "payments"
+    }
+  ]
+}
