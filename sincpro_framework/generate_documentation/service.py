@@ -14,6 +14,7 @@ def build_documentation(
     framework_instances: UseFramework | list[UseFramework],
     output_dir: str = "generated_docs",
     format: Literal["markdown", "json", "both"] = "both",
+    chunked: bool = False,
 ) -> str:
     """
     Build complete documentation ready for use with MkDocs and/or AI-optimized JSON schemas.
@@ -22,6 +23,7 @@ def build_documentation(
         framework_instances: Framework instance(s) to document.
         output_dir: Output directory for documentation.
         format: Output format - "markdown" for MkDocs, "json" for AI schemas, "both" for both.
+        chunked: Whether to generate chunked JSON files optimized for AI consumption.
 
     Returns:
         str: Path to the generated directory.
@@ -35,6 +37,9 @@ def build_documentation(
 
         # Generate JSON schema for AI consumption
         schema_path = build_documentation(framework_instance, format="json")
+
+        # Generate chunked JSON for optimized AI consumption
+        chunked_path = build_documentation(framework_instance, format="json", chunked=True)
 
         # Generate both markdown and JSON
         both_path = build_documentation(framework_instance, format="both")
@@ -75,7 +80,10 @@ def build_documentation(
 
     if format in ["json", "both"]:
         # Generate JSON schema for AI consumption
-        json_output = generate_json_schema(framework_docs, output_dir)
+        if chunked:
+            json_output = generate_chunked_json_schema(framework_docs, output_dir)
+        else:
+            json_output = generate_json_schema(framework_docs, output_dir)
 
         if format == "json":
             return json_output
@@ -161,3 +169,60 @@ def generate_json_schema(
         )
         print(f"✅ Individual schemas with framework context: {', '.join(schema_files)}")
         return consolidated_path
+
+
+def generate_chunked_json_schema(
+    framework_docs: list[FrameworkDocs], output_dir: str = "generated_docs"
+) -> str:
+    """
+    Generate chunked AI-optimized JSON schemas for optimized token consumption.
+    
+    This creates multiple smaller JSON files organized for progressive AI discovery:
+    - General framework context (reusable across all instances)
+    - Framework instance overview (lightweight context per instance)
+    - Component-specific chunks (DTOs, Features, etc.)
+    - Detail-level chunks for when full information is needed
+    
+    The chunked approach allows AIs to:
+    1. Start with framework understanding (01_framework_context.json)
+    2. Get instance overview (01_<name>_context.json)
+    3. Discover available components without full details
+    4. Load specific detailed chunks when needed
+    
+    Args:
+        framework_docs: List of FrameworkDocs instances
+        output_dir: Output directory for JSON schema files
+        
+    Returns:
+        str: Path to the ai_context directory containing all chunked files
+    """
+    import json
+    import os
+    
+    from sincpro_framework.generate_documentation.infrastructure.json_schema_generator import (
+        ChunkedAIJSONSchemaGenerator,
+    )
+    
+    # Create ai_context subdirectory within output_dir
+    ai_context_dir = os.path.join(output_dir, "ai_context")
+    os.makedirs(ai_context_dir, exist_ok=True)
+    
+    # Generate framework context once (shared across all instances)
+    framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+    generator = ChunkedAIJSONSchemaGenerator()
+    generator.save_framework_context_to_file(framework_context_path)
+    
+    generated_files = [framework_context_path]
+    
+    # Generate chunked files for each framework instance
+    for i, doc in enumerate(framework_docs, 1):
+        instance_generator = ChunkedAIJSONSchemaGenerator(doc)
+        instance_files = instance_generator.generate_all_chunks(ai_context_dir, i)
+        generated_files.extend(instance_files)
+    
+    print(f"✅ Generated {len(generated_files)} chunked AI context files:")
+    for file_path in generated_files:
+        filename = os.path.basename(file_path)
+        print(f"   - {filename}")
+    
+    return ai_context_dir
