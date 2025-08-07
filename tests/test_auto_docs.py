@@ -135,117 +135,97 @@ def test_generate_markdown_documentation(test_framework):
 
 
 def test_generate_json_schema(test_framework):
-    """Test para generar JSON schema para consumo de IA"""
+    """Test para generar JSON schema chunked para consumo de IA (nuevo formato por defecto)"""
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Generate JSON schema
+        # Generate JSON schema - now chunked by default
         from sincpro_framework.generate_documentation import build_documentation
 
         result_path = build_documentation(test_framework, output_dir=temp_dir, format="json")
 
-        # Verify that the JSON schema was created in ai_context subdirectory
-        assert os.path.exists(result_path)
-        assert result_path.endswith("_schema.json")
-        assert "ai_context" in result_path
+        # Verify that the AI context directory was created
+        ai_context_dir = os.path.join(temp_dir, "ai_context")
+        assert os.path.exists(ai_context_dir)
+        assert result_path == ai_context_dir
 
-        # Load and verify JSON schema content
-        with open(result_path, "r") as f:
-            schema = json.load(f)
+        # Check that framework context file exists
+        framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+        assert os.path.exists(framework_context_path)
 
-        # Verify schema structure - new format includes framework context and repository analysis
-        assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-        assert schema["title"] == "test_framework Repository Schema"  # Updated title format
-        assert schema["version"] == "1.0.0"
-        assert "framework_context" in schema
-        assert "repository_analysis" in schema
-        assert "ai_integration" in schema
+        # Check that instance files exist
+        instance_context_path = os.path.join(ai_context_dir, "01_test_framework_context.json")
+        assert os.path.exists(instance_context_path)
 
-        # Verify framework context (from hardcoded guide)
-        framework_context = schema["framework_context"]
-        assert framework_context["framework_name"] == "Sincpro Framework"
-        assert "core_principles" in framework_context
-        assert "key_features" in framework_context
+        # Load and verify framework context
+        with open(framework_context_path, "r") as f:
+            framework_context = json.load(f)
 
-        # Verify repository analysis (from code inspection)
-        repository_analysis = schema["repository_analysis"]
-        assert "metadata" in repository_analysis
-        assert "components" in repository_analysis
+        assert framework_context["schema_type"] == "framework_context"
+        assert "framework_context" in framework_context
+        assert framework_context["framework_context"]["framework_name"] == "Sincpro Framework"
 
-        # Verify metadata (now under repository_analysis)
-        metadata = repository_analysis["metadata"]
+        # Load and verify instance context
+        with open(instance_context_path, "r") as f:
+            instance_data = json.load(f)
+
+        assert instance_data["schema_type"] == "instance_overview"
+        assert "framework_instance" in instance_data
+        assert instance_data["framework_instance"]["name"] == "test_framework"
+
+        # Verify component summary contains expected data
+        component_summary = instance_data["framework_instance"]["component_summary"]
+        assert component_summary["dtos"]["count"] >= 2  # ExampleDTO and ProcessCommandDTO
         assert (
-            metadata["repository_name"] == "test_framework"
-        )  # Changed from 'name' to 'repository_name'
-        assert metadata["uses_framework"] == "sincpro_framework"  # Updated field
-        assert "architecture_patterns" in metadata
-        assert "component_summary" in metadata
+            component_summary["features"]["count"] >= 2
+        )  # ExampleFeature and ProcessFeature
 
-        # Verify components (now under repository_analysis)
-        components = repository_analysis["components"]
-        assert "dtos" in components
-        assert "features" in components
-        assert "application_services" in components
-        assert "dependencies" in components
+        # Check DTO files
+        dto_summary_path = os.path.join(ai_context_dir, "01_test_framework_dtos.json")
+        dto_details_path = os.path.join(ai_context_dir, "01_test_framework_dtos_details.json")
+        assert os.path.exists(dto_summary_path)
+        assert os.path.exists(dto_details_path)
 
-        # Verify DTOs
-        dtos = components["dtos"]
-        assert len(dtos) >= 2  # ExampleDTO and ProcessCommandDTO
-
-        # Find ExampleDTO
-        example_dto = next((dto for dto in dtos if dto["name"] == "ExampleDTO"), None)
-        assert example_dto is not None
-        assert example_dto["type"] == "data_transfer_object"
-        assert example_dto["purpose"] == "data_validation_serialization"
-        assert "fields" in example_dto
-        assert "ai_hints" in example_dto
-
-        # Verify Features
-        features = components["features"]
-        assert len(features) >= 2  # ExampleFeature and ProcessFeature
-
-        # Find ExampleFeature
-        example_feature = next(
-            (feat for feat in features if feat["name"] == "ExampleFeature"), None
+        # Check Feature files
+        feature_summary_path = os.path.join(ai_context_dir, "01_test_framework_features.json")
+        feature_details_path = os.path.join(
+            ai_context_dir, "01_test_framework_features_details.json"
         )
-        assert example_feature is not None
-        assert example_feature["type"] == "feature"
-        assert example_feature["pattern"] == "command_pattern"
-        assert "execute_method" in example_feature
-        assert "ai_hints" in example_feature
+        assert os.path.exists(feature_summary_path)
+        assert os.path.exists(feature_details_path)
 
-        # Verify Application Services
-        app_services = components["application_services"]
-        assert len(app_services) >= 1
+        # Verify DTOs summary content
+        with open(dto_summary_path, "r") as f:
+            dto_summary = json.load(f)
 
-        # Find ComplexProcessor
-        processor = next(
-            (svc for svc in app_services if svc["name"] == "ComplexProcessor"), None
-        )
-        assert processor is not None
-        assert processor["type"] == "application_service"
-        assert processor["purpose"] == "orchestration_coordination"
+        assert dto_summary["schema_type"] == "dto_chunk"
+        assert dto_summary["content_type"] == "summary_information"
+        assert len(dto_summary["dtos"]) >= 2
 
-        # Verify AI integration (enhanced metadata combining framework and repository knowledge)
-        ai_integration = schema["ai_integration"]
-        assert "embedding_suggestions" in ai_integration
-        assert "code_generation_hints" in ai_integration
-        assert "complexity_analysis" in ai_integration
+        # Check DTO summary structure
+        sample_dto = dto_summary["dtos"][0]
+        assert "name" in sample_dto
+        assert "field_count" in sample_dto
+        assert "field_names" in sample_dto
+        assert "business_domain" in sample_dto
 
-        # Verify embedding suggestions
-        embedding = ai_integration["embedding_suggestions"]
-        assert "primary_entities" in embedding
-        assert "business_capabilities" in embedding
-        assert len(embedding["primary_entities"]) >= 2
+        # Verify Features summary content
+        with open(feature_summary_path, "r") as f:
+            feature_summary = json.load(f)
 
-        # Verify code generation hints
-        code_hints = ai_integration["code_generation_hints"]
-        assert "framework_patterns" in code_hints
-        assert "common_imports" in code_hints
-        assert "naming_conventions" in code_hints
+        assert feature_summary["schema_type"] == "feature_chunk"
+        assert feature_summary["content_type"] == "summary_information"
+        assert len(feature_summary["features"]) >= 2
+
+        # Check Feature summary structure
+        sample_feature = feature_summary["features"][0]
+        assert "name" in sample_feature
+        assert "input_dto" in sample_feature
+        assert "method_count" in sample_feature
+        assert "business_domain" in sample_feature
 
 
 def test_generate_both_formats(test_framework):
-    """Test para generar ambos formatos: markdown y JSON"""
+    """Test para generar ambos formatos: markdown y JSON chunked"""
 
     with tempfile.TemporaryDirectory() as temp_dir:
         # Generate both formats
@@ -261,24 +241,29 @@ def test_generate_both_formats(test_framework):
         assert os.path.exists(os.path.join(temp_dir, "docs", "index.md"))
         assert os.path.exists(os.path.join(temp_dir, "site"))  # Built site
 
-        # Check for JSON schema in ai_context subdirectory
+        # Check for chunked JSON schema in ai_context subdirectory
         ai_context_dir = os.path.join(temp_dir, "ai_context")
         assert os.path.exists(ai_context_dir)
-        json_files = [f for f in os.listdir(ai_context_dir) if f.endswith("_schema.json")]
-        assert len(json_files) >= 1
 
-        # Verify JSON schema content
-        json_path = os.path.join(ai_context_dir, json_files[0])
-        with open(json_path, "r") as f:
-            schema = json.load(f)
+        # Check that framework context and instance files exist
+        framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+        instance_context_path = os.path.join(ai_context_dir, "01_test_framework_context.json")
+        assert os.path.exists(framework_context_path)
+        assert os.path.exists(instance_context_path)
 
-        assert schema["title"] == "test_framework Repository Schema"  # Updated title format
+        # Verify JSON content
+        with open(instance_context_path, "r") as f:
+            instance_data = json.load(f)
+
+        assert instance_data["schema_type"] == "instance_overview"
+        assert "framework_instance" in instance_data
+        assert instance_data["framework_instance"]["name"] == "test_framework"
 
 
-def test_direct_json_schema_generation():
-    """Test directo de generación de JSON schema usando generate_json_schema"""
+def test_direct_chunked_json_schema_generation():
+    """Test directo de generación de JSON schema chunked usando generate_chunked_json_schema"""
 
-    from sincpro_framework.generate_documentation import generate_json_schema
+    from sincpro_framework.generate_documentation import generate_chunked_json_schema
     from sincpro_framework.generate_documentation.infrastructure.framework_docs_extractor import (
         doc_extractor,
     )
@@ -301,74 +286,88 @@ def test_direct_json_schema_generation():
     doc = doc_extractor.extract_framework_docs(introspector_instance)
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Generate JSON schema directly
-        result_path = generate_json_schema([doc], temp_dir)
+        # Generate chunked JSON schema directly
+        result_dir = generate_chunked_json_schema([doc], temp_dir)
 
-        # Verify result is in ai_context subdirectory
-        assert os.path.exists(result_path)
-        assert "direct_test_schema.json" in result_path
-        assert "ai_context" in result_path
+        # Verify result is ai_context directory
+        ai_context_dir = os.path.join(temp_dir, "ai_context")
+        assert os.path.exists(ai_context_dir)
+        assert result_dir == ai_context_dir
+
+        # Check that framework context file exists
+        framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+        assert os.path.exists(framework_context_path)
+
+        # Check that instance files exist
+        instance_context_path = os.path.join(ai_context_dir, "01_direct_test_context.json")
+        assert os.path.exists(instance_context_path)
 
         # Verify content
-        with open(result_path, "r") as f:
-            schema = json.load(f)
+        with open(instance_context_path, "r") as f:
+            instance_data = json.load(f)
 
-        # Check the new structure with repository_analysis containing metadata
-        assert (
-            schema["repository_analysis"]["metadata"]["repository_name"] == "direct_test"
-        )  # Changed from 'name' to 'repository_name'
-        assert len(schema["repository_analysis"]["components"]["features"]) == 1
+        assert instance_data["schema_type"] == "instance_overview"
+        assert "framework_instance" in instance_data
+        assert instance_data["framework_instance"]["name"] == "direct_test"
 
 
 def test_json_schema_ai_optimization(test_framework):
-    """Test específico para verificar optimizaciones para IA"""
+    """Test específico para verificar optimizaciones para IA en formato chunked"""
 
     with tempfile.TemporaryDirectory() as temp_dir:
         from sincpro_framework.generate_documentation import build_documentation
 
         result_path = build_documentation(test_framework, output_dir=temp_dir, format="json")
 
-        with open(result_path, "r") as f:
-            schema = json.load(f)
+        ai_context_dir = os.path.join(temp_dir, "ai_context")
 
-        # Verify AI-specific optimizations (now under ai_integration)
-        ai_integration = schema["ai_integration"]
+        # Verify framework context contains AI optimizations
+        framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+        with open(framework_context_path, "r") as f:
+            framework_context = json.load(f)
 
-        # Check embedding suggestions
-        embedding = ai_integration["embedding_suggestions"]
-        assert isinstance(embedding["primary_entities"], list)
-        assert isinstance(embedding["business_capabilities"], list)
-        assert isinstance(embedding["data_flow_patterns"], list)
+        # Check AI usage information in framework context
+        ai_usage = framework_context["ai_usage"]
+        assert ai_usage["purpose"] is not None
+        assert "token_efficiency" in ai_usage
+        assert "next_steps" in ai_usage
 
-        # Check code generation hints
-        code_hints = ai_integration["code_generation_hints"]
-        assert "decorator_based_registration" in code_hints["framework_patterns"]
-        assert "dependency_injection" in code_hints["framework_patterns"]
-        assert any("sincpro_framework" in imp for imp in code_hints["common_imports"])
+        # Verify instance context has AI usage information
+        instance_context_path = os.path.join(ai_context_dir, "01_test_framework_context.json")
+        with open(instance_context_path, "r") as f:
+            instance_data = json.load(f)
 
-        # Check complexity analysis
-        complexity = ai_integration["complexity_analysis"]
-        assert complexity["overall_complexity"] in ["simple", "medium", "complex"]
-        assert isinstance(complexity["most_complex_components"], list)
-        assert isinstance(complexity["simplest_components"], list)
+        # Check ai_usage in instance context
+        ai_usage_instance = instance_data["ai_usage"]
+        assert ai_usage_instance["purpose"] is not None
+        assert "token_efficiency" in ai_usage_instance
+        assert "next_steps" in ai_usage_instance
 
-        # Verify DTO AI hints (now under repository_analysis)
-        dtos = schema["repository_analysis"]["components"]["dtos"]
-        for dto in dtos:
+        # Check DTO details file for AI hints
+        dto_details_path = os.path.join(ai_context_dir, "01_test_framework_dtos_details.json")
+        with open(dto_details_path, "r") as f:
+            dto_details = json.load(f)
+
+        # Verify DTO AI hints
+        for dto in dto_details["dtos"]:
             ai_hints = dto["ai_hints"]
-            assert "is_input_type" in ai_hints
-            assert "is_output_type" in ai_hints
-            assert "complexity_level" in ai_hints
-            assert "validation_rules" in ai_hints
-
-        # Verify Feature AI hints (now under repository_analysis)
-        features = schema["repository_analysis"]["components"]["features"]
-        for feature in features:
-            ai_hints = feature["ai_hints"]
-            assert "is_synchronous" in ai_hints
-            assert "has_side_effects" in ai_hints
-            assert "complexity_level" in ai_hints
             assert "business_domain" in ai_hints
+            assert "complexity" in ai_hints
+            assert "usage_pattern" in ai_hints
+
+        # Check Feature details file for AI hints
+        feature_details_path = os.path.join(
+            ai_context_dir, "01_test_framework_features_details.json"
+        )
+        with open(feature_details_path, "r") as f:
+            feature_details = json.load(f)
+
+        # Verify Feature AI hints
+        for feature in feature_details["features"]:
+            ai_hints = feature["ai_hints"]
+            assert "business_domain" in ai_hints
+            assert "complexity" in ai_hints
+            assert "execution_pattern" in ai_hints
 
 
 if __name__ == "__main__":
@@ -391,13 +390,177 @@ if __name__ == "__main__":
     from sincpro_framework.generate_documentation import build_documentation
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        json_path = build_documentation(framework, output_dir=temp_dir, format="json")
-        print(f"✅ JSON Schema generated: {json_path}")
+        json_dir = build_documentation(framework, output_dir=temp_dir, format="json")
+        print(f"✅ Chunked JSON Schema generated: {json_dir}")
 
-        with open(json_path, "r") as f:
-            schema = json.load(f)
+        # Check framework context
+        framework_context_path = os.path.join(json_dir, "01_framework_context.json")
+        instance_context_path = os.path.join(json_dir, "01_test_framework_context.json")
+
+        with open(instance_context_path, "r") as f:
+            instance_data = json.load(f)
+
+        component_summary = instance_data["framework_instance"]["component_summary"]
         print(
-            f"✅ Schema contains {len(schema['repository_analysis']['components']['dtos'])} DTOs and {len(schema['repository_analysis']['components']['features'])} Features"
+            f"✅ Schema contains {component_summary['dtos']['count']} DTOs and {component_summary['features']['count']} Features"
         )
 
     print("\n🎉 All basic tests passed!")
+
+
+def test_chunked_json_generation(test_framework):
+    """Test the chunked JSON generation functionality (now the default)"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Test chunked generation (now the default and only option)
+        from sincpro_framework.generate_documentation import build_documentation
+
+        result_dir = build_documentation(test_framework, output_dir=temp_dir, format="json")
+
+        ai_context_dir = os.path.join(temp_dir, "ai_context")
+        assert os.path.exists(ai_context_dir), "AI context directory should be created"
+
+        # Check that framework context file exists
+        framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+        assert os.path.exists(framework_context_path), "Framework context file should exist"
+
+        # Check that instance files exist
+        instance_context_path = os.path.join(ai_context_dir, "01_test_framework_context.json")
+        assert os.path.exists(instance_context_path), "Instance context file should exist"
+
+        # Check DTO files
+        dto_summary_path = os.path.join(ai_context_dir, "01_test_framework_dtos.json")
+        dto_details_path = os.path.join(ai_context_dir, "01_test_framework_dtos_details.json")
+        assert os.path.exists(dto_summary_path), "DTO summary file should exist"
+        assert os.path.exists(dto_details_path), "DTO details file should exist"
+
+        # Check Feature files
+        feature_summary_path = os.path.join(ai_context_dir, "01_test_framework_features.json")
+        feature_details_path = os.path.join(
+            ai_context_dir, "01_test_framework_features_details.json"
+        )
+        assert os.path.exists(feature_summary_path), "Feature summary file should exist"
+        assert os.path.exists(feature_details_path), "Feature details file should exist"
+
+        # Validate file sizes are reasonable (much smaller than consolidated)
+        framework_size = os.path.getsize(framework_context_path)
+        instance_size = os.path.getsize(instance_context_path)
+        dto_summary_size = os.path.getsize(dto_summary_path)
+        dto_details_size = os.path.getsize(dto_details_path)
+
+        # Framework context should be largest (contains full guide)
+        assert (
+            framework_size > 50000
+        ), f"Framework context should be substantial: {framework_size}"
+
+        # Instance files should be much smaller
+        assert instance_size < 5000, f"Instance context should be compact: {instance_size}"
+        assert dto_summary_size < 2000, f"DTO summary should be compact: {dto_summary_size}"
+        assert (
+            dto_details_size < 5000
+        ), f"DTO details should be reasonable: {dto_details_size}"
+
+        # Validate JSON structure
+        with open(framework_context_path, "r") as f:
+            framework_data = json.load(f)
+
+        assert framework_data["schema_type"] == "framework_context"
+        assert "framework_context" in framework_data
+        assert framework_data["ai_usage"]["purpose"] is not None
+
+        with open(instance_context_path, "r") as f:
+            instance_data = json.load(f)
+
+        assert instance_data["schema_type"] == "instance_overview"
+        assert "framework_instance" in instance_data
+        assert "component_summary" in instance_data["framework_instance"]
+
+        # Check that component summary contains expected data
+        component_summary = instance_data["framework_instance"]["component_summary"]
+        assert component_summary["dtos"]["count"] >= 2  # ExampleDTO and ProcessCommandDTO
+        assert (
+            component_summary["features"]["count"] >= 2
+        )  # ExampleFeature and ProcessFeature
+
+        with open(dto_summary_path, "r") as f:
+            dto_summary_data = json.load(f)
+
+        assert dto_summary_data["schema_type"] == "dto_chunk"
+        assert dto_summary_data["content_type"] == "summary_information"
+        assert "dtos" in dto_summary_data
+        assert len(dto_summary_data["dtos"]) >= 2
+
+        # Check DTO summary structure
+        sample_dto = dto_summary_data["dtos"][0]
+        assert "name" in sample_dto
+        assert "field_count" in sample_dto
+        assert "field_names" in sample_dto
+        assert "business_domain" in sample_dto
+
+        with open(dto_details_path, "r") as f:
+            dto_details_data = json.load(f)
+
+        assert dto_details_data["schema_type"] == "dto_chunk_details"
+        assert dto_details_data["content_type"] == "detailed_information"
+
+        # Check DTO details structure
+        detailed_dto = dto_details_data["dtos"][0]
+        assert "name" in detailed_dto
+        assert "fields" in detailed_dto
+        assert isinstance(detailed_dto["fields"], list)
+        assert "ai_hints" in detailed_dto
+
+        print(f"✅ Chunked generation test passed!")
+        print(f"   Framework context: {framework_size} bytes")
+        print(f"   Instance context: {instance_size} bytes")
+        print(f"   DTO summary: {dto_summary_size} bytes")
+        print(f"   DTO details: {dto_details_size} bytes")
+        print(
+            f"   Total chunked size: {framework_size + instance_size + dto_summary_size + dto_details_size} bytes"
+        )
+
+
+def test_chunked_json_features(test_framework):
+    """Test the chunked JSON generation features and file structure"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from sincpro_framework.generate_documentation import build_documentation
+
+        # Generate chunked format (now the default and only option)
+        result_dir = build_documentation(test_framework, output_dir=temp_dir, format="json")
+
+        # Compare expected files
+        ai_context_dir = os.path.join(temp_dir, "ai_context")
+        chunked_files = [
+            os.path.join(ai_context_dir, f)
+            for f in os.listdir(ai_context_dir)
+            if f.endswith(".json")
+        ]
+
+        chunked_total_size = sum(os.path.getsize(f) for f in chunked_files)
+
+        print(f"✅ Chunked generation completed:")
+        print(f"   Total files: {len(chunked_files)}")
+        print(f"   Total size: {chunked_total_size} bytes")
+
+        framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+        framework_context_size = os.path.getsize(framework_context_path)
+        instance_specific_size = chunked_total_size - framework_context_size
+
+        print(f"   Framework context (reusable): {framework_context_size} bytes")
+        print(f"   Instance-specific size: {instance_specific_size} bytes")
+        print(
+            f"   📊 For multiple instances, framework context is reused, saving {framework_context_size} bytes per additional instance"
+        )
+
+        # Verify key files exist
+        expected_files = [
+            "01_framework_context.json",
+            "01_test_framework_context.json",
+            "01_test_framework_dtos.json",
+            "01_test_framework_dtos_details.json",
+            "01_test_framework_features.json",
+            "01_test_framework_features_details.json",
+        ]
+
+        for expected_file in expected_files:
+            file_path = os.path.join(ai_context_dir, expected_file)
+            assert os.path.exists(file_path), f"Expected file {expected_file} should exist"

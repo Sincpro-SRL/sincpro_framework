@@ -781,6 +781,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#validatecommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      ValidateCommand
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#paymentcommand" class="md-nav__link">
     <span class="md-ellipsis">
       PaymentCommand
@@ -882,6 +891,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#validatecommand" class="md-nav__link">
+    <span class="md-ellipsis">
+      ValidateCommand
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#paymentcommand" class="md-nav__link">
     <span class="md-ellipsis">
       PaymentCommand
@@ -914,7 +932,7 @@
 <h1 id="dtos-data-transfer-objects">📋 DTOs (Data Transfer Objects)<a class="headerlink" href="#dtos-data-transfer-objects" title="Permanent link">🔗</a></h1>
 <p>Data models including commands and responses for the framework.</p>
 <h2 id="overview">📋 Overview<a class="headerlink" href="#overview" title="Permanent link">🔗</a></h2>
-<p>This framework includes <strong>2</strong> Pydantic models that provide
+<p>This framework includes <strong>3</strong> Pydantic models that provide
 data validation, serialization, and type safety.</p>
 <h3 id="features">✨ Features<a class="headerlink" href="#features" title="Permanent link">🔗</a></h3>
 <ul>
@@ -935,6 +953,17 @@ data validation, serialization, and type safety.</p>
 <li><code>amount</code> (<class 'float'>) - Required</li>
 <li>Default: <code>PydanticUndefined</code></li>
 <li><code>merchant_id</code> (<class 'str'>) - Required</li>
+<li>Default: <code>PydanticUndefined</code></li>
+</ul>
+<hr />
+<h3 id="validatecommand">ValidateCommand<a class="headerlink" href="#validatecommand" title="Permanent link">🔗</a></h3>
+<p><strong>Module:</strong> <code>dynamic.ValidateCommand</code></p>
+<p>ValidateCommand</p>
+<p><strong>Fields:</strong></p>
+<ul>
+<li><code>card_number</code> (<class 'str'>) - Required</li>
+<li>Default: <code>PydanticUndefined</code></li>
+<li><code>cvv</code> (<class 'str'>) - Required</li>
 <li>Default: <code>PydanticUndefined</code></li>
 </ul>
 <hr />

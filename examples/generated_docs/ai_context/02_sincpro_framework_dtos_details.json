@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sincpro_framework DTOs (Detailed)",
+  "description": "Data Transfer Objects for sincpro_framework",
+  "version": "1.0.0",
+  "instance_number": 2,
+  "schema_type": "dto_chunk_details",
+  "content_type": "detailed_information",
+  "ai_usage": {
+    "purpose": "Complete DTO information for code generation",
+    "token_efficiency": "Full details for optimal consumption"
+  },
+  "dtos": [
+    {
+      "name": "MakeTransactionCommand",
+      "docstring": "MakeTransactionCommand",
+      "fields": [
+        {
+          "name": "card_number",
+          "type": "<class 'str'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        },
+        {
+          "name": "amount",
+          "type": "<class 'float'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        },
+        {
+          "name": "merchant_id",
+          "type": "<class 'str'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        }
+      ],
+      "ai_hints": {
+        "business_domain": "payments",
+        "complexity": "simple",
+        "usage_pattern": "command"
+      }
+    },
+    {
+      "name": "ValidateCommand",
+      "docstring": "ValidateCommand",
+      "fields": [
+        {
+          "name": "card_number",
+          "type": "<class 'str'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        },
+        {
+          "name": "cvv",
+          "type": "<class 'str'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        }
+      ],
+      "ai_hints": {
+        "business_domain": "general",
+        "complexity": "simple",
+        "usage_pattern": "command"
+      }
+    },
+    {
+      "name": "PaymentCommand",
+      "docstring": "PaymentCommand",
+      "fields": [
+        {
+          "name": "card_number",
+          "type": "<class 'str'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        },
+        {
+          "name": "amount",
+          "type": "<class 'float'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        },
+        {
+          "name": "merchant_id",
+          "type": "<class 'str'>",
+          "default": "PydanticUndefined",
+          "required": true,
+          "description": null
+        }
+      ],
+      "ai_hints": {
+        "business_domain": "payments",
+        "complexity": "simple",
+        "usage_pattern": "command"
+      }
+    }
+  ]
+}

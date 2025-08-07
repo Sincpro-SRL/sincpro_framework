@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "payment-system Features (Detailed)",
+  "description": "Features (use cases) for payment-system",
+  "version": "1.0.0",
+  "instance_number": 1,
+  "schema_type": "feature_chunk_details",
+  "content_type": "detailed_information",
+  "ai_usage": {
+    "purpose": "Complete Feature information for understanding business logic",
+    "token_efficiency": "Full implementation details for optimal consumption"
+  },
+  "features": [
+    {
+      "name": "ValidateFeature",
+      "docstring": "Feature to validate payment card details",
+      "input_dto": null,
+      "methods": [
+        {
+          "name": "execute",
+          "docstring": "Execute card validation\nArgs:\n    dto (ValidateCommand): Data transfer object containing card details\nReturns:\n    ValidateResponse: Response indicating if the card is valid",
+          "parameters": {
+            "self": {
+              "type": "Any",
+              "default": null,
+              "required": true
+            },
+            "dto": {
+              "type": "<class '__main__.ValidateCommand'>",
+              "default": null,
+              "required": true
+            }
+          },
+          "return_type": "<class '__main__.ValidateResponse'>"
+        }
+      ],
+      "ai_hints": {
+        "business_domain": "general",
+        "complexity": "simple",
+        "execution_pattern": "synchronous"
+      }
+    },
+    {
+      "name": "RefundFeature",
+      "docstring": "Feature to handle refund processing",
+      "input_dto": null,
+      "methods": [
+        {
+          "name": "execute",
+          "docstring": "Execute refund processing\nArgs:\n    dto (RefundCommand): Data transfer object containing refund details\nReturns:\n    RefundResponse: Response containing refund details",
+          "parameters": {
+            "self": {
+              "type": "Any",
+              "default": null,
+              "required": true
+            },
+            "dto": {
+              "type": "<class '__main__.RefundCommand'>",
+              "default": null,
+              "required": true
+            }
+          },
+          "return_type": "<class '__main__.RefundResponse'>"
+        }
+      ],
+      "ai_hints": {
+        "business_domain": "general",
+        "complexity": "simple",
+        "execution_pattern": "synchronous"
+      }
+    },
+    {
+      "name": "PaymentFeature",
+      "docstring": "Feature to handle payment processing",
+      "input_dto": null,
+      "methods": [
+        {
+          "name": "execute",
+          "docstring": "Execute payment processing\nArgs:\n    dto (PaymentCommand): Data transfer object containing payment details\nReturns:\n    PaymentResponse: Response containing transaction details",
+          "parameters": {
+            "self": {
+              "type": "Any",
+              "default": null,
+              "required": true
+            },
+            "dto": {
+              "type": "<class '__main__.PaymentCommand'>",
+              "default": null,
+              "required": true
+            }
+          },
+          "return_type": "<class '__main__.PaymentResponse'>"
+        }
+      ],
+      "ai_hints": {
+        "business_domain": "payments",
+        "complexity": "simple",
+        "execution_pattern": "synchronous"
+      }
+    }
+  ]
+}

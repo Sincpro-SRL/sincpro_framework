@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sincpro_framework Instance Overview",
+  "description": "Lightweight overview of sincpro_framework components",
+  "version": "1.0.0",
+  "instance_number": 2,
+  "schema_type": "instance_overview",
+  "content_type": "component_overview",
+  "ai_usage": {
+    "purpose": "Quick understanding of available components without full details",
+    "token_efficiency": "Summary-level information for rapid comprehension",
+    "next_steps": "Load specific component detail files when needed"
+  },
+  "framework_instance": {
+    "name": "sincpro_framework",
+    "generated_at": "2025-08-07 16:31:59",
+    "component_summary": {
+      "dtos": {
+        "count": 3,
+        "names": [
+          "MakeTransactionCommand",
+          "ValidateCommand",
+          "PaymentCommand"
+        ]
+      },
+      "features": {
+        "count": 2,
+        "names": [
+          "ValidateFeatureSincpro",
+          "PaymentFeatureSincpro"
+        ]
+      },
+      "application_services": {
+        "count": 1,
+        "names": [
+          "MakeTransactionSincpro"
+        ]
+      },
+      "dependencies": {
+        "count": 3,
+        "names": [
+          "check_health",
+          "Database",
+          "VisaAdapter"
+        ]
+      }
+    },
+    "available_detail_files": [
+      "02_sincpro_framework_dtos.json",
+      "02_sincpro_framework_features.json",
+      "02_sincpro_framework_services.json"
+    ]
+  }
+}

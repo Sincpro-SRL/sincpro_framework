@@ -840,3 +840,423 @@ class AIOptimizedJSONSchemaGenerator:
             json.dump(schema, f, indent=2, ensure_ascii=False, default=str)
 
         return output_path
+
+
+class ChunkedAIJSONSchemaGenerator:
+    """
+    Generates chunked JSON schemas optimized for AI consumption with progressive discovery.
+
+    Creates multiple smaller JSON files organized for token efficiency:
+    - Framework context (shared knowledge)
+    - Instance overview (lightweight per-framework context)
+    - Component chunks (DTOs, Features, etc. in digestible pieces)
+    - Detail chunks (full information when needed)
+    """
+
+    def __init__(self, framework_docs: FrameworkDocs = None):
+        self.framework_docs = framework_docs
+        self.schema_version = "1.0.0"
+
+    def _load_framework_context(self) -> Dict[str, Any]:
+        """Load the shared framework context from AI guide"""
+        try:
+            current_dir = os.path.dirname(__file__)
+            guide_path = os.path.join(current_dir, "..", "sincpro_framework_ai_guide.json")
+            guide_path = os.path.abspath(guide_path)
+
+            with open(guide_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {
+                "framework_name": "Sincpro Framework",
+                "description": "Application Layer Framework within Hexagonal Architecture",
+                "note": "Framework context not available - using minimal fallback",
+            }
+
+    def generate_framework_context(self) -> Dict[str, Any]:
+        """Generate the shared framework context file"""
+        context = self._load_framework_context()
+
+        return {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Sincpro Framework Context",
+            "description": "General framework knowledge for understanding how to use Sincpro Framework",
+            "version": self.schema_version,
+            "schema_type": "framework_context",
+            "content_type": "framework_knowledge",
+            "ai_usage": {
+                "purpose": "Provides foundational understanding of Sincpro Framework patterns and usage",
+                "token_efficiency": "Shared across all instances to avoid duplication",
+                "next_steps": "Load specific instance context files for implementation details",
+            },
+            "framework_context": context,
+        }
+
+    def generate_instance_overview(self, instance_number: int) -> Dict[str, Any]:
+        """Generate lightweight overview for a framework instance"""
+        if not self.framework_docs:
+            raise ValueError("FrameworkDocs required for instance overview")
+
+        return {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": f"{self.framework_docs.framework_name} Instance Overview",
+            "description": f"Lightweight overview of {self.framework_docs.framework_name} components",
+            "version": self.schema_version,
+            "instance_number": instance_number,
+            "schema_type": "instance_overview",
+            "content_type": "component_overview",
+            "ai_usage": {
+                "purpose": "Quick understanding of available components without full details",
+                "token_efficiency": "Summary-level information for rapid comprehension",
+                "next_steps": "Load specific component detail files when needed",
+            },
+            "framework_instance": {
+                "name": self.framework_docs.framework_name,
+                "generated_at": self.framework_docs.generated_at,
+                "component_summary": {
+                    "dtos": {
+                        "count": len(self.framework_docs.dtos),
+                        "names": [dto.name for dto in self.framework_docs.dtos],
+                    },
+                    "features": {
+                        "count": len(self.framework_docs.features),
+                        "names": [feature.name for feature in self.framework_docs.features],
+                    },
+                    "application_services": {
+                        "count": len(self.framework_docs.application_services),
+                        "names": [
+                            service.name
+                            for service in self.framework_docs.application_services
+                        ],
+                    },
+                    "dependencies": {
+                        "count": len(self.framework_docs.dependencies),
+                        "names": [
+                            getattr(dep, "name", str(dep))
+                            for dep in self.framework_docs.dependencies
+                        ],
+                    },
+                },
+                "available_detail_files": [
+                    f"{instance_number:02d}_{self.framework_docs.framework_name}_dtos.json",
+                    f"{instance_number:02d}_{self.framework_docs.framework_name}_features.json",
+                    f"{instance_number:02d}_{self.framework_docs.framework_name}_services.json",
+                ],
+            },
+        }
+
+    def generate_dto_chunk(
+        self, instance_number: int, detailed: bool = False
+    ) -> Dict[str, Any]:
+        """Generate DTO chunk with optional detailed information"""
+        if not self.framework_docs:
+            raise ValueError("FrameworkDocs required for DTO chunk")
+
+        suffix = "_details" if detailed else ""
+        title = f"{self.framework_docs.framework_name} DTOs"
+        if detailed:
+            title += " (Detailed)"
+
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": title,
+            "description": f"Data Transfer Objects for {self.framework_docs.framework_name}",
+            "version": self.schema_version,
+            "instance_number": instance_number,
+            "schema_type": f"dto_chunk{suffix}",
+            "content_type": "detailed_information" if detailed else "summary_information",
+            "ai_usage": {
+                "purpose": f"{'Complete' if detailed else 'Summary'} DTO information for code generation",
+                "token_efficiency": f"{'Full details' if detailed else 'Compact summaries'} for optimal consumption",
+            },
+            "dtos": [],
+        }
+
+        for dto in self.framework_docs.dtos:
+            if detailed:
+                # Include full details
+                dto_info = {
+                    "name": dto.name,
+                    "docstring": dto.docstring,
+                    "fields": [
+                        {
+                            "name": field_name,
+                            "type": field_info.get("type", "any"),
+                            "default": field_info.get("default"),
+                            "required": field_info.get("required", False),
+                            "description": field_info.get("description", ""),
+                        }
+                        for field_name, field_info in dto.fields.items()
+                    ],
+                    "ai_hints": {
+                        "business_domain": self._infer_business_domain(dto.name),
+                        "complexity": self._assess_dto_complexity(dto.fields),
+                        "usage_pattern": (
+                            "command"
+                            if "Command" in dto.name
+                            else "response" if "Response" in dto.name else "data"
+                        ),
+                    },
+                }
+            else:
+                # Include only summary
+                dto_info = {
+                    "name": dto.name,
+                    "docstring": dto.docstring,
+                    "field_count": len(dto.fields),
+                    "field_names": list(dto.fields.keys()),
+                    "business_domain": self._infer_business_domain(dto.name),
+                }
+
+            schema["dtos"].append(dto_info)
+
+        return schema
+
+    def generate_feature_chunk(
+        self, instance_number: int, detailed: bool = False
+    ) -> Dict[str, Any]:
+        """Generate Feature chunk with optional detailed information"""
+        if not self.framework_docs:
+            raise ValueError("FrameworkDocs required for Feature chunk")
+
+        suffix = "_details" if detailed else ""
+        title = f"{self.framework_docs.framework_name} Features"
+        if detailed:
+            title += " (Detailed)"
+
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": title,
+            "description": f"Features (use cases) for {self.framework_docs.framework_name}",
+            "version": self.schema_version,
+            "instance_number": instance_number,
+            "schema_type": f"feature_chunk{suffix}",
+            "content_type": "detailed_information" if detailed else "summary_information",
+            "ai_usage": {
+                "purpose": f"{'Complete' if detailed else 'Summary'} Feature information for understanding business logic",
+                "token_efficiency": f"{'Full implementation details' if detailed else 'Overview and patterns'} for optimal consumption",
+            },
+            "features": [],
+        }
+
+        for feature in self.framework_docs.features:
+            if detailed:
+                # Include full details
+                feature_info = {
+                    "name": feature.name,
+                    "docstring": feature.docstring,
+                    "input_dto": getattr(feature, "input_dto_name", None),
+                    "methods": [
+                        {
+                            "name": method.name,
+                            "docstring": method.docstring,
+                            "parameters": method.parameters,
+                            "return_type": method.return_type,
+                        }
+                        for method in feature.methods.values()
+                    ],
+                    "ai_hints": {
+                        "business_domain": self._infer_business_domain(feature.name),
+                        "complexity": self._assess_feature_complexity(feature),
+                        "execution_pattern": "synchronous",  # Could be enhanced with analysis
+                    },
+                }
+            else:
+                # Include only summary
+                feature_info = {
+                    "name": feature.name,
+                    "docstring": feature.docstring,
+                    "input_dto": getattr(feature, "input_dto_name", None),
+                    "method_count": len(feature.methods),
+                    "business_domain": self._infer_business_domain(feature.name),
+                }
+
+            schema["features"].append(feature_info)
+
+        return schema
+
+    def generate_service_chunk(
+        self, instance_number: int, detailed: bool = False
+    ) -> Dict[str, Any]:
+        """Generate ApplicationService chunk with optional detailed information"""
+        if not self.framework_docs:
+            raise ValueError("FrameworkDocs required for Service chunk")
+
+        suffix = "_details" if detailed else ""
+        title = f"{self.framework_docs.framework_name} Application Services"
+        if detailed:
+            title += " (Detailed)"
+
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": title,
+            "description": f"Application Services (orchestrators) for {self.framework_docs.framework_name}",
+            "version": self.schema_version,
+            "instance_number": instance_number,
+            "schema_type": f"service_chunk{suffix}",
+            "content_type": "detailed_information" if detailed else "summary_information",
+            "ai_usage": {
+                "purpose": f"{'Complete' if detailed else 'Summary'} Service information for understanding orchestration",
+                "token_efficiency": f"{'Full orchestration details' if detailed else 'Overview and patterns'} for optimal consumption",
+            },
+            "application_services": [],
+        }
+
+        for service in self.framework_docs.application_services:
+            if detailed:
+                # Include full details
+                service_info = {
+                    "name": service.name,
+                    "docstring": service.docstring,
+                    "input_dto": getattr(service, "input_dto_name", None),
+                    "methods": [
+                        {
+                            "name": method.name,
+                            "docstring": method.docstring,
+                            "parameters": method.parameters,
+                            "return_type": method.return_type,
+                        }
+                        for method in service.methods.values()
+                    ],
+                    "ai_hints": {
+                        "business_domain": self._infer_business_domain(service.name),
+                        "complexity": self._assess_service_complexity(service),
+                        "orchestration_pattern": "feature_bus",  # Based on framework pattern
+                    },
+                }
+            else:
+                # Include only summary
+                service_info = {
+                    "name": service.name,
+                    "docstring": service.docstring,
+                    "input_dto": getattr(service, "input_dto_name", None),
+                    "method_count": len(service.methods),
+                    "business_domain": self._infer_business_domain(service.name),
+                }
+
+            schema["application_services"].append(service_info)
+
+        return schema
+
+    def generate_all_chunks(self, output_dir: str, instance_number: int) -> List[str]:
+        """Generate all chunks for a framework instance"""
+        if not self.framework_docs:
+            raise ValueError("FrameworkDocs required for generating chunks")
+
+        generated_files = []
+        framework_name = self.framework_docs.framework_name
+
+        # Instance overview
+        overview_path = os.path.join(
+            output_dir, f"{instance_number:02d}_{framework_name}_context.json"
+        )
+        overview = self.generate_instance_overview(instance_number)
+        self._save_chunk_to_file(overview, overview_path)
+        generated_files.append(overview_path)
+
+        # DTO chunks (summary and detailed)
+        dto_summary_path = os.path.join(
+            output_dir, f"{instance_number:02d}_{framework_name}_dtos.json"
+        )
+        dto_summary = self.generate_dto_chunk(instance_number, detailed=False)
+        self._save_chunk_to_file(dto_summary, dto_summary_path)
+        generated_files.append(dto_summary_path)
+
+        dto_detail_path = os.path.join(
+            output_dir, f"{instance_number:02d}_{framework_name}_dtos_details.json"
+        )
+        dto_detail = self.generate_dto_chunk(instance_number, detailed=True)
+        self._save_chunk_to_file(dto_detail, dto_detail_path)
+        generated_files.append(dto_detail_path)
+
+        # Feature chunks (summary and detailed)
+        feature_summary_path = os.path.join(
+            output_dir, f"{instance_number:02d}_{framework_name}_features.json"
+        )
+        feature_summary = self.generate_feature_chunk(instance_number, detailed=False)
+        self._save_chunk_to_file(feature_summary, feature_summary_path)
+        generated_files.append(feature_summary_path)
+
+        feature_detail_path = os.path.join(
+            output_dir, f"{instance_number:02d}_{framework_name}_features_details.json"
+        )
+        feature_detail = self.generate_feature_chunk(instance_number, detailed=True)
+        self._save_chunk_to_file(feature_detail, feature_detail_path)
+        generated_files.append(feature_detail_path)
+
+        # Service chunks (summary and detailed) - only if services exist
+        if self.framework_docs.application_services:
+            service_summary_path = os.path.join(
+                output_dir, f"{instance_number:02d}_{framework_name}_services.json"
+            )
+            service_summary = self.generate_service_chunk(instance_number, detailed=False)
+            self._save_chunk_to_file(service_summary, service_summary_path)
+            generated_files.append(service_summary_path)
+
+            service_detail_path = os.path.join(
+                output_dir, f"{instance_number:02d}_{framework_name}_services_details.json"
+            )
+            service_detail = self.generate_service_chunk(instance_number, detailed=True)
+            self._save_chunk_to_file(service_detail, service_detail_path)
+            generated_files.append(service_detail_path)
+
+        return generated_files
+
+    def save_framework_context_to_file(self, output_path: str):
+        """Save the shared framework context to a file"""
+        context = self.generate_framework_context()
+        self._save_chunk_to_file(context, output_path)
+        return output_path
+
+    def _save_chunk_to_file(self, chunk: Dict[str, Any], output_path: str):
+        """Save a chunk to a JSON file"""
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(chunk, f, indent=2, ensure_ascii=False, default=str)
+
+    # Helper methods for business domain inference and complexity assessment
+    def _infer_business_domain(self, component_name: str) -> str:
+        """Infer business domain from component name"""
+        name_lower = component_name.lower()
+
+        if any(term in name_lower for term in ["payment", "pay", "transaction", "billing"]):
+            return "payments"
+        elif any(term in name_lower for term in ["user", "customer", "profile", "account"]):
+            return "user_management"
+        elif any(term in name_lower for term in ["order", "cart", "checkout", "purchase"]):
+            return "orders"
+        elif any(term in name_lower for term in ["auth", "login", "token", "security"]):
+            return "authentication"
+        elif any(term in name_lower for term in ["notification", "email", "sms", "alert"]):
+            return "notifications"
+        else:
+            return "general"
+
+    def _assess_dto_complexity(self, fields: Dict[str, Any]) -> str:
+        """Assess DTO complexity based on field count and types"""
+        field_count = len(fields) if isinstance(fields, dict) else len(fields)
+        if field_count <= 3:
+            return "simple"
+        elif field_count <= 7:
+            return "medium"
+        else:
+            return "complex"
+
+    def _assess_feature_complexity(self, feature: ClassMetadata) -> str:
+        """Assess Feature complexity based on methods and parameters"""
+        total_params = sum(len(method.parameters) for method in feature.methods.values())
+        if len(feature.methods) <= 1 and total_params <= 3:
+            return "simple"
+        elif len(feature.methods) <= 2 and total_params <= 6:
+            return "medium"
+        else:
+            return "complex"
+
+    def _assess_service_complexity(self, service: ClassMetadata) -> str:
+        """Assess Service complexity based on methods and parameters"""
+        total_params = sum(len(method.parameters) for method in service.methods.values())
+        if len(service.methods) <= 1 and total_params <= 3:
+            return "simple"
+        elif len(service.methods) <= 2 and total_params <= 6:
+            return "medium"
+        else:
+            return "complex"

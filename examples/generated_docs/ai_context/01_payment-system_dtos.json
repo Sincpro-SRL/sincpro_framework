@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "payment-system DTOs",
+  "description": "Data Transfer Objects for payment-system",
+  "version": "1.0.0",
+  "instance_number": 1,
+  "schema_type": "dto_chunk",
+  "content_type": "summary_information",
+  "ai_usage": {
+    "purpose": "Summary DTO information for code generation",
+    "token_efficiency": "Compact summaries for optimal consumption"
+  },
+  "dtos": [
+    {
+      "name": "MakeTransactionCommand",
+      "docstring": "MakeTransactionCommand",
+      "field_count": 3,
+      "field_names": [
+        "card_number",
+        "amount",
+        "merchant_id"
+      ],
+      "business_domain": "payments"
+    },
+    {
+      "name": "ValidateCommand",
+      "docstring": "ValidateCommand",
+      "field_count": 2,
+      "field_names": [
+        "card_number",
+        "cvv"
+      ],
+      "business_domain": "general"
+    },
+    {
+      "name": "RefundCommand",
+      "docstring": "RefundCommand",
+      "field_count": 3,
+      "field_names": [
+        "transaction_id",
+        "amount",
+        "reason"
+      ],
+      "business_domain": "general"
+    },
+    {
+      "name": "PaymentCommand",
+      "docstring": "PaymentCommand",
+      "field_count": 3,
+      "field_names": [
+        "card_number",
+        "amount",
+        "merchant_id"
+      ],
+      "business_domain": "payments"
+    }
+  ]
+}

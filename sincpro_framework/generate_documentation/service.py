@@ -30,10 +30,10 @@ def build_documentation(
         ```python
         from sincpro_framework.generate_documentation import build_documentation
 
-        # Generate markdown documentation only (default)
-        docs_path = build_documentation(framework_instance)
+        # Generate markdown documentation only
+        docs_path = build_documentation(framework_instance, format="markdown")
 
-        # Generate JSON schema for AI consumption
+        # Generate chunked JSON schema for AI consumption (default optimized format)
         schema_path = build_documentation(framework_instance, format="json")
 
         # Generate both markdown and JSON
@@ -74,8 +74,8 @@ def build_documentation(
             return markdown_output
 
     if format in ["json", "both"]:
-        # Generate JSON schema for AI consumption
-        json_output = generate_json_schema(framework_docs, output_dir)
+        # Generate chunked JSON schema for AI consumption (default optimized format)
+        json_output = generate_chunked_json_schema(framework_docs, output_dir)
 
         if format == "json":
             return json_output
@@ -84,80 +84,57 @@ def build_documentation(
     return output_dir
 
 
-def generate_json_schema(
+def generate_chunked_json_schema(
     framework_docs: list[FrameworkDocs], output_dir: str = "generated_docs"
 ) -> str:
     """
-    Generate AI-optimized JSON schema from framework documentation.
+    Generate chunked AI-optimized JSON schemas for optimized token consumption.
 
-    This function now combines framework context (how to use the Sincpro Framework)
-    with repository-specific component analysis to provide complete AI understanding.
+    This creates multiple smaller JSON files organized for progressive AI discovery:
+    - General framework context (reusable across all instances)
+    - Framework instance overview (lightweight context per instance)
+    - Component-specific chunks (DTOs, Features, etc.)
+    - Detail-level chunks for when full information is needed
 
-    The generated schema includes:
-    - Framework context: Usage patterns, examples, and best practices
-    - Repository analysis: Specific components found in the codebase
-    - AI integration: Enhanced metadata for code generation and semantic search
+    The chunked approach allows AIs to:
+    1. Start with framework understanding (01_framework_context.json)
+    2. Get instance overview (01_<name>_context.json)
+    3. Discover available components without full details
+    4. Load specific detailed chunks when needed
 
     Args:
         framework_docs: List of FrameworkDocs instances
         output_dir: Output directory for JSON schema files
 
     Returns:
-        str: Path to the generated JSON schema file(s)
+        str: Path to the ai_context directory containing all chunked files
     """
-    import json
     import os
 
     from sincpro_framework.generate_documentation.infrastructure.json_schema_generator import (
-        AIOptimizedJSONSchemaGenerator,
+        ChunkedAIJSONSchemaGenerator,
     )
 
     # Create ai_context subdirectory within output_dir
     ai_context_dir = os.path.join(output_dir, "ai_context")
     os.makedirs(ai_context_dir, exist_ok=True)
 
-    if len(framework_docs) == 1:
-        # Single framework - generate single schema file
-        generator = AIOptimizedJSONSchemaGenerator(framework_docs[0])
-        schema_path = os.path.join(
-            ai_context_dir, f"{framework_docs[0].framework_name}_schema.json"
-        )
-        generator.save_to_file(schema_path)
+    # Generate framework context once (shared across all instances)
+    framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+    generator = ChunkedAIJSONSchemaGenerator()
+    generator.save_framework_context_to_file(framework_context_path)
 
-        print(f"✅ AI-optimized JSON schema with framework context generated: {schema_path}")
-        return schema_path
-    else:
-        # Multiple frameworks - generate consolidated schema
-        consolidated_schema = {
-            "schema_version": "1.0.0",
-            "generated_at": framework_docs[0].generated_at,
-            "generated_by": "sincpro_framework",
-            "type": "multi_framework_schema",
-            "frameworks": [],
-        }
+    generated_files = [framework_context_path]
 
-        schema_files = []
-        for doc in framework_docs:
-            generator = AIOptimizedJSONSchemaGenerator(doc)
-            individual_schema = generator.generate_complete_schema()
-            consolidated_schema["frameworks"].append(individual_schema)
+    # Generate chunked files for each framework instance
+    for i, doc in enumerate(framework_docs, 1):
+        instance_generator = ChunkedAIJSONSchemaGenerator(doc)
+        instance_files = instance_generator.generate_all_chunks(ai_context_dir, i)
+        generated_files.extend(instance_files)
 
-            # Also save individual schemas
-            individual_path = os.path.join(
-                ai_context_dir, f"{doc.framework_name}_schema.json"
-            )
-            generator.save_to_file(individual_path)
-            schema_files.append(individual_path)
+    print(f"✅ Generated {len(generated_files)} chunked AI context files:")
+    for file_path in generated_files:
+        filename = os.path.basename(file_path)
+        print(f"   - {filename}")
 
-        # Save consolidated schema
-        consolidated_path = os.path.join(
-            ai_context_dir, "consolidated_frameworks_schema.json"
-        )
-        with open(consolidated_path, "w", encoding="utf-8") as f:
-            json.dump(consolidated_schema, f, indent=2, ensure_ascii=False, default=str)
-
-        print(
-            f"✅ Consolidated AI-optimized JSON schema with framework context generated: {consolidated_path}"
-        )
-        print(f"✅ Individual schemas with framework context: {', '.join(schema_files)}")
-        return consolidated_path
+    return ai_context_dir

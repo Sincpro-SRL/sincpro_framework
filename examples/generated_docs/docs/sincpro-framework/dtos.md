@@ -4,7 +4,7 @@ Data models including commands and responses for the framework.
 
 ## 📋 Overview
 
-This framework includes **2** Pydantic models that provide
+This framework includes **3** Pydantic models that provide
 data validation, serialization, and type safety.
 
 ### ✨ Features
@@ -31,6 +31,21 @@ MakeTransactionCommand
 - `amount` (<class 'float'>) - Required
   - Default: `PydanticUndefined`
 - `merchant_id` (<class 'str'>) - Required
+  - Default: `PydanticUndefined`
+
+---
+
+### ValidateCommand
+
+**Module:** `dynamic.ValidateCommand`
+
+ValidateCommand
+
+**Fields:**
+
+- `card_number` (<class 'str'>) - Required
+  - Default: `PydanticUndefined`
+- `cvv` (<class 'str'>) - Required
   - Default: `PydanticUndefined`
 
 ---
