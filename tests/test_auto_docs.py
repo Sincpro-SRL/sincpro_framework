@@ -401,3 +401,158 @@ if __name__ == "__main__":
         )
 
     print("\n🎉 All basic tests passed!")
+
+
+def test_chunked_json_generation(test_framework):
+    """Test the new chunked JSON generation functionality"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Test chunked generation
+        from sincpro_framework.generate_documentation import build_documentation
+        
+        result_dir = build_documentation(
+            test_framework,
+            output_dir=temp_dir,
+            format="json",
+            chunked=True
+        )
+        
+        ai_context_dir = os.path.join(temp_dir, "ai_context")
+        assert os.path.exists(ai_context_dir), "AI context directory should be created"
+        
+        # Check that framework context file exists
+        framework_context_path = os.path.join(ai_context_dir, "01_framework_context.json")
+        assert os.path.exists(framework_context_path), "Framework context file should exist"
+        
+        # Check that instance files exist
+        instance_context_path = os.path.join(ai_context_dir, "01_test_framework_context.json")
+        assert os.path.exists(instance_context_path), "Instance context file should exist"
+        
+        # Check DTO files
+        dto_summary_path = os.path.join(ai_context_dir, "01_test_framework_dtos.json")
+        dto_details_path = os.path.join(ai_context_dir, "01_test_framework_dtos_details.json")
+        assert os.path.exists(dto_summary_path), "DTO summary file should exist"
+        assert os.path.exists(dto_details_path), "DTO details file should exist"
+        
+        # Check Feature files
+        feature_summary_path = os.path.join(ai_context_dir, "01_test_framework_features.json")
+        feature_details_path = os.path.join(ai_context_dir, "01_test_framework_features_details.json")
+        assert os.path.exists(feature_summary_path), "Feature summary file should exist"
+        assert os.path.exists(feature_details_path), "Feature details file should exist"
+        
+        # Validate file sizes are reasonable (much smaller than consolidated)
+        framework_size = os.path.getsize(framework_context_path)
+        instance_size = os.path.getsize(instance_context_path)
+        dto_summary_size = os.path.getsize(dto_summary_path)
+        dto_details_size = os.path.getsize(dto_details_path)
+        
+        # Framework context should be largest (contains full guide)
+        assert framework_size > 50000, f"Framework context should be substantial: {framework_size}"
+        
+        # Instance files should be much smaller
+        assert instance_size < 5000, f"Instance context should be compact: {instance_size}"
+        assert dto_summary_size < 2000, f"DTO summary should be compact: {dto_summary_size}"
+        assert dto_details_size < 5000, f"DTO details should be reasonable: {dto_details_size}"
+        
+        # Validate JSON structure
+        with open(framework_context_path, 'r') as f:
+            framework_data = json.load(f)
+        
+        assert framework_data["schema_type"] == "framework_context"
+        assert "framework_context" in framework_data
+        assert framework_data["ai_usage"]["purpose"] is not None
+        
+        with open(instance_context_path, 'r') as f:
+            instance_data = json.load(f)
+        
+        assert instance_data["schema_type"] == "instance_overview"
+        assert "framework_instance" in instance_data
+        assert "component_summary" in instance_data["framework_instance"]
+        
+        # Check that component summary contains expected data
+        component_summary = instance_data["framework_instance"]["component_summary"]
+        assert component_summary["dtos"]["count"] >= 2  # ExampleDTO and ProcessCommandDTO
+        assert component_summary["features"]["count"] >= 2  # ExampleFeature and ProcessFeature
+        
+        with open(dto_summary_path, 'r') as f:
+            dto_summary_data = json.load(f)
+        
+        assert dto_summary_data["schema_type"] == "dto_chunk"
+        assert dto_summary_data["content_type"] == "summary_information"
+        assert "dtos" in dto_summary_data
+        assert len(dto_summary_data["dtos"]) >= 2
+        
+        # Check DTO summary structure
+        sample_dto = dto_summary_data["dtos"][0]
+        assert "name" in sample_dto
+        assert "field_count" in sample_dto
+        assert "field_names" in sample_dto
+        assert "business_domain" in sample_dto
+        
+        with open(dto_details_path, 'r') as f:
+            dto_details_data = json.load(f)
+        
+        assert dto_details_data["schema_type"] == "dto_chunk_details"
+        assert dto_details_data["content_type"] == "detailed_information"
+        
+        # Check DTO details structure
+        detailed_dto = dto_details_data["dtos"][0]
+        assert "name" in detailed_dto
+        assert "fields" in detailed_dto
+        assert isinstance(detailed_dto["fields"], list)
+        assert "ai_hints" in detailed_dto
+        
+        print(f"✅ Chunked generation test passed!")
+        print(f"   Framework context: {framework_size} bytes")
+        print(f"   Instance context: {instance_size} bytes")
+        print(f"   DTO summary: {dto_summary_size} bytes")
+        print(f"   DTO details: {dto_details_size} bytes")
+        print(f"   Total chunked size: {framework_size + instance_size + dto_summary_size + dto_details_size} bytes")
+
+
+def test_chunked_vs_traditional_comparison(test_framework):
+    """Compare chunked vs traditional generation to show size improvement"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from sincpro_framework.generate_documentation import build_documentation
+        
+        # Generate traditional format
+        traditional_dir = os.path.join(temp_dir, "traditional")
+        build_documentation(
+            test_framework,
+            output_dir=traditional_dir,
+            format="json",
+            chunked=False
+        )
+        
+        # Generate chunked format
+        chunked_dir = os.path.join(temp_dir, "chunked")
+        build_documentation(
+            test_framework,
+            output_dir=chunked_dir,
+            format="json",
+            chunked=True
+        )
+        
+        # Compare sizes
+        traditional_file = os.path.join(traditional_dir, "ai_context", "test_framework_schema.json")
+        chunked_files = [
+            os.path.join(chunked_dir, "ai_context", f)
+            for f in os.listdir(os.path.join(chunked_dir, "ai_context"))
+            if f.endswith('.json')
+        ]
+        
+        traditional_size = os.path.getsize(traditional_file)
+        chunked_total_size = sum(os.path.getsize(f) for f in chunked_files)
+        
+        # For a single framework, chunked should be larger due to metadata overhead
+        # But for multiple frameworks, chunked should save significant space
+        print(f"✅ Size comparison completed:")
+        print(f"   Traditional single file: {traditional_size} bytes")
+        print(f"   Chunked total: {chunked_total_size} bytes ({len(chunked_files)} files)")
+        print(f"   Framework context (reusable): {os.path.getsize(os.path.join(chunked_dir, 'ai_context', '01_framework_context.json'))} bytes")
+        
+        # The key benefit is in reusability - framework context is shared
+        framework_context_size = os.path.getsize(os.path.join(chunked_dir, "ai_context", "01_framework_context.json"))
+        instance_specific_size = chunked_total_size - framework_context_size
+        
+        print(f"   Instance-specific size: {instance_specific_size} bytes")
+        print(f"   📊 For multiple instances, framework context is reused, saving {framework_context_size} bytes per additional instance")
