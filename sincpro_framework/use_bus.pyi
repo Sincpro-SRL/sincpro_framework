@@ -2,9 +2,11 @@ from typing import Any, Callable, Dict, Type, TypeVar, overload
 
 from _typeshed import Incomplete
 from sincpro_log.logger import LoggerProxy
+from typing_extensions import Self
 
 from . import ioc as ioc
 from .bus import FrameworkBus as FrameworkBus
+from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
@@ -55,7 +57,8 @@ class UseFramework(ContextMixin):
     feature_error_handler: Callable[..., Any] | None
     app_service_error_handler: Callable[..., Any] | None
     was_initialized: bool
-    bus: FrameworkBus | None
+    # Override the parent bus type to allow None during initialization
+    bus: FrameworkBus | None  # type: ignore[override]
 
     def __init__(
         self,
@@ -76,7 +79,9 @@ class UseFramework(ContextMixin):
         ...
     # Improved overloads for framework execution
     @overload
-    def __call__(self, dto: TypeDTO, return_type: Type[TypeDTOResponse]) -> TypeDTOResponse:
+    def __call__(
+        self, dto: DataTransferObject, return_type: Type[TypeDTOResponse]
+    ) -> TypeDTOResponse:
         """
         Execute a DTO with specified return type for better IDE support.
 
@@ -90,7 +95,7 @@ class UseFramework(ContextMixin):
         ...
 
     @overload
-    def __call__(self, dto: TypeDTO) -> TypeDTOResponse | None:
+    def __call__(self, dto: DataTransferObject) -> DataTransferObject | None:
         """
         Execute a DTO without specifying return type.
 
@@ -156,6 +161,25 @@ class UseFramework(ContextMixin):
             handler: A callable that handles ApplicationService exceptions
         """
         ...
+
+    def context(self, context_to_set: Dict[str, Any]) -> FrameworkContext:
+        """
+        Create a context manager that applies the specified context attributes.
+
+        When used with 'with' statement, returns this UseFramework instance
+        with the context applied, allowing for scoped context execution.
+
+        Args:
+            context_to_set: Dictionary of context attributes to set
+
+        Returns:
+            FrameworkContext that yields this UseFramework instance when entered
+
+        Example:
+            with framework.context({"user_id": "123", "correlation_id": "abc"}) as app_with_context:
+                # app_with_context is the same UseFramework instance but with context applied
+                result = app_with_context(some_dto)  # DTO handlers can access the context
+        """
 
     @property
     def logger(self) -> LoggerProxy:
