@@ -15,10 +15,9 @@ import os
 from typing import Any, Dict, List, Optional
 
 from sincpro_framework.generate_documentation.domain.models import (
-    ClassMetadata,
-    FrameworkDocs,
-    FunctionMetadata,
-)
+    ClassMetadata, FrameworkDocs, FunctionMetadata)
+from sincpro_framework.generate_documentation.infrastructure.docstring_processor import \
+    process_docstring_for_documentation
 
 
 class AIOptimizedJSONSchemaGenerator:
@@ -139,7 +138,8 @@ class AIOptimizedJSONSchemaGenerator:
                 "type": "data_transfer_object",
                 "name": dto.name,
                 "module": dto.module,
-                "description": dto.docstring or f"Data Transfer Object: {dto.name}",
+                "description": process_docstring_for_documentation(dto.docstring, dto.name)
+                or f"Data Transfer Object: {dto.name}",
                 "purpose": "data_validation_serialization",
                 "validation_framework": "pydantic",
                 "fields": self._convert_pydantic_fields_to_ai_schema(dto.fields),
@@ -170,7 +170,10 @@ class AIOptimizedJSONSchemaGenerator:
                 "type": "feature",
                 "name": feature.name,
                 "module": feature.module,
-                "description": feature.docstring or f"Feature: {feature.name}",
+                "description": process_docstring_for_documentation(
+                    feature.docstring, feature.name
+                )
+                or f"Feature: {feature.name}",
                 "purpose": "business_logic_execution",
                 "pattern": "command_pattern",
                 "methods": self._convert_methods_to_ai_schema(feature.methods),
@@ -198,7 +201,10 @@ class AIOptimizedJSONSchemaGenerator:
                 "type": "application_service",
                 "name": service.name,
                 "module": service.module,
-                "description": service.docstring or f"Application Service: {service.name}",
+                "description": process_docstring_for_documentation(
+                    service.docstring, service.name
+                )
+                or f"Application Service: {service.name}",
                 "purpose": "orchestration_coordination",
                 "pattern": "service_layer_pattern",
                 "methods": self._convert_methods_to_ai_schema(service.methods),
@@ -225,7 +231,10 @@ class AIOptimizedJSONSchemaGenerator:
                     "type": "dependency_function",
                     "name": dep.name,
                     "module": dep.module,
-                    "description": dep.docstring or f"Dependency Function: {dep.name}",
+                    "description": process_docstring_for_documentation(
+                        dep.docstring, dep.name
+                    )
+                    or f"Dependency Function: {dep.name}",
                     "purpose": "utility_service_provision",
                     "signature": dep.signature,
                     "parameters": dep.parameters,
@@ -242,7 +251,10 @@ class AIOptimizedJSONSchemaGenerator:
                     "type": "dependency_class",
                     "name": dep.name,
                     "module": dep.module,
-                    "description": dep.docstring or f"Dependency Class: {dep.name}",
+                    "description": process_docstring_for_documentation(
+                        dep.docstring, dep.name
+                    )
+                    or f"Dependency Class: {dep.name}",
                     "purpose": "service_provision",
                     "methods": self._convert_methods_to_ai_schema(dep.methods),
                     "attributes": dep.attributes,
