@@ -381,7 +381,7 @@ class TestUseFrameworkContext:
             {"level": "outer", "correlation_id": "outer-123", "persistent": "value"}
         ) as outer_app:
             # Verify outer context
-            result_outer = outer_app(ContextTestDTO(message="outer"))
+            result_outer = outer_app(ContextTestDTO(message="outer"), ContextTestResponseDTO)
             assert result_outer.context_data["level"] == "outer"
             assert result_outer.context_data["correlation_id"] == "outer-123"
 
@@ -389,7 +389,9 @@ class TestUseFrameworkContext:
                 {"level": "inner", "correlation_id": "inner-456", "temp": "temp_value"}
             ) as inner_app:
                 # Verify inner context (override + inheritance)
-                result_inner = inner_app(ContextTestDTO(message="inner"))
+                result_inner = inner_app(
+                    ContextTestDTO(message="inner"), ContextTestResponseDTO
+                )
                 assert result_inner.context_data["level"] == "inner"  # overridden
                 assert (
                     result_inner.context_data["correlation_id"] == "inner-456"
@@ -398,7 +400,9 @@ class TestUseFrameworkContext:
                 assert result_inner.context_data["temp"] == "temp_value"  # new
 
             # After inner context exits, outer context should be restored
-            result_outer_restored = outer_app(ContextTestDTO(message="outer restored"))
+            result_outer_restored = outer_app(
+                ContextTestDTO(message="outer restored"), ContextTestResponseDTO
+            )
             assert result_outer_restored.context_data["level"] == "outer"
             assert result_outer_restored.context_data["correlation_id"] == "outer-123"
             assert result_outer_restored.context_data["persistent"] == "value"
@@ -428,7 +432,9 @@ class TestUseFrameworkContext:
 
         with framework.context({"a": "outer_a", "b": "outer_b", "c": "outer_c"}) as outer_app:
             with outer_app.context({"a": "inner_a", "d": "inner_d"}) as inner_app:
-                result = inner_app(ContextTestDTO(message="override test"))
+                result = inner_app(
+                    ContextTestDTO(message="override test"), ContextTestResponseDTO
+                )
 
                 # Should have overridden 'a', inherited 'b' and 'c', and added 'd'
                 assert result.context_data["a"] == "inner_a"  # overridden
