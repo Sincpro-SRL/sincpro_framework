@@ -62,15 +62,47 @@ class UseFramework(ContextMixin):
         # Middleware pipeline
         self.middleware_pipeline = MiddlewarePipeline()
 
+        # Observability
+        self.observability_enabled: bool = False
+        self._tracer = None
+
         self.was_initialized: bool = False
         self.bus: FrameworkBus | None = None
 
+    def enable_observability(self, service_name: str = None, jaeger_endpoint: str = None):
+        """Enable comprehensive observability for the framework.
+
+        Args:
+            service_name (str): Name of the service for tracing. Defaults to logger name.
+            jaeger_endpoint (str): Jaeger collector endpoint. If None, uses console exporter.
+        """
+        try:
+            from .observability.tracing import configure_observability, get_tracer
+            from .observability.correlation import correlation_manager
+
+            service_name = service_name or self._logger_name
+            configure_observability(service_name, jaeger_endpoint)
+            self._tracer = get_tracer()
+            self.observability_enabled = True
+
+            self.logger.info(f"Observability enabled for service: {service_name}")
+        except ImportError as e:
+            self.logger.warning(f"Observability dependencies not available: {e}")
+            self.observability_enabled = False
+
     def __call__(
-        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+        self,
+        dto: TypeDTO,
+        return_type: Type[TypeDTOResponse] | None = None,
+        correlation_id: str = None,
+        trace_context: Dict = None,
     ) -> TypeDTOResponse | None:
         """
         Main function to execute the framework
-        :param dto:
+        :param dto: The data transfer object to execute
+        :param return_type: Expected return type
+        :param correlation_id: Optional correlation ID for request tracking
+        :param trace_context: Optional trace context for distributed tracing
         :return: Any response
         """
         if not self.was_initialized:
@@ -81,6 +113,15 @@ class UseFramework(ContextMixin):
                 "Check the decorators are rigistering the features and app services, check the imports of each "
                 "feature and app service"
             )
+
+        # Set correlation ID if provided
+        if correlation_id and self.observability_enabled:
+            try:
+                from .observability.correlation import correlation_manager
+
+                correlation_manager.set_correlation_id(correlation_id)
+            except ImportError:
+                pass  # Graceful degradation
 
         # Inject current context to services before execution
         current_context = self._get_context()
@@ -114,6 +155,11 @@ class UseFramework(ContextMixin):
         self.bus.app_service_bus.log_after_execution = (
             self.log_after_execution and self.log_app_services
         )
+
+        # Enable observability on individual buses if framework observability is enabled
+        if self.observability_enabled and self._tracer:
+            self.bus.feature_bus.enable_observability(self._tracer)
+            self.bus.app_service_bus.enable_observability(self._tracer)
 
         # Set the DTO registry Tricky way but it works
         self.bus.dto_registry = dto_registry
