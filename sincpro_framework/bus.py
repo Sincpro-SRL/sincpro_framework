@@ -135,12 +135,6 @@ class FrameworkBus(Bus):
         registered_features = set(self.feature_bus.feature_registry.keys())
         registered_app_services = set(self.app_service_bus.app_service_registry.keys())
         self.logger.debug("Framework bus created")
-        self.logger.debug(
-            f"Registered features: {registered_features}",
-        )
-        self.logger.debug(
-            f"Registered app services: {registered_app_services}",
-        )
 
         intersection_dtos = registered_features.intersection(registered_app_services)
         if intersection_dtos:
