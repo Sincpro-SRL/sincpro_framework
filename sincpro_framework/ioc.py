@@ -76,57 +76,62 @@ def _register_service(
     # Normalize DTOs to list
     dto_list = dto if isinstance(dto, list) else [dto]
 
-    match service_type:
-        case ServiceType.FEATURE:
-            current_service_registry = framework_container.feature_registry
-            target_bus = framework_container.feature_bus
-            service_name = "feature"
-            factory_dependencies = []
-            registry_attribute_name = "feature_registry"
-
-        case ServiceType.APP_SERVICE:
-            current_service_registry = framework_container.app_service_registry
-            target_bus = framework_container.app_service_bus
-            service_name = "application service"
-            factory_dependencies = [framework_container.feature_bus]
-            registry_attribute_name = "app_service_registry"
-
     for data_transfer_object in dto_list:
         dto_name = data_transfer_object.__name__
 
         # Check if DTO is already registered
-        if dto_name in current_service_registry.kwargs:
+        if (
+            service_type == ServiceType.FEATURE
+            and dto_name in framework_container.feature_bus.kwargs
+        ):
             raise DTOAlreadyRegistered(
-                f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already registered"
+                f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already registered as a feature"
+            )
+
+        if (
+            service_type == ServiceType.APP_SERVICE
+            and dto_name in framework_container.app_service_bus.kwargs
+        ):
+            raise DTOAlreadyRegistered(
+                f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already registered as an application service"
             )
 
         # Log registration
-        framework_container.logger_bus.debug(f"Registering {service_name}: [{dto_name}]")
-
-        dto_registry = framework_container.dto_registry.kwargs
+        framework_container.logger_bus.debug(f"Registering {service_type}: [{dto_name}]")
 
         # Update DTO registry with new DTO
-        updated_dto_registry = providers.Dict(
-            {**{dto_name: data_transfer_object}, **dto_registry}
-        )
-
-        framework_container.dto_registry = updated_dto_registry
-
-        # Create updated service registry with new service factory
-        updated_service_registry = providers.Dict(
-            {
-                **{dto_name: providers.Factory(decorated_class, *factory_dependencies)},
-                **current_service_registry.kwargs.copy(),
-            }
+        framework_container.dto_registry = providers.Dict(
+            {**{dto_name: data_transfer_object}, **framework_container.dto_registry.kwargs}
         )
 
         # Update container registry and bus attributes
-        if service_type == ServiceType.FEATURE:
-            framework_container.feature_registry = updated_service_registry
-        else:
-            framework_container.app_service_registry = updated_service_registry
+        match service_type:
+            case ServiceType.FEATURE:
+                framework_container.feature_registry = providers.Dict(
+                    {
+                        **{dto_name: providers.Factory(decorated_class)},
+                        **framework_container.feature_registry.kwargs,
+                    }
+                )
 
-        target_bus.add_attributes(**{registry_attribute_name: updated_service_registry})
+                framework_container.feature_bus.add_attributes(
+                    feature_registry=framework_container.feature_registry
+                )
+
+            case ServiceType.APP_SERVICE:
+                framework_container.app_service_registry = providers.Dict(
+                    {
+                        **{
+                            dto_name: providers.Factory(
+                                decorated_class, framework_container.feature_bus
+                            )
+                        },
+                        **framework_container.app_service_registry.kwargs,
+                    }
+                )
+                framework_container.app_service_bus.add_attributes(
+                    app_service_registry=framework_container.app_service_registry
+                )
 
 
 def inject_feature_to_bus(
