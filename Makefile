@@ -68,6 +68,14 @@ clean-pyc:
 build: configure-gemfury
 	poetry build
 
+update-version:
+ifndef VERSION
+	$(error VERSION is required. Usage: make update-version VERSION=1.2.3)
+endif
+	@echo "Updating version to $(VERSION) using Poetry..."
+	poetry version $(VERSION)
+	@echo "Version updated successfully"
+
 publish: configure-gemfury
 	poetry publish -r fury --build
 	poetry publish -u __token__ -p $(POETRY_PYPI_TOKEN)

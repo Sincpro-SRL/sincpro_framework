@@ -1,0 +1,9 @@
+name: "Prepare envinronment"
+description: "Install OS packages and dependencies"
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Python  ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
