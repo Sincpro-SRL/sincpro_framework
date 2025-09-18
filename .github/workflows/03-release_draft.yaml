@@ -1,0 +1,11 @@
+name: Release draft
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    uses: Sincpro-SRL/.github/.github/workflows/03-release_draft.yaml@main
+    secrets: inherit

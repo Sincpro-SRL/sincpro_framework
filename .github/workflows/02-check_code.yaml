@@ -1,0 +1,14 @@
+name: Check code
+
+# Run this workflow every time a new commit pushed to your repository
+on: push
+
+env:
+  GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
+
+jobs:
+  validate:
+    uses: Sincpro-SRL/.github/.github/workflows/02-check_code.yaml@main
+    secrets: inherit
+    with:
+      environments: '["3.12", "3.13"]'

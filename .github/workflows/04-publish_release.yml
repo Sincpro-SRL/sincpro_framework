@@ -1,0 +1,16 @@
+name: Publish release to PyPip
+
+on:
+  release:
+    types: [published]
+
+env:
+  GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
+  POETRY_PYPI_TOKEN: ${{ secrets.POETRY_PYPI_TOKEN }}
+
+jobs:
+  validate:
+    uses: Sincpro-SRL/.github/.github/workflows/04-publish_release.yaml@main
+    secrets: inherit
+    with:
+      environments: '["3.12"]'
