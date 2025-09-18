@@ -9,3 +9,5 @@ jobs:
   validate:
     uses: Sincpro-SRL/.github/.github/workflows/03-release_draft.yaml@main
     secrets: inherit
+    with:
+      environments: '["3.12"]'
