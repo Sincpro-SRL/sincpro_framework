@@ -13,3 +13,7 @@ runs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ inputs.environment }}
+
+    - name: Initialize dependencies
+      run: make init
+      shell: bash
