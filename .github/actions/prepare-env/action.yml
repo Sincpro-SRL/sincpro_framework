@@ -2,7 +2,7 @@ name: "Prepare envinronment"
 description: "Install OS packages and dependencies"
 
 inputs:
-  enviroment:
+  environment:
     description: "Python versions to setup"
     required: true
 
@@ -12,4 +12,4 @@ runs:
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ inputs.enviroment }}
+        python-version: ${{ inputs.environment }}
