@@ -8,9 +8,7 @@ env:
 
 jobs:
   validate:
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        python-version: [3.12, 3.13]
-    uses: Sincpro-SRL/.github/.github/workflows/02-check-code.yaml@main
+    uses: Sincpro-SRL/.github/.github/workflows/02-check_code.yaml@main
     secrets: inherit
+    with:
+      environments: '["3.12", "3.13"]'

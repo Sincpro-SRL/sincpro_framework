@@ -10,5 +10,7 @@ env:
 
 jobs:
   validate:
-    uses: Sincpro-SRL/.github/.github/workflows/04-publish-release-process.yaml@main
+    uses: Sincpro-SRL/.github/.github/workflows/04-publish_release.yaml@main
     secrets: inherit
+    with:
+      environments: '["3.12"]'
