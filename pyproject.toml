@@ -14,24 +14,24 @@ priority = "supplemental"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-dependency-injector = "^4.46.0"
-pydantic = "^2.9.2"
+dependency-injector = "^4.48.3"
+pydantic = "^2.12.5"
 pyyaml = "6.0.1"
 sincpro-log = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
-isort = "^6.0.1"
-black = "^25.1.0"
-pytest = "^8.3.5"
-ipython = "^9.1.0"
+isort = "^7.0.0"
+black = "^25.12.0"
+pytest = "^9.0.2"
+ipython = "^9.9.0"
 autoflake = "^2.3.1"
-pyright = "^1.1.399"
-jupyterlab = "^4.3.4"
-mypy = "^1.14.1"
+pyright = "^1.1.407"
+jupyterlab = "^4.5.1"
+mypy = "^1.19.1"
 mkdocs = "^1.6.1"
-mkdocs-material = "^9.6.16"
-mkdocstrings = {extras = ["python"], version = "^0.30.0"}
-pymdown-extensions = "^10.16.1"
+mkdocs-material = "^9.7.1"
+mkdocstrings = {extras = ["python"], version = "^1.0.0"}
+pymdown-extensions = "^10.20"
 
 
 [build-system]
