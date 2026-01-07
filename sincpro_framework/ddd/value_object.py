@@ -1,6 +1,6 @@
 """Value object module."""
 
-from typing import Callable, NewType, Type, TypeVar
+from typing import Any, Callable, NewType, Type, TypeVar
 
 PrimitiveType = TypeVar(
     "PrimitiveType", int, float, str, bool, list, dict, set, tuple, bytes, bytearray
@@ -9,7 +9,7 @@ PrimitiveType = TypeVar(
 
 def new_value_object(
     new_type: Type[PrimitiveType] | Type[NewType],
-    validate_fn: Callable[[PrimitiveType], None] | None,
+    validate_fn: Callable[[PrimitiveType], Any] | None,
 ) -> Type[PrimitiveType]:
     """Create a new value object."""
     name = new_type.__name__
@@ -18,7 +18,9 @@ def new_value_object(
     class ValueObjectType(base_type):
         def __new__(cls, value: PrimitiveType) -> PrimitiveType:
             if validate_fn:
-                validate_fn(value)
+                new_value = validate_fn(value)
+                if new_value:
+                    value = new_value
             return super().__new__(cls, value)
 
         def __repr__(self):
