@@ -8,13 +8,11 @@ Focused solely on content generation, leaving YAML and site generation to specia
 from typing import List
 
 from sincpro_framework.generate_documentation.domain.models import (
-    ClassMetadata,
-    FrameworkDocs,
-    FunctionMetadata,
-    MkDocsCompleteDocumentation,
-    MkDocsFrameworkDocumentation,
-    PydanticModelMetadata,
-)
+    ClassMetadata, FrameworkDocs, FunctionMetadata,
+    MkDocsCompleteDocumentation, MkDocsFrameworkDocumentation,
+    PydanticModelMetadata)
+from sincpro_framework.generate_documentation.infrastructure.docstring_processor import \
+    process_docstring_for_documentation
 
 
 class MkDocsMarkdownGenerator:
@@ -64,9 +62,8 @@ class MkDocsMarkdownGenerator:
         Legacy method for backward compatibility.
         Use StaticSiteGenerator for better control over site generation.
         """
-        from sincpro_framework.generate_documentation.infrastructure.static_site_generator import (
-            site_generator,
-        )
+        from sincpro_framework.generate_documentation.infrastructure.static_site_generator import \
+            site_generator
 
         print(
             "⚠️  Using legacy write_documentation_files. Consider using StaticSiteGenerator directly."
@@ -521,7 +518,11 @@ class MkDocsMarkdownGenerator:
         ]
 
         if func.docstring:
-            lines.extend([func.docstring, ""])
+            processed_docstring = process_docstring_for_documentation(
+                func.docstring, func.name
+            )
+            if processed_docstring:
+                lines.extend([processed_docstring, ""])
 
         if func.parameters:
             lines.extend(["**Parameters:**", ""])
@@ -548,7 +549,9 @@ class MkDocsMarkdownGenerator:
         ]
 
         if cls.docstring:
-            lines.extend([cls.docstring, ""])
+            processed_docstring = process_docstring_for_documentation(cls.docstring, cls.name)
+            if processed_docstring:
+                lines.extend([processed_docstring, ""])
 
         if cls.methods:
             lines.extend(["**Methods:**", ""])
@@ -565,7 +568,11 @@ class MkDocsMarkdownGenerator:
                     ]
                 )
                 if method.docstring:
-                    lines.extend([method.docstring, ""])
+                    processed_method_docstring = process_docstring_for_documentation(
+                        method.docstring, f"{cls.name}.{method_name}"
+                    )
+                    if processed_method_docstring:
+                        lines.extend([processed_method_docstring, ""])
 
         return lines
 
@@ -581,7 +588,9 @@ class MkDocsMarkdownGenerator:
         ]
 
         if dto.docstring:
-            lines.extend([dto.docstring, ""])
+            processed_docstring = process_docstring_for_documentation(dto.docstring, dto.name)
+            if processed_docstring:
+                lines.extend([processed_docstring, ""])
 
         if dto.fields:
             lines.extend(["**Fields:**", ""])
