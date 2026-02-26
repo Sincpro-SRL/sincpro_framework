@@ -16,12 +16,12 @@ priority = "supplemental"
 python = "^3.12"
 dependency-injector = "^4.48.3"
 pydantic = "^2.12.5"
-pyyaml = "6.0.1"
+pyyaml = "^6.0.3"
 sincpro-log = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
-isort = "^7.0.0"
-black = "^25.12.0"
+isort = "^8.0.0"
+black = "^26.1.0"
 pytest = "^9.0.2"
 ipython = "^9.9.0"
 autoflake = "^2.3.1"
@@ -32,6 +32,7 @@ mkdocs = "^1.6.1"
 mkdocs-material = "^9.7.1"
 mkdocstrings = {extras = ["python"], version = "^1.0.0"}
 pymdown-extensions = "^10.20"
+griffe = ">=1.15.0,<2.0.0"
 
 
 [build-system]
