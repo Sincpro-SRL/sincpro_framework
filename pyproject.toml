@@ -34,26 +34,17 @@ mkdocstrings = {extras = ["python"], version = "^1.0.0"}
 mkdocstrings-python = "2.0.1"
 pymdown-extensions = "^10.20"
 griffe = ">=1.15.0,<2.0.0"
+urllib3 = ">=2.6.3"
+nbconvert = ">=7.17.0"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.pylint]
-disable = [
-    "missing-docstring",
-    "fixme",
-    "C0103",
-    "C0301",
-    "R0903",
-    "C0413",
-    "W1203",
-    "I1101",
-    "W1309",
-    "R0902",
-    "C0415",
-]
-
 [tool.black]
 line-length = 94
+
+[tool.pyright]
+reportInvalidTypeVarUse = "none"
+reportInvalidTypeForm = "none"

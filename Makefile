@@ -53,12 +53,26 @@ format-python:
 
 format: format-python format-yaml
 
-verify-format: format
+verify-format: format lint
 	@if ! git diff --quiet; then \
 	  echo >&2 "✘ El formateo ha modificado archivos. Por favor agrégalos al commit."; \
 	  git --no-pager diff --name-only HEAD -- >&2; \
 	  exit 1; \
 	fi
+	@echo "✔ Format and lint checks passed."
+
+
+lint:
+	@echo "-------------"
+	@echo "Main code"
+	@echo "-------------"
+	@echo
+	@poetry run pyright sincpro_framework 
+	@echo
+	@echo "-------------"
+	@echo "Tests"
+	@echo "-------------"
+	@poetry run pyright tests
 
 
 clean-pyc:

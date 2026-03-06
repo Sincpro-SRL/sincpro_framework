@@ -16,10 +16,10 @@ from .sincpro_logger import is_logger_in_debug, logger
 class FeatureBus(Bus):
     """First layer of the framework, atomic features"""
 
-    def __init__(self, logger_bus: Logger = logger):
+    def __init__(self, logger_bus: Logger = logger):  # type: ignore[assignment]
         self.feature_registry: Dict[str, Feature] = dict()
         self.handle_error: Optional[Callable] = None
-        self.logger: Logger = logger_bus or logger
+        self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -32,7 +32,7 @@ class FeatureBus(Bus):
         self.feature_registry[dto.__name__] = feature
         return True
 
-    def execute(
+    def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """Execute a feature, and handle error if exists error handler"""
@@ -64,7 +64,7 @@ class ApplicationServiceBus(Bus):
     This object contains the feature bus internally
     """
 
-    def __init__(self, logger_bus: Logger = logger):
+    def __init__(self, logger_bus: Logger = logger):  # type: ignore[assignment]
         self.app_service_registry: Dict[str, ApplicationService] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
@@ -84,7 +84,7 @@ class ApplicationServiceBus(Bus):
         self.app_service_registry[dto.__name__] = app_service
         return True
 
-    def execute(
+    def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """Execute an application service, and handle error if exists error handler"""
@@ -125,7 +125,7 @@ class FrameworkBus(Bus):
         self,
         feature_bus: FeatureBus,
         app_service_bus: ApplicationServiceBus,
-        logger_bus: Logger = logger,
+        logger_bus: Logger = logger,  # type: ignore[assignment]
     ):
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
@@ -146,7 +146,7 @@ class FrameworkBus(Bus):
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
 
-    def execute(
+    def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """Main method to execute the framework

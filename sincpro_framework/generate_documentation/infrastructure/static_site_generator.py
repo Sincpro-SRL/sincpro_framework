@@ -67,7 +67,7 @@ class StaticSiteGenerator:
 
         return site_path
 
-    def _build_static_site(self, source_path: str, site_dir: str = "site") -> str:
+    def _build_static_site(self, source_path: str | Path, site_dir: str = "site") -> str:
         """
         Execute mkdocs build using subprocess to generate static HTML.
 

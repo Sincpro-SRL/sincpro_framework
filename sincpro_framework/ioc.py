@@ -33,12 +33,12 @@ class FrameworkContainer(containers.DeclarativeContainer):
 
     # atomic layer
     feature_registry: Dict = providers.Dict({})
-    feature_bus: Singleton[FeatureBus] = providers.Singleton(FeatureBus, logger_bus)
+    feature_bus: Singleton[FeatureBus] = providers.Singleton(FeatureBus, logger_bus)  # type: ignore[arg-type]
 
     # orchestration layer
     app_service_registry: Dict = providers.Dict({})
     app_service_bus: Singleton[ApplicationServiceBus] = providers.Singleton(
-        ApplicationServiceBus, logger_bus
+        ApplicationServiceBus, logger_bus  # type: ignore[arg-type]
     )
 
     # Facade
@@ -46,7 +46,7 @@ class FrameworkContainer(containers.DeclarativeContainer):
         FrameworkBus,
         feature_bus=feature_bus,
         app_service_bus=app_service_bus,
-        logger_bus=logger_bus,
+        logger_bus=logger_bus,  # type: ignore[arg-type]
     )
 
 
@@ -77,7 +77,7 @@ def _register_service(
     dto_list = dto if isinstance(dto, list) else [dto]
 
     for data_transfer_object in dto_list:
-        dto_name = data_transfer_object.__name__
+        dto_name = data_transfer_object.__name__  # type: ignore[union-attr]
 
         # Check if DTO is already registered
         if (
@@ -97,7 +97,7 @@ def _register_service(
             )
 
         # Log registration
-        framework_container.logger_bus.debug(f"Registering {service_type}: [{dto_name}]")
+        framework_container.logger_bus.debug(f"Registering {service_type}: [{dto_name}]")  # type: ignore[union-attr]
 
         # Update DTO registry with new DTO
         framework_container.dto_registry = providers.Dict(

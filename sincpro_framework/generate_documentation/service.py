@@ -53,9 +53,11 @@ def build_documentation(
         site_generator,
     )
 
-    _framework_instances = framework_instances
-    if not isinstance(framework_instances, list):
-        _framework_instances: list = [framework_instances]
+    _framework_instances: list[UseFramework] = (
+        framework_instances
+        if isinstance(framework_instances, list)
+        else [framework_instances]
+    )
 
     framework_docs = []
     for framework_instance in _framework_instances:
