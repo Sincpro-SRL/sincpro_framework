@@ -44,8 +44,8 @@ class UseFramework(ContextMixin):
         self._current_context: Dict[str, Any] = {}
 
         # Container
-        self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
-        self._sp_container.logger_bus = self.logger
+        self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)  # type: ignore[call-arg]
+        self._sp_container.logger_bus = self.logger  # type: ignore[assignment]
 
         # Decorators
         self.feature = partial(ioc.inject_feature_to_bus, self._sp_container)
@@ -104,7 +104,7 @@ class UseFramework(ContextMixin):
         self.was_initialized = True
         dto_registry = self._sp_container.dto_registry()
 
-        self.bus: FrameworkBus = self._sp_container.framework_bus()
+        self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
 
         # Set the loggers
         self.bus.log_after_execution = self.log_after_execution
@@ -145,7 +145,7 @@ class UseFramework(ContextMixin):
             with app.context({"correlation_id": "123", "user_id": "456"}) as app_with_context:
                 result = app_with_context(some_dto)
         """
-        return FrameworkContext(self, context_to_set)
+        return FrameworkContext(self, context_to_set)  # type: ignore[arg-type]
 
     def add_global_error_handler(self, handler: Callable):
         if not callable(handler):
@@ -212,4 +212,4 @@ class UseFramework(ContextMixin):
         if not self._is_logger_configured:
             self._logger = create_logger(self._logger_name)
             self._is_logger_configured = True
-        return self._logger
+        return self._logger  # type: ignore[return-value]

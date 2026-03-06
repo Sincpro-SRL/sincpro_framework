@@ -237,6 +237,7 @@ class AIOptimizedJSONSchemaGenerator:
                         "complexity_level": "low",
                     },
                 }
+                dependency_schemas.append(schema)
             elif isinstance(dep, ClassMetadata):
                 schema = {
                     "type": "dependency_class",
@@ -252,8 +253,7 @@ class AIOptimizedJSONSchemaGenerator:
                         "complexity_level": self._assess_dependency_complexity(dep),
                     },
                 }
-
-            dependency_schemas.append(schema)
+                dependency_schemas.append(schema)
 
         return dependency_schemas
 
@@ -279,6 +279,7 @@ class AIOptimizedJSONSchemaGenerator:
                         "complexity_level": "medium",
                     },
                 }
+                middleware_schemas.append(schema)
             elif isinstance(middleware, ClassMetadata):
                 schema = {
                     "type": "middleware_class",
@@ -294,8 +295,7 @@ class AIOptimizedJSONSchemaGenerator:
                         "complexity_level": self._assess_middleware_complexity(middleware),
                     },
                 }
-
-            middleware_schemas.append(schema)
+                middleware_schemas.append(schema)
 
         return middleware_schemas
 
@@ -853,7 +853,7 @@ class ChunkedAIJSONSchemaGenerator:
     - Detail chunks (full information when needed)
     """
 
-    def __init__(self, framework_docs: FrameworkDocs = None):
+    def __init__(self, framework_docs: Optional[FrameworkDocs] = None):
         self.framework_docs = framework_docs
         self.schema_version = "1.0.0"
 

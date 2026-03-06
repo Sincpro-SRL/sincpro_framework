@@ -61,6 +61,19 @@ verify-format: format
 	fi
 
 
+lint:
+	@echo "-------------"
+	@echo "Main code"
+	@echo "-------------"
+	@echo
+	@poetry run pyright sincpro_framework 
+	@echo
+	@echo "-------------"
+	@echo "Tests"
+	@echo "-------------"
+	@poetry run pyright tests
+
+
 clean-pyc:
 	find . -type d -name '__pycache__' -exec rm -rf {} \; || exit 0
 	find . -type f -iname '*.pyc' -delete || exit 0

@@ -40,20 +40,8 @@ griffe = ">=1.15.0,<2.0.0"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.pylint]
-disable = [
-    "missing-docstring",
-    "fixme",
-    "C0103",
-    "C0301",
-    "R0903",
-    "C0413",
-    "W1203",
-    "I1101",
-    "W1309",
-    "R0902",
-    "C0415",
-]
-
 [tool.black]
 line-length = 94
+
+[tool.pyright]
+reportInvalidTypeVarUse = "none"

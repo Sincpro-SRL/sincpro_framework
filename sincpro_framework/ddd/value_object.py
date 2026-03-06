@@ -12,10 +12,10 @@ def new_value_object(
     validate_fn: Callable[[PrimitiveType], Any] | None,
 ) -> Type[PrimitiveType]:
     """Create a new value object."""
-    name = new_type.__name__
-    base_type = new_type.__supertype__
+    name = new_type.__name__  # type: ignore[union-attr]
+    base_type = new_type.__supertype__  # type: ignore[union-attr]
 
-    class ValueObjectType(base_type):
+    class ValueObjectType(base_type):  # type: ignore[valid-type,misc]
         def __new__(cls, value: PrimitiveType) -> PrimitiveType:
             if validate_fn:
                 new_value = validate_fn(value)
@@ -25,6 +25,17 @@ def new_value_object(
 
         def __repr__(self):
             return f"{name}({super().__repr__()})"
+
+        @classmethod
+        def __get_pydantic_core_schema__(cls, source_type: Any, handler: Any) -> Any:
+            from pydantic_core import core_schema as cs
+
+            return cs.chain_schema(
+                [
+                    handler.generate_schema(base_type),
+                    cs.no_info_plain_validator_function(cls),
+                ]
+            )
 
     ValueObjectType.__name__ = name
     ValueObjectType.__qualname__ = name

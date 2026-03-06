@@ -21,10 +21,10 @@ class SincproComponentFinder:
         if not self.framework.was_initialized:
             raise ValueError("Framework must be built before introspection")
 
-        self.bus: FrameworkBus = self.framework.bus
+        self.bus: FrameworkBus = self.framework.bus  # type: ignore[assignment]
 
         return IntrospectionResult(
-            framework_name=self.framework._logger_name,
+            framework_name=self.framework._logger_name,  # type: ignore[attr-defined]
             dtos=self.extract_dtos(),
             dependencies=self.extract_injected_dependencies(),
             middlewares=self.extract_middlewares(),

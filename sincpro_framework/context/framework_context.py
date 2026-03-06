@@ -8,7 +8,7 @@ with instance-based context storage for proper isolation.
 from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
-    from .use_bus import UseFramework
+    from ..use_bus import UseFramework
 
 
 class FrameworkContext:
