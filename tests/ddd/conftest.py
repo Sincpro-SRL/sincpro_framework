@@ -2,14 +2,8 @@
 
 from typing import NewType
 
+from sincpro_framework.ddd import ValueObject
 from sincpro_framework.ddd.value_object import new_value_object
-
-_UserId = NewType("UserId", int)
-_Email = NewType("Email", str)
-_Amount = NewType("Amount", float)
-_Tag = NewType("Tag", str)
-_ProductCode = NewType("ProductCode", str)
-_Stock = NewType("Stock", int)
 
 
 def _validate_non_empty(value: str) -> str | None:
@@ -18,9 +12,33 @@ def _validate_non_empty(value: str) -> str | None:
     return None
 
 
-UserIdVO = new_value_object(_UserId, lambda v: abs(v))  # siempre positivo
-EmailVO = new_value_object(_Email, lambda v: v.strip().lower())
-AmountVO = new_value_object(_Amount, lambda v: round(v, 2))
-TagVO = new_value_object(_Tag, _validate_non_empty)
-ProductCodeVO = new_value_object(_ProductCode, lambda v: v.strip().upper())
-StockVO = new_value_object(_Stock, lambda v: v * 2)  # duplica
+# ---------------------------------------------------------------------------
+# New API: ValueObject(base, fn, name=...)
+# ---------------------------------------------------------------------------
+
+UserIdVO = ValueObject(int, lambda v: abs(v), name="UserId")  # always positive
+EmailVO = ValueObject(str, lambda v: v.strip().lower(), name="Email")
+AmountVO = ValueObject(float, lambda v: round(v, 2), name="Amount")
+TagVO = ValueObject(str, _validate_non_empty, name="Tag")
+ProductCodeVO = ValueObject(str, lambda v: v.strip().upper(), name="ProductCode")
+StockVO = ValueObject(int, lambda v: v * 2, name="Stock")  # doubles the value
+
+# Collection primitives
+TagsVO = ValueObject(list, lambda v: sorted(set(v)), name="Tags")  # dedup and sort
+MetaVO = ValueObject(dict, lambda v: {k.strip(): val for k, val in v.items()}, name="Meta")
+CoordSetVO = ValueObject(
+    set, lambda v: {abs(x) for x in v}, name="CoordSet"
+)  # abs of each element
+PointVO = ValueObject(tuple, lambda v: tuple(sorted(v)), name="Point")  # sort elements
+
+# ---------------------------------------------------------------------------
+# Legacy API (deprecated): new_value_object(NewType(...), fn)
+# ---------------------------------------------------------------------------
+
+import warnings  # noqa: E402
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    LegacyUserIdVO = new_value_object(NewType("LegacyUserId", int), lambda v: abs(v))
+    LegacyEmailVO = new_value_object(NewType("LegacyEmail", str), lambda v: v.strip().lower())
+    LegacyAmountVO = new_value_object(NewType("LegacyAmount", float), lambda v: round(v, 2))

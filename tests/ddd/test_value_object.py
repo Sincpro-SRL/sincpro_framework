@@ -4,6 +4,7 @@ from typing import NewType
 
 import pytest
 
+from sincpro_framework.ddd import ValueObject
 from sincpro_framework.ddd.value_object import new_value_object
 from tests.ddd.conftest import AmountVO, EmailVO, TagVO, UserIdVO
 
@@ -88,7 +89,7 @@ class TestMetadata:
         assert UserIdVO.__qualname__ == "UserId"
 
     def test_module_matches_newtype(self):
-        assert UserIdVO.__module__ == "tests.ddd.conftest"
+        assert UserIdVO.__module__ == "builtins"
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +133,8 @@ class TestIndependentInstances:
         assert a != b
 
     def test_different_value_object_types_independent(self):
-        """Dos VOs con distinto NewType y distinto validate_fn son independientes."""
-        OrderId = NewType("OrderId", int)
-        OrderIdVO = new_value_object(OrderId, lambda v: v * 2)  # duplica
+        """Dos VOs con distinto tipo y distinto validate_fn son independientes."""
+        OrderIdVO = ValueObject(int, lambda v: v * 2, name="OrderId")
 
         uid = UserIdVO(-3)  # abs(-3) = 3
         oid = OrderIdVO(3)  # 3 * 2 = 6
@@ -143,3 +143,36 @@ class TestIndependentInstances:
         assert oid == 6
         assert type(uid).__name__ == "UserId"
         assert type(oid).__name__ == "OrderId"
+
+
+# ---------------------------------------------------------------------------
+# Compatibilidad: ambas APIs producen el mismo resultado
+# ---------------------------------------------------------------------------
+
+
+class TestBothAPIs:
+    def test_new_api_value_object(self):
+        """API nueva: ValueObject(int, fn, name='X')."""
+        UserId = ValueObject(int, lambda v: abs(v), name="UserId")
+        uid = UserId(-5)
+        assert uid == 5
+        assert isinstance(uid, int)
+        assert UserId.__name__ == "UserId"
+
+    def test_old_api_new_value_object_with_newtype(self):
+        """API vieja: new_value_object(NewType('X', int), fn) — retro-compatible."""
+        UserId = NewType("UserId", int)
+        UserIdVO = new_value_object(UserId, lambda v: abs(v))
+        uid = UserIdVO(-5)
+        assert uid == 5
+        assert isinstance(uid, int)
+        assert UserIdVO.__name__ == "UserId"
+
+    def test_both_apis_produce_equivalent_behaviour(self):
+        """Ambas APIs producen value objects con el mismo comportamiento."""
+        NewApiVO = ValueObject(str, lambda v: v.strip().lower(), name="Email")
+        OldApiVO = new_value_object(NewType("Email", str), lambda v: v.strip().lower())
+
+        assert NewApiVO("  Hello@World.COM  ") == "hello@world.com"
+        assert OldApiVO("  Hello@World.COM  ") == "hello@world.com"
+        assert NewApiVO.__name__ == OldApiVO.__name__ == "Email"

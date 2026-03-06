@@ -1,0 +1,1 @@
+from sincpro_framework.ddd.value_object import ValueObject
