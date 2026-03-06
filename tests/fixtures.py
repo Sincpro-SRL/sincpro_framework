@@ -39,6 +39,7 @@ class ResponseApplicationService1(DataTransferObject):
 class TestApplicationService(ApplicationService):
     def execute(self, dto: CommandFeatureTest1, **kwargs) -> ResponseApplicationService1:
         res = self.feature_bus.execute(CommandFeatureTest1(to_print=dto.to_print))
+        assert res is not None
         return ResponseApplicationService1(**res.model_dump())
 
 

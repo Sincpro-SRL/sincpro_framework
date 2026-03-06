@@ -3,7 +3,7 @@ Tests for the Context Manager functionality in Sincpro Framework
 """
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 import pytest
 
@@ -149,6 +149,7 @@ class TestContextMixin:
         framework._inject_context_to_services_and_features(test_context)
 
         # Verify context was injected to features
+        assert framework.bus is not None
         feature_registry = framework.bus.feature_bus.feature_registry
 
         for feature in feature_registry.values():
@@ -179,7 +180,9 @@ class TestUseFrameworkContext:
             pass
 
         # Test without context
-        result_no_context = framework(ContextTestDTO(message="no context"))
+        result_no_context = cast(
+            ContextTestResponseDTO, framework(ContextTestDTO(message="no context"))
+        )
         assert "processed: no context" in result_no_context.result
         assert result_no_context.context_data == {}
 
@@ -187,7 +190,10 @@ class TestUseFrameworkContext:
         with framework.context(
             {"correlation_id": "test-123", "user": "testuser"}
         ) as app_with_context:
-            result_with_context = app_with_context(ContextTestDTO(message="with context"))
+            result_with_context = cast(
+                ContextTestResponseDTO,
+                app_with_context(ContextTestDTO(message="with context")),
+            )
 
             assert "processed: with context" in result_with_context.result
             assert result_with_context.context_data["correlation_id"] == "test-123"
@@ -205,7 +211,9 @@ class TestUseFrameworkContext:
             {"correlation_id": "outer", "user": "testuser", "env": "prod"}
         ) as outer_app:
             # Test outer context
-            result_outer = outer_app(ContextTestDTO(message="outer context"))
+            result_outer = cast(
+                ContextTestResponseDTO, outer_app(ContextTestDTO(message="outer context"))
+            )
             assert result_outer.context_data["correlation_id"] == "outer"
             assert result_outer.context_data["user"] == "testuser"
             assert result_outer.context_data["env"] == "prod"
@@ -214,7 +222,9 @@ class TestUseFrameworkContext:
             with outer_app.context(
                 {"correlation_id": "inner", "session": "abc123"}
             ) as inner_app:
-                result_inner = inner_app(ContextTestDTO(message="inner context"))
+                result_inner = cast(
+                    ContextTestResponseDTO, inner_app(ContextTestDTO(message="inner context"))
+                )
 
                 # Inner context should have overridden correlation_id but inherited other values
                 assert result_inner.context_data["correlation_id"] == "inner"  # overridden
@@ -235,7 +245,10 @@ class TestUseFrameworkContext:
         with framework.context(
             {"correlation_id": "app-test", "user": "appuser"}
         ) as app_with_context:
-            result = app_with_context(ContextTestDTO(message="test with context"))
+            result = cast(
+                ContextTestResponseDTO,
+                app_with_context(ContextTestDTO(message="test with context")),
+            )
 
             # Feature should have context
             assert result.context_data["correlation_id"] == "app-test"
@@ -256,12 +269,16 @@ class TestUseFrameworkContext:
 
         # Set different contexts for each framework
         with framework1.context({"service": "service-1", "correlation_id": "ctx-1"}) as app1:
-            result1 = app1(ContextTestDTO(message="framework 1"))
+            result1 = cast(
+                ContextTestResponseDTO, app1(ContextTestDTO(message="framework 1"))
+            )
 
             with framework2.context(
                 {"service": "service-2", "correlation_id": "ctx-2"}
             ) as app2:
-                result2 = app2(ContextTestDTO(message="framework 2"))
+                result2 = cast(
+                    ContextTestResponseDTO, app2(ContextTestDTO(message="framework 2"))
+                )
 
                 # Verify context isolation
                 assert result1.context_data["service"] == "service-1"
@@ -282,16 +299,23 @@ class TestUseFrameworkContext:
             pass
 
         # Initially no context
-        result_initial = framework(ContextTestDTO(message="initial"))
+        result_initial = cast(
+            ContextTestResponseDTO, framework(ContextTestDTO(message="initial"))
+        )
         assert result_initial.context_data == {}
 
         # Use context
         with framework.context({"correlation_id": "cleanup-test"}) as app_with_context:
-            result_with_context = app_with_context(ContextTestDTO(message="with context"))
+            result_with_context = cast(
+                ContextTestResponseDTO,
+                app_with_context(ContextTestDTO(message="with context")),
+            )
             assert result_with_context.context_data["correlation_id"] == "cleanup-test"
 
         # After exiting, context should be clean
-        result_after = framework(ContextTestDTO(message="after"))
+        result_after = cast(
+            ContextTestResponseDTO, framework(ContextTestDTO(message="after"))
+        )
         assert result_after.context_data == {}
 
     def test_context_with_error_handling(self):
@@ -324,9 +348,18 @@ class TestUseFrameworkContext:
             {"correlation_id": "multi-exec", "session": "session-123"}
         ) as app_with_context:
             # Execute multiple times in the same context
-            result1 = app_with_context(ContextTestDTO(message="first execution"))
-            result2 = app_with_context(ContextTestDTO(message="second execution"))
-            result3 = app_with_context(ContextTestDTO(message="third execution"))
+            result1 = cast(
+                ContextTestResponseDTO,
+                app_with_context(ContextTestDTO(message="first execution")),
+            )
+            result2 = cast(
+                ContextTestResponseDTO,
+                app_with_context(ContextTestDTO(message="second execution")),
+            )
+            result3 = cast(
+                ContextTestResponseDTO,
+                app_with_context(ContextTestDTO(message="third execution")),
+            )
 
             # All should have the same context
             for result in [result1, result2, result3]:
@@ -354,7 +387,10 @@ class TestUseFrameworkContext:
             context = {"thread_id": thread_id, "worker": f"worker-{thread_id}"}
 
             with fw.context(context) as app_with_context:
-                result = app_with_context(ContextTestDTO(message=f"thread {thread_id}"))
+                result = cast(
+                    ContextTestResponseDTO,
+                    app_with_context(ContextTestDTO(message=f"thread {thread_id}")),
+                )
                 results[thread_id] = result.context_data
 
         # Run multiple threads
@@ -419,7 +455,10 @@ class TestUseFrameworkContext:
             pass
 
         with framework.context({}) as app_with_context:
-            result = app_with_context(ContextTestDTO(message="empty context"))
+            result = cast(
+                ContextTestResponseDTO,
+                app_with_context(ContextTestDTO(message="empty context")),
+            )
             assert result.context_data == {}
 
     def test_context_override_behavior(self):

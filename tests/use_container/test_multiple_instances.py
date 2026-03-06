@@ -33,6 +33,8 @@ def test_multiple_instances():
     f1.build_root_bus()
     f2.build_root_bus()
 
+    assert f1.bus is not None
+    assert f2.bus is not None
     assert (
         f1.bus.feature_bus.feature_registry.keys()
         != f2.bus.feature_bus.feature_registry.keys()

@@ -87,12 +87,12 @@ def test_framework():
 
         test_db: TestDatabase
 
-        def execute(self, dto: ServiceProcessCommandDTO) -> ExampleResponseDTO:
+        def execute(self, dto: ServiceProcessCommandDTO):
             # Orchestrate features - convert to feature DTO
             process_dto = ProcessCommandDTO(
                 operation_id=dto.operation_id, data=dto.data, priority=dto.priority
             )
-            return self.feature_bus.execute(process_dto)
+            return self.feature_bus.execute(process_dto, ExampleResponseDTO)
 
     framework.build_root_bus()
     return framework

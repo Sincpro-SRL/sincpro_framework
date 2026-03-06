@@ -54,7 +54,7 @@ def test_error_handler_application_layer_handled_error(
         pass
 
     class AppServicesHandledError(ApplicationService):
-        def execute(self, dto: CommandDTOApplicationLayer) -> CommandDTOApplicationLayer:
+        def execute(self, dto: CommandDTOApplicationLayer):
             return self.feature_bus.execute(CommandDTOFeatureLayer())
 
     expected_message = "Error handled"
@@ -109,7 +109,7 @@ def test_error_handler_application_layer_NO_handledError(
         pass
 
     class AppServicesHandledError(ApplicationService):
-        def execute(self, dto: CommandDTOApplicationLayer) -> CommandDTOApplicationLayer:
+        def execute(self, dto: CommandDTOApplicationLayer):
             return self.feature_bus.execute(CommandDTOFeatureLayer())
 
     expected_message = "Error handled"

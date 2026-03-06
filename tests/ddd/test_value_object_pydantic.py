@@ -116,7 +116,7 @@ class TestPydanticValidationErrors:
             order_id: UserIdVO
 
         with pytest.raises(ValidationError):
-            OrderDTO()
+            OrderDTO.model_validate({})
 
     def test_none_for_required_vo_field(self):
         """Passing None to a required VO field raises ValidationError."""

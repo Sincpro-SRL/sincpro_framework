@@ -184,8 +184,8 @@ class TestMiddlewareIntegration:
                 # But has enriched data from middleware transformation
                 assert hasattr(dto, "processed")
                 assert hasattr(dto, "timestamp")
-                assert dto.processed is True
-                assert dto.timestamp == "2024-01-01T00:00:00Z"
+                assert getattr(dto, "processed") is True
+                assert getattr(dto, "timestamp") == "2024-01-01T00:00:00Z"
 
                 return dto
 
@@ -251,10 +251,10 @@ class TestMiddlewareIntegration:
                 assert hasattr(dto, "last_login")
 
                 # Verify aggregated data values
-                assert dto.processed is True
-                assert dto.user_type in ["premium", "standard"]
-                assert dto.membership_status == "active"
-                assert dto.last_login == "2024-01-01T10:00:00Z"
+                assert getattr(dto, "processed") is True
+                assert getattr(dto, "user_type") in ["premium", "standard"]
+                assert getattr(dto, "membership_status") == "active"
+                assert getattr(dto, "last_login") == "2024-01-01T10:00:00Z"
 
                 return dto
 
@@ -266,7 +266,7 @@ class TestMiddlewareIntegration:
         assert result.name == "Alice"
         assert result.age == 30
         assert hasattr(result, "user_type")
-        assert result.user_type == "premium"  # Aggregated data accessible
+        assert getattr(result, "user_type") == "premium"  # Aggregated data accessible
 
         # Test with standard user
         standard_user = OriginalDTO(name="Bob", age=20)
@@ -276,7 +276,7 @@ class TestMiddlewareIntegration:
         assert result.name == "Bob"
         assert result.age == 20
         assert hasattr(result, "user_type")
-        assert result.user_type == "standard"
+        assert getattr(result, "user_type") == "standard"
 
     def test_framework_middleware_validation_error(self):
         """Test that validation errors in middleware are properly handled"""
@@ -311,6 +311,7 @@ class TestMiddlewareIntegration:
         original_dto = OriginalDTO(name="Frank", age=40)
         result = framework(original_dto)
 
+        assert isinstance(result, OriginalDTO)
         assert result.name == "Frank"
         assert result.age == 40
         # No middleware applied, so no additional fields
