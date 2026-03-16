@@ -1,0 +1,21 @@
+name: Discord Notification
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - release/**
+
+  release:
+    types: [published]
+
+  push:
+    branches:
+      - main
+      - release/**
+
+jobs:
+  discord:
+    uses: Sincpro-SRL/.github/.github/workflows/05-discord_notify.yaml@main
+    secrets: inherit
