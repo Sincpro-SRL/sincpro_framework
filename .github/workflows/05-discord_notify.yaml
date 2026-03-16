@@ -10,11 +10,6 @@ on:
   release:
     types: [published]
 
-  push:
-    branches:
-      - main
-      - release/**
-
 jobs:
   discord:
     uses: Sincpro-SRL/.github/.github/workflows/05-discord_notify.yaml@main
