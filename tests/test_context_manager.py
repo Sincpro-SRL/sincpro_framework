@@ -2,7 +2,10 @@
 Tests for the Context Manager functionality in Sincpro Framework
 """
 
+import shutil
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Dict, cast
 
 import pytest
@@ -480,3 +483,35 @@ class TestUseFrameworkContext:
                 assert result.context_data["b"] == "outer_b"  # inherited
                 assert result.context_data["c"] == "outer_c"  # inherited
                 assert result.context_data["d"] == "inner_d"  # new
+
+
+class TestContextTypingRegression:
+    """Static typing checks related to context typing compatibility."""
+
+    def test_pyright_typed_context_file(self):
+        """Run pyright against a real context typing sample file."""
+        sample_file = (
+            Path(__file__).resolve().parent / "typing_cases" / "typed_context_case.py"
+        )
+
+        pyright_bin = shutil.which("pyright")
+        if pyright_bin:
+            command = [pyright_bin, str(sample_file)]
+        else:
+            poetry_bin = shutil.which("poetry")
+            if not poetry_bin:
+                pytest.skip("pyright or poetry executable is required for this test")
+            command = [poetry_bin, "run", "pyright", str(sample_file)]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).resolve().parents[1],
+            check=False,
+        )
+
+        assert result.returncode == 0, (
+            "Pyright reported typing issues for TypedDict context compatibility.\n"
+            f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )

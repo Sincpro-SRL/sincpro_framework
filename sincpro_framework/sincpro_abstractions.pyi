@@ -1,13 +1,15 @@
 import abc
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Type, TypeVar, overload
+from typing import Any, Generic, Type, overload
 
 from pydantic import BaseModel
+from typing_extensions import TypeVar
 
 class DataTransferObject(BaseModel): ...
 
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
 TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
+ContextT = TypeVar("ContextT")
 
 # Additional TypeVars for better dependency injection typing
 TFeature = TypeVar("TFeature", bound="Feature")
@@ -25,7 +27,7 @@ class Bus(ABC, metaclass=abc.ABCMeta):
     @overload
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None: ...
 
-class Feature(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
+class Feature(ABC, Generic[TypeDTO, TypeDTOResponse, ContextT], metaclass=abc.ABCMeta):
     """
     Feature is the first layer of the framework, it is the main abstraction to execute a business logic.
 
@@ -41,7 +43,7 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
             def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
     """
 
-    context: dict
+    context: ContextT
 
     def __init__(self, *args, **kwargs) -> None: ...
     @abstractmethod
@@ -52,7 +54,9 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
     # Custom Feature classes should define typed attributes for IDE support
     def __getattr__(self, name: str) -> Any: ...
 
-class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.ABCMeta):
+class ApplicationService(
+    ABC, Generic[TypeDTO, TypeDTOResponse, ContextT], metaclass=abc.ABCMeta
+):
     """
     Second layer of the framework, orchestration of features.
 
@@ -68,7 +72,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse], metaclass=abc.A
             def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
     """
 
-    context: dict
+    context: ContextT
     feature_bus: Bus
     def __init__(self, feature_bus: Bus, *args, **kwargs) -> None: ...
     @abstractmethod

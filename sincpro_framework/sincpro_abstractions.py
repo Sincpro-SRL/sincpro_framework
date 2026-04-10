@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Generic, Type, TypeVar
+from typing import Generic, Type, cast
 
 from pydantic import BaseModel, ConfigDict
+from typing_extensions import TypeVar
 
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
 TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
+ContextT = TypeVar("ContextT")
 
 # Additional TypeVars for better dependency injection typing
 TFeature = TypeVar("TFeature", bound="Feature")
@@ -33,7 +35,7 @@ class Bus(ABC):
         """
 
 
-class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
+class Feature(ABC, Generic[TypeDTO, TypeDTOResponse, ContextT]):
     """
     Feature is the first layer of the framework, it is the main abstraction to execute a business logic.
 
@@ -69,13 +71,13 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
                 return MyResponseDTO(result="example")
     """
 
-    context: dict
+    context: ContextT
 
     def __init__(self, *args, **kwargs):
         """
         Initialize the Feature. Dependencies are injected automatically by the framework.
         """
-        self.context = {}
+        self.context = cast(ContextT, {})
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
@@ -90,7 +92,7 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse]):
         """
 
 
-class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
+class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse, ContextT]):
     """
     Second layer of the framework, orchestration of features.
 
@@ -134,7 +136,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
                 return MyResponseDTO(result="example")
     """
 
-    context: dict
+    context: ContextT
     feature_bus: Bus
 
     def __init__(self, feature_bus: Bus, *args, **kwargs):
@@ -143,7 +145,7 @@ class ApplicationService(ABC, Generic[TypeDTO, TypeDTOResponse]):
         Additional dependencies are injected automatically by the framework.
         """
         self.feature_bus = feature_bus
-        self.context = {}
+        self.context = cast(ContextT, {})
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
