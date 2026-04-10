@@ -18,6 +18,7 @@ from .sincpro_logger import create_logger as create_logger
 
 # Type alias for decorator functions
 DecoratorFunction = Callable[[Type], Type]
+DTORegistration = Type[DataTransferObject] | list[Type[DataTransferObject]]
 
 class UseFramework(ContextMixin):
     """
@@ -48,8 +49,8 @@ class UseFramework(ContextMixin):
     log_features: bool
 
     # Decorators with better typing
-    feature: Callable[[Type[DataTransferObject]], DecoratorFunction]
-    app_service: Callable[[Type[DataTransferObject]], DecoratorFunction]
+    feature: Callable[[DTORegistration], DecoratorFunction]
+    app_service: Callable[[DTORegistration], DecoratorFunction]
 
     middleware_pipeline: MiddlewarePipeline
     dynamic_dep_registry: Dict[str, Any]
