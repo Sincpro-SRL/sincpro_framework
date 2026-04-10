@@ -2,7 +2,7 @@
 
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, TypeVar, Union
+from typing import Callable, TypeVar
 
 from dependency_injector import containers, providers
 from dependency_injector.providers import Dict, Factory, Object, Singleton
@@ -13,7 +13,10 @@ T = TypeVar("T", bound=type)
 
 from .bus import ApplicationServiceBus, FeatureBus, FrameworkBus
 from .exceptions import DTOAlreadyRegistered
-from .sincpro_abstractions import TypeDTO
+from .sincpro_abstractions import DataTransferObject
+
+DTOClass = type[DataTransferObject]
+DTORegistration = DTOClass | str | list[DTOClass | str]
 
 # ---------------------------------------------------------------------------------------------
 # Container Definition
@@ -68,7 +71,7 @@ class ServiceType(Enum):
 def _register_service(
     framework_container: FrameworkContainer,
     service_type: ServiceType,
-    dto: Union[str, list, TypeDTO, Any],
+    dto: DTORegistration,
     decorated_class: type,
 ) -> None:
     """Register a service (feature or app_service) to the framework container"""
@@ -135,7 +138,7 @@ def _register_service(
 
 
 def inject_feature_to_bus(
-    framework_container: FrameworkContainer, dto: Union[str, list, TypeDTO, Any]
+    framework_container: FrameworkContainer, dto: DTORegistration
 ) -> Callable[[T], T]:
     """Decorator to register a feature to the framework bus
 
@@ -156,7 +159,7 @@ def inject_feature_to_bus(
 
 
 def inject_app_service_to_bus(
-    framework_container: FrameworkContainer, dto: Union[str, list]
+    framework_container: FrameworkContainer, dto: DTORegistration
 ) -> Callable[[T], T]:
     """Decorator to register an application service to the framework bus
 
