@@ -4,14 +4,6 @@ from sincpro_log import configure_global_logging, create_logger
 
 from .sincpro_conf import settings
 
-__all__ = [
-    "create_logger",
-    "configure_global_logging",
-    "settings",
-    "logger",
-    "is_logger_in_debug",
-]
-
 configure_global_logging(settings.sincpro_framework_log_level)
 
 
@@ -21,3 +13,11 @@ def is_logger_in_debug() -> bool:
 
 
 logger = create_logger("sincpro_framework")
+
+__all__ = [
+    "create_logger",
+    "configure_global_logging",
+    "settings",
+    "logger",
+    "is_logger_in_debug",
+]
