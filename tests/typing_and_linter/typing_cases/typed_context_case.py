@@ -3,6 +3,7 @@ from typing import Any, NotRequired, TypedDict, assert_type
 
 from sincpro_framework import ApplicationService as _ApplicationService
 from sincpro_framework import Feature as _Feature
+from sincpro_framework import UseFramework
 
 
 class SIATEnvironment(StrEnum):
@@ -70,3 +71,12 @@ def verify_feature_context_payload(feature: FeatureWithPayload) -> None:
 def verify_feature_context_direct(feature: Feature) -> None:
     direct = feature.context
     assert_type(direct, ContextApp)
+
+
+def verify_typed_dict_context_with_manager() -> None:
+    siat_soap_sdk = UseFramework("typing-context")
+
+    with siat_soap_sdk.context(
+        ContextApp(TOKEN="token", SIAT_ENV=SIATEnvironment.TEST)
+    ) as sdk:
+        assert_type(sdk, UseFramework)

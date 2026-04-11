@@ -5,7 +5,7 @@ Provides automatic metadata propagation and scope management
 with instance-based context storage for proper isolation.
 """
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Mapping
 
 if TYPE_CHECKING:
     from ..use_bus import UseFramework
@@ -17,11 +17,11 @@ class FrameworkContext:
     and scope management with instance-based storage.
     """
 
-    def __init__(self, framework_instance: "UseFramework", context: Dict[str, Any]):
+    def __init__(self, framework_instance: "UseFramework", context: Mapping[str, Any]):
         self._is_entered: bool = False
         self.framework = framework_instance
 
-        self.context: Dict[str, Any] = context
+        self.context: Dict[str, Any] = dict(context)
         self.parent_context: Dict[str, Any] = framework_instance._get_context().copy()
 
     def __enter__(self) -> "UseFramework":
