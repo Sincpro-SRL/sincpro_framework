@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Any, Callable, Dict, Mapping, Optional, Type, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -131,7 +131,7 @@ class UseFramework(ContextMixin):
         """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)
 
-    def context(self, context_to_set: Dict[str, Any]) -> FrameworkContext:
+    def context(self, context_to_set: Mapping[str, Any]) -> FrameworkContext:
         """
         Create a context manager with the specified attributes
 
@@ -145,7 +145,7 @@ class UseFramework(ContextMixin):
             with app.context({"correlation_id": "123", "user_id": "456"}) as app_with_context:
                 result = app_with_context(some_dto)
         """
-        return FrameworkContext(self, context_to_set)  # type: ignore[arg-type]
+        return FrameworkContext(cast(Any, self), context_to_set)
 
     def add_global_error_handler(self, handler: Callable):
         if not callable(handler):

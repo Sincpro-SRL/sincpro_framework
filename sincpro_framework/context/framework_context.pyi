@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Mapping
 
 if TYPE_CHECKING:
     from ..use_bus import UseFramework
@@ -16,7 +16,9 @@ class FrameworkContext:
     context: Dict[str, Any]
     parent_context: Dict[str, Any]
 
-    def __init__(self, framework_instance: "UseFramework", context: Dict[str, Any]) -> None:
+    def __init__(
+        self, framework_instance: "UseFramework", context: Mapping[str, Any]
+    ) -> None:
         """
         Initialize the context manager.
 

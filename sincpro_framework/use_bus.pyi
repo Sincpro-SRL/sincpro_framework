@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Type, TypeVar, overload
+from typing import Any, Callable, Dict, Mapping, Type, TypeVar, overload
 
 from _typeshed import Incomplete
 from sincpro_log.logger import LoggerProxy
@@ -163,7 +163,7 @@ class UseFramework(ContextMixin):
         """
         ...
 
-    def context(self, context_to_set: Dict[str, Any]) -> FrameworkContext:
+    def context(self, context_to_set: Mapping[str, Any]) -> FrameworkContext:
         """
         Create a context manager that applies the specified context attributes.
 
