@@ -7,15 +7,14 @@ from . import ioc
 from .bus import FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
+from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
 class UseFramework(ContextMixin):
-    """
-    Main class to use the framework, this is the main entry point to configure the framework
-    """
+    """Main class to use the framework, this is the main entry point to configure the framework."""
 
     def __init__(
         self,
@@ -54,10 +53,13 @@ class UseFramework(ContextMixin):
         # Registry for dynamic dep injection
         self.dynamic_dep_registry: Dict[str, Any] = dict()
 
-        # Error handlers
-        self.global_error_handler: Optional[Callable] = None
-        self.feature_error_handler: Optional[Callable] = None
-        self.app_service_error_handler: Optional[Callable] = None
+        # Error handlers — ordered pipeline (first registered, first executed)
+        self._global_error_handlers: list[ErrorHandler] = []
+        self._feature_error_handlers: list[ErrorHandler] = []
+        self._app_service_error_handlers: list[ErrorHandler] = []
+        self.global_error_handler: Optional[ErrorHandler] = None
+        self.feature_error_handler: Optional[ErrorHandler] = None
+        self.app_service_error_handler: Optional[ErrorHandler] = None
 
         # Middleware pipeline
         self.middleware_pipeline = MiddlewarePipeline()
@@ -147,20 +149,58 @@ class UseFramework(ContextMixin):
         """
         return FrameworkContext(cast(Any, self), context_to_set)
 
-    def add_global_error_handler(self, handler: Callable):
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self.global_error_handler = handler
+    def add_global_error_handler(self, handler: ErrorHandler):
+        """Register a global error handler.
 
-    def add_feature_error_handler(self, handler: Callable):
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self.feature_error_handler = handler
+        Signature: ``(error) -> Any``.
+        If the handler re-raises, the framework calls the next handler in the chain.
+        First registered = first to execute.
 
-    def add_app_service_error_handler(self, handler: Callable):
+        Example::
+
+            def base(error):
+                return ErrorResponse(str(error))
+
+            app.add_global_error_handler(base)
+
+            def logger(error):
+                notify_sentry(error)
+                raise error  # delegates to base
+
+            app.add_global_error_handler(logger)
+        """
         if not callable(handler):
             raise TypeError("The handler must be a callable")
-        self.app_service_error_handler = handler
+        self._global_error_handlers.append(handler)
+        self.global_error_handler = build_error_handler_chain(self._global_error_handlers)
+        if self.was_initialized and self.bus is not None:
+            self.bus.handle_error = self.global_error_handler
+
+    def add_feature_error_handler(self, handler: ErrorHandler):
+        """Register a feature-level error handler.
+
+        Same semantics as ``add_global_error_handler``.
+        """
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        self._feature_error_handlers.append(handler)
+        self.feature_error_handler = build_error_handler_chain(self._feature_error_handlers)
+        if self.was_initialized and self.bus is not None:
+            self.bus.feature_bus.handle_error = self.feature_error_handler
+
+    def add_app_service_error_handler(self, handler: ErrorHandler):
+        """Register an app service-level error handler.
+
+        Same semantics as ``add_global_error_handler``.
+        """
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        self._app_service_error_handlers.append(handler)
+        self.app_service_error_handler = build_error_handler_chain(
+            self._app_service_error_handlers
+        )
+        if self.was_initialized and self.bus is not None:
+            self.bus.app_service_bus.handle_error = self.app_service_error_handler
 
     def _add_dependencies_provided_by_user(self):
         if "feature_registry" in self._sp_container.feature_bus.attributes:

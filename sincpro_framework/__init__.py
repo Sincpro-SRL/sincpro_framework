@@ -16,7 +16,6 @@ __all__ = [
     "UseFramework",
     "logger",
     "Middleware",
-    # Type variables for better typing
     "TypeDTO",
     "TypeDTOResponse",
 ]

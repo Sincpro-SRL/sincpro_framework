@@ -8,6 +8,7 @@ from . import ioc as ioc
 from .bus import FrameworkBus as FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
+from .error_handler import ErrorHandler as ErrorHandler
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
@@ -54,9 +55,9 @@ class UseFramework(ContextMixin):
 
     middleware_pipeline: MiddlewarePipeline
     dynamic_dep_registry: Dict[str, Any]
-    global_error_handler: Callable[..., Any] | None
-    feature_error_handler: Callable[..., Any] | None
-    app_service_error_handler: Callable[..., Any] | None
+    global_error_handler: ErrorHandler | None
+    feature_error_handler: ErrorHandler | None
+    app_service_error_handler: ErrorHandler | None
     was_initialized: bool
     # Override the parent bus type to allow None during initialization
     bus: FrameworkBus | None  # type: ignore[override]
@@ -136,30 +137,36 @@ class UseFramework(ContextMixin):
         """
         ...
 
-    def add_global_error_handler(self, handler: Callable[..., Any]) -> None:
+    def add_global_error_handler(self, handler: ErrorHandler) -> None:
         """
-        Add a global error handler for all framework errors.
+        Add a global error handler. First registered = first to execute.
+
+        On re-raise the framework delegates to the next handler in the chain.
 
         Args:
-            handler: A callable that handles exceptions
+            handler: An ``ErrorHandler`` callable.
         """
         ...
 
-    def add_feature_error_handler(self, handler: Callable[..., Any]) -> None:
+    def add_feature_error_handler(self, handler: ErrorHandler) -> None:
         """
         Add an error handler specifically for Feature errors.
 
+        Same composition semantics as ``add_global_error_handler``.
+
         Args:
-            handler: A callable that handles Feature exceptions
+            handler: An ``ErrorHandler`` callable.
         """
         ...
 
-    def add_app_service_error_handler(self, handler: Callable[..., Any]) -> None:
+    def add_app_service_error_handler(self, handler: ErrorHandler) -> None:
         """
         Add an error handler specifically for ApplicationService errors.
 
+        Same composition semantics as ``add_global_error_handler``.
+
         Args:
-            handler: A callable that handles ApplicationService exceptions
+            handler: An ``ErrorHandler`` callable.
         """
         ...
 

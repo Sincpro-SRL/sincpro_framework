@@ -18,8 +18,8 @@ from sincpro_framework import Database
 db = Database()
 framework.add_dependency("db", db)
 
-# 3. Error Handler (Optional, use the built-in error handling feature)
-framework.set_global_error_handler(lambda e: print(f"Error: {e}"))
+# 3. Error Handler (Optional)
+framework.add_global_error_handler(lambda e: print(f"Error: {e}"))
 
 
 # 4. Create a Use Case with DTOs
@@ -157,7 +157,9 @@ class PaymentFeature(Feature):
 
 ### ⚠️ Error Handling at Different Levels
 
-- Provides centralized error handling at multiple levels: **global**, **Service Application**, and **Feature** levels.
+- Provides centralized error handling at three independent levels: **global**, **app service**, and **feature**.
+- First registered handler executes first. On re-raise, the framework delegates to the next handler in the chain.
+- Handlers can be registered **at any point** — before or after the first execution — and take effect immediately.
 - Ensures consistent error management, improving overall reliability.
 
 ### 🚌 Bus Pattern for Component Communication
@@ -540,9 +542,96 @@ result = framework(my_dto)  # Raises ValueError if required_field is missing
 4. **Return the DTO**: Always return the DTO (modified or unchanged).
 5. **Don't break the chain**: Ensure your middleware doesn't silently swallow exceptions.
 
+## ⚠️ Error Handling
+
+The framework provides three independent error handler scopes: **global** (framework bus), **feature**, and **app service**. Register a handler with the corresponding method — handlers can be added before or after the first execution and always take effect immediately.
+
+### Basic usage
+
+An error handler receives the exception. Return a value to suppress it:
+
+```python
+from sincpro_framework import UseFramework
+
+framework = UseFramework("my_app")
+
+def handle_error(error: Exception):
+    return {"error": str(error)}  # suppresses the exception
+
+framework.add_global_error_handler(handle_error)
+```
+
+### Scoped handlers
+
+Each scope intercepts only the errors produced at that level:
+
+```python
+# Only feature errors
+framework.add_feature_error_handler(feature_handler)
+
+# Only app service errors
+framework.add_app_service_error_handler(app_service_handler)
+
+# Everything that reaches the root bus
+framework.add_global_error_handler(global_handler)
+```
+
+### Registration lifecycle
+
+Handlers can be registered at any point — before the bus is built or after — and take effect immediately:
+
+```python
+framework = UseFramework("my_app")
+
+framework.add_global_error_handler(base_handler)  # before first execution
+
+framework(some_dto)  # first call triggers build
+
+framework.add_global_error_handler(extra_handler)  # after build — also works
+```
+
+---
+
+### 🔗 Advanced: Handler chaining
+
+Every call to `add_*_error_handler` adds the handler to a chain. The **first registered handler executes first**. If it re-raises, the framework automatically delegates to the next handler in the chain.
+
+| Registration order | Role | Executes |
+|---|---|---|
+| `add(h1)` first | Auth — intercepts auth errors early | First |
+| `add(h2)` second | Logging — records the error, then delegates | Second |
+| `add(h3)` third | Base — produces the structured error response | Last |
+
+#### Example: three-layer chain
+
+```python
+# Registration order: auth → observability → base
+# Execution order: auth → observability → base
+
+def auth_handler(error: Exception):
+    """First — intercepts auth errors; delegates everything else."""
+    if isinstance(error, AuthenticationError):
+        return {"ok": False, "detail": "unauthenticated", "code": 401}
+    raise error  # delegates to observability_handler
+
+def observability_handler(error: Exception):
+    """Second — logs error, then delegates to base_handler."""
+    log.error("unhandled error", exc_info=error)
+    raise error  # delegates to base_handler
+
+def base_handler(error: Exception):
+    """Last — always returns a structured error, never raises."""
+    return {"ok": False, "detail": str(error)}
+
+framework.add_global_error_handler(auth_handler)          # 1st = runs first
+framework.add_global_error_handler(observability_handler) # 2nd
+framework.add_global_error_handler(base_handler)          # 3rd = final fallback
+```
+
 ## �📖 Auto-Documentation
 
 The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in multiple formats optimized for different use cases.
+
 
 ### 🚀 Quick Documentation Generation
 
