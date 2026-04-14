@@ -18,8 +18,8 @@ from sincpro_framework import Database
 db = Database()
 framework.add_dependency("db", db)
 
-# 3. Error Handler (Optional, use the built-in error handling feature)
-framework.set_global_error_handler(lambda e: print(f"Error: {e}"))
+# 3. Error Handler (Optional)
+framework.add_global_error_handler(lambda e: print(f"Error: {e}"))
 
 
 # 4. Create a Use Case with DTOs
@@ -157,7 +157,9 @@ class PaymentFeature(Feature):
 
 ### ⚠️ Error Handling at Different Levels
 
-- Provides centralized error handling at multiple levels: **global**, **Service Application**, and **Feature** levels.
+- Provides centralized error handling at three independent levels: **global**, **app service**, and **feature**.
+- Handlers use **function composition**: each call to `add_*_error_handler` wraps the previous one, so the *last registered handler executes first*.
+- Handlers can be registered **at any point** — before or after the first execution — and take effect immediately.
 - Ensures consistent error management, improving overall reliability.
 
 ### 🚌 Bus Pattern for Component Communication
@@ -540,9 +542,140 @@ result = framework(my_dto)  # Raises ValueError if required_field is missing
 4. **Return the DTO**: Always return the DTO (modified or unchanged).
 5. **Don't break the chain**: Ensure your middleware doesn't silently swallow exceptions.
 
+## ⚠️ Error Handling
+
+The framework provides three independent error handler scopes: **global** (framework bus), **feature**, and **app service**. Register a handler with the corresponding method — handlers can be added before or after the first execution and always take effect immediately.
+
+### Basic usage
+
+An error handler receives the exception. Return a value to suppress it:
+
+```python
+from sincpro_framework import UseFramework
+
+framework = UseFramework("my_app")
+
+def handle_error(error: Exception):
+    return {"error": str(error)}  # suppresses the exception
+
+framework.add_global_error_handler(handle_error)
+```
+
+### Scoped handlers
+
+Each scope intercepts only the errors produced at that level:
+
+```python
+# Only feature errors
+framework.add_feature_error_handler(feature_handler)
+
+# Only app service errors
+framework.add_app_service_error_handler(app_service_handler)
+
+# Everything that reaches the root bus
+framework.add_global_error_handler(global_handler)
+```
+
+### Registration lifecycle
+
+Handlers can be registered at any point — before the bus is built or after — and take effect immediately:
+
+```python
+framework = UseFramework("my_app")
+
+framework.add_global_error_handler(base_handler)  # before first execution
+
+framework(some_dto)  # first call triggers build
+
+framework.add_global_error_handler(extra_handler)  # after build — also works
+```
+
+---
+
+### 🔗 Advanced: Handler chaining
+
+Every call to `add_*_error_handler` **wraps** the previously registered handler. The **last registered handler executes first**. This lets different layers of the application (framework core, adapters, third-party modules) each contribute error handling behaviour without knowing about each other.
+
+#### When order matters
+
+Order matters whenever the response to an error depends on context that a later layer adds. Common cases:
+
+| Scenario | Outer (last added) | Inner (first added) |
+|---|---|---|
+| Logging + structured response | Log & re-raise | Build `ErrorResponse` |
+| Retry logic | Decide whether to retry | Execute the fallback |
+| Multi-tenant routing | Identify tenant, re-raise | Generic handler |
+| Circuit breaker | Open circuit, re-raise | Default error response |
+
+#### Implicit delegation — `(error)`
+
+The primary signature. If the handler re-raises, the framework automatically calls the previous handler in the chain:
+
+```python
+# Layer 1 — innermost, registered first
+def base_handler(error: Exception):
+    return {"error": str(error)}  # final fallback response
+
+framework.add_global_error_handler(base_handler)
+
+# Layer 2 — runs before base_handler
+def observability_handler(error: Exception):
+    send_to_sentry(error)   # side effect
+    raise error             # framework calls base_handler automatically
+
+framework.add_global_error_handler(observability_handler)
+
+# Execution order when an error occurs:
+# 1. observability_handler → sends to Sentry, re-raises
+# 2. base_handler          → returns structured response
+```
+
+#### Explicit delegation — `(error, next_handler)`
+
+For advanced cases where the handler needs full control over whether and when to call the next one:
+
+```python
+def circuit_breaker(error: Exception, next_handler):
+    if is_circuit_open():
+        return {"error": "service unavailable"}  # skip next_handler entirely
+    return next_handler(error)  # delegate explicitly
+
+framework.add_global_error_handler(base_handler)
+framework.add_global_error_handler(circuit_breaker)
+```
+
+The framework auto-detects the signature — no configuration needed.
+
+#### A realistic three-layer chain
+
+```python
+# Registered in order: base → observability → auth
+# Execution order on error: auth → observability → base
+
+def base_handler(error: Exception):
+    """Always returns a structured error — never raises."""
+    return {"ok": False, "detail": str(error)}
+
+def observability_handler(error: Exception):
+    """Records the error, then delegates."""
+    log.error("unhandled error", exc_info=error)
+    raise error
+
+def auth_handler(error: Exception):
+    """Converts auth errors to 401; delegates everything else."""
+    if isinstance(error, AuthenticationError):
+        return {"ok": False, "detail": "unauthenticated", "code": 401}
+    raise error
+
+framework.add_global_error_handler(base_handler)
+framework.add_global_error_handler(observability_handler)
+framework.add_global_error_handler(auth_handler)
+```
+
 ## �📖 Auto-Documentation
 
 The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in multiple formats optimized for different use cases.
+
 
 ### 🚀 Quick Documentation Generation
 

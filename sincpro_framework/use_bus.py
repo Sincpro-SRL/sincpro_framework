@@ -7,15 +7,14 @@ from . import ioc
 from .bus import FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
+from .error_handler import AnyErrorHandler, compose_handler
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
 class UseFramework(ContextMixin):
-    """
-    Main class to use the framework, this is the main entry point to configure the framework
-    """
+    """Main class to use the framework, this is the main entry point to configure the framework."""
 
     def __init__(
         self,
@@ -147,20 +146,72 @@ class UseFramework(ContextMixin):
         """
         return FrameworkContext(cast(Any, self), context_to_set)
 
-    def add_global_error_handler(self, handler: Callable):
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self.global_error_handler = handler
+    def add_global_error_handler(self, handler: AnyErrorHandler):
+        """Register a global error handler.
 
-    def add_feature_error_handler(self, handler: Callable):
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self.feature_error_handler = handler
+        Two supported signatures — the framework detects it automatically:
 
-    def add_app_service_error_handler(self, handler: Callable):
+        **Implicit** ``(error) -> Any``:
+        The handler just handles the error. If it re-raises, the framework
+        automatically calls the previously registered handler.
+
+        **Explicit** ``(error, next_handler) -> Any``:
+        The handler receives the composed previous handler directly and decides
+        when (or whether) to call it.
+
+        Example::
+
+            # Implicit — simple
+            def base(error):
+                return ErrorResponse(str(error))
+
+            app.add_global_error_handler(base)
+
+            # Implicit — re-raises to delegate
+            def extra(error):
+                notify_sentry(error)
+                raise error  # framework calls base next automatically
+
+            app.add_global_error_handler(extra)
+
+            # Explicit — full control
+            def auditor(error, next_handler):
+                log_audit(error)
+                return next_handler(error)  # call previous explicitly
+
+            app.add_global_error_handler(auditor)
+        """
         if not callable(handler):
             raise TypeError("The handler must be a callable")
-        self.app_service_error_handler = handler
+        self.global_error_handler = compose_handler(handler, self.global_error_handler)
+        if self.was_initialized and self.bus is not None:
+            self.bus.handle_error = self.global_error_handler
+
+    def add_feature_error_handler(self, handler: AnyErrorHandler):
+        """Register a feature-level error handler.
+
+        Same semantics as ``add_global_error_handler``.
+        Supports both ``(error)`` and ``(error, next_handler)`` signatures.
+        """
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        self.feature_error_handler = compose_handler(handler, self.feature_error_handler)
+        if self.was_initialized and self.bus is not None:
+            self.bus.feature_bus.handle_error = self.feature_error_handler
+
+    def add_app_service_error_handler(self, handler: AnyErrorHandler):
+        """Register an app service-level error handler.
+
+        Same semantics as ``add_global_error_handler``.
+        Supports both ``(error)`` and ``(error, next_handler)`` signatures.
+        """
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        self.app_service_error_handler = compose_handler(
+            handler, self.app_service_error_handler
+        )
+        if self.was_initialized and self.bus is not None:
+            self.bus.app_service_bus.handle_error = self.app_service_error_handler
 
     def _add_dependencies_provided_by_user(self):
         if "feature_registry" in self._sp_container.feature_bus.attributes:
