@@ -7,7 +7,7 @@ from . import ioc
 from .bus import FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
-from .error_handler import AnyErrorHandler, compose_handler
+from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
@@ -53,10 +53,13 @@ class UseFramework(ContextMixin):
         # Registry for dynamic dep injection
         self.dynamic_dep_registry: Dict[str, Any] = dict()
 
-        # Error handlers
-        self.global_error_handler: Optional[Callable] = None
-        self.feature_error_handler: Optional[Callable] = None
-        self.app_service_error_handler: Optional[Callable] = None
+        # Error handlers — ordered pipeline (first registered, first executed)
+        self._global_error_handlers: list[ErrorHandler] = []
+        self._feature_error_handlers: list[ErrorHandler] = []
+        self._app_service_error_handlers: list[ErrorHandler] = []
+        self.global_error_handler: Optional[ErrorHandler] = None
+        self.feature_error_handler: Optional[ErrorHandler] = None
+        self.app_service_error_handler: Optional[ErrorHandler] = None
 
         # Middleware pipeline
         self.middleware_pipeline = MiddlewarePipeline()
@@ -146,69 +149,55 @@ class UseFramework(ContextMixin):
         """
         return FrameworkContext(cast(Any, self), context_to_set)
 
-    def add_global_error_handler(self, handler: AnyErrorHandler):
+    def add_global_error_handler(self, handler: ErrorHandler):
         """Register a global error handler.
 
-        Two supported signatures — the framework detects it automatically:
-
-        **Implicit** ``(error) -> Any``:
-        The handler just handles the error. If it re-raises, the framework
-        automatically calls the previously registered handler.
-
-        **Explicit** ``(error, next_handler) -> Any``:
-        The handler receives the composed previous handler directly and decides
-        when (or whether) to call it.
+        Signature: ``(error) -> Any``.
+        If the handler re-raises, the framework calls the next handler in the chain.
+        First registered = first to execute.
 
         Example::
 
-            # Implicit — simple
             def base(error):
                 return ErrorResponse(str(error))
 
             app.add_global_error_handler(base)
 
-            # Implicit — re-raises to delegate
-            def extra(error):
+            def logger(error):
                 notify_sentry(error)
-                raise error  # framework calls base next automatically
+                raise error  # delegates to base
 
-            app.add_global_error_handler(extra)
-
-            # Explicit — full control
-            def auditor(error, next_handler):
-                log_audit(error)
-                return next_handler(error)  # call previous explicitly
-
-            app.add_global_error_handler(auditor)
+            app.add_global_error_handler(logger)
         """
         if not callable(handler):
             raise TypeError("The handler must be a callable")
-        self.global_error_handler = compose_handler(handler, self.global_error_handler)
+        self._global_error_handlers.append(handler)
+        self.global_error_handler = build_error_handler_chain(self._global_error_handlers)
         if self.was_initialized and self.bus is not None:
             self.bus.handle_error = self.global_error_handler
 
-    def add_feature_error_handler(self, handler: AnyErrorHandler):
+    def add_feature_error_handler(self, handler: ErrorHandler):
         """Register a feature-level error handler.
 
         Same semantics as ``add_global_error_handler``.
-        Supports both ``(error)`` and ``(error, next_handler)`` signatures.
         """
         if not callable(handler):
             raise TypeError("The handler must be a callable")
-        self.feature_error_handler = compose_handler(handler, self.feature_error_handler)
+        self._feature_error_handlers.append(handler)
+        self.feature_error_handler = build_error_handler_chain(self._feature_error_handlers)
         if self.was_initialized and self.bus is not None:
             self.bus.feature_bus.handle_error = self.feature_error_handler
 
-    def add_app_service_error_handler(self, handler: AnyErrorHandler):
+    def add_app_service_error_handler(self, handler: ErrorHandler):
         """Register an app service-level error handler.
 
         Same semantics as ``add_global_error_handler``.
-        Supports both ``(error)`` and ``(error, next_handler)`` signatures.
         """
         if not callable(handler):
             raise TypeError("The handler must be a callable")
-        self.app_service_error_handler = compose_handler(
-            handler, self.app_service_error_handler
+        self._app_service_error_handlers.append(handler)
+        self.app_service_error_handler = build_error_handler_chain(
+            self._app_service_error_handlers
         )
         if self.was_initialized and self.bus is not None:
             self.bus.app_service_bus.handle_error = self.app_service_error_handler

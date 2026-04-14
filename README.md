@@ -158,7 +158,7 @@ class PaymentFeature(Feature):
 ### ⚠️ Error Handling at Different Levels
 
 - Provides centralized error handling at three independent levels: **global**, **app service**, and **feature**.
-- Handlers use **function composition**: each call to `add_*_error_handler` wraps the previous one, so the *last registered handler executes first*.
+- First registered handler executes first. On re-raise, the framework delegates to the next handler in the chain.
 - Handlers can be registered **at any point** — before or after the first execution — and take effect immediately.
 - Ensures consistent error management, improving overall reliability.
 
@@ -594,82 +594,38 @@ framework.add_global_error_handler(extra_handler)  # after build — also works
 
 ### 🔗 Advanced: Handler chaining
 
-Every call to `add_*_error_handler` **wraps** the previously registered handler. The **last registered handler executes first**. This lets different layers of the application (framework core, adapters, third-party modules) each contribute error handling behaviour without knowing about each other.
+Every call to `add_*_error_handler` adds the handler to a chain. The **first registered handler executes first**. If it re-raises, the framework automatically delegates to the next handler in the chain.
 
-#### When order matters
-
-Order matters whenever the response to an error depends on context that a later layer adds. Common cases:
-
-| Scenario | Outer (last added) | Inner (first added) |
+| Registration order | Role | Executes |
 |---|---|---|
-| Logging + structured response | Log & re-raise | Build `ErrorResponse` |
-| Retry logic | Decide whether to retry | Execute the fallback |
-| Multi-tenant routing | Identify tenant, re-raise | Generic handler |
-| Circuit breaker | Open circuit, re-raise | Default error response |
+| `add(h1)` first | Auth — intercepts auth errors early | First |
+| `add(h2)` second | Logging — records the error, then delegates | Second |
+| `add(h3)` third | Base — produces the structured error response | Last |
 
-#### Implicit delegation — `(error)`
-
-The primary signature. If the handler re-raises, the framework automatically calls the previous handler in the chain:
+#### Example: three-layer chain
 
 ```python
-# Layer 1 — innermost, registered first
-def base_handler(error: Exception):
-    return {"error": str(error)}  # final fallback response
-
-framework.add_global_error_handler(base_handler)
-
-# Layer 2 — runs before base_handler
-def observability_handler(error: Exception):
-    send_to_sentry(error)   # side effect
-    raise error             # framework calls base_handler automatically
-
-framework.add_global_error_handler(observability_handler)
-
-# Execution order when an error occurs:
-# 1. observability_handler → sends to Sentry, re-raises
-# 2. base_handler          → returns structured response
-```
-
-#### Explicit delegation — `(error, next_handler)`
-
-For advanced cases where the handler needs full control over whether and when to call the next one:
-
-```python
-def circuit_breaker(error: Exception, next_handler):
-    if is_circuit_open():
-        return {"error": "service unavailable"}  # skip next_handler entirely
-    return next_handler(error)  # delegate explicitly
-
-framework.add_global_error_handler(base_handler)
-framework.add_global_error_handler(circuit_breaker)
-```
-
-The framework auto-detects the signature — no configuration needed.
-
-#### A realistic three-layer chain
-
-```python
-# Registered in order: base → observability → auth
-# Execution order on error: auth → observability → base
-
-def base_handler(error: Exception):
-    """Always returns a structured error — never raises."""
-    return {"ok": False, "detail": str(error)}
-
-def observability_handler(error: Exception):
-    """Records the error, then delegates."""
-    log.error("unhandled error", exc_info=error)
-    raise error
+# Registration order: auth → observability → base
+# Execution order: auth → observability → base
 
 def auth_handler(error: Exception):
-    """Converts auth errors to 401; delegates everything else."""
+    """First — intercepts auth errors; delegates everything else."""
     if isinstance(error, AuthenticationError):
         return {"ok": False, "detail": "unauthenticated", "code": 401}
-    raise error
+    raise error  # delegates to observability_handler
 
-framework.add_global_error_handler(base_handler)
-framework.add_global_error_handler(observability_handler)
-framework.add_global_error_handler(auth_handler)
+def observability_handler(error: Exception):
+    """Second — logs error, then delegates to base_handler."""
+    log.error("unhandled error", exc_info=error)
+    raise error  # delegates to base_handler
+
+def base_handler(error: Exception):
+    """Last — always returns a structured error, never raises."""
+    return {"ok": False, "detail": str(error)}
+
+framework.add_global_error_handler(auth_handler)          # 1st = runs first
+framework.add_global_error_handler(observability_handler) # 2nd
+framework.add_global_error_handler(base_handler)          # 3rd = final fallback
 ```
 
 ## �📖 Auto-Documentation
