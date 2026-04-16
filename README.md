@@ -66,16 +66,21 @@ Now you are ready to explore more complex use cases! 🚀
     - [Configuring the Framework](#configuring-the-framework)
     - [Best Practices for Imports](#best-practices-for-imports)
     - [Sample Configuration in ](#sample-configuration-in-init-py)[`__init__.py`](#sample-configuration-in-init-py)
-5. [Creating a Feature](#creating-a-feature)
+5. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
+    - [dependencies.py — Adapter Registration](#dependenciespy--adapter-registration)
+    - [framework.py — Wiring with DependencyContextType](#frameworkpy--wiring-with-dependencycontexttype)
+    - [\_\_init\_\_.py — Bootstrap the Bounded Context](#__init__py--bootstrap-the-bounded-context)
+    - [Testing Dependency Consistency](#testing-dependency-consistency)
+6. [Creating a Feature](#creating-a-feature)
     - [Example of Creating a Feature](#example-of-creating-a-feature)
-6. [Creating an Application Service](#creating-an-application-service)
+7. [Creating an Application Service](#creating-an-application-service)
     - [Example of Creating an Application Service](#example-of-creating-an-application-service)
-7. [Executing a Use Case](#executing-a-use-case)
+8. [Executing a Use Case](#executing-a-use-case)
     - [Example of Executing a Use Case](#example-of-executing-a-use-case)
-8. [Summary](#summary)
-9. [Middleware System](#middleware-system-1)
-10. [Configuration or settings](#variables)
-11. [Variables](#variables)
+9. [Summary](#summary)
+10. [Middleware System](#middleware-system-1)
+11. [Configuration or settings](#configuration-or-settings)
+12. [Variables](#variables)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -289,6 +294,153 @@ from . import tokenization
 
 __all__ = ["cybersource", "tokenization", "Feature"]
 ```
+
+## 🏗️ Recommended Infrastructure Structure
+
+When bootstrapping a bounded context with `UseFramework`, the recommended practice is to split
+framework wiring into three dedicated files under `apps/<domain>/infrastructure/`:
+
+```plaintext
+apps/
+└── my_domain/
+    ├── infrastructure/
+    │   ├── dependencies.py   # registers adapters; declares DependencyContextType
+    │   ├── framework.py      # defines local Feature/ApplicationService + config_framework()
+    │   └── error_handler.py  # (optional) registers error handlers
+    ├── services/
+    │   ├── feature_a.py
+    │   └── feature_b.py
+    └── __init__.py           # creates the framework instance and imports services
+```
+
+### `dependencies.py` — Adapter Registration
+
+Declare all external adapters in one place and expose a `DependencyContextType` typing helper.
+This class is **not** instantiated — it is used only as a mixin to give `Feature` and
+`ApplicationService` subclasses IDE autocomplete for injected attributes.
+
+```python
+# apps/my_domain/infrastructure/dependencies.py
+from sincpro_framework import UseFramework
+
+from my_sdk.adapters import PaymentAdapter, TokenizationAdapter
+
+
+class DependencyContextType:
+    """Typing helper — gives Features/AppServices IDE autocomplete for injected deps."""
+
+    token_adapter: TokenizationAdapter
+    payment_adapter: PaymentAdapter
+
+
+def register_dependencies(framework: UseFramework) -> UseFramework:
+    """Register all adapters with the framework instance."""
+    framework.add_dependency("token_adapter", TokenizationAdapter())
+    framework.add_dependency("payment_adapter", PaymentAdapter())
+    return framework
+```
+
+### `framework.py` — Wiring with DependencyContextType
+
+Combine the framework base classes with `DependencyContextType` using multiple inheritance so that
+every Feature and ApplicationService in this bounded context automatically inherits the typed
+attributes.
+
+```python
+# apps/my_domain/infrastructure/framework.py
+from sincpro_framework import ApplicationService as _ApplicationService
+from sincpro_framework import DataTransferObject  # re-exported for convenience
+from sincpro_framework import Feature as _Feature
+from sincpro_framework import UseFramework
+
+from .dependencies import DependencyContextType, register_dependencies
+
+
+class Feature(_Feature, DependencyContextType):
+    """Base Feature for this bounded context — typed deps included."""
+
+    pass
+
+
+class ApplicationService(_ApplicationService, DependencyContextType):
+    """Base ApplicationService for this bounded context — typed deps included."""
+
+    pass
+
+
+def config_framework(name: str) -> UseFramework:
+    """Create and configure the framework instance."""
+    instance = UseFramework(name)
+    register_dependencies(instance)
+    return instance
+```
+
+### `__init__.py` — Bootstrap the Bounded Context
+
+Create the framework instance first, then import the service modules so that the `@framework.feature`
+and `@framework.app_service` decorators register against the already-created instance.
+
+```python
+# apps/my_domain/__init__.py
+from .infrastructure.framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    config_framework,
+)
+
+my_framework = config_framework("my-domain")
+
+# Import services AFTER creating the instance so decorators register against it
+from .services import feature_a, feature_b  # noqa: E402, F401
+```
+
+### Testing Dependency Consistency
+
+Register a dedicated test feature to verify that every attribute declared in `DependencyContextType`
+is actually injected at runtime. If a new dependency is added to `DependencyContextType` but
+forgotten in `register_dependencies`, this test catches it automatically.
+
+```python
+# tests/my_domain/test_framework_setup.py
+from my_sdk.apps.my_domain import DataTransferObject, Feature, my_framework
+from my_sdk.apps.my_domain.infrastructure.dependencies import DependencyContextType
+
+
+class CommandVerifyDeps(DataTransferObject):
+    pass
+
+
+class ResponseVerifyDeps(DataTransferObject):
+    ok: bool
+
+
+# Register at module level — not inside the test function — so the decorator runs
+# before any other test in the session builds the framework bus.
+@my_framework.feature(CommandVerifyDeps)
+class VerifyDepsFeature(Feature):
+    def execute(self, dto: CommandVerifyDeps) -> ResponseVerifyDeps:
+        for dep_name in DependencyContextType.__annotations__:
+            assert getattr(self, dep_name, None) is not None, f"Missing dep: {dep_name}"
+        return ResponseVerifyDeps(ok=True)
+
+
+def test_framework_dependencies_injected_in_feature():
+    """All deps declared in DependencyContextType must be accessible inside a Feature."""
+    result = my_framework(CommandVerifyDeps(), ResponseVerifyDeps)
+    assert result.ok is True
+```
+
+**Why this matters:**
+
+- Iterates `DependencyContextType.__annotations__` automatically — adding a new dependency to
+  the context covers it in the test without any manual edits.
+- Catches mismatches between what is declared in `DependencyContextType` and what is actually
+  registered via `add_dependency`.
+- The feature must be registered at **module level** (not inside the test function) if other
+  tests in the same session build the framework bus first.
+
+---
 
 ## 🛠️ Creating a Feature
 
