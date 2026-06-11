@@ -180,6 +180,10 @@ class UseFramework(ContextMixin):
         """Create a tracing context manager for an execution block."""
         ...
 
+    def with_parent_trace(self) -> FrameworkSpanContext:
+        """Adopt the currently active OTel span for log correlation (no new span created)."""
+        ...
+
     def context(self, context_to_set: Mapping[str, Any]) -> FrameworkContext:
         """
         Create a context manager that applies the specified context attributes.

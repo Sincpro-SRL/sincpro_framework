@@ -501,6 +501,92 @@ def test_otel_instance_attribute_differs_per_framework(otel_setup):
 
 
 # ---------------------------------------------------------------------------
+# with_parent_trace() — adopt the host application's active span
+# ---------------------------------------------------------------------------
+
+
+def test_with_parent_trace_generates_ids_without_otel():
+    """with_parent_trace() without OTel still provides UUID-based log correlation."""
+    fw = UseFramework("parent-trace-no-otel", log_after_execution=False)
+
+    class NoOtelDTO(DataTransferObject):
+        pass
+
+    @fw.feature(NoOtelDTO)
+    class NoOtelFeature(Feature):
+        def execute(self, dto: NoOtelDTO) -> None:
+            return None
+
+    with fw.with_parent_trace() as traced:
+        ctx = traced._get_context()
+        assert "trace_id" in ctx
+        assert "span_id" in ctx
+        assert len(ctx["trace_id"]) > 0
+
+
+def test_with_parent_trace_adopts_active_span_ids(otel_setup):
+    """(OTel) with_parent_trace() binds the active span's trace_id/span_id to
+    the framework context and logger — same IDs as the host span, no new span."""
+    from opentelemetry import trace as otel_trace
+
+    fw = UseFramework("parent-trace-adopt", log_after_execution=False)
+
+    tracer = otel_trace.get_tracer("test-host")
+    with tracer.start_as_current_span("odoo-controller") as host_span:
+        expected_trace_id = format(host_span.get_span_context().trace_id, "032x")
+        expected_span_id = format(host_span.get_span_context().span_id, "016x")
+
+        with fw.with_parent_trace() as traced:
+            ctx = traced._get_context()
+            assert ctx["trace_id"] == expected_trace_id
+            assert ctx["span_id"] == expected_span_id
+            assert fw.logger.logger_fields["trace_id"] == expected_trace_id
+
+
+def test_with_parent_trace_dto_is_direct_child_no_root_span(otel_setup):
+    """(OTel) DTO spans inside with_parent_trace() are direct children of the host
+    span — no intermediate root span is added by the framework."""
+    from opentelemetry import trace as otel_trace
+
+    fw = UseFramework("parent-trace-direct-child", log_after_execution=False)
+
+    class DirectChildDTO(DataTransferObject):
+        pass
+
+    @fw.feature(DirectChildDTO)
+    class DirectChildFeature(Feature):
+        def execute(self, dto: DirectChildDTO) -> None:
+            return None
+
+    tracer = otel_trace.get_tracer("test-host")
+    with tracer.start_as_current_span("odoo-controller") as host_span:
+        with fw.with_parent_trace() as traced:
+            traced(DirectChildDTO())
+
+    spans = otel_setup.get_finished_spans()
+    dto_spans = [s for s in spans if s.name == "DirectChildDTO"]
+    root_spans = [s for s in spans if s.name == "parent-trace-direct-child"]
+
+    assert len(dto_spans) == 1
+    assert (
+        len(root_spans) == 0
+    ), "with_parent_trace() must not create an intermediate root span"
+    assert dto_spans[0].parent is not None
+    assert dto_spans[0].parent.span_id == host_span.get_span_context().span_id
+
+
+def test_with_parent_trace_fallback_uuids_when_no_active_span(otel_setup):
+    """(OTel) with_parent_trace() falls back to fresh UUIDs when no span is active."""
+    fw = UseFramework("parent-trace-fallback", log_after_execution=False)
+
+    with fw.with_parent_trace() as traced:
+        ctx = traced._get_context()
+        assert "trace_id" in ctx
+        # UUID-based IDs are 36 chars; OTel hex trace_ids are 32 chars — both > 0
+        assert len(ctx["trace_id"]) > 0
+
+
+# ---------------------------------------------------------------------------
 # carrier without OTel — warning test (no otel_setup fixture needed)
 # ---------------------------------------------------------------------------
 

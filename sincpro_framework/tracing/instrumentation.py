@@ -49,14 +49,14 @@ def record_observability_span_error(span: Any, error: Exception) -> None:
 def _dto_span(dto_name: str, layer: str, instance: str):
     """Return an OTel span CM tagged with sincpro attributes, or a no-op."""
     if _OTEL_AVAILABLE:
-        from opentelemetry import trace as otel_trace
+        from .provider import get_framework_tracer
 
         attrs: dict = {"sincpro.layer": layer}
         if instance:
             attrs["sincpro.instance"] = instance
-        return otel_trace.get_tracer("sincpro_framework").start_as_current_span(
-            dto_name, attributes=attrs
-        )
+        tracer = get_framework_tracer("sincpro_framework")
+        if tracer is not None:
+            return tracer.start_as_current_span(dto_name, attributes=attrs)
     return nullcontext()
 
 

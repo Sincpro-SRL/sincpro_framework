@@ -37,12 +37,14 @@ class FrameworkSpanContext:
         trace_id: Optional[str] = None,
         span_id: Optional[str] = None,
         carrier: Optional[Mapping[str, Any]] = None,
+        adopt_active: bool = False,
     ) -> None:
         self.framework = framework
         self._service_name = service_name
         self._trace_id = trace_id
         self._span_id = span_id
         self._carrier = carrier
+        self._adopt_active = adopt_active
 
         self._otel_token: Any = None
         self._root_span: Any = None
@@ -140,6 +142,9 @@ class FrameworkSpanContext:
                 )
             return self._trace_id or str(uuid4()), self._span_id or str(uuid4())
 
+        if self._adopt_active:
+            return self._setup_from_active_span()
+
         if self._carrier is not None:
             return self._setup_from_carrier()
 
@@ -147,6 +152,26 @@ class FrameworkSpanContext:
             return self._setup_from_explicit_ids()
 
         return self._setup_root_span()
+
+    def _setup_from_active_span(self) -> tuple[str, str]:
+        """Read trace context from the currently active OTel span.
+
+        Does NOT create a new span or attach a new OTel context — it only reads
+        the span that is already active (set by Odoo, FastAPI, Celery, etc.) so
+        that logs emitted inside this block carry the same trace_id/span_id as
+        the host application's active span.
+
+        DTO spans produced by the bus become direct children of the active span
+        because OTel's contextvars propagation is untouched.
+
+        Falls back to UUID-based correlation when no valid span is active.
+        """
+        from opentelemetry import trace as otel_trace
+
+        span_ctx = otel_trace.get_current_span().get_span_context()
+        if span_ctx.is_valid:
+            return format(span_ctx.trace_id, "032x"), format(span_ctx.span_id, "016x")
+        return str(uuid4()), str(uuid4())
 
     def _setup_from_carrier(self) -> tuple[str, str]:
         """Extract W3C traceparent from carrier headers and attach context."""

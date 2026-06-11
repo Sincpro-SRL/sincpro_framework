@@ -991,9 +991,19 @@ Every span produced by the framework carries:
 | `sincpro.layer` | `"feature"` or `"application_service"` | Identify which bus layer handled the DTO |
 | `sincpro.instance` | The framework instance name (e.g. `"payments"`) | Distinguish bounded contexts — useful when multiple `UseFramework` instances share one process, since the OTLP `service.name` Resource reflects only the first registered instance |
 
-### Multi-bounded-context note
+### Embedding sincpro inside another instrumented service (Odoo, FastAPI, etc.)
 
-If your process contains N bounded contexts (N `UseFramework` instances), `setup_otlp_provider` will only register the OTLP provider once. The `service.name` Resource attribute in the exported spans will reflect the **first** instance that called it. Use `sincpro.instance` on individual spans to distinguish which bounded context produced each span in your tracing backend.
+`setup_otlp_provider` always creates a **private** TracerProvider for sincpro with its own `service.name`. If the host application (Odoo, FastAPI, Celery) already registered the global OTel provider, sincpro leaves it untouched and keeps its provider internal.
+
+The trace relationship is still preserved: OTel propagates the active parent span via `contextvars` (process-wide), so sincpro spans are automatically children of whatever span the host has active at call time. In Tempo/Jaeger the full tree is visible and filterable:
+
+```
+service.name=odoo          →  GET /web/dataset/call_kw     (Odoo HTTP span)
+service.name=my-service    →    └── CreateOrderDTO          (application_service)
+service.name=my-service    →         └── ValidateStockDTO   (feature)
+```
+
+Sampling is respected across the boundary: sincpro uses `ParentBased(root=ALWAYS_ON)`, so when the host did not sample a trace, sincpro's spans are also dropped. When running standalone (no host parent span), every span is sampled.
 
 ## Configuration or settings
 

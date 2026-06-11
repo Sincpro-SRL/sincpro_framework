@@ -213,6 +213,43 @@ class UseFramework(ContextMixin):
             carrier=carrier,
         )
 
+    def with_parent_trace(self) -> FrameworkSpanContext:
+        """Adopt the currently active OTel span for log correlation and context injection.
+
+        Unlike ``with_trace()``, this does **not** create a new root span. It reads
+        the ``trace_id`` and ``span_id`` from whatever span is currently active in the
+        process — typically a span created by the host application's instrumentation
+        (Odoo WSGI middleware, FastAPI OpenTelemetry middleware, a Celery task decorator,
+        etc.) — and uses them to correlate logs and make them available inside
+        Feature / ApplicationService via ``self.context.get("trace_id")``.
+
+        Because no new span is created and the OTel context is not modified, DTO spans
+        produced by the bus are **direct children** of the active span, not grandchildren
+        through an intermediate root span as ``with_trace()`` would produce::
+
+            # with with_trace()
+            host-span
+              └── my-service (root span added by the framework)
+                    └── CreateOrderDTO (application_service)
+
+            # with with_parent_trace()
+            host-span
+              └── CreateOrderDTO (application_service)   ← direct child, no extra level
+
+        Falls back to UUID-based log correlation when no valid OTel span is active or
+        when opentelemetry is not installed, so it is always safe to call.
+
+        Examples::
+
+            # Inside an Odoo controller or FastAPI handler where the
+            # host has already started a span
+            with framework.with_parent_trace() as fw:
+                result = fw(CreateOrderDTO(...), OrderResult)
+        """
+        return FrameworkSpanContext(
+            cast(Any, self), service_name=self._logger_name, adopt_active=True
+        )
+
     def add_global_error_handler(self, handler: ErrorHandler):
         """Register a global error handler.
 
