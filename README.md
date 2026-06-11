@@ -74,8 +74,9 @@ Now you are ready to explore more complex use cases! 🚀
     - [Example of Executing a Use Case](#example-of-executing-a-use-case)
 8. [Summary](#summary)
 9. [Middleware System](#middleware-system-1)
-10. [Configuration or settings](#variables)
-11. [Variables](#variables)
+10. [Observability & Tracing](#observability--tracing)
+11. [Configuration or settings](#configuration-or-settings)
+12. [Variables](#variables)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -890,6 +891,110 @@ The JSON schema format enables powerful AI integrations:
 - **Analysis**: AI can identify optimization opportunities and suggest improvements
 - **Migration**: AI can understand dependencies for migration planning
 
+## Observability & Tracing
+
+The framework provides built-in log correlation out of the box and optional distributed tracing via OpenTelemetry.
+
+### What works without any extra install
+
+Every `framework(dto)` call automatically tags all internal log lines with a `trace_id` and `span_id`. These are UUID-based identifiers — enough to correlate all logs produced by a single execution even without an external tracing backend.
+
+You can also read them inside any Feature or ApplicationService:
+
+```python
+class MyFeature(Feature):
+    def execute(self, dto: MyDTO) -> MyResponse:
+        trace_id = self.context.get("trace_id")  # always present
+        ...
+```
+
+### Installing with OpenTelemetry
+
+```bash
+pip install sincpro-framework[opentelemetry]
+```
+
+This installs:
+- `opentelemetry-api` + `opentelemetry-sdk`
+- `opentelemetry-exporter-otlp-proto-grpc` (primary)
+- `opentelemetry-exporter-otlp-proto-http` (fallback)
+
+### What OpenTelemetry adds
+
+| Without OTel | With OTel |
+|---|---|
+| UUID-based trace/span IDs in logs | Real OTel spans with proper trace IDs |
+| No span hierarchy | `ApplicationService` span wraps `Feature` spans |
+| No OTLP export | Exports to Jaeger, Grafana Tempo, Honeycomb, etc. |
+| No W3C traceparent propagation | Parent context from HTTP headers via `carrier=` |
+| No external span adoption | Auto-adopts active span from FastAPI, Celery, etc. |
+
+When OTel is installed, auto-adoption of outer spans happens transparently — any active span already in the OTel context (set by FastAPI OpenTelemetry middleware, a Celery task decorator, etc.) becomes the parent of all sincpro spans without any extra setup.
+
+### Configuring the OTLP exporter
+
+Set the endpoint in your environment or the framework config file:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+
+Or in `sincpro_framework/conf/sincpro_framework_conf.yml`:
+
+```yaml
+otlp_endpoint: $ENV:OTEL_EXPORTER_OTLP_ENDPOINT
+```
+
+Register the provider once at startup, before any `framework(dto)` call:
+
+```python
+from sincpro_framework.tracing import setup_otlp_provider
+
+setup_otlp_provider("payments-service")
+```
+
+The provider is a **process-level singleton** — only the first call registers it. Subsequent calls (e.g. from a second bounded context) are no-ops.
+
+### The `with_trace()` context manager
+
+Use `with_trace()` when you need explicit control over the trace boundary — for example, to group multiple `framework(dto)` calls under a single trace, or to accept a trace from an upstream caller.
+
+**Fresh trace** (useful in CLI scripts, workers, or test harnesses):
+
+```python
+with framework.with_trace() as fw:
+    result = fw(MyDTO(...), MyResponse)
+    # all logs inside this block share the same trace_id/span_id
+```
+
+**Propagate from upstream HTTP headers** (W3C `traceparent`):
+
+```python
+# headers = {"traceparent": "00-<trace_id>-<parent_id>-01", ...}
+with framework.with_trace(carrier=request.headers) as fw:
+    result = fw(ProcessOrderDTO(...), OrderResult)
+```
+
+**Explicit IDs** (re-use IDs from a previous system that doesn't speak W3C):
+
+```python
+with framework.with_trace(trace_id="abc123", span_id="def456") as fw:
+    result = fw(MyDTO(...), MyResponse)
+```
+
+### Span attributes
+
+Every span produced by the framework carries:
+
+| Attribute | Value | Purpose |
+|---|---|---|
+| `sincpro.layer` | `"feature"` or `"application_service"` | Identify which bus layer handled the DTO |
+| `sincpro.instance` | The framework instance name (e.g. `"payments"`) | Distinguish bounded contexts — useful when multiple `UseFramework` instances share one process, since the OTLP `service.name` Resource reflects only the first registered instance |
+
+### Multi-bounded-context note
+
+If your process contains N bounded contexts (N `UseFramework` instances), `setup_otlp_provider` will only register the OTLP provider once. The `service.name` Resource attribute in the exported spans will reflect the **first** instance that called it. Use `sincpro.instance` on individual spans to distinguish which bounded context produced each span in your tracing backend.
+
 ## Configuration or settings
 
 The framework comes with a module or component to allow us to create configuratio or settings based on files or
@@ -973,7 +1078,8 @@ The framework use a default setting file where live in the module folder inside 
 `sincpro_framework/conf/sincpro_framework_conf.yml`
 where you can define some behavior currently we support the following settings:
 
-- log level(`sincpro_framework_log_level`): Define the log level for the logger, the default is `DEBUG`
+- `sincpro_framework_log_level`: Log level for the framework logger. Default: `DEBUG`.
+- `otlp_endpoint`: OTLP exporter endpoint for distributed tracing. Resolved from `OTEL_EXPORTER_OTLP_ENDPOINT` env var. Default: `null` (tracing disabled). Requires `sincpro-framework[opentelemetry]`.
 
 Override the config file using another
 

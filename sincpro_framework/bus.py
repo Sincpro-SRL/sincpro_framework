@@ -11,6 +11,7 @@ from .sincpro_abstractions import (
     TypeDTOResponse,
 )
 from .sincpro_logger import is_logger_in_debug, logger
+from .tracing.instrumentation import _log_ctx, _record_span_error, _span
 
 
 class FeatureBus(Bus):
@@ -20,6 +21,7 @@ class FeatureBus(Bus):
         self.feature_registry: Dict[str, Feature] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
+        self.service_name = ""
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -45,18 +47,21 @@ class FeatureBus(Bus):
 
         self.logger.debug(f"{dto_name}({dto})")
 
-        try:
-            response = self.feature_registry[dto.__class__.__name__].execute(dto)
-            if response:
-                self.logger.debug(
-                    f"Feature response {response.__class__.__name__}({response})",
-                )
-            return response
+        with _span(dto_name, "feature", self.service_name) as span:
+            with _log_ctx(self.logger, span):
+                try:
+                    response = self.feature_registry[dto.__class__.__name__].execute(dto)
+                    if response:
+                        self.logger.debug(
+                            f"Feature response {response.__class__.__name__}({response})",
+                        )
+                    return response
 
-        except Exception as error:
-            if self.handle_error:
-                return self.handle_error(error)
-            raise error
+                except Exception as error:
+                    _record_span_error(span, error)
+                    if self.handle_error:
+                        return self.handle_error(error)
+                    raise error
 
 
 class ApplicationServiceBus(Bus):
@@ -68,6 +73,7 @@ class ApplicationServiceBus(Bus):
         self.app_service_registry: Dict[str, ApplicationService] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
+        self.service_name = ""
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -95,19 +101,21 @@ class ApplicationServiceBus(Bus):
             )
         self.logger.debug(f"{dto_name}({dto})")
 
-        try:
-            response = self.app_service_registry[dto.__class__.__name__].execute(dto)
-            if response:
-                self.logger.debug(
-                    f"Application service response {response.__class__.__name__}({response})"
-                )
+        with _span(dto_name, "application_service", self.service_name) as span:
+            with _log_ctx(self.logger, span):
+                try:
+                    response = self.app_service_registry[dto.__class__.__name__].execute(dto)
+                    if response:
+                        self.logger.debug(
+                            f"Application service response {response.__class__.__name__}({response})"
+                        )
+                    return response
 
-            return response
-
-        except Exception as error:
-            if self.handle_error:
-                return self.handle_error(error)
-            raise error
+                except Exception as error:
+                    _record_span_error(span, error)
+                    if self.handle_error:
+                        return self.handle_error(error)
+                    raise error
 
 
 # ---------------------------------------------------------------------------------------------
@@ -120,6 +128,9 @@ class FrameworkBus(Bus):
     - Feature bus
     - App service bus (This contain the feature bus internally)
     """
+
+    feature_bus: FeatureBus
+    app_service_bus: ApplicationServiceBus
 
     def __init__(
         self,

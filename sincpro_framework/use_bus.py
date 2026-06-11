@@ -11,10 +11,14 @@ from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
+from .tracing import setup_otlp_provider
+from .tracing.span_context import FrameworkSpanContext
 
 
 class UseFramework(ContextMixin):
     """Main class to use the framework, this is the main entry point to configure the framework."""
+
+    _logger_name: str
 
     def __init__(
         self,
@@ -117,8 +121,16 @@ class UseFramework(ContextMixin):
             self.log_after_execution and self.log_app_services
         )
 
+        # Propagate the bounded-context name so spans carry sincpro.instance
+        self.bus.feature_bus.service_name = self._logger_name
+        self.bus.app_service_bus.service_name = self._logger_name
+
         # Set the DTO registry Tricky way but it works
         self.bus.dto_registry = dto_registry
+
+        # Configure OTLP provider if opentelemetry-sdk is installed and
+        # OTEL_EXPORTER_OTLP_ENDPOINT is set. No-op otherwise.
+        setup_otlp_provider(self._logger_name)
 
     def add_dependency(self, name, dep: Any):
         """
@@ -148,6 +160,58 @@ class UseFramework(ContextMixin):
                 result = app_with_context(some_dto)
         """
         return FrameworkContext(cast(Any, self), context_to_set)
+
+    def with_trace(
+        self,
+        trace_id: Optional[str] = None,
+        span_id: Optional[str] = None,
+        carrier: Optional[Mapping[str, Any]] = None,
+    ) -> FrameworkSpanContext:
+        """Create a tracing context manager for an execution block.
+
+        Binds trace_id/span_id to all internal logs and makes them available in
+        Feature/ApplicationService via self.context.get("trace_id").
+
+        When opentelemetry is installed, also attaches an OTel span context so
+        all bus spans are exported under the correct parent trace.
+
+        Args:
+            trace_id: Explicit trace identifier (hex string for OTel compatibility,
+                      or any string for log-only correlation). Auto-generated if None.
+            span_id:  Explicit span identifier. Auto-generated if None.
+            carrier:  Mapping with W3C traceparent/tracestate headers (e.g.
+                      request.headers). Extracts the parent trace from the headers.
+                      Requires opentelemetry to be installed.
+
+        Returns:
+            FrameworkSpanContext ready to use with the ``with`` statement.
+
+        Examples::
+
+            # Fresh trace — auto-generated IDs
+            with app.with_trace() as traced:
+                result = traced(MyDTO(...))
+
+            # Propagate from explicit IDs
+            with app.with_trace(trace_id="4bf92f35...", span_id="00f067aa...") as traced:
+                result = traced(MyDTO(...))
+
+            # Extract from incoming W3C headers (OTel)
+            with app.with_trace(carrier=request.headers) as traced:
+                result = traced(MyDTO(...))
+
+            # Compose with context()
+            with app.with_trace(carrier=headers) as traced:
+                with traced.context({"user.id": "u-123"}) as app_with_ctx:
+                    result = app_with_ctx(MyDTO(...))
+        """
+        return FrameworkSpanContext(
+            cast(Any, self),
+            service_name=self._logger_name,
+            trace_id=trace_id,
+            span_id=span_id,
+            carrier=carrier,
+        )
 
     def add_global_error_handler(self, handler: ErrorHandler):
         """Register a global error handler.

@@ -1,648 +1,341 @@
-# 🚀 PRD_03: Observability and Tracing for Sincpro Framework
+# PRD_03: Observability & Tracing — Sincpro Framework
 
-## 📋 General Information
+## Overview
 
-- **Title**: Distributed Observability and Tracing System
-- **Priority**: HIGH - Production Debugging Essential
-- **Estimated Effort**: 2-3 weeks
-- **Phase**: PRD_03 of Implementation Roadmap
-
----
-
-## 🎯 Executive Summary
-
-Implement comprehensive observability capabilities in the Sincpro Framework to provide real-time visibility into system behavior, performance, and distributed debugging.
-
-### Problem to Solve
-
-Currently the framework only has basic logging, which makes it difficult to:
-- Debug complex flows in production
-- Identify performance bottlenecks
-- Track distributed requests
-- Analyze usage patterns and errors
-
-### Proposed Solution
-
-Integrate a complete observability system that includes:
-- **Distributed Tracing** with OpenTelemetry
-- **Metrics Collection** with Prometheus/StatsD
-- **Automatic Performance Monitoring**
-- **Request Correlation** for end-to-end tracking
+- **Priority**: High
+- **Extra**: `sincpro-framework[opentelemetry]` (OTel is fully optional)
+- **Scope**: Log correlation (always) · OTel spans (optional) · OTLP export (optional)
 
 ---
 
-## 🔍 Technical Analysis
+## Problem
 
-### Observability Architecture
+The framework executes Features and ApplicationServices with no visibility into
+the execution chain. In production it is impossible to:
 
-```mermaid
-graph TD
-    subgraph "🚌 Framework Layer"
-        UF[UseFramework]
-        FB[FrameworkBus]
-        F[Features]
-        AS[ApplicationServices]
-    end
-    
-    subgraph "📊 Observability Layer"
-        T[Tracer]
-        M[Metrics Collector]
-        L[Logger]
-        C[Correlator]
-    end
-    
-    subgraph "📈 External Systems"
-        J[Jaeger/Zipkin]
-        P[Prometheus]
-        G[Grafana]
-        E[ELK Stack]
-    end
-    
-    UF --> T
-    FB --> T
-    F --> T
-    AS --> T
-    
-    UF --> M
-    FB --> M
-    F --> M
-    AS --> M
-    
-    UF --> L
-    FB --> L
-    F --> L
-    AS --> L
-    
-    T --> C
-    M --> C
-    L --> C
-    
-    T --> J
-    M --> P
-    L --> E
-    
-    J --> G
-    P --> G
-    E --> G
-    
-    classDef framework fill:#e3f2fd
-    classDef observability fill:#fff3e0
-    classDef external fill:#e8f5e8
-    
-    class UF,FB,F,AS framework
-    class T,M,L,C observability
-    class J,P,G,E external
-```
-
-### Tracing Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant UF as UseFramework
-    participant T as Tracer
-    participant FB as FrameworkBus
-    participant F as Feature
-    participant EXT as External Systems
-    
-    C->>UF: Request with/without trace-id
-    UF->>T: Start root span
-    T->>UF: Return span context
-    UF->>FB: Execute with span context
-    FB->>T: Create child span
-    FB->>F: Execute feature
-    F->>T: Add custom attributes
-    F->>EXT: External call with propagated context
-    EXT-->>F: Response
-    F->>T: Record metrics & events
-    F-->>FB: Response
-    FB->>T: Finish child span
-    FB-->>UF: Response
-    UF->>T: Finish root span
-    UF-->>C: Response with trace-id
-    T->>EXT: Export traces to collector
-```
+- Correlate log lines to a specific execution or distributed request.
+- See the parent → child span hierarchy when an ApplicationService calls Features.
+- Connect to an existing trace started by an outer layer (FastAPI, Celery, etc.).
 
 ---
 
-## 🛠️ Technical Specifications
+## Design principles
 
-### 1. OpenTelemetry Integration
+1. **Zero-dependency opt-out** — `opentelemetry-api` is NOT a base dependency.
+   Everything in the framework works identically whether OTel is installed or not.
+   All OTel imports are lazy (`try/except ImportError`).
 
-#### 1.1 Core Tracing Implementation
+2. **Log correlation is always available** — `with_trace()` works without OTel.
+   When OTel is absent it binds `trace_id`/`span_id` using `sincpro_log`'s existing
+   `logger.tracing()` API. No structlog reconfiguration, no global side effects.
+
+3. **OTel spans are additive** — when `opentelemetry-sdk` is installed and a
+   provider is configured, spans are created automatically on top of log
+   correlation. Nothing breaks if the SDK is removed.
+
+4. **Zero flag to toggle OTel** — no `enabled`/`disabled` setting. If a real
+   `TracerProvider` is configured, spans are exported. If not, they are no-op.
+
+5. **Same context manager pattern** — `with_trace()` follows the same idiom as
+   `with framework.context({...})`. Both are context managers on `UseFramework`,
+   both are composable.
+
+6. **Auto-config at `build_root_bus()`**, not at `__init__`** — OTLP provider
+   setup runs when the bus is built (explicit), not when `UseFramework` is
+   instantiated (implicit).
+
+---
+
+## Key insight: shared logger instance
+
+All buses share **the same `LoggerProxy` instance** created in `UseFramework`:
+
 ```python
-# sincpro_framework/observability/tracing.py
-import time
-from typing import Dict, Any, Optional, List
-from opentelemetry import trace
-from opentelemetry.exporter.jaeger.thrift import JaegerExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-import uuid
-
-class SincproTracer:
-    """Enhanced tracer for Sincpro Framework"""
-    
-    def __init__(self, service_name: str, jaeger_endpoint: str = None):
-        # Configure resource
-        resource = Resource.create({
-            "service.name": service_name,
-            "service.version": "2.4.1",
-            "framework.name": "sincpro-framework"
-        })
-        
-        # Set up tracer provider
-        trace.set_tracer_provider(TracerProvider(resource=resource))
-        tracer_provider = trace.get_tracer_provider()
-        
-        # Configure Jaeger exporter if endpoint provided
-        if jaeger_endpoint:
-            jaeger_exporter = JaegerExporter(
-                agent_host_name="localhost",
-                agent_port=6831,
-                collector_endpoint=jaeger_endpoint,
-            )
-            span_processor = BatchSpanProcessor(jaeger_exporter)
-            tracer_provider.add_span_processor(span_processor)
-        
-        # Get tracer
-        self.tracer = trace.get_tracer(__name__)
-        self.propagator = TraceContextTextMapPropagator()
-    
-    def start_span(self, operation_name: str, parent_context: Optional[Dict] = None) -> trace.Span:
-        """Start a new span with optional parent context"""
-        if parent_context:
-            # Extract context from headers/metadata
-            context = self.propagator.extract(parent_context)
-            return self.tracer.start_span(operation_name, context=context)
-        else:
-            return self.tracer.start_span(operation_name)
-    
-    def inject_context(self, span: trace.Span) -> Dict[str, str]:
-        """Inject span context into headers for propagation"""
-        headers = {}
-        self.propagator.inject(headers, context=trace.set_span_in_context(span))
-        return headers
-    
-    def add_event(self, span: trace.Span, name: str, attributes: Dict[str, Any] = None):
-        """Add event to span"""
-        span.add_event(name, attributes or {})
-    
-    def set_attributes(self, span: trace.Span, attributes: Dict[str, Any]):
-        """Set attributes on span"""
-        for key, value in attributes.items():
-            span.set_attribute(key, value)
-    
-    def record_exception(self, span: trace.Span, exception: Exception):
-        """Record exception in span"""
-        span.record_exception(exception)
-        span.set_status(trace.Status(trace.StatusCode.ERROR, str(exception)))
-
-# Global tracer instance
-_tracer: Optional[SincproTracer] = None
-
-def get_tracer() -> SincproTracer:
-    """Get global tracer instance"""
-    if _tracer is None:
-        raise RuntimeError("Tracer not initialized. Call configure_observability() first.")
-    return _tracer
-
-def configure_observability(service_name: str, jaeger_endpoint: str = None):
-    """Configure global observability settings"""
-    global _tracer
-    _tracer = SincproTracer(service_name, jaeger_endpoint)
+# use_bus.py
+self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
+# FeatureBus, ApplicationServiceBus, FrameworkBus all receive self.logger
 ```
 
-### 2. Metrics Collection
+This means binding `trace_id`/`span_id` on `self.logger` via `logger.tracing()`
+propagates to all internal framework logs automatically — no structlog
+reconfiguration needed.
 
-#### 2.1 Prometheus Metrics Integration
+---
+
+## Naming
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| `service.name`     | `bundled_context_name` — `UseFramework("cybersource")` → `"cybersource"` |
+| span name          | DTO class name — `TokenizationParams`, `PaymentServiceParams`          |
+| `sincpro.layer`    | `"feature"` or `"application_service"`                                 |
+| `trace_id` in logs | OTel hex string when OTel active; UUID when OTel absent                |
+| `span_id` in logs  | OTel hex string when OTel active; UUID when OTel absent                |
+
+---
+
+## Span hierarchy (when OTel is installed)
+
+OTel uses `contextvars` internally. `start_as_current_span()` detects any active
+span automatically:
+
+```
+[outer span — FastAPI, Celery, gRPC interceptor …]   ← adopted if present
+  └── PaymentServiceParams                           ← ApplicationServiceBus span
+        └── TokenizationParams                      ← FeatureBus span (auto child)
+        └── ChargeCardParams                        ← FeatureBus span (auto child)
+```
+
+If there is no outer span, `PaymentServiceParams` becomes the root trace.
+
+When OTel is **not** installed, the hierarchy is reflected only in log correlation:
+each execution block has the same `trace_id`; each bus level gets a `span_id`.
+
+---
+
+## Public API
+
+### Without OTel installed — log correlation only
+
 ```python
-# sincpro_framework/observability/metrics.py
-import time
-from typing import Dict, Any, Optional
-from prometheus_client import Counter, Histogram, Gauge, start_http_server
-from functools import wraps
-import threading
+cybersource = UseFramework("cybersource")
 
-class SincproMetrics:
-    """Metrics collector for Sincpro Framework"""
-    
-    def __init__(self, service_name: str, metrics_port: int = 8000):
-        self.service_name = service_name
-        self.metrics_port = metrics_port
-        
-        # Core framework metrics
-        self.request_count = Counter(
-            'sincpro_requests_total',
-            'Total number of requests processed',
-            ['service', 'feature_type', 'dto_name', 'status']
-        )
-        
-        self.request_duration = Histogram(
-            'sincpro_request_duration_seconds',
-            'Request processing duration',
-            ['service', 'feature_type', 'dto_name'],
-            buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-        )
-        
-        self.active_requests = Gauge(
-            'sincpro_active_requests',
-            'Number of requests currently being processed',
-            ['service', 'feature_type']
-        )
-        
-        self.dependency_operations = Counter(
-            'sincpro_dependency_operations_total',
-            'Total dependency operations',
-            ['service', 'dependency_name', 'operation', 'status']
-        )
-        
-        self.cache_operations = Counter(
-            'sincpro_cache_operations_total',
-            'Cache operations',
-            ['service', 'operation', 'result']
-        )
-        
-        # Start metrics server
-        self._start_metrics_server()
-    
-    def _start_metrics_server(self):
-        """Start Prometheus metrics HTTP server"""
-        def start_server():
-            start_http_server(self.metrics_port)
-        
-        thread = threading.Thread(target=start_server, daemon=True)
-        thread.start()
-    
-    def record_request(self, feature_type: str, dto_name: str, status: str, duration: float):
-        """Record request metrics"""
-        labels = {
-            'service': self.service_name,
-            'feature_type': feature_type,
-            'dto_name': dto_name,
-            'status': status
-        }
-        
-        self.request_count.labels(**labels).inc()
-        self.request_duration.labels(
-            service=self.service_name,
-            feature_type=feature_type,
-            dto_name=dto_name
-        ).observe(duration)
-    
-    def track_active_request(self, feature_type: str):
-        """Context manager to track active requests"""
-        labels = {'service': self.service_name, 'feature_type': feature_type}
-        
-        class ActiveRequestTracker:
-            def __enter__(self):
-                self.active_requests.labels(**labels).inc()
-                return self
-            
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                self.active_requests.labels(**labels).dec()
-        
-        return ActiveRequestTracker()
-    
-    def record_dependency_operation(self, dependency_name: str, operation: str, status: str):
-        """Record dependency operation metrics"""
-        self.dependency_operations.labels(
-            service=self.service_name,
-            dependency_name=dependency_name,
-            operation=operation,
-            status=status
-        ).inc()
-    
-    def record_cache_operation(self, operation: str, result: str):
-        """Record cache operation metrics"""
-        self.cache_operations.labels(
-            service=self.service_name,
-            operation=operation,
-            result=result
-        ).inc()
-
-# Global metrics instance
-_metrics: Optional[SincproMetrics] = None
-
-def get_metrics() -> SincproMetrics:
-    """Get global metrics instance"""
-    if _metrics is None:
-        raise RuntimeError("Metrics not initialized. Call configure_observability() first.")
-    return _metrics
-
-def configure_metrics(service_name: str, metrics_port: int = 8000):
-    """Configure global metrics collection"""
-    global _metrics
-    _metrics = SincproMetrics(service_name, metrics_port)
+with cybersource.with_trace() as traced:
+    result = traced(TokenizationParams(...))
+# → all logs in that block contain trace_id and span_id (auto-generated UUIDs)
+# → no OTel spans, no export — framework still works identically
 ```
 
-### 3. Request Correlation
+### With OTel installed + OTLP endpoint set — full tracing
 
-#### 3.1 Correlation ID Management
 ```python
-# sincpro_framework/observability/correlation.py
-import uuid
-import contextvars
-from typing import Optional, Dict, Any
-import logging
+# pip install sincpro-framework[opentelemetry]
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
-# Context variable for correlation ID
-correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
-    'correlation_id', default=None
-)
+cybersource = UseFramework("cybersource")
 
-class CorrelationManager:
-    """Manages request correlation across the framework"""
-    
-    def __init__(self):
-        self.correlation_header = "X-Correlation-ID"
-        self.trace_header = "X-Trace-ID"
-    
-    def generate_correlation_id(self) -> str:
-        """Generate new correlation ID"""
-        return str(uuid.uuid4())
-    
-    def set_correlation_id(self, correlation_id: str):
-        """Set correlation ID for current context"""
-        correlation_id_var.set(correlation_id)
-    
-    def get_correlation_id(self) -> Optional[str]:
-        """Get correlation ID from current context"""
-        return correlation_id_var.get()
-    
-    def get_or_create_correlation_id(self) -> str:
-        """Get existing or create new correlation ID"""
-        correlation_id = self.get_correlation_id()
-        if not correlation_id:
-            correlation_id = self.generate_correlation_id()
-            self.set_correlation_id(correlation_id)
-        return correlation_id
-    
-    def extract_from_headers(self, headers: Dict[str, str]) -> Optional[str]:
-        """Extract correlation ID from HTTP headers"""
-        return headers.get(self.correlation_header)
-    
-    def inject_into_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
-        """Inject correlation ID into HTTP headers"""
-        correlation_id = self.get_or_create_correlation_id()
-        headers[self.correlation_header] = correlation_id
-        return headers
-    
-    def create_child_context(self) -> Dict[str, Any]:
-        """Create context for child operations"""
-        return {
-            'correlation_id': self.get_or_create_correlation_id(),
-            'parent_operation': 'framework_execution'
-        }
-
-# Global correlation manager
-correlation_manager = CorrelationManager()
-
-# Custom logging formatter with correlation ID
-class CorrelationFormatter(logging.Formatter):
-    """Logging formatter that includes correlation ID"""
-    
-    def format(self, record):
-        correlation_id = correlation_manager.get_correlation_id()
-        if correlation_id:
-            record.correlation_id = correlation_id
-        else:
-            record.correlation_id = "no-correlation"
-        
-        return super().format(record)
-
-def configure_correlation_logging():
-    """Configure logging to include correlation IDs"""
-    formatter = CorrelationFormatter(
-        '%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s'
-    )
-    
-    # Apply to root logger
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers:
-        handler.setFormatter(formatter)
+with cybersource.with_trace() as traced:
+    result = traced(TokenizationParams(...))
+# → span "TokenizationParams", service.name="cybersource", exported via OTLP
+# → all logs contain OTel trace_id and span_id
 ```
 
-### 4. Framework Integration
+### Explicit propagation from outer layer
 
-#### 4.1 Observability-Enhanced UseFramework
 ```python
-# Modifications in use_bus.py
-import time
-from .observability.tracing import get_tracer
-from .observability.metrics import get_metrics
-from .observability.correlation import correlation_manager
+# Propagate from raw trace_id / span_id (e.g. read from internal headers)
+with cybersource.with_trace(trace_id="4bf92f3577b3...", span_id="00f067aa0ba9...") as traced:
+    result = traced(TokenizationParams(...))
 
-class UseFramework:
-    def __init__(self, ...):
-        # ... existing code
-        self.observability_enabled = False
-        self._tracer = None
-        self._metrics = None
-    
-    def enable_observability(self, service_name: str, 
-                           jaeger_endpoint: str = None,
-                           metrics_port: int = 8000):
-        """Enable comprehensive observability"""
-        
-        # Configure tracing
-        configure_observability(service_name, jaeger_endpoint)
-        self._tracer = get_tracer()
-        
-        # Configure metrics
-        configure_metrics(service_name, metrics_port)
-        self._metrics = get_metrics()
-        
-        # Configure correlation logging
-        configure_correlation_logging()
-        
-        self.observability_enabled = True
-        self.logger.info(f"Observability enabled for service: {service_name}")
-    
-    async def __call__(self, dto: TypeDTO, 
-                      correlation_id: str = None,
-                      trace_context: Dict = None) -> TypeDTOResponse | None:
-        
-        if not self.observability_enabled:
-            return await self._execute_without_observability(dto)
-        
-        # Set up correlation
-        if correlation_id:
-            correlation_manager.set_correlation_id(correlation_id)
-        else:
-            correlation_manager.get_or_create_correlation_id()
-        
-        # Start tracing
-        operation_name = f"framework.execute.{type(dto).__name__}"
-        with self._tracer.start_span(operation_name, trace_context) as span:
-            
-            # Add span attributes
-            self._tracer.set_attributes(span, {
-                "framework.version": "2.4.1",
-                "dto.type": type(dto).__name__,
-                "service.name": self._logger_name,
-                "correlation_id": correlation_manager.get_correlation_id()
-            })
-            
-            # Track metrics
-            start_time = time.time()
-            feature_type = "feature" if dto.__name__ in self.bus.feature_bus.feature_registry else "app_service"
-            
-            with self._metrics.track_active_request(feature_type):
-                try:
-                    # Execute with observability
-                    result = await self._execute_with_observability(dto, span)
-                    
-                    # Record successful execution
-                    duration = time.time() - start_time
-                    self._metrics.record_request(
-                        feature_type=feature_type,
-                        dto_name=type(dto).__name__,
-                        status="success",
-                        duration=duration
-                    )
-                    
-                    # Add result metadata to span
-                    self._tracer.set_attributes(span, {
-                        "execution.duration_ms": duration * 1000,
-                        "execution.status": "success"
-                    })
-                    
-                    return result
-                    
-                except Exception as e:
-                    # Record error
-                    duration = time.time() - start_time
-                    self._metrics.record_request(
-                        feature_type=feature_type,
-                        dto_name=type(dto).__name__,
-                        status="error",
-                        duration=duration
-                    )
-                    
-                    # Record exception in span
-                    self._tracer.record_exception(span, e)
-                    self._tracer.set_attributes(span, {
-                        "execution.duration_ms": duration * 1000,
-                        "execution.status": "error",
-                        "error.type": type(e).__name__,
-                        "error.message": str(e)
-                    })
-                    
-                    raise
-    
-    async def _execute_with_observability(self, dto: TypeDTO, parent_span) -> Any:
-        """Execute with full observability tracking"""
-        
-        # Create child span for bus execution
-        with self._tracer.start_span("framework.bus.execute", parent_span) as bus_span:
-            
-            # Track dependency injections
-            self._trace_dependency_injection(bus_span)
-            
-            # Execute the actual operation
-            if type(dto).__name__ in self.bus.feature_bus.feature_registry:
-                return await self._execute_feature_with_observability(dto, bus_span)
-            else:
-                return await self._execute_app_service_with_observability(dto, bus_span)
-    
-    def _trace_dependency_injection(self, span):
-        """Add dependency injection info to span"""
-        dependencies = list(self.dynamic_dep_registry.keys())
-        self._tracer.set_attributes(span, {
-            "dependencies.count": len(dependencies),
-            "dependencies.names": ",".join(dependencies)
-        })
-    
-    async def _execute_feature_with_observability(self, dto: TypeDTO, parent_span):
-        """Execute feature with observability"""
-        feature_name = type(dto).__name__
-        
-        with self._tracer.start_span(f"feature.{feature_name}", parent_span) as feature_span:
-            self._tracer.set_attributes(feature_span, {
-                "feature.name": feature_name,
-                "feature.type": "feature"
-            })
-            
-            # Execute feature
-            feature_instance = self.bus.feature_bus.feature_registry[feature_name]
-            result = feature_instance.execute(dto)
-            
-            # Add result metadata
-            if result:
-                self._tracer.set_attributes(feature_span, {
-                    "result.type": type(result).__name__,
-                    "result.exists": True
-                })
-            
-            return result
+# Extract from W3C traceparent header (requires OTel installed)
+with cybersource.with_trace(carrier=request.headers) as traced:
+    result = traced(TokenizationParams(...))
+```
+
+### Composition with `context()`
+
+`with_trace()` is orthogonal to `context()` — both can be composed freely:
+
+```python
+with cybersource.with_trace(carrier=headers) as traced:
+    with traced.context({"user.id": "u-123"}) as app:
+        result = app(TokenizationParams(...))
+```
+
+### Access trace context from Feature / ApplicationService
+
+Because `with_trace()` also writes `trace_id` and `span_id` into the framework
+context, user code can read them without importing anything from `tracing/`:
+
+```python
+@cybersource.feature(TokenizationParams)
+class TokenizeFeature(Feature):
+    def execute(self, dto: TokenizationParams):
+        trace_id = self.context.get("trace_id")   # available automatically
+        span_id = self.context.get("span_id")
+        ...
 ```
 
 ---
 
-## 📊 Implementation Plan
+## Log correlation detail
 
-### Sprint 1 (Week 1): Core Tracing
-1. **Days 1-2**: OpenTelemetry integration and basic tracing
-2. **Days 3-4**: Correlation ID management and context propagation
-3. **Day 5**: Integration with UseFramework and testing
+`sincpro_log`'s `LoggerProxy` already has `logger.tracing(trace_id, request_id)`
+which stores fields in `_temporal_fields` and merges them into every structlog
+call within the block.
 
-### Sprint 2 (Week 2): Metrics and Monitoring
-1. **Days 1-2**: Prometheus metrics collection
-2. **Days 3-4**: Performance monitoring and alerting
-3. **Day 5**: Dashboard setup and documentation
+`with_trace()` implementation:
 
-### Sprint 3 (Week 3): Advanced Features
-1. **Days 1-2**: Custom span attributes and events
-2. **Days 3-4**: Error tracking and debugging tools
-3. **Day 5**: Production deployment and monitoring
+```python
+with self.logger.tracing(trace_id=trace_id, request_id=span_id):
+    # all bus logs (FeatureBus, ApplicationServiceBus, FrameworkBus)
+    # automatically include trace_id + span_id because they share self.logger
+    yield self
+```
 
----
+No changes to `sincpro_log` are required for the initial version.
 
-## 📈 Success Metrics
-
-### Observability Coverage
-- **Request Tracking**: 100% of framework executions traced
-- **Error Visibility**: All exceptions captured with context
-- **Performance Metrics**: Complete latency and throughput data
-
-### Operational Impact
-- **Debug Time**: 80% reduction in production issue resolution
-- **Incident Response**: < 5 minutes to identify root cause
-- **Performance Monitoring**: Real-time bottleneck detection
-
-### Integration Quality
-- **Zero Overhead**: < 2ms additional latency
-- **Reliability**: 99.9% trace collection success rate
-- **Scalability**: Support for 1000+ requests/second
+> **Note (future)**: `LoggerProxy._temporal_fields` is instance-level state, not
+> `contextvars`. Under concurrent async workloads this can cause field bleed
+> between coroutines. A future `sincpro_log` improvement should migrate
+> `_temporal_fields` to `contextvars.ContextVar` (backwards-compatible API).
 
 ---
 
-## ✅ Acceptance Criteria
+## Auto-configuration logic (OTel path)
 
-### Must Have
-- [x] OpenTelemetry distributed tracing integration
-- [x] Prometheus metrics collection
-- [x] Request correlation ID management
-- [x] Automatic span creation for all framework operations
-- [x] Error tracking and exception recording
-- [x] Performance metrics dashboard
-
-### Should Have
-- [x] Custom span attributes for business context
-- [x] Dependency operation tracking
-- [x] Cache hit/miss metrics
-- [x] Real-time alerting on errors/performance
-- [x] Integration with external observability platforms
-
-### Could Have
-- [ ] Custom business metrics collection
-- [ ] Advanced sampling strategies
-- [ ] Distributed debugging tools
-- [ ] Machine learning anomaly detection
+```
+build_root_bus() called
+  └── opentelemetry-sdk installed?
+        NO  → skip, no-op
+        YES → check OTEL_EXPORTER_OTLP_ENDPOINT
+                not set → skip (outer app may configure its own provider)
+                set     → check trace.get_tracer_provider()
+                            ProxyTracerProvider or NoOpTracerProvider?
+                              YES → configure TracerProvider + BatchSpanProcessor
+                                    + OTLPSpanExporter for this service_name
+                              NO  → respect existing provider, do nothing
+```
 
 ---
 
-*PRD generated for Sincpro Framework Observability and Tracing - July 2025*
+## Module structure
+
+```
+sincpro_framework/
+  tracing/
+    __init__.py          # public: setup_otlp_provider
+    span_context.py      # FrameworkSpanContext — with_trace() context manager
+```
+
+`log_correlation.py` from the original PRD is dropped — log correlation is
+handled directly by `sincpro_log`'s `logger.tracing()` within `FrameworkSpanContext`.
+
+---
+
+## Implementation plan
+
+### Phase 1 — `pyproject.toml`
+
+`opentelemetry-api` is **not** added to base dependencies.
+
+```toml
+[tool.poetry.extras]
+opentelemetry = [
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-exporter-otlp-proto-http",
+]
+```
+
+All OTel imports in the framework use lazy guard:
+
+```python
+try:
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+    _OTEL_AVAILABLE = True
+except ImportError:
+    _OTEL_AVAILABLE = False
+```
+
+### Phase 2 — `tracing/span_context.py`
+
+`FrameworkSpanContext` — context manager returned by `with_trace()`.
+
+**`__enter__`**:
+1. Resolve `trace_id` / `span_id`:
+   - If `carrier` provided and OTel available → extract via W3C propagator
+   - If `trace_id`/`span_id` provided explicitly → use them (construct `NonRecordingSpan` if OTel available)
+   - Otherwise → auto-generate (OTel root span if available, UUID fallback)
+2. If OTel available → attach span to OTel contextvars token
+3. Call `self.logger.tracing(trace_id=trace_id, request_id=span_id)` → all bus logs get fields
+4. Inject `trace_id`/`span_id` into framework context via `_set_context()` → Features read from `self.context`
+5. Return `UseFramework` instance (same as `FrameworkContext.__enter__`)
+
+**`__exit__`**:
+1. If OTel → detach contextvars token
+2. `logger.tracing()` context manager exit restores previous `_temporal_fields`
+3. Restore previous framework context
+
+### Phase 3 — `tracing/__init__.py`
+
+`setup_otlp_provider(service_name: str)`:
+- Runs only if OTel SDK available and `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+- Checks `trace.get_tracer_provider()` before registering to avoid double-config
+- Creates `TracerProvider` with `Resource({"service.name": service_name})`
+- Adds `BatchSpanProcessor(OTLPSpanExporter())`
+
+### Phase 4 — Instrument `bus.py`
+
+Applied to `FeatureBus.execute` and `ApplicationServiceBus.execute`:
+
+```python
+# Lazy at module level
+try:
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.trace import StatusCode
+    _OTEL_AVAILABLE = True
+except ImportError:
+    _OTEL_AVAILABLE = False
+
+# Inside execute():
+if _OTEL_AVAILABLE:
+    tracer = otel_trace.get_tracer("sincpro_framework")
+    with tracer.start_as_current_span(
+        dto_name,
+        attributes={
+            "sincpro.layer": "feature",   # or "application_service"
+        },
+    ) as span:
+        try:
+            return registry[dto_name].execute(dto)
+        except Exception as error:
+            span.record_exception(error)
+            span.set_status(StatusCode.ERROR, str(error))
+            raise
+else:
+    return registry[dto_name].execute(dto)
+```
+
+`start_as_current_span` detects and inherits any active parent span automatically.
+
+### Phase 5 — `use_bus.py` additions
+
+- `build_root_bus()`: call `setup_otlp_provider(self._logger_name)` after bus build
+- `with_trace(trace_id=None, span_id=None, carrier=None) → FrameworkSpanContext`
+
+### Phase 6 — Tests
+
+`tests/tracing/test_tracing.py`:
+
+| Test | What it validates |
+|------|-------------------|
+| `test_no_otel_no_error` | Framework runs normally without `[opentelemetry]` |
+| `test_with_trace_generates_ids` | `with_trace()` with no args auto-generates `trace_id`/`span_id` |
+| `test_with_trace_explicit_ids` | `with_trace(trace_id, span_id)` uses provided values |
+| `test_trace_ids_in_framework_context` | `trace_id`/`span_id` available in Feature via `self.context` |
+| `test_logs_have_trace_id` | Logger contains `trace_id` and `span_id` inside `with_trace` block |
+| `test_log_fields_cleared_after_exit` | No trace fields leak outside `with_trace` block |
+| `test_context_api_composable` | `with_trace()` + `context()` compose without conflict |
+| `test_span_name_equals_dto_name` | (OTel) Span name matches `dto.__class__.__name__` |
+| `test_span_attributes` | (OTel) `sincpro.layer` present on span |
+| `test_app_service_child_spans` | (OTel) Feature spans are children of AppService span |
+| `test_adopts_outer_active_span` | (OTel) Active span in contextvars becomes parent |
+| `test_with_trace_carrier` | (OTel) W3C `traceparent` in carrier used as parent |
+| `test_error_recorded_in_span` | (OTel) Exception sets span status `ERROR` |
+
+Tests marked `(OTel)` use `opentelemetry-sdk` in-memory exporter and are
+skipped automatically if the extra is not installed.
+
+---
+
+## Out of scope
+
+- Metrics (Prometheus, StatsD, histograms)
+- Baggage propagation
+- Jaeger-native protocol (OTLP covers Jaeger, Tempo, and any OTLP backend)
+- Changing `Feature.execute` or `ApplicationService.execute` signatures
+- Multi-provider or custom exporter factory beyond OTLP
+- `sincpro_log` async safety (`ContextVar` migration) — tracked separately

@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Mapping, Type, TypeVar, overload
+from typing import Any, Callable, Dict, Mapping, Optional, Type, TypeVar, overload
 
 from _typeshed import Incomplete
 from sincpro_log.logger import LoggerProxy
@@ -16,6 +16,7 @@ from .sincpro_abstractions import ApplicationService, DataTransferObject, Featur
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
 from .sincpro_logger import create_logger as create_logger
+from .tracing.span_context import FrameworkSpanContext as FrameworkSpanContext
 
 # Type alias for decorator functions
 DecoratorFunction = Callable[[Type], Type]
@@ -168,6 +169,15 @@ class UseFramework(ContextMixin):
         Args:
             handler: An ``ErrorHandler`` callable.
         """
+        ...
+
+    def with_trace(
+        self,
+        trace_id: Optional[str] = None,
+        span_id: Optional[str] = None,
+        carrier: Optional[Mapping[str, Any]] = None,
+    ) -> FrameworkSpanContext:
+        """Create a tracing context manager for an execution block."""
         ...
 
     def context(self, context_to_set: Mapping[str, Any]) -> FrameworkContext:

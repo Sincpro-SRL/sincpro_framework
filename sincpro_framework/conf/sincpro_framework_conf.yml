@@ -1,1 +1,2 @@
 sincpro_framework_log_level: DEBUG
+otlp_endpoint: $ENV:OTEL_EXPORTER_OTLP_ENDPOINT

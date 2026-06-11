@@ -46,6 +46,9 @@ class SincproConfig(BaseModel):
                             f"Using default value: {default_value}"
                         )
                         values[field_name] = default_value
+                    elif field_info is not None and field_info.default is None:
+                        # Optional field (default=None) — env var is optional, use None silently
+                        values[field_name] = None
                     else:
                         warnings.warn(
                             f"Environment variable [{env_var_name}] is not set for field [{field_name}] "
@@ -61,6 +64,7 @@ class DefaultFrameworkConfig(SincproConfig):
     """Default configuration for the framework"""
 
     sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "DEBUG"
+    otlp_endpoint: str | None = None
 
 
 def build_config_obj(
