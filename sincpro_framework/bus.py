@@ -11,7 +11,7 @@ from .sincpro_abstractions import (
     TypeDTOResponse,
 )
 from .sincpro_logger import is_logger_in_debug, logger
-from .tracing.instrumentation import _log_ctx, _record_span_error, _span
+from .tracing.instrumentation import observe_execution, record_observability_span_error
 
 
 class FeatureBus(Bus):
@@ -40,28 +40,24 @@ class FeatureBus(Bus):
         """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
 
-        if is_logger_in_debug() or self.log_after_execution:
-            self.logger.info(
-                f"Executing feature dto: [{dto_name}]",
-            )
+        with observe_execution(dto_name, "feature", self.service_name, self.logger) as span:
+            if is_logger_in_debug() or self.log_after_execution:
+                self.logger.info(f"Executing feature dto: [{dto_name}]")
+            self.logger.debug(f"{dto_name}({dto})")
 
-        self.logger.debug(f"{dto_name}({dto})")
+            try:
+                response = self.feature_registry[dto.__class__.__name__].execute(dto)
+                if response:
+                    self.logger.debug(
+                        f"Feature response {response.__class__.__name__}({response})",
+                    )
+                return response
 
-        with _span(dto_name, "feature", self.service_name) as span:
-            with _log_ctx(self.logger, span):
-                try:
-                    response = self.feature_registry[dto.__class__.__name__].execute(dto)
-                    if response:
-                        self.logger.debug(
-                            f"Feature response {response.__class__.__name__}({response})",
-                        )
-                    return response
-
-                except Exception as error:
-                    _record_span_error(span, error)
-                    if self.handle_error:
-                        return self.handle_error(error)
-                    raise error
+            except Exception as error:
+                record_observability_span_error(span, error)
+                if self.handle_error:
+                    return self.handle_error(error)
+                raise error
 
 
 class ApplicationServiceBus(Bus):
@@ -95,27 +91,27 @@ class ApplicationServiceBus(Bus):
     ) -> TypeDTOResponse | None:
         """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
-        if is_logger_in_debug() or self.log_after_execution:
-            self.logger.info(
-                f"Executing app service dto: [{dto_name}]",
-            )
-        self.logger.debug(f"{dto_name}({dto})")
 
-        with _span(dto_name, "application_service", self.service_name) as span:
-            with _log_ctx(self.logger, span):
-                try:
-                    response = self.app_service_registry[dto.__class__.__name__].execute(dto)
-                    if response:
-                        self.logger.debug(
-                            f"Application service response {response.__class__.__name__}({response})"
-                        )
-                    return response
+        with observe_execution(
+            dto_name, "application_service", self.service_name, self.logger
+        ) as span:
+            if is_logger_in_debug() or self.log_after_execution:
+                self.logger.info(f"Executing app service dto: [{dto_name}]")
+            self.logger.debug(f"{dto_name}({dto})")
 
-                except Exception as error:
-                    _record_span_error(span, error)
-                    if self.handle_error:
-                        return self.handle_error(error)
-                    raise error
+            try:
+                response = self.app_service_registry[dto.__class__.__name__].execute(dto)
+                if response:
+                    self.logger.debug(
+                        f"Application service response {response.__class__.__name__}({response})"
+                    )
+                return response
+
+            except Exception as error:
+                record_observability_span_error(span, error)
+                if self.handle_error:
+                    return self.handle_error(error)
+                raise error
 
 
 # ---------------------------------------------------------------------------------------------
