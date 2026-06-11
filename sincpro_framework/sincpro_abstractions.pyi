@@ -17,6 +17,7 @@ TApplicationService = TypeVar("TApplicationService", bound="ApplicationService")
 
 class Bus(ABC, metaclass=abc.ABCMeta):
     log_after_execution: bool
+    service_name: str
 
     @abstractmethod
     @overload
