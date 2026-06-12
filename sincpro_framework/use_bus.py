@@ -130,7 +130,9 @@ class UseFramework(ContextMixin):
 
         # Configure OTLP provider if opentelemetry-sdk is installed and
         # OTEL_EXPORTER_OTLP_ENDPOINT is set. No-op otherwise.
-        setup_otlp_provider(self._logger_name)
+        # When OTel is active, also wires the current span context into the logger
+        # so framework.logger.info(...) carries trace_id/span_id automatically.
+        setup_otlp_provider(self._logger_name, self.logger)
 
     def add_dependency(self, name, dep: Any):
         """
@@ -349,7 +351,7 @@ class UseFramework(ContextMixin):
 
     @property
     def logger(self) -> LoggerProxy:
-        """Get bundle context logger"""
+        """Get the bundle context logger."""
         if not self._is_logger_configured:
             self._logger = create_logger(self._logger_name)
             self._is_logger_configured = True

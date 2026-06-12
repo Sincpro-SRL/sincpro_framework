@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from sincpro_log.logger import LoggerProxy
+
 from ..sincpro_conf import settings
 
 # Private provider owned by sincpro. Kept separate from the global OTel provider
@@ -10,7 +12,23 @@ from ..sincpro_conf import settings
 _sincpro_provider: Any = None
 
 
-def setup_otlp_provider(service_name: str) -> None:
+def _get_current_otel_context() -> dict:
+    """Return trace_id and span_id from the currently active OTel span, or {}."""
+    try:
+        from opentelemetry import trace
+
+        span_ctx = trace.get_current_span().get_span_context()
+        if span_ctx.is_valid:
+            return {
+                "trace_id": format(span_ctx.trace_id, "032x"),
+                "span_id": format(span_ctx.span_id, "016x"),
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def setup_otlp_provider(service_name: str, logger: LoggerProxy | None = None) -> None:
     """Configure a dedicated TracerProvider for this bounded context.
 
     Always creates a private TracerProvider with the given ``service_name`` —
@@ -69,6 +87,11 @@ def setup_otlp_provider(service_name: str) -> None:
     current_type: str = type(trace.get_tracer_provider()).__name__
     if current_type in ("ProxyTracerProvider", "NoOpTracerProvider"):
         trace.set_tracer_provider(provider)
+
+    # Wire OTel span context into the logger so every framework.logger.info(...)
+    # call automatically carries trace_id/span_id from the active span.
+    if logger is not None:
+        logger.set_getter_context(_get_current_otel_context)
 
 
 def get_framework_tracer(instrumentation_name: str) -> Any:

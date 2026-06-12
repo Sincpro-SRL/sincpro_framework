@@ -612,3 +612,94 @@ def test_carrier_without_otel_emits_warning(monkeypatch):
             # trace IDs are still generated (UUIDs), execution completes normally
             assert "trace_id" in traced._get_context()
             traced(WarnDTO())
+
+
+# ---------------------------------------------------------------------------
+# logger getter — framework.logger.info() outside Feature.execute()
+# ---------------------------------------------------------------------------
+
+
+def test_otel_getter_provides_trace_id_outside_execution(otel_setup):
+    """(OTel) framework.logger carries trace_id from the active OTel span even when
+    called outside a Feature.execute() — the getter reads the span directly.
+
+    This is the core use case: framework.logger.info(...) called between requests
+    or between framework() calls automatically includes the host trace_id.
+    """
+    from opentelemetry import trace
+    from sincpro_log.logger import create_logger
+
+    from sincpro_framework.tracing.provider import _get_current_otel_context
+
+    logger = create_logger("test-outside-exec")
+    logger.set_getter_context(_get_current_otel_context)
+
+    tracer = trace.get_tracer("host")
+    with tracer.start_as_current_span("http-handler") as span:
+        expected_trace_id = format(span.get_span_context().trace_id, "032x")
+        expected_span_id = format(span.get_span_context().span_id, "016x")
+
+        fields = logger.logger_fields
+        assert fields["trace_id"] == expected_trace_id
+        assert fields["span_id"] == expected_span_id
+
+    # After span ends, no trace context leaks into the logger
+    assert "trace_id" not in logger.logger_fields
+
+
+def test_otel_getter_empty_when_no_active_span(otel_setup):
+    """(OTel) The getter returns {} when no span is active — logger stays clean."""
+    from sincpro_framework.tracing.provider import _get_current_otel_context
+
+    result = _get_current_otel_context()
+    assert result == {}
+
+
+def test_otel_getter_suppressed_during_execution(otel_setup):
+    """(OTel) Inside Feature.execute(), _bind_span_to_logger sets _temporal_fields,
+    which suppresses the getter — no double-binding or conflict."""
+    from opentelemetry import trace
+
+    from sincpro_framework.tracing.provider import _get_current_otel_context
+
+    fw = UseFramework("getter-suppression-test", log_after_execution=False)
+
+    class GS_DTO(DataTransferObject):
+        pass
+
+    captured: dict = {}
+
+    @fw.feature(GS_DTO)
+    class GS_Feature(Feature):
+        def execute(self, dto: GS_DTO) -> None:
+            # Inside execute, _temporal_fields are set by _bind_span_to_logger.
+            # The getter must NOT be called (logger.is_contextualized would be True).
+            captured["temporal"] = dict(fw.logger._temporal_fields)
+            captured["fields"] = dict(fw.logger.logger_fields)
+            return None
+
+    fw.logger.set_getter_context(_get_current_otel_context)
+
+    tracer = trace.get_tracer("host")
+    with tracer.start_as_current_span("http-handler"):
+        fw(GS_DTO())
+
+    # _temporal_fields were set during execution (by _bind_span_to_logger)
+    assert "trace_id" in captured["temporal"]
+    # logger_fields also had trace_id (from _temporal_fields, not getter)
+    assert "trace_id" in captured["fields"]
+
+
+def test_logger_getter_not_registered_without_otlp_endpoint():
+    """Without OTEL_EXPORTER_OTLP_ENDPOINT, setup_otlp_provider must NOT register
+    the getter — the logger stays unmodified (backwards-compatible behavior)."""
+    from sincpro_log.logger import create_logger
+
+    from sincpro_framework.tracing.provider import setup_otlp_provider
+
+    logger = create_logger("no-endpoint-test")
+    assert logger._getter_context is None  # no getter before
+
+    setup_otlp_provider("no-endpoint-test", logger)  # no endpoint in env
+
+    assert logger._getter_context is None  # getter must NOT be registered
