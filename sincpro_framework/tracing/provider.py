@@ -64,7 +64,7 @@ def setup_otlp_provider(service_name: str, logger: LoggerProxy | None = None) ->
     except ImportError:
         return
 
-    endpoint = settings.otlp_endpoint
+    endpoint: str | None = settings.otlp_endpoint
     if not endpoint:
         return
 

@@ -3,6 +3,8 @@
 from contextlib import contextmanager, nullcontext
 from typing import Any, Generator
 
+from .sentry import record_sentry_error
+
 try:
     import opentelemetry  # noqa: F401 — existence check only
 
@@ -30,6 +32,22 @@ def observe_execution(
     with _dto_span(dto_name, layer, instance) as span:
         with _bind_span_to_logger(logger, span):
             yield span
+
+
+def record_observability_error(
+    span: Any,
+    error: Exception,
+    dto_name: str,
+    layer: str,
+    instance: str,
+) -> None:
+    """Record the exception on the OTel span (if any) and in Sentry (if active).
+
+    Both backends are optional: missing SDK / unset DSN / unset OTLP endpoint
+    are silent no-ops. Callers always invoke this; they never check extras.
+    """
+    record_observability_span_error(span, error)
+    record_sentry_error(error, dto_name, layer, instance)
 
 
 def record_observability_span_error(span: Any, error: Exception) -> None:

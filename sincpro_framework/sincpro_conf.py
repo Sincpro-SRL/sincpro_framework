@@ -65,6 +65,7 @@ class DefaultFrameworkConfig(SincproConfig):
 
     sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "DEBUG"
     otlp_endpoint: str | None = None
+    sentry_dsn: str | None = None
 
 
 def build_config_obj(

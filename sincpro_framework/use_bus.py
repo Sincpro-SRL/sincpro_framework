@@ -11,7 +11,7 @@ from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .tracing import setup_otlp_provider
+from .tracing import setup_otlp_provider, setup_sentry
 from .tracing.span_context import FrameworkSpanContext
 
 
@@ -133,6 +133,10 @@ class UseFramework(ContextMixin):
         # When OTel is active, also wires the current span context into the logger
         # so framework.logger.info(...) carries trace_id/span_id automatically.
         setup_otlp_provider(self._logger_name, self.logger)
+
+        # Sentry/GlitchTip: same silent contract. sentry-sdk + SENTRY_DSN →
+        # init (unless the host already did). Capture happens on bus errors.
+        setup_sentry(self._logger_name)
 
     def add_dependency(self, name, dep: Any):
         """
@@ -267,7 +271,7 @@ class UseFramework(ContextMixin):
             app.add_global_error_handler(base)
 
             def logger(error):
-                notify_sentry(error)
+                log.error(error)
                 raise error  # delegates to base
 
             app.add_global_error_handler(logger)
