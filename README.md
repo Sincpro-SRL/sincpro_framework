@@ -79,7 +79,7 @@ Now you are ready to explore more complex use cases! 🚀
     - [Example of Executing a Use Case](#example-of-executing-a-use-case)
 9. [Summary](#summary)
 10. [Middleware System](#middleware-system-1)
-11. [Observability & Tracing](#observability--tracing)
+11. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
 12. [Configuration or settings](#configuration-or-settings)
 13. [Variables](#variables)
 
@@ -188,6 +188,13 @@ class PaymentFeature(Feature):
 
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
 - Improves development efficiency and reliability.
+
+### Observability (tracing + errors)
+
+- **Tracing** (optional): OpenTelemetry spans on every DTO, export via OTLP (`sincpro-framework[opentelemetry]` + `OTEL_EXPORTER_OTLP_ENDPOINT`).
+- **Errors** (optional): Sentry/GlitchTip capture on bus exceptions (`sincpro-framework[sentry]` + `SENTRY_DSN`).
+- Both are silent if the extra or env is missing. If the host (Odoo, FastAPI) already configured the SDK, the bus piggybacks — no second init.
+- Independent: you can enable traces, errors, both, or neither.
 
 ## ⚙️ Features vs. Application Service
 
@@ -1043,9 +1050,17 @@ The JSON schema format enables powerful AI integrations:
 - **Analysis**: AI can identify optimization opportunities and suggest improvements
 - **Migration**: AI can understand dependencies for migration planning
 
-## Observability & Tracing
+## Observability
 
-The framework provides built-in log correlation out of the box and optional distributed tracing via OpenTelemetry.
+The bus always instruments. Extras and env vars only decide **where** data goes.
+
+| Signal | Extra | Env | Backend |
+|---|---|---|---|
+| Logs (`trace_id` / `span_id`) | none | — | stdout / your logger |
+| Tracing (spans) | `[opentelemetry]` | `OTEL_EXPORTER_OTLP_ENDPOINT` | Tempo / Jaeger |
+| Errors (exceptions) | `[sentry]` | `SENTRY_DSN` | GlitchTip / Sentry |
+
+If the host already called `sentry_sdk.init` or registered an OTel `TracerProvider`, those env vars are not required — the framework piggybacks. Missing extra or missing config → no-op, the bus still raises.
 
 ### What works without any extra install
 
@@ -1070,6 +1085,19 @@ This installs:
 - `opentelemetry-api` + `opentelemetry-sdk`
 - `opentelemetry-exporter-otlp-proto-grpc` (primary)
 - `opentelemetry-exporter-otlp-proto-http` (fallback)
+
+### Sentry / GlitchTip (errors)
+
+Same silent contract as OTel. The bus **always** tries to report exceptions; if `sentry-sdk` is missing or `SENTRY_DSN` is unset, it is a no-op.
+
+```bash
+pip install sincpro-framework[sentry]
+export SENTRY_DSN=https://KEY@glitchtip.sincpro.dev/1
+```
+
+`build_root_bus()` calls `setup_sentry()`. If the host (Odoo, FastAPI) already ran `sentry_sdk.init`, the framework does **not** re-init — it only `capture_exception` with tags `sincpro.layer`, `sincpro.dto`, `sincpro.instance`.
+
+Do not send traces to GlitchTip (`traces_sample_rate=0`); Tempo stays on OTLP.
 
 ### What OpenTelemetry adds
 
@@ -1242,6 +1270,7 @@ where you can define some behavior currently we support the following settings:
 
 - `sincpro_framework_log_level`: Log level for the framework logger. Default: `DEBUG`.
 - `otlp_endpoint`: OTLP exporter endpoint for distributed tracing. Resolved from `OTEL_EXPORTER_OTLP_ENDPOINT` env var. Default: `null` (tracing disabled). Requires `sincpro-framework[opentelemetry]`.
+- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). If the host already called `sentry_sdk.init` (Odoo), the framework does not re-init — it only tags and captures bus errors.
 
 Override the config file using another
 

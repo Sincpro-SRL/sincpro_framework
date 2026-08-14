@@ -11,7 +11,8 @@ from .sincpro_abstractions import (
     TypeDTOResponse,
 )
 from .sincpro_logger import is_logger_in_debug, logger
-from .tracing.instrumentation import observe_execution, record_observability_span_error
+from .tracing.instrumentation import observe_execution, record_observability_error
+from .tracing.sentry import record_sentry_error
 
 
 class FeatureBus(Bus):
@@ -54,7 +55,9 @@ class FeatureBus(Bus):
                 return response
 
             except Exception as error:
-                record_observability_span_error(span, error)
+                record_observability_error(
+                    span, error, dto_name, "feature", self.service_name
+                )
                 if self.handle_error:
                     return self.handle_error(error)
                 raise error
@@ -108,7 +111,9 @@ class ApplicationServiceBus(Bus):
                 return response
 
             except Exception as error:
-                record_observability_span_error(span, error)
+                record_observability_error(
+                    span, error, dto_name, "application_service", self.service_name
+                )
                 if self.handle_error:
                     return self.handle_error(error)
                 raise error
@@ -186,6 +191,8 @@ class FrameworkBus(Bus):
             )
 
         except Exception as error:
+            if isinstance(error, (UnknownDTOToExecute, DTOAlreadyRegistered)):
+                record_sentry_error(error, dto_name, "framework", "")
             if self.handle_error:
                 return self.handle_error(error)
 
