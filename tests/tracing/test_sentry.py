@@ -205,6 +205,7 @@ def test_tenant_tag_from_env(monkeypatch):
 
     record_sentry_error(RuntimeError("x"), "BoomDTO", "feature", "payments")
     assert state.tags["tenant"] == "acme"
+    assert state.clients[0]["environment"] == "acme"
 
 
 def test_error_handler_still_reports_unexpected(monkeypatch):

@@ -136,18 +136,22 @@ def _isolated_client(release: str) -> Optional[Any]:
     dsn = _dsn()
     if not dsn or not release:
         return None
+    tenant = _tenant()
     cached = _clients.get(release)
     if cached is not None:
         return cached
     import sentry_sdk  # pyright: ignore[reportMissingImports]
 
-    client = sentry_sdk.Client(
-        dsn=dsn,
-        release=release,
-        traces_sample_rate=0.0,
-        auto_enabling_integrations=False,
-        send_default_pii=False,
-    )
+    client_kwargs: Dict[str, Any] = {
+        "dsn": dsn,
+        "release": release,
+        "traces_sample_rate": 0.0,
+        "auto_enabling_integrations": False,
+        "send_default_pii": False,
+    }
+    if tenant:
+        client_kwargs["environment"] = tenant
+    client = sentry_sdk.Client(**client_kwargs)
     _clients[release] = client
     return client
 
