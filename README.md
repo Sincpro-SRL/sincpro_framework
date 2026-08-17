@@ -192,8 +192,7 @@ class PaymentFeature(Feature):
 ### Observability (tracing + errors)
 
 - **Tracing** (optional): OpenTelemetry spans on every DTO, export via OTLP (`sincpro-framework[opentelemetry]` + `OTEL_EXPORTER_OTLP_ENDPOINT`).
-- **Errors** (optional): Sentry/GlitchTip capture on bus exceptions (`sincpro-framework[sentry]` + `SENTRY_DSN`).
-- Both are silent if the extra or env is missing. If the host (Odoo, FastAPI) already configured the SDK, the bus piggybacks — no second init.
+- **Errors** (optional): Sentry/GlitchTip capture on bus exceptions (`sincpro-framework[sentry]` + `SENTRY_PYTHON_DSN` in conf). Isolated client — does not call `sentry_sdk.init()`, does not reuse Odoo's client.
 - Independent: you can enable traces, errors, both, or neither.
 
 ## ⚙️ Features vs. Application Service
@@ -1058,9 +1057,9 @@ The bus always instruments. Extras and env vars only decide **where** data goes.
 |---|---|---|---|
 | Logs (`trace_id` / `span_id`) | none | — | stdout / your logger |
 | Tracing (spans) | `[opentelemetry]` | `OTEL_EXPORTER_OTLP_ENDPOINT` | Tempo / Jaeger |
-| Errors (exceptions) | `[sentry]` | `SENTRY_DSN` | GlitchTip / Sentry |
+| Errors (exceptions) | `[sentry]` | `SENTRY_PYTHON_DSN` (framework conf) | GlitchTip / Sentry |
 
-If the host already called `sentry_sdk.init` or registered an OTel `TracerProvider`, those env vars are not required — the framework piggybacks. Missing extra or missing config → no-op, the bus still raises.
+Missing extra or missing DSN in conf → no-op, the bus still raises. Framework events are independent from the host: Odoo may also capture the same exception with its own release. That is intended.
 
 ### What works without any extra install
 
@@ -1088,14 +1087,41 @@ This installs:
 
 ### Sentry / GlitchTip (errors)
 
-Same silent contract as OTel. The bus **always** tries to report exceptions; if `sentry-sdk` is missing or `SENTRY_DSN` is unset, it is a no-op.
+Same silent contract as OTel. The bus **always** tries to report exceptions; if `sentry-sdk` is missing or the DSN in conf is unset, it is a no-op.
 
 ```bash
 pip install sincpro-framework[sentry]
-export SENTRY_DSN=https://KEY@glitchtip.sincpro.dev/1
+export SENTRY_PYTHON_DSN=https://KEY@glitchtip.sincpro.dev/1
 ```
 
-`build_root_bus()` calls `setup_sentry()`. If the host (Odoo, FastAPI) already ran `sentry_sdk.init`, the framework does **not** re-init — it only `capture_exception` with tags `sincpro.layer`, `sincpro.dto`, `sincpro.instance`.
+Conf (`sincpro_framework/conf/sincpro_framework_conf.yml`) resolves `sentry_dsn` from `SENTRY_PYTHON_DSN`. If that env is set, `observability_status()["sentry"]` is `on:init`, not `off`. The framework does **not** call `sentry_sdk.init()` and does not reuse the host client.
+
+Each framework event uses an isolated Sentry `Client` whose `release` is computed once at `UseFramework` init: `{app_name}:{library_version}` (Poetry/installed dist). Not `APP_RELEASE`, not the Python version. Example: `payment-cybersource:5.0.3`. Framework-internal errors use `sincpro-framework:<framework version>`.
+
+Odoo may capture the same exception with Odoo's release. That second event is intended — two products, two releases, same traceback.
+
+The bus reports **before** the error handler runs. A handler that swallows an unexpected exception still produces a GlitchTip event. Expected domain errors can be excluded per instance:
+
+```python
+app = UseFramework("payment-cybersource")  # release auto-detected from the caller package
+app.ignore_sentry_exceptions(ValidationError, InsufficientFunds)
+```
+
+Pass `package="sincpro-payments-sdk"` to `UseFramework` when the caller is not the library itself (tests, a thin adapter).
+
+Observability is optional and must never break the bus. After `build_root_bus()` (or the first `app(dto)` call) every instance exposes a probe:
+
+```python
+status = app.observability_status()
+status["sentry"]  # {active, state, reason}  state: off | on | failed
+status["otel"]
+```
+
+- `off` — extra not installed or conf DSN missing (`sdk_missing`, `dsn_missing`)
+- `on` — isolated client ready (`init`)
+- `failed` — DSN present but client construction broke; the bus still runs. Logged as **warning**.
+
+The instance logger emits: `observability sentry=on:init otel=off:no_endpoint`.
 
 Do not send traces to GlitchTip (`traces_sample_rate=0`); Tempo stays on OTLP.
 
@@ -1270,7 +1296,7 @@ where you can define some behavior currently we support the following settings:
 
 - `sincpro_framework_log_level`: Log level for the framework logger. Default: `DEBUG`.
 - `otlp_endpoint`: OTLP exporter endpoint for distributed tracing. Resolved from `OTEL_EXPORTER_OTLP_ENDPOINT` env var. Default: `null` (tracing disabled). Requires `sincpro-framework[opentelemetry]`.
-- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). If the host already called `sentry_sdk.init` (Odoo), the framework does not re-init — it only tags and captures bus errors.
+- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release={app_name}:{library_version}` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. Use `UseFramework.ignore_sentry_exceptions(...)` for expected errors.
 
 Override the config file using another
 

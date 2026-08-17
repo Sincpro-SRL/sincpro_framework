@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Optional, Type, overload
+from typing import Any, Callable, Dict, Optional, Tuple, Type, overload
 
 from sincpro_log.logger import LoggerProxy
 
@@ -23,6 +23,9 @@ class FeatureBus(Bus):
     feature_registry: Dict[str, Feature]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
+    service_name: str
+    sentry_release: str
+    ignored_sentry_exceptions: Tuple[Type[Exception], ...]
 
     def __init__(self, logger_bus: LoggerProxy = ...) -> None: ...
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
@@ -51,6 +54,9 @@ class ApplicationServiceBus(Bus):
     app_service_registry: Dict[str, ApplicationService]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
+    service_name: str
+    sentry_release: str
+    ignored_sentry_exceptions: Tuple[Type[Exception], ...]
 
     def __init__(self, logger_bus: LoggerProxy = ...) -> None: ...
     def register_app_service(
@@ -86,6 +92,8 @@ class FrameworkBus(Bus):
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     dto_registry: Dict[str, Any]
+    service_name: str
+    sentry_release: str
 
     def __init__(
         self,

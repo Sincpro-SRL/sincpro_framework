@@ -69,15 +69,17 @@ class UseFramework(ContextMixin):
         log_after_execution: bool = True,
         log_app_services: bool = True,
         log_features: bool = True,
+        package: Optional[str] = None,
     ) -> None:
         """
         Initialize the framework.
 
         Args:
-            bundled_context_name: Name of the logger context
+            bundled_context_name: Name of the logger context / GlitchTip app
             log_after_execution: Enable/disable execution logging
             log_app_services: Enable/disable application service logging
             log_features: Enable/disable feature logging
+            package: Optional Poetry distribution name used in Sentry release
         """
         ...
     # Improved overloads for framework execution
@@ -168,6 +170,18 @@ class UseFramework(ContextMixin):
 
         Args:
             handler: An ``ErrorHandler`` callable.
+        """
+        ...
+
+    def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
+        """Do not send these exception types to GlitchTip / Sentry."""
+        ...
+
+    def observability_status(self) -> Dict[str, Any]:
+        """Probe Sentry/OTel for this instance. Never raises.
+
+        Each component is ``off``, ``on`` or ``failed``. Missing extras are
+        ``off``, not an error.
         """
         ...
 

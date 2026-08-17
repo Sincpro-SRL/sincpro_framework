@@ -8,6 +8,7 @@ Public API:
   - FrameworkSpanContext   — returned by UseFramework.with_trace()
   - setup_otlp_provider    — called by UseFramework.build_root_bus()
   - setup_sentry           — called by UseFramework.build_root_bus()
+  - UseFramework.observability_status() — probe off/on/failed, never raises
 """
 
 from .provider import setup_otlp_provider

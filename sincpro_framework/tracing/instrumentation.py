@@ -1,9 +1,9 @@
 """Bus-level observability: span creation, log correlation, and error recording."""
 
 from contextlib import contextmanager, nullcontext
-from typing import Any, Generator
+from typing import Any, Generator, Tuple, Type
 
-from .sentry import record_sentry_error
+from .sentry import SentryKind, record_sentry_error
 
 try:
     import opentelemetry  # noqa: F401 — existence check only
@@ -40,23 +40,44 @@ def record_observability_error(
     dto_name: str,
     layer: str,
     instance: str,
+    kind: SentryKind = "instance",
+    release: str = "",
+    ignored_exceptions: Tuple[Type[Exception], ...] = (),
 ) -> None:
     """Record the exception on the OTel span (if any) and in Sentry (if active).
 
     Both backends are optional: missing SDK / unset DSN / unset OTLP endpoint
     are silent no-ops. Callers always invoke this; they never check extras.
+
+    Sentry is invoked before the bus error handler. A handler that swallows
+    the error does not hide it from GlitchTip. Expected types in
+    ``ignored_exceptions`` skip Sentry only; the span is still marked ERROR.
     """
-    record_observability_span_error(span, error)
-    record_sentry_error(error, dto_name, layer, instance)
+    try:
+        record_observability_span_error(span, error)
+        record_sentry_error(
+            error,
+            dto_name,
+            layer,
+            instance,
+            kind=kind,
+            release=release,
+            ignored_exceptions=ignored_exceptions,
+        )
+    except Exception:
+        return
 
 
 def record_observability_span_error(span: Any, error: Exception) -> None:
     """Record an exception on the active span and mark its status as ERROR."""
-    if _OTEL_AVAILABLE and span is not None:
-        from opentelemetry.trace import StatusCode
+    try:
+        if _OTEL_AVAILABLE and span is not None:
+            from opentelemetry.trace import StatusCode
 
-        span.record_exception(error)
-        span.set_status(StatusCode.ERROR, str(error))
+            span.record_exception(error)
+            span.set_status(StatusCode.ERROR, str(error))
+    except Exception:
+        return
 
 
 # ---------------------------------------------------------------------------
@@ -66,15 +87,18 @@ def record_observability_span_error(span: Any, error: Exception) -> None:
 
 def _dto_span(dto_name: str, layer: str, instance: str):
     """Return an OTel span CM tagged with sincpro attributes, or a no-op."""
-    if _OTEL_AVAILABLE:
-        from .provider import get_framework_tracer
+    try:
+        if _OTEL_AVAILABLE:
+            from .provider import get_framework_tracer
 
-        attrs: dict = {"sincpro.layer": layer}
-        if instance:
-            attrs["sincpro.instance"] = instance
-        tracer = get_framework_tracer("sincpro_framework")
-        if tracer is not None:
-            return tracer.start_as_current_span(dto_name, attributes=attrs)
+            attrs: dict = {"sincpro.layer": layer}
+            if instance:
+                attrs["sincpro.instance"] = instance
+            tracer = get_framework_tracer("sincpro_framework")
+            if tracer is not None:
+                return tracer.start_as_current_span(dto_name, attributes=attrs)
+    except Exception:
+        pass
     return nullcontext()
 
 
@@ -85,11 +109,14 @@ def _bind_span_to_logger(logger: Any, span: Any):
     Celery), or a fresh root span created by the bus itself.
     Returns a context manager that restores the logger's previous fields on exit.
     """
-    if _OTEL_AVAILABLE and span is not None:
-        span_ctx = span.get_span_context()
-        if span_ctx.is_valid:
-            return logger.context(
-                trace_id=format(span_ctx.trace_id, "032x"),
-                span_id=format(span_ctx.span_id, "016x"),
-            )
+    try:
+        if _OTEL_AVAILABLE and span is not None:
+            span_ctx = span.get_span_context()
+            if span_ctx.is_valid:
+                return logger.context(
+                    trace_id=format(span_ctx.trace_id, "032x"),
+                    span_id=format(span_ctx.span_id, "016x"),
+                )
+    except Exception:
+        pass
     return nullcontext()

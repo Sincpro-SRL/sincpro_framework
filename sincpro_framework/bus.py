@@ -1,5 +1,5 @@
 from logging import Logger
-from typing import Callable, Dict, Optional, Type
+from typing import Callable, Dict, Optional, Tuple, Type
 
 from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 from .sincpro_abstractions import (
@@ -23,6 +23,8 @@ class FeatureBus(Bus):
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
         self.service_name = ""
+        self.sentry_release = ""
+        self.ignored_sentry_exceptions: Tuple[Type[Exception], ...] = ()
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -56,7 +58,14 @@ class FeatureBus(Bus):
 
             except Exception as error:
                 record_observability_error(
-                    span, error, dto_name, "feature", self.service_name
+                    span,
+                    error,
+                    dto_name,
+                    "feature",
+                    self.service_name,
+                    kind="instance",
+                    release=self.sentry_release,
+                    ignored_exceptions=self.ignored_sentry_exceptions,
                 )
                 if self.handle_error:
                     return self.handle_error(error)
@@ -73,6 +82,8 @@ class ApplicationServiceBus(Bus):
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
         self.service_name = ""
+        self.sentry_release = ""
+        self.ignored_sentry_exceptions: Tuple[Type[Exception], ...] = ()
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -112,7 +123,14 @@ class ApplicationServiceBus(Bus):
 
             except Exception as error:
                 record_observability_error(
-                    span, error, dto_name, "application_service", self.service_name
+                    span,
+                    error,
+                    dto_name,
+                    "application_service",
+                    self.service_name,
+                    kind="instance",
+                    release=self.sentry_release,
+                    ignored_exceptions=self.ignored_sentry_exceptions,
                 )
                 if self.handle_error:
                     return self.handle_error(error)
@@ -143,6 +161,8 @@ class FrameworkBus(Bus):
         self.app_service_bus = app_service_bus
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
+        self.service_name = ""
+        self.sentry_release = ""
 
         registered_features = set(self.feature_bus.feature_registry.keys())
         registered_app_services = set(self.app_service_bus.app_service_registry.keys())
@@ -192,7 +212,14 @@ class FrameworkBus(Bus):
 
         except Exception as error:
             if isinstance(error, (UnknownDTOToExecute, DTOAlreadyRegistered)):
-                record_sentry_error(error, dto_name, "framework", "")
+                record_sentry_error(
+                    error,
+                    dto_name,
+                    "framework",
+                    self.service_name,
+                    kind="framework",
+                    release=self.sentry_release,
+                )
             if self.handle_error:
                 return self.handle_error(error)
 
