@@ -1098,6 +1098,8 @@ Conf (`sincpro_framework/conf/sincpro_framework_conf.yml`) resolves `sentry_dsn`
 
 Each framework event uses an isolated Sentry `Client` whose `release` is computed once at `UseFramework` init: `{app_name}:{library_version}` (Poetry/installed dist). Not `APP_RELEASE`, not the Python version. Example: `payment-cybersource:5.0.3`. Framework-internal errors use `sincpro-framework:<framework version>`.
 
+GlitchTip `environment` is `TENANT` (same value as the `tenant` tag) so events can be filtered by tenant in the UI.
+
 Odoo may capture the same exception with Odoo's release. That second event is intended — two products, two releases, same traceback.
 
 The bus reports **before** the error handler runs. A handler that swallows an unexpected exception still produces a GlitchTip event. Expected domain errors can be excluded per instance:
