@@ -5,6 +5,7 @@ from typing import Any
 from sincpro_log.logger import LoggerProxy
 
 from ..sincpro_conf import settings
+from .status import ComponentStatus, component_status, status_from_exception
 
 # Private provider owned by sincpro. Kept separate from the global OTel provider
 # so sincpro spans carry their own service.name even when another framework
@@ -28,30 +29,23 @@ def _get_current_otel_context() -> dict:
     return {}
 
 
-def setup_otlp_provider(service_name: str, logger: LoggerProxy | None = None) -> None:
+def _host_provider_is_real() -> bool:
+    try:
+        from opentelemetry import trace
+
+        current_type = type(trace.get_tracer_provider()).__name__
+        return current_type not in ("ProxyTracerProvider", "NoOpTracerProvider")
+    except Exception:
+        return False
+
+
+def setup_otlp_provider(
+    service_name: str, logger: LoggerProxy | None = None
+) -> ComponentStatus:
     """Configure a dedicated TracerProvider for this bounded context.
 
-    Always creates a private TracerProvider with the given ``service_name`` —
-    this is what appears as ``service.name`` in the exported spans, making sincpro
-    spans identifiable independently from the host application (Odoo, FastAPI, etc.).
-
-    If no global provider is registered yet, the private provider is also set as
-    the global so that direct ``framework(dto)`` calls (without ``with_trace()``)
-    still produce real spans.
-
-    If another framework already registered the global provider, the private provider
-    is kept internal only. All sincpro spans will still be children of whatever span
-    is active at call time — the trace_id and parent relationship are preserved via
-    OTel contextvars, which are process-wide and independent of which provider
-    created each span. In Tempo/Jaeger the full tree is visible:
-
-        service.name=odoo      →  GET /web/dataset/call_kw
-        service.name=<service_name>  →    └── CreateOrderDTO  (application_service)
-        service.name=<service_name>  →         └── ValidateDTO  (feature)
-
-    Sampler: ``ParentBased(root=ALWAYS_ON)`` — when a parent span exists (e.g. from
-    Odoo), its sampling decision is respected automatically.  When there is no parent
-    (standalone CLI, worker, test) every span is sampled.
+    Never raises. Missing SDK or endpoint is ``off``. A host that already
+    registered a real TracerProvider is ``on:host`` even without our endpoint.
     """
     global _sincpro_provider
 
@@ -62,11 +56,15 @@ def setup_otlp_provider(service_name: str, logger: LoggerProxy | None = None) ->
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.sdk.trace.sampling import ALWAYS_ON, ParentBased
     except ImportError:
-        return
+        return component_status(False, "off", "sdk_missing")
+    except Exception as exc:
+        return status_from_exception(exc)
 
     endpoint: str | None = settings.otlp_endpoint
     if not endpoint:
-        return
+        if _host_provider_is_real():
+            return component_status(True, "on", "host")
+        return component_status(False, "off", "no_endpoint")
 
     try:
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -74,24 +72,29 @@ def setup_otlp_provider(service_name: str, logger: LoggerProxy | None = None) ->
         try:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         except ImportError:
-            return
+            return component_status(False, "failed", "exporter_missing")
+        except Exception as exc:
+            return status_from_exception(exc)
+    except Exception as exc:
+        return status_from_exception(exc)
 
-    provider = TracerProvider(
-        resource=Resource(attributes={SERVICE_NAME: service_name}),
-        sampler=ParentBased(root=ALWAYS_ON),
-    )
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    _sincpro_provider = provider
+    try:
+        provider = TracerProvider(
+            resource=Resource(attributes={SERVICE_NAME: service_name}),
+            sampler=ParentBased(root=ALWAYS_ON),
+        )
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        _sincpro_provider = provider
 
-    # Register as global only when no real provider exists yet.
-    current_type: str = type(trace.get_tracer_provider()).__name__
-    if current_type in ("ProxyTracerProvider", "NoOpTracerProvider"):
-        trace.set_tracer_provider(provider)
+        current_type: str = type(trace.get_tracer_provider()).__name__
+        if current_type in ("ProxyTracerProvider", "NoOpTracerProvider"):
+            trace.set_tracer_provider(provider)
 
-    # Wire OTel span context into the logger so every framework.logger.info(...)
-    # call automatically carries trace_id/span_id from the active span.
-    if logger is not None:
-        logger.set_getter_context(_get_current_otel_context)
+        if logger is not None:
+            logger.set_getter_context(_get_current_otel_context)
+        return component_status(True, "on", "init")
+    except Exception as exc:
+        return status_from_exception(exc)
 
 
 def get_framework_tracer(instrumentation_name: str) -> Any:
@@ -103,12 +106,11 @@ def get_framework_tracer(instrumentation_name: str) -> Any:
     covers the case where the host already configured a provider that sincpro should
     just piggyback on.
     """
-    if _sincpro_provider is not None:
-        return _sincpro_provider.get_tracer(instrumentation_name)
-
     try:
+        if _sincpro_provider is not None:
+            return _sincpro_provider.get_tracer(instrumentation_name)
         from opentelemetry import trace as otel_trace
 
         return otel_trace.get_tracer(instrumentation_name)
-    except ImportError:
+    except Exception:
         return None

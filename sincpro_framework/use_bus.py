@@ -12,7 +12,22 @@ from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 from .tracing import setup_otlp_provider, setup_sentry
+from .tracing.sentry import (
+    UNKNOWN_VERSION,
+    detect_caller_library_version,
+    framework_release,
+    instance_release,
+    library_version,
+    record_sentry_error,
+    register_app_release,
+)
 from .tracing.span_context import FrameworkSpanContext
+from .tracing.status import (
+    ComponentStatus,
+    ObservabilityStatus,
+    not_built_status,
+    status_from_exception,
+)
 
 
 class UseFramework(ContextMixin):
@@ -26,14 +41,18 @@ class UseFramework(ContextMixin):
         log_after_execution: bool = True,
         log_app_services: bool = True,
         log_features: bool = True,
+        package: Optional[str] = None,
     ):
         """Initialize the framework
 
         Args:
-            bundled_context_name (str): Name of the logger
+            bundled_context_name (str): Name of the logger / GlitchTip app
             log_after_execution (bool): Log after execution if False, All logs will be disabled
             log_app_services (bool): Log app services, If log_after_execution is False, this will be disabled
             log_features (bool): Log features, If log_after_execution is False, this will be disabled
+            package: Optional distribution name (Poetry package) used for
+                ``release``. When omitted, the version is taken from the
+                caller outside ``sincpro_framework``.
         """
         # Logger
         self._is_logger_configured: bool = False
@@ -42,6 +61,22 @@ class UseFramework(ContextMixin):
         self.log_after_execution: bool = log_after_execution
         self.log_app_services: bool = log_app_services
         self.log_features: bool = log_features
+        self._library_version: str = UNKNOWN_VERSION
+        try:
+            self._library_version = (
+                library_version(package) if package else detect_caller_library_version()
+            )
+        except Exception:
+            self._library_version = UNKNOWN_VERSION
+        try:
+            self._sentry_release: str = instance_release(
+                self._logger_name, self._library_version
+            )
+        except Exception:
+            self._sentry_release = f"{self._logger_name}:{UNKNOWN_VERSION}"
+        register_app_release(self._logger_name, self._sentry_release)
+        self._ignored_sentry_exceptions: list[Type[Exception]] = []
+        self._observability_status: ObservabilityStatus = not_built_status()
 
         # Instance-based context storage
         self._current_context: Dict[str, Any] = {}
@@ -83,10 +118,19 @@ class UseFramework(ContextMixin):
             self.build_root_bus()
 
         if self.bus is None:
-            raise SincproFrameworkNotBuilt(
+            error = SincproFrameworkNotBuilt(
                 "Check the decorators are rigistering the features and app services, check the imports of each "
                 "feature and app service"
             )
+            record_sentry_error(
+                error,
+                "",
+                "framework",
+                self._logger_name,
+                kind="framework",
+                release=framework_release(),
+            )
+            raise error
 
         # Inject current context to services before execution
         current_context = self._get_context()
@@ -124,19 +168,24 @@ class UseFramework(ContextMixin):
         # Propagate the bounded-context name so spans carry sincpro.instance
         self.bus.feature_bus.service_name = self._logger_name
         self.bus.app_service_bus.service_name = self._logger_name
+        self.bus.service_name = self._logger_name
+        self._propagate_sentry_config()
 
         # Set the DTO registry Tricky way but it works
         self.bus.dto_registry = dto_registry
 
-        # Configure OTLP provider if opentelemetry-sdk is installed and
-        # OTEL_EXPORTER_OTLP_ENDPOINT is set. No-op otherwise.
-        # When OTel is active, also wires the current span context into the logger
-        # so framework.logger.info(...) carries trace_id/span_id automatically.
-        setup_otlp_provider(self._logger_name, self.logger)
-
-        # Sentry/GlitchTip: same silent contract. sentry-sdk + SENTRY_DSN →
-        # init (unless the host already did). Capture happens on bus errors.
-        setup_sentry(self._logger_name)
+        # Observability is optional. Setup never raises; status is always
+        # inspectable so SDKs can see if Sentry/OTel actually came up.
+        try:
+            sentry_status = setup_sentry(self._logger_name, release=self._sentry_release)
+        except Exception as exc:
+            sentry_status = status_from_exception(exc)
+        try:
+            otel_status = setup_otlp_provider(self._logger_name, self.logger)
+        except Exception as exc:
+            otel_status = status_from_exception(exc)
+        self._observability_status = {"sentry": sentry_status, "otel": otel_status}
+        self._log_observability()
 
     def add_dependency(self, name, dep: Any):
         """
@@ -144,7 +193,16 @@ class UseFramework(ContextMixin):
         The Feature and App Service have as attribute
         """
         if name in self.dynamic_dep_registry:
-            raise DependencyAlreadyRegistered(f"The dependency {name} is already injected")
+            error = DependencyAlreadyRegistered(f"The dependency {name} is already injected")
+            record_sentry_error(
+                error,
+                "",
+                "framework",
+                self._logger_name,
+                kind="framework",
+                release=framework_release(),
+            )
+            raise error
         self.dynamic_dep_registry[name] = dep
 
     def add_middleware(self, middleware: Middleware):
@@ -308,6 +366,58 @@ class UseFramework(ContextMixin):
         )
         if self.was_initialized and self.bus is not None:
             self.bus.app_service_bus.handle_error = self.app_service_error_handler
+
+    def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
+        """Do not send these exception types to GlitchTip / Sentry.
+
+        Error handlers still run. Use this for expected domain errors
+        (validation, insufficient funds, etc.) so they do not hide real bugs:
+        anything not in this list is reported even if a handler swallows it.
+        """
+        for exc_type in exc_types:
+            if exc_type not in self._ignored_sentry_exceptions:
+                self._ignored_sentry_exceptions.append(exc_type)
+        if self.was_initialized and self.bus is not None:
+            self._propagate_sentry_config()
+
+    def observability_status(self) -> ObservabilityStatus:
+        """Return whether Sentry and OTel were built for this instance.
+
+        Never raises. ``state`` is ``off`` (optional/not configured), ``on``
+        (Sentry isolated client ready, or OTel provider ready) or ``failed``
+        (configured but construction broke). Missing sentry-sdk is
+        ``off:sdk_missing``, not an error.
+        """
+        return {
+            "sentry": cast(ComponentStatus, dict(self._observability_status["sentry"])),
+            "otel": cast(ComponentStatus, dict(self._observability_status["otel"])),
+        }
+
+    def _log_observability(self) -> None:
+        sentry = self._observability_status["sentry"]
+        otel = self._observability_status["otel"]
+        message = (
+            f"observability sentry={sentry['state']}:{sentry['reason']} "
+            f"otel={otel['state']}:{otel['reason']}"
+        )
+        try:
+            if sentry["state"] == "failed" or otel["state"] == "failed":
+                self.logger.warning(message)
+            else:
+                self.logger.info(message)
+        except Exception:
+            return
+
+    def _propagate_sentry_config(self) -> None:
+        """Copy release and ignored types onto the buses after they exist."""
+        if self.bus is None:
+            return
+        ignored = tuple(self._ignored_sentry_exceptions)
+        self.bus.feature_bus.sentry_release = self._sentry_release
+        self.bus.feature_bus.ignored_sentry_exceptions = ignored
+        self.bus.app_service_bus.sentry_release = self._sentry_release
+        self.bus.app_service_bus.ignored_sentry_exceptions = ignored
+        self.bus.sentry_release = framework_release()
 
     def _add_dependencies_provided_by_user(self):
         if "feature_registry" in self._sp_container.feature_bus.attributes:
