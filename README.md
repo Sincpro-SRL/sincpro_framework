@@ -1259,7 +1259,7 @@ When using `$ENV:` prefix in your configuration files, the framework will:
    - Issue a warning indicating that the environment variable is missing
    - Proceed with execution rather than raising an error
 
-This behavior allows applications to run with partial configurations in development environments or when not all environment variables are available, while still logging appropriate warnings.
+This behavior allows applications to run with partial configurations in development environments or when not all environment variables are available, while still logging the fallback at info level.
 
 Example of fallback to default values:
 
@@ -1272,7 +1272,7 @@ class ApiConfig(SincproConfig):
 api_key: "$ENV:API_KEY"  # References environment variable
 
 # If API_KEY environment variable is not set, the framework will:
-# 1. Log a warning: "Environment variable [API_KEY] is not set for field [api_key]. Using default value: dev_default_key"
+# 1. Log info: "Environment variable [API_KEY] is not set for field [api_key]. Using default value: dev_default_key"
 # 2. Use the default value "dev_default_key"
 # 3. Continue execution without error
 ```

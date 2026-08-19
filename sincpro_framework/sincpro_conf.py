@@ -1,7 +1,7 @@
 """Module to handle configuration based on yaml or init"""
 
+import logging
 import os
-import warnings
 from typing import Literal, Type, TypeVar
 
 import yaml
@@ -11,6 +11,8 @@ DEFAULT_CONFIG_FILE_PATH = (
     os.getenv("SINCPRO_FRAMEWORK_CONFIG_FILE", default=None)
     or os.path.dirname(__file__) + "/conf/sincpro_framework_conf.yml"
 )
+
+logger = logging.getLogger("sincpro_framework")
 
 
 def load_yaml_file(file_path: str) -> dict:
@@ -27,7 +29,7 @@ class SincproConfig(BaseModel):
     @model_validator(mode="before")
     def resolve_env_variables(cls, values):
         """Load all environment variables that start with $ENV:
-        If the environment variable is not set, a warning is emitted and the default value is used
+        If the environment variable is not set, an info log is emitted and the default value is used
         """
         for field_name, value in values.items():
             if isinstance(value, str) and value.startswith("$ENV:"):
@@ -41,7 +43,7 @@ class SincproConfig(BaseModel):
                     field_info = cls.model_fields.get(field_name, None)
                     if field_info and field_info.default is not None:
                         default_value = field_info.default
-                        warnings.warn(
+                        logger.info(
                             f"Environment variable [{env_var_name}] is not set for field [{field_name}]. "
                             f"Using default value: {default_value}"
                         )
@@ -50,7 +52,7 @@ class SincproConfig(BaseModel):
                         # Optional field (default=None) — env var is optional, use None silently
                         values[field_name] = None
                     else:
-                        warnings.warn(
+                        logger.info(
                             f"Environment variable [{env_var_name}] is not set for field [{field_name}] "
                             f"and no default value was provided. This might cause issues."
                         )

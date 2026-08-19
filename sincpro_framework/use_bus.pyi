@@ -198,7 +198,9 @@ class UseFramework(ContextMixin):
         """Adopt the currently active OTel span for log correlation (no new span created)."""
         ...
 
-    def context(self, context_to_set: Mapping[str, Any]) -> FrameworkContext:
+    def context(
+        self, context_to_set: Mapping[str, Any], global_scope: bool = False
+    ) -> FrameworkContext:
         """
         Create a context manager that applies the specified context attributes.
 
@@ -207,6 +209,7 @@ class UseFramework(ContextMixin):
 
         Args:
             context_to_set: Dictionary of context attributes to set
+            global_scope: Publish on the instance so concurrent executions can read them
 
         Returns:
             FrameworkContext that yields this UseFramework instance when entered

@@ -4,7 +4,7 @@ FrameworkSpanContext — context manager returned by UseFramework.with_trace().
 Responsibilities:
   1. Log correlation: binds trace_id/span_id to the shared LoggerProxy so all
      internal bus logs carry those fields automatically.
-  2. Framework context: injects trace_id/span_id into the framework context dict
+  2. Framework context: publishes trace_id/span_id on the isolated overlay
      so Feature/ApplicationService can read them via self.context.get("trace_id").
   3. OTel context (when installed): attaches a parent span context so all bus
      spans become children of the correct parent trace.
@@ -15,6 +15,8 @@ regardless of whether opentelemetry is installed.
 
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 from uuid import uuid4
+
+from ..context.framework_context import FrameworkContext
 
 try:
     import opentelemetry  # noqa: F401 — existence check only
@@ -49,7 +51,7 @@ class FrameworkSpanContext:
         self._otel_token: Any = None
         self._root_span: Any = None
         self._log_ctx_cm: Any = None
-        self._prev_context: dict[str, Any] = {}
+        self._fw_context_cm: FrameworkContext | None = None
 
     # ------------------------------------------------------------------
     # Context manager protocol
@@ -74,14 +76,11 @@ class FrameworkSpanContext:
 
         # Make trace_id/span_id available inside Feature/ApplicationService
         # via self.context.get("trace_id") without any extra imports.
-        self._prev_context = self.framework._get_context().copy()
-        merged = {
-            **self._prev_context,
-            "trace_id": resolved_trace_id,
-            "span_id": resolved_span_id,
-        }
-        self.framework._set_context(merged)
-        self.framework._inject_context_to_services_and_features(merged)
+        self._fw_context_cm = FrameworkContext(
+            self.framework,
+            {"trace_id": resolved_trace_id, "span_id": resolved_span_id},
+        )
+        self._fw_context_cm.__enter__()
 
         return self.framework
 
@@ -118,8 +117,8 @@ class FrameworkSpanContext:
         if self._log_ctx_cm is not None:
             self._log_ctx_cm.__exit__(exc_type, exc_val, exc_tb)
 
-        self.framework._set_context(self._prev_context)
-        self.framework._inject_context_to_services_and_features(self._prev_context)
+        if self._fw_context_cm is not None:
+            self._fw_context_cm.__exit__(exc_type, exc_val, exc_tb)
 
         return False
 
