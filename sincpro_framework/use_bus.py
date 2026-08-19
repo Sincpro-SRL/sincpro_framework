@@ -78,8 +78,7 @@ class UseFramework(ContextMixin):
         self._ignored_sentry_exceptions: list[Type[Exception]] = []
         self._observability_status: ObservabilityStatus = not_built_status()
 
-        # Instance-based context storage
-        self._current_context: Dict[str, Any] = {}
+        self._init_context_storage()
 
         # Container
         self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)  # type: ignore[call-arg]
@@ -132,12 +131,11 @@ class UseFramework(ContextMixin):
             )
             raise error
 
-        # Inject current context to services before execution
-        current_context = self._get_context()
-        if current_context:
-            self._inject_context_to_services_and_features(current_context)
+        implicit_token = None
+        implicit_overlay = None
+        if self._overlay_var.get() is None and not self._in_global_var.get():
+            implicit_token, implicit_overlay = self._push_overlay(dict(self._shared_context))
 
-        # Execute with middleware pipeline
         def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
             assert (
                 self.bus is not None
@@ -145,7 +143,11 @@ class UseFramework(ContextMixin):
 
             return self.bus.execute(processed_dto)
 
-        return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+        try:
+            return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+        finally:
+            if implicit_token is not None and implicit_overlay is not None:
+                self._pop_overlay(implicit_token, implicit_overlay)
 
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user"""
@@ -155,6 +157,7 @@ class UseFramework(ContextMixin):
         dto_registry = self._sp_container.dto_registry()
 
         self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
+        self._bind_context_to_handlers()
 
         # Set the loggers
         self.bus.log_after_execution = self.log_after_execution
@@ -209,12 +212,19 @@ class UseFramework(ContextMixin):
         """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)
 
-    def context(self, context_to_set: Mapping[str, Any]) -> FrameworkContext:
+    def context(
+        self, context_to_set: Mapping[str, Any], global_scope: bool = False
+    ) -> FrameworkContext:
         """
-        Create a context manager with the specified attributes
+        Create a context manager with the specified attributes.
+
+        Default is isolated per task/thread. Concurrent executions of this
+        instance do not see each other's keys. Pass global_scope=True to
+        publish keys on this instance so concurrent executions can read them.
 
         Args:
             context_to_set: Dictionary of context attributes to set
+            global_scope: Publish on the instance instead of isolating the task
 
         Returns:
             FrameworkContext instance ready to be used with 'with' statement
@@ -223,7 +233,7 @@ class UseFramework(ContextMixin):
             with app.context({"correlation_id": "123", "user_id": "456"}) as app_with_context:
                 result = app_with_context(some_dto)
         """
-        return FrameworkContext(cast(Any, self), context_to_set)
+        return FrameworkContext(cast(Any, self), context_to_set, global_scope)
 
     def with_trace(
         self,

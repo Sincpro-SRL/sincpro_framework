@@ -6,7 +6,7 @@ if TYPE_CHECKING:
 class FrameworkContext:
     """
     Framework context manager that provides automatic metadata propagation
-    and scope management with instance-based storage.
+    and scope management with ContextVar isolation.
 
     When used with 'with' statement, returns the UseFramework instance
     with the context applied.
@@ -15,9 +15,13 @@ class FrameworkContext:
     framework: "UseFramework"
     context: Dict[str, Any]
     parent_context: Dict[str, Any]
+    global_scope: bool
 
     def __init__(
-        self, framework_instance: "UseFramework", context: Mapping[str, Any]
+        self,
+        framework_instance: "UseFramework",
+        context: Mapping[str, Any],
+        global_scope: bool = False,
     ) -> None:
         """
         Initialize the context manager.
@@ -25,6 +29,8 @@ class FrameworkContext:
         Args:
             framework_instance: The UseFramework instance to manage context for
             context: The context dictionary to apply
+            global_scope: When True, publish keys on the instance so concurrent
+                executions of this same instance can read them
         """
         ...
 

@@ -6,8 +6,8 @@ This module verifies the following configuration behaviors:
 3. Validation errors are raised for required fields with no default values
 """
 
+import logging
 import os
-import warnings
 from typing import Optional
 
 import pytest
@@ -56,41 +56,28 @@ def test_environment_variables_are_replaced(monkeypatch):
     assert config.int_value == 100
 
 
-def test_default_values_used_when_environment_variables_missing():
+def test_default_values_used_when_environment_variables_missing(caplog):
     """Verify that default values are used when referenced environment variables don't exist.
 
     This test ensures that when a configuration references a non-existent environment
     variable, the system falls back to the default value defined in the model
-    and issues an appropriate warning.
+    and logs it at info level.
     """
-    # Arrange & Act: Capture warnings while loading config with missing env var
-    with warnings.catch_warnings(record=True) as captured_warnings:
+    with caplog.at_level(logging.INFO, logger="sincpro_framework"):
         config = build_config_obj(_ConfigWithDefaults, CONFIG_WITH_MISSING_ENV_VARS)
 
-        # Assert: Warning was issued about the missing environment variable
-        assert len(captured_warnings) == 1
-        warning_message = str(captured_warnings[0].message)
-        assert "NON_EXISTENT_VAR" in warning_message
-        assert "default value" in warning_message
-
-    # Assert: Default values were used instead
     assert config.string_value == "default_string"
     assert config.int_value == 42  # Unchanged from default
+    assert any("NON_EXISTENT_VAR" in record.message for record in caplog.records)
+    assert all(record.levelno < logging.WARNING for record in caplog.records)
 
 
 def test_validation_error_for_required_fields_with_missing_env_vars():
     """Verify that validation errors occur for required fields with missing env vars.
 
     This test ensures that when a required field (one without a default value)
-    references a non-existent environment variable, the system issues a warning
-    and then Pydantic raises a validation error as expected.
+    references a non-existent environment variable, Pydantic raises a validation
+    error as expected.
     """
-    # Arrange & Act: Attempt to load config with required field but missing env var
-    with warnings.catch_warnings(record=True) as captured_warnings:
-        # Assert: ValidationError is raised
-        with pytest.raises(ValidationError):
-            build_config_obj(_ConfigWithRequiredField, CONFIG_WITH_REQUIRED_FIELD)
-
-        # Assert: Warning was issued before the error
-        assert len(captured_warnings) == 1
-        assert "NON_EXISTENT_VAR" in str(captured_warnings[0].message)
+    with pytest.raises(ValidationError):
+        build_config_obj(_ConfigWithRequiredField, CONFIG_WITH_REQUIRED_FIELD)

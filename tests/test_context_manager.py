@@ -3,6 +3,7 @@ Tests for the Context Manager functionality in Sincpro Framework
 """
 
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event, Thread
 from typing import Any, Dict, cast
 
 import pytest
@@ -132,29 +133,24 @@ class TestContextMixin:
         framework._clean_context()
         assert framework._get_context() == {}
 
-    def test_context_injection_to_services(self):
-        """Test context injection to features and services"""
+    def test_context_visible_on_features_inside_context_manager(self):
+        """Test context is visible on features without mutating injected adapters"""
         framework = UseFramework("test-service")
 
-        # Register a simple feature first
         @framework.feature(ContextTestDTO)
         class ContextTestFeature(ContextAwareFeature):
             pass
 
-        # Manually call build to initialize the bus
         framework.build_root_bus()
 
-        # Set context and inject to services
         test_context = {"correlation_id": "inject-test", "user": "testuser"}
-        framework._inject_context_to_services_and_features(test_context)
+        with framework.context(test_context):
+            assert framework.bus is not None
+            feature_registry = framework.bus.feature_bus.feature_registry
 
-        # Verify context was injected to features
-        assert framework.bus is not None
-        feature_registry = framework.bus.feature_bus.feature_registry
-
-        for feature in feature_registry.values():
-            assert hasattr(feature, "context")
-            assert feature.context == test_context
+            for feature in feature_registry.values():
+                assert isinstance(feature.context, dict)
+                assert feature.context == test_context
 
 
 class TestUseFrameworkContext:
@@ -480,3 +476,171 @@ class TestUseFrameworkContext:
                 assert result.context_data["b"] == "outer_b"  # inherited
                 assert result.context_data["c"] == "outer_c"  # inherited
                 assert result.context_data["d"] == "inner_d"  # new
+
+
+class WriterDTO(DataTransferObject):
+    pass
+
+
+class ReaderDTO(DataTransferObject):
+    pass
+
+
+class TestContextIsolationAndGlobalScope:
+    """Isolation by default, shared instance visibility with global_scope=True"""
+
+    def test_same_instance_concurrent_contexts_do_not_collide(self):
+        framework = UseFramework("same-instance-concurrent")
+
+        @framework.feature(ContextTestDTO)
+        class ConcurrentFeature(ContextAwareFeature):
+            pass
+
+        framework.build_root_bus()
+
+        barrier = Barrier(2)
+        results: Dict[str, str] = {}
+
+        def worker(tenant: str):
+            with framework.context({"tenant": tenant}):
+                barrier.wait()
+                result = cast(
+                    ContextTestResponseDTO,
+                    framework(ContextTestDTO(message=tenant), ContextTestResponseDTO),
+                )
+                results[tenant] = result.context_data["tenant"]
+
+        threads = [
+            Thread(target=worker, args=("A",)),
+            Thread(target=worker, args=("B",)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert results["A"] == "A"
+        assert results["B"] == "B"
+
+    def test_global_scope_is_visible_to_concurrent_execution(self):
+        framework = UseFramework("global-scope-concurrent")
+
+        @framework.feature(ContextTestDTO)
+        class GlobalFeature(ContextAwareFeature):
+            pass
+
+        entered = Event()
+        release = Event()
+        seen: Dict[str, str] = {}
+
+        def publisher():
+            with framework.context({"tenant": "shared"}, True):
+                entered.set()
+                release.wait(timeout=5)
+
+        def reader():
+            entered.wait(timeout=5)
+            result = cast(
+                ContextTestResponseDTO,
+                framework(ContextTestDTO(message="reader"), ContextTestResponseDTO),
+            )
+            seen["tenant"] = result.context_data.get("tenant", "")
+            release.set()
+
+        publisher_thread = Thread(target=publisher)
+        reader_thread = Thread(target=reader)
+        publisher_thread.start()
+        reader_thread.start()
+        publisher_thread.join()
+        reader_thread.join()
+
+        assert seen["tenant"] == "shared"
+
+    def test_global_scope_restored_after_exit(self):
+        framework = UseFramework("global-scope-restore")
+
+        @framework.feature(ContextTestDTO)
+        class GlobalFeature(ContextAwareFeature):
+            pass
+
+        with framework.context({"tenant": "shared"}, True) as app:
+            result_inside = cast(
+                ContextTestResponseDTO,
+                app(ContextTestDTO(message="inside"), ContextTestResponseDTO),
+            )
+            assert result_inside.context_data["tenant"] == "shared"
+
+        result_after = cast(
+            ContextTestResponseDTO,
+            framework(ContextTestDTO(message="after"), ContextTestResponseDTO),
+        )
+        assert "tenant" not in result_after.context_data
+
+    def test_feature_write_is_visible_to_sibling_in_same_context(self):
+        framework = UseFramework("writable-sibling")
+
+        @framework.feature(WriterDTO)
+        class WriterFeature(Feature):
+            def execute(self, dto):
+                self.context["note"] = "from-writer"
+                return ContextTestResponseDTO(result="ok", context_data=self.context.copy())
+
+        @framework.feature(ReaderDTO)
+        class ReaderFeature(Feature):
+            def execute(self, dto):
+                return ContextTestResponseDTO(result="ok", context_data=self.context.copy())
+
+        with framework.context({"seed": "1"}):
+            framework(WriterDTO(), ContextTestResponseDTO)
+            read_result = cast(
+                ContextTestResponseDTO, framework(ReaderDTO(), ContextTestResponseDTO)
+            )
+            assert read_result.context_data["seed"] == "1"
+            assert read_result.context_data["note"] == "from-writer"
+
+    def test_assigning_context_dict_overwrites_without_breaking_adapters(self):
+        framework = UseFramework("overwrite-absorb")
+        adapter = object()
+        framework.add_dependency("gateway", adapter)
+
+        @framework.feature(ContextTestDTO)
+        class OverwriteFeature(Feature):
+            gateway: object
+
+            def execute(self, dto):
+                self.context = {"replaced": True}
+                return ContextTestResponseDTO(
+                    result=str(id(self.gateway)), context_data=self.context.copy()
+                )
+
+        with framework.context({"seed": "keep-me"}):
+            result = cast(
+                ContextTestResponseDTO,
+                framework(ContextTestDTO(message="overwrite"), ContextTestResponseDTO),
+            )
+            assert result.context_data == {"replaced": True}
+            assert result.result == str(id(adapter))
+
+    def test_writes_outside_context_manager_do_not_leak_to_next_call(self):
+        framework = UseFramework("no-leak-between-calls")
+
+        @framework.feature(ContextTestDTO)
+        class StampFeature(Feature):
+            def execute(self, dto):
+                leaked = self.context.get("stamp")
+                self.context["stamp"] = dto.message
+                return ContextTestResponseDTO(
+                    result=str(leaked), context_data=self.context.copy()
+                )
+
+        first = cast(
+            ContextTestResponseDTO,
+            framework(ContextTestDTO(message="first"), ContextTestResponseDTO),
+        )
+        second = cast(
+            ContextTestResponseDTO,
+            framework(ContextTestDTO(message="second"), ContextTestResponseDTO),
+        )
+
+        assert first.result == "None"
+        assert second.result == "None"
