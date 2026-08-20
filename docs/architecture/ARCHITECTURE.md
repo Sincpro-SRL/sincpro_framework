@@ -10,6 +10,7 @@
 6.  [External Dependencies](#external-dependencies)
 7.  [Current State and Roadmap](#current-state-and-roadmap)
 8.  [Design Considerations](#design-considerations)
+9.  [`entrypoint_mcp`](./entrypoint_mcp.md)
 
 ---
 
@@ -25,6 +26,7 @@ The **Sincpro Framework** is an implementation of **Hexagonal Architecture** wit
 -   **Decoupling** between business logic and infrastructure
 -   **Automatic validation** of DTOs with Pydantic
 -   **Integrated observability** with structured logging
+-   **`entrypoint_mcp`** — bus catalog as MCP tools. See [entrypoint_mcp.md](./entrypoint_mcp.md).
 
 ### Usage Context
 
@@ -50,6 +52,7 @@ The framework is designed for enterprise applications that require:
 | **Logging Integration** | `sincpro_logger.py` | Logging system integration | Infrastructure | sincpro-log |
 | **Value Objects** | `ddd/value_object.py` | DDD Value Objects implementation | Domain | - |
 | **Exception Handling** | `exceptions.py` | Framework-specific exceptions | Cross-cutting | - |
+| **`entrypoint_mcp`** | `entrypoints/mcp/` | MCP host: bus catalog → tools | Exposure | FastMCP (optional extra) |
 
 ### Component Details
 
@@ -784,6 +787,7 @@ sincpro-log = "^1.0.1"            # Logging System
 -   [x] Integrated logging
 -   [x] DDD Value Objects
 -   [x] Complete type safety
+-   [x] `entrypoint_mcp` (`build_mcp_server`) — Features and ApplicationServices as MCP tools
 
 ### 🔄 Planned Improvements (according to roadmap)
 

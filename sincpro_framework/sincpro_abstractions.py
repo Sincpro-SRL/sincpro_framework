@@ -20,7 +20,10 @@ class DataTransferObject(BaseModel):
     Abstraction that represent a object that will travel through to any layer
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        use_attribute_docstrings=True,
+    )
 
 
 class Bus(ABC):
