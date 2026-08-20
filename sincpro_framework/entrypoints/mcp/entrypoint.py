@@ -6,37 +6,32 @@ from typing import Annotated, Any, Self
 
 from pydantic import Field
 
-from sincpro_framework.entrypoints.mcp.tools import (
-    Tool,
-    collect_tools,
-    dto_is_json_serializable,
-)
-from sincpro_framework.sincpro_logger import logger
+from sincpro_framework.entrypoints.catalog import Catalog, Operation
 from sincpro_framework.use_bus import UseFramework
 
 FASTMCP_MISSING = "FastMCP is not installed. Install with: pip install sincpro-framework[mcp]"
 
 
-def fastmcp_callable(tool: Tool):
+def fastmcp_callable(operation: Operation):
     """Build a typed function FastMCP 3 inspects to generate the MCP schema.
 
-    1. Forward keyword arguments to tool.run (DTO.model_validate inside).
+    1. Forward keyword arguments to operation.run (DTO.model_validate inside).
     2. Stamp a keyword-only signature from DTO fields so FastMCP sees Pydantic types
        (Value Objects, Field descriptions) instead of a nested wrapper object.
         2.1 Required fields have no default.
         2.2 A default_factory travels as Annotated metadata, never as a value: a
             concrete default would freeze uuid4/datetime.now at import time.
         2.3 Any other optional field keeps the Pydantic default.
-    3. Stamp name and docstring from the Tool (FastMCP infers tool name / description).
+    3. Stamp name and docstring from the Operation (FastMCP infers tool name / description).
     4. Final: a function for mcp.tool(fn, name=..., description=...).
     """
 
     def tool_fn(**kwargs: Any) -> dict[str, Any]:
-        return tool.run(kwargs)
+        return operation.run(kwargs)
 
     parameters: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {"return": dict[str, Any]}
-    for field_name, field_info in tool.dto.model_fields.items():
+    for field_name, field_info in operation.dto.model_fields.items():
         annotation = field_info.annotation
         default: Any = inspect.Parameter.empty
         if field_info.default_factory is not None:
@@ -54,8 +49,8 @@ def fastmcp_callable(tool: Tool):
                 annotation=annotation,
             )
         )
-    tool_fn.__name__ = tool.name
-    tool_fn.__doc__ = tool.description
+    tool_fn.__name__ = operation.name
+    tool_fn.__doc__ = operation.description
     tool_fn.__annotations__ = annotations
     setattr(tool_fn, "__signature__", inspect.Signature(parameters))
     return tool_fn
@@ -65,48 +60,36 @@ class Entrypoint:
     """MCP facade over one UseFramework instance."""
 
     def __init__(self, framework: UseFramework):
-        if not framework.was_initialized:
-            framework.build_root_bus()
-        self.framework = framework
-        self._include: set[str] | None = None
-        self._exclude: set[str] = set()
-        self._wrappers: dict[str, Callable] = {}
+        self.catalog = Catalog(framework)
 
     @property
     def name(self) -> str:
-        return self.framework._logger_name
+        return self.catalog.framework._logger_name
 
     def include(self, *dtos: type | str) -> Self:
-        self._include = {dto if isinstance(dto, str) else dto.__name__ for dto in dtos}
+        self.catalog.include(*dtos)
         return self
 
     def exclude(self, *dtos: type | str) -> Self:
-        self._exclude = {dto if isinstance(dto, str) else dto.__name__ for dto in dtos}
+        self.catalog.exclude(*dtos)
         return self
 
     def wrap(self, dto: type | str, wrapper: Callable) -> Self:
-        key = dto if isinstance(dto, str) else dto.__name__
-        self._wrappers[key] = wrapper
+        self.catalog.wrap(dto, wrapper)
         return self
 
-    def tools(self) -> list[Tool]:
-        return collect_tools(
-            self.framework,
-            include=self._include,
-            exclude=self._exclude,
-            wrappers=self._wrappers,
-        )
+    def tools(self) -> list[Operation]:
+        return self.catalog.operations()
 
     def to_callables(self) -> dict[str, Callable[[dict[str, Any]], dict[str, Any]]]:
-        return {tool.name: tool.run for tool in self.tools()}
+        return {operation.name: operation.run for operation in self.catalog.operations()}
 
     def server(self, name: str | None = None) -> Any:
-        """Publish JSON-safe tools on a FastMCP server.
+        """Publish JSON-safe operations on a FastMCP server.
 
         1. Import FastMCP or raise with the extra-install hint.
-        2. For each collected tool, skip DTOs that are not JSON-serializable.
-        3. Register the rest with mcp.tool(fn, name=..., description=..., tags=kind).
-        4. Final: a FastMCP 3 instance ready to run (stdio by default).
+        2. Register catalog.published() with mcp.tool(fn, name=..., description=..., tags=kind).
+        3. Final: a FastMCP 3 instance ready to run (stdio by default).
         """
         try:
             from fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
@@ -114,15 +97,12 @@ class Entrypoint:
             raise ImportError(FASTMCP_MISSING) from error
 
         mcp = FastMCP(name or self.name)
-        for tool in self.tools():
-            if not dto_is_json_serializable(tool.dto):
-                logger.warning("Skipping MCP tool [%s]: DTO is not JSON", tool.name)
-                continue
+        for operation in self.catalog.published():
             mcp.tool(
-                fastmcp_callable(tool),
-                name=tool.name,
-                description=tool.description,
-                tags={tool.kind},
+                fastmcp_callable(operation),
+                name=operation.name,
+                description=operation.description,
+                tags={operation.kind},
             )
         return mcp
 

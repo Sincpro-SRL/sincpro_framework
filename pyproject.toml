@@ -24,6 +24,8 @@ opentelemetry-exporter-otlp-proto-grpc = {version = ">=1.20", optional = true}
 opentelemetry-exporter-otlp-proto-http = {version = ">=1.20", optional = true}
 sentry-sdk = {version = ">=2.0", optional = true}
 fastmcp = {version = ">=3.0,<4", optional = true}
+starlette = {version = ">=1.0", optional = true}
+uvicorn = {version = ">=0.35", optional = true}
 
 [tool.poetry.extras]
 opentelemetry = [
@@ -34,6 +36,7 @@ opentelemetry = [
 ]
 sentry = ["sentry-sdk"]
 mcp = ["fastmcp"]
+rpc = ["starlette", "uvicorn"]
 
 [tool.poetry.group.dev.dependencies]
 isort = "^8.0.0"

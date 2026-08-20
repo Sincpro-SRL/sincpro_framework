@@ -43,7 +43,7 @@ from sincpro_framework.entrypoints.mcp import build_mcp_server
 build_mcp_server(framework).run()
 ```
 
-Write the use case once. **`entrypoint_mcp`** publishes the same catalog as MCP tools. No flags on Features — the bus is already the catalog.
+Write the use case once. **`entrypoint_mcp`** publishes the same catalog as MCP tools. **`entrypoint_rpc`** publishes several instances as JSON-RPC methods. No flags on Features — the bus is already the catalog.
 
 Now you are ready to explore more complex use cases! 🚀
 
@@ -53,7 +53,8 @@ Now you are ready to explore more complex use cases! 🚀
     - [Key Layers of Hexagonal Architecture](#key-layers-of-hexagonal-architecture)
     - [Why Use a Unified Bus Pattern?](#why-use-a-unified-bus-pattern)
 2. [entrypoint_mcp](#entrypoint_mcp)
-3. [Key Features of the Sincpro Framework](#key-features-of-the-sincpro-framework)
+3. [entrypoint_rpc](#entrypoint_rpc)
+4. [Key Features of the Sincpro Framework](#key-features-of-the-sincpro-framework)
     - [DTO Validation with Pydantic](#dto-validation-with-pydantic)
     - [Dependency Injection](#dependency-injection)
     - [Inversion of Control (IoC)](#inversion-of-control-ioc)
@@ -65,27 +66,28 @@ Now you are ready to explore more complex use cases! 🚀
     - [Application Service Orchestration](#application-service-orchestration)
     - [IDE Support with Typing](#ide-support-with-typing)
     - [entrypoint_mcp](#entrypoint_mcp-1)
-4. [Features vs. Application Service](#features-vs-application-service)
-5. [Example Usage for a Payment Gateway](#example-usage-for-a-payment-gateway)
+    - [entrypoint_rpc](#entrypoint_rpc-1)
+5. [Features vs. Application Service](#features-vs-application-service)
+6. [Example Usage for a Payment Gateway](#example-usage-for-a-payment-gateway)
     - [Configuring the Framework](#configuring-the-framework)
     - [Best Practices for Imports](#best-practices-for-imports)
     - [Sample Configuration in ](#sample-configuration-in-init-py)[`__init__.py`](#sample-configuration-in-init-py)
-6. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
+7. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
     - [dependencies.py — Adapter Registration](#dependenciespy--adapter-registration)
     - [framework.py — Wiring with DependencyContextType](#frameworkpy--wiring-with-dependencycontexttype)
     - [\_\_init\_\_.py — Bootstrap the Bounded Context](#__init__py--bootstrap-the-bounded-context)
     - [Testing Dependency Consistency](#testing-dependency-consistency)
-7. [Creating a Feature](#creating-a-feature)
+8. [Creating a Feature](#creating-a-feature)
     - [Example of Creating a Feature](#example-of-creating-a-feature)
-8. [Creating an Application Service](#creating-an-application-service)
+9. [Creating an Application Service](#creating-an-application-service)
     - [Example of Creating an Application Service](#example-of-creating-an-application-service)
-9. [Executing a Use Case](#executing-a-use-case)
+10. [Executing a Use Case](#executing-a-use-case)
     - [Example of Executing a Use Case](#example-of-executing-a-use-case)
-10. [Summary](#summary)
-11. [Middleware System](#middleware-system-1)
-12. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
-13. [Configuration or settings](#configuration-or-settings)
-14. [Variables](#variables)
+11. [Summary](#summary)
+12. [Middleware System](#middleware-system-1)
+13. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
+14. [Configuration or settings](#configuration-or-settings)
+15. [Variables](#variables)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -117,7 +119,7 @@ scalable, and minimizes coupling while enhancing modularity.
 
 **Turn the bus into an MCP server. Docstrings contextualize the tools for the LLM.**
 
-A bounded context already *is* an API: DTO in, `execute`, DTO out. **`entrypoint_mcp`** is the MCP host for that catalog — not a generic “entrypoints” product, not REST, not RPC. The Feature never learns what FastMCP is. There is no `expose_mcp=True`.
+A bounded context already *is* an API: DTO in, `execute`, DTO out. **`entrypoint_mcp`** is the MCP host for that catalog — not REST. JSON-RPC is **[`entrypoint_rpc`](#entrypoint_rpc)**. The Feature never learns what FastMCP is. There is no `expose_mcp=True`.
 
 | How you run it | What the client speaks |
 |---|---|
@@ -179,6 +181,40 @@ A Feature with no own docstring publishes the DTO class name. That is enough to 
 MCP HTTP is still MCP (`tools/call`), not a REST API.
 
 Contract: **[`entrypoint_mcp`](docs/architecture/entrypoint_mcp.md)**. SIAT evaluation: **[use case](docs/architecture/entrypoint_mcp_use_case.md)**.
+
+## `entrypoint_rpc`
+
+**Turn one or more bounded contexts into a JSON-RPC 2.0 server. Methods are `instance.layer.DtoName`.**
+
+Payments mounts `qr`, `cybersource`, and `bank_account` in one process. The prefix exists because DTO names collide (`CommandAuthenticateEconomico` lives in qr and in extractos). Discovery is OpenRPC 1.4 (`rpc.discover` / `GET /openrpc.json`). This is not REST.
+
+```bash
+pip install sincpro-framework[rpc]
+```
+
+```python
+from sincpro_framework.entrypoints.rpc import RpcGateway
+
+RpcGateway({
+    "qr": qr,
+    "cybersource": cybersource,
+    "bank_account": bank_account,
+}).run()  # POST http://127.0.0.1:8080/rpc
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "qr.features.CommandCreateQREconomico",
+  "params": { "transaction_id": "t-1", "amount": 50.0 },
+  "context": { "correlation_id": "req-9" }
+}
+```
+
+`params` are DTO fields. `context` is a JSON-RPC extension (sibling of `params`) and becomes `framework.context` — Features keep using `self.context`. HTTP `X-Correlation-Id` and `traceparent` fill in when the body omits them. `layers=("app_services",)` publishes only ApplicationServices.
+
+Contract: **[`entrypoint_rpc`](docs/architecture/entrypoint_rpc.md)**.
 
 ## 🔑 Key Features of the Sincpro Framework
 
@@ -265,6 +301,12 @@ class PaymentFeature(Feature):
 - One line publishes the bus as MCP tools: `build_mcp_server(instance).run()`.
 - Features and ApplicationServices become typed tools. Docstrings are the LLM context.
 - Domain code stays host-agnostic. This extra is MCP only.
+
+### `entrypoint_rpc`
+
+- One process, several instances: `RpcGateway({"qr": qr, "cybersource": cybersource}).run()`.
+- Methods are `qr.features.CommandCreateQREconomico` / `siat.app_services.CommandGenerateCUFD`.
+- `context` on the JSON-RPC request is `framework.context` + optional `with_trace`. OpenRPC 1.4 discovery.
 
 ### Observability (tracing + errors)
 
@@ -658,6 +700,7 @@ maintainability.
 - **Features**: Handle specific, self-contained business actions.
 - **ApplicationServices**: Orchestrate multiple features for cohesive workflows.
 - **`entrypoint_mcp`**: Publish that catalog as MCP tools (`sincpro-framework[mcp]`).
+- **`entrypoint_rpc`**: Publish one or more instances as JSON-RPC 2.0 methods (`sincpro-framework[rpc]`).
 
 This structured approach ensures high-quality, maintainable software that can adapt to evolving business needs. 🚀
 

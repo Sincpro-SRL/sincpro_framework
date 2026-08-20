@@ -225,6 +225,7 @@ docs/
 
 - [**🏗️ Complete Architecture Guide**](./architecture/ARCHITECTURE.md)
 - [**`entrypoint_mcp`**](./architecture/entrypoint_mcp.md) — bus catalog as MCP tools
+- [**`entrypoint_rpc`**](./architecture/entrypoint_rpc.md) — bus catalog as JSON-RPC 2.0 methods
 - [**SIAT use case**](./architecture/entrypoint_mcp_use_case.md) — CUF / CUFD / verify vs XML bytes
 - [**🎯 SIAT Integration Context**](./architecture/README.md#siat-integration-context)
 - [**🔄 CQRS Implementation Patterns**](./architecture/README.md#cqrs-patterns)
@@ -245,6 +246,7 @@ docs/
 - **Exception Handling**: Multi-layer error management
 - **Value Objects**: DDD pattern implementation
 - **`entrypoint_mcp`**: MCP host for the bus catalog
+- **`entrypoint_rpc`**: JSON-RPC 2.0 host for one or more instances
 
 ---
 

@@ -11,6 +11,7 @@
 7.  [Current State and Roadmap](#current-state-and-roadmap)
 8.  [Design Considerations](#design-considerations)
 9.  [`entrypoint_mcp`](./entrypoint_mcp.md)
+10. [`entrypoint_rpc`](./entrypoint_rpc.md)
 
 ---
 
@@ -27,6 +28,7 @@ The **Sincpro Framework** is an implementation of **Hexagonal Architecture** wit
 -   **Automatic validation** of DTOs with Pydantic
 -   **Integrated observability** with structured logging
 -   **`entrypoint_mcp`** — bus catalog as MCP tools. See [entrypoint_mcp.md](./entrypoint_mcp.md).
+-   **`entrypoint_rpc`** — bus catalog as JSON-RPC 2.0 methods. See [entrypoint_rpc.md](./entrypoint_rpc.md).
 
 ### Usage Context
 
@@ -52,7 +54,9 @@ The framework is designed for enterprise applications that require:
 | **Logging Integration** | `sincpro_logger.py` | Logging system integration | Infrastructure | sincpro-log |
 | **Value Objects** | `ddd/value_object.py` | DDD Value Objects implementation | Domain | - |
 | **Exception Handling** | `exceptions.py` | Framework-specific exceptions | Cross-cutting | - |
-| **`entrypoint_mcp`** | `entrypoints/mcp/` | MCP host: bus catalog → tools | Exposure | FastMCP (optional extra) |
+| **Catalog** | `entrypoints/catalog.py` | Shared bus → Operation projection | Exposure | — |
+| **`entrypoint_mcp`** | `entrypoints/mcp/` | MCP host: Catalog → tools | Exposure | FastMCP (optional extra) |
+| **`entrypoint_rpc`** | `entrypoints/rpc/` | JSON-RPC 2.0 host: Catalog × N → methods | Exposure | Starlette (optional extra) |
 
 ### Component Details
 
@@ -788,6 +792,8 @@ sincpro-log = "^1.0.1"            # Logging System
 -   [x] DDD Value Objects
 -   [x] Complete type safety
 -   [x] `entrypoint_mcp` (`build_mcp_server`) — Features and ApplicationServices as MCP tools
+-   [x] Shared `Catalog` / `Operation` for driving adapters
+-   [x] `entrypoint_rpc` (`RpcGateway`) — several UseFramework instances as JSON-RPC 2.0 methods
 
 ### 🔄 Planned Improvements (according to roadmap)
 

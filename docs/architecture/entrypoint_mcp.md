@@ -2,7 +2,7 @@
 
 **`entrypoint_mcp`** is the shipped feature: take a `UseFramework` instance and publish its Features / ApplicationServices as MCP tools. Docstrings contextualize the LLM (`tools/list`); `tools/call` is `framework(dto)`.
 
-This is **not** a generic “entrypoints” product. REST and RPC are other hosts, not this extra.
+This is **not** a generic “entrypoints” product. REST is another host. JSON-RPC is **[`entrypoint_rpc`](./entrypoint_rpc.md)**.
 
 The domain does not know MCP exists. There is no `expose_mcp=True` on a Feature. The bus is the catalog; `entrypoint_mcp` is the MCP host.
 
@@ -20,6 +20,8 @@ Real SDK evaluation (SIAT SOAP, not Greeting): **[entrypoint_mcp_use_case.md](./
 `build_documentation(...)` is a **read-only catalog**. `entrypoint_mcp` is **live** `tools/call`. Both read the same registries.
 
 Package path: `sincpro_framework.entrypoints.mcp` (`build_mcp_server`, `Entrypoint`). The **feature name** in docs and product language is `entrypoint_mcp`.
+
+The bus projection is `Catalog` / `Operation` (`entrypoints/catalog.py`). This host only binds FastMCP.
 
 ---
 
