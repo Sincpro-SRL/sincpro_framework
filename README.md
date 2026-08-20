@@ -34,14 +34,16 @@ class GreetingFeature(Feature):
         return f"Hello, {dto.name}!"
 
 
-# 5. Execute the Use Case
-if __name__ == "__main__":
-    # Create an instance of the parameter DTO
-    greeting_dto = GreetingParams(name="Alice")
-    # Execute the feature
-    result = framework(greeting_dto)
-    print(result)  # Output: Hello, Alice!
+# 5. Execute the Use Case — or export the same catalog as MCP
+result = framework(GreetingParams(name="Alice"))
+print(result)  # Hello, Alice!
+
+# pip install sincpro-framework[mcp]
+from sincpro_framework.entrypoints.mcp import build_mcp_server
+build_mcp_server(framework).run()
 ```
+
+Write the use case once. **`entrypoint_mcp`** publishes the same catalog as MCP tools. No flags on Features — the bus is already the catalog.
 
 Now you are ready to explore more complex use cases! 🚀
 
@@ -50,7 +52,8 @@ Now you are ready to explore more complex use cases! 🚀
 1. [Overview of Hexagonal Architecture](#overview-of-hexagonal-architecture)
     - [Key Layers of Hexagonal Architecture](#key-layers-of-hexagonal-architecture)
     - [Why Use a Unified Bus Pattern?](#why-use-a-unified-bus-pattern)
-2. [Key Features of the Sincpro Framework](#key-features-of-the-sincpro-framework)
+2. [entrypoint_mcp](#entrypoint_mcp)
+3. [Key Features of the Sincpro Framework](#key-features-of-the-sincpro-framework)
     - [DTO Validation with Pydantic](#dto-validation-with-pydantic)
     - [Dependency Injection](#dependency-injection)
     - [Inversion of Control (IoC)](#inversion-of-control-ioc)
@@ -61,27 +64,28 @@ Now you are ready to explore more complex use cases! 🚀
     - [Decoupled Logic Execution](#decoupled-logic-execution)
     - [Application Service Orchestration](#application-service-orchestration)
     - [IDE Support with Typing](#ide-support-with-typing)
-3. [Features vs. Application Service](#features-vs-application-service)
-4. [Example Usage for a Payment Gateway](#example-usage-for-a-payment-gateway)
+    - [entrypoint_mcp](#entrypoint_mcp-1)
+4. [Features vs. Application Service](#features-vs-application-service)
+5. [Example Usage for a Payment Gateway](#example-usage-for-a-payment-gateway)
     - [Configuring the Framework](#configuring-the-framework)
     - [Best Practices for Imports](#best-practices-for-imports)
     - [Sample Configuration in ](#sample-configuration-in-init-py)[`__init__.py`](#sample-configuration-in-init-py)
-5. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
+6. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
     - [dependencies.py — Adapter Registration](#dependenciespy--adapter-registration)
     - [framework.py — Wiring with DependencyContextType](#frameworkpy--wiring-with-dependencycontexttype)
     - [\_\_init\_\_.py — Bootstrap the Bounded Context](#__init__py--bootstrap-the-bounded-context)
     - [Testing Dependency Consistency](#testing-dependency-consistency)
-6. [Creating a Feature](#creating-a-feature)
+7. [Creating a Feature](#creating-a-feature)
     - [Example of Creating a Feature](#example-of-creating-a-feature)
-7. [Creating an Application Service](#creating-an-application-service)
+8. [Creating an Application Service](#creating-an-application-service)
     - [Example of Creating an Application Service](#example-of-creating-an-application-service)
-8. [Executing a Use Case](#executing-a-use-case)
+9. [Executing a Use Case](#executing-a-use-case)
     - [Example of Executing a Use Case](#example-of-executing-a-use-case)
-9. [Summary](#summary)
-10. [Middleware System](#middleware-system-1)
-11. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
-12. [Configuration or settings](#configuration-or-settings)
-13. [Variables](#variables)
+10. [Summary](#summary)
+11. [Middleware System](#middleware-system-1)
+12. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
+13. [Configuration or settings](#configuration-or-settings)
+14. [Variables](#variables)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -108,6 +112,73 @@ context, ensuring a clear and consistent structure.
 Using a unified bus allows developers to access all dependencies through a single environment, eliminating the need for
 repeated imports or initialization. This approach ensures each bounded context is self-sufficient, independently
 scalable, and minimizes coupling while enhancing modularity.
+
+## `entrypoint_mcp`
+
+**Turn the bus into an MCP server. Docstrings contextualize the tools for the LLM.**
+
+A bounded context already *is* an API: DTO in, `execute`, DTO out. **`entrypoint_mcp`** is the MCP host for that catalog — not a generic “entrypoints” product, not REST, not RPC. The Feature never learns what FastMCP is. There is no `expose_mcp=True`.
+
+| How you run it | What the client speaks |
+|---|---|
+| `.run()` | MCP stdio — Cursor, Claude Desktop, CLI |
+| `.run(transport="http")` | MCP Streamable HTTP at `/mcp` — still `tools/call`, not REST |
+
+```bash
+pip install sincpro-framework[mcp]
+```
+
+```python
+from sincpro_framework.entrypoints.mcp import build_mcp_server, Entrypoint
+
+# CLI / Cursor / Claude Desktop (stdio)
+build_mcp_server(payment_sdk).run()
+
+# Same MCP catalog over the network
+build_mcp_server(payment_sdk).run(transport="http", host="127.0.0.1", port=8000)
+
+# Optional: allow-list, then pick the transport
+Entrypoint(payment_sdk).include(ChargePayment).exclude(InternalDebug).run()
+Entrypoint(payment_sdk).include(ChargePayment).run(transport="http", port=8000)
+```
+
+Agents see typed tools generated from your DTOs (Pydantic JSON Schema, Value Object titles, `Field(description=...)`). A `tools/call` is the same operation as `framework(dto)`: validation, middleware, tracing, error handlers.
+
+### Docstrings are the LLM context
+
+The agent **reads** `tools/list` (name + description + field schema) and then **executes** `tools/call`. Nothing else is injected. Write the docstring for that reader — when to use the tool, what not to send, enum values — not Args/Returns (the schema already has types).
+
+```python
+class CommandGenerateCUF(DataTransferObject):
+    nit: str | int
+    """Issuer NIT. Digits only; the Feature zero-pads to 13."""
+    modality: SIATModality
+    """SIAT modality value, not the Python name. Example: 1 = electrónica."""
+
+
+@siat_soap_sdk.feature(CommandGenerateCUF)
+class GenerateCUF(Feature):
+    """Build the SIAT CUF (código único de factura) from NIT, datetime, branch, and modality.
+
+    Use before reception. Does not call SIAT — local encoding only.
+    """
+
+    def execute(self, dto: CommandGenerateCUF) -> ResponseGenerateCUF:
+        ...
+```
+
+| You write | LLM sees |
+|---|---|
+| Feature class docstring (preferred) | Tool description in `tools/list` |
+| else `execute` docstring, else DTO docstring, else DTO name | same |
+| Field docstring or `Field(description=...)` | Each argument in the input schema |
+| Inherited `Feature` / `ApplicationService` essay | **Ignored** — not published |
+
+A Feature with no own docstring publishes the DTO class name. That is enough to call; it is not enough for an LLM to choose the right tool.
+
+MCP HTTP is still MCP (`tools/call`), not a REST API.
+
+Contract: **[`entrypoint_mcp`](docs/architecture/entrypoint_mcp.md)**. SIAT evaluation: **[use case](docs/architecture/entrypoint_mcp_use_case.md)**.
 
 ## 🔑 Key Features of the Sincpro Framework
 
@@ -188,6 +259,12 @@ class PaymentFeature(Feature):
 
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
 - Improves development efficiency and reliability.
+
+### `entrypoint_mcp`
+
+- One line publishes the bus as MCP tools: `build_mcp_server(instance).run()`.
+- Features and ApplicationServices become typed tools. Docstrings are the LLM context.
+- Domain code stays host-agnostic. This extra is MCP only.
 
 ### Observability (tracing + errors)
 
@@ -580,6 +657,7 @@ maintainability.
 
 - **Features**: Handle specific, self-contained business actions.
 - **ApplicationServices**: Orchestrate multiple features for cohesive workflows.
+- **`entrypoint_mcp`**: Publish that catalog as MCP tools (`sincpro-framework[mcp]`).
 
 This structured approach ensures high-quality, maintainable software that can adapt to evolving business needs. 🚀
 

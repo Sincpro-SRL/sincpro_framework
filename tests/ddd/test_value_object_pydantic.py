@@ -268,3 +268,29 @@ class TestBothAPIsInPydantic:
 
         assert NewModel(email="  HI@X.COM  ").email == "hi@x.com"
         assert OldModel(email="  HI@X.COM  ").email == "hi@x.com"
+
+
+class TestValueObjectJsonSchema:
+    """JSON Schema is what MCP / agents see: primitive type + domain title."""
+
+    def test_schema_is_primitive_with_value_object_title(self):
+        class PaymentDTO(BaseModel):
+            order_id: UserIdVO
+            email: EmailVO
+            amount: AmountVO
+
+        schema = PaymentDTO.model_json_schema()["properties"]
+        assert schema["order_id"]["type"] == "integer"
+        assert schema["order_id"]["title"] == "UserId"
+        assert schema["email"]["type"] == "string"
+        assert schema["email"]["title"] == "Email"
+        assert schema["amount"]["type"] == "number"
+        assert schema["amount"]["title"] == "Amount"
+
+    def test_json_payload_hydrates_and_validate_fn_runs(self):
+        class PaymentDTO(BaseModel):
+            order_id: UserIdVO
+            email: EmailVO
+
+        payment = PaymentDTO.model_validate({"order_id": -7, "email": "  A@B.COM "})
+        assert payment.model_dump(mode="json") == {"order_id": 7, "email": "a@b.com"}

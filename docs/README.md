@@ -223,7 +223,9 @@ docs/
 
 ### Architecture & Design
 
-- [**🏗️ Complete Architecture Guide**](./architecture/README.md)
+- [**🏗️ Complete Architecture Guide**](./architecture/ARCHITECTURE.md)
+- [**`entrypoint_mcp`**](./architecture/entrypoint_mcp.md) — bus catalog as MCP tools
+- [**SIAT use case**](./architecture/entrypoint_mcp_use_case.md) — CUF / CUFD / verify vs XML bytes
 - [**🎯 SIAT Integration Context**](./architecture/README.md#siat-integration-context)
 - [**🔄 CQRS Implementation Patterns**](./architecture/README.md#cqrs-patterns)
 
@@ -242,6 +244,7 @@ docs/
 - **Logging Infrastructure**: Structured logging with correlation
 - **Exception Handling**: Multi-layer error management
 - **Value Objects**: DDD pattern implementation
+- **`entrypoint_mcp`**: MCP host for the bus catalog
 
 ---
 

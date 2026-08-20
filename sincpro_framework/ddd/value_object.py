@@ -32,6 +32,14 @@ def _build_value_object_type(
                 ]
             )
 
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: Any, handler: Any
+        ) -> dict[str, Any]:
+            json_schema = handler(core_schema)
+            json_schema["title"] = name
+            return json_schema
+
     _ValueObjectType.__name__ = name
     _ValueObjectType.__qualname__ = name
     _ValueObjectType.__module__ = module

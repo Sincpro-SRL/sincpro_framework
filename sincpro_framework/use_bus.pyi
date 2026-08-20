@@ -60,6 +60,7 @@ class UseFramework(ContextMixin):
     feature_error_handler: ErrorHandler | None
     app_service_error_handler: ErrorHandler | None
     was_initialized: bool
+    _logger_name: str
     # Override the parent bus type to allow None during initialization
     bus: FrameworkBus | None  # type: ignore[override]
 
