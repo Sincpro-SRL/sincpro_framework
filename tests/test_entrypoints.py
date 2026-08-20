@@ -1,6 +1,9 @@
 """entrypoint_mcp: catalog, MCP host, Field descriptions, Value Object JSON roundtrip."""
 
 import inspect
+import json
+from typing import Any
+from uuid import uuid4
 
 from pydantic import Field
 
@@ -54,6 +57,37 @@ class OrchestrateCharge(DataTransferObject):
     amount: float
 
 
+class ScheduleTask(DataTransferObject):
+    """Queue a task with optional metadata."""
+
+    name: str
+    tags: list[str] = Field(default_factory=list)
+    token: str = Field(default_factory=lambda: uuid4().hex)
+    retries: int = 3
+
+
+class ScheduleTaskResponse(DataTransferObject):
+    name: str
+    tags: list[str]
+    token: str
+    retries: int
+
+
+class SoapLike:
+    """Stand-in for a Zeep object kept on an Any field."""
+
+
+class ReportRaw(DataTransferObject):
+    """Return a response that carries a non-JSON object."""
+
+    label: str
+
+
+class ReportRawResponse(DataTransferObject):
+    label: str
+    raw_response: Any = None
+
+
 def _build_framework() -> UseFramework:
     framework = UseFramework("entrypoint-test", log_after_execution=False)
 
@@ -87,6 +121,22 @@ def _build_framework() -> UseFramework:
                 ChargePayment(nit=dto.nit, email=dto.email, amount=dto.amount),
                 ChargePaymentResponse,
             )
+
+    @framework.feature(ScheduleTask)
+    class ScheduleTaskFeature(Feature):
+        """Queue a task, echoing the defaults the DTO resolved."""
+
+        def execute(self, dto: ScheduleTask) -> ScheduleTaskResponse:
+            return ScheduleTaskResponse(
+                name=dto.name, tags=dto.tags, token=dto.token, retries=dto.retries
+            )
+
+    @framework.feature(ReportRaw)
+    class ReportRawFeature(Feature):
+        """Respond with a SOAP-like object on an Any field."""
+
+        def execute(self, dto: ReportRaw) -> ReportRawResponse:
+            return ReportRawResponse(label=dto.label, raw_response=SoapLike())
 
     framework.build_root_bus()
     return framework
@@ -217,3 +267,51 @@ def test_value_object_title_in_input_schema():
     assert nit_schema["type"] == "integer"
     assert email_schema["title"] == "Email"
     assert email_schema["type"] == "string"
+
+
+def test_default_factory_field_stays_optional_and_runs_per_call():
+    """A default_factory must not be frozen into the signature as a fixed value."""
+    ops = Entrypoint(_build_framework()).to_callables()
+
+    first = ops["ScheduleTask"]({"name": "sync"})
+    second = ops["ScheduleTask"]({"name": "sync"})
+
+    assert first["tags"] == []
+    assert first["retries"] == 3
+    assert first["token"] != second["token"]
+
+
+def test_default_factory_field_is_not_required_in_published_schema():
+    tools = {tool.name: tool for tool in Entrypoint(_build_framework()).tools()}
+    fn = fastmcp_callable(tools["ScheduleTask"])
+    parameters = inspect.signature(fn).parameters
+
+    assert parameters["retries"].default == 3
+    assert parameters["name"].default is inspect.Parameter.empty
+
+    try:
+        import anyio
+        from fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
+    except ImportError:
+        return
+
+    server = FastMCP("schema-check")
+    server.tool(fn, name="ScheduleTask", description="test")
+
+    async def published_schema() -> dict:
+        published = await server.list_tools()
+        return published[0].parameters
+
+    schema = anyio.run(published_schema)
+    assert schema["required"] == ["name"]
+    assert set(schema["properties"]) == {"name", "tags", "token", "retries"}
+
+
+def test_non_json_response_is_coerced_and_keeps_the_other_fields():
+    ops = Entrypoint(_build_framework()).to_callables()
+
+    result = ops["ReportRaw"]({"label": "monthly"})
+
+    assert result["label"] == "monthly"
+    assert isinstance(result["raw_response"], str)
+    assert json.dumps(result)

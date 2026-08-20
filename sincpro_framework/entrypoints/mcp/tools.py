@@ -1,12 +1,14 @@
 """Generate MCP tools from a UseFramework bus."""
 
 import inspect
+import json
 from collections.abc import Callable
 from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel
 
 from sincpro_framework.sincpro_abstractions import DataTransferObject
+from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
 BINARY_TYPES = (bytes, bytearray, memoryview)
@@ -62,13 +64,33 @@ def dto_json_schema(dto_type: type[DataTransferObject]) -> dict[str, Any]:
         return {"type": "object", "title": dto_type.__name__}
 
 
+def json_safe_dict(payload: dict[str, Any], source: str) -> dict[str, Any]:
+    """Guarantee the MCP host can serialize the payload.
+
+    Pydantic keeps arbitrary objects (a Zeep SOAP response on an ``Any`` field) in
+    the dump instead of raising, so the failure would otherwise surface inside the
+    MCP host, after the Feature already ran its side effect.
+
+    1. Return the payload untouched when json.dumps accepts it.
+    2. Else stringify the offending leaves and warn naming the response.
+    3. Final: a dict json.dumps accepts, with the JSON-safe keys intact.
+    """
+    try:
+        json.dumps(payload)
+        return payload
+    except (TypeError, ValueError):
+        logger.warning("Non-JSON value in [%s] response: coerced to string", source)
+        return json.loads(json.dumps(payload, default=str))
+
+
 def dump_json_result(result: Any) -> dict[str, Any]:
     """Turn a bus response into a JSON object for MCP.
 
     1. None becomes {}.
     2. A Pydantic model dumps in JSON mode; fall back to Python dump if that fails.
     3. A dict passes through; any other value is wrapped as {result: value}.
-    4. Final: a dict FastMCP can serialize.
+    4. Coerce whatever is left into a JSON-serializable dict.
+    5. Final: a dict FastMCP can serialize.
     """
     if result is None:
         return {}
@@ -77,10 +99,12 @@ def dump_json_result(result: Any) -> dict[str, Any]:
             dumped = result.model_dump(mode="json")
         except Exception:
             dumped = result.model_dump()
-        return dumped if isinstance(dumped, dict) else {"result": dumped}
-    if isinstance(result, dict):
-        return result
-    return {"result": result}
+        payload = dumped if isinstance(dumped, dict) else {"result": dumped}
+    elif isinstance(result, dict):
+        payload = result
+    else:
+        payload = {"result": result}
+    return json_safe_dict(payload, type(result).__name__)
 
 
 def is_binary_annotation(annotation: Any) -> bool:

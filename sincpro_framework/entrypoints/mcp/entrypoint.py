@@ -2,9 +2,9 @@
 
 import inspect
 from collections.abc import Callable
-from typing import Any, Self
+from typing import Annotated, Any, Self
 
-from pydantic_core import PydanticUndefined
+from pydantic import Field
 
 from sincpro_framework.entrypoints.mcp.tools import (
     Tool,
@@ -24,7 +24,9 @@ def fastmcp_callable(tool: Tool):
     2. Stamp a keyword-only signature from DTO fields so FastMCP sees Pydantic types
        (Value Objects, Field descriptions) instead of a nested wrapper object.
         2.1 Required fields have no default.
-        2.2 Optional fields keep the Pydantic default.
+        2.2 A default_factory travels as Annotated metadata, never as a value: a
+            concrete default would freeze uuid4/datetime.now at import time.
+        2.3 Any other optional field keeps the Pydantic default.
     3. Stamp name and docstring from the Tool (FastMCP infers tool name / description).
     4. Final: a function for mcp.tool(fn, name=..., description=...).
     """
@@ -35,17 +37,21 @@ def fastmcp_callable(tool: Tool):
     parameters: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {"return": dict[str, Any]}
     for field_name, field_info in tool.dto.model_fields.items():
-        annotations[field_name] = field_info.annotation
-        if field_info.is_required() or field_info.default is PydanticUndefined:
-            default: Any = inspect.Parameter.empty
-        else:
+        annotation = field_info.annotation
+        default: Any = inspect.Parameter.empty
+        if field_info.default_factory is not None:
+            annotation = Annotated[
+                annotation, Field(default_factory=field_info.default_factory)
+            ]
+        elif not field_info.is_required():
             default = field_info.default
+        annotations[field_name] = annotation
         parameters.append(
             inspect.Parameter(
                 field_name,
                 inspect.Parameter.KEYWORD_ONLY,
                 default=default,
-                annotation=field_info.annotation,
+                annotation=annotation,
             )
         )
     tool_fn.__name__ = tool.name
