@@ -130,6 +130,7 @@ class RpcGateway:
     def app(self) -> Any:
         """ASGI app: POST /rpc (JSON-RPC 2.0) and GET /openrpc.json (OpenRPC 1.4)."""
         try:
+            # pyright: ignore[reportMissingImports]
             from starlette.applications import (
                 Starlette,
             )  # pyright: ignore[reportMissingImports]
