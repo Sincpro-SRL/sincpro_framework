@@ -1,11 +1,14 @@
-"""JSON-RPC 2.0 dispatch over the bus catalog."""
+"""JSON-RPC 2.0 wire: dispatch over the shared catalog, and the OpenRPC 1.4 document."""
 
+import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.entrypoints.catalog import Operation, invoke
+from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
+from sincpro_framework.entrypoints.const import Scalar
+from sincpro_framework.entrypoints.scalar_executor import execute
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
@@ -15,10 +18,33 @@ METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 DISCOVER_METHOD = "rpc.discover"
+OPENRPC_VERSION = "1.4.0"
+
+MethodIndex = dict[str, tuple[str, UseFramework, PackedFeatureOrAppService]]
+
+
+class MethodNotFound(Exception):
+    def __init__(self, method: str):
+        self.method = method
+        super().__init__(method)
+
+
+class InvalidParams(Exception):
+    def __init__(self, data: Any):
+        self.data = data
+        super().__init__(str(data))
 
 
 def method_name(instance: str, layer: str, dto_name: str) -> str:
     return f"{instance}.{layer}.{dto_name}"
+
+
+def json_safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:
+    """Pydantic puts the raw exception in ctx.error for value_error types (any
+    ValueObject validate_fn that rejects input). json.dumps on that raises, so the
+    JSON-RPC error envelope would crash the host instead of returning -32602.
+    """
+    return json.loads(json.dumps(error.errors(), default=str))
 
 
 def jsonrpc_error(
@@ -35,7 +61,7 @@ def jsonrpc_result(request_id: Any, result: Any) -> dict[str, Any]:
 
 
 def dispatch_method(
-    methods: dict[str, tuple[UseFramework, Operation]],
+    methods: MethodIndex,
     discover: Callable[[], dict[str, Any]],
     method: str,
     params: Any,
@@ -44,9 +70,9 @@ def dispatch_method(
     """Execute one JSON-RPC method against the catalog.
 
     1. rpc.discover returns the OpenRPC document (no params).
-    2. Unknown method → -32601.
+    2. Unknown method → MethodNotFound.
     3. Params must be a by-name object (or omitted). Arrays are invalid.
-    4. Pydantic ValidationError → -32602. Any other exception → -32603.
+    4. Pydantic ValidationError → InvalidParams. Any other exception propagates.
     5. Final: the JSON object the Feature / ApplicationService returned.
     """
     if method == DISCOVER_METHOD:
@@ -55,32 +81,20 @@ def dispatch_method(
     if bound is None:
         raise MethodNotFound(method)
     if params is None:
-        payload: dict[str, Any] = {}
+        payload: Scalar = {}
     elif isinstance(params, dict):
         payload = params
     else:
         raise InvalidParams("params must be a JSON object (by-name)")
-    framework, operation = bound
+    _alias, framework, operation = bound
     try:
-        return invoke(framework, operation.run, payload, context)
+        return execute(framework, operation.run, payload, context)
     except ValidationError as error:
-        raise InvalidParams(error.errors()) from error
-
-
-class MethodNotFound(Exception):
-    def __init__(self, method: str):
-        self.method = method
-        super().__init__(method)
-
-
-class InvalidParams(Exception):
-    def __init__(self, data: Any):
-        self.data = data
-        super().__init__(str(data))
+        raise InvalidParams(json_safe_validation_errors(error)) from error
 
 
 def handle_single(
-    methods: dict[str, tuple[UseFramework, Operation]],
+    methods: MethodIndex,
     discover: Callable[[], dict[str, Any]],
     request: Any,
     inherited_context: Mapping[str, Any] | None = None,
@@ -122,7 +136,7 @@ def handle_single(
 
 
 def handle_payload(
-    methods: dict[str, tuple[UseFramework, Operation]],
+    methods: MethodIndex,
     discover: Callable[[], dict[str, Any]],
     payload: Any,
     inherited_context: Mapping[str, Any] | None = None,
@@ -143,3 +157,71 @@ def handle_payload(
         visible = [item for item in replies if item is not None]
         return visible or None
     return handle_single(methods, discover, payload, inherited_context)
+
+
+def content_descriptors(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    """Turn a DTO JSON Schema object into OpenRPC by-name params.
+
+    1. Read properties and required from the DTO schema.
+    2. Each field becomes a Content Descriptor (name, required, schema).
+    3. Final: descriptors in the same order Pydantic emitted the properties.
+    """
+    properties = schema.get("properties") or {}
+    required = set(schema.get("required") or [])
+    descriptors: list[dict[str, Any]] = []
+    for name, field_schema in properties.items():
+        if not isinstance(field_schema, dict):
+            continue
+        descriptors.append(
+            {
+                "name": name,
+                "required": name in required,
+                "schema": field_schema,
+            }
+        )
+    return descriptors
+
+
+def method_object(
+    name: str, operation: PackedFeatureOrAppService, instance: str
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "summary": operation.description.split("\n", 1)[0],
+        "description": operation.description,
+        "tags": [{"name": instance}, {"name": operation.layer}],
+        "paramStructure": "by-name",
+        "params": content_descriptors(operation.json_schema),
+        "result": {
+            "name": "result",
+            "schema": {"type": "object"},
+        },
+        "x-sincpro-instance": instance,
+        "x-sincpro-layer": operation.layer,
+        "x-sincpro-dto": operation.name,
+    }
+
+
+def discover_method_object() -> dict[str, Any]:
+    return {
+        "name": DISCOVER_METHOD,
+        "summary": "OpenRPC service discovery",
+        "description": "Return this server's OpenRPC document.",
+        "params": [],
+        "result": {
+            "name": "OpenRPC Document",
+            "schema": {"type": "object"},
+        },
+    }
+
+
+def openrpc_document(
+    title: str,
+    methods: list[dict[str, Any]],
+    version: str = "1.0.0",
+) -> dict[str, Any]:
+    return {
+        "openrpc": OPENRPC_VERSION,
+        "info": {"title": title, "version": version},
+        "methods": [discover_method_object(), *methods],
+    }

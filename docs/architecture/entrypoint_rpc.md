@@ -15,7 +15,7 @@ Python remains: framework(dto)                                ValueObject
 
 Package: `sincpro_framework.entrypoints.rpc` (`RpcGateway`, `build_rpc_app`). Feature name: **`entrypoint_rpc`**.
 
-The bus projection is shared: `Catalog` / `Operation` in [`catalog.py`](../../sincpro_framework/entrypoints/catalog.py). MCP and JSON-RPC only add a wire. REST/CLI should do the same — do not copy `collect_operations`.
+The bus projection is shared: `sincpro_framework.introspection` describes what exists (`FeatureOrAppServiceMetadata`/`DtoMetadata`), `Catalog` / `PackedFeatureOrAppService` in [`catalog.py`](../../sincpro_framework/entrypoints/catalog.py) packages it for JSON. MCP and JSON-RPC only add a wire. REST/CLI should do the same — reuse `Catalog`, do not reimplement it.
 
 MCP stays `entrypoint_mcp`. Do not share a port with FastMCP — MCP already uses JSON-RPC methods `tools/list` / `tools/call`.
 
@@ -141,6 +141,24 @@ Notifications (no `id`) run the Feature and return HTTP 204. Batch is JSON-RPC 2
 | `build_rpc_app(instances)` | Same as `RpcGateway(...).app()`. |
 
 `rpc.discover` is also a JSON-RPC method (OpenRPC service discovery).
+
+---
+
+## Module map
+
+```
+sincpro_framework/
+├── introspection/         # shared: bus → FeatureOrAppServiceMetadata/DtoMetadata (name, type, own-docstring description)
+└── entrypoints/
+    ├── scalar_executor.py # shared: Scalar (dict) in/out execution against a UseFramework
+    ├── catalog.py         # shared: FeatureOrAppServiceMetadata → PackedFeatureOrAppService (JSON schema, binary check)
+    └── rpc/               # entrypoint_rpc
+        ├── __init__.py    # re-exports RpcGateway, build_rpc_app
+        ├── jrpc.py        # JSON-RPC-specific wire: dispatch, errors, OpenRPC document
+        └── entrypoint.py  # orchestrates catalog.py + jrpc.py — the RpcGateway facade
+```
+
+Same split as `entrypoint_mcp`: `entrypoint.py` orchestrates, `jrpc.py` holds everything specific to the JSON-RPC wire. A future protocol under `entrypoints/` follows the same two-file recipe. `jrpc.py`'s `execute()` (context/tracing around a call) comes from `scalar_executor.py`, not from `catalog.py` — it is orthogonal to packaging metadata into a wire DTO, and MCP does not need it (FastMCP has no per-request context sibling field the way JSON-RPC does).
 
 ---
 

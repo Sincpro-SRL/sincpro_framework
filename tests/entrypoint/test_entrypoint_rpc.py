@@ -1,10 +1,12 @@
 """entrypoint_rpc: JSON-RPC 2.0 methods instance.layer.Dto, context, OpenRPC discover."""
 
+import json
 from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework.ddd import ValueObject
 from sincpro_framework.entrypoints.rpc import RpcGateway
-from sincpro_framework.entrypoints.rpc.protocol import (
+from sincpro_framework.entrypoints.rpc.jrpc import (
     DISCOVER_METHOD,
     INVALID_PARAMS,
     METHOD_NOT_FOUND,
@@ -61,7 +63,24 @@ class SendBinaryPackageResponse(DataTransferObject):
     ok: bool
 
 
-def _instance(name: str, *, with_app_service: bool = False) -> UseFramework:
+def _positive(value: int) -> int:
+    if value < 0:
+        raise ValueError("must be positive")
+    return value
+
+
+PositiveAmount = ValueObject(int, _positive, name="PositiveAmount")
+
+
+class ChargeWithVO(DataTransferObject):
+    amount: PositiveAmount
+
+
+class ChargeWithVOResponse(DataTransferObject):
+    amount: PositiveAmount
+
+
+def _instance(name: str, with_app_service: bool = False) -> UseFramework:
     framework = UseFramework(name, log_after_execution=False)
 
     @framework.feature(ValidateCard)
@@ -89,6 +108,11 @@ def _instance(name: str, *, with_app_service: bool = False) -> UseFramework:
     class SendBinaryPackageFeature(Feature):
         def execute(self, dto: SendBinaryPackage) -> SendBinaryPackageResponse:
             return SendBinaryPackageResponse(ok=bool(dto.payload))
+
+    @framework.feature(ChargeWithVO)
+    class ChargeWithVOFeature(Feature):
+        def execute(self, dto: ChargeWithVO) -> ChargeWithVOResponse:
+            return ChargeWithVOResponse(amount=dto.amount)
 
     if with_app_service:
 
@@ -209,6 +233,27 @@ def test_invalid_params_is_32602():
     )
 
     assert reply["error"]["code"] == INVALID_PARAMS
+
+
+def test_value_object_rejection_stays_json_safe():
+    """A ValueObject validate_fn raising ValueError puts the exception itself in
+    ctx.error (pydantic ValidationError.errors()). The -32602 envelope must not
+    leak that raw exception, or json.dumps on the reply would crash the host.
+    """
+    gateway = RpcGateway({"pay": _instance("pay")})
+    reply = rpc_object(
+        gateway.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "pay.features.ChargeWithVO",
+                "params": {"amount": -5},
+            }
+        )
+    )
+
+    assert reply["error"]["code"] == INVALID_PARAMS
+    assert json.dumps(reply)
 
 
 def test_unknown_method_is_32601():

@@ -5,20 +5,16 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any, Self
 
-from sincpro_framework.entrypoints.catalog import (
-    LAYER_APP_SERVICES,
-    LAYER_FEATURES,
-    Catalog,
-    Operation,
-    Wrapper,
-    layer_for_kind,
-)
-from sincpro_framework.entrypoints.rpc.openrpc import method_object, openrpc_document
-from sincpro_framework.entrypoints.rpc.protocol import (
+from sincpro_framework.entrypoints.catalog import Catalog
+from sincpro_framework.entrypoints.const import Layer, Wrapper
+from sincpro_framework.entrypoints.rpc.jrpc import (
     PARSE_ERROR,
+    MethodIndex,
     handle_payload,
     jsonrpc_error,
     method_name,
+    method_object,
+    openrpc_document,
 )
 from sincpro_framework.use_bus import UseFramework
 
@@ -26,7 +22,7 @@ RPC_MISSING = (
     "Starlette/uvicorn is not installed. Install with: pip install sincpro-framework[rpc]"
 )
 ALIAS_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-DEFAULT_LAYERS = (LAYER_APP_SERVICES, LAYER_FEATURES)
+DEFAULT_LAYERS = (Layer.APP_SERVICES, Layer.FEATURES)
 
 
 def validate_alias(alias: str) -> str:
@@ -35,41 +31,33 @@ def validate_alias(alias: str) -> str:
     return alias
 
 
-def merge_http_context(
-    headers: Mapping[str, str], body_context: Mapping[str, Any] | None
-) -> dict[str, Any]:
+def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
     """Fold transport headers into the framework context without touching DTO params.
 
-    1. Copy X-Correlation-Id into correlation_id when the body did not set it.
-    2. Copy W3C traceparent into carrier so with_trace can adopt the parent.
-    3. Final: a context dict for handle_payload; empty becomes {}.
+    1. correlation_id from X-Correlation-Id (body context, merged later, still wins).
+    2. carrier.traceparent from the W3C header, for OTel parent adoption.
+    3. Final: a context dict handle_payload treats as inherited; empty becomes {}.
     """
-    merged = dict(body_context or {})
+    merged: dict[str, Any] = {}
     correlation = headers.get("x-correlation-id")
-    if correlation and "correlation_id" not in merged:
+    if correlation:
         merged["correlation_id"] = correlation
     traceparent = headers.get("traceparent")
     if traceparent:
-        carrier = dict(merged.get("carrier") or {})
-        carrier.setdefault("traceparent", traceparent)
-        merged["carrier"] = carrier
+        merged["carrier"] = {"traceparent": traceparent}
     return merged
 
 
-def index_methods(
-    catalogs: Mapping[str, Catalog],
-    layers: Iterable[str],
-) -> dict[str, tuple[UseFramework, Operation]]:
-    """Index published operations as instance.layer.DtoName."""
+def index_methods(catalogs: Mapping[str, Catalog], layers: Iterable[str]) -> MethodIndex:
+    """Index JSON-safe Features/ApplicationServices as instance.layer.DtoName."""
     allowed = set(layers)
-    methods: dict[str, tuple[UseFramework, Operation]] = {}
+    methods: MethodIndex = {}
     for alias, catalog in catalogs.items():
-        for operation in catalog.published():
-            layer = layer_for_kind(operation.kind)
-            if layer not in allowed:
+        for operation in catalog.get_scalar_use_cases(filter_binaries_schema=True):
+            if operation.layer not in allowed:
                 continue
-            name = method_name(alias, layer, operation.name)
-            methods[name] = (catalog.framework, operation)
+            name = method_name(alias, operation.layer, operation.name)
+            methods[name] = (alias, catalog.framework_instance, operation)
     return methods
 
 
@@ -79,7 +67,6 @@ class RpcGateway:
     def __init__(
         self,
         instances: Mapping[str, UseFramework] | None = None,
-        *,
         layers: Iterable[str] = DEFAULT_LAYERS,
         title: str = "sincpro-rpc",
         version: str = "1.0.0",
@@ -88,19 +75,18 @@ class RpcGateway:
         self._layers = tuple(layers)
         self._title = title
         self._version = version
-        for alias, framework in (instances or {}).items():
-            self.add(alias, framework)
+        for alias, framework_instance in (instances or {}).items():
+            self.add(alias, framework_instance)
 
     def add(
         self,
         alias: str,
-        framework: UseFramework,
-        *,
+        framework_instance: UseFramework,
         include: Iterable[type | str] | None = None,
         exclude: Iterable[type | str] | None = None,
         wrap: Mapping[type | str, Wrapper] | None = None,
     ) -> Self:
-        catalog = Catalog(framework)
+        catalog = Catalog(framework_instance)
         if include is not None:
             catalog.include(*include)
         if exclude is not None:
@@ -110,19 +96,19 @@ class RpcGateway:
         self._catalogs[validate_alias(alias)] = catalog
         return self
 
-    def methods(self) -> dict[str, tuple[UseFramework, Operation]]:
+    def methods(self) -> MethodIndex:
         return index_methods(self._catalogs, self._layers)
 
     def discover(self) -> dict[str, Any]:
-        catalog = self.methods()
+        indexed = self.methods()
         published = [
-            method_object(name, operation, alias_of(name))
-            for name, (_framework, operation) in catalog.items()
+            method_object(name, operation, alias)
+            for name, (alias, _framework, operation) in indexed.items()
         ]
         return openrpc_document(self._title, published, version=self._version)
 
     def handle(
-        self, payload: Any, *, context: Mapping[str, Any] | None = None
+        self, payload: Any, context: Mapping[str, Any] | None = None
     ) -> dict[str, Any] | list[Any] | None:
         indexed = self.methods()
         return handle_payload(indexed, self.discover, payload, context)
@@ -153,7 +139,7 @@ class RpcGateway:
                 return JSONResponse(
                     jsonrpc_error(PARSE_ERROR, "Parse error"), status_code=200
                 )
-            header_context = merge_http_context(request.headers, None)
+            header_context = merge_http_context(request.headers)
             reply = gateway.handle(payload, context=header_context or None)
             if reply is None:
                 return Response(status_code=204)
@@ -178,13 +164,8 @@ class RpcGateway:
         uvicorn.run(self.app(), host=host, port=port, **kwargs)
 
 
-def alias_of(method: str) -> str:
-    return method.split(".", 1)[0]
-
-
 def build_rpc_app(
     instances: Mapping[str, UseFramework],
-    *,
     layers: Iterable[str] = DEFAULT_LAYERS,
     title: str = "sincpro-rpc",
     version: str = "1.0.0",

@@ -9,9 +9,9 @@ from pydantic import Field
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject
+from sincpro_framework.entrypoints.json_utils import dto_is_json_serializable
 from sincpro_framework.entrypoints.mcp import Entrypoint, build_mcp_server
-from sincpro_framework.entrypoints.mcp.entrypoint import fastmcp_callable
-from sincpro_framework.entrypoints.mcp.tools import dto_is_json_serializable
+from sincpro_framework.entrypoints.mcp.mcp import fastmcp_callable
 
 NIT = ValueObject(int, lambda v: abs(v), name="NIT")
 Email = ValueObject(str, lambda v: v.strip().lower(), name="Email")
@@ -145,13 +145,13 @@ def _build_framework() -> UseFramework:
 def test_tools_include_features_and_application_services():
     entrypoint = Entrypoint(_build_framework())
     names = {tool.name for tool in entrypoint.tools()}
-    kinds = {tool.name: tool.kind for tool in entrypoint.tools()}
+    layers = {tool.name: tool.layer for tool in entrypoint.tools()}
 
     assert "ValidateCard" in names
     assert "ChargePayment" in names
     assert "OrchestrateCharge" in names
-    assert kinds["ValidateCard"] == "feature"
-    assert kinds["OrchestrateCharge"] == "application_service"
+    assert layers["ValidateCard"] == "features"
+    assert layers["OrchestrateCharge"] == "app_services"
 
 
 def test_own_docstring_not_feature_base():
