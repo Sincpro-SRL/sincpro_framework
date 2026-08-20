@@ -8,7 +8,8 @@ from sincpro_framework.generate_documentation.domain.models import (
     IntrospectionResult,
     MiddlewareMetadata,
 )
-from sincpro_framework.use_bus import FrameworkBus, UseFramework
+from sincpro_framework.introspection import app_services, dtos, features
+from sincpro_framework.use_bus import UseFramework
 
 
 class SincproComponentFinder:
@@ -17,11 +18,6 @@ class SincproComponentFinder:
     def introspect(self, framework_instance: UseFramework) -> IntrospectionResult:
         """Realiza introspección completa del framework"""
         self.framework = framework_instance
-
-        if not self.framework.was_initialized:
-            raise ValueError("Framework must be built before introspection")
-
-        self.bus: FrameworkBus = self.framework.bus  # type: ignore[assignment]
 
         return IntrospectionResult(
             framework_name=self.framework._logger_name,  # type: ignore[attr-defined]
@@ -33,14 +29,16 @@ class SincproComponentFinder:
         )
 
     def extract_dtos(self) -> DTOMetadata:
-        return DTOMetadata(classes=list(self.bus.dto_registry.values()))
+        return DTOMetadata(classes=[info.type for info in dtos(self.framework).values()])
 
     def extract_features(self) -> FeatureMetadata:
-        return FeatureMetadata(objects=list(self.bus.feature_bus.feature_registry.values()))
+        return FeatureMetadata(
+            objects=[info.instance for info in features(self.framework).values()]
+        )
 
     def extract_app_services(self) -> ApplicationServiceMetadata:
         return ApplicationServiceMetadata(
-            objects=list(self.bus.app_service_bus.app_service_registry.values())
+            objects=[info.instance for info in app_services(self.framework).values()]
         )
 
     def extract_injected_dependencies(self) -> DependencyMetadata:

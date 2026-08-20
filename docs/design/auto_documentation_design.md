@@ -1331,20 +1331,23 @@ import pytest
 from sincpro_framework import UseFramework
 from sincpro_framework.auto_docs.introspection.framework_inspector import FrameworkRegistryInspector
 
+
 def test_framework_inspector_creation():
     framework = UseFramework("test")
     inspector = FrameworkRegistryInspector(framework)
-    assert inspector.framework == framework
+    assert inspector.framework_instance == framework
+
 
 def test_introspection_with_features():
     # Crear framework con features de prueba
     framework = create_test_framework_with_features()
-    
+
     inspector = FrameworkRegistryInspector(framework)
     result = inspector.inspect_complete_framework()
-    
+
     assert len(result.features) > 0
     assert result.framework_name == "test"
+
 
 def test_dto_metadata_extraction():
     # Test específico para extracción de DTOs

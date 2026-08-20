@@ -2,7 +2,7 @@
 
 **`entrypoint_mcp`** is the shipped feature: take a `UseFramework` instance and publish its Features / ApplicationServices as MCP tools. Docstrings contextualize the LLM (`tools/list`); `tools/call` is `framework(dto)`.
 
-This is **not** a generic “entrypoints” product. REST and RPC are other hosts, not this extra.
+This is **not** a generic “entrypoints” product. REST is another host. JSON-RPC is **[`entrypoint_rpc`](./entrypoint_rpc.md)**.
 
 The domain does not know MCP exists. There is no `expose_mcp=True` on a Feature. The bus is the catalog; `entrypoint_mcp` is the MCP host.
 
@@ -20,6 +20,8 @@ Real SDK evaluation (SIAT SOAP, not Greeting): **[entrypoint_mcp_use_case.md](./
 `build_documentation(...)` is a **read-only catalog**. `entrypoint_mcp` is **live** `tools/call`. Both read the same registries.
 
 Package path: `sincpro_framework.entrypoints.mcp` (`build_mcp_server`, `Entrypoint`). The **feature name** in docs and product language is `entrypoint_mcp`.
+
+The bus projection is `Catalog` / `PackedFeatureOrAppService` (`entrypoints/catalog.py`), built on `sincpro_framework.introspection` (features/app_services registries — shared with `generate_documentation`). This host only binds FastMCP.
 
 ---
 
@@ -59,32 +61,32 @@ pip install sincpro-framework[mcp]
 |---|---|
 | `build_mcp_server(instance)` | Composition root. Collect tools, skip binary DTOs, return a FastMCP server. |
 | `Entrypoint(instance)` | Same projection with `include` / `exclude` / `wrap`. |
-| `Entrypoint.tools()` | In-process `Tool` DTOs (tests, LangChain). |
+| `Entrypoint.tools()` | In-process `PackedFeatureOrAppService` DTOs (tests, LangChain). |
 | `Entrypoint.to_callables()` | `name → payload dict → result dict`. No FastMCP required. |
 | `Entrypoint.run(**kwargs)` | Start the host. Omit transport = stdio. `transport="http"` = MCP Streamable HTTP at `/mcp` (not REST). |
 
 ---
 
-## Projection: bus → Tool
+## Projection: bus → PackedFeatureOrAppService
 
-A `Tool` is a `DataTransferObject` that describes one registry entry for MCP:
+A `PackedFeatureOrAppService` is a `DataTransferObject` that packages one `introspection.FeatureOrAppServiceMetadata` for a JSON wire (shared with `entrypoint_rpc`; this host maps it to an MCP tool):
 
 | Field | Source |
 |---|---|
 | `name` | DTO class name (`IssueInvoice`) — the bus key |
-| `kind` | `"feature"` or `"application_service"` |
+| `layer` | `"features"` or `"app_services"` — the bus's own vocabulary |
 | `description` | LLM instruction (see below) |
 | `dto` | Input DTO type |
 | `json_schema` | `dto.model_json_schema()` |
 | `run` | Bound callable: JSON object → `framework(dto)` → JSON object |
 
-Both Features **and** ApplicationServices are tools by default. Value Objects are **field types**, never tools.
+Both Features **and** ApplicationServices become MCP tools by default. Value Objects are **field types**, never tools.
 
 ### Instruction (description)
 
 The host must not publish the inherited `Feature` / `ApplicationService` base essay. Resolution:
 
-1. Handler class **own** docstring (`cls.__dict__['__doc__']`, not inherited).
+1. Feature/ApplicationService class **own** docstring (`cls.__dict__['__doc__']`, not inherited).
 2. Else the `execute` method's **own** docstring.
 3. Else the input DTO's **own** docstring.
 4. Final: DTO class name.
@@ -138,12 +140,12 @@ sequenceDiagram
     participant F as Feature / AppService
 
     Agent->>Host: tools/list
-    Host->>EP: collect_tools (registries)
+    Host->>EP: Catalog.get_scalar_use_cases(filter_binaries_schema=True)
     EP-->>Host: name, description, JSON Schema
     Host-->>Agent: tools
 
     Agent->>Host: tools/call IssueInvoice {…}
-    Host->>EP: Tool.run(payload)
+    Host->>EP: PackedFeatureOrAppService.run(payload)
     EP->>EP: DTO.model_validate (VOs run here)
     EP->>Bus: framework(dto)
     Bus->>F: execute
@@ -175,15 +177,21 @@ There is **no runtime on/off flag** in this iteration. Shipping MCP is a process
 ## Module map
 
 ```
-sincpro_framework/entrypoints/mcp/   # entrypoint_mcp
-├── __init__.py                      # re-exports Entrypoint, build_mcp_server
-├── tools.py                         # bus → Tool  (callees first, collect_tools last)
-└── entrypoint.py                    # FastMCP facade
+sincpro_framework/
+├── introspection/                    # shared: bus → FeatureOrAppServiceMetadata/DtoMetadata (name, type, own-docstring description)
+└── entrypoints/
+    ├── scalar_executor.py            # shared: Scalar (dict) in/out execution against a UseFramework
+    ├── json_utils.py                # shared: DTO JSON Schema + binary-field detection ($defs/$ref aware)
+    ├── catalog.py                    # shared: FeatureOrAppServiceMetadata → PackedFeatureOrAppService
+    └── mcp/                          # entrypoint_mcp
+        ├── __init__.py               # re-exports Entrypoint, build_mcp_server
+        ├── mcp.py                    # FastMCP-specific wire: fastmcp_callable
+        └── entrypoint.py             # orchestrates catalog.py + mcp.py — the FastMCP facade
 ```
 
 Callees above callers, public API last (`sincpro_coding_style` Principle 3). `__init__.py` files re-export only.
 
-`tools.py` projects the bus (usable without FastMCP). `entrypoint.py` is the FastMCP adapter: keyword-only signature from DTO fields so FastMCP advertises typed parameters.
+`introspection` describes what exists (own-docstring resolution lives there, not here). `scalar_executor.py` is the boundary that marshals a Scalar (`dict[str, Any]`) into a DTO call and back — `UseFramework.__call__` itself never learns about dicts or JSON, only typed DTOs; that stays a wire concern, isolated here rather than pushed into `use_bus.py`. `json_utils.py` answers one question — can this DTO travel as JSON — by walking Pydantic's `model_json_schema()` tree (`$defs`/`$ref`/`items`/`additionalProperties`/`anyOf` included, so a `bytes` field nested inside a submodel, list, dict, or Optional is still caught). `catalog.py` packages a described handler into a `PackedFeatureOrAppService` for a JSON wire using those two — it does no reflection on classes and no JSON Schema walking itself, and is usable without FastMCP, shared with `entrypoint_rpc`. `mcp.py` is the FastMCP-only wire: keyword-only signature from DTO fields so FastMCP advertises typed parameters. `entrypoint.py` is the thin orchestrator — every protocol under `entrypoints/` follows this same `entrypoint.py` + `{protocol}.py` split (see `entrypoint_rpc.md`).
 
 ---
 
@@ -192,7 +200,7 @@ Callees above callers, public API last (`sincpro_coding_style` Principle 3). `__
 | Rule | Why |
 |---|---|
 | No `expose_mcp` / transport flags on Feature or ApplicationService | Domain must not know the host (hexagonal). |
-| Do not put `Tool` / `Entrypoint` on `entrypoints/` root | Root is a namespace; this feature is `entrypoint_mcp`. |
+| Do not put FastMCP-specific code (`Entrypoint`, `fastmcp_callable`) on `entrypoints/` root | Root only holds the shared, protocol-agnostic `Catalog` / `PackedFeatureOrAppService`. |
 | No implementation in `__init__.py` | Re-exports only. |
 | Do not treat Value Objects as tools | They are field types; JSON hydrates them. |
 | Do not skip ApplicationServices | Both layers are tools by default. |
@@ -221,7 +229,7 @@ The extra is `fastmcp >= 3.0,<4` (lock: 3.4.7). FastMCP 4 is prerelease; do not 
 After `@framework.feature` / `@framework.app_service`, the bus already has the catalog. `entrypoint_mcp` does **not** invent a second schema. It builds a typed function whose signature is the DTO fields, then registers it with the FastMCP 3 public API:
 
 ```python
-mcp.tool(fn, name=dto_name, description=instruction, tags={kind})
+mcp.tool(fn, name=dto_name, description=instruction, tags={layer})
 ```
 
 That is the documented “direct function call” form (`server.tool(my_function, name="custom_name")`). FastMCP then:
@@ -234,7 +242,7 @@ That is the documented “direct function call” form (`server.tool(my_function
 
 Fields are flattened on purpose. A single parameter typed as the DTO (`def tool(payload: ChargePayment)`) would nest arguments under `payload` in MCP. Agents should fill `nit`, `email`, `amount` at the top level — the same shape as `framework(ChargePayment(...))`.
 
-`tags={kind}` is `"feature"` or `"application_service"`. FastMCP can filter with `include_tags` / `exclude_tags` on the server; we do not set that by default (full catalog).
+`tags={layer}` is `"features"` or `"app_services"`. FastMCP can filter with `include_tags` / `exclude_tags` on the server; we do not set that by default (full catalog).
 
 `.run()` with no args is stdio (Cursor / Claude Desktop / CLI). HTTP is still MCP:
 
