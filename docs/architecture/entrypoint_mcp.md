@@ -140,7 +140,7 @@ sequenceDiagram
     participant F as Feature / AppService
 
     Agent->>Host: tools/list
-    Host->>EP: Catalog.build_scalar_feature_and_app_services(filter_binaries_schema=True)
+    Host->>EP: Catalog.get_scalar_use_cases(filter_binaries_schema=True)
     EP-->>Host: name, description, JSON Schema
     Host-->>Agent: tools
 

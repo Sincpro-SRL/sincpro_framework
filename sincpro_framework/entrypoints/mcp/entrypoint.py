@@ -42,7 +42,7 @@ class Entrypoint:
         """Publish JSON-safe Features/ApplicationServices on a FastMCP server.
 
         1. Import FastMCP or raise with the extra-install hint.
-        2. Register catalog.build_scalar_feature_and_app_services(filter_binaries_schema=True)
+        2. Register catalog.get_scalar_use_cases(filter_binaries_schema=True)
            with mcp.tool(fn, name=..., description=..., tags=layer).
         3. Final: a FastMCP 3 instance ready to run (stdio by default).
         """

@@ -40,7 +40,7 @@ class Catalog:
 
     `include`/`exclude`/`wrap` narrow the DTO surface or decorate one `run` (auth,
     audit, extra logging). Hosts (MCP, JSON-RPC, REST, CLI) call
-    `build_scalar_feature_and_app_services(filter_binaries_schema=True)` and map
+    `get_scalar_use_cases(filter_binaries_schema=True)` and map
     the `PackedFeatureOrAppService` list to their wire.
     """
 
