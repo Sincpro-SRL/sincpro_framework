@@ -167,6 +167,25 @@ def test_framework_release_uses_package_version():
     )
 
 
+def test_detect_caller_library_version_falls_back_to_app_release_env(monkeypatch):
+    """A service entrypoint isn't an installed distribution — use APP_RELEASE."""
+    from sincpro_framework.tracing import sentry as sentry_mod
+
+    monkeypatch.setattr(sentry_mod, "_caller_distribution_version", lambda: "unknown")
+    monkeypatch.setenv("APP_RELEASE", "2026.08.21")
+
+    assert sentry_mod.detect_caller_library_version() == "2026.08.21"
+
+
+def test_detect_caller_library_version_without_app_release_env_is_unknown(monkeypatch):
+    from sincpro_framework.tracing import sentry as sentry_mod
+
+    monkeypatch.setattr(sentry_mod, "_caller_distribution_version", lambda: "unknown")
+    monkeypatch.delenv("APP_RELEASE", raising=False)
+
+    assert sentry_mod.detect_caller_library_version() == "unknown"
+
+
 def test_instance_release_is_app_name_and_library_version(monkeypatch):
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
