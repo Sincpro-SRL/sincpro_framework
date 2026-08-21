@@ -4,7 +4,9 @@ Independent from the host (Odoo, FastAPI):
 
 - Never calls ``sentry_sdk.init()`` — that would overwrite the host client
 - Uses an isolated ``Client`` whose ``release`` is the app release computed
-  at ``UseFramework`` init (``{app_name}:{library_version}``), not env vars
+  at ``UseFramework`` init (``{app_name}:{library_version}``). The version
+  falls back to the ``APP_RELEASE`` env var when the caller is not an
+  installed distribution (e.g. a service, not a library)
 - DSN comes from framework conf (``SENTRY_PYTHON_DSN``)
 - Does not mark exceptions; if Odoo also captures, that is a second event
   with Odoo's release. That is intended.
@@ -71,24 +73,40 @@ def version_for_import_name(module_name: str) -> str:
     return UNKNOWN_VERSION
 
 
+def _app_release_env() -> str:
+    """``APP_RELEASE`` env var — fallback version for services (not libraries)."""
+    return (os.environ.get("APP_RELEASE") or "").strip()
+
+
+def _caller_distribution_version() -> str:
+    for frame_info in inspect.stack()[1:]:
+        module = inspect.getmodule(frame_info.frame)
+        if module is None or not module.__name__:
+            continue
+        if _is_framework_module(module.__name__):
+            continue
+        return version_for_import_name(module.__name__)
+    return library_version(FRAMEWORK_DISTRIBUTION)
+
+
 def detect_caller_library_version() -> str:
     """Version of the first caller outside ``sincpro_framework``.
 
     Used so ``UseFramework("payment-cybersource")`` created from
     ``sincpro_payments_sdk`` gets that SDK's Poetry version without the
     instance passing it explicitly.
+
+    A service entrypoint (not an installed distribution) can't be resolved
+    this way and would otherwise report ``unknown`` to Sentry. In that case,
+    falls back to the ``APP_RELEASE`` env var.
     """
     try:
-        for frame_info in inspect.stack()[1:]:
-            module = inspect.getmodule(frame_info.frame)
-            if module is None or not module.__name__:
-                continue
-            if _is_framework_module(module.__name__):
-                continue
-            return version_for_import_name(module.__name__)
-        return library_version(FRAMEWORK_DISTRIBUTION)
+        resolved = _caller_distribution_version()
     except Exception:
-        return UNKNOWN_VERSION
+        resolved = UNKNOWN_VERSION
+    if resolved != UNKNOWN_VERSION:
+        return resolved
+    return _app_release_env() or UNKNOWN_VERSION
 
 
 def build_release(app_name: str, lib_version: str) -> str:

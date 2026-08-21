@@ -1217,7 +1217,9 @@ export SENTRY_PYTHON_DSN=https://KEY@glitchtip.sincpro.dev/1
 
 Conf (`sincpro_framework/conf/sincpro_framework_conf.yml`) resolves `sentry_dsn` from `SENTRY_PYTHON_DSN`. If that env is set, `observability_status()["sentry"]` is `on:init`, not `off`. The framework does **not** call `sentry_sdk.init()` and does not reuse the host client.
 
-Each framework event uses an isolated Sentry `Client` whose `release` is computed once at `UseFramework` init: `{app_name}:{library_version}` (Poetry/installed dist). Not `APP_RELEASE`, not the Python version. Example: `payment-cybersource:5.0.3`. Framework-internal errors use `sincpro-framework:<framework version>`.
+Each framework event uses an isolated Sentry `Client` whose `release` is computed once at `UseFramework` init: `{app_name}:{library_version}` (Poetry/installed dist), not the Python version. Example: `payment-cybersource:5.0.3`. Framework-internal errors use `sincpro-framework:<framework version>`.
+
+When the caller isn't an installed distribution (e.g. a service entrypoint, not a library) `library_version` can't be resolved and falls back to the `APP_RELEASE` env var, so services still get a real release instead of `payment-cybersource:unknown`.
 
 GlitchTip `environment` is `TENANT` (same value as the `tenant` tag) so events can be filtered by tenant in the UI.
 
