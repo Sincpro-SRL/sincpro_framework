@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Callable, Dict, Mapping, Optional, Type, cast
+from typing import Any, Callable, Dict, Generic, Mapping, Optional, Type, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -7,6 +7,7 @@ from . import ioc
 from .bus import FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
+from .deps import DependencyLocator, TDeps
 from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
@@ -30,8 +31,16 @@ from .tracing.status import (
 )
 
 
-class UseFramework(ContextMixin):
-    """Main class to use the framework, this is the main entry point to configure the framework."""
+class UseFramework(ContextMixin, Generic[TDeps]):
+    """Main class to use the framework, this is the main entry point to configure the framework.
+
+    Parameterize with the bounded context's ``DependencyContextType`` so registered
+    adapters are typed on ``framework.deps``::
+
+        framework = UseFramework[DependencyContextType]("my-context")
+        framework.add_dependency("my_adapter", MyAdapter())
+        framework.deps.my_adapter  # MyAdapter, same name Features get as self.my_adapter
+    """
 
     _logger_name: str
 
@@ -90,6 +99,7 @@ class UseFramework(ContextMixin):
 
         # Registry for dynamic dep injection
         self.dynamic_dep_registry: Dict[str, Any] = dict()
+        self._deps_locator = DependencyLocator(self.dynamic_dep_registry)
 
         # Error handlers — ordered pipeline (first registered, first executed)
         self._global_error_handlers: list[ErrorHandler] = []
@@ -207,6 +217,17 @@ class UseFramework(ContextMixin):
             )
             raise error
         self.dynamic_dep_registry[name] = dep
+
+    @property
+    def deps(self) -> TDeps:
+        """Read-only locator of dependencies registered with ``add_dependency``.
+
+        Inside a Feature / ApplicationService keep using ``self.<name>``.
+        Use this from the bounded-context root (SDK caller, test, entrypoint)::
+
+            adapter = framework.deps.my_adapter
+        """
+        return cast(TDeps, self._deps_locator)
 
     def add_middleware(self, middleware: Middleware):
         """Add middleware function to the execution pipeline"""

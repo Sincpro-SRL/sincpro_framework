@@ -294,7 +294,7 @@ class PaymentFeature(Feature):
 ### 💻 IDE Support with Typing
 
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
-- Improves development efficiency and reliability.
+- Parameterize the bus as `UseFramework[DependencyContextType]`. Features get `self.token_adapter`; callers outside a Feature get the same instance as `framework.deps.token_adapter`.
 
 ### `entrypoint_mcp`
 
@@ -459,7 +459,7 @@ class DependencyContextType:
     payment_adapter: PaymentAdapter
 
 
-def register_dependencies(framework: UseFramework) -> UseFramework:
+def register_dependencies(framework: UseFramework[DependencyContextType]) -> UseFramework[DependencyContextType]:
     """Register all adapters with the framework instance."""
     framework.add_dependency("token_adapter", TokenizationAdapter())
     framework.add_dependency("payment_adapter", PaymentAdapter())
@@ -494,12 +494,16 @@ class ApplicationService(_ApplicationService, DependencyContextType):
     pass
 
 
-def config_framework(name: str) -> UseFramework:
+def config_framework(name: str) -> UseFramework[DependencyContextType]:
     """Create and configure the framework instance."""
-    instance = UseFramework(name)
+    instance = UseFramework[DependencyContextType](name)
     register_dependencies(instance)
     return instance
 ```
+
+The same names Features receive as `self.token_adapter` are available on the root as
+`my_framework.deps.token_adapter`. Use `self.<name>` inside a Feature / ApplicationService;
+use `.deps` from SDK callers, tests, and entrypoints.
 
 ### `__init__.py` — Bootstrap the Bounded Context
 
@@ -523,38 +527,19 @@ from .services import feature_a, feature_b  # noqa: E402, F401
 
 ### Testing Dependency Consistency
 
-Register a dedicated test feature to verify that every attribute declared in `DependencyContextType`
-is actually injected at runtime. If a new dependency is added to `DependencyContextType` but
-forgotten in `register_dependencies`, this test catches it automatically.
+Assert every name declared on `DependencyContextType` is present on `framework.deps`. If a new
+dependency is added to the typing class but forgotten in `register_dependencies`, this test
+catches it without registering a Feature.
 
 ```python
 # tests/my_domain/test_framework_setup.py
-from my_sdk.apps.my_domain import DataTransferObject, Feature, my_framework
+from my_sdk.apps.my_domain import my_framework
 from my_sdk.apps.my_domain.infrastructure.dependencies import DependencyContextType
 
 
-class CommandVerifyDeps(DataTransferObject):
-    pass
-
-
-class ResponseVerifyDeps(DataTransferObject):
-    ok: bool
-
-
-# Register at module level — not inside the test function — so the decorator runs
-# before any other test in the session builds the framework bus.
-@my_framework.feature(CommandVerifyDeps)
-class VerifyDepsFeature(Feature):
-    def execute(self, dto: CommandVerifyDeps) -> ResponseVerifyDeps:
-        for dep_name in DependencyContextType.__annotations__:
-            assert getattr(self, dep_name, None) is not None, f"Missing dep: {dep_name}"
-        return ResponseVerifyDeps(ok=True)
-
-
-def test_framework_dependencies_injected_in_feature():
-    """All deps declared in DependencyContextType must be accessible inside a Feature."""
-    result = my_framework(CommandVerifyDeps(), ResponseVerifyDeps)
-    assert result.ok is True
+def test_declared_deps_are_registered():
+    for dep_name in DependencyContextType.__annotations__:
+        assert dep_name in my_framework.deps, f"Missing dep: {dep_name}"
 ```
 
 **Why this matters:**
@@ -563,8 +548,6 @@ def test_framework_dependencies_injected_in_feature():
   the context covers it in the test without any manual edits.
 - Catches mismatches between what is declared in `DependencyContextType` and what is actually
   registered via `add_dependency`.
-- The feature must be registered at **module level** (not inside the test function) if other
-  tests in the same session build the framework bus first.
 
 ---
 
