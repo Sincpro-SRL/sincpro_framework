@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Mapping, Optional, Type, TypeVar, overload
+from typing import Any, Callable, Dict, Generic, Mapping, Optional, Type, overload
 
 from _typeshed import Incomplete
 from sincpro_log.logger import LoggerProxy
@@ -8,6 +8,7 @@ from . import ioc as ioc
 from .bus import FrameworkBus as FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
+from .deps import TDeps
 from .error_handler import ErrorHandler as ErrorHandler
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
@@ -22,28 +23,15 @@ from .tracing.span_context import FrameworkSpanContext as FrameworkSpanContext
 DecoratorFunction = Callable[[Type], Type]
 DTORegistration = Type[DataTransferObject] | list[Type[DataTransferObject]]
 
-class UseFramework(ContextMixin):
+class UseFramework(ContextMixin, Generic[TDeps]):
     """
     Main class to use the framework, this is the main entry point to configure the framework.
 
-    The UseFramework class provides:
-    - Dependency injection registration via add_dependency()
-    - Feature and ApplicationService decorators
-    - Middleware registration
-    - Error handler configuration
-    - Framework execution as a callable
+    Parameterize with ``DependencyContextType`` so ``framework.deps`` is typed::
 
-    Example:
-        # Setup
-        framework = UseFramework("my_context")
+        framework = UseFramework[DependencyContextType]("my_context")
         framework.add_dependency("database", db_instance)
-
-        # Register handlers
-        @framework.feature(MyDTO)
-        class MyFeature(Feature): ...
-
-        # Execute
-        result = framework(MyDTO(param="value"), MyResponseDTO)
+        framework.deps.database  # same instance Features receive as self.database
     """
 
     log_after_execution: bool
@@ -129,6 +117,15 @@ class UseFramework(ContextMixin):
 
         Raises:
             DependencyAlreadyRegistered: If the dependency name is already registered
+        """
+        ...
+
+    @property
+    def deps(self) -> TDeps:
+        """Read-only locator of dependencies registered with ``add_dependency``.
+
+        Inside a Feature / ApplicationService keep using ``self.<name>``.
+        Use this from the bounded-context root (SDK caller, test, entrypoint).
         """
         ...
 
