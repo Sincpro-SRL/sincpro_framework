@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Generic, Mapping, Optional, Type, cast
 from sincpro_log.logger import LoggerProxy, create_logger
 
 from . import ioc
+from .aio import AsyncBus
 from .bus import FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
@@ -159,6 +160,20 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             if implicit_token is not None and implicit_overlay is not None:
                 self._pop_overlay(implicit_token, implicit_overlay)
 
+    def get_async_bus(self) -> AsyncBus:
+        """Return a stateless async facade over this framework's bus.
+
+        Builds the root bus if it wasn't built yet (same lazy behavior as
+        ``__call__``). Use this from a caller that is itself ``async def`` and
+        wants to fan out several DTOs concurrently, e.g. via ``asyncio.gather``,
+        without blocking its event loop. See ``Bus.get_async_bus`` /
+        ``AsyncBus`` for the propagation and reuse semantics.
+        """
+        if not self.was_initialized:
+            self.build_root_bus()
+        assert self.bus is not None
+        return self.bus.get_async_bus()
+
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user"""
         self._add_dependencies_provided_by_user()
@@ -204,6 +219,15 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """
         Add a dependency to the framework where
         The Feature and App Service have as attribute
+
+        Call this during startup, before the first execution — not
+        concurrently with in-flight requests. `dynamic_dep_registry` is a
+        plain dict with no lock: under the GIL, a late/concurrent call is at
+        worst "last write wins"; without it (a free-threaded build; see
+        `ioc.py` for why that's not in scope yet for this codebase's other
+        dependencies anyway) it becomes a genuine data race. Not enforced
+        today to avoid a breaking change — documented so it isn't a surprise
+        later.
         """
         if name in self.dynamic_dep_registry:
             error = DependencyAlreadyRegistered(f"The dependency {name} is already injected")

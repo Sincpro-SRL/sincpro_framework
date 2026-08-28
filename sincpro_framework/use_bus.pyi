@@ -5,6 +5,7 @@ from sincpro_log.logger import LoggerProxy
 from typing_extensions import Self
 
 from . import ioc as ioc
+from .aio import AsyncBus as AsyncBus
 from .bus import FrameworkBus as FrameworkBus
 from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
@@ -98,6 +99,17 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
         Returns:
             The response DTO or None if no response
+        """
+        ...
+
+    def get_async_bus(self) -> AsyncBus:
+        """
+        Return a stateless async facade over this framework's bus.
+
+        Builds the root bus if it wasn't built yet (same lazy behavior as
+        `__call__`). Use this from a caller that is itself `async def` and
+        wants to fan out several DTOs concurrently, e.g. via `asyncio.gather`,
+        without blocking its event loop.
         """
         ...
 

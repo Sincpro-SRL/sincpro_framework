@@ -12,6 +12,15 @@ name = "fury"
 url = "https://pypi.fury.io/sincpro/"
 priority = "supplemental"
 
+# PYTHON 3.14 FREE-THREADING: verified (3.14.7 / 3.14.7t) that every dependency
+# below installs cleanly on regular (GIL) 3.14 with no code changes — full test
+# suite green. On a free-threaded (`python3.14t`) interpreter, `dependency-injector`
+# (core, required — see ioc.py) and, if the `opentelemetry` extra's grpc exporter
+# is used, `grpcio` (transitive dep of opentelemetry-exporter-otlp-proto-grpc)
+# both lack a free-threaded wheel today and force CPython to silently re-enable
+# the GIL for the whole process on import. Free-threading itself is not
+# implemented/targeted in this codebase yet — this is a known current gap in
+# the dependency ecosystem, not something to work around here.
 [tool.poetry.dependencies]
 python = "^3.12"
 dependency-injector = "^4.48.3"

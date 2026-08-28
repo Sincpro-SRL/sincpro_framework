@@ -5,6 +5,7 @@ from typing import Any, Generic, Type, overload
 from pydantic import BaseModel
 from typing_extensions import TypeVar
 
+from .aio import AsyncBus as AsyncBus
 from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 
 class DataTransferObject(BaseModel): ...
@@ -42,6 +43,19 @@ class Bus(ABC, metaclass=abc.ABCMeta):
 
         Call it once per task you submit, not once for a whole batch — see
         `ThreadContextBus`.
+        """
+        ...
+
+    def get_async_bus(self) -> AsyncBus:
+        """
+        Return a stateless async facade bound to this bus.
+
+        Unlike `thread_context()`, this handle is reusable across concurrent
+        calls: call `get_async_bus()` once, then `await`/`asyncio.gather` many
+        `.execute()`/`__call__` calls on it — each call captures its own
+        context snapshot internally. Use this from a caller that is itself
+        `async def` and wants to fan out several DTOs concurrently without
+        blocking its event loop.
         """
         ...
 
