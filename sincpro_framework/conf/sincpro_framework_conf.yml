@@ -1,3 +1,5 @@
 sincpro_framework_log_level: DEBUG
+sincpro_framework_log_backend: $ENV:SINCPRO_FRAMEWORK_LOG_BACKEND
+sincpro_framework_log_file_path: $ENV:SINCPRO_FRAMEWORK_LOG_FILE_PATH
 otlp_endpoint: $ENV:OTEL_EXPORTER_OTLP_ENDPOINT
 sentry_dsn: $ENV:SENTRY_PYTHON_DSN
