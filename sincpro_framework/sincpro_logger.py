@@ -4,7 +4,11 @@ from sincpro_log import configure_global_logging, create_logger
 
 from .sincpro_conf import settings
 
-configure_global_logging(settings.sincpro_framework_log_level)
+configure_global_logging(
+    settings.sincpro_framework_log_level,
+    backend=settings.sincpro_framework_log_backend,
+    file_path=settings.sincpro_framework_log_file_path,
+)
 
 
 def is_logger_in_debug() -> bool:

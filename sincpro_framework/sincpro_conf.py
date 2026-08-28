@@ -66,6 +66,8 @@ class DefaultFrameworkConfig(SincproConfig):
     """Default configuration for the framework"""
 
     sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "DEBUG"
+    sincpro_framework_log_backend: Literal["print", "stdlib", "file"] = "print"
+    sincpro_framework_log_file_path: str | None = None
     otlp_endpoint: str | None = None
     sentry_dsn: str | None = None
 

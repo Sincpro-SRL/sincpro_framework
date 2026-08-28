@@ -4356,14 +4356,14 @@ unleash = ["UnleashClient (>=6.0.1)"]
 
 [[package]]
 name = "sincpro-log"
-version = "1.1.1"
+version = "1.2.0"
 description = "A logging module for sincpro applications"
 optional = false
 python-versions = "<4.0,>=3.12"
 groups = ["main"]
 files = [
-    {file = "sincpro_log-1.1.1-py3-none-any.whl", hash = "sha256:f7ba186be720e1786689a21d796120511ca97a241bb86edd9ab635f35adf826b"},
-    {file = "sincpro_log-1.1.1.tar.gz", hash = "sha256:0a452f8306ed00729a70927e00053965f1065c3d7424f6f75a05fb0860e20956"},
+    {file = "sincpro_log-1.2.0-py3-none-any.whl", hash = "sha256:9cb206e39ff50ce3bf56af61c67bb958042f4bf4cf8759de830770b272af126c"},
+    {file = "sincpro_log-1.2.0.tar.gz", hash = "sha256:e24d2420f8a8e49828c5b813e05abdd2d7e28c10cc65085738b096858d3e7e77"},
 ]
 
 [package.dependencies]
@@ -4996,4 +4996,4 @@ sentry = ["sentry-sdk"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "6726ef745f45ecd46339598101ca1843d8edde975b615c5a23b6edac9268c442"
+content-hash = "0659be81cb179624e1bf8345fe23883c48047f77245250649528ff5e71d4de72"

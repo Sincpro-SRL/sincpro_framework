@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
+from contextvars import copy_context
 from typing import Generic, Type
 
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypeVar
 
 from .context.framework_context_consumer import ContextConsumer
+from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
 TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
@@ -39,6 +41,33 @@ class Bus(ABC):
         If return_type is provided, returns an instance of return_type.
         Otherwise, returns None.
         """
+
+    def thread_context(self) -> "ThreadContextBus":
+        """Return a handle to this bus bound to the calling thread's current context.
+
+        `context()` overlays live in a ``ContextVar``, which is isolated per OS
+        thread by design. A plain ``executor.submit(bus.execute, dto)`` runs
+        ``execute`` in a *new* thread that never saw the overlay's ``set()``, so
+        every Feature's ``self.context`` there silently falls back to the (usually
+        empty) shared context. Call ``thread_context()`` here, in the thread that
+        still has the overlay active, then hand `.execute` (not the raw bus) to
+        the executor.
+
+        Call it **once per task you submit**, not once for a whole batch — a
+        captured snapshot can only be entered by one thread at a time, so sharing
+        a single one across concurrent workers raises a ``RuntimeError``::
+
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = [
+                    executor.submit(self.feature_bus.thread_context().execute, dto, return_type)
+                    for dto in dtos
+                ]
+        """
+        # `Self@Bus` vs. `Bus` here is a known pyright edge case when the base
+        # class is only resolvable across modules via a TYPE_CHECKING import
+        # (see context/thread_context_bus.py) — correct at runtime and covered
+        # by tests/test_thread_context_bus.py.
+        return ThreadContextBus(self, copy_context())  # pyright: ignore[reportArgumentType]
 
 
 class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT]):
