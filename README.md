@@ -268,6 +268,33 @@ class PaymentFeature(Feature):
         # Use context in business logic...
 ```
 
+#### Propagating context into a `ThreadPoolExecutor`
+
+- The context overlay lives in a `ContextVar`, which is isolated **per OS thread**. A plain
+  `executor.submit(bus.execute, dto)` runs `execute` in a *new* thread that never saw the
+  overlay's `set()` — every Feature's `self.context` there silently falls back to the (usually
+  empty) shared context.
+- `bus.thread_context()` captures the calling thread's current context and returns a
+  `ThreadContextBus` — pass `.execute` (not the raw bus) to the executor instead.
+- Call `thread_context()` **once per task you submit**, not once for a whole batch: a captured
+  `contextvars.Context` can only be entered by one thread at a time, so sharing a single one
+  across concurrent workers raises `RuntimeError`.
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+class SyncManyFeature(ApplicationService):
+    def execute(self, dto: SyncManyDTO) -> SyncManyResponse:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [
+                # captured here, in this thread, once per task
+                executor.submit(self.feature_bus.thread_context().execute, item_dto)
+                for item_dto in dto.items
+            ]
+            results = [f.result() for f in futures]
+        return SyncManyResponse(results=results)
+```
+
 ### ⚠️ Error Handling at Different Levels
 
 - Provides centralized error handling at three independent levels: **global**, **app service**, and **feature**.

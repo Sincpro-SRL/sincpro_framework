@@ -5,6 +5,8 @@ from typing import Any, Generic, Type, overload
 from pydantic import BaseModel
 from typing_extensions import TypeVar
 
+from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
+
 class DataTransferObject(BaseModel): ...
 
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
@@ -27,6 +29,21 @@ class Bus(ABC, metaclass=abc.ABCMeta):
     @abstractmethod
     @overload
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None: ...
+    def thread_context(self) -> ThreadContextBus:
+        """
+        Return a handle to this bus bound to the calling thread's current context.
+
+        `context()` overlays live in a ContextVar, which is isolated per OS
+        thread. A plain `executor.submit(bus.execute, dto)` runs `execute` in a
+        new thread that never saw the overlay's `set()`, so every Feature's
+        `self.context` there silently falls back to the (usually empty) shared
+        context. Call `thread_context()` here, in the thread that still has the
+        overlay active, then hand `.execute` (not the raw bus) to the executor.
+
+        Call it once per task you submit, not once for a whole batch — see
+        `ThreadContextBus`.
+        """
+        ...
 
 class Feature(ABC, Generic[TypeDTO, TypeDTOResponse, ContextT], metaclass=abc.ABCMeta):
     """
