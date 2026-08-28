@@ -7,6 +7,7 @@ design. A Feature/ApplicationService that fans work out to a `ThreadPoolExecutor
 explicitly propagated. These tests pin down that failure mode and verify the fix.
 """
 
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, cast
 
@@ -16,6 +17,11 @@ from sincpro_framework.context.thread_context_bus import ThreadContextBus
 
 class ThreadDTO(DataTransferObject):
     message: str = ""
+    # Only set by the concurrent-misuse test, to deterministically force two
+    # threads to hold the *same* captured Context open at once, instead of
+    # hoping a race materializes (which is flaky — see that test's docstring).
+    entered_event: Any = None
+    release_event: Any = None
 
 
 class ThreadResponseDTO(DataTransferObject):
@@ -24,6 +30,10 @@ class ThreadResponseDTO(DataTransferObject):
 
 class ThreadAwareFeature(Feature):
     def execute(self, dto):
+        if dto.entered_event is not None:
+            dto.entered_event.set()
+        if dto.release_event is not None:
+            dto.release_event.wait(timeout=5)
         return ThreadResponseDTO(context_data=dict(self.context))
 
 
@@ -49,7 +59,7 @@ class FanOutUsingThreadContext(ApplicationService):
         with ThreadPoolExecutor(max_workers=dto.workers) as executor:
             futures = [
                 executor.submit(
-                    self.feature_bus.thread_context().execute,  # pyright: ignore[reportAttributeAccessIssue]
+                    self.feature_bus.thread_context().execute,
                     ThreadDTO(message=str(i)),
                 )
                 for i in range(dto.workers)
@@ -91,7 +101,7 @@ class TestThreadContextBus:
         framework = _build_framework("thread-context-type")
         framework.build_root_bus()
         assert framework.bus is not None
-        bound = framework.bus.feature_bus.thread_context()  # pyright: ignore[reportAttributeAccessIssue]  # fmt: skip
+        bound = framework.bus.feature_bus.thread_context()
         assert isinstance(bound, ThreadContextBus)
 
     def test_execute_via_thread_context_preserves_context_in_new_thread(self):
@@ -102,7 +112,7 @@ class TestThreadContextBus:
         assert framework.bus is not None
 
         with framework.context({"TOKEN": "abc123"}):
-            bound = framework.bus.feature_bus.thread_context()  # pyright: ignore[reportAttributeAccessIssue]  # fmt: skip
+            bound = framework.bus.feature_bus.thread_context()
             with ThreadPoolExecutor(max_workers=1) as executor:
                 result = cast(
                     ThreadResponseDTO, executor.submit(bound.execute, ThreadDTO()).result()
@@ -177,10 +187,10 @@ class TestThreadContextBus:
         bound_second: ThreadContextBus | None = None
 
         with framework.context({"TOKEN": "first"}):
-            bound_first = framework.bus.feature_bus.thread_context()  # pyright: ignore[reportAttributeAccessIssue]  # fmt: skip
+            bound_first = framework.bus.feature_bus.thread_context()
 
         with framework.context({"TOKEN": "second"}):
-            bound_second = framework.bus.feature_bus.thread_context()  # pyright: ignore[reportAttributeAccessIssue]  # fmt: skip
+            bound_second = framework.bus.feature_bus.thread_context()
 
         assert bound_first is not None
         assert bound_second is not None
@@ -200,24 +210,40 @@ class TestThreadContextBus:
         """A captured Context can't be entered by two threads at once. Reusing one
         ThreadContextBus across concurrent workers must fail loudly with guidance,
         not the raw stdlib RuntimeError — this is the exact mistake the first
-        draft of FanOutUsingThreadContext made in this test file."""
+        draft of FanOutUsingThreadContext made in this test file.
+
+        The collision is forced deterministically with events (one worker holds
+        the context open until told to release it) rather than firing N tasks
+        and hoping two of them race — that approach is flaky: on a fast enough
+        interpreter/machine every task can finish before the next one starts,
+        so the "already entered" window never actually overlaps.
+        """
         framework = _build_framework("thread-context-misuse")
         framework.build_root_bus()
         assert framework.bus is not None
 
-        errors: list[RuntimeError] = []
-        with framework.context({"TOKEN": "abc123"}):
-            bound = framework.bus.feature_bus.thread_context()  # pyright: ignore[reportAttributeAccessIssue]  # fmt: skip
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                futures = [
-                    executor.submit(bound.execute, ThreadDTO(message=str(i)))
-                    for i in range(5)
-                ]
-                for future in as_completed(futures):
-                    try:
-                        future.result()
-                    except RuntimeError as error:
-                        errors.append(error)
+        entered = threading.Event()
+        release = threading.Event()
 
-        assert errors, "expected at least one concurrent-reuse RuntimeError"
-        assert all("thread_context()" in str(error) for error in errors)
+        with framework.context({"TOKEN": "abc123"}):
+            bound = framework.bus.feature_bus.thread_context()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                blocking_future = executor.submit(
+                    bound.execute,
+                    ThreadDTO(entered_event=entered, release_event=release),
+                )
+                assert entered.wait(timeout=5), "worker never entered the captured context"
+
+                try:
+                    bound.execute(ThreadDTO())
+                    raised = None
+                except RuntimeError as error:
+                    raised = error
+                finally:
+                    release.set()
+
+                blocking_result = cast(ThreadResponseDTO, blocking_future.result())
+
+            assert raised is not None, "expected a concurrent-reuse RuntimeError"
+            assert "thread_context()" in str(raised)
+            assert blocking_result.context_data == {"TOKEN": "abc123"}
