@@ -5,6 +5,7 @@ from typing import Generic, Type
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypeVar
 
+from .aio import AsyncBus as AsyncBus
 from .context.framework_context_consumer import ContextConsumer
 from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 
@@ -68,6 +69,18 @@ class Bus(ABC):
         # (see context/thread_context_bus.py) — correct at runtime and covered
         # by tests/test_thread_context_bus.py.
         return ThreadContextBus(self, copy_context())  # pyright: ignore[reportArgumentType]
+
+    def get_async_bus(self) -> "AsyncBus":
+        """Return a stateless async facade bound to this bus.
+
+        Unlike ``thread_context()``, this handle is reusable across concurrent
+        calls: call ``get_async_bus()`` once, then ``await``/``asyncio.gather``
+        many ``.execute()``/``__call__`` calls on it — each call captures its
+        own context snapshot internally. Use this from a caller that is itself
+        ``async def`` and wants to fan out several DTOs concurrently without
+        blocking its event loop.
+        """
+        return AsyncBus(self)  # pyright: ignore[reportArgumentType]
 
 
 class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT]):

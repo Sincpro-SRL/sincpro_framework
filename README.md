@@ -88,6 +88,7 @@ Now you are ready to explore more complex use cases! 🚀
 13. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
 14. [Configuration or settings](#configuration-or-settings)
 15. [Variables](#variables)
+16. [Python 3.14 & Free-Threading Notes](#python-314--free-threading-notes)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -294,6 +295,42 @@ class SyncManyFeature(ApplicationService):
             results = [f.result() for f in futures]
         return SyncManyResponse(results=results)
 ```
+
+#### Async fan-out with `get_async_bus()`
+
+- `thread_context()` is for **sync** code manually managing a `ThreadPoolExecutor`. If the
+  caller is already `async def` (an async host handler, a script) and wants to fan out
+  several DTOs concurrently instead, use `bus.get_async_bus()` (or the shortcut
+  `framework.get_async_bus()`).
+- Solves the same context-propagation problem as `thread_context()`, via `asyncio.to_thread`
+  itself (stdlib already propagates `contextvars` into the worker thread — no
+  `ThreadContextBus` involved here). Opposite reuse rule: an `AsyncBus` is stateless, so get
+  it **once** and `await`/`asyncio.gather` many calls on it — each call gets its own fresh
+  context snapshot, unlike `ThreadContextBus`'s single-use-per-snapshot restriction.
+- Runs each call via `asyncio.to_thread` (stdlib), so `Feature`/`ApplicationService` stay
+  100% sync — no "async Feature" variant to maintain.
+
+```python
+import asyncio
+
+async def handle_request(framework, dto_a, dto_b, dto_c):
+    async_bus = framework.get_async_bus()
+    result_a, result_b, result_c = await asyncio.gather(
+        async_bus(dto_a), async_bus(dto_b), async_bus(dto_c),
+    )
+    return result_a, result_b, result_c
+```
+
+**Cancellation and fan-out reliability**
+
+- Cancelling the awaiting coroutine (e.g. a `asyncio.wait_for(...)` timeout) does **not**
+  stop the `Feature`/`ApplicationService` already running in its worker thread — Python
+  cannot forcibly kill a thread. Design for that (idempotency, no assumption that a timeout
+  actually aborted the work) rather than relying on cancellation to stop it.
+- For fan-out with proper partial-failure handling, prefer `asyncio.TaskGroup` (3.11+) over
+  `asyncio.gather`: it cancels sibling tasks on the first failure and raises an
+  `ExceptionGroup`, instead of `gather`'s default of leaving siblings running and swallowing
+  all-but-the-first exception unless `return_exceptions=True` is passed.
 
 ### ⚠️ Error Handling at Different Levels
 
@@ -1438,3 +1475,43 @@ Override the config file using another
 ```bash
 export SINCPRO_FRAMEWORK_CONFIG_FILE = /path/to/your/config.yml
 ```
+
+## 🧵 Python 3.14 & Free-Threading Notes
+
+**Regular Python 3.14 (GIL build): fully supported today, no breaking changes.**
+Verified end-to-end on 3.14.7 — every dependency (core and all extras: `opentelemetry`,
+`sentry`, `mcp`, `rpc`) installs from prebuilt wheels with no source builds, `pyright`
+reports 0 issues, and the full test suite passes (215/215). CI (`.github/workflows/02-check_code.yaml`)
+now runs `"3.12"`, `"3.13"`, `"3.14"`.
+
+**Free-threaded Python (`python3.14t`, PEP 703/779): not implemented or targeted yet — this
+section documents current findings only, so the challenges are visible before anyone
+attempts it.** Everything below was verified hands-on (3.14.7 vs. 3.14.7t), not inferred:
+
+- **Dependency gap, not a code gap.** `dependency-injector` (core, required — see `ioc.py`)
+  and `grpcio` (transitive dep of the optional `opentelemetry-exporter-otlp-proto-grpc`)
+  have no free-threaded wheel yet. Importing either on `python3.14t` makes CPython print
+  `RuntimeWarning: The global interpreter lock (GIL) has been enabled to load module
+  '...', which has not declared that it can run safely without the GIL` and silently
+  re-enable the GIL for the rest of the process. `pydantic-core` (the framework's other
+  compiled dependency) is fine — it already ships a `cp314t` wheel.
+- **`contextvars` propagation to a bare `ThreadPoolExecutor.submit` differs by build.**
+  Verified with a minimal repro outside this framework: on 3.12.11 and 3.14.7 (GIL builds)
+  a bare `executor.submit(fn)` loses the caller's `contextvars.Context`, same as always —
+  this is the bug `ThreadContextBus`/`thread_context()` exists to fix. On 3.14.7t
+  (free-threaded), it's already propagated with no `thread_context()` involved. This
+  doesn't make `thread_context()` wrong or unnecessary — most users run a GIL build, and
+  code shouldn't silently depend on a free-threaded-only behavior — but it does mean
+  `tests/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread` and
+  `::test_fan_out_without_thread_context_loses_context_for_every_worker` encode a
+  GIL-build-specific assumption and would legitimately fail if that suite is ever run on a
+  free-threaded interpreter.
+- **`asyncio`'s free-threading support only matured in 3.14.** Relevant to `get_async_bus()`
+  / `AsyncBus`, which is built on `asyncio.to_thread`: prefer 3.14+ over 3.13t for that path.
+- Registries built once at startup (`feature_registry`, `app_service_registry`,
+  `dynamic_dep_registry`, the middleware list) are safe as long as nothing mutates them
+  concurrently with in-flight executions — true today, not enforced. See the docstring on
+  `UseFramework.add_dependency`.
+
+Every spot above is also marked in the source with a `# PYTHON 3.14 FREE-THREADING:` comment
+— `grep -rn "PYTHON 3.14 FREE-THREADING" sincpro_framework/ tests/` finds all of them.

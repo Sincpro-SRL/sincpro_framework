@@ -124,7 +124,13 @@ class TestThreadContextBus:
         executor.submit(bus.execute, dto) must NOT see the context — this is the
         exact bug thread_context() exists to fix. If this assertion ever starts
         failing, ContextVar propagation semantics changed and the workaround in
-        thread_context() may no longer be necessary (or may need revisiting)."""
+        thread_context() may no longer be necessary (or may need revisiting).
+
+        # PYTHON 3.14 FREE-THREADING: this already happened — verified failing
+        # on 3.14.7t (free-threaded build), passing on 3.14.7/3.12.11 (GIL
+        # builds). See the note in context/thread_context_bus.py for details.
+        # Expected to fail there, not a regression in this codebase.
+        """
         framework = _build_framework("thread-context-bare-bug")
         framework.build_root_bus()
         assert framework.bus is not None
@@ -160,7 +166,13 @@ class TestThreadContextBus:
         """End-to-end regression test matching the real ApplicationService shape
         (GenerateSyncDataDict) before the fix: every single worker lost context,
         not just some — which is what made the original bug so confusing to
-        diagnose (it looked like a flaky/partial failure)."""
+        diagnose (it looked like a flaky/partial failure).
+
+        # PYTHON 3.14 FREE-THREADING: same caveat as
+        # test_bare_submit_loses_context_in_new_thread — verified failing on
+        # 3.14.7t, passing on 3.14.7/3.12.11. See
+        # context/thread_context_bus.py for details.
+        """
         framework = _build_framework("thread-context-fanout-bug")
 
         @framework.app_service(FanOutDTO)

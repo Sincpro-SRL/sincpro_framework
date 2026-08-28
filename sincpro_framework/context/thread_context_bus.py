@@ -4,6 +4,21 @@
 per OS thread by design. A Feature/ApplicationService that fans work out to a
 `ThreadPoolExecutor` loses `self.context` in every worker unless the context is
 explicitly propagated — this module is that propagation mechanism.
+
+# PYTHON 3.14 FREE-THREADING: verified (3.14.7 vs. 3.14.7t, minimal repro
+# outside this framework) that a *bare* `ThreadPoolExecutor.submit(fn)`, with
+# no `thread_context()` involved at all, already propagates the caller's
+# `contextvars.Context` into the worker thread on a free-threaded interpreter
+# — the exact bug this module exists to fix does not reproduce there. Regular
+# (GIL) 3.12/3.13/3.14 keep losing context on a bare submit, same as always.
+# This module still must stay: most users run a GIL build, and code written
+# against it must not silently depend on a free-threaded-only propagation
+# behavior that isn't guaranteed long-term. Side effect worth knowing:
+# `tests/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread`
+# and `::test_fan_out_without_thread_context_loses_context_for_every_worker`
+# encode the GIL-build assumption and will legitimately fail if ever run on a
+# free-threaded interpreter — that would mean the assumption stopped holding
+# for that build, not that `ThreadContextBus` regressed.
 """
 
 from contextvars import Context

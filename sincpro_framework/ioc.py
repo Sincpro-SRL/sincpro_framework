@@ -4,6 +4,14 @@ from enum import Enum
 from functools import wraps
 from typing import Callable, TypeVar
 
+# PYTHON 3.14 FREE-THREADING: dependency-injector 4.49.1 ships an abi3 wheel
+# (works fine on regular 3.14) but has not declared free-threading support.
+# Importing it on a `python3.14t` (free-threaded) interpreter makes CPython
+# print RuntimeWarning "The global interpreter lock (GIL) has been enabled to
+# load module 'dependency_injector.containers'..." and silently re-enable the
+# GIL for the whole process — verified on 3.14.7t. Not a bug in this codebase;
+# nothing to fix here until dependency-injector itself declares
+# Py_mod_gil/free-threading support. Regular (GIL) 3.12/3.13/3.14 unaffected.
 from dependency_injector import containers, providers
 from dependency_injector.providers import Dict, Factory, Object, Singleton
 from sincpro_log.logger import LoggerProxy
