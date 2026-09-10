@@ -23,8 +23,8 @@ priority = "supplemental"
 # the dependency ecosystem, not something to work around here.
 [tool.poetry.dependencies]
 python = "^3.12"
-dependency-injector = "^4.48.3"
-pydantic = "^2.12.5"
+dependency-injector = "^4.49.1"
+pydantic = "^2.13.5"
 pyyaml = ">=6.0.1"
 sincpro-log = "^1.2.0"
 opentelemetry-api = {version = ">=1.20", optional = true}
@@ -48,22 +48,24 @@ mcp = ["fastmcp"]
 rpc = ["starlette", "uvicorn"]
 
 [tool.poetry.group.dev.dependencies]
-isort = "^8.0.0"
-black = "^26.1.0"
-pytest = "^9.0.2"
-ipython = "^9.9.0"
-autoflake = "^2.3.1"
-pyright = "^1.1.411"
-jupyterlab = "^4.5.1"
-mypy = "^2.3.0"
+isort = "^9.0.1"
+black = "^26.5.1"
+pytest = "^9.1.1"
+pytest-cov = "^7.1.0"
+ipython = "^9.17.1"
+autoflake = "^2.4.0"
+pyright = "^1.1.413"
+jupyterlab = "^4.6.3"
+mypy = "^2.3.1"
 mkdocs = ">=1.6.1,<2.0.0"
-mkdocs-material = "^9.7.1"
-mkdocstrings = {extras = ["python"], version = "^1.0.0"}
-mkdocstrings-python = "2.0.1"
-pymdown-extensions = "^11.0.1"
-griffe = ">=1.15.0,<2.0.0"
-urllib3 = ">=2.6.3"
-nbconvert = ">=7.17.0"
+mkdocs-material = "^9.7.7"
+mkdocstrings = {extras = ["python"], version = "^1.0.6"}
+mkdocstrings-python = "^2.0.8"
+pymdown-extensions = "^11.0.2"
+# griffe 2.x was renamed to griffelib; mkdocstrings-python 2.x requires griffelib>=2.0
+griffelib = ">=2.3.0,<3.0.0"
+urllib3 = ">=2.7.0"
+nbconvert = ">=7.17.1"
 opentelemetry-api = ">=1.20"
 opentelemetry-sdk = ">=1.20"
 opentelemetry-exporter-otlp-proto-grpc = ">=1.20"
@@ -83,3 +85,27 @@ venvPath = "."
 venv = ".venv"
 reportInvalidTypeVarUse = "none"
 reportInvalidTypeForm = "none"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["sincpro_framework"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+    "if __name__ == .__main__.:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
