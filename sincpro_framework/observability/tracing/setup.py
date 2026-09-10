@@ -17,7 +17,7 @@ from sincpro_framework.observability.domain import (
     off,
     on,
 )
-from sincpro_framework.observability.registry import registry
+from sincpro_framework.observability.registry import PROCESS, registry
 from sincpro_framework.sincpro_conf import settings
 
 try:
@@ -95,13 +95,45 @@ def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
     return provider
 
 
+def install_process_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
+    """Own the global provider with the **process** identity, never a bus's.
+
+    Transport instrumentation — ASGI, httpx, uvicorn — asks OTel for the global
+    tracer. If a bus answered there, every HTTP request would be exported as if it
+    belonged to that bounded context. A host that already owns the global is left
+    alone: inside Odoo there is nothing for us to install.
+    """
+    from opentelemetry import trace
+
+    if type(trace.get_tracer_provider()).__name__ not in PROXY_PROVIDERS:
+        return None
+
+    provider = registry.tracer_provider(PROCESS)
+    if provider is None:
+        process_identity = identity.model_copy(update={"bus": ""})
+        provider = _build_provider(process_identity, endpoint)
+        registry.register_tracer_provider(PROCESS, provider)
+        registry.register_process_identity(process_identity)
+    trace.set_tracer_provider(provider)
+    return provider
+
+
+def _bind_log_ids(logger: LoggerProxy | None) -> None:
+    """Teach the logger to stamp the active span's ids on every line. Never raises."""
+    if logger is None:
+        return
+    try:
+        logger.set_getter_context(current_otel_context)
+    except Exception:
+        return
+
+
 def setup(
     identity: ObservabilityIdentity, logger: LoggerProxy | None = None
 ) -> ComponentStatus:
     """Install this bus's TracerProvider and bind trace ids to its logger."""
     try:
         import opentelemetry.sdk.trace  # noqa: F401 — the SDK must be installed
-        from opentelemetry import trace
     except ImportError:
         return off("sdk_missing")
     except Exception as exc:
@@ -110,6 +142,9 @@ def setup(
     endpoint: str | None = settings.otlp_endpoint
     if not endpoint:
         if host_provider_is_real():
+            # Riding the host's provider still produces spans, so the logger must
+            # still learn where to read their ids from.
+            _bind_log_ids(logger)
             return on("host")
         return off("no_endpoint")
 
@@ -122,11 +157,9 @@ def setup(
                 return failed("exporter_missing")
             registry.register_tracer_provider(identity.bus, provider)
 
-            if type(trace.get_tracer_provider()).__name__ in PROXY_PROVIDERS:
-                trace.set_tracer_provider(provider)
+        install_process_provider(identity, endpoint)
 
-        if logger is not None:
-            logger.set_getter_context(current_otel_context)
+        _bind_log_ids(logger)
         return on("init")
     except Exception as exc:
         return failure_of(exc)

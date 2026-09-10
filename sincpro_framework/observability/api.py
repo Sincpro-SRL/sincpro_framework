@@ -1,9 +1,13 @@
-"""The framework's single door to observability.
+"""The two doors to observability.
 
-One ``Observability`` per ``UseFramework``. It knows who the bus is, brings the
-backends up, and is the only object ``bus.py`` and ``use_bus.py`` talk to — so the
+``Observability`` — one per ``UseFramework``. It knows who the bus is, brings the
+backends up, and is the only object ``bus.py`` and ``use_bus.py`` talk to, so the
 rest of the framework never imports opentelemetry, sentry_sdk, or anything under
 ``observability.errors`` / ``observability.tracing``.
+
+``process`` — the transport around those buses. A bus is instrumented for you; the
+ASGI request, the httpx call, the server's own loggers and a 500 that dies before any
+Feature runs belong to the **process**, and must not be exported under a bus's name.
 
 Nothing here raises and nothing here is required: with neither extra installed every
 method is a no-op and the bus runs exactly as it would without observability.
@@ -14,13 +18,22 @@ from typing import Any, ContextManager, Optional, Tuple, Type
 from sincpro_log.logger import LoggerProxy
 
 from sincpro_framework.observability.domain import (
+    ComponentStatus,
     ObservabilityIdentity,
     ObservabilityStatus,
     caller_module,
+    off,
+    on,
     resolve_identity,
 )
 from sincpro_framework.observability.errors.record_error import ErrorKind, record_error
 from sincpro_framework.observability.errors.setup import setup as setup_errors
+from sincpro_framework.observability.registry import PROCESS, registry
+from sincpro_framework.observability.tracing.setup import (
+    OTEL_AVAILABLE,
+    current_otel_context,
+    host_provider_is_real,
+)
 from sincpro_framework.observability.tracing.setup import setup as setup_tracing
 from sincpro_framework.observability.tracing.span_context import FrameworkSpanContext
 from sincpro_framework.observability.tracing.span_error import span_error
@@ -121,3 +134,76 @@ class Observability:
             carrier=carrier,
             adopt_active=adopt_active,
         )
+
+
+class ProcessObservability:
+    """What the transport needs, and nothing a bounded context already has."""
+
+    @property
+    def identity(self) -> ObservabilityIdentity:
+        """Who this process is: ``artifact:version``, without a bus segment.
+
+        Prefers what a bus already announced, so the transport and the buses of one
+        deployment never disagree about the version that is running.
+        """
+        announced = registry.process_identity()
+        if announced is not None:
+            return announced
+        resolved = resolve_identity("", module_name=caller_module())
+        return resolved.model_copy(update={"bus": ""})
+
+    @property
+    def status(self) -> ComponentStatus:
+        """Who owns the global provider that transport instrumentation will find.
+
+        ``on:installed`` — this framework put the process provider there.
+        ``on:host`` — someone got there first (Odoo, an operator's auto-instrumentation).
+        ``off:*`` — nothing is registered, so transport spans would be no-ops.
+        """
+        if not OTEL_AVAILABLE:
+            return off("sdk_missing")
+        if registry.tracer_provider(PROCESS) is not None:
+            return on("installed")
+        if host_provider_is_real():
+            return on("host")
+        return off("no_endpoint")
+
+    def tracer(self, instrumentation_name: str) -> Optional[Any]:
+        """Tracer for a transport span. The global one: this process, or the host.
+
+        Returns ``None`` when opentelemetry is not installed, so a caller can skip
+        instrumenting instead of guarding the import itself.
+        """
+        try:
+            from opentelemetry import trace
+
+            return trace.get_tracer(instrumentation_name)
+        except Exception:
+            return None
+
+    def bind_logger(self, logger: Any) -> None:
+        """Make a process logger stamp the ids of the request being served.
+
+        Without this an access log line, or a line from uvicorn, has no trace_id and
+        cannot be found from the trace it belongs to. Never raises: a logger that
+        does not support it simply keeps logging.
+        """
+        try:
+            logger.set_getter_context(self.trace_ids)
+        except Exception:
+            return
+
+    def trace_ids(self) -> dict:
+        """``trace_id``/``span_id`` of the active span, for a process logger.
+
+        Hand it to ``logger.set_getter_context(...)`` so an access log line, or a
+        line from uvicorn, lands on the same trace as the request that caused it.
+        """
+        return current_otel_context()
+
+    def record_error(self, error: Exception, layer: str = "process") -> None:
+        """Report a transport failure under the process release. Never raises."""
+        record_error(error, "", layer, self.identity, kind="instance")
+
+
+process = ProcessObservability()

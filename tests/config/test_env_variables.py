@@ -145,3 +145,21 @@ def test_sample_rate_reads_the_standard_otel_variable():
         / "sincpro_framework_conf.yml"
     )
     assert "otlp_traces_sample_rate: $ENV:OTEL_TRACES_SAMPLER_ARG" in conf.read_text()
+
+
+def test_the_framework_log_level_comes_from_the_environment():
+    """A service sets its own level without reaching into framework internals.
+
+    It used to be a literal in the conf, so the only way to change it was to assign
+    `framework_settings.sincpro_framework_log_level` from outside — a side channel
+    that also ran too late, since the logger is configured at import time.
+    """
+    from pathlib import Path
+
+    conf = (
+        Path(__file__).resolve().parents[2]
+        / "sincpro_framework"
+        / "conf"
+        / "sincpro_framework_conf.yml"
+    )
+    assert "sincpro_framework_log_level: $ENV:SINCPRO_FRAMEWORK_LOG_LEVEL" in conf.read_text()

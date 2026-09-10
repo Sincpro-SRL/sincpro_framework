@@ -197,15 +197,65 @@ def test_a_real_host_provider_is_never_replaced(monkeypatch):
     assert registry.tracer_provider("payment") is not host_provider
 
 
-def test_our_provider_becomes_global_when_nobody_configured_otel(monkeypatch):
-    """With no host provider, this bus's becomes the global one so libraries inherit it."""
+def test_the_process_takes_the_global_provider_never_a_bus(monkeypatch):
+    """Transport instrumentation asks OTel for the global tracer.
+
+    If a bus answered there, every ASGI request and every httpx call would be
+    exported as if it belonged to that bounded context.
+    """
+    from sincpro_framework.observability.registry import PROCESS
+
     monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
     fake_export_pipeline(monkeypatch)
     registered = stub_host_provider(monkeypatch, proxy_provider())
 
+    setup_for("payment", artifact="sincpro-odoo-mcp", version="0.8.0")
+
+    assert registered == [registry.tracer_provider(PROCESS)]
+    assert registry.tracer_provider(PROCESS) is not registry.tracer_provider("payment")
+
+
+def test_the_process_provider_drops_the_bus_from_its_service_name(monkeypatch):
+    """A request belongs to the deployment, not to one of its buses."""
+    from sincpro_framework.observability.registry import PROCESS
+
+    monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
+    fake_export_pipeline(monkeypatch)
+    stub_host_provider(monkeypatch, proxy_provider())
+
+    setup_for("common_mcp", artifact="sincpro-odoo-mcp", version="0.8.0")
+
+    resource = provider_of(PROCESS).resource
+    assert resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0"
+
+
+def test_every_bus_shares_one_process_provider(monkeypatch):
+    """Three buses must not open three global providers, nor fight over it."""
+    from sincpro_framework.observability.registry import PROCESS
+
+    monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
+    fake_export_pipeline(monkeypatch)
+    registered = stub_host_provider(monkeypatch, proxy_provider())
+
+    for bus in ("common_mcp", "sales_mcp", "mail_mcp"):
+        setup_for(bus, artifact="sincpro-odoo-mcp", version="0.8.0")
+
+    assert len(set(id(p) for p in registered)) == 1
+    assert registered[0] is registry.tracer_provider(PROCESS)
+
+
+def test_the_process_provider_is_not_installed_when_the_host_owns_otel(monkeypatch):
+    """Inside Odoo there is nothing for us to install: the host got there first."""
+    from sincpro_framework.observability.registry import PROCESS
+
+    monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
+    fake_export_pipeline(monkeypatch)
+    registered = stub_host_provider(monkeypatch, real_provider())
+
     setup_for("payment")
 
-    assert registered == [registry.tracer_provider("payment")]
+    assert registered == []
+    assert registry.tracer_provider(PROCESS) is None
 
 
 def test_each_bus_keeps_its_own_provider_and_service_name(monkeypatch):
@@ -411,3 +461,65 @@ def test_an_upstream_sampling_decision_is_always_honoured(monkeypatch):
     setup_for("payment")
 
     assert isinstance(sampler_of("payment"), ParentBased)
+
+
+# ---------------------------------------------------------------------------
+# Observability never breaks the bus, not even while closing a span
+# ---------------------------------------------------------------------------
+
+
+def exploding_processor():
+    """A span processor that fails on close — a host's, or a broken exporter."""
+    from opentelemetry.sdk.trace import SpanProcessor
+
+    class ExplodingProcessor(SpanProcessor):
+        def on_end(self, span):
+            raise RuntimeError("exporter exploded while closing the span")
+
+    return ExplodingProcessor()
+
+
+def framework_with_exploding_spans(bus: str):
+    from sincpro_framework import DataTransferObject, Feature, UseFramework
+
+    provider = real_provider()
+    provider.add_span_processor(exploding_processor())
+    registry.register_tracer_provider(bus, provider)
+
+    class Charge(DataTransferObject):
+        amount: int
+
+    framework = UseFramework(bus, log_after_execution=False)
+
+    @framework.feature(Charge)
+    class Do(Feature):
+        def execute(self, dto: Charge) -> str:
+            if dto.amount < 0:
+                raise ValueError("monto invalido")
+            return "cobrado"
+
+    framework.build_root_bus()
+    return framework, Charge
+
+
+def test_a_processor_that_fails_on_close_does_not_break_the_execution():
+    """Closing the span is observability work; it must not reach the caller."""
+    framework, Charge = framework_with_exploding_spans("exploding-close")
+
+    assert framework(Charge(amount=10)) == "cobrado"
+
+
+def test_a_processor_that_fails_on_close_does_not_swallow_the_real_error():
+    """The opposite failure: a broken exporter hiding a business exception."""
+    framework, Charge = framework_with_exploding_spans("exploding-close-error")
+
+    with pytest.raises(ValueError, match="monto invalido"):
+        framework(Charge(amount=-1))
+
+
+def test_a_trace_block_survives_a_processor_that_fails_on_close():
+    """`with_trace()` ends its root span on exit — same shield applies."""
+    framework, Charge = framework_with_exploding_spans("exploding-close-trace")
+
+    with framework.with_trace() as traced:
+        assert traced(Charge(amount=5)) == "cobrado"

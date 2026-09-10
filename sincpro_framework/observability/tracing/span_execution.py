@@ -6,6 +6,37 @@ from typing import Any, Generator
 from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE, tracer_for
 
 
+@contextmanager
+def _shielded(cm: Any) -> Generator[Any, None, None]:
+    """Run a block inside ``cm`` without letting ``cm`` break the block.
+
+    Entering, exiting and closing are all observability work: a span processor
+    that raises on ``on_end``, a logger that fails to unbind. None of that may
+    reach the bus. The block's **own** exception always propagates — a failing
+    exporter must never swallow a business error, so a suppressing ``__exit__``
+    is ignored on purpose.
+    """
+    try:
+        value = cm.__enter__()
+    except Exception:
+        yield None
+        return
+
+    try:
+        yield value
+    except BaseException as error:
+        try:
+            cm.__exit__(type(error), error, error.__traceback__)
+        except Exception:
+            pass
+        raise
+    else:
+        try:
+            cm.__exit__(None, None, None)
+        except Exception:
+            pass
+
+
 def _span_for(dto_name: str, layer: str, bus: str) -> Any:
     if not OTEL_AVAILABLE:
         return nullcontext()
@@ -40,6 +71,6 @@ def _log_ids_of(span: Any, logger: Any) -> Any:
 def span_execution(
     dto_name: str, layer: str, bus: str, logger: Any
 ) -> Generator[Any, None, None]:
-    with _span_for(dto_name, layer, bus) as span:
-        with _log_ids_of(span, logger):
+    with _shielded(_span_for(dto_name, layer, bus)) as span:
+        with _shielded(_log_ids_of(span, logger)):
             yield span

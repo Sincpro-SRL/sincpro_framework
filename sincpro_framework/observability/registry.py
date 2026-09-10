@@ -5,7 +5,12 @@ own them. Keeping the state here is what makes a second ``build_root_bus()`` reu
 what the first one created, and what lets a test reset everything with one call.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+from sincpro_framework.observability.domain import ObservabilityIdentity
+
+PROCESS = "<process>"
+"""Reserved key: the provider that owns the process, not any bounded context."""
 
 
 class ObservabilityRegistry:
@@ -14,6 +19,14 @@ class ObservabilityRegistry:
     def __init__(self) -> None:
         self._tracer_providers: Dict[str, Any] = {}
         self._error_clients: Dict[str, Any] = {}
+        self._process_identity: Optional[ObservabilityIdentity] = None
+
+    def register_process_identity(self, identity: ObservabilityIdentity) -> None:
+        self._process_identity = identity
+
+    def process_identity(self) -> Optional[ObservabilityIdentity]:
+        """Identity the process announced, so transport and buses agree on it."""
+        return self._process_identity
 
     def register_tracer_provider(self, bus: str, provider: Any) -> None:
         self._tracer_providers[bus] = provider
@@ -34,6 +47,7 @@ class ObservabilityRegistry:
     def reset(self) -> None:
         self._tracer_providers.clear()
         self._error_clients.clear()
+        self._process_identity = None
 
 
 registry = ObservabilityRegistry()

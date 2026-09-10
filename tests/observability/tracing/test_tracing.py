@@ -695,20 +695,41 @@ def test_otel_getter_suppressed_during_execution(otel_setup):
     assert captured["getter_calls"] == 0
 
 
-def test_logger_getter_not_registered_without_otlp_endpoint():
-    """Without OTEL_EXPORTER_OTLP_ENDPOINT, setup_otlp_provider must NOT register
-    the getter — the logger stays unmodified (backwards-compatible behavior)."""
+def test_logger_getter_not_registered_when_there_are_no_spans_to_read(monkeypatch):
+    """No endpoint and no host provider means no spans exist — nothing to stamp."""
     from sincpro_log.logger import create_logger
 
     from sincpro_framework.observability import ObservabilityIdentity
-    from sincpro_framework.observability.tracing.setup import setup
+    from sincpro_framework.observability.tracing import setup as setup_module
 
+    monkeypatch.setattr(setup_module, "host_provider_is_real", lambda: False)
     logger = create_logger("no-endpoint-test")
-    assert logger._getter_context is None  # no getter before
+    assert logger._getter_context is None
 
-    setup(ObservabilityIdentity(bus="no-endpoint-test"), logger)  # no endpoint in env
+    setup_module.setup(ObservabilityIdentity(bus="no-endpoint-test"), logger)
 
-    assert logger._getter_context is None  # getter must NOT be registered
+    assert logger._getter_context is None
+
+
+def test_logger_getter_is_registered_when_riding_the_host_provider(monkeypatch):
+    """The host owns OTel, so spans exist and the logs must carry their ids.
+
+    Setup used to return `on:host` before reaching the registration, leaving every
+    log line of an embedded bus without a trace_id.
+    """
+    from sincpro_log.logger import create_logger
+
+    from sincpro_framework.observability import ObservabilityIdentity
+    from sincpro_framework.observability.tracing import setup as setup_module
+
+    monkeypatch.setattr(setup_module.settings, "otlp_endpoint", None)
+    monkeypatch.setattr(setup_module, "host_provider_is_real", lambda: True)
+    logger = create_logger("host-provider-test")
+
+    status = setup_module.setup(ObservabilityIdentity(bus="host-provider-test"), logger)
+
+    assert status.reason == "host"
+    assert logger._getter_context is setup_module.current_otel_context
 
 
 def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):

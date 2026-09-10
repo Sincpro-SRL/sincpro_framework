@@ -95,22 +95,40 @@ class FrameworkSpanContext:
                 otel_context.detach(self._otel_token)
                 self._otel_token = None
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
-        if OTEL_AVAILABLE:
+    def _end_root_span(self, exc_type: Any, exc_val: Any) -> None:
+        """End the root span. A processor that fails here must not stop the cleanup."""
+        if not OTEL_AVAILABLE or self._root_span is None:
+            return
+        try:
+            if exc_type is not None:
+                from opentelemetry.trace import StatusCode
+
+                self._root_span.set_status(StatusCode.ERROR, str(exc_val))
+            self._root_span.end()
+        except Exception:
+            return
+
+    def _detach_otel_context(self) -> None:
+        """Detach the token even if ending the span blew up — otherwise the context
+        leaks into the next request served by this worker."""
+        if not OTEL_AVAILABLE or self._otel_token is None:
+            return
+        try:
             from opentelemetry import context as otel_context
 
-            if self._root_span is not None:
-                if exc_type is not None:
-                    from opentelemetry.trace import StatusCode
+            otel_context.detach(self._otel_token)
+        except Exception:
+            return
 
-                    self._root_span.set_status(StatusCode.ERROR, str(exc_val))
-                self._root_span.end()
-
-            if self._otel_token is not None:
-                otel_context.detach(self._otel_token)
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
+        self._end_root_span(exc_type, exc_val)
+        self._detach_otel_context()
 
         if self._log_ctx_cm is not None:
-            self._log_ctx_cm.__exit__(exc_type, exc_val, exc_tb)
+            try:
+                self._log_ctx_cm.__exit__(exc_type, exc_val, exc_tb)
+            except Exception:
+                pass
 
         if self._fw_context_cm is not None:
             self._fw_context_cm.__exit__(exc_type, exc_val, exc_tb)
