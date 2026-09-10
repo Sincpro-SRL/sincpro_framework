@@ -26,7 +26,7 @@ python = "^3.12"
 dependency-injector = "^4.49.1"
 pydantic = "^2.13.5"
 pyyaml = ">=6.0.1"
-sincpro-log = "^1.2.0"
+sincpro-log = "^1.2.1"
 opentelemetry-api = {version = ">=1.20", optional = true}
 opentelemetry-sdk = {version = ">=1.20", optional = true}
 opentelemetry-exporter-otlp-proto-grpc = {version = ">=1.20", optional = true}

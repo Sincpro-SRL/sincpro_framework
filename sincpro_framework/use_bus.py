@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Callable, Dict, Generic, Mapping, Optional, Type, cast
+from typing import Any, Dict, Generic, Mapping, Optional, Type, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -12,24 +12,8 @@ from .deps import DependencyLocator, TDeps
 from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
 from .middleware import Middleware, MiddlewarePipeline
+from .observability import FrameworkSpanContext, Observability
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .tracing import setup_otlp_provider, setup_sentry
-from .tracing.sentry import (
-    UNKNOWN_VERSION,
-    detect_caller_library_version,
-    framework_release,
-    instance_release,
-    library_version,
-    record_sentry_error,
-    register_app_release,
-)
-from .tracing.span_context import FrameworkSpanContext
-from .tracing.status import (
-    ComponentStatus,
-    ObservabilityStatus,
-    not_built_status,
-    status_from_exception,
-)
 
 
 class UseFramework(ContextMixin, Generic[TDeps]):
@@ -60,9 +44,9 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             log_after_execution (bool): Log after execution if False, All logs will be disabled
             log_app_services (bool): Log app services, If log_after_execution is False, this will be disabled
             log_features (bool): Log features, If log_after_execution is False, this will be disabled
-            package: Optional distribution name (Poetry package) used for
-                ``release``. When omitted, the version is taken from the
-                caller outside ``sincpro_framework``.
+            package: Optional Poetry distribution name used for Sentry
+                release and OTel ``service.name``. When omitted, the
+                caller outside ``sincpro_framework`` is detected.
         """
         # Logger
         self._is_logger_configured: bool = False
@@ -71,27 +55,14 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.log_after_execution: bool = log_after_execution
         self.log_app_services: bool = log_app_services
         self.log_features: bool = log_features
-        self._library_version: str = UNKNOWN_VERSION
-        try:
-            self._library_version = (
-                library_version(package) if package else detect_caller_library_version()
-            )
-        except Exception:
-            self._library_version = UNKNOWN_VERSION
-        try:
-            self._sentry_release: str = instance_release(
-                self._logger_name, self._library_version
-            )
-        except Exception:
-            self._sentry_release = f"{self._logger_name}:{UNKNOWN_VERSION}"
-        register_app_release(self._logger_name, self._sentry_release)
-        self._ignored_sentry_exceptions: list[Type[Exception]] = []
-        self._observability_status: ObservabilityStatus = not_built_status()
+        self.observability = Observability(bundled_context_name, package=package or "")
 
         self._init_context_storage()
 
         # Container
-        self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)  # type: ignore[call-arg]
+        self._sp_container = ioc.FrameworkContainer(  # type: ignore[call-arg]
+            logger_bus=self.logger, observability=self.observability
+        )
         self._sp_container.logger_bus = self.logger  # type: ignore[assignment]
 
         # Decorators
@@ -116,63 +87,38 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.was_initialized: bool = False
         self.bus: FrameworkBus | None = None
 
-    def __call__(
-        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
-    ) -> TypeDTOResponse | None:
-        """
-        Main function to execute the framework
-        :param dto:
-        :return: Any response
-        """
-        if not self.was_initialized:
-            self.build_root_bus()
+    def _add_dependencies_provided_by_user(self):
+        if "feature_registry" in self._sp_container.feature_bus.attributes:
+            feature_registry = self._sp_container.feature_bus.attributes[
+                "feature_registry"
+            ].kwargs
 
-        if self.bus is None:
-            error = SincproFrameworkNotBuilt(
-                "Check the decorators are rigistering the features and app services, check the imports of each "
-                "feature and app service"
+            for _, feature in feature_registry.items():
+                feature.add_attributes(**self.dynamic_dep_registry)
+
+        if "app_service_registry" in self._sp_container.app_service_bus.attributes:
+            app_service_registry = self._sp_container.app_service_bus.attributes[
+                "app_service_registry"
+            ].kwargs
+
+            for _, app_service in app_service_registry.items():
+                app_service.add_attributes(**self.dynamic_dep_registry)
+
+    def _add_error_handlers_provided_by_user(self):
+        if self.global_error_handler:
+            self._sp_container.framework_bus.add_attributes(
+                handle_error=self.global_error_handler
             )
-            record_sentry_error(
-                error,
-                "",
-                "framework",
-                self._logger_name,
-                kind="framework",
-                release=framework_release(),
+
+        if self.feature_error_handler:
+            self._sp_container.feature_bus.add_attributes(
+                handle_error=self.feature_error_handler
             )
-            raise error
 
-        implicit_token = None
-        implicit_overlay = None
-        if self._overlay_var.get() is None and not self._in_global_var.get():
-            implicit_token, implicit_overlay = self._push_overlay(dict(self._shared_context))
-
-        def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
-            assert (
-                self.bus is not None
-            )  # Help mypy understand this is safe after the check above
-
-            return self.bus.execute(processed_dto)
-
-        try:
-            return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
-        finally:
-            if implicit_token is not None and implicit_overlay is not None:
-                self._pop_overlay(implicit_token, implicit_overlay)
-
-    def get_async_bus(self) -> AsyncBus:
-        """Return a stateless async facade over this framework's bus.
-
-        Builds the root bus if it wasn't built yet (same lazy behavior as
-        ``__call__``). Use this from a caller that is itself ``async def`` and
-        wants to fan out several DTOs concurrently, e.g. via ``asyncio.gather``,
-        without blocking its event loop. See ``Bus.get_async_bus`` /
-        ``AsyncBus`` for the propagation and reuse semantics.
-        """
-        if not self.was_initialized:
-            self.build_root_bus()
-        assert self.bus is not None
-        return self.bus.get_async_bus()
+        if self.app_service_error_handler:
+            self._sp_container.app_service_bus.add_attributes(
+                handle_error=self.app_service_error_handler
+            )
 
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user"""
@@ -193,27 +139,15 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             self.log_after_execution and self.log_app_services
         )
 
-        # Propagate the bounded-context name so spans carry sincpro.instance
-        self.bus.feature_bus.service_name = self._logger_name
-        self.bus.app_service_bus.service_name = self._logger_name
-        self.bus.service_name = self._logger_name
-        self._propagate_sentry_config()
-
         # Set the DTO registry Tricky way but it works
         self.bus.dto_registry = dto_registry
 
-        # Observability is optional. Setup never raises; status is always
-        # inspectable so SDKs can see if Sentry/OTel actually came up.
-        try:
-            sentry_status = setup_sentry(self._logger_name, release=self._sentry_release)
-        except Exception as exc:
-            sentry_status = status_from_exception(exc)
-        try:
-            otel_status = setup_otlp_provider(self._logger_name, self.logger)
-        except Exception as exc:
-            otel_status = status_from_exception(exc)
-        self._observability_status = {"sentry": sentry_status, "otel": otel_status}
-        self._log_observability()
+        # The container already injects this into the three buses; kept as a guard so
+        # the guarantee does not depend on the provider still being the one the
+        # framework_bus Factory captured.
+        self.bus.observability = self.observability
+
+        self.observability.start(self.logger)
 
     def add_dependency(self, name, dep: Any):
         """
@@ -231,14 +165,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """
         if name in self.dynamic_dep_registry:
             error = DependencyAlreadyRegistered(f"The dependency {name} is already injected")
-            record_sentry_error(
-                error,
-                "",
-                "framework",
-                self._logger_name,
-                kind="framework",
-                release=framework_release(),
-            )
+            self.observability.record_error(error, "", "framework", kind="framework")
             raise error
         self.dynamic_dep_registry[name] = dep
 
@@ -256,6 +183,68 @@ class UseFramework(ContextMixin, Generic[TDeps]):
     def add_middleware(self, middleware: Middleware):
         """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)
+
+    def add_global_error_handler(self, handler: ErrorHandler):
+        """Register a global error handler.
+
+        Signature: ``(error) -> Any``.
+        If the handler re-raises, the framework calls the next handler in the chain.
+        First registered = first to execute.
+
+        Example::
+
+            def base(error):
+                return ErrorResponse(str(error))
+
+            app.add_global_error_handler(base)
+
+            def logger(error):
+                log.error(error)
+                raise error  # delegates to base
+
+            app.add_global_error_handler(logger)
+        """
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        self._global_error_handlers.append(handler)
+        self.global_error_handler = build_error_handler_chain(self._global_error_handlers)
+        if self.was_initialized and self.bus is not None:
+            self.bus.handle_error = self.global_error_handler
+
+    def add_feature_error_handler(self, handler: ErrorHandler):
+        """Register a feature-level error handler.
+
+        Same semantics as ``add_global_error_handler``.
+        """
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        self._feature_error_handlers.append(handler)
+        self.feature_error_handler = build_error_handler_chain(self._feature_error_handlers)
+        if self.was_initialized and self.bus is not None:
+            self.bus.feature_bus.handle_error = self.feature_error_handler
+
+    def add_app_service_error_handler(self, handler: ErrorHandler):
+        """Register an app service-level error handler.
+
+        Same semantics as ``add_global_error_handler``.
+        """
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        self._app_service_error_handlers.append(handler)
+        self.app_service_error_handler = build_error_handler_chain(
+            self._app_service_error_handlers
+        )
+        if self.was_initialized and self.bus is not None:
+            self.bus.app_service_bus.handle_error = self.app_service_error_handler
+
+    def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
+        """Do not send these exception types to GlitchTip / Sentry.
+
+        Error handlers still run. Use this for expected domain errors
+        (validation, insufficient funds, etc.) so they do not hide real bugs:
+        anything not in this list is reported even if a handler swallows it.
+        """
+        self.observability.ignore(*exc_types)
 
     def context(
         self, context_to_set: Mapping[str, Any], global_scope: bool = False
@@ -324,12 +313,10 @@ class UseFramework(ContextMixin, Generic[TDeps]):
                 with traced.context({"user.id": "u-123"}) as app_with_ctx:
                     result = app_with_ctx(MyDTO(...))
         """
-        return FrameworkSpanContext(
-            cast(Any, self),
-            service_name=self._logger_name,
-            trace_id=trace_id,
-            span_id=span_id,
-            carrier=carrier,
+        if not self.was_initialized:
+            self.build_root_bus()
+        return self.observability.trace_context(
+            cast(Any, self), trace_id=trace_id, span_id=span_id, carrier=carrier
         )
 
     def with_parent_trace(self) -> FrameworkSpanContext:
@@ -365,158 +352,56 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             with framework.with_parent_trace() as fw:
                 result = fw(CreateOrderDTO(...), OrderResult)
         """
-        return FrameworkSpanContext(
-            cast(Any, self), service_name=self._logger_name, adopt_active=True
-        )
+        if not self.was_initialized:
+            self.build_root_bus()
+        return self.observability.trace_context(cast(Any, self), adopt_active=True)
 
-    def add_global_error_handler(self, handler: ErrorHandler):
-        """Register a global error handler.
+    def get_async_bus(self) -> AsyncBus:
+        """Return a stateless async facade over this framework's bus.
 
-        Signature: ``(error) -> Any``.
-        If the handler re-raises, the framework calls the next handler in the chain.
-        First registered = first to execute.
-
-        Example::
-
-            def base(error):
-                return ErrorResponse(str(error))
-
-            app.add_global_error_handler(base)
-
-            def logger(error):
-                log.error(error)
-                raise error  # delegates to base
-
-            app.add_global_error_handler(logger)
+        Builds the root bus if it wasn't built yet (same lazy behavior as
+        ``__call__``). Use this from a caller that is itself ``async def`` and
+        wants to fan out several DTOs concurrently, e.g. via ``asyncio.gather``,
+        without blocking its event loop. See ``Bus.get_async_bus`` /
+        ``AsyncBus`` for the propagation and reuse semantics.
         """
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self._global_error_handlers.append(handler)
-        self.global_error_handler = build_error_handler_chain(self._global_error_handlers)
-        if self.was_initialized and self.bus is not None:
-            self.bus.handle_error = self.global_error_handler
+        if not self.was_initialized:
+            self.build_root_bus()
+        assert self.bus is not None
+        return self.bus.get_async_bus()
 
-    def add_feature_error_handler(self, handler: ErrorHandler):
-        """Register a feature-level error handler.
-
-        Same semantics as ``add_global_error_handler``.
-        """
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self._feature_error_handlers.append(handler)
-        self.feature_error_handler = build_error_handler_chain(self._feature_error_handlers)
-        if self.was_initialized and self.bus is not None:
-            self.bus.feature_bus.handle_error = self.feature_error_handler
-
-    def add_app_service_error_handler(self, handler: ErrorHandler):
-        """Register an app service-level error handler.
-
-        Same semantics as ``add_global_error_handler``.
-        """
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self._app_service_error_handlers.append(handler)
-        self.app_service_error_handler = build_error_handler_chain(
-            self._app_service_error_handlers
-        )
-        if self.was_initialized and self.bus is not None:
-            self.bus.app_service_bus.handle_error = self.app_service_error_handler
-
-    def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
-        """Do not send these exception types to GlitchTip / Sentry.
-
-        Error handlers still run. Use this for expected domain errors
-        (validation, insufficient funds, etc.) so they do not hide real bugs:
-        anything not in this list is reported even if a handler swallows it.
-        """
-        for exc_type in exc_types:
-            if exc_type not in self._ignored_sentry_exceptions:
-                self._ignored_sentry_exceptions.append(exc_type)
-        if self.was_initialized and self.bus is not None:
-            self._propagate_sentry_config()
-
-    def observability_status(self) -> ObservabilityStatus:
-        """Return whether Sentry and OTel were built for this instance.
-
-        Never raises. ``state`` is ``off`` (optional/not configured), ``on``
-        (Sentry isolated client ready, or OTel provider ready) or ``failed``
-        (configured but construction broke). Missing sentry-sdk is
-        ``off:sdk_missing``, not an error.
-        """
-        return {
-            "sentry": cast(ComponentStatus, dict(self._observability_status["sentry"])),
-            "otel": cast(ComponentStatus, dict(self._observability_status["otel"])),
-        }
-
-    def _log_observability(self) -> None:
-        sentry = self._observability_status["sentry"]
-        otel = self._observability_status["otel"]
-        message = (
-            f"observability sentry={sentry['state']}:{sentry['reason']} "
-            f"otel={otel['state']}:{otel['reason']}"
-        )
-        try:
-            if sentry["state"] == "failed" or otel["state"] == "failed":
-                self.logger.warning(message)
-            else:
-                self.logger.info(message)
-        except Exception:
-            return
-
-    def _propagate_sentry_config(self) -> None:
-        """Copy release and ignored types onto the buses after they exist."""
-        if self.bus is None:
-            return
-        ignored = tuple(self._ignored_sentry_exceptions)
-        self.bus.feature_bus.sentry_release = self._sentry_release
-        self.bus.feature_bus.ignored_sentry_exceptions = ignored
-        self.bus.app_service_bus.sentry_release = self._sentry_release
-        self.bus.app_service_bus.ignored_sentry_exceptions = ignored
-        self.bus.sentry_release = framework_release()
-
-    def _add_dependencies_provided_by_user(self):
-        if "feature_registry" in self._sp_container.feature_bus.attributes:
-            feature_registry = self._sp_container.feature_bus.attributes[
-                "feature_registry"
-            ].kwargs
-
-            for _, feature in feature_registry.items():
-                feature.add_attributes(**self.dynamic_dep_registry)
-
-        if "app_service_registry" in self._sp_container.app_service_bus.attributes:
-            app_service_registry = self._sp_container.app_service_bus.attributes[
-                "app_service_registry"
-            ].kwargs
-
-            for _, app_service in app_service_registry.items():
-                app_service.add_attributes(**self.dynamic_dep_registry)
-
-    def _add_error_handlers_provided_by_user(self):
-        if self.global_error_handler:
-            self._sp_container.framework_bus.add_attributes(
-                handle_error=self.global_error_handler
-            )
-
-        if self.feature_error_handler:
-            self._sp_container.feature_bus.add_attributes(
-                handle_error=self.feature_error_handler
-            )
-
-        if self.app_service_error_handler:
-            self._sp_container.app_service_bus.add_attributes(
-                handle_error=self.app_service_error_handler
-            )
-
-    def _execute_with_middleware(
-        self,
-        dto: TypeDTO,
-        executor: Callable,
-        return_type: Type[TypeDTOResponse] | None = None,
+    def __call__(
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
-        """
-        Execute the DTO with the middleware pipeline
-        """
-        return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+        """Main function to execute the framework"""
+        if not self.was_initialized:
+            self.build_root_bus()
+
+        if self.bus is None:
+            error = SincproFrameworkNotBuilt(
+                "Check the decorators are rigistering the features and app services, check the imports of each "
+                "feature and app service"
+            )
+            self.observability.record_error(error, "", "framework", kind="framework")
+            raise error
+
+        implicit_token = None
+        implicit_overlay = None
+        if self._overlay_var.get() is None and not self._in_global_var.get():
+            implicit_token, implicit_overlay = self._push_overlay(dict(self._shared_context))
+
+        def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
+            assert (
+                self.bus is not None
+            )  # Help mypy understand this is safe after the check above
+
+            return self.bus.execute(processed_dto)
+
+        try:
+            return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+        finally:
+            if implicit_token is not None and implicit_overlay is not None:
+                self._pop_overlay(implicit_token, implicit_overlay)
 
     @property
     def logger(self) -> LoggerProxy:

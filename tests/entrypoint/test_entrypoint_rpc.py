@@ -6,6 +6,7 @@ from typing import Any
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject
 from sincpro_framework.entrypoints.rpc import RpcGateway
+from sincpro_framework.entrypoints.rpc.entrypoint import merge_http_context
 from sincpro_framework.entrypoints.rpc.jrpc import (
     DISCOVER_METHOD,
     INVALID_PARAMS,
@@ -333,3 +334,64 @@ def test_build_rpc_app_requires_extra_or_returns_asgi():
         assert app is not None
     except ImportError as error:
         assert "sincpro-framework[rpc]" in str(error)
+
+
+# ---------------------------------------------------------------------------
+# HTTP transport — headers folded into the framework context
+# ---------------------------------------------------------------------------
+
+
+def test_correlation_id_header_reaches_the_feature():
+    """X-Correlation-Id is what ties an RPC call to the caller's request log."""
+    gateway = RpcGateway({"pay": _instance("ctx")})
+    header_context = merge_http_context({"x-correlation-id": "req-from-gateway"})
+
+    reply = rpc_object(
+        gateway.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "pay.features.EchoContext",
+                "params": {"label": "ok"},
+            },
+            context=header_context,
+        )
+    )
+
+    assert reply["result"]["correlation_id"] == "req-from-gateway"
+
+
+def test_traceparent_header_becomes_the_otel_carrier():
+    """W3C traceparent must arrive as a carrier so the span adopts the remote parent."""
+    traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+    merged = merge_http_context({"traceparent": traceparent})
+
+    assert merged == {"carrier": {"traceparent": traceparent}}
+
+
+def test_body_context_wins_over_the_headers():
+    """Headers are a default: an explicit context in the payload overrides them."""
+    gateway = RpcGateway({"pay": _instance("ctx")})
+    header_context = merge_http_context({"x-correlation-id": "from-header"})
+
+    reply = rpc_object(
+        gateway.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "pay.features.EchoContext",
+                "params": {"label": "ok"},
+                "context": {"correlation_id": "from-body"},
+            },
+            context=header_context,
+        )
+    )
+
+    assert reply["result"]["correlation_id"] == "from-body"
+
+
+def test_request_without_context_headers_inherits_nothing():
+    """No headers must not fabricate a context the DTO would have to carry."""
+    assert merge_http_context({}) == {}
+    assert merge_http_context({"content-type": "application/json"}) == {}

@@ -34,16 +34,18 @@ class GreetingFeature(Feature):
         return f"Hello, {dto.name}!"
 
 
-# 5. Execute the Use Case — or export the same catalog as MCP
+# 5. Execute the Use Case
 result = framework(GreetingParams(name="Alice"))
 print(result)  # Hello, Alice!
-
-# pip install sincpro-framework[mcp]
-from sincpro_framework.entrypoints.mcp import build_mcp_server
-build_mcp_server(framework).run()
 ```
 
-Write the use case once. **`entrypoint_mcp`** publishes the same catalog as MCP tools. **`entrypoint_rpc`** publishes several instances as JSON-RPC methods. No flags on Features — the bus is already the catalog.
+That is the whole framework: a use case, its DTO, and a bus that executes it. Observability
+comes with it — a span per DTO, errors reported, logs correlated — without configuring
+anything.
+
+When the same catalog has to be reachable from outside the process, an
+[entrypoint](#entrypoints-exposing-the-bus) publishes it over a protocol without touching
+the use case. That is transport, and it comes later.
 
 Now you are ready to explore more complex use cases! 🚀
 
@@ -52,9 +54,7 @@ Now you are ready to explore more complex use cases! 🚀
 1. [Overview of Hexagonal Architecture](#overview-of-hexagonal-architecture)
     - [Key Layers of Hexagonal Architecture](#key-layers-of-hexagonal-architecture)
     - [Why Use a Unified Bus Pattern?](#why-use-a-unified-bus-pattern)
-2. [entrypoint_mcp](#entrypoint_mcp)
-3. [entrypoint_rpc](#entrypoint_rpc)
-4. [Key Features of the Sincpro Framework](#key-features-of-the-sincpro-framework)
+2. [Key Features of the Sincpro Framework](#key-features-of-the-sincpro-framework)
     - [DTO Validation with Pydantic](#dto-validation-with-pydantic)
     - [Dependency Injection](#dependency-injection)
     - [Inversion of Control (IoC)](#inversion-of-control-ioc)
@@ -65,30 +65,31 @@ Now you are ready to explore more complex use cases! 🚀
     - [Decoupled Logic Execution](#decoupled-logic-execution)
     - [Application Service Orchestration](#application-service-orchestration)
     - [IDE Support with Typing](#ide-support-with-typing)
-    - [entrypoint_mcp](#entrypoint_mcp-1)
-    - [entrypoint_rpc](#entrypoint_rpc-1)
-5. [Features vs. Application Service](#features-vs-application-service)
-6. [Example Usage for a Payment Gateway](#example-usage-for-a-payment-gateway)
+3. [Features vs. Application Service](#features-vs-application-service)
+4. [Example Usage for a Payment Gateway](#example-usage-for-a-payment-gateway)
     - [Configuring the Framework](#configuring-the-framework)
     - [Best Practices for Imports](#best-practices-for-imports)
-    - [Sample Configuration in ](#sample-configuration-in-init-py)[`__init__.py`](#sample-configuration-in-init-py)
-7. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
+    - [Sample Configuration in `__init__.py`](#sample-configuration-in-__init__py)
+5. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
     - [dependencies.py — Adapter Registration](#dependenciespy--adapter-registration)
     - [framework.py — Wiring with DependencyContextType](#frameworkpy--wiring-with-dependencycontexttype)
     - [\_\_init\_\_.py — Bootstrap the Bounded Context](#__init__py--bootstrap-the-bounded-context)
     - [Testing Dependency Consistency](#testing-dependency-consistency)
-8. [Creating a Feature](#creating-a-feature)
-    - [Example of Creating a Feature](#example-of-creating-a-feature)
-9. [Creating an Application Service](#creating-an-application-service)
-    - [Example of Creating an Application Service](#example-of-creating-an-application-service)
-10. [Executing a Use Case](#executing-a-use-case)
-    - [Example of Executing a Use Case](#example-of-executing-a-use-case)
-11. [Summary](#summary)
-12. [Middleware System](#middleware-system-1)
-13. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
-14. [Configuration or settings](#configuration-or-settings)
-15. [Variables](#variables)
-16. [Python 3.14 & Free-Threading Notes](#python-314--free-threading-notes)
+6. [Creating a Feature](#creating-a-feature)
+7. [Creating an Application Service](#creating-an-application-service)
+8. [Executing a Use Case](#executing-a-use-case)
+9. [Summary](#summary)
+10. [Middleware System](#middleware-system-1)
+11. [Error Handling](#error-handling)
+12. [Auto-Documentation](#auto-documentation)
+13. [Entrypoints: exposing the bus](#entrypoints-exposing-the-bus) — transport, not domain
+    - [MCP tools (`entrypoint_mcp`)](#mcp-tools-entrypoint_mcp)
+    - [JSON-RPC (`entrypoint_rpc`)](#json-rpc-entrypoint_rpc)
+14. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
+15. [Configuration or settings](#configuration-or-settings)
+16. [Variables](#variables)
+17. [Tests & coverage](#tests--coverage)
+18. [Python 3.14 & Free-Threading Notes](#python-314--free-threading-notes)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -116,107 +117,6 @@ Using a unified bus allows developers to access all dependencies through a singl
 repeated imports or initialization. This approach ensures each bounded context is self-sufficient, independently
 scalable, and minimizes coupling while enhancing modularity.
 
-## `entrypoint_mcp`
-
-**Turn the bus into an MCP server. Docstrings contextualize the tools for the LLM.**
-
-A bounded context already *is* an API: DTO in, `execute`, DTO out. **`entrypoint_mcp`** is the MCP host for that catalog — not REST. JSON-RPC is **[`entrypoint_rpc`](#entrypoint_rpc)**. The Feature never learns what FastMCP is. There is no `expose_mcp=True`.
-
-| How you run it | What the client speaks |
-|---|---|
-| `.run()` | MCP stdio — Cursor, Claude Desktop, CLI |
-| `.run(transport="http")` | MCP Streamable HTTP at `/mcp` — still `tools/call`, not REST |
-
-```bash
-pip install sincpro-framework[mcp]
-```
-
-```python
-from sincpro_framework.entrypoints.mcp import build_mcp_server, Entrypoint
-
-# CLI / Cursor / Claude Desktop (stdio)
-build_mcp_server(payment_sdk).run()
-
-# Same MCP catalog over the network
-build_mcp_server(payment_sdk).run(transport="http", host="127.0.0.1", port=8000)
-
-# Optional: allow-list, then pick the transport
-Entrypoint(payment_sdk).include(ChargePayment).exclude(InternalDebug).run()
-Entrypoint(payment_sdk).include(ChargePayment).run(transport="http", port=8000)
-```
-
-Agents see typed tools generated from your DTOs (Pydantic JSON Schema, Value Object titles, `Field(description=...)`). A `tools/call` is the same operation as `framework(dto)`: validation, middleware, tracing, error handlers.
-
-### Docstrings are the LLM context
-
-The agent **reads** `tools/list` (name + description + field schema) and then **executes** `tools/call`. Nothing else is injected. Write the docstring for that reader — when to use the tool, what not to send, enum values — not Args/Returns (the schema already has types).
-
-```python
-class CommandGenerateCUF(DataTransferObject):
-    nit: str | int
-    """Issuer NIT. Digits only; the Feature zero-pads to 13."""
-    modality: SIATModality
-    """SIAT modality value, not the Python name. Example: 1 = electrónica."""
-
-
-@siat_soap_sdk.feature(CommandGenerateCUF)
-class GenerateCUF(Feature):
-    """Build the SIAT CUF (código único de factura) from NIT, datetime, branch, and modality.
-
-    Use before reception. Does not call SIAT — local encoding only.
-    """
-
-    def execute(self, dto: CommandGenerateCUF) -> ResponseGenerateCUF:
-        ...
-```
-
-| You write | LLM sees |
-|---|---|
-| Feature class docstring (preferred) | Tool description in `tools/list` |
-| else `execute` docstring, else DTO docstring, else DTO name | same |
-| Field docstring or `Field(description=...)` | Each argument in the input schema |
-| Inherited `Feature` / `ApplicationService` essay | **Ignored** — not published |
-
-A Feature with no own docstring publishes the DTO class name. That is enough to call; it is not enough for an LLM to choose the right tool.
-
-MCP HTTP is still MCP (`tools/call`), not a REST API.
-
-Contract: **[`entrypoint_mcp`](docs/architecture/entrypoint_mcp.md)**. SIAT evaluation: **[use case](docs/architecture/entrypoint_mcp_use_case.md)**.
-
-## `entrypoint_rpc`
-
-**Turn one or more bounded contexts into a JSON-RPC 2.0 server. Methods are `instance.layer.DtoName`.**
-
-Payments mounts `qr`, `cybersource`, and `bank_account` in one process. The prefix exists because DTO names collide (`CommandAuthenticateEconomico` lives in qr and in extractos). Discovery is OpenRPC 1.4 (`rpc.discover` / `GET /openrpc.json`). This is not REST.
-
-```bash
-pip install sincpro-framework[rpc]
-```
-
-```python
-from sincpro_framework.entrypoints.rpc import RpcGateway
-
-RpcGateway({
-    "qr": qr,
-    "cybersource": cybersource,
-    "bank_account": bank_account,
-}).run()  # POST http://127.0.0.1:8080/rpc
-```
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "qr.features.CommandCreateQREconomico",
-  "params": { "transaction_id": "t-1", "amount": 50.0 },
-  "context": { "correlation_id": "req-9" }
-}
-```
-
-`params` are DTO fields. `context` is a JSON-RPC extension (sibling of `params`) and becomes `framework.context` — Features keep using `self.context`. HTTP `X-Correlation-Id` and `traceparent` fill in when the body omits them. `layers=("app_services",)` publishes only ApplicationServices.
-
-Contract: **[`entrypoint_rpc`](docs/architecture/entrypoint_rpc.md)**.
-
 ## 🔑 Key Features of the Sincpro Framework
 
 The Sincpro Framework follows hexagonal architecture principles, promoting modularity, scalability, and development
@@ -237,14 +137,14 @@ efficiency. Here are its core features:
 - Automates the instantiation and configuration of components, reducing boilerplate code.
 - Encourages loose coupling, making systems more adaptable and maintainable.
 
-### � Middleware System
+### 🧬 Middleware System
 
 - Allows registering custom functions that run before every Feature or ApplicationService execution.
 - Middleware execute **in order**: each one receives the DTO output from the previous step.
 - Common uses: validation, authentication checks, data enrichment, and logging.
 - Any middleware that raises an exception stops the pipeline immediately.
 
-### �📡 Context Manager for Metadata Propagation
+### 📡 Context Manager for Metadata Propagation
 
 - Provides automatic metadata propagation across Features and ApplicationServices without manual parameter passing.
 - Uses Python's `contextvars` for thread-safe context storage and isolation.
@@ -362,11 +262,15 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 
 ### `entrypoint_mcp`
 
+See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
+
 - One line publishes the bus as MCP tools: `build_mcp_server(instance).run()`.
 - Features and ApplicationServices become typed tools. Docstrings are the LLM context.
 - Domain code stays host-agnostic. This extra is MCP only.
 
 ### `entrypoint_rpc`
+
+See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
 
 - One process, several instances: `RpcGateway({"qr": qr, "cybersource": cybersource}).run()`.
 - Methods are `qr.features.CommandCreateQREconomico` / `siat.app_services.CommandGenerateCUFD`.
@@ -751,7 +655,7 @@ maintainability.
 
 This structured approach ensures high-quality, maintainable software that can adapt to evolving business needs. 🚀
 
-## � Middleware System
+## 🧬 Middleware System
 
 The Sincpro Framework provides a simple and flexible middleware system that lets you add custom processing logic **before** your Features and ApplicationServices are executed.
 
@@ -955,7 +859,7 @@ framework.add_global_error_handler(observability_handler) # 2nd
 framework.add_global_error_handler(base_handler)          # 3rd = final fallback
 ```
 
-## �📖 Auto-Documentation
+## 📖 Auto-Documentation
 
 The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in multiple formats optimized for different use cases.
 
@@ -1217,6 +1121,113 @@ The JSON schema format enables powerful AI integrations:
 - **Analysis**: AI can identify optimization opportunities and suggest improvements
 - **Migration**: AI can understand dependencies for migration planning
 
+## 🔌 Entrypoints: exposing the bus
+
+The application layer above is the framework. An entrypoint is transport: it publishes
+the same catalog of Features and ApplicationServices over a protocol, and adds nothing
+to the domain. Pick one, both or none — the bus does not change.
+
+### MCP tools (`entrypoint_mcp`)
+
+**Turn the bus into an MCP server. Docstrings contextualize the tools for the LLM.**
+
+A bounded context already *is* an API: DTO in, `execute`, DTO out. **`entrypoint_mcp`** is the MCP host for that catalog — not REST. JSON-RPC is **[`entrypoint_rpc`](#entrypoint_rpc)**. The Feature never learns what FastMCP is. There is no `expose_mcp=True`.
+
+| How you run it | What the client speaks |
+|---|---|
+| `.run()` | MCP stdio — Cursor, Claude Desktop, CLI |
+| `.run(transport="http")` | MCP Streamable HTTP at `/mcp` — still `tools/call`, not REST |
+
+```bash
+pip install sincpro-framework[mcp]
+```
+
+```python
+from sincpro_framework.entrypoints.mcp import build_mcp_server, Entrypoint
+
+# CLI / Cursor / Claude Desktop (stdio)
+build_mcp_server(payment_sdk).run()
+
+# Same MCP catalog over the network
+build_mcp_server(payment_sdk).run(transport="http", host="127.0.0.1", port=8000)
+
+# Optional: allow-list, then pick the transport
+Entrypoint(payment_sdk).include(ChargePayment).exclude(InternalDebug).run()
+Entrypoint(payment_sdk).include(ChargePayment).run(transport="http", port=8000)
+```
+
+Agents see typed tools generated from your DTOs (Pydantic JSON Schema, Value Object titles, `Field(description=...)`). A `tools/call` is the same operation as `framework(dto)`: validation, middleware, tracing, error handlers.
+
+#### Docstrings are the LLM context
+
+The agent **reads** `tools/list` (name + description + field schema) and then **executes** `tools/call`. Nothing else is injected. Write the docstring for that reader — when to use the tool, what not to send, enum values — not Args/Returns (the schema already has types).
+
+```python
+class CommandGenerateCUF(DataTransferObject):
+    nit: str | int
+    """Issuer NIT. Digits only; the Feature zero-pads to 13."""
+    modality: SIATModality
+    """SIAT modality value, not the Python name. Example: 1 = electrónica."""
+
+
+@siat_soap_sdk.feature(CommandGenerateCUF)
+class GenerateCUF(Feature):
+    """Build the SIAT CUF (código único de factura) from NIT, datetime, branch, and modality.
+
+    Use before reception. Does not call SIAT — local encoding only.
+    """
+
+    def execute(self, dto: CommandGenerateCUF) -> ResponseGenerateCUF:
+        ...
+```
+
+| You write | LLM sees |
+|---|---|
+| Feature class docstring (preferred) | Tool description in `tools/list` |
+| else `execute` docstring, else DTO docstring, else DTO name | same |
+| Field docstring or `Field(description=...)` | Each argument in the input schema |
+| Inherited `Feature` / `ApplicationService` essay | **Ignored** — not published |
+
+A Feature with no own docstring publishes the DTO class name. That is enough to call; it is not enough for an LLM to choose the right tool.
+
+MCP HTTP is still MCP (`tools/call`), not a REST API.
+
+Contract: **[`entrypoint_mcp`](docs/architecture/entrypoint_mcp.md)**. SIAT evaluation: **[use case](docs/architecture/entrypoint_mcp_use_case.md)**.
+
+### JSON-RPC (`entrypoint_rpc`)
+
+**Turn one or more bounded contexts into a JSON-RPC 2.0 server. Methods are `instance.layer.DtoName`.**
+
+Payments mounts `qr`, `cybersource`, and `bank_account` in one process. The prefix exists because DTO names collide (`CommandAuthenticateEconomico` lives in qr and in extractos). Discovery is OpenRPC 1.4 (`rpc.discover` / `GET /openrpc.json`). This is not REST.
+
+```bash
+pip install sincpro-framework[rpc]
+```
+
+```python
+from sincpro_framework.entrypoints.rpc import RpcGateway
+
+RpcGateway({
+    "qr": qr,
+    "cybersource": cybersource,
+    "bank_account": bank_account,
+}).run()  # POST http://127.0.0.1:8080/rpc
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "qr.features.CommandCreateQREconomico",
+  "params": { "transaction_id": "t-1", "amount": 50.0 },
+  "context": { "correlation_id": "req-9" }
+}
+```
+
+`params` are DTO fields. `context` is a JSON-RPC extension (sibling of `params`) and becomes `framework.context` — Features keep using `self.context`. HTTP `X-Correlation-Id` and `traceparent` fill in when the body omits them. `layers=("app_services",)` publishes only ApplicationServices.
+
+Contract: **[`entrypoint_rpc`](docs/architecture/entrypoint_rpc.md)**.
+
 ## Observability
 
 The bus always instruments. Extras and env vars only decide **where** data goes.
@@ -1262,11 +1273,11 @@ pip install sincpro-framework[sentry]
 export SENTRY_PYTHON_DSN=https://KEY@glitchtip.sincpro.dev/1
 ```
 
-Conf (`sincpro_framework/conf/sincpro_framework_conf.yml`) resolves `sentry_dsn` from `SENTRY_PYTHON_DSN`. If that env is set, `observability_status()["sentry"]` is `on:init`, not `off`. The framework does **not** call `sentry_sdk.init()` and does not reuse the host client.
+Conf (`sincpro_framework/conf/sincpro_framework_conf.yml`) resolves `sentry_dsn` from `SENTRY_PYTHON_DSN`. If that env is set, `app.observability.status.sentry` is `on:init`, not `off`. The framework does **not** call `sentry_sdk.init()` and does not reuse the host client.
 
-Each framework event uses an isolated Sentry `Client` whose `release` is computed once at `UseFramework` init: `{app_name}:{library_version}` (Poetry/installed dist), not the Python version. Example: `payment-cybersource:5.0.3`. Framework-internal errors use `sincpro-framework:<framework version>`.
+Each framework event uses an isolated Sentry `Client` whose `release` is the deployed artifact and its version — literally `APP_RELEASE` (`sincpro_mcp_odoo:0.8.0`), or `{distribution}:{version}` for an SDK (`sincpro-payments-sdk:5.0.3`). The bus is **not** part of the release: two buses of one deployment ship the same release and are told apart by the `sincpro.instance` tag. Framework-internal errors use `sincpro-framework:<framework version>`.
 
-When the caller isn't an installed distribution (e.g. a service entrypoint, not a library) `library_version` can't be resolved and falls back to the `APP_RELEASE` env var, so services still get a real release instead of `payment-cybersource:unknown`.
+`APP_RELEASE` is the standard on every deployed service, so it answers first. Only when there is no artifact at all does the bus name stand in for it, so events stay separable per bounded context.
 
 GlitchTip `environment` is `TENANT` (same value as the `tenant` tag) so events can be filtered by tenant in the UI.
 
@@ -1284,9 +1295,9 @@ Pass `package="sincpro-payments-sdk"` to `UseFramework` when the caller is not t
 Observability is optional and must never break the bus. After `build_root_bus()` (or the first `app(dto)` call) every instance exposes a probe:
 
 ```python
-status = app.observability_status()
-status["sentry"]  # {active, state, reason}  state: off | on | failed
-status["otel"]
+status = app.observability.status          # ObservabilityStatus
+status.sentry.state                        # off | on | failed
+status.otel.reason
 ```
 
 - `off` — extra not installed or conf DSN missing (`sdk_missing`, `dsn_missing`)
@@ -1367,21 +1378,119 @@ Every span produced by the framework carries:
 | Attribute | Value | Purpose |
 |---|---|---|
 | `sincpro.layer` | `"feature"` or `"application_service"` | Identify which bus layer handled the DTO |
-| `sincpro.instance` | The framework instance name (e.g. `"payments"`) | Distinguish bounded contexts — useful when multiple `UseFramework` instances share one process, since the OTLP `service.name` Resource reflects only the first registered instance |
+| `sincpro.instance` | The framework instance name (e.g. `"payments"`) | Distinguish bounded contexts inside one deployment |
+
+### The observability API: automatic first, two doors when you need them
+
+**Nothing has to be called.** Creating a `UseFramework` and building it is the whole
+setup:
+
+- **It auto-configures.** The endpoint, the DSN, the release, the tenant and the
+  sampling rate are read from the environment by the framework itself
+  (`OTEL_EXPORTER_OTLP_ENDPOINT`, `SENTRY_PYTHON_DSN`, `APP_RELEASE`, `TENANT`,
+  `OTEL_TRACES_SAMPLER_ARG`, `OTEL_SERVICE_NAME`, `SINCPRO_FRAMEWORK_LOG_LEVEL`).
+  A service does **not** assign anything into the framework's settings: if the pod has
+  the variable, the bus has it too.
+- **It auto-instruments.** Every DTO gets a span named after it, with `sincpro.layer`
+  and `sincpro.instance`; every unhandled exception reaches GlitchTip under the right
+  release; every internal log line carries the active `trace_id`. Identity is resolved
+  once — the calling library, or `APP_RELEASE` for a service.
+- **It degrades on its own.** Extras missing, endpoint absent, collector down, a span
+  processor that raises: all of it is a status you can read, never an exception the bus
+  has to survive.
+
+So a library embedded in Odoo calls none of this. `UseFramework(...)`, and done.
+
+Two doors exist for what the framework cannot know on its own:
+
+```python
+# 1. Per bus — you already have it
+framework.observability.identity   # sincpro-odoo-mcp:0.8.0:sales_mcp
+framework.observability.status     # {"sentry": {...}, "otel": {...}}
+
+# 2. The transport — only for a service that also serves HTTP
+from sincpro_framework.observability import process
+
+process.identity                     # sincpro-odoo-mcp:0.8.0 — no bus segment
+process.status                       # on:installed | on:host | off:...
+process.tracer("asgi")               # for OpenTelemetryMiddleware / HTTPXClientInstrumentor
+process.bind_logger(access_log)      # that logger now stamps the request's trace_id
+process.trace_ids()                  # the same ids, for a structlog processor
+process.record_error(error, "asgi")  # a 500 that dies before any Feature runs
+```
+
+Everything else under `sincpro_framework.observability` is an implementation detail of
+those two. There is nothing to monkeypatch and no private module to import.
+
+#### A bus never takes the global TracerProvider
+
+Transport instrumentation asks OTel for the *global* tracer. If a bus answered there,
+every request would be exported as if it belonged to that bounded context — with three
+buses in one process, `POST /mcp` came out labelled as the first one that booted.
+
+So the rule is: when nobody owns the global, the framework installs a **process**
+provider there — same endpoint, same tenant, identity without the bus segment. When a
+host (Odoo) already owns it, nothing is installed. Building any bus is what triggers
+this, which is why a service builds its buses before it serves the first request.
+
+The result is one trace, several identities, and no shared Resource:
+
+```
+service.name=sincpro-odoo-mcp:0.8.0              POST /mcp                  (ASGI)
+  └── service.name=...:0.8.0:common_mcp            CommandListAvailableTools  (bus)
+  └── service.name=...:0.8.0:sales_mcp             CommandCreateQuote         (bus)
+        └── service.name=sincpro-odoo-mcp:0.8.0      GET /odoo/registry       (httpx)
+access log / uvicorn                              same trace_id, process logger
+```
+
+They share the `trace_id` because OTel propagates through contextvars — not because
+they share a provider. Filter the deployment by `sincpro-odoo-mcp:0.8.0`, a bounded
+context by its full `service.name` or by the `sincpro.instance` attribute.
+
+#### What a service's boot looks like
+
+```python
+from sincpro_framework.observability import process
+
+def main() -> None:
+    configure_process_logging(settings.log_level)   # your own stdlib/structlog routing
+
+    # Eager: building a bus installs the process provider, which the ASGI middleware
+    # needs before it opens its first span.
+    for bus in ALL_BUSES:
+        bus.build_root_bus()
+
+    process.bind_logger(access_log)
+    logger.info("otel proceso=%s:%s", process.status.state, process.status.reason)
+
+    serve(middleware=[Middleware(OpenTelemetryMiddleware), Middleware(JsonAccessLog)])
+```
+
+What stays yours: which URLs to exclude, which library loggers to route, what not to
+log, the origin guard, the routes. The framework gives the sink, the identity, the
+tracer per layer and the ids for the logs; the service wires its own transport.
 
 ### Embedding sincpro inside another instrumented service (Odoo, FastAPI, etc.)
 
-`setup_otlp_provider` always creates a **private** TracerProvider for sincpro with its own `service.name`. If the host application (Odoo, FastAPI, Celery) already registered the global OTel provider, sincpro leaves it untouched and keeps its provider internal.
+Every bus gets its **own** TracerProvider, whose `service.name` is `artifact:version:bus` — e.g. `sincpro_mcp_odoo:0.8.0:common_mcp`. The root span created by `with_trace()` and the DTO spans under it all come from that provider, so one trace reports one identity. If the host application (Odoo, FastAPI, Celery) already registered the global OTel provider, sincpro leaves it untouched and keeps its own provider internal.
 
 The trace relationship is still preserved: OTel propagates the active parent span via `contextvars` (process-wide), so sincpro spans are automatically children of whatever span the host has active at call time. In Tempo/Jaeger the full tree is visible and filterable:
 
 ```
-service.name=odoo          →  GET /web/dataset/call_kw     (Odoo HTTP span)
-service.name=my-service    →    └── CreateOrderDTO          (application_service)
-service.name=my-service    →         └── ValidateStockDTO   (feature)
+service.name=odoo                            →  GET /web/dataset/call_kw    (Odoo HTTP span)
+service.name=sincpro_mcp_odoo:0.8.0:sales    →    └── CreateOrderDTO         (application_service)
+service.name=sincpro_mcp_odoo:0.8.0:sales    →         └── ValidateStockDTO  (feature)
 ```
 
-Sampling is respected across the boundary: sincpro uses `ParentBased(root=ALWAYS_ON)`, so when the host did not sample a trace, sincpro's spans are also dropped. When running standalone (no host parent span), every span is sampled.
+Sampling is respected across the boundary: sincpro uses `ParentBased`, so a decision already taken upstream — by the host, or by an incoming `traceparent` — always wins and a sampled request is never truncated halfway through.
+
+How much of the traffic this bus starts on its own is recorded comes from OTel's standard variable:
+
+```bash
+export OTEL_TRACES_SAMPLER_ARG=0.1   # record 10% of the traces born in this bus
+```
+
+`1.0` (the default) records everything, `0.0` records nothing. An unusable value falls back to `1.0` with an info log — `settings` is built at import time, so a typo in one deployment variable must not make the framework unimportable.
 
 ## Configuration or settings
 
@@ -1468,7 +1577,12 @@ where you can define some behavior currently we support the following settings:
 
 - `sincpro_framework_log_level`: Log level for the framework logger. Default: `DEBUG`.
 - `otlp_endpoint`: OTLP exporter endpoint for distributed tracing. Resolved from `OTEL_EXPORTER_OTLP_ENDPOINT` env var. Default: `null` (tracing disabled). Requires `sincpro-framework[opentelemetry]`.
-- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release={app_name}:{library_version}` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. Use `UseFramework.ignore_sentry_exceptions(...)` for expected errors.
+- `sincpro_framework_log_level`: `INFO` or `DEBUG`. Resolved from `SINCPRO_FRAMEWORK_LOG_LEVEL`. Default: `DEBUG`. A service sets its own level through the environment — never by assigning into the framework's settings, which also ran too late because the logger is configured at import time.
+- `otlp_traces_sample_rate`: share of new traces to record, `0.0`-`1.0`. Resolved from `OTEL_TRACES_SAMPLER_ARG`. Default: `1.0`. An upstream sampling decision always wins over this ratio.
+- `app_release`: deployed artifact and version, `artifact:version`. Resolved from `APP_RELEASE` — the standard on every Sincpro service. Feeds both the GlitchTip release and the OTel `service.name`.
+- `otel_service_name`: names the artifact when `APP_RELEASE` carries only a version. Resolved from `OTEL_SERVICE_NAME`.
+- `tenant`: GlitchTip `environment` and the `tenant` tag. Resolved from `TENANT`.
+- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release=APP_RELEASE` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. Use `UseFramework.ignore_sentry_exceptions(...)` for expected errors.
 
 Override the config file using another
 

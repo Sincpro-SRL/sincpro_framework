@@ -1,5 +1,9 @@
-sincpro_framework_log_level: DEBUG
+sincpro_framework_log_level: $ENV:SINCPRO_FRAMEWORK_LOG_LEVEL
 sincpro_framework_log_backend: $ENV:SINCPRO_FRAMEWORK_LOG_BACKEND
 sincpro_framework_log_file_path: $ENV:SINCPRO_FRAMEWORK_LOG_FILE_PATH
 otlp_endpoint: $ENV:OTEL_EXPORTER_OTLP_ENDPOINT
+otlp_traces_sample_rate: $ENV:OTEL_TRACES_SAMPLER_ARG
 sentry_dsn: $ENV:SENTRY_PYTHON_DSN
+app_release: $ENV:APP_RELEASE
+otel_service_name: $ENV:OTEL_SERVICE_NAME
+tenant: $ENV:TENANT

@@ -1,7 +1,8 @@
 from logging import Logger
-from typing import Callable, Dict, Optional, Tuple, Type
+from typing import Callable, Dict, Optional, Type
 
 from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
+from .observability import Observability
 from .sincpro_abstractions import (
     ApplicationService,
     Bus,
@@ -11,20 +12,20 @@ from .sincpro_abstractions import (
     TypeDTOResponse,
 )
 from .sincpro_logger import is_logger_in_debug, logger
-from .tracing.instrumentation import observe_execution, record_observability_error
-from .tracing.sentry import record_sentry_error
 
 
 class FeatureBus(Bus):
     """First layer of the framework, atomic features"""
 
-    def __init__(self, logger_bus: Logger = logger):  # type: ignore[assignment]
+    def __init__(
+        self,
+        logger_bus: Logger = logger,  # type: ignore[assignment]
+        observability: Optional[Observability] = None,
+    ):
         self.feature_registry: Dict[str, Feature] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
-        self.service_name = ""
-        self.sentry_release = ""
-        self.ignored_sentry_exceptions: Tuple[Type[Exception], ...] = ()
+        self.observability = observability or Observability()
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -43,7 +44,7 @@ class FeatureBus(Bus):
         """Execute a feature, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
 
-        with observe_execution(dto_name, "feature", self.service_name, self.logger) as span:
+        with self.observability.span(dto_name, "feature") as span:
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing feature dto: [{dto_name}]")
             self.logger.debug(f"{dto_name}({dto})")
@@ -57,16 +58,7 @@ class FeatureBus(Bus):
                 return response
 
             except Exception as error:
-                record_observability_error(
-                    span,
-                    error,
-                    dto_name,
-                    "feature",
-                    self.service_name,
-                    kind="instance",
-                    release=self.sentry_release,
-                    ignored_exceptions=self.ignored_sentry_exceptions,
-                )
+                self.observability.record_error(error, dto_name, "feature", span)
                 if self.handle_error:
                     return self.handle_error(error)
                 raise error
@@ -77,13 +69,15 @@ class ApplicationServiceBus(Bus):
     This object contains the feature bus internally
     """
 
-    def __init__(self, logger_bus: Logger = logger):  # type: ignore[assignment]
+    def __init__(
+        self,
+        logger_bus: Logger = logger,  # type: ignore[assignment]
+        observability: Optional[Observability] = None,
+    ):
         self.app_service_registry: Dict[str, ApplicationService] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
-        self.service_name = ""
-        self.sentry_release = ""
-        self.ignored_sentry_exceptions: Tuple[Type[Exception], ...] = ()
+        self.observability = observability or Observability()
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -106,9 +100,7 @@ class ApplicationServiceBus(Bus):
         """Execute an application service, and handle error if exists error handler"""
         dto_name = dto.__class__.__name__
 
-        with observe_execution(
-            dto_name, "application_service", self.service_name, self.logger
-        ) as span:
+        with self.observability.span(dto_name, "application_service") as span:
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing app service dto: [{dto_name}]")
             self.logger.debug(f"{dto_name}({dto})")
@@ -122,16 +114,7 @@ class ApplicationServiceBus(Bus):
                 return response
 
             except Exception as error:
-                record_observability_error(
-                    span,
-                    error,
-                    dto_name,
-                    "application_service",
-                    self.service_name,
-                    kind="instance",
-                    release=self.sentry_release,
-                    ignored_exceptions=self.ignored_sentry_exceptions,
-                )
+                self.observability.record_error(error, dto_name, "application_service", span)
                 if self.handle_error:
                     return self.handle_error(error)
                 raise error
@@ -156,13 +139,13 @@ class FrameworkBus(Bus):
         feature_bus: FeatureBus,
         app_service_bus: ApplicationServiceBus,
         logger_bus: Logger = logger,  # type: ignore[assignment]
+        observability: Optional[Observability] = None,
     ):
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
-        self.service_name = ""
-        self.sentry_release = ""
+        self.observability = observability or Observability()
 
         registered_features = set(self.feature_bus.feature_registry.keys())
         registered_app_services = set(self.app_service_bus.app_service_registry.keys())
@@ -212,13 +195,8 @@ class FrameworkBus(Bus):
 
         except Exception as error:
             if isinstance(error, (UnknownDTOToExecute, DTOAlreadyRegistered)):
-                record_sentry_error(
-                    error,
-                    dto_name,
-                    "framework",
-                    self.service_name,
-                    kind="framework",
-                    release=self.sentry_release,
+                self.observability.record_error(
+                    error, dto_name, "framework", kind="framework"
                 )
             if self.handle_error:
                 return self.handle_error(error)

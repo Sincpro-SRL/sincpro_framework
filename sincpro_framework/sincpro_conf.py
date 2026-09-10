@@ -2,10 +2,10 @@
 
 import logging
 import os
-from typing import Literal, Type, TypeVar
+from typing import Annotated, Literal, Type, TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 DEFAULT_CONFIG_FILE_PATH = (
     os.getenv("SINCPRO_FRAMEWORK_CONFIG_FILE", default=None)
@@ -19,6 +19,23 @@ def load_yaml_file(file_path: str) -> dict:
     """Load a yaml file and return the content as a dictionary"""
     with open(file_path) as file:
         return yaml.safe_load(file)
+
+
+def usable_env_value(value: str, field_info) -> bool:
+    """Whether an env string satisfies the field it is going into.
+
+    ``settings`` is built at import time, so a malformed env var would otherwise
+    raise ValidationError before the framework is even importable — a typo in one
+    deployment variable would take down the whole process.
+    """
+    try:
+        annotation = field_info.annotation
+        if field_info.metadata:
+            annotation = Annotated[tuple([annotation, *field_info.metadata])]
+        TypeAdapter(annotation).validate_python(value)
+        return True
+    except Exception:
+        return False
 
 
 class SincproConfig(BaseModel):
@@ -36,11 +53,19 @@ class SincproConfig(BaseModel):
                 env_var_name = value.split("$ENV:")[1]
                 env_value = os.getenv(env_var_name)
 
+                field_info = cls.model_fields.get(field_name, None)
+
                 if env_value is not None:
-                    values[field_name] = env_value
+                    if field_info is None or usable_env_value(env_value, field_info):
+                        values[field_name] = env_value
+                    else:
+                        logger.info(
+                            f"Environment variable [{env_var_name}] holds [{env_value!r}], "
+                            f"which field [{field_name}] cannot accept. "
+                            f"Using default value: {field_info.default}"
+                        )
+                        values[field_name] = field_info.default
                 else:
-                    # Get default value if available in model field definition
-                    field_info = cls.model_fields.get(field_name, None)
                     if field_info and field_info.default is not None:
                         default_value = field_info.default
                         logger.info(
@@ -69,7 +94,11 @@ class DefaultFrameworkConfig(SincproConfig):
     sincpro_framework_log_backend: Literal["print", "stdlib", "file"] = "print"
     sincpro_framework_log_file_path: str | None = None
     otlp_endpoint: str | None = None
+    otlp_traces_sample_rate: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
     sentry_dsn: str | None = None
+    app_release: str | None = None
+    otel_service_name: str | None = None
+    tenant: str | None = None
 
 
 def build_config_obj(

@@ -4,6 +4,9 @@ from _typeshed import Incomplete
 from sincpro_log.logger import LoggerProxy
 from typing_extensions import Self
 
+from sincpro_framework.observability import FrameworkSpanContext as FrameworkSpanContext
+from sincpro_framework.observability import Observability as Observability
+
 from . import ioc as ioc
 from .aio import AsyncBus as AsyncBus
 from .bus import FrameworkBus as FrameworkBus
@@ -18,7 +21,6 @@ from .sincpro_abstractions import ApplicationService, DataTransferObject, Featur
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
 from .sincpro_logger import create_logger as create_logger
-from .tracing.span_context import FrameworkSpanContext as FrameworkSpanContext
 
 # Type alias for decorator functions
 DecoratorFunction = Callable[[Type], Type]
@@ -45,6 +47,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     middleware_pipeline: MiddlewarePipeline
     dynamic_dep_registry: Dict[str, Any]
+    observability: Observability
     global_error_handler: ErrorHandler | None
     feature_error_handler: ErrorHandler | None
     app_service_error_handler: ErrorHandler | None
@@ -69,7 +72,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             log_after_execution: Enable/disable execution logging
             log_app_services: Enable/disable application service logging
             log_features: Enable/disable feature logging
-            package: Optional Poetry distribution name used in Sentry release
+            package: Optional Poetry distribution name used in Sentry release and OTel service.name
         """
         ...
     # Improved overloads for framework execution
@@ -185,14 +188,6 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
         """Do not send these exception types to GlitchTip / Sentry."""
-        ...
-
-    def observability_status(self) -> Dict[str, Any]:
-        """Probe Sentry/OTel for this instance. Never raises.
-
-        Each component is ``off``, ``on`` or ``failed``. Missing extras are
-        ``off``, not an error.
-        """
         ...
 
     def with_trace(

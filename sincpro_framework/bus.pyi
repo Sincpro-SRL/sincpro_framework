@@ -4,6 +4,7 @@ from sincpro_log.logger import LoggerProxy
 
 from .exceptions import DTOAlreadyRegistered as DTOAlreadyRegistered
 from .exceptions import UnknownDTOToExecute as UnknownDTOToExecute
+from .observability import Observability
 from .sincpro_abstractions import ApplicationService as ApplicationService
 from .sincpro_abstractions import Bus as Bus
 from .sincpro_abstractions import DataTransferObject as DataTransferObject
@@ -23,11 +24,11 @@ class FeatureBus(Bus):
     feature_registry: Dict[str, Feature]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
-    service_name: str
-    sentry_release: str
-    ignored_sentry_exceptions: Tuple[Type[Exception], ...]
+    observability: Observability
 
-    def __init__(self, logger_bus: LoggerProxy = ...) -> None: ...
+    def __init__(
+        self, logger_bus: LoggerProxy = ..., observability: Observability | None = ...
+    ) -> None: ...
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature handler for a specific DTO type."""
         ...
@@ -54,11 +55,11 @@ class ApplicationServiceBus(Bus):
     app_service_registry: Dict[str, ApplicationService]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
-    service_name: str
-    sentry_release: str
-    ignored_sentry_exceptions: Tuple[Type[Exception], ...]
+    observability: Observability
 
-    def __init__(self, logger_bus: LoggerProxy = ...) -> None: ...
+    def __init__(
+        self, logger_bus: LoggerProxy = ..., observability: Observability | None = ...
+    ) -> None: ...
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
     ) -> bool:
@@ -92,14 +93,14 @@ class FrameworkBus(Bus):
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     dto_registry: Dict[str, Any]
-    service_name: str
-    sentry_release: str
+    observability: Observability
 
     def __init__(
         self,
         feature_bus: FeatureBus,
         app_service_bus: ApplicationServiceBus,
         logger_bus: LoggerProxy = ...,
+        observability: Observability | None = ...,
     ) -> None: ...
     @overload
     def execute(self, dto: TypeDTO, return_type: Type[TypeDTOResponse]) -> TypeDTOResponse:
