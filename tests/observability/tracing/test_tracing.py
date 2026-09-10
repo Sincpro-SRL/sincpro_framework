@@ -656,8 +656,11 @@ def test_otel_getter_empty_when_no_active_span(otel_setup):
 
 
 def test_otel_getter_suppressed_during_execution(otel_setup):
-    """(OTel) Inside Feature.execute(), _bind_span_to_logger sets _temporal_fields,
-    which suppresses the getter — no double-binding or conflict."""
+    """(OTel) The ids bound for the execution answer; the ambient getter is not asked.
+
+    Both would say the same thing here — the point is that a DTO execution has one
+    source for its ids, not two that could disagree.
+    """
     from opentelemetry import trace
 
     from sincpro_framework.observability.tracing.setup import current_otel_context
@@ -667,27 +670,29 @@ def test_otel_getter_suppressed_during_execution(otel_setup):
     class GS_DTO(DataTransferObject):
         pass
 
+    getter_calls: list[int] = []
     captured: dict = {}
+
+    def counting_getter() -> dict:
+        getter_calls.append(1)
+        return current_otel_context()
 
     @fw.feature(GS_DTO)
     class GS_Feature(Feature):
         def execute(self, dto: GS_DTO) -> None:
-            # Inside execute, _temporal_fields are set by _bind_span_to_logger.
-            # The getter must NOT be called (logger.is_contextualized would be True).
-            captured["temporal"] = dict(fw.logger._temporal_fields)
+            before = len(getter_calls)
             captured["fields"] = dict(fw.logger.logger_fields)
+            captured["getter_calls"] = len(getter_calls) - before
             return None
 
-    fw.logger.set_getter_context(current_otel_context)
+    fw.logger.set_getter_context(counting_getter)
 
     tracer = trace.get_tracer("host")
     with tracer.start_as_current_span("http-handler"):
         fw(GS_DTO())
 
-    # _temporal_fields were set during execution (by _bind_span_to_logger)
-    assert "trace_id" in captured["temporal"]
-    # logger_fields also had trace_id (from _temporal_fields, not getter)
     assert "trace_id" in captured["fields"]
+    assert captured["getter_calls"] == 0
 
 
 def test_logger_getter_not_registered_without_otlp_endpoint():
