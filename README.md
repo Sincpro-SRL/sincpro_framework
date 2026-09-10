@@ -1476,6 +1476,30 @@ Override the config file using another
 export SINCPRO_FRAMEWORK_CONFIG_FILE = /path/to/your/config.yml
 ```
 
+## 🧪 Tests & coverage
+
+The `Makefile` is the single entry point — CI calls the same targets you run locally.
+
+```bash
+make test                 # test suite + coverage report in the terminal + coverage.xml
+make test-coverage        # the above + HTML report in htmlcov/
+make test-coverage-open   # the above + opens htmlcov/index.html in the browser
+make test_one t=tests/test_async_bus.py   # a single file/test, verbose, no coverage
+make clean-coverage       # remove .coverage, coverage.xml and htmlcov/
+```
+
+`make test` fails when total coverage drops below `COVERAGE_MIN` (65% by default), so a
+regression breaks the build instead of passing silently. Raise the floor as coverage grows,
+or override it for a single run:
+
+```bash
+make test COVERAGE_MIN=80
+```
+
+Coverage is measured over `sincpro_framework` with branch coverage enabled; the settings
+live in `[tool.coverage.*]` in `pyproject.toml`. All generated artifacts
+(`.coverage`, `coverage.xml`, `htmlcov/`) are git-ignored.
+
 ## 🧵 Python 3.14 & Free-Threading Notes
 
 **Regular Python 3.14 (GIL build): fully supported today, no breaking changes.**

@@ -1,6 +1,10 @@
 GEMFURY_PUSH_TOKEN ?= DEFAULT_TOKEN
 POETRY_PYPI_TOKEN ?= DEFAULT_TOKEN
 
+# Minimum accepted coverage percentage. `make test` fails below this value.
+COVERAGE_MIN ?= 65
+COVERAGE_ARGS = --cov --cov-fail-under=$(COVERAGE_MIN)
+
 .SILENT: configure-gemfury
 
 add-gemfury-repo:
@@ -95,7 +99,18 @@ publish: configure-gemfury
 	poetry publish -u __token__ -p $(POETRY_PYPI_TOKEN)
 
 test:
-	poetry run pytest tests
+	poetry run pytest tests $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml
+
+test-coverage: test
+	poetry run coverage html
+	@echo "HTML coverage report: htmlcov/index.html"
+
+test-coverage-open: test-coverage
+	@if command -v open > /dev/null; then \
+		open htmlcov/index.html; \
+	else \
+		xdg-open htmlcov/index.html; \
+	fi
 
 test_debug:
 	poetry run pytest -vvs tests
@@ -103,4 +118,7 @@ test_debug:
 test_one:
 	poetry run pytest ${t} -vvs
 
-.PHONY: install start clean test build format format-yaml format-all
+clean-coverage:
+	rm -rf htmlcov coverage.xml .coverage .coverage.*
+
+.PHONY: install start clean test test-coverage test-coverage-open clean-coverage build format format-yaml format-all
