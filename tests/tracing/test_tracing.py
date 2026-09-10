@@ -703,3 +703,45 @@ def test_logger_getter_not_registered_without_otlp_endpoint():
     setup_otlp_provider("no-endpoint-test", logger)  # no endpoint in env
 
     assert logger._getter_context is None  # getter must NOT be registered
+
+
+def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):
+    """``settings.otlp_endpoint`` is the exporter destination, not a boolean gate.
+
+    ``OTLPSpanExporter()`` without ``endpoint=`` ignores the conf and falls back
+    to ``OTEL_EXPORTER_OTLP_ENDPOINT`` or localhost:4317.
+    """
+    pytest.importorskip("opentelemetry.exporter.otlp.proto.grpc.trace_exporter")
+
+    from unittest.mock import MagicMock
+
+    from sincpro_framework.sincpro_conf import settings
+    from sincpro_framework.tracing import provider as otel_module
+
+    seen: dict = {}
+
+    def fake_exporter(*, endpoint=None, **kwargs):
+        seen["endpoint"] = endpoint
+        return MagicMock(name="exporter")
+
+    def fake_processor(exporter):
+        seen["exporter"] = exporter
+        return MagicMock(name="processor")
+
+    monkeypatch.setattr(settings, "otlp_endpoint", "http://collector:4317")
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter",
+        fake_exporter,
+    )
+    monkeypatch.setattr(
+        "opentelemetry.sdk.trace.export.BatchSpanProcessor",
+        fake_processor,
+    )
+
+    previous = otel_module._sincpro_provider
+    try:
+        status = otel_module.setup_otlp_provider("test-svc")
+        assert status == {"active": True, "state": "on", "reason": "init"}
+        assert seen["endpoint"] == "http://collector:4317"
+    finally:
+        otel_module._sincpro_provider = previous

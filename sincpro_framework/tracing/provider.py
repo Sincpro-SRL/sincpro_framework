@@ -83,7 +83,9 @@ def setup_otlp_provider(
             resource=Resource(attributes={SERVICE_NAME: service_name}),
             sampler=ParentBased(root=ALWAYS_ON),
         )
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        # El conf no es un flag: es el destino. Sin `endpoint=` el SDK mira el env
+        # o cae en localhost:4317, y un YAML con URL explícita no exporta a ningún lado.
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
         _sincpro_provider = provider
 
         current_type: str = type(trace.get_tracer_provider()).__name__
