@@ -1,8 +1,19 @@
 GEMFURY_PUSH_TOKEN ?= DEFAULT_TOKEN
 POETRY_PYPI_TOKEN ?= DEFAULT_TOKEN
 
-# Minimum accepted coverage percentage. `make test` fails below this value.
-COVERAGE_MIN ?= 65
+OPENWIKI_VERSION ?= 0.5.1
+OPENWIKI := npx --yes openwiki@$(OPENWIKI_VERSION)
+
+OPENWIKI_PROVIDER          ?= openai-compatible
+OPENWIKI_MODEL_ID          ?= deepseek-v4-flash-vision-exp
+OPENAI_COMPATIBLE_BASE_URL ?= https://api.deepseek.com/v1
+
+OPENWIKI_TELEMETRY_DISABLED ?= 1
+export OPENWIKI_PROVIDER OPENWIKI_MODEL_ID OPENAI_COMPATIBLE_BASE_URL
+export OPENWIKI_TELEMETRY_DISABLED
+export OPENAI_COMPATIBLE_API_KEY
+
+COVERAGE_MIN ?= 85
 COVERAGE_ARGS = --cov --cov-fail-under=$(COVERAGE_MIN)
 
 .SILENT: configure-gemfury
@@ -31,6 +42,29 @@ init: prepare-environment install
 
 ipython:
 	poetry run ipython
+
+check-openwiki:
+	@command -v npx >/dev/null 2>&1 || { \
+	  echo >&2 "✘ npx not found. Install Node >= 22."; exit 1; }
+	@node -e 'process.exit(parseInt(process.versions.node, 10) >= 22 ? 0 : 1)' || { \
+	  echo >&2 "✘ Node >= 22 required, found $$(node -v)."; exit 1; }
+	@test -n "$$OPENAI_COMPATIBLE_API_KEY" || test -f "$$HOME/.openwiki/.env" || { \
+	  echo >&2 "✘ OPENAI_COMPATIBLE_API_KEY is not set."; \
+	  echo >&2 "   Provider, model and endpoint are already set in this Makefile;"; \
+	  echo >&2 "   the key is the only thing missing. Either export it:"; \
+	  echo >&2 "     export OPENAI_COMPATIBLE_API_KEY=<key>"; \
+	  echo >&2 "   or store it in ~/.openwiki/.env (chmod 600)."; \
+	  echo >&2 "   Never put it in the Makefile or any versioned file."; \
+	  exit 1; }
+
+docs-init: check-openwiki
+	$(OPENWIKI) --init
+
+docs: check-openwiki
+	$(OPENWIKI) --update
+
+docs-view: check-openwiki
+	$(OPENWIKI) visualize openwiki
 
 format-yaml:
 	@if command -v prettier > /dev/null; then \
@@ -121,4 +155,5 @@ test_one:
 clean-coverage:
 	rm -rf htmlcov coverage.xml .coverage .coverage.*
 
-.PHONY: install start clean test test-coverage test-coverage-open clean-coverage build format format-yaml format-all
+.PHONY: install start clean test test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
+	docs docs-init docs-view check-openwiki

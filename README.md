@@ -81,7 +81,7 @@ Now you are ready to explore more complex use cases! 🚀
 9. [Summary](#summary)
 10. [Middleware System](#middleware-system-1)
 11. [Error Handling](#error-handling)
-12. [Auto-Documentation](#auto-documentation)
+12. [Documentation](#-documentation)
 13. [Entrypoints: exposing the bus](#entrypoints-exposing-the-bus) — transport, not domain
     - [MCP tools (`entrypoint_mcp`)](#mcp-tools-entrypoint_mcp)
     - [JSON-RPC (`entrypoint_rpc`)](#json-rpc-entrypoint_rpc)
@@ -859,375 +859,46 @@ framework.add_global_error_handler(observability_handler) # 2nd
 framework.add_global_error_handler(base_handler)          # 3rd = final fallback
 ```
 
-## 📖 Auto-Documentation
+## 📖 Documentation
 
-The Sincpro Framework includes a powerful **auto-documentation** feature that automatically generates comprehensive documentation for your framework instances. This documentation includes all your DTOs, Features, Application Services, Dependencies, and Middlewares in multiple formats optimized for different use cases.
-
-
-### 🚀 Quick Documentation Generation
-
-The easiest way to generate documentation for your project:
-
-```python
-from sincpro_framework.generate_documentation import build_documentation
-
-# Import your framework instances from their respective modules
-from apps.payment_gateway import payment_framework
-from apps.user_management import user_framework
-
-# Generate traditional markdown documentation (default)
-build_documentation(
-    [payment_framework, user_framework],
-    output_dir="docs/generated"
-)
-
-# Generate AI-optimized JSON schema
-build_documentation(
-    [payment_framework, user_framework],
-    output_dir="docs/generated",
-    format="json"
-)
-
-# Generate chunked JSON for optimal AI consumption (NEW!)
-build_documentation(
-    [payment_framework, user_framework],
-    output_dir="docs/generated",
-    format="json",
-    chunked=True
-)
-
-# Generate both formats
-build_documentation(
-    [payment_framework, user_framework],
-    output_dir="docs/generated", 
-    format="both"
-)
-```
-
-### 📋 Output Formats
-
-#### 📝 Markdown Documentation (Traditional)
-- **MkDocs-ready**: Complete documentation website with search
-- **Human-readable**: Beautiful, professional documentation for developers
-- **Interactive**: Searchable content with cross-references
-
-#### 🤖 AI-Optimized JSON Schema (Enhanced!)
-- **Complete AI Understanding**: Combines framework context with repository analysis
-- **Framework Context**: How to use the Sincpro Framework (patterns, examples, best practices)
-- **Repository Analysis**: What components exist in your specific codebase
-- **Rich Metadata**: Business domains, complexity analysis, architectural patterns
-- **Code Generation**: Comprehensive hints for AI-powered code generation
-- **Embedding Support**: Optimized for semantic search and AI embeddings
-- **Usage Synthesis**: Real examples combining framework knowledge with repository components
-
-#### 🔥 NEW: Chunked JSON for AI Token Optimization
-- **Progressive Discovery**: AI can understand what exists without loading all details
-- **Massive Size Reduction**: Up to 96.7% smaller for multiple framework instances
-- **Token Efficiency**: Shared framework context across all instances (~70KB once)
-- **Selective Loading**: Load only needed chunks (DTOs, Features, Services)
-- **Smart Categorization**: Automatic business domain inference and complexity analysis
-
-### 📁 Generated Documentation Structure
-
-#### Traditional Structure
-```
-docs/generated/
-├── mkdocs.yml                    # MkDocs configuration
-├── requirements.txt              # Dependencies
-├── framework_schema.json         # AI-optimized JSON with framework context
-├── site/                        # Built HTML documentation
-└── docs/                        # Markdown content
-    ├── index.md                 # Overview
-    ├── features.md              # Features documentation
-    ├── dtos.md                  # DTOs documentation
-    └── application-services.md  # Services documentation
-```
-
-#### NEW: Chunked Structure (AI-Optimized)
-```
-docs/generated/ai_context/
-├── 01_framework_context.json           # Shared framework knowledge (70KB)
-├── 01_payment_gateway_context.json     # Instance overview (1-2KB)
-├── 01_payment_gateway_dtos.json        # DTO summaries (700B)
-├── 01_payment_gateway_dtos_details.json # Full DTO details (1-3KB)
-├── 01_payment_gateway_features.json    # Feature summaries (700B)
-├── 01_payment_gateway_features_details.json # Full feature details (1-3KB)
-├── 01_payment_gateway_services.json    # Service summaries (if any)
-├── 01_payment_gateway_services_details.json # Full service details
-├── 02_user_management_context.json     # Second instance overview
-├── 02_user_management_dtos.json        # Second instance DTOs
-└── ...                                 # Additional instances
-```
-
-### 🤖 AI-Optimized JSON Schema Features
-
-The enhanced JSON schema combines framework context with repository analysis for complete AI understanding:
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Repository Schema with Framework Context",
-  "schema_type": "ai_optimized_complete",
-  
-  "framework_context": {
-    "framework_name": "Sincpro Framework",
-    "core_principles": {/* Framework usage patterns and principles */},
-    "key_features": {/* Framework capabilities and features */},
-    "framework_execution_patterns": {/* How to execute features/services */}
-  },
-  
-  "repository_analysis": {
-    "metadata": {
-      "architecture_patterns": ["DDD", "Clean Architecture"],
-      "component_summary": { /* counts and statistics */ }
-    },
-    "components": {
-      "dtos": [/* with AI hints for type classification */],
-      "features": [/* with business domain inference */],
-      "application_services": [/* with orchestration patterns */]
-    }
-  },
-  
-  "ai_integration": {
-    "framework_integration": {
-      "execution_patterns": {/* How to use framework with repository components */},
-      "available_features": {/* Framework capabilities */}
-    },
-    "complete_understanding": {
-      "framework_knowledge": "Loaded from hardcoded guide",
-      "repository_knowledge": "Generated from code analysis",
-      "ai_capability": "Complete understanding of framework usage + repository components"
-    },
-    "usage_synthesis": {
-      "how_to_execute_features": {/* Real examples combining framework + repo */},
-      "how_to_execute_services": {/* Real examples combining framework + repo */}
-    },
-    "embedding_suggestions": {
-      "primary_entities": ["PaymentCommand", "UserCommand"],
-      "business_capabilities": ["PaymentFeature", "UserFeature"]
-    },
-    "code_generation_hints": {
-      "framework_patterns": ["command_pattern", "dependency_injection"],
-      "common_imports": ["from sincpro_framework import..."]
-    },
-    "complexity_analysis": {
-      "overall_complexity": "medium",
-      "most_complex_components": ["ComplexService"]
-    }
-  }
-}
-```
-
-### 🎯 Chunked JSON Benefits for AI Consumption
-
-The new chunked approach provides significant advantages for AI systems:
-
-#### 📊 Size Reduction Examples
-- **Single Instance**: Traditional 90KB → Chunked 10KB (89% reduction)
-- **Two Instances**: Traditional 180KB → Chunked 80KB (56% reduction) 
-- **Five Instances**: Traditional 450KB → Chunked 110KB (76% reduction)
-- **Twenty Instances**: Traditional 1.8MB → Chunked 250KB (86% reduction)
-
-#### 🧠 Progressive AI Discovery Pattern
-1. **Start with Framework Context** (`01_framework_context.json` - 70KB)
-   - Learn how to use Sincpro Framework
-   - Understand patterns and principles
-   - Get execution examples
-
-2. **Instance Overview** (`01_<name>_context.json` - 1-2KB each)
-   - Quickly understand what components exist
-   - See component counts and names
-   - Identify available detail files
-
-3. **Component Summaries** (`01_<name>_dtos.json` - 700B each)
-   - Get basic component information
-   - Understand business domains
-   - Assess complexity levels
-
-4. **Detailed Information** (`01_<name>_dtos_details.json` - 1-3KB each)
-   - Load full component details when needed
-   - Complete field information
-   - Implementation details
-
-#### 🤖 AI Token Optimization
-- **Traditional**: Load everything at once (high token cost)
-- **Chunked**: Load progressively as needed (optimized token usage)
-- **Reusability**: Framework context shared across all instances
-- **Selectivity**: Load only relevant component types (DTOs, Features, Services)
-
-### ✨ Documentation Features
-
-#### Traditional Markdown
-- **🎨 Sincpro Theme**: Beautiful violet corporate colors and professional styling
-- **📱 Responsive Design**: Works perfectly on desktop and mobile devices
-- **🔍 Full-Text Search**: Find any component, method, or parameter instantly
-- **📊 Component Overview**: Summary tables with component counts and descriptions
-
-#### AI-Optimized JSON
-- **🧠 Business Domain Inference**: Automatic categorization (payments, users, orders)
-- **📈 Complexity Assessment**: Automatic complexity analysis for optimization
-- **🔍 Pattern Recognition**: Identification of architectural patterns
-- **🤖 AI Hints**: Rich metadata for AI understanding and code generation
-
-### 🎯 Best Practices
-
-1. **Document your DTOs**: Add clear docstrings to your Data Transfer Objects
-2. **Describe your Features**: Include comprehensive docstrings for execute methods
-3. **Name components clearly**: Use descriptive names for better auto-generated docs
-4. **Organize by domain**: Group related features and services logically
-
-Example of well-documented code:
-
-```python
-class PaymentCommand(DataTransferObject):
-    """Command for processing credit card payments.
-
-    This DTO contains all necessary information to process
-    a payment transaction through the payment gateway.
-    """
-    card_number: str  # Credit card number (PCI compliant)
-    amount: float     # Payment amount in USD
-    merchant_id: str  # Unique merchant identifier
-
-@framework.feature(PaymentCommand)
-class PaymentFeature(Feature):
-    """Process payment transactions through external gateway.
-
-    This feature handles the complete payment flow including
-    validation, gateway communication, and response processing.
-    """
-
-    def execute(self, dto: PaymentCommand) -> PaymentResponse:
-        """Execute payment processing.
-
-        Args:
-            dto: Payment command with card and amount information
-
-        Returns:
-            PaymentResponse: Transaction result with ID and status
-
-        Raises:
-            PaymentError: When payment fails or card is invalid
-        """
-        # Implementation here...
-```
-
-### 🚀 Integration with AI Systems
-
-The JSON schema format enables powerful AI integrations:
-
-- **Code Generation**: AI can understand patterns and generate similar code
-- **Documentation**: AI can explain components and their relationships  
-- **Analysis**: AI can identify optimization opportunities and suggest improvements
-- **Migration**: AI can understand dependencies for migration planning
-
-## 🔌 Entrypoints: exposing the bus
-
-The application layer above is the framework. An entrypoint is transport: it publishes
-the same catalog of Features and ApplicationServices over a protocol, and adds nothing
-to the domain. Pick one, both or none — the bus does not change.
-
-### MCP tools (`entrypoint_mcp`)
-
-**Turn the bus into an MCP server. Docstrings contextualize the tools for the LLM.**
-
-A bounded context already *is* an API: DTO in, `execute`, DTO out. **`entrypoint_mcp`** is the MCP host for that catalog — not REST. JSON-RPC is **[`entrypoint_rpc`](#entrypoint_rpc)**. The Feature never learns what FastMCP is. There is no `expose_mcp=True`.
-
-| How you run it | What the client speaks |
-|---|---|
-| `.run()` | MCP stdio — Cursor, Claude Desktop, CLI |
-| `.run(transport="http")` | MCP Streamable HTTP at `/mcp` — still `tools/call`, not REST |
+This repository's documentation is generated with
+[openwiki](https://github.com/langchain-ai/openwiki) and lives in
+[`openwiki/`](openwiki/) as browsable Markdown.
 
 ```bash
-pip install sincpro-framework[mcp]
+make docs-init   # first generation (once per repository)
+make docs        # regenerate from code changes
+make docs-view   # local explorer: node graph + Markdown reader
 ```
 
-```python
-from sincpro_framework.entrypoints.mcp import build_mcp_server, Entrypoint
+Requires Node >= 22 — nothing else. The `Makefile` runs openwiki through
+`npx --yes openwiki@$(OPENWIKI_VERSION)`, so there is no global install and the
+version is pinned per run.
 
-# CLI / Cursor / Claude Desktop (stdio)
-build_mcp_server(payment_sdk).run()
-
-# Same MCP catalog over the network
-build_mcp_server(payment_sdk).run(transport="http", host="127.0.0.1", port=8000)
-
-# Optional: allow-list, then pick the transport
-Entrypoint(payment_sdk).include(ChargePayment).exclude(InternalDebug).run()
-Entrypoint(payment_sdk).include(ChargePayment).run(transport="http", port=8000)
-```
-
-Agents see typed tools generated from your DTOs (Pydantic JSON Schema, Value Object titles, `Field(description=...)`). A `tools/call` is the same operation as `framework(dto)`: validation, middleware, tracing, error handlers.
-
-#### Docstrings are the LLM context
-
-The agent **reads** `tools/list` (name + description + field schema) and then **executes** `tools/call`. Nothing else is injected. Write the docstring for that reader — when to use the tool, what not to send, enum values — not Args/Returns (the schema already has types).
-
-```python
-class CommandGenerateCUF(DataTransferObject):
-    nit: str | int
-    """Issuer NIT. Digits only; the Feature zero-pads to 13."""
-    modality: SIATModality
-    """SIAT modality value, not the Python name. Example: 1 = electrónica."""
-
-
-@siat_soap_sdk.feature(CommandGenerateCUF)
-class GenerateCUF(Feature):
-    """Build the SIAT CUF (código único de factura) from NIT, datetime, branch, and modality.
-
-    Use before reception. Does not call SIAT — local encoding only.
-    """
-
-    def execute(self, dto: CommandGenerateCUF) -> ResponseGenerateCUF:
-        ...
-```
-
-| You write | LLM sees |
-|---|---|
-| Feature class docstring (preferred) | Tool description in `tools/list` |
-| else `execute` docstring, else DTO docstring, else DTO name | same |
-| Field docstring or `Field(description=...)` | Each argument in the input schema |
-| Inherited `Feature` / `ApplicationService` essay | **Ignored** — not published |
-
-A Feature with no own docstring publishes the DTO class name. That is enough to call; it is not enough for an LLM to choose the right tool.
-
-MCP HTTP is still MCP (`tools/call`), not a REST API.
-
-Contract: **[`entrypoint_mcp`](docs/architecture/entrypoint_mcp.md)**. SIAT evaluation: **[use case](docs/architecture/entrypoint_mcp_use_case.md)**.
-
-### JSON-RPC (`entrypoint_rpc`)
-
-**Turn one or more bounded contexts into a JSON-RPC 2.0 server. Methods are `instance.layer.DtoName`.**
-
-Payments mounts `qr`, `cybersource`, and `bank_account` in one process. The prefix exists because DTO names collide (`CommandAuthenticateEconomico` lives in qr and in extractos). Discovery is OpenRPC 1.4 (`rpc.discover` / `GET /openrpc.json`). This is not REST.
+Provider, model and endpoint are already set in the `Makefile`
+(`OPENWIKI_PROVIDER`, `OPENWIKI_MODEL_ID`, `OPENAI_COMPATIBLE_BASE_URL`), so the
+only thing you have to supply is the API key:
 
 ```bash
-pip install sincpro-framework[rpc]
+export OPENAI_COMPATIBLE_API_KEY=<key>   # or store it in ~/.openwiki/.env (chmod 600)
 ```
 
-```python
-from sincpro_framework.entrypoints.rpc import RpcGateway
+The key is the one value that is **never** committed — not in the `Makefile`,
+not anywhere in the repository. `make docs` fails with a clear message when it
+is missing. Any of the other parameters can be overridden from the shell.
+The scope of the wiki is controlled in
+[`openwiki/INSTRUCTIONS.md`](openwiki/INSTRUCTIONS.md), and what the agent is
+not allowed to read, in [`.openwikiignore`](.openwikiignore).
 
-RpcGateway({
-    "qr": qr,
-    "cybersource": cybersource,
-    "bank_account": bank_account,
-}).run()  # POST http://127.0.0.1:8080/rpc
-```
+Hand-written architecture decisions stay in
+[`docs/architecture/`](docs/architecture/) and remain authoritative: the wiki
+references them, it does not replace them.
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "qr.features.CommandCreateQREconomico",
-  "params": { "transaction_id": "t-1", "amount": 50.0 },
-  "context": { "correlation_id": "req-9" }
-}
-```
-
-`params` are DTO fields. `context` is a JSON-RPC extension (sibling of `params`) and becomes `framework.context` — Features keep using `self.context`. HTTP `X-Correlation-Id` and `traceparent` fill in when the body omits them. `layers=("app_services",)` publishes only ApplicationServices.
-
-Contract: **[`entrypoint_rpc`](docs/architecture/entrypoint_rpc.md)**.
-
+> **Migration note (4.0.0)** — up to 3.x the framework shipped its own
+> documentation generator (`sincpro_framework.generate_documentation`, with
+> `build_documentation()` and the `ai_context/` JSON files). It has been
+> removed. Projects that used it replace their `scripts/generate_doc.py` with
+> the `make docs` above.
 ## Observability
 
 The bus always instruments. Extras and env vars only decide **where** data goes.

@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:6a6bb21ff1da62bf3b588572dedeed342d0653ff3733d85c07fc897f70957075",
+  "claims": [
+    {
+      "id": "claim_64f4e223176f42c0b87312fb23b3dc66",
+      "statement": "RpcGateway is the JSON-RPC composition root: it mounts one UseFramework per alias, wrapping each in its own Catalog (which builds the root bus when the instance was never initialized), so several bounded contexts run in one process; per-alias include/exclude/wrap policies are applied to that alias's catalog only, and re-adding an existing alias replaces its catalog rather than duplicating it.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L47-L50",
+          "version": "repo-lines-v1:sha256:d5d2625e90df60b2d01b5478cb93efa9a34372082a5de4014df26bc2bd6348d2:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjVlMmE4M2IzMDQzOTVjZmFiOTI4ODkwNTQ1Y2RjZWY5MzgzZmJiMmMyMjNjYjgwY2RkMTI3MWEyNTMzZTUzYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWE4OGU2NzdkMzk2ZjAyNWYyYTIxZWI3Njk3NjJjOGVkZjczZTNmMjRkMjI5MWIwZmViYWExM2IxYmQ2NmE3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDQ0Yjk1YmM4NGJmNmM4OTRjN2YwYWFmMzM4NjQzZjAwZGY0OTcxMzFiYjk5NThmMjA3Y2E1MmZiNGU3ZDRkOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWViZWFmOWMxYzVlMGE0MjU1NDI3MmRkOTJiNDBiNjliODY5MTZhZWNmYzUwY2M2MTBkOGRjNWE0YWEyY2RjOSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L64-L97",
+          "version": "repo-lines-v1:sha256:dc465c4e9878b59893d089e84d7bdb9bdf1bb27458b43ccbe63f3cd0137cf2eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0MjczYzE4ZjI1ZDQ2ZTM5MDA3YzliZWU5MjFlODU0ZDFlNzhkNDcxOWQ3MjJmZWE1YTNmMDY0ZmFlZGQ1NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY1ZDBhODk0NWUxYTI3OTY5NjdkYjgyMTI1OTg0YWNjNmU5NWUzYzg2YTAzZjM1ZDUyMGZiZmJlMTIzNDhlNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3ODAxNGRkMmNmM2M0NDkwYjFjYTY4M2U5YzEyMjRiNTUzZWMzOTIzNjZjM2FmZjE4YTUxYTlhNDE3OTU1ZjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_83e9fe4e9d3546f9bdd59c419f18080f",
+      "statement": "The composition-root alias is not the UseFramework logger name: alias is the mapping key that becomes the method namespace prefix, and validate_alias rejects anything outside ^[A-Za-z][A-Za-z0-9_-]*$ — notably an alias containing a dot, which would make the instance.layer.Dto split ambiguous.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_rpc.md#L44-L45",
+          "version": "repo-lines-v1:sha256:05446c227949fe24455cf5ad450eb7554d7b783c4de5802ed035edd6897d05dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQzZWQ4ODgxMzZjMTQyZDc4ZTczYTc4YTRjZjFiZDNiYTlmNDA3ZDMxMGJhOGU4NmY0Y2Y0MjU0ZDk2YWZmYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmVkYmEzMTQ0YjAzOGEwYzY3N2U1MTY1ZmYyYjc2YWZiNjFjMjRhNTFmOGQxN2JmNzE1Y2JjNDI1ODY5ODc0NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmIxOWI3MmFjZjI2Y2Q1ZTk0YjQ5ZDJjMzY0NjIzNWE1NjA0ZWYxMGYxOGRhYzM0MDNhYjBkODBjMmQ2MTM5OCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L24-L31",
+          "version": "repo-lines-v1:sha256:20fa43a651ca3e9152e8930f3d1d4120041763bc5b2c0e612538a7e218efd8bc:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk0MDYyNzZmM2NkN2Y0OGE0NWEwYjk3NDdjNGVkNTU5MzJlNDA2MTM2YWM0NDRjMmQzNzJkYzhiN2M3ZTdkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjM4ODZlZjAwOThlMWE5ZGFhYmFmNzk1MTkzN2Y0MjUxZmUwZjdhOWMwNGVlM2IxMGY3MTQzOTVjNWRiNWI4NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWQyNmYzY2E2MmNmODU2YWNhMDAyOWE3NzhhMTkxZGEwODFjNDRkMmY5YTIyZDY2MzVkN2YzNjEwYTU0YjAzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGIxYTcyY2VmMDE3MzYwZjA2NTNjODY4OWZkMDZiMDY3YmJlNWFlZjUzOGVmMzdhNWExNThlYjM1OTMyYTlkZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_aaf05a2b4e8d4656aa2ca70d7f45506b",
+      "statement": "Published method names are exactly {alias}.{layer}.{DtoName}, composed by method_name; index_methods builds the lookup name -> (alias, UseFramework, PackedFeatureOrAppService) by asking each alias's Catalog for get_scalar_use_cases(filter_binaries_schema=True) and dropping operations whose layer is not in the gateway's configured layers.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L51-L61",
+          "version": "repo-lines-v1:sha256:756ac7a5da610250c439dd6723ee8cb66d5344382409cbdf5f8c1aa441e643b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiY2QxNDQ5OGRiYjBiZjkxMzU3MGEyZDI3ODVkYzNhZjU2N2U1YzAxMGI1NzY2ZmFlN2Y2MGRhYjEyNDFlYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4NTlmNGUxMWFmNDBlMjk0MmQ2NDk0M2ZmMjIwMGM1MWU5YTdlNmE4ZTkyOWNhOGUxMzNhZjVmY2Q3NDVlMjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0YTNiYWNjMWEyMzI1ODFlMGI4YTE2NzJhZjI3NDA0ZGY2NjE3MmVkYjlmMzRiNmU1NzJiMGYyZTBjZmZkZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjOGYyOWRiOWVjNzhlZWI1OWY0MDE1MTUwYTdlYjA4YTNjY2E4ZDgzOTY0MDg0OWViMzVhYzJkN2YxYjgxN2IifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L23-L39",
+          "version": "repo-lines-v1:sha256:951f8b06563d61412720a64dfca708154e7337c2734e7929968e3820975c70b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNzM3Y2NmZWYxMzRmYWQ1ZWYzNzYzOWEzNDc1Zjk4Nzg3Yjc2ZjJkZWYxODFlNWE0Yzg2OThjMmMwNGVjZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiNzY5MjQ3MTkzZTA3ZmU1OGVlYWFlYjRiZGU0N2IzY2NlNmM3ZDZhMTQ3Y2NlMzA5ZWI0MGFjMTQ5NjJkMDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhMTljNTgzMjc0ZDgzNDlkNWMwNTc0ZGJjZTBmMTZmMGMzYzBhYTM5NTViOGVmNGVhMzQ4ZDNjYWExMDAyNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmMmMxZWYzMDIwOWE0MWE5ZGYxMjUwYWNjNjhhYjNhMDg4Y2QxOTVkMmEyNWIwNWYwMzNhZjZkNzRkNTM1ZWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a2aa79b0fbb34e949ebf59d3ad63b05a",
+      "statement": "The methods index and the DTO JSON Schemas behind it are not cached: methods() recomputes index_methods and is called again by both handle() and discover(), so every request and every discovery read rewalks the bus registries.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L99-L114",
+          "version": "repo-lines-v1:sha256:bba685b22dd0f17e051b5ced54f96105394761f38fefbcb3c11b53dd84ca10e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNTUwZGYwMmY1M2Y4Mjc4OTQyMjc4Mzg5YzYzNzA2ODRkMWE5ZTNmMTNjMWFjMmJjZTU1MmY0ZDI2OThkM2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwN2U0NTk4YzRlNjcxZWUxZTg1YTk1NDM5ZDI2MDI4YTc0YzVmZTcyOTQ1ZWYzYTE2MDMzODJmOTMzY2Q4N2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNjEwNWE0MWQxOWZkYWE1ZDcyZDBlMjkzMDc5ZDg4ZjE1MzZhZjkyZWMxZDYzY2RlYTY5MDRiM2Y1ZjdiNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxNzU5Njk3NTkxNzk0MmE4MTU4Nzc4OWY3ZTUyNDk5NzMzZDAwMmZmNWVmZjMzN2ZkMzYwYzgyM2MyOGQwYzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c7829b4b90f444e7af4975a29155a3d4",
+      "statement": "The default published surface is both bus layers, because DEFAULT_LAYERS is (Layer.APP_SERVICES, Layer.FEATURES) and Layer is a StrEnum whose only members are \"features\" and \"app_services\"; passing layers=(\"app_services\",) narrows the surface to ApplicationServices.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L5-L11",
+          "version": "repo-lines-v1:sha256:4de21352f8c9f8c7059d4f6e6b977b70ffa47fb04459648ee2759c97095feb6f:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGZlYTVmNGYzNDE3MjRlMGVlZjIxMGRmZmRmOWYwOGU3YzQwMTA5NjBlYzZmNDQ0OThkODI1M2NhNDQzMzE0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDBmOGVmOTU0MjE1Y2VjMTgxNTdiZmY3ZTVjM2ViZTc4MmQxN2JhZDBiZjdjNmIwOGE2YTI1NDMzN2FlZjM2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmZjZDI4ZDdmNWZjNmE5ZWE3OTk1ZTM3NTgwNjZmMmEyMzllM2M5ZmY2MDg4YTZmZmI3OTkyNGEyZTkwNTAzMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTg4MmZjYzBkN2VkZjBhNjYyYjI1ZmE2Yzk0ODU2ZjA4YWI3Y2U4MGYxZmY1Mjg1MmZiYTA3NjY3MmRlOTUyNiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L25-L25",
+          "version": "repo-lines-v1:sha256:2c863bbdc3f092990f334645c9bd61d432006811bd43b62913c53c501b31ffd8:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmM4NjNiYmRjM2YwOTI5OTBmMzM0NjQ1YzliZDYxZDQzMjAwNjgxMWJkNDNiNjI5MTNjNTNjNTAxYjMxZmZkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmM4NjNiYmRjM2YwOTI5OTBmMzM0NjQ1YzliZDYxZDQzMjAwNjgxMWJkNDNiNjI5MTNjNTNjNTAxYjMxZmZkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGQzZWI5YWM4ZThhNWU2NmJlY2Y1YmZmY2YxODA5MzVhYWNkNjlhM2MzNWIyMjZhNmVlNmZlMDM5MzE5M2Y3YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODhjZmFlNzdkMjFjMmY3ODUyYTE1ZjhiODY3NGY0YTdhMjQ4MmY4MTQzNGNhODRmYmNjNzhjNzY0YTUwZjhmMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_39e4779357d84bf3bae826bf1b683006",
+      "statement": "Non-JSON operations are never addressable over this wire: index_methods asks the catalog with filter_binaries_schema=True, so a DTO carrying bytes (a bytes field or format binary/byte anywhere in the schema tree) is skipped with a warning at catalog time and remains callable only in-process via framework(dto).",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L147-L156",
+          "version": "repo-lines-v1:sha256:26db4ae3d4312f1a6cde89c03ba61196114c4537debb7fb15a833eb803f87bb5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzYzUwNWM0MDY3YjAyNzhkMWMyNDA5NDk0OWNlNmE5ZDExZWQ2NmRiOTY1ZGM2ZDVjMzczNTQwYmJlZDlmYjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3MmY5Njk1Yzc0NjdjNzQ3NzNjOWNlN2ZjNDI5YzVkMGQwZTQ4N2YzYzUxZDE1ZDY2NjhhM2QyNDA3MmJiOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0YjllYjZjYjhhYjZhNmFmOGFlMDhhZmQ2NGNmYzY5YzAyMDU2OGZjN2Y0MzFhMzY5MjAyZjBlMWJjY2Y4ZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L67-L78",
+          "version": "repo-lines-v1:sha256:aeb93c592babd284a0dc9e1e1cc240a4535acbe9d378e42b5673f9cf4cf799ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczMTUyMDUzZWJhYjk2OTQ5MzczNDg2OTgxMWM2MjU3MzMzNDA4MmU1NjkyZGY2MGQ4MzFiNmQzZjlhYWI3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwYjIxYmY4OTVmYWUyZDczOTIwZDkzMTc4Y2ZkNTg0MWNkZjhmOTUyNDUxNmM4YTU2NTg0MzZhNGFjNDhmM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkMTJiZGEzOGUyNTI4YjcxNjZmMGViZWJjYTNlNGYwNjI5ZWRkZThlNmZhMDBjYjJlNjE2OGIwOTIwNTI2NmQifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L56-L56",
+          "version": "repo-lines-v1:sha256:d56e43d189472129d2f65c427d2ad0f9edc1ac0b0db58766a64cc2a1c719b221:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDU2ZTQzZDE4OTQ3MjEyOWQyZjY1YzQyN2QyYWQwZjllZGMxYWMwYjBkYjU4NzY2YTY0Y2MyYTFjNzE5YjIyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDU2ZTQzZDE4OTQ3MjEyOWQyZjY1YzQyN2QyYWQwZjllZGMxYWMwYjBkYjU4NzY2YTY0Y2MyYTFjNzE5YjIyMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmUyNjZkYjliMWI2NTM1OTQ0ZjU0ZmMzZmE2ZGUxNzQ3MzRiNjZiYTRmNWE0N2E3MDk2NDdlNGQ5YTRjNGY3YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDYzNDc4ZmVhOWNjY2Q3NjNhMWVmZWVlNDFiMjgxZWEzMTdkZWNmOTVkNGNmZDVkNDM4M2VkN2QwOTM4NTI4MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1f323ba6c5ae41d6922fd509b2b04b53",
+      "statement": "params must be a by-name JSON object: None or absent becomes an empty payload, a dict is passed through unchanged, and anything else — arrays included — raises InvalidParams, answered as -32602 Invalid params with data = \"params must be a JSON object (by-name)\"; there is no positional form, matching the paramStructure \"by-name\" the discovery document advertises.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L126-L128",
+          "version": "repo-lines-v1:sha256:b66c8fbf93673754107ab5fa3d678ab6d48895f10c1af78c55c78890aba98a67:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWFmNzRkYTlhN2U4ZWMyNTEyNjZjYWFkMmI5MGRjYmE3ZDNhYmU3MWExODMzYTBmYTIyNTUwYmJiZDk3MzI1ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzI2NGIzZDE3OWFmZmViZGNkMTYxYjM1NDI1Njc1YmQ4NGE1NmMzMmRjZGFmZGFkY2RiMjMzYmRiMjg3MmJkOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTg2MTMzODNkM2U4NGVhMTY0YjgyZGFlOTllZmU0ZTZhZWZlYzEyOTRlYzFlYzg1MmU5NWQwOThhYzRjZGQxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTIyYTMyMDBjYmM5Mjg4MWViMTIzNTRmZmJjNWE0ODkyMjk5YWVkODcxZjI2ZTM4MTM1NzkwNWU1OGJjODM2NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L193-L193",
+          "version": "repo-lines-v1:sha256:8aad7525593ab652c56bf846b893f8f2292ad996bd3b843c483602e202e0d288:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGFhZDc1MjU1OTNhYjY1MmM1NmJmODQ2Yjg5M2Y4ZjIyOTJhZDk5NmJkM2I4NDNjNDgzNjAyZTIwMmUwZDI4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGFhZDc1MjU1OTNhYjY1MmM1NmJmODQ2Yjg5M2Y4ZjIyOTJhZDk5NmJkM2I4NDNjNDgzNjAyZTIwMmUwZDI4OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODQyYjg1MDBjYjJlZDM5MTJiZjIyODlhMzkyMWM3NTQyY2MzNjUxZjQxYWJhMTdhMGI3ZjAyNzYyYTFmZDg0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzE5NDc0ZDM5NmQ5YThkZDFmNjkzNTQ3ZmM1NmE1NDUzNmFhYzAyY2ZiNzkzMGRjY2VmZTVlODAzOTY3ZmExNSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L83-L88",
+          "version": "repo-lines-v1:sha256:3019d2694b3872192a51a92528761574436c6fd417d463da8c8013d18f3ba280:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTY3MDdiYmZiYWE2NWMyNDdkMzhhMTJiMWMwNjNlZjNjYzQ4NmJhNDRmMzUzZDMzZGJmZDFmY2VlNWQ4YzlhMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjc2OWFiMTZkMjFkMjk3NjJjNjZlN2QxZDA5ZjRlZWYxNmYzYWIwOGU1NjdlODgwYWUwNmFiYjAyZTBmNTdmNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDc1M2M0ZmE5Y2VkMDdjYTEwZTAyNTkzOGQyMzQ3NjBkMDk1YjQyZWI3OGMwNjM1NDVmM2YxMzMwZDIwODM2MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWRjOGUxZWE2ZTZjMzgzMTQ3ZDRkOGU3Y2U0ODk1OGFlN2Y5N2Y4NmE3NWMzYjk1OGJiOTgwZTcyZmYyNDBjNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0c18707de384fb2aaa2988ca630b269",
+      "statement": "A pydantic ValidationError raised while validating the payload DTO is converted to InvalidParams (-32602) rather than propagating; json_safe_validation_errors round-trips error.errors() through json.dumps(default=str) because pydantic stores the raw exception in ctx.error for value_error types (a rejecting ValueObject validate_fn), which would otherwise crash the host's json.dumps instead of returning the error envelope. This is also what lets a rejected ValueObject stay JSON-safe in the reply.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L42-L47",
+          "version": "repo-lines-v1:sha256:436f2b6a974912f14c8f55019670ccf7ac8e6a88cc7bf35d7ccd9b5c72fd63bf:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWI0ZmE0Y2JjM2RkNjg4YjJmN2UwMjVhZWE0MGViMWNlYzVjNDE1ZjExZWQxYjdhYmVkM2NkYjdiNDEzMThjZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmU3YjhkM2MyY2QzZWUwOTdmNTg3Y2NlZmNkNWExYjExMTQwYTVmOGM5MmJjMGIyYzVkN2M0ZWJmNTM2ZWU5ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzBjMTk5ZjA2MGNhNjNkNTNlNDFlZjcyYTI4NTJmZTYwYmMyZWFmMmY5ZjA0OGM3YmViYzk2MjNiMjRmNmIxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjgwMzhjYzE5NzFjMmU0YzQ1YjRkZWFjMzc4Yzc0ZjEyNWJmYjhlMmIxNWY4ZTM2ZmRhMTc5MDU0MWZlZGMzYiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L90-L93",
+          "version": "repo-lines-v1:sha256:b595a75f28e6093c64ce381c77404c99ac50fcb3cc8b5f10e78f7fa2d56c912d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRhNWM2NmUxN2IxNDUzOTc4MzRiOGM4NTRkYzQxOTNlMjEyNTE4MGE4OTk2YTE0YzMxODgzMzI2YjJlZmJjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJmZDEzMDAxZTBkZmYzYmQ3MDUxNWQ3YTQyMWQ4MWMxYzZhYWRkOWIzZTg1OTdjZmU0YmNkZjU2NWQ3MmQ3MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTYzNTg3M2RkNjk2MDYxNzYxNGViN2JhYjg3ODlhZTA2ODIzNjRhMmMzYjQ0NTFiNmI4OGIzYzI0N2QyMGJiNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTA4NWRlZGE3NTY3NzNlNTdlOTFjMmIxNzViN2UzZjg2MTk3ZDIyNjkzZDhhMmQ3MjFmY2MwZmU5Y2Y0OGMxNCJ9"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoint_rpc.py#L239-L257",
+          "version": "repo-lines-v1:sha256:807fe67f97030fcef3dfd94219e1295e33ff8889c1b34d00ffb60f9d84effcd5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwZTM2ZTYxMzQ1M2Q3ZGM5OGY3NzJiMTRkNWUwYmRiMTgxZTk2YjczNGY2NzI2YzU3MmYzNmI4ZDVkNDI5MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1ZGIzYWNlZmU0YjBiZjViNDRlOWU5ZTQ3YTM0MGU3NjkyNGNjMDhkNTkwOTI1NjMzMmU1MzA2ODRjZThkOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlMjgwZTVhMGQ1NzYxNDIwYzUxMTU4MDQ5Y2U5OTlkZmJkYmFiZmZjNDIzMzJkY2RhODNiZDM1MmZlZjYwN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0ZjI0NDVjNjU5YmJhMjg0M2FkYTdkZDBlNWI5NmZlNWU5MzNkMmYwNmM0OTI5MWZlZDljYzMxYjM5NTkyMmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d3dc56c903d445798a4bc6087956bb84",
+      "statement": "Any exception other than MethodNotFound or InvalidParams becomes -32603 Internal error whose data is only str(error); the failure is logged with logger.exception(\"JSON-RPC method [%s] failed\", method), so the traceback stays in the log and not on the wire.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L129-L132",
+          "version": "repo-lines-v1:sha256:fcf4b0651ef0d14de330d1e0d7f1c95d0855a7725f49ba4504c3bb16fb4782e0:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGMyYTgxNWFkNjJmZGQxY2Y2ZGZjNzRlNDE2NjUwZWY4N2JmNjExNzYwOTgzOThmNDRlZDk1MGRjMTA3ZmQyZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzI2NGIzZDE3OWFmZmViZGNkMTYxYjM1NDI1Njc1YmQ4NGE1NmMzMmRjZGFmZGFkY2RiMjMzYmRiMjg3MmJkOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjY2YzhmYmY5MzY3Mzc1NDEwN2FiNWZhM2Q2NzhhYjZkNDg4OTVmMTBjMWFmNzhjNTVjNzg4OTBhYmE5OGE2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzFiYjFlMjE2OTZhMTE4MjI2YjRlMDFjNTFlODI3YmE1NTU5ZDhlMTgwYzIzMmEwYjliMmQxOTdkNjU1YmQ0MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_617b2191544a4ac6a73bf637be56351c",
+      "statement": "Notifications are detected by the absence of an id member, not by a null id: the method still executes, but handle_single returns None for every outcome including -32601, -32602 and -32603, so a notification never produces a reply.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L110-L115",
+          "version": "repo-lines-v1:sha256:f5fef1f00db2340faba68909317a150100d2ed93d71605ce58b6001c4895400c:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTJmNTkwMzIxNTk3ZTk3NDAyMzdiNDQ4NWNmZDVlMWRjZmM2ZmRhZjE4NWI4NGYzYzI5MzU4NTUxZWU5NTJiZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzI2NGIzZDE3OWFmZmViZGNkMTYxYjM1NDI1Njc1YmQ4NGE1NmMzMmRjZGFmZGFkY2RiMjMzYmRiMjg3MmJkOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDg5ZmM2YWU0YjY2YTZiYzNhNzY5MGIyYjhmMGJlODllNWM5ZDliZWQ4YTBkZWU5NTQyZmNmZjRhMWJkN2IzMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTlkNjM0NTg3ZjE0MWQ4MzNhYTcwYmIxYTVjYzdlYzQ1NDk2ZDJmNDYwZjY2OWY0NDQzZmI4MGY3ZTNjNWUyYiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L133-L135",
+          "version": "repo-lines-v1:sha256:c1bb1e21696a118226b4e01c51e827ba5559d8e180c232a0b9b2d197d655bd42:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2EyZTFhYTZkNjA4YmM3OTg4YWIxZTljMjRlZmU4YzA1YTQzNDhjY2ZlOTIwZmQ0YTNmYmRhNTYxZDA3ZjMxYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWM5ZmExMmY3NDdhZWJlMjcyN2VlNTZkZmU0ZGJhOGY5ZmI4N2RlN2U1NjI0NmIwZjA0N2JjMWE1MDcyMDY5NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTlmZDQyZTgwZWY2NmJkMWU5MDczMjVlZDg4ODMxZDM2OGQ2ZGZiZDMwNGE0Mjk2ZDQzOTE5ZDY4MmZmMmViNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTkzNTQ0YzMzNTRkNjNhZjk5MjVkOWZkY2FmNjBlMzc4NmZkZmZiMjI5MDNkNzJhOGEwM2E4MDBiNDEwN2ZlMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6137d2697dea4e7c9497f50fb7007a39",
+      "statement": "Batch semantics: a JSON list is a batch, an empty list is invalid and answered with a single -32600 \"Batch must not be empty\" object (not a list), the None replies of notifications are filtered out of the batch result, and a batch whose items were all notifications returns None.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L138-L159",
+          "version": "repo-lines-v1:sha256:52365046dedc0280d943bcd64b5f7583a566056ae019c1edc2a5f43c99909704:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyZjE0ODdiNzkxNDBkZmE3YzQyMjE5YjExMTI3Mjk2NWUxZjM2NjJmM2EyMjQyN2UyNDIzMGFkMTllZjFhNmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0YjkxMDUzNzkyNTM3ZDRiNzRiNzY0YjgzZmViNGQ4OGEzM2RjMmZkMzFkNjZjMWE4ZTY1MzkzMDBiMWExM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkNzZmZmNmNzRhMzVjYjlmZTllNjlmYmEyYmU2YWVkNTU4OTA4ZDUyOWFiODVmZGI5NjY5MGNhMjc3MTgwOWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1NGNiYzFhNWU3NmQyZmQ3YmQ4ZmZiMzkzODE1YjJmMzY0YzJjOWU1MTIwNmNiZjUyYTQ1MWU1MDFkNzA4NmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bac67136a5774400a8708494b8a755c8",
+      "statement": "The JSON-RPC request envelope is validated in one place: a request that is not an object, a missing or wrong jsonrpc member, a method that is not a non-empty string, and a context member that is present but not an object all yield -32600 Invalid request.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L103-L115",
+          "version": "repo-lines-v1:sha256:091be9358f2e011ded3554cf6279b2f44fc95fc42bde0b691fcd310abf8e4979:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4N2U2NmM4NTkxYzlhOTFmNWE4ZjMwOWY1ODUyNzRhMTBhM2E0YmY0ZjI3Yzk4ZDEyZjE2MGY4NWM2YTlkYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyNjRiM2QxNzlhZmZlYmRjZDE2MWIzNTQyNTY3NWJkODRhNTZjMzJkY2RhZmRhZGNkYjIzM2JkYjI4NzJiZDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczMDMyNGQyNGE5NmIxZTc2ZGQwODAyNTJmMTU5ZGQ3ZTk0YTAwODAwNTQ3MTFiZjU0NjM1ZjJmMDcwZmQ0N2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5ZDYzNDU4N2YxNDFkODMzYWE3MGJiMWE1Y2M3ZWM0NTQ5NmQyZjQ2MGY2NjlmNDQ0M2ZiODBmN2UzYzVlMmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cc8c490126a94b73a367cb4ef4908037",
+      "statement": "Error and result envelopes have a fixed shape: jsonrpc_error emits {jsonrpc: \"2.0\", id, error: {code, message}} and adds data only when data is not None; jsonrpc_result emits {jsonrpc: \"2.0\", id, result} with the request's own id.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L50-L60",
+          "version": "repo-lines-v1:sha256:60e9f855cac8a445e06f49ef8d8e31d3db0e1626952cdd760b60d18eadfeae17:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllMGMwZTBjYjJlOGUyYTgyNzM3ZTE3NWMzNDY3YzFhOWVhMTk4MmFhZGM4OGM1NjRkNzUzYjhmOTBlMTg4ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczMzc1NGVlNDIxZTNhMDgzZjY4ZjZiMGNmY2E2MTVlMzgzYTY5OWExMWQyODRkMzQ3NGRhMWRkMTRkOThiNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiZDY0NTg5ZGVmOGIxNjI5OGNkNjllNzk4NTAwYWUzZDM3NjI1MTU5ZjE2MjIxOTY2YjBhYWYzMGY2YWY2MTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjMzI0NDFhNmZmZjY4MWZjMWFlNDI0YzgyZDQ5Y2U4MzY3ZDBlM2Q1ZDFiZDY1NWE1YWI5ODJmNmI4ODNkNDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_737a1d4ea22245359b98f7661dd35c68",
+      "statement": "rpc.discover is a real JSON-RPC method on the same dispatch path, and dispatch_method returns the OpenRPC document before validating params or consulting the methods index — so a params array sent to rpc.discover is ignored rather than rejected. RpcGateway.handle() passes its own discover as the discovery callable, so in-process callers, POST /rpc and GET /openrpc.json all return the same document.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L102-L114",
+          "version": "repo-lines-v1:sha256:b60bf822a38d99edaf800b432311d58def1a33d7c627238886261997d0b78961:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1M2E3YmMwMzRmMmViZjg0MjBkZWI4MTRjM2UwZTBhMjY5ZjU5YjY3YTRjYWUxNzU0NzJhODIwMWE1NDcwYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwN2U0NTk4YzRlNjcxZWUxZTg1YTk1NDM5ZDI2MDI4YTc0YzVmZTcyOTQ1ZWYzYTE2MDMzODJmOTMzY2Q4N2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyYmU5ZmY4YjY1NTBhMGQwZGZjNWZlNzhmZTE0NWFmMzQ1MDczMjAxYWIwNzYwNjc2YTM0NzVkYmEwM2MwY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxNzU5Njk3NTkxNzk0MmE4MTU4Nzc4OWY3ZTUyNDk5NzMzZDAwMmZmNWVmZjMzN2ZkMzYwYzgyM2MyOGQwYzYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L78-L79",
+          "version": "repo-lines-v1:sha256:3d8482865984be91a7c1540e52cc6a3815b069ddbebabe65a26f53fe95117c26:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjk5MmYxZmI0MjFiYzQ1OTgyYmRiMzRkNzFjYzgwNzJkOGI4NDM4ZjkyOGZhNDc4NTM2YzQ0MzVjODY0MGIyOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyYTg5Njk0NjE3MjE4MTViMzcyNTIwZWI3YjI0NmEyYzBiMzhkN2YzNWQ1MDY2MWFkYTZkZTAwNTM3NjIwMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjBiY2RiNDVhNWQ5OTZjZWFhMDYzM2Q5MDg2NTQ1YTU4ZTMzZWYwYzZlNWRjY2U0OWVlZDMyMTEyZWEyMDYxYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDc1M2M0ZmE5Y2VkMDdjYTEwZTAyNTkzOGQyMzQ3NjBkMDk1YjQyZWI3OGMwNjM1NDVmM2YxMzMwZDIwODM2MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b720fbd72b547049ae0b78120392d99",
+      "statement": "The discovery document is OpenRPC 1.4.0 shaped as {openrpc, info: {title, version}, methods}, with the synthesised rpc.discover method always first; title and version default to \"sincpro-rpc\" / \"1.0.0\" and are constructor arguments of RpcGateway and build_rpc_app.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L67-L73",
+          "version": "repo-lines-v1:sha256:71be73c4b50aa12eb721e47430f3aeb5307a103aceb2cdf5684f362b6890bee5:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWZkN2EwN2E4M2RkMTk5NmZiNTE2ODRiNDJhZWNhZjRlOTBmYjc4YmE3MjMwZTU0MmVkN2JkMDFkNDIzMDFiZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzAxNGFlYjAxNWU4YjhlNzEwN2M1NDI2ZmM4NjZkZmY5ZGJhYzI2MGM2ZjExNmFjMzU4NjFiNzA5OTk4YzhmZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjA0MGNjNzJmMmU5ZTg0YzA1ZjkwMjUwMzdkZTI5YWQyMTRkMjhlZjljODE1NWY1ZjY3MzZmOGEzNWZlYWMyYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTExYmI0YWZkZjIyYmYxZWI3Njk5MDg0MGViMDA5ZDI1OTQzZjA2MzA3OTYyYTE4YmMxZWZmMDUwNWFlMTQ5OCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L20-L21",
+          "version": "repo-lines-v1:sha256:89e8474a02dced70646260ee833df57ab51846f5be60e5764cafc39fa223fd63:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI4OWFlNTVkNDE4ZGRmNWRmZjg2ZWY5NzNkY2JiNjg3OWIzOTI5Y2JkZDRjOTlmYWQ2YzM4YjNjNjkzZWFjOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWYwYTEwZDI2N2RmMjcyZTBkZTRmYjUzZTI5YzllM2IxZGQ3MWFhYTRiMTQyMmVjNmY4NTQ2NWYwMzI0M2VjMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzUyNTI2MGFiMjM5ZTBhZDdmN2Q0MDNmNWJkOGEwMzkxMTdkYmEwZGE5YzMzYzU1NjNkN2YwMzk0OWUwYzY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmNmNjZhNDBiMTA0ZDhmZTg1OWFhMDliMjQ3MWJiNDdjMmFhNjM1Zjg4MDk1ZGQ4YzAyMGU3ZTVjNDBiZjdiYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L218-L227",
+          "version": "repo-lines-v1:sha256:b296eb82d4cf0bf58a84204ca3fe715fe26d5f31dcc31575c8b5fbc54b4b9a0f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0Mjk5ZjYwMGRiNGVjMGU3Y2NjYWRkZDUyNTdkYTliNzkwMWZhMDg5N2NhMTY3MjYzZjUwYjNmMjU4NDg5NDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7bab5c9d86224646a5bd7a47bd59eb30",
+      "statement": "Each published OpenRPC method object carries summary (first line of the description) and description resolved by introspection from docstrings, tags for the alias and the layer, paramStructure \"by-name\", params as content descriptors (name, required, schema) generated from the DTO's JSON Schema in pydantic's property order, a loose {\"name\": \"result\", \"schema\": {\"type\": \"object\"}} result, and the vendor extensions x-sincpro-instance / x-sincpro-layer / x-sincpro-dto.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L91-L100",
+          "version": "repo-lines-v1:sha256:0613aebf47d05f1aeef843caabbb1bb6f4733d25106720db9fdcc33ac5f952be:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlNzY2N2M1MzBmODU5MDg2NmNiYTY1MjA0ODcxYWJiY2RlMjJhZGQ2MzRmMjE5MTk4YzQ2NjU1MzMwNzUwNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlZmViNThlZjE1NGRlYjYwODRlNmM1NTM5N2E3MjkxMGVmMjE2OTI3MjRiNzc0M2Y3NWViMjFjNjk4Yzk1YzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxYWY1NWRlNDBlNzY4ZTFhNmNhNTBhNDkwN2E4Mjc2MDZjZGFkYTM4OTY4ZmI2MDg2NTliZTBiMTZkYzdkYTEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L162-L202",
+          "version": "repo-lines-v1:sha256:609bc5dbe8f95d2efc36476ff297cff7ab4651a4f99ca512b239fa02680db623:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3NGI2ZWVjZTEyMTE3ZDI0ZGE5MGYxYjZiMmQ3NTUzYTFkYTQ3MDM1ZWNmMzQwY2QzZTcwYWExYmE1YmNjNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjYmE1MWE1ZjYxZTMyOTU2MzE5ZDdhZTA5MTYyYjBhYjI3YzFhZWE2NDVkMmRlZWIwOTRjZjE0OTQ5YzAwODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxN2NiYTk2ZGMxMjA0NjY1YjdiZjE3ZDQzYjdlMzJlYTMyMGUyM2U5ZDg2YTFmZjBjNjQ5NmMzODAxNjdkYjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3493af8b8b2946e9a076befb729b81b7",
+      "statement": "merge_http_context folds transport headers into the inherited framework context without touching DTO params: X-Correlation-Id becomes correlation_id and the W3C traceparent header becomes {\"carrier\": {\"traceparent\": ...}} for OTel parent adoption, while a request with no such headers yields {} rather than a fabricated context.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L34-L48",
+          "version": "repo-lines-v1:sha256:d64a1ce695896ef3999e7240e7dae8634ff2dbe4630f4f9bd35a0cee29f9d4b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmM2JiZWRiZmZhNTdlZmI4ZDU0NGIxZjdhODVlY2FiNTk5MGFlMDYxNGJhNzIzN2E4YjMxZDhmMmUwMWUxODkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3MjE1ODE2NDg3YTEwNGMyOGM0NTM0ZDY2Nzg4OTU2NDYxMGM0MTQwZTFiMjFkMWUwZDUyMjFkOTdmMjExMDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmNzVjM2ZiMDg5MDdiODY3OGIzYmJiM2EwOGJkZDQ2ZDRlZTg3ZWZlNjIzNGZkZjllYTIxNDQ4MjBmMjkzMWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjMmYxNmIyZTZkMzBiMTllNGUwNzk2ODhhOTVkMzViNmVjZDk0YmJhZGY1NWZhOWU0MjBlZTk5YjdkNGRlNzIifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoint_rpc.py#L363-L397",
+          "version": "repo-lines-v1:sha256:d9f6f40c3893a2dadbb17e0037a6f52478a653c67421c3a822f75cb5720147d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyODBhMDRkNTIzMDNiYTUyNjFmYTZmOTQ4MmRkZmVhNjVkYjNmNmQwYzFmOTc1YWJkNmE2OGZkZGU2YjhjYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjNmFlNGVhOWU5NDlkMmUxNjUwNGM2MTQ3OWE1YjZkOGI4NWIyMDZlOTFkYWFkMWE3YzNmODNjOTJiOTU3OWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dce83562ac4f4e409e469354031ab668",
+      "statement": "Request-body context wins over headers: handle_single copies the inherited (header-derived) dict first and then updates it with the request's context member, and passes the merged dict down as `merged or None`. context is a sibling of params in the request object, never a DTO field, so a context key cannot collide with a DTO field.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L112-L121",
+          "version": "repo-lines-v1:sha256:b7dd1603e60a9c00212004166cd507e2d348ae5413c965041dd3e801658d5b46:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMmU1NzNjYWY2NDFjOTNjYTUxN2EwNmE4Y2FiNjc5YWVhZjQxNjI2MTQyMDE0N2Q2NzM2OWQzY2RiNjFhNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3MmVjMThkYjQ1NWIzMDk3ZjY5NDc0NzIyYzQ0YzJlZmE3MTE3YzdmNmI0MjdkMDA1YjNkZTQxN2ZmOWI3YjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4Mzk3ZGExNjAyMjcxYTA1ODRiNjBhYjIwN2UyOTlhODM5Y2ZmMDk2ZTIxY2E0OTkwYzFiMWE1MzU5YTNjM2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5NWQxZjRiZWYxN2EyMWEzMzQzNjRmMDc4NmU3M2RmZGQ2OTgzYTY0ZGQ4NzBiNTdjNjBjODkxMGI5ZWRlNGIifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoint_rpc.py#L373-L391",
+          "version": "repo-lines-v1:sha256:37091497201d07341e16ec9f9bf850988f579165d46480f7a69d80127f93fc92:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiYWQ2OTUxZGJhODJmYmZhNjhlODhjZTgzZDE5YTY5YmI3ZGFkYzhiNWViMzEwNTliNTE1OTRlMzQyMTRjNzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1ZjJhNmY5NzliM2U2MDk3NmE0NjIxNDJjNTE3OTRmYWQxYzkzY2JiMzNhNjQzZTRlN2RhODg3MDQ5YjVjMDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhYzYyZjNiNGE5NDYwZmIwODQ4YzE2MjhhMGM4N2FmMjU2N2E0YzI4ODQ2ZTYxY2JlYjYzYTc1MTBiODBkMDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2OGFjMzQxYTIwOGNjZDdkMDJhNDAxM2FmY2RlM2RiMzg0MWE5MDYzNmQxNTRkZjczODY5OTRlM2NlMDUyZGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9e65b3c6e56549ed9c1ec8a5b60ccbb1",
+      "statement": "The merged context is split by scalar_executor.execute: TRACE_KEYS (\"trace_id\", \"span_id\", \"carrier\") go to framework.with_trace(**trace_kwargs) and the remaining keys to framework.context(extra), each entered only when it has content — so a request carrying only X-Correlation-Id enters a context block and no trace block, while traceparent enters a trace block that adopts the remote parent.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L18-L18",
+          "version": "repo-lines-v1:sha256:21396ce6d44d87d2b90376271e2a149cc098b8eb16172d99bcca1f5bf24a9daa:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjEzOTZjZTZkNDRkODdkMmI5MDM3NjI3MWUyYTE0OWNjMDk4YjhlYjE2MTcyZDk5YmNjYTFmNWJmMjRhOWRhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjEzOTZjZTZkNDRkODdkMmI5MDM3NjI3MWUyYTE0OWNjMDk4YjhlYjE2MTcyZDk5YmNjYTFmNWJmMjRhOWRhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzY1MDQzODVjYzdmYzQ1ODExMTM1NzUzMmFkNWEyZTFmYjQ2YmFjYzMxZmEyYWQ3ZTIwOTdhMDhjMDVkNmM4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODEyMTJjN2UxM2IwYjg5MTA4MzY1MDU5MWUyM2EwMDRlNWY2MDgzMDkzMzA5Yjg5NDY2ZGI4ZGI4MGYxYmJkYyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L77-L109",
+          "version": "repo-lines-v1:sha256:f5686485e813fc021a09e1704f21003db583a05687299cf327231606d231b88a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4OGIxZjg4Mjc3MmYxZDcyMDIwMWZkNzU3NTA3OTAyOTZjM2Y3NzA4M2IwN2FlNTIwZDhmYWE0YmYwMTdkNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZmQzNjU3MWI1YzRkMmM0OGY0MmI0OWNhNWFmNjI4MGNlMGY0YTFhZTUzMDMzYzYxYjg2NTBlYmE1NzA0MzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3NGRlNjBlNmIxYzBkNjA1OTlmMWI3NTU5YzA0M2ZiODBlOTFkYTdlZGNlODdjZjM1Y2JmM2U1NzNkY2FlYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_146ce9f73a81451a949e76c0f3ae8012",
+      "statement": "RpcGateway.app() returns a Starlette application with exactly two routes: POST /rpc and GET /openrpc.json. The async rpc_endpoint awaits the body, folds headers, and then calls the synchronous gateway.handle inline, so dispatch runs on the event loop rather than being offloaded to a threadpool; there is no async bus path in this host.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L116-L153",
+          "version": "repo-lines-v1:sha256:9d1a1d998becee2b7ceda51cf3d21fda6615bd8da0ab5c43f668a4fd0567d5f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YzZlNDg1MGEwYjk2ODc1M2Y3MWVhMzY0ZGM5MGJkMWQzM2EzNzc0OTMxNWRhN2FhNzA3NDM1ZjM4ZGE4MGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyNmRmOWVjNTkzMjMwZTViMjU5YjRmOGExNTM0NzNiMGJjY2QzMjlmMmE4ODI4MDJkNDIyOGRmYTIzOTU4MDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmNWE0NzRlYzE0ZDQxOTE5ZWVlYTRjNzU3ZWVmNTllZjQ2N2IxZjVjYTk5NzhjMzU2ZjM2OTVkN2Y2ZGE5YTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bc07fcaa47ec415f8369c8b2039da23c",
+      "statement": "HTTP status codes are narrow by design: an undecodable body returns -32700 Parse error with HTTP 200 (the error travels in the JSON-RPC envelope, and an empty body decodes to null and is answered as -32600 \"Request must be an object\"), a None dispatch result — a lone notification or an all-notification batch — returns an empty 204, and every other reply is a 200 JSONResponse. The app adds no authentication, CORS or size limits.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L131-L153",
+          "version": "repo-lines-v1:sha256:660eeb03fa8ac822cece3741a352240f1fc3d25486ddd01edaa35a103084496e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZDNkOGFkMTJmZjk0YjE0MDYxNDFjOTQ1MzZiZDNjN2QwODcxNzgyNDdhY2ZhZmM0ZDA5NDA4NmQxNWZiNjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzNzNkMThlOWQ4MjU4NjlmMGY2MWI0NGU5ZmM1YjBjZmUwN2E4NDA3MjA3MzViMGFmYzJjZjQ3OTdlYTE2YjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmNWE0NzRlYzE0ZDQxOTE5ZWVlYTRjNzU3ZWVmNTllZjQ2N2IxZjVjYTk5NzhjMzU2ZjM2OTVkN2Y2ZGE5YTcifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L103-L104",
+          "version": "repo-lines-v1:sha256:ba22ec99aecd8924fad58d27cf5bc768b25cf24d96b7c5e14161d61ece24eeca:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg3ZTY2Yzg1OTFjOWE5MWY1YThmMzA5ZjU4NTI3NGExMGEzYTRiZjRmMjdjOThkMTJmMTYwZjg1YzZhOWRjOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGFiMWUwY2JkOGNhYmI0MmQwZjFmMTBkMWY1NGQ4Y2RhNTJkNjE2YWYxODI4Y2ZhZjJlZDRlMWUyMjRjZjMyZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzMwMzI0ZDI0YTk2YjFlNzZkZDA4MDI1MmYxNTlkZDdlOTRhMDA4MDA1NDcxMWJmNTQ2MzVmMmYwNzBmZDQ3ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGRmYjExOWVhYjY0ZmJiOTBkYjQ1Y2M3Y2YwZmViYjgwMzIwNTFjMzI5MTZlMGEzZWM0ZjdkNGQ1YTZmOWQ1ZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_eec59fbff3b342768c663f0c1e016264",
+      "statement": "Starlette and uvicorn are imported lazily inside app() and run(), never at module import, so methods()/discover()/handle() work without the extra; a missing extra raises ImportError chained from the original one with the message \"Starlette/uvicorn is not installed. Install with: pip install sincpro-framework[rpc]\".",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L116-L127",
+          "version": "repo-lines-v1:sha256:8838d327d292e1c2ca509a528b47752073798311c2c3ca70daa161f31f1fae51:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YzZlNDg1MGEwYjk2ODc1M2Y3MWVhMzY0ZGM5MGJkMWQzM2EzNzc0OTMxNWRhN2FhNzA3NDM1ZjM4ZGE4MGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3Mzc4MTFmYmYzN2ZkY2ViZmIyOGM2YWNlNzc2MDhiOWNmOTEyNTk4MzI3MzcxMDRmYTYzZTIyNmRkYjIyYjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyNmRmOWVjNTkzMjMwZTViMjU5YjRmOGExNTM0NzNiMGJjY2QzMjlmMmE4ODI4MDJkNDIyOGRmYTIzOTU4MDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzNzNkMThlOWQ4MjU4NjlmMGY2MWI0NGU5ZmM1YjBjZmUwN2E4NDA3MjA3MzViMGFmYzJjZjQ3OTdlYTE2YjkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L155-L161",
+          "version": "repo-lines-v1:sha256:fc71d87e3a97e7744cf28dbfa98673e8b34e638b56a2fbd87458019868926a0a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzExMDE1ZGE4OTJjNzJhODdkZmU3MGE0NzEzYzhiYjc5ZTM2NTVhNGNlYmI1MDNjMGYzNDJjOWZlOTA5Mzg2MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTJhNTA1NTNhNjJmNGViMTIwMzEzZjNlMzJlNGYwNzM5MWRiMTUwMTVkY2U5ZmEzNzkyNTU5YTQzNzU4ZGZlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWY1OTk0YTNkMDhmOTQ4NDQyYzE1YjEwNDBlYTA5YjcyNjdhNDk5OGRmYTc3OGJhNWUzNjlhNGQzM2VhNjRiZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2QwMzM1ODM0OTYwMGJhNjA5ZTk3YmU3ZTMyZmVlZWIxN2E1ZTIxODVjYjEwMGJiMjlkZTBjYWIzYmE4YzUxMCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L21-L23",
+          "version": "repo-lines-v1:sha256:5d26f3ca62cf856aca0029a778a191da081c44d2f9a22d6635d7f3610a54b035:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA0OWIwYzYwZDdiNGUyZThjOWI2YTkzZjg3ODA5YjIzOTgwYTkyZjUyNGMxYmI2NGVlN2IxNmY4YTY3ZTU4NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjYwNTA5NGRmMWJkNTMwOTEyMDA5N2M5YTFjOThhMTFkZDU1ZTIzNjlkY2E4YzFhNmNhYjA4OTJiOTY5NzVjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDNiZTgwNTliYTFjOTg1NDNjY2UxOGQ1MTUxMmZiMmExM2E2NTJjZmIwNTBiM2M4NzEyNmJiOWVkMDg5Y2VmNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1ecf68c4c4994f1980c576a87c5e2239",
+      "statement": "The rpc extra is declared as starlette + uvicorn in pyproject (rpc = [\"starlette\", \"uvicorn\"]) so the core bus installs without an RPC stack, and run(host=\"127.0.0.1\", port=8080, **kwargs) is the only place the bind address is chosen, forwarding extra kwargs to uvicorn.run. build_rpc_app(instances, layers, title, version) is exactly RpcGateway(...).app().",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L36-L48",
+          "version": "repo-lines-v1:sha256:28a694518af311466ab4900d8b4a7d08139b51884706e65c97d5fb6ccf858fd9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMjIzMDRhMjNkZjUyY2U5MTMxNmJhNDYyM2RiYTM0M2Y5NTMwMGZhOGViODFjNWM3NTcwM2Y3ODcxMzA5MTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMWJhNDc3ZTE1OGMxNjAxY2YwOGI2ZDYzNGJkMjIwMzk3N2M3NDQyMzM3YzlkMjUwZjBkNDMzNzdlNDI1NDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxNTYyNGZjZjViYzc5MmU3NWNiNGJkYTYyNDU4ZGZjNTNhMjVmZDE0NDkyMjQ3ODE4ZTI4YzRhNGMwY2RiYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNWY5OWM2YmUwOGRiNGYwMTdhZDZkZTBjY2QzOTlkYWZmOWZkY2EwODMwZTNhNDFkMTU2NGE4MDNmYjAwYWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L155-L170",
+          "version": "repo-lines-v1:sha256:f24facf6ce795c484f98c433124da42ed734b3767a02a7b5074e856bae9bcd05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMTAxNWRhODkyYzcyYTg3ZGZlNzBhNDcxM2M4YmI3OWUzNjU1YTRjZWJiNTAzYzBmMzQyYzlmZTkwOTM4NjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzZTc1ZDNiNDVhZWQxZjRiOGMyNmE2NjM2MTZhMTNiMmM4OTc0NTljNjFlMTNkODk4ZDhkZDMzZTRjZjE4NjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmNTk5NGEzZDA4Zjk0ODQ0MmMxNWIxMDQwZWEwOWI3MjY3YTQ5OThkZmE3NzhiYTVlMzY5YTRkMzNlYTY0YmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1a06e4f3d06b492d9bda7ee87b1a3042",
+      "statement": "These method names are reserved for the framework's own namespace and must not be shared with FastMCP's JSON-RPC methods: entrypoint_mcp serves MCP over JSON-RPC (tools/list, tools/call), so an MCP host and an RPC host must not share an HTTP port, and the alias may not contain dots because the dot separates alias, layer and DtoName.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_rpc.md#L165-L172",
+          "version": "repo-lines-v1:sha256:e86fd0cc9f6319ed532255efbf64763f43ce9bca56282042df3c5a062106d537:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTZlODJhYWRmZTFjYjE5MDhkZmVmNWFlZGUxYzYxOWJjMDY1ZDFmYzQ2MzNhZGJhYjU4N2Q5ZWMyNGM2ZTc5OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODFkNzY4OTI5YTY1MDMwMGZjN2E0NmJkNDllNjY5YmFjMzQ4Yzk2Yjg2ZDA3OWU5MGI3ODYxYWUyMWU3NjI2YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDAxZjJlYzE3NTkzYzEwNTRlYjQ2MzY3ZDg0NTNlZjI0YTE3M2NlOTZiNzExN2Q5MWY5YTY4ZDQ0ZmVmOGIwMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzc2OWY2OWI0NDY2ZDBlNmQ5MTIyNzI4ZTgzZGQ2ZTZlODAyMjJlOGFlMjgyMWM4ZjgzMTZmOTM4MTM5Y2Q5NSJ9"
+        },
+        {
+          "resource": "repo://docs/architecture/entrypoint_rpc.md#L20-L20",
+          "version": "repo-lines-v1:sha256:e17f0ba07e672e1efb2941cf4aaac824273fcb4b6ad3771307b85f5817650832:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTE3ZjBiYTA3ZTY3MmUxZWZiMjk0MWNmNGFhYWM4MjQyNzNmY2I0YjZhZDM3NzEzMDdiODVmNTgxNzY1MDgzMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTE3ZjBiYTA3ZTY3MmUxZWZiMjk0MWNmNGFhYWM4MjQyNzNmY2I0YjZhZDM3NzEzMDdiODVmNTgxNzY1MDgzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDIyYTI0NjJhNmI2ZGMyOTUzMWUzMDY0NDk2NTIxZWQyZjdkODI1MDk2ZTQyMDBjNDkwZDMwM2IyZDQ2ZTgxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDAxZjJlYzE3NTkzYzEwNTRlYjQ2MzY3ZDg0NTNlZjI0YTE3M2NlOTZiNzExN2Q5MWY5YTY4ZDQ0ZmVmOGIwMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L24-L31",
+          "version": "repo-lines-v1:sha256:20fa43a651ca3e9152e8930f3d1d4120041763bc5b2c0e612538a7e218efd8bc:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk0MDYyNzZmM2NkN2Y0OGE0NWEwYjk3NDdjNGVkNTU5MzJlNDA2MTM2YWM0NDRjMmQzNzJkYzhiN2M3ZTdkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjM4ODZlZjAwOThlMWE5ZGFhYmFmNzk1MTkzN2Y0MjUxZmUwZjdhOWMwNGVlM2IxMGY3MTQzOTVjNWRiNWI4NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWQyNmYzY2E2MmNmODU2YWNhMDAyOWE3NzhhMTkxZGEwODFjNDRkMmY5YTIyZDY2MzVkN2YzNjEwYTU0YjAzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGIxYTcyY2VmMDE3MzYwZjA2NTNjODY4OWZkMDZiMDY3YmJlNWFlZjUzOGVmMzdhNWExNThlYjM1OTMyYTlkZiJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

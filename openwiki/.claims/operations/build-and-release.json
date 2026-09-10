@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:af0dae7250a1b59e58c2be83c57248266096b30c81977188f7659c2a22f049db",
+  "claims": [
+    {
+      "id": "claim_b50a12e731164db4b4ea6517e10fcf4e",
+      "statement": "The repository ships exactly one Poetry package: `sincpro-framework` version 4.0.0, built by `poetry.core.masonry.api` from the single included package `sincpro_framework`, with `fury` (https://pypi.fury.io/sincpro/) declared as a supplemental index.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L1-L13",
+          "version": "repo-lines-v1:sha256:9b15b0e392a52c3dc9f50a00a52e20fedad04addcb6296e563b23a6c26d02aa2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyZGZmMTBhZmFlNjBiNDdjNTgzYjNmZGExNmRjNmJkMDk1MmIzOWY5YWNjNDk2NDU4MjEwZDVhZmMxZWIyOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkZGUyNGRhMWVhZmQzYzM2MjkxNWFmYjYzMWZjMGM2OTA3NjY3MWJlY2M2MGFkY2Y2YmJhOGYzNmY2Y2JkNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2OGUzNGExMGRiMTkyNzgzMDA3YmZkMzk1MjhhMDc3MjQ4NGRjYzhiYjY4MDgxMTY2YjZjYWJmNmQ5ODU5YTIifQ"
+        },
+        {
+          "resource": "repo://pyproject.toml#L69-L71",
+          "version": "repo-lines-v1:sha256:6e26f47a3349e796825124206f8a3d9a5ab36ac005ee46d78c32c30eb6235668:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQ1Njk5NDZhYzliYmU3Y2IyY2RlYzNmOGJlY2YzNDM3NTBjNThiOWIzMjFlYzIxOTViZmJhYWIyYWE4YzRiYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzEzNzk0YjU5ZTljNWU2NTExMDE0YWQzYWEwMzdkOTczNWFmYmE4MDUwYzY2YzUwODllMjFlMWFiMjVhY2QzYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTMzZDY2MjA4NjczMTE2OWRiODc4NjkwOTEwYTk1M2IxMzliYjVjNzAwNWI2MmRmYmE0ODcyMmIzMGYxMGViYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTFiNjIyN2VjOTNkMDhkNjQ4ZDBiYWQ4Njc4MzRjNDU0NDJkNTVkNzc4MjhhNmNmMzk4ODAxZDNhYzYzOTA1ZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8a80a67c492044c5a5d8f988559039a4",
+      "statement": "`poetry.toml` forces an in-project virtualenv (`create = true`, `in-project = true`), and `[tool.pyright]` targets exactly that directory (`venvPath = \".\"`, `venv = \".venv\"`), so type checks resolve against the Poetry-created `.venv`.",
+      "evidence": [
+        {
+          "resource": "repo://poetry.toml#L1-L3",
+          "version": "repo-lines-v1:sha256:7d9f0f2620de500a84dbb4b45c19e38d40352d76e11e6b59956eda08c314217e:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTcyNGQ0NjYzZGRlM2E3NjBkYWNjZDk0YzU0YTZjNzI5ZDg0ZjQ4ODM4MDIzMTJhMGMxMzE3ZTQ4ZTg2MzczOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmEzZGUyMmU2NGU5MjdmODA3N2YzZTk3YjVjNWJjMjA3NWM2NTcxNmE4ZmVhYTAzZDJmYjgyMzQyMWJiODNjYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L76-L80",
+          "version": "repo-lines-v1:sha256:38b55ddeebeb814a120a029bbc2bf259f1040e256ffafff9bb7e09cad882f40e:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTg1MjBlNDIxZDc1ZGRkYWEzYjA5NzUzYzFjYjJhYzEwYzYwZDE3MjlmNjgwZGQyNzYwN2QzNGRkNGY5ZjdhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODFhZDA3MGVmMmY1NGVkZmI3OTZjOTdiZDZlMWFhYTU2YTBhYmQxNDA4ZWZhN2JjMGZhYzE3ZTJkYjFiY2RjNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDZlMDlmNzlhOGUwOTNjYmVjZjhlMDViODIxNDc5NWExZmQ0NWE5Mzg1NjcyZGI3MjNmNjIxNmJiOWZiZDE0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTcwMjE1YTM3ODk4YTYzYTI1OWZhZTA1NDY5NjIzMDk4MDU1YmE2NjM5MTkzNDg2YzNmNzY4NzRhMTIyZDIxYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fcf823cc70d7443c942e7fcf2a277b8f",
+      "statement": "The unconditional runtime dependencies are `dependency-injector ^4.49.1` (the IoC container), `pydantic ^2.13.5` (DTO and config base models), `pyyaml >=6.0.1` and `sincpro-log ^1.2.1`, with the declared interpreter range `python = \"^3.12\"`.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L24-L29",
+          "version": "repo-lines-v1:sha256:e404f1e7413c9000596ca40d22e2ba2e63f89cee8a4bf67d0342f060841006ef:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2ZmOWYzNzNhZDc3NGQ5ZjgwN2FjMmRlNDMwYWFmODFhYzdlNmIxZmU1ZTEwY2ExMGM2NjY1MDg0OWQxMzY1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWY2OWIxMjkxNDZjNzVlYmQyZWJkODg5ZDlmZWY1MDg0ODIwMWJmNTM4YzljNDg4MjkyNmUwYzgzYTM3YTA1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjBhYjU5OGRhZGE0OTI4YzdiMGI1MDI4ZmY4ZGFkYjgzZTdjMTJhYjQ0MGFjZWFiMWE0OTAzNmE2ZWE1NjA2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODUyZjFkZDdjNzQ3MmJjZjI4NWJjODdmNGM2ZjhiMGM3NTYyOTI4YmQ1ZTU0NTc3NWViYzFlOWViYjgyYmVkNiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L15-L15",
+          "version": "repo-lines-v1:sha256:f9e24c0f8adba876ee45d6f777c53b0903158b5ad81973f75d003e12656ffd9d:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjllMjRjMGY4YWRiYTg3NmVlNDVkNmY3NzdjNTNiMDkwMzE1OGI1YWQ4MTk3M2Y3NWQwMDNlMTI2NTZmZmQ5ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjllMjRjMGY4YWRiYTg3NmVlNDVkNmY3NzdjNTNiMDkwMzE1OGI1YWQ4MTk3M2Y3NWQwMDNlMTI2NTZmZmQ5ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjIwNGE3OGM3ZTRhYWFlYzM2OWVhMGU2ZWRjNWI2ZTlmMzg3MGY3YzM4MDU1OGM4OGFjOGFkM2Q0ZWIzZmM0ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGE0NjFmNWVlZDY5YmQ5ZGQzMTU3NGNlZGU2YTY3NzljY2MwYTY3ZGY1NjRiZTc4MjRjYjE5MjA3MzcwYTg4YiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L5-L5",
+          "version": "repo-lines-v1:sha256:82b458965195b6613a46e2ebb35faf1116b0e5da30f1613ca42de4fa3c93dc21:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODJiNDU4OTY1MTk1YjY2MTNhNDZlMmViYjM1ZmFmMTExNmIwZTVkYTMwZjE2MTNjYTQyZGU0ZmEzYzkzZGMyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODJiNDU4OTY1MTk1YjY2MTNhNDZlMmViYjM1ZmFmMTExNmIwZTVkYTMwZjE2MTNjYTQyZGU0ZmEzYzkzZGMyMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzQ2OGMzZmFjOWI3NGI0NWQ2NjAxOWE1NTE5OGZmYmI0YjhmOGNkNzM5Y2IzMzUyNWQ5NzFiMGZlMmE4ODliNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmY4NzljYWNkNzc4YjNlYTU2ZjNhNTI0YWJiZWFhNDkwZWQ5YzYwNTVlODRmMWI1ZDNjOWJhYTU0ZWE5OTE2YyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a64b9226d90943eb8d970b36532c539e",
+      "statement": "The optional extras map one-to-one onto optional features: `opentelemetry` pulls the OTel API, SDK and both OTLP proto exporters; `sentry` pulls `sentry-sdk`; `mcp` pulls `fastmcp >=3.0,<4`; `rpc` pulls `starlette` and `uvicorn`. Observability and both entrypoint hosts are therefore optional installs while dependency-injector and pydantic are core.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L30-L48",
+          "version": "repo-lines-v1:sha256:f60fc003e8ee572ea76a6b95e152e00eeeaec7e2363c82d2d990feb8608a33ab:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyZDZiOTRiM2YyZWU1OGQwNTE1MWJhYmQ4ZWE3NjAxM2ZhNmJmMjExMjk5MWE2ZGMzOGFjYjA2NGNiNTdhNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMWJhNDc3ZTE1OGMxNjAxY2YwOGI2ZDYzNGJkMjIwMzk3N2M3NDQyMzM3YzlkMjUwZjBkNDMzNzdlNDI1NDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1M2Q3ZTg2YjMxMGJkNDE5NjI0ZTEwZGU4ZmM1Y2Y3YmE2ZTE0ZTM1MDVlNTliNTZmYTVlYWNlMDJjNTgxYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNWY5OWM2YmUwOGRiNGYwMTdhZDZkZTBjY2QzOTlkYWZmOWZkY2EwODMwZTNhNDFkMTU2NGE4MDNmYjAwYWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/__init__.py#L11-L13",
+          "version": "repo-lines-v1:sha256:8478942d7702b708d4572cc624acc6c49bd2c3c8ae6fa73542403b566f740988:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmIyYTg5NjA0Mjg3OTkxNjc1MTM5YjhiNzFmZjIyYjRhZjMzYWFhNmQ5NmM3NTQ0MDI4NTQyYWRmM2FiNTBiZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGIxZWExYTE1YzJjNmJhOGNkNzI5M2UxYWYyN2JmZDc4NzQwZjY1ZjY3NzQ0YTdlOGMwNTc5Mjg4OGY2NDMxNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjg3ZjcyMjcxYTczODM1NTc5M2NmZjUzMmQ5NjM2ZTk3NjZkYTJjNTNiMGVlMzI2YjhiYzM5MjhmZWI0MGI5MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmFhMWFjNjVkOTUzZDY4YWYxYmU1NjMxMzA0N2U5MTI3YjZmYmUxYjFhMWE1ODViNThmYjkyOTg4NjUyNGFlYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e2d53104d7c1474bbd98a398131f86c5",
+      "statement": "Each optional host imports its library lazily and raises an ImportError whose message names the extra to install: `FASTMCP_MISSING` ends in `pip install sincpro-framework[mcp]` and `RPC_MISSING` in `pip install sincpro-framework[rpc]`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L49-L52",
+          "version": "repo-lines-v1:sha256:e5a2ccae4963b70269e36fa2cd92500cbcd8bf56d9c6bcdb4b1bdcdc11fcc1de:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU2OWNiMDkyODBlZTA3ODE5NDVlNDhkNDA0MWJkMmRmYWFlNjkxYWQyZWFiZjVkM2NiYTA4NDZjNzIxNmNhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2Y2NWEwZDVhNWY0YTg4MzU2Y2FjNjJhNDAwOGVmY2E3NDQyODFlZTQ1YjNkZmFmYTk2MWQzN2FmZTM4M2VlNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWI1MjlmYzJkODZjMzUwN2JmNTEzMjQxMzM5OTlkYjFjZTVmMzI1MDAyZjVjNjY0MTAyNWMyOTQyYzkzNTgyZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzU3MGE4MmQ3OWZlMWE2ODU3NjEzMmZkMGQyNjI5ZjY5OTUyZTJjNWY2YjJmNDY5N2YxYzczMzQ0ZDgzMzI3NiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L10-L10",
+          "version": "repo-lines-v1:sha256:fec932f18d2f245f3c7f1e635a2a6997575c535ed2f83f0722374e1b02d993d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmVjOTMyZjE4ZDJmMjQ1ZjNjN2YxZTYzNWEyYTY5OTc1NzVjNTM1ZWQyZjgzZjA3MjIzNzRlMWIwMmQ5OTNkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmVjOTMyZjE4ZDJmMjQ1ZjNjN2YxZTYzNWEyYTY5OTc1NzVjNTM1ZWQyZjgzZjA3MjIzNzRlMWIwMmQ5OTNkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzQzMDU5YWNhNjZlMjQ2NmY1MzIwY2YyMDgzMWYzZTc3ZWE1NGIzYWM5OWJkY2RhNmY1N2M5NjI3ZjhiZmJiMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTg2YjIyODc0NzQ1ZjYzODAyY2U1N2M2NjgyNDk3MTFiZGZlNDgxYjk3MzllMmIwZDg2NzkwZmYzMTNlNDRhMiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L21-L23",
+          "version": "repo-lines-v1:sha256:5d26f3ca62cf856aca0029a778a191da081c44d2f9a22d6635d7f3610a54b035:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA0OWIwYzYwZDdiNGUyZThjOWI2YTkzZjg3ODA5YjIzOTgwYTkyZjUyNGMxYmI2NGVlN2IxNmY4YTY3ZTU4NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjYwNTA5NGRmMWJkNTMwOTEyMDA5N2M5YTFjOThhMTFkZDU1ZTIzNjlkY2E4YzFhNmNhYjA4OTJiOTY5NzVjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDNiZTgwNTliYTFjOTg1NDNjY2UxOGQ1MTUxMmZiMmExM2E2NTJjZmIwNTBiM2M4NzEyNmJiOWVkMDg5Y2VmNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_841ef7dcd6f245958d95961b7eadcf0b",
+      "statement": "When the telemetry extras are absent or unconfigured the framework degrades to a recorded status instead of failing: tracing setup returns `off(\"sdk_missing\")` / `off(\"no_endpoint\")` and error reporting returns `off(\"sdk_missing\")` / `off(\"dsn_missing\")`, so the bus keeps executing. The OTLP provider prefers the gRPC exporter and falls back to the HTTP exporter, and the Sentry client is isolated per release without ever calling `sentry_sdk.init()`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L44-L69",
+          "version": "repo-lines-v1:sha256:9c2627a8baa01e608b0462be454c49b36ae8d47a57d77e73faaaac4269aff304:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMzRkN2EyNTI0NTI3YTAyZWNjYzJmOTdhYjFkZjA1NGRkZjg1YTk1YjIyYzEwMmM5ODM3NjU1ZTdhYWY0NzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkMGU5MWM3MjM3YjdhMmNiZmZhY2FkNTRiN2MyZDA2ZDI0YWY4ZmFlMzkwMDc4ZDY5YjQ4ZmE5ZDc4Yzg1NTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNGQ1YTY2MTVmMzczNGRjOGI5OTk5OWI3NGI2ODIyMmQxZWE4MWUwN2FhMTUxNWVlNTNkOGJlNDExNGI4YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NjAwYTFmMGEzYzZmOTJkYjJlMTU1OWQzMDZhYWQ5ZDJlM2U5Y2QzOWE3Y2RhN2MzODQ3YmIwMmI5YjQyZGYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L72-L81",
+          "version": "repo-lines-v1:sha256:3a9fbf45c193d53bdc04f70f9165d4523e6b207076fb047d469256ad7866f7ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkM2MxOGRiMDMyMjY3MjQ1ZDgwM2JlZjgyYjE1ZWM1OGQwNDM1ZWMwNWI5ZDQzNThkNmFlODMzNzhhMGNjYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkZDNkNDQ3YjE1MDc2YWZmNTEzMjY2OGExNTU4MmUzMTQ4YmI4N2M2MzAxZmIzZWJmMTZiMTE0MWVkMzc3MjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkYTNhNzAyYjhmOWUzMTE1MGU0MjY1OTc5NjBjNWEwMjJmYzc1NWNiOWFkMDlmMjhlMzlkNGJkNWNiOGUxMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlNzI1M2JiOTE1MmNhM2IwZTkyZWYzNjA1YzRiM2JhNzhjODQ1NWMwOWFhOTQ5NzY0ODRhNjcwMmI3YWU2M2YifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/setup.py#L135-L149",
+          "version": "repo-lines-v1:sha256:245c3732849c1e8fedc5d34d985926427bf0317324df106034531d33763b051a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzY2Y1NTM0M2E2ZGY4ZDE3NTMxM2ZiMWQ2ZjQ2OTQ4NGUyNjM5YTYwNTMxZmI2NmU2MzU5YWI4YTQ2NDE5MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViY2U3MmM0YjYyMDM2MmQ2MmFjNjcxMTA0MjYxODVjYTgyMmQwYzQ5ZDZlN2FkYjVmN2FmYTdjNTc2YzE1NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhMzAzZTA5MzFiMTI0M2RhMDYwMWJhNjdkYWNjOTkzY2NmYTZmZjgyNDJlMGQ1OTY0NmUxM2M5ZDI3MWRkOTQifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/setup.py#L81-L84",
+          "version": "repo-lines-v1:sha256:64e6612fc6dd21a28012f56dc25af2bca908f26ddf1573fe7bc46b49cbbbd7d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRhNWM2NmUxN2IxNDUzOTc4MzRiOGM4NTRkYzQxOTNlMjEyNTE4MGE4OTk2YTE0YzMxODgzMzI2YjJlZmJjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDJmNDE4ZGExZGY3MjI2Y2RjMGExMDAwZDBlNGMzZjY1MjQ0MDgyOGZlNGQzZjA2ZmU4NzA1YjcyZDk2ZDI3YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGZiNjE3M2VkY2I3MGFlOTZkNTYzZmViNTUzMjI0MWU0NDNjMDQyNjliYWIxMzg3NjU5YzEwOWUzYTU2MTY4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2I0NGRkYzZlNjgzNzllZTY5NmIzNjkyYTA1Yjg0MjhlNzFjYWQ5YjFiNDNlODVlMDdjOTdjMDlhM2I5YjNkNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_71297a5febf640cc82e8b448f8ea4fba",
+      "statement": "The dev dependency group installs the observability SDKs (all four opentelemetry packages plus sentry-sdk) even though they are optional extras for consumers, so a `poetry install`ed checkout can exercise optional paths without installing an extra — which also means the local suite cannot detect an optional dependency becoming a mandatory one.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L50-L66",
+          "version": "repo-lines-v1:sha256:c5d7eaafc4c92872eda9b9ce658752cb0220e679ba37b5dd5220af0787e08a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmN2ZkYWRiYWEwZWQzZjUwZjliYzg0MDQyOWM1ZTdkODkzZGM0NDVmOThiYTJmOTM4NDk5NTY1Y2UxYWVjM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiYjVkMTM3OWM4ZDAxYzNmNjdlNTA2NGRjMGNmN2ZhMmNjZDU5NmQxZWQ1OWEzYWFiOTFlN2VmZjg4Y2Q0MmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlNGNjYmRhNjYyMThmMGIxNDYyM2I3MmIzMDhiOWJmOTA3ZmJlM2M3NmQ5NzFjN2ZmMGUyNDhkODYyZjc1MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2OGIxNTljOGY4ZjNiNDVhYzA4M2QzN2YyZjUzMzlkZWNkODAwMGI0ODE5NjU4YTVjN2E2MmY1Y2U2NjM4ZDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a2d0e33a48a44762bb1776f461455cfc",
+      "statement": "The interpreter note in pyproject records a hands-on verification on 3.14.7 / 3.14.7t that every declared dependency installs cleanly on regular (GIL) 3.14 with no code changes and a green test suite, and records free-threading as not implemented or targeted in this codebase.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L15-L23",
+          "version": "repo-lines-v1:sha256:083a8eb5e813766df8b4322fdb01c2aee9ee1d81796022af997ffed3934cd7a0:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzFmMGY4NmY0ZjY3YzFlNDIwNjk0NTRjZWIxOTM2ZWI3ZDNiYjFlZWE5YmM2ZmRjNmI1NDkzYjJkZWE3ZGU0ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTczNmY3Zjg0ZDUxOTA5YWY4ZGRmMmNmMGIyNmNkZDM0YTQxZTE1NGE3NTg0YTFiNTRkMzVjYjgxMGJkZTQ4ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTY3YTViYzhlNzAxZDdjMGQ2ZDljNzhiYTI5MjI1ODc5MGM5MjVhZTBiZjM3MGZiNDI3ZWQxMjllMTQwNjFkYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmVlZjgwMDFmZmY4NjRkMjU2MWNhNWE4NWIzMGM5Nzc5NGQ3MjJiNjA5NzA1NjYyNWVlNTU0Y2VkNzQ5MmI4MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a3f700e07d1a4ec78360fe8f9430fac1",
+      "statement": "The free-threaded gap is a dependency-ecosystem gap: on a `python3.14t` interpreter `dependency-injector` (core, required) and `grpcio` (a transitive dependency of the optional `opentelemetry-exporter-otlp-proto-grpc`) have no free-threaded wheel, so importing them makes CPython warn and silently re-enable the GIL for the process; `ioc.py` states this is not a bug in this codebase and that regular GIL 3.12/3.13/3.14 are unaffected.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L15-L23",
+          "version": "repo-lines-v1:sha256:083a8eb5e813766df8b4322fdb01c2aee9ee1d81796022af997ffed3934cd7a0:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzFmMGY4NmY0ZjY3YzFlNDIwNjk0NTRjZWIxOTM2ZWI3ZDNiYjFlZWE5YmM2ZmRjNmI1NDkzYjJkZWE3ZGU0ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTczNmY3Zjg0ZDUxOTA5YWY4ZGRmMmNmMGIyNmNkZDM0YTQxZTE1NGE3NTg0YTFiNTRkMzVjYjgxMGJkZTQ4ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTY3YTViYzhlNzAxZDdjMGQ2ZDljNzhiYTI5MjI1ODc5MGM5MjVhZTBiZjM3MGZiNDI3ZWQxMjllMTQwNjFkYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmVlZjgwMDFmZmY4NjRkMjU2MWNhNWE4NWIzMGM5Nzc5NGQ3MjJiNjA5NzA1NjYyNWVlNTU0Y2VkNzQ5MmI4MCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L7-L14",
+          "version": "repo-lines-v1:sha256:61cb73a371633785837e11b46690667855a16efac48a5b2d6c3c16cc8620c4cb:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVlMjQ1MmFjNDkyOTVkMTQ2MjViYjc5MmM4NTIxYjEzNjMyMWI4ZTI2NjlhNWQ1M2Q3ZGQzZWFkMzQ3NjMxZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjQ5YmRiMGYxMTY4NjZkZmEwZWQwYWYzMTg2NWNiMTlkNjFkNTk4ODRiOWE3ZmE5MTIwMjE1YmRkN2I3YjI1OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2FjYjA5MzNkN2RlNmQyYzZhZjdhNzA0OTIzNWMxZDZiMDVlMDk2MjhkM2Q4MDFjNzdlNTA3NzQ3YzE0NDg4YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGY5YWVmNjBlNmI4YmM1M2JmMDU1OWFkNDMxZWRkN2YxNDUzODI4MGVlNmRiZTk2Y2YxMjYwNmZkOTY5NmJiNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b3272018d1b4490d8de918d0b87f47ac",
+      "statement": "The Makefile is the single entry point for maintainer operations, with `make init` composing `prepare-environment` (pipx installs of poetry/black/autoflake/isort/pyright/pre-commit plus `pre-commit install`) and `install` (`add-gemfury-repo` then `poetry install`).",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L21-L44",
+          "version": "repo-lines-v1:sha256:b9c830dd83763f2a0c976dd6f8edf253069818db88cc358213dd07ed73311c9e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiZDVlNmIzNTdlM2VlMjU4NTBlMmJhNzA4MDAyYmVlZjkyNjFmOGViOTZhNDdhNmQxNWE0MDExNWRhNzUwZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMjIxMzNiYWI5ZjUwOTgxMjhkZWJjMjdlNzQ2YzZjMjdjOTE4OWZmMmY5ZjY2ODBhN2UxOWI3YmYyYTgwYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyY2JhOWU2YzgzZjY2ZDliOWQ5Y2IwZDY2Yzg5MjA5ZDJjODE5NGNhYzhjMzFmMzlkMmI4YTg0ZDk5ODVhOGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NDNmMDRlNDQyNTgzMjViMjUzYzgxNjhmMzczMTM5NmU4ZmY1Y2M2ZDdlYzIwMDYzZjMzYmIzMTc2MjM2OTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_893d4c165b294dc99f9024d4e0c48290",
+      "statement": "`make test` runs pytest with `--cov --cov-fail-under=$(COVERAGE_MIN) --cov-report=term-missing --cov-report=xml`; `COVERAGE_MIN` defaults to 85 via `?=`, so the coverage floor fails the build when total coverage regresses, while the README still documents \"65% by default\" — the Makefile value is what executes.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L135-L136",
+          "version": "repo-lines-v1:sha256:766bd21983009bdf4c6c621a6cb1f0a6cd133e4df19b569c279fe9f468ca1334:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDAwN2I1MTE4ODQ1MWRiMzc5M2FlMjRlYTE3OTQ4NTgzNjcyZWM1NTE0MmFmYWI5NWYzMTQxM2RmMTFkNWI5ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDRlNmU0MGZjYjU0ODIwY2ViOTJhMjdmOGU3Zjg4YTQ4Njk4ZjY5Nzc5YTI1ZWM1ZmQ5M2JjYzJlNDY1YWNiZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTg2MGNiNzhlMWI2NzU1MzY1ZDgxZDA3YzdlZWJiOTAzMjEyMTVhMDhlMmJkODFhMjQ0MjZkNTY3Mzc0ZWUxMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjViOWQ1NmY5OThmMzM1ODQ4OTM3M2IxZDAyNjAzZGM0ZGYwNzdhM2JhZjUwOTQwZGMxYjA0MDUyM2ZmN2Q0ZiJ9"
+        },
+        {
+          "resource": "repo://Makefile#L16-L17",
+          "version": "repo-lines-v1:sha256:1413613de6213a153d7d11a89b7bf3d2b0dc7bedad73fe83ecfee26d6544779f:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjAxMTNiZWZiNTU0MGZkN2U1YTljNjYxYjE4MjI2ZWVmOWRiMjlmNjVjOWQ0OGIxODdkZTZkMGI1MGMwOTliYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2Y0NDliZDNkOWQ0NmIyNTc3NTExNDJkZWY2NjdlYWZjMDY3ZTczNmQ3YmJiOGNkZDUwNTJlNzRkNjM1ZjcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmE3OTE2Zjk4NGMyNDMyNzJlYmRhNmE0YWFlZjg0Y2I3MjFlNTEwOWNjYmY1NDIxMTI3YjVkOTRiOGFhYWUxNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTJjYmE5ZTZjODNmNjZkOWI5ZDljYjBkNjZjODkyMDlkMmM4MTk0Y2FjOGMzMWYzOWQyYjhhODRkOTk4NWE4ZiJ9"
+        },
+        {
+          "resource": "repo://README.md#L1276-L1282",
+          "version": "repo-lines-v1:sha256:4c2a90765bed92fbc3ee942d73a1c541cc8a483faf780eb99182aee5af148891:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmU5MWU2M2E1MzY4YTBhM2YwMmY2NjVlNmEyYzVjNmE3NDg3YzZkZWE0YzVhNmNkOWM5ZTZkZDdkMDhiOTg1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2VjNTY4ZWFkZGNjNDg0MDI2ZjFlMzJhZjIyYzc1ZjM4NTM2MmNmMmM1YzFkZDk2OGMwNTkyZjU3MTk1ODMzMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTNhMGUyNGNlMzhiZDUzZjYxNTIxNzFkNTFiYjhmYWVlZjEyMDJjNWZjODU4Yjk0YzE0MDc4NDg4YzA3ZTBiYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2FkNjQ4MWQzZWU4MTRmMjhlMzRiMDdjY2Y2NGMyZWU1NGQwMmIwMmIzZDU5NWRkMWYwNTQzOWFhMTkzZDZiZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c44c95a1d3e24e6e8d39248ac0287a68",
+      "statement": "`make verify-format` depends on `format lint`, so it reformats the tree itself and then runs `git diff --quiet`, aborting with the list of changed files; a commit therefore only passes once the reformatted files have been staged, and the failure message is in Spanish.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L94-L100",
+          "version": "repo-lines-v1:sha256:e726ad599100f81de9bece9d895c390b158e5ba5f3997771eeba4f9106fbb2a5:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWJhNzBhZWVkMzU0Zjg3OTEwYTg2ZWEyMzMyOGZlMDVmZTU1Njg2M2RjMWY4MGRkNDQ1ZDM5YzZhNGJhZTMwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjBlMWE1ZmEwMWIzMTMwMmJjOGE0ZTYzZmZiODBlYjhjMTliNzM3M2ExZmE4YjAyMmI4NDYyYzkyOTE0YjU3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjQ3YTY1YjhiNmMwMjQwOTBjYWMwNDBiMDczY2Q4YWE4YmFiZWUxMDViZDMwZjU3MWIyNTRmNDNlNWIwY2M5ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzVhYTk4MjFmMjc1MDZjOTRjMzcxYzk0MjRiNWRhZjIwZGFlN2YwMGE1YTQ4NDljOGQwYTU5N2I4MjA2ZTg5MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_97aacd68868a4997a54baaf4fb18c387",
+      "statement": "The pre-commit configuration registers exactly one hook: a local hook whose entry is `make verify-format`, with `language: system`, `pass_filenames: false` and `always_run: true`, installed by `make init`.",
+      "evidence": [
+        {
+          "resource": "repo://.pre-commit-config.yaml#L1-L9",
+          "version": "repo-lines-v1:sha256:eb5f4dcd60333074ec264c28e29cfd9e5095a5d4d6de588897b56b1618b648ee:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWExMTBkYjVhOTM1N2NkYTFkNzgyMTZjZGMwYmY4YjI1NWUzMzhjYmMxZjMyN2UwZGYwOGNmYzc3MzkxZGRlZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ4ZjgwYjVhNzNlODRiMjY2ZDQ5ZDc3ZGI1NDg1NzQzNjJlNzkxNjBjMDliZjQ2MDExMTJmM2JhZjNlY2RhMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjllNjU4ZGJhMjM3ODg4NjBjYzZmNzNjNGU5MjA5ZjVkZDUzMzRmNDU1ZWJiZWMyZjkxZGY2MDkzMzk4Y2NhZCJ9"
+        },
+        {
+          "resource": "repo://Makefile#L36-L36",
+          "version": "repo-lines-v1:sha256:c5910015b8b0b8729b93dfc89d101118510581e7a963402584145dbe049c8088:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzU5MTAwMTViOGIwYjg3MjliOTNkZmM4OWQxMDExMTg1MTA1ODFlN2E5NjM0MDI1ODQxNDVkYmUwNDljODA4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzU5MTAwMTViOGIwYjg3MjliOTNkZmM4OWQxMDExMTg1MTA1ODFlN2E5NjM0MDI1ODQxNDVkYmUwNDljODA4OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmMyNjNjMmI2NTMyMzNiNTA1OTdlMGVjNzhlYWFiODM3YmRmMjY0NmYzM2QzNmU1MjAxY2M4OTVjZDQ3MWY2MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTdjZmVkZTkzZTlmZDUzNDU4OWY5ZWEzNTU5YTBmM2E4NDAzZmQxNjM5ZTU3ZmQwNjIxNzM0NDM1ZjA5ZjIyMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c1111c8bf4144a26999865581abc599d",
+      "statement": "Formatting is layered: `autoflake` (in place, removing unused variables/imports, preserving `__init__.py` imports), then `isort`, then `black`, with `line-length = 94` in `[tool.black]`; `format-python` recurses into `format-yaml`, which makes prettier rewrite every `*.yml`/`*.yaml` while yamllint lints only `sincpro_framework/conf/*.yml` and `tests/config/resources/*.yml`.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L69-L81",
+          "version": "repo-lines-v1:sha256:c96a17af43d0e696abf84caf86fe04a4b6a34c4ef63f4f550a6bbcbc1278e5b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MWM5MWI5MzE0ZDRmYWE5OTFiZWRjM2I3MDEyZjFhZTlkNmQxYWQ0MDc5YjM2MzdjMDZhOTExZTQ5NjljZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlY2IzODFhYjc5MmQ4MjNmMDEzZjgyYzcwNjdmY2YwNjE0NTZjY2I2ODU2ZTJmYTNkMzZkNDA2ODZiZjhlYjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2OGNjOGIwYjcxYzM4OTliMGRmMDkzODQ1ZjBiMWVjY2UzYTgxYzA4Mjk5MTBiODY3ZGQ4ZmE1NzljN2U5NGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhZDMwZjI4M2M0YmVjYTY4MjdjOTdlNjZlYjdlZTQyMmY0OGU4ZjQ0MjQzODg3MWE3MGU1NTI4ZTYxM2M3NDcifQ"
+        },
+        {
+          "resource": "repo://Makefile#L83-L92",
+          "version": "repo-lines-v1:sha256:4c6714bc5895ea926fd7706c058c8b281b0f5a6a5572c135517d825f0372c9a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxOTFkNmJjMTc4ZWY0NDA1ZWYyNTQ5MjNmN2EyYTM5ZGZiNTkyMzRmNTc3ZWJjMmUyMzJlZjhlODU3MzVmMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljNjIyYWQ4MGEzNmZmZjM5NTBhZGZmZDQ2YzA4ZGFjMzRmNTAzYmQ0MDBlNWQ0MDAxY2YzMDFlNjFlNjU1NzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhYWRlYzA2NzQwMGYxYTg3MDM4OWY0MzVmZDZmYTgyYjg3MTBiNzg3Zjg3OGEzZTliZjJmOWE4MWVhMTE2YmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlOGMxNmQyZmM4ZGQwZjQyN2E1NjM3OWZmZTA3YzNlN2IyMTI4OThiZTIxMGRkZjE2NTU4OTYyZjRhYjg1M2MifQ"
+        },
+        {
+          "resource": "repo://pyproject.toml#L73-L74",
+          "version": "repo-lines-v1:sha256:313df32743e9b8f36c8c72b874fc93fbc81bd4037c2bc9901ce32cef8af63eb8:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWZkY2EyYTM5ZjMxODE0ZjAyNzA3ZDNhMDlmNjFjZDBmYzBkZDVkMGU1ZDRjYTdmMWVhYTZlNDU2MmQzOGFlZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRkNTIyYjVhYzUwYzQxYzcwYzY3ODE2NjUxNjBkYjdmMzZiNTQwYWQ2ZGY5ZDMzZjI1ZDYxMGM4YzJlNGFmYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDEzYmFjMzBiODljNWU0MjZmOTBlMjNiMTdmYzU0YTdlOGMwNGFjYjMxOGVhZmMzYTJhN2E0NjI4OTE5YThiYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmE1YjU2OTY2N2M4YTAyMTI0YzNkNzZiOGY0YjRmZTgzOGM0MTY4ZWRiZWViOTNhNjJlOTJlODg1NDNjZDM1YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_824d476a1c5e4cf3ae8f0b6d1ffbc40a",
+      "statement": "`.prettierignore` excludes the generated wiki and agent-owned files (`openwiki/`, `AGENTS.md`, `CLAUDE.md`, `.github/workflows/openwiki-update.yml`) from prettier, and `.yamllint` extends the default ruleset while relaxing only `line-length` (max 100, level warning) plus compatibility switches — `trailing-spaces`, `truthy` and 2-space `indentation` stay enabled.",
+      "evidence": [
+        {
+          "resource": "repo://.prettierignore#L1-L13",
+          "version": "repo-lines-v1:sha256:1d024d41438131a779241fd0d28bf0d6f6bd6ce8fed4e07e1eab3914e9a232f5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMzBhYTBlMDVjYTAwOGVlNDliNWEzNjMzZGNkMzBlYWE3YTg1ZjY5MjYzMTY2MzFjNDlhMWZiYzkxNWY2MjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0M2M3ZGNjZTE2MGVlYmViODE3ZjE5MjQ4YjlmM2Q2NzBiZTQwMTc5ZDg4ZmIwMGQxZDJmNDc4MGIxZjEyMjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://.yamllint#L5-L27",
+          "version": "repo-lines-v1:sha256:27d8a8e9224fa08e77fcdc6873036ec3a08c761edb55680c4b019d4d92471523:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4ZGZmOGEzYTk2NGViZGNjMDY1ODc5YzU1NzliZjYyNzZiNmJiMDQ0ZGUxYWQ2ZmQ2YmE1MWUxOTg4OWQxZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5Mzc3YTg0MGY2NDk5NDQ3MjM4NDk1NGU1ZTJiZmRkMjk0YWY4ZTA3MDYxZTc4ZTI0ZmJlMmZhZTJlZTJmYTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyYTljMmQyNWY2YTdkOTJiOTRkNDQ1NmRhYzMwYWE5ZGY4YWVkNzExOGZjZTk0YWI4YmIzNGQ4MmViY2FjZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_13357118aebb43ab922dd2cc0ffa1e1e",
+      "statement": "pyright is the only type checker wired into a gate: `make lint` runs it over `sincpro_framework` and then over `tests`, `[tool.pyright]` pins the venv and disables `reportInvalidTypeVarUse` and `reportInvalidTypeForm`, and `mypy` is declared as a dev dependency but invoked by no Makefile target or workflow step.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L103-L113",
+          "version": "repo-lines-v1:sha256:b657d6586847590cf006a8c97d4cb7bceed63d3cbc16d3000c3b60b7becfa83f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMDk1ZDI5MjU2MTViZDUzOTBmOTRiNjQ1MzYzY2I0ODE1YzJjOTU2YWZmNDdlNWFjYTFkODg1MTg3YjIwODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNDc1N2EyNzM5MWRiMGQzYzQwNWExMTdjNDkzMDhhN2E3MjgxNzllY2MxOTg3YTkxYzA3ZjNkOThhMzdiMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViMzYwMWJjZDQ0OGRiNDk3YWRlMzE5OTFlOTgxZDc4N2I1ZjUwNWJmMzg4MjdkNzY4NDM2MDg4ZTU4MzJhMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5YWUyODZkMTVkYWUzY2E0NTVhMDdmMTZlMWNhNmNiNGY5YzM0MzBlNTg0NGQ5ODE3MzcwNjVjOTM1ZWE0ZTcifQ"
+        },
+        {
+          "resource": "repo://pyproject.toml#L59-L59",
+          "version": "repo-lines-v1:sha256:b77c0cf9f20300f30888241b4c39b8117ddb30f6b6251213150bc480813bdd7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjc3YzBjZjlmMjAzMDBmMzA4ODgyNDFiNGMzOWI4MTE3ZGRiMzBmNmI2MjUxMjEzMTUwYmM0ODA4MTNiZGQ3YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjc3YzBjZjlmMjAzMDBmMzA4ODgyNDFiNGMzOWI4MTE3ZGRiMzBmNmI2MjUxMjEzMTUwYmM0ODA4MTNiZGQ3YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGVkMGFkZGU5NWMzYzZmNDRlZTdjMGFmYTY2MjEyNWM3MGY5MjljNzZlNjYxZTAxMzdlMmI1ZDc3OTk0NTAxMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjc3NDNkMDQ3OGI1MTQzMGM3Y2M0NDA5MWNiNWY4NTAwYzQzODMyNDdlZjQ4MzEwNzhmNzI3ZWJiNThlMjIyZCJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L76-L80",
+          "version": "repo-lines-v1:sha256:38b55ddeebeb814a120a029bbc2bf259f1040e256ffafff9bb7e09cad882f40e:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTg1MjBlNDIxZDc1ZGRkYWEzYjA5NzUzYzFjYjJhYzEwYzYwZDE3MjlmNjgwZGQyNzYwN2QzNGRkNGY5ZjdhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODFhZDA3MGVmMmY1NGVkZmI3OTZjOTdiZDZlMWFhYTU2YTBhYmQxNDA4ZWZhN2JjMGZhYzE3ZTJkYjFiY2RjNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDZlMDlmNzlhOGUwOTNjYmVjZjhlMDViODIxNDc5NWExZmQ0NWE5Mzg1NjcyZGI3MjNmNjIxNmJiOWZiZDE0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTcwMjE1YTM3ODk4YTYzYTI1OWZhZTA1NDY5NjIzMDk4MDU1YmE2NjM5MTkzNDg2YzNmNzY4NzRhMTIyZDIxYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5386bc7b447149da96e9cf700a3001bf",
+      "statement": "The static typing examples are enforced by a test that shells out to pyright: it prefers a `pyright` binary on PATH, otherwise falls back to `poetry run pyright`, and skips when neither executable exists; when it runs, it targets `tests/typing_and_linter/typing_cases` from the repository root and asserts a zero exit code. Consequently a green pytest run is not evidence that types check — `make lint` is the binding gate.",
+      "evidence": [
+        {
+          "resource": "repo://tests/typing_and_linter/test_typing_and_linter.py#L12-L41",
+          "version": "repo-lines-v1:sha256:bebd68249d898c1ca444ca7b307e7f0b45f74b143e1e50395d3ecbce09fd4f3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyZGRhYTg4ZmQwODBjMjVkOWVlMGI0NTM4NDMxNmQyMDY5OTU1ZTljZTY5NDY1ZmMyYzk3MzZmODExYmMyZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlN2U5YTRlOTM2ZWY3YTNlNDU1ODc1OGE3ZTViNzg3MWI1NzYwMWMyZTRkNDJlMGQ3YmE3ZTM5NTE4YWFlMmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9857a733da4e4816a4219371feed1b9f",
+      "statement": "Coverage behaviour lives in pyproject rather than on the command line: `[tool.coverage.run]` measures only the `sincpro_framework` package with branch coverage, `[tool.coverage.report]` enables `show_missing`/`skip_empty` and excludes `TYPE_CHECKING` blocks, `raise NotImplementedError`, `abstractmethod`, `overload` and `__main__` guards, and HTML/XML outputs go to `htmlcov/` and `coverage.xml`.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L85-L104",
+          "version": "repo-lines-v1:sha256:3053591d4d4788bc9674b1657b2a1d30c6315900bc1fa82d9027210e8e893850:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmZjg3ODg3NzNlMzFjN2E5MzkzNmM5ZWFlMWViMTUzMTE2N2M4OTU3N2ZmMzNiN2Y2NWNkOGVjMDhhMmM4MGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkYjFkYTJmZGJjZmVmZWFmM2E3YWY4MWVmMDI3YTMzNWRhM2YwMWVlZjNlMWY3NThiNmNjY2UxNTU2NmYwZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNkNGQ5OTljMDQ1ZjlkNjBjNzQ0ZTUwZWRhNTRlNGZiZjIwMzkyMzk0Yzg5NDRiNGVkNTQwODliODU3MThiMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e200ad5b37d547c4a27a329205eb64ae",
+      "statement": "Pytest's default selection is `testpaths = [\"tests\"]` and `make test` passes `tests` explicitly; the generated coverage artifacts (`.coverage`, `coverage.xml`, `htmlcov/`) are git-ignored and `make clean-coverage` removes them.",
+      "evidence": [
+        {
+          "resource": "repo://.gitignore#L39-L47",
+          "version": "repo-lines-v1:sha256:662a3f85bd906836c07097125431f42d51dc5512c537e05acd635cf46897f987:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjA4ZGEyMDQ4NDUyMzhhNTcxYTU0NmIwMDk1YzkyZjE4MTEzMWI2OWNkMTNiODMxZDE4MDRhYmQyYjUyYjhjNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2Q2MzFjZTIyNDllM2U3OWQ1NWQ3YzgwMTIyODUyNmEzNGZkNmI4YjgxNDFjZDU0Nzg2NWEyZDg2YmIzYWYyMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTdlNTBmODhiM2U0YTQ1ODg5OGJkZTM5ZWQ5NWI1MTU4NTZiZDdhMGJmNmU3MGRjNDljOTg4MmJmZDE3YWZkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTFmYWIyYzI4NWQwNzQzOTUzMzNmZmIxZDIxYWZkNGU4NjdkNjgyNmU2MTlmYTRmY2Y5OGRkZjNjYzBiMTU0YSJ9"
+        },
+        {
+          "resource": "repo://Makefile#L155-L156",
+          "version": "repo-lines-v1:sha256:5a61fb58251b5adb2d2e687b80e8f427e4c56713a24da809cb3932f220345b3e:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWY2Zjk0YzRkZTBmOTZiZDAwZTdiMjBjZmM4YTYzNWU4YzNkYTlkMDBmNjNlNjEwZThmMjlkZDMwYTcyZTg2MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWU4MTI2MDA3ODVhZjIwNmE4Y2ZhYTVkYTc0ZDVkMzM5N2NlMjZkYjJhNTcxMTJmNGNhNjE0MjM5YmMyOWRmOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWNjOWZmZjUwNjBkNTJiMDViNjc3ZjM3OWExNTU2NGI5MDFkY2I1YTMwMjRiN2Q3NDYwYmQ1OWFiNDhjZGY0MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmM0MmU3NmI5ZTdlNGM2ZjEwZTdlYWE2NzY0ZGE3MTU4YmI1ZDEzOGU3YTQ1ZDAyMmJhZDllMGMwNmIxYzEzZCJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L82-L83",
+          "version": "repo-lines-v1:sha256:0f792d73d83e29f0fb703a46db10647879b1415b0de84941d5c746117996609f:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzRkZTA5MTVjNzVmYjA4OTZkMjZjM2Y2NjhhZTNiMzBiZjUyMjBkMjQyMzdhZTU1MzcxNjc1MDlhMzNiNDNkZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTRkMDMwZDQ2NDQwMGEyOWFjNDY4YjFiOGY1YmFkZjU0NjFlNmQ0NzcxYmRiMjE2ZmQ3ZDNiYzI0MDgxY2U3YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_dcd5154ba5d547b0b7e1296c88244aaf",
+      "statement": "The build and release path is three Makefile targets plus a configuration helper: `update-version` runs `poetry version $(VERSION)` and errors out when `VERSION` is unset; `build` configures the Gemfury index and runs `poetry build`; `publish` configures Gemfury then runs `poetry publish -r fury --build` followed by `poetry publish -u __token__ -p $(POETRY_PYPI_TOKEN)` so one run ships to Gemfury and PyPI.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L120-L133",
+          "version": "repo-lines-v1:sha256:501e430c2f7b16364f6710a756a09eb2ff0efac15ce87510d1b26dc0c412d5b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjODc3ZjhmNjY1NTNlNmNiYTVhNDM0OGQzMGIzNDNmM2NlNTZmYjc2NWRhNmZiMjA3OWNmOTY4MjQwZDZhNWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwM2E3MDNkYzRiMjE0NmI1NmY3Mzg0Y2E2ZTgyMmE2ZWQyMWZmZTZjZmJjNzljODNiNmM3YWNkMGM2YzI3YTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2Y2JlNGUwYTJkZTQ5Yzc4N2MyZTZmZTExNGNjN2E2MmNhOWVmOGU0ZGJlMjkzYTk0YjcwOGYzOTVhNzJhYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiMWZjZjdmOTc1NTM4ZGJmOWU3NmU3ODllZDRlNjA0MzYxZTkzNzJhMDgwYjExN2IyODBkMjM4NDg2ZWI3NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a084fb7389d940f1b5739b9bd6494deb",
+      "statement": "Release credentials come from Make variables with placeholder defaults (`GEMFURY_PUSH_TOKEN ?= DEFAULT_TOKEN`, `POETRY_PYPI_TOKEN ?= DEFAULT_TOKEN`); `add-gemfury-repo` registers the repository `fury` at https://pypi.fury.io/sincpro/ and `configure-gemfury` sets its http-basic credentials using the token with the password `NOPASS`, with the helper silenced so the token-bearing command is not echoed.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L1-L2",
+          "version": "repo-lines-v1:sha256:d426a72ff782d9bf79c121a8fdf85851b96df60c154c1bdb8fa2d51496f5cc4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwMGMyZjJiNjNmYTQwODYzZTNhNmQzN2M3OGYyZjZjNmFmYzg4NTA5MmM1YTIxMGJjOTZiYzUwYTNhNjVmOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTg2OWY5YjUxOGFhZjExOGY4YjA3OGU0MWFkZDhjMmYwMTE3ZGYyM2ViZjNmNjExMDdkMjgzMGU4NzM0ZjMzMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzI3MjAxYjg5ODQwMzk0MTMwNThmNGQ2YTE1NzQzZGJlNGIzOTdjM2QyMTMyYjY4MmU3ZGQzYzY3ZTIwMjAzZiJ9"
+        },
+        {
+          "resource": "repo://Makefile#L19-L25",
+          "version": "repo-lines-v1:sha256:2abbf4baae2a058ee0e96a636e47534d179679659f6221305a890acf9b6871f0:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWExMDg2OTk4OTBkNTkxODg2MzFhZDkyNThlMDgzYjQ4MzgwMTZiMjc1Y2QxNjhmYWFhMDYzOGZhMzViODZhYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmI0YmZkNDJkZTFhYmUzYmZhOTJhNmRjMmJlMmEzNzA0YTY4NDM1ZjVkNjQxOTEzMjhiZTI1NDljN2VmNDBjMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjQ3MDllZGJjMTBkNTVmNmM5MWNlOGJkMzlhZjcxZThjYzBmMjE2M2NkZDZkNGI5MzVkOTNiMDBkNDc4YTdjMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTZiMDkwN2M2NzgxMmEzNzM1OTlkNzdiODBkMGQ0MWIzMTYyYTQxYjc5MjU5NDgyN2YwMmE1MmJhNDMyMTgwMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7794f740906e44ccb33f7546f2999e6b",
+      "statement": "Every GitHub workflow in this repository is a thin caller of a reusable workflow in `Sincpro-SRL/.github` (branch `main`) using `secrets: inherit` and passing only a Python-version list: `02-check_code.yaml` on push with `[\"3.12\", \"3.13\", \"3.14\"]`, `03-release_draft.yaml` on push to main with `[\"3.12\"]`, `04-publish_release.yml` on a published release with `[\"3.12\"]`, plus label automation on pull requests and Discord notification. Because the job bodies only delegate, this repository declares the trigger, the Python version and the required secret names, not the build steps.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/01-add_label_to_pr.yaml#L1-L11",
+          "version": "repo-lines-v1:sha256:2bda82d2f6b19fd8062b15e623aed2a6d7d9d932f923e03935ce300ea0ebaaef:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwYTQxMTc3MjVkYzdlZjZhNWZlZTBhZWJhNDRiOTIyZjUyNWY5ZDk5YTAyZWI3ZTNiYjhiYWEyZDM0YWYyYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5ZDVkZDNlOGEyNGQ1Y2VlMjhlYTIzZjdiNTRlYWY1MjQ2OGZmMWVkY2FhNWVmNTg5NzBmMWQ5NWYxMjRmNWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/02-check_code.yaml#L1-L14",
+          "version": "repo-lines-v1:sha256:f838cd225479ead9387be9711d83c36eee84bf61d7452dd35c2bc4930fa3c72e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4M2M1NzBiYjYyNmE4MjM4ZWYwZDgwODE4MjE1YzE0ZjUwODE3MjkyYWFmMGI4NTRiNGQxZmNlOGU4NmY2ZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliOWE0NDgxMTQxMTUwNThmZDdlMjY2MjM3ZTg3NjM5YzRmNjg1YmRkNDAzNzQxMmY1OWE1YTI5MDk3ZjlkYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/03-release_draft.yaml#L1-L13",
+          "version": "repo-lines-v1:sha256:9ddb3d2e708c29e076bd642ef5d4aa6329455b51f190409290d19bb75d380aaa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwZmI0NWUzYTZmYTQ2YTU4MzMzOWRkZjA2MjVlYTg2YTEwNDI3MTZhNjk5OTY1ZDVjMDNlZWY2NDE1ZWQwMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxM2Y0ZGEwYzIxODk4ZTBhZjc5YjIyYzdmNzgzMDkwMThmNjJmNTEzYTEzNTM3MzlhMzEzMmIwMjExZTg2ZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/04-publish_release.yml#L1-L16",
+          "version": "repo-lines-v1:sha256:fb0f5555474388013cc0dca31373b0c531183be4b6ccd042d47b9fdd5b3c7efd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmZTcyNTY4ZTRlNTgzYzkyNDY0NjUxMTIyNDFkOTQ4YjJhZTk5YTg5MGFkYmFjZmQ2ZjQyNmZkZmYwNjFmYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxM2Y0ZGEwYzIxODk4ZTBhZjc5YjIyYzdmNzgzMDkwMThmNjJmNTEzYTEzNTM3MzlhMzEzMmIwMjExZTg2ZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/05-discord_notify.yaml#L1-L16",
+          "version": "repo-lines-v1:sha256:cf454a645baffc33aa83093f8a9e197bd6d44922be5faf76603fa90cd4e828ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1OWZlNWIzYjc2ZTgzZjg5OTBlNTdmZDJiMTdlOWU3MzI0NjE0MjA3NWVjZmZhZTk0ZDA3MjEwNGRjZDFlY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5ZDVkZDNlOGEyNGQ1Y2VlMjhlYTIzZjdiNTRlYWY1MjQ2OGZmMWVkY2FhNWVmNTg5NzBmMWQ5NWYxMjRmNWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6a5f1157814a4c499e0c03080da85c78",
+      "statement": "`04-publish_release.yml` declares `GEMFURY_PUSH_TOKEN` and `POETRY_PYPI_TOKEN` as workflow-level environment from secrets — the same two variable names the Makefile reads — and `02-check_code.yaml` declares `GEMFURY_PUSH_TOKEN` likewise; the local `.yml` file delegates to the org workflow named `.yaml`.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/02-check_code.yaml#L6-L11",
+          "version": "repo-lines-v1:sha256:bb2e6c606594e14d642421bced49aac72492c54161b006999ffbb3fb1cbf8521:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTBhNTk0ZjM0YjdmMGVhNTczZGE3ODcwM2UyNzQ5MzBkYjcxOGM5NDJjYWYzYzA0MjUxNzU1ZjYyM2M2MGQ1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmJlYzkwMThiMDFjOTM4ZDhkODk5YjJkMGM2MDIzZjJlOGY1Yjg4ZmIxYjg1ZmE3Nzk3NzhmMGVlYzgyNGY1MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTc4M2JkMDFhYjU4MGZkNzNmYTQ0NjU5MzUwMGQ4M2U4ZjAzYzViODkyYjE5Mzg4YmE3OWZiNmU1YzE5YjI4ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmMzMDIzN2NiYzMxNzU1NjhkM2YyYjhkYWJjMDhlNzNjNDM2NThiNzI4ZjUwOTY2NTA0NjUwODU0N2JlNDBkNiJ9"
+        },
+        {
+          "resource": "repo://.github/workflows/04-publish_release.yml#L7-L13",
+          "version": "repo-lines-v1:sha256:481d6a95d004298a5f94ef5f180cffd5403dd38a501e0cafd30b6a0cd27c5d85:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTBhNTk0ZjM0YjdmMGVhNTczZGE3ODcwM2UyNzQ5MzBkYjcxOGM5NDJjYWYzYzA0MjUxNzU1ZjYyM2M2MGQ1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQ3NjUxYmE2ODNkM2NmZWZkOGZlM2FhYzBhYjI4ODUzZWQyNzQ4OTNlZTgyNDgxYzNkYTJiYmQxNzM4NjZhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTVjMzY1MTFiNjJmMDgzZWQxNGZhNGY5MmVmNzkyZjJlNmQ0YTJhN2YxYmE3YjdmOWM5NTE0NDc4MzI1OWM5MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTExYjkzMzlmMTYwYzQzZmJjYTFhNzYxYjEyMTgxOWFiNjYzZTc5YjhkZTAxN2UzYzY4YjgwMmUwM2ZiZmRlOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3cfd53bf526a4ccf82c3a6dc2e645e60",
+      "statement": "`.github/actions/prepare-env/action.yml` is a composite action taking a Python version input, installing it with `actions/setup-python@v4` and then running `make init`; no workflow in this repository references it, so it is the convention for how a job boots this project rather than a step that runs here today.",
+      "evidence": [
+        {
+          "resource": "repo://.github/actions/prepare-env/action.yml#L1-L18",
+          "version": "repo-lines-v1:sha256:2c7b594b3a85f9b82ffcbb8e8603951db57bb2c1a94215ff9c9c1a8ebaa057e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkNmNiMDIzYzBjMTJmZTk3NzZmMThjZTU5YmU2MjdjYTU1ZDlhODNiZmQ1YTEyYzZiNTE3OTQxOGYwY2Y0MTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0Y2RlNzA5NDRjZmI0ZmJiY2I1NDY5NzUxOWMxYmI0MDM2ODgzNzQzOTJmN2NjNTAwMDc1NzdmYWFkZjFhN2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlMTM2ZDViYzRiOTIyNDczMGNmYzhjN2VmYmYwNDZmNTdmMmJkOThmZjk3YWUzZTk1NmY0NTZiYWNhMjdkZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0190cabc3d174a56b1fbcea9c551e084",
+      "statement": "Documentation generation is separate from building the package: `make docs` / `docs-init` / `docs-view` are gated by `check-openwiki`, which requires `npx`, Node >= 22 and `OPENAI_COMPATIBLE_API_KEY` (or `~/.openwiki/.env`) and otherwise exits with a message naming the missing piece, while the provider, model, endpoint and OpenWiki version are pinned as Make variables. The scheduled `openwiki-update.yml` workflow performs the same job in CI.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L3-L6",
+          "version": "repo-lines-v1:sha256:ae3cfd11fbd2aec9ba8022f9055a23900230776141f0fd80f6908edd097fed23:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk2ZGM0ODE0OWY1YTgzZDFlZDZkYmIzOWJiYzdlMmI5MDJhYTNkMzRkNmJkNWFlNGIyOTFiNjhkZjBjYTc5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTNhZWQ1MDJhNWFkZWU3YmIwY2FkZDQ2Y2Q3NDYzYjUzMjBjNmNjZWU0NDgwZDY2ODU0ODg0MzEwNjM3NjExOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzViMWYyNGU2MTgwNWVlMWE5YmM3ODA0N2UxZTRiM2Q4NjE1N2Q2ZTM3ZDhhYzBiY2JlYmQ1ZTY1ZTVlZjFhYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzk0NjJkNWYyYzIwN2U2YjRmODI4NDNkOTE1NGZmMGJiYWQwMzQzOTI0YjJjM2M0YmFiZDk5Yjg3Y2NkNGI4MiJ9"
+        },
+        {
+          "resource": "repo://Makefile#L4-L14",
+          "version": "repo-lines-v1:sha256:82eaf80af39fa8f3f1eee6e0d7d93e761e89b519daf326d168e6593b056cdf69:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlMTkxNmU3YTkyN2VkYTVhMGZlMjNkNTVlYmE5NTE1ZjY1NGY1YWQwYzM3YTRlM2ZkODgzMjZkZjFjN2UzZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwYjUwZWI4N2U2ZDM5NGU1N2NmNTJhNTBhMWM3NzAwMzlkOTdjMTAzZmYwZDUyZDc1MDkzN2YyYzA1NmY1MWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4OGU1NjAxOTFkNGRkYTNkNjFkOTkwZGFiNGI0YzY2MmUyN2M2NGNiMDEwYmRlMGVhZmYwNGQ0ZTY0Y2FlYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlNGU5MzQxMDYyYjFiODhjZDgxYzhmMzMwM2M3ZGRiMmQ4NjI1M2RmYzg3OTNkZmQ3NzViODFjZGQyNjcyM2QifQ"
+        },
+        {
+          "resource": "repo://Makefile#L46-L67",
+          "version": "repo-lines-v1:sha256:a522a4863f92bf7d81256a3fe0c144e9281560f42602d481db5b2cd2991b07e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMWUyODVkMzBiZDhhM2M5Mjk1MjE3YTc4NzQ5OTkyYzczNWNlYjQxODhmMzQzNTViNjE1ODU1YWFlOWMzZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViMzg3ZTI5MGMwNTFhZDBkOWU2NTAyNGMwNzg1MTI2ZTVjOGM1M2Y4Mzg5ZGJkZTM1Y2Y0NzQxM2ZlMzkzMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmYjU1YTZiMDJlZWJhNTNjODE2NTQ0OTliZGMxYzFmZjdiYTY3NDExOThmN2IyZDZiMjE5NDUzNTQ4MzMyYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmMDNmYWM0YjY4ZjcyNWZiNDA1YThmNWRmMDcyY2QxNzk4YWQ0Zjg2ZjkwOGQ3N2Y0YjEzYWNiZDYxYzY3NTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b88c2a6465f2480ea6785fc575f4285c",
+      "statement": "The `.PHONY` list at the end of the Makefile is inconsistent with the targets that exist: it names `start`, `clean` and `format-all`, which are not defined, and omits real targets including `lint`, `verify-format`, `test_one`, `update-version` and `publish` — harmless while no same-named files exist.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L158-L159",
+          "version": "repo-lines-v1:sha256:f5408f4df6be42f5cd0e3313c14c7a07bef6ff5a7e725a3f59446cf8b3928e13:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmM0YWU5MGVjNTRmMjljYWQyNTQwZmRjZmFiMTQzNWU2NDYwZmE4NDJmMzQwZmEwODNhMjEyNWI0ZDg3NjQ4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWM1ZDA2MTg5NjhlMWFiYmU2N2RkYTk5YzNkYmVhYmQyNDc3ZTg0OWRiODdkYTBkMzUwNTYxZmI4MTQyYmZiMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzdkNzY5NTQ4MmNmNzIxNWMxMTgwMzYzMzU1MGQ4YTU1NTFlNDM0YjhlOWQ4MjQ1MDRlNGQxMjRjMDVmMWE4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

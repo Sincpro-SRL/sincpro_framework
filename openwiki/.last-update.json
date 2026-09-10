@@ -1,0 +1,7 @@
+{
+  "updatedAt": "2026-09-10T08:22:30.593Z",
+  "command": "init",
+  "model": "deepseek-v4-flash-vision-exp",
+  "status": "interrupted",
+  "language": "en"
+}

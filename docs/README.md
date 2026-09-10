@@ -52,13 +52,6 @@ Provide a **type-safe**, **scalable**, and **maintainable** foundation for enter
 - **Priority**: HIGH - Essential for production debugging
 - **Business Value**: Dramatic reduction in bug resolution time
 
-### PRD_04: Auto-Documentation (1-2 weeks)
-
-- **PRD**: [`docs/prd/PRD_04_auto-documentation.md`](./prd/PRD_04_auto-documentation.md)
-- **Objective**: Automatic documentation generation for Features/ApplicationServices
-- **Priority**: MEDIUM - Developer Experience
-- **Business Value**: 70% reduction in manual documentation, always up-to-date APIs
-
 ---
 
 ## 📊 Current State Analysis
@@ -216,8 +209,7 @@ docs/
 ├── prd/
 │   ├── typed-dependency-container.md    # PRD_01: Type Safety (CRITICAL)
 │   ├── middleware-system.md            # PRD_02: Middleware Pipeline (HIGH)
-│   ├── observability-tracing.md        # PRD_03: Observability (HIGH)
-│   └── auto-documentation.md           # PRD_04: Auto-Documentation (MEDIUM)
+│   └── observability-tracing.md        # PRD_03: Observability (HIGH)
 └── README.md                           # This file
 ```
 
@@ -235,7 +227,6 @@ docs/
 - [**PRD_01: Typed Dependencies**](./prd/typed-dependency-container.md) - *Critical Priority*
 - [**PRD_02: Middleware System**](./prd/middleware-system.md) - *High Priority*
 - [**PRD_03: Observability**](./prd/observability-tracing.md) - *High Priority*
-- [**PRD_04: Auto-Documentation**](./prd/auto-documentation.md) - *Medium Priority*
 
 ### Framework Components
 

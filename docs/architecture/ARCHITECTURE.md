@@ -54,7 +54,7 @@ The framework is designed for enterprise applications that require:
 | **Logging Integration** | `sincpro_logger.py` | Logging system integration | Infrastructure | sincpro-log |
 | **Value Objects** | `ddd/value_object.py` | DDD Value Objects implementation | Domain | - |
 | **Exception Handling** | `exceptions.py` | Framework-specific exceptions | Cross-cutting | - |
-| **Introspection** | `introspection/` | Read a built framework's Feature/ApplicationService/DTO registries — shared by `generate_documentation` and `entrypoints/` | Cross-cutting | use_bus, bus |
+| **Introspection** | `introspection/` | Read a built framework's Feature/ApplicationService/DTO registries — used by `entrypoints/` | Cross-cutting | use_bus, bus |
 | **Scalar Executor** | `entrypoints/scalar_executor.py` | Scalar (dict) in/out execution against a UseFramework | Exposure | introspection |
 | **Catalog** | `entrypoints/catalog.py` | Shared bus → PackedFeatureOrAppService projection (features/app_services) | Exposure | introspection, scalar_executor |
 | **`entrypoint_mcp`** | `entrypoints/mcp/` | MCP host: Catalog → tools | Exposure | FastMCP (optional extra) |
@@ -794,7 +794,7 @@ sincpro-log = "^1.0.1"            # Logging System
 -   [x] DDD Value Objects
 -   [x] Complete type safety
 -   [x] `entrypoint_mcp` (`build_mcp_server`) — Features and ApplicationServices as MCP tools
--   [x] Shared `introspection/` — one place reading Feature/ApplicationService/DTO registries, used by `generate_documentation` and `entrypoints/`
+-   [x] Shared `introspection/` — one place reading Feature/ApplicationService/DTO registries, used by `entrypoints/`
 -   [x] Shared `Catalog` / `PackedFeatureOrAppService` for driving adapters
 -   [x] `entrypoint_rpc` (`RpcGateway`) — several UseFramework instances as JSON-RPC 2.0 methods
 
@@ -824,9 +824,8 @@ sincpro-log = "^1.0.1"            # Logging System
 -   [ ] Performance monitoring
 -   [ ] Request correlation IDs
 
-#### PRD_04: Auto-Documentation (1-2 weeks)
+#### Production readiness
 
--   **PRD**: [`docs/prd/PRD_04_auto-documentation.md`](../prd/PRD_04_auto-documentation.md)
 -   [ ] Configuration validation
 -   [ ] Health checks endpoint
 -   [ ] Graceful shutdown

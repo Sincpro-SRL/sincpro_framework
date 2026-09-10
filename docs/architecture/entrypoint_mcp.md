@@ -17,11 +17,9 @@ Python remains: framework(dto)                                ValueObject
 
 Real SDK evaluation (SIAT SOAP, not Greeting): **[entrypoint_mcp_use_case.md](./entrypoint_mcp_use_case.md)**.
 
-`build_documentation(...)` is a **read-only catalog**. `entrypoint_mcp` is **live** `tools/call`. Both read the same registries.
-
 Package path: `sincpro_framework.entrypoints.mcp` (`build_mcp_server`, `Entrypoint`). The **feature name** in docs and product language is `entrypoint_mcp`.
 
-The bus projection is `Catalog` / `PackedFeatureOrAppService` (`entrypoints/catalog.py`), built on `sincpro_framework.introspection` (features/app_services registries — shared with `generate_documentation`). This host only binds FastMCP.
+The bus projection is `Catalog` / `PackedFeatureOrAppService` (`entrypoints/catalog.py`), built on `sincpro_framework.introspection` (features/app_services registries). This host only binds FastMCP.
 
 ---
 
@@ -209,14 +207,11 @@ Callees above callers, public API last (`sincpro_coding_style` Principle 3). `__
 
 ---
 
-## How this differs from auto-documentation
+## How this differs from documentation
 
-| | `build_documentation` | `entrypoint_mcp` |
-|---|---|---|
-| Direction | Read registries, write Markdown / JSON | Read registries, **execute** |
-| Consumer | Humans, MkDocs, embedding indexes | Agents, Cursor, Claude Desktop, LangChain |
-| Schema | Generated docs | Live `tools/list` + `tools/call` |
-| Side effects | None | Same as `framework(dto)` |
+The generated wiki (`openwiki/`) describes the bus for humans; `entrypoint_mcp`
+**executes** it. Both start from the same registries, and only this host has
+side effects — the same ones as calling `framework(dto)` directly.
 
 If a Feature is safe to call from Python, it is the same operation over MCP. Authorization, if needed, belongs in `wrap` or in the process that hosts the server — not in the Feature.
 

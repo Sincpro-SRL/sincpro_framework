@@ -160,3 +160,9 @@ cython_debug/
 .idea/
 .vscode/
 
+
+# openwiki: transient run checkpoint; the wiki itself under openwiki/ is committed
+openwiki/.run.json
+# openwiki regenerates this workflow on every run. Documentation is generated
+# manually with `make docs`, never on CI, so it must never be committed.
+.github/workflows/openwiki-update.yml

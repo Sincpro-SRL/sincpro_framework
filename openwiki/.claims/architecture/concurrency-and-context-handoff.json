@@ -1,0 +1,392 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:f3a74653abd459c6107be1a5b00a22d27793fa00e212a551c64474e6c170dcc7",
+  "claims": [
+    {
+      "id": "claim_62dda05e672a4a1f9846ec6849dfc799",
+      "statement": "The framework exposes exactly two bus-level handles for crossing a thread boundary with context intact, with opposite reuse rules: Bus.thread_context() returns a ThreadContextBus bound to one captured contextvars snapshot and must be created once per submitted task, while Bus.get_async_bus() returns a stateless AsyncBus that is created once and reused across concurrent calls.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L30-L35",
+          "version": "repo-lines-v1:sha256:abcac39bbc5c62425ec699e6d0b701d8948381383ac228334487742890134ba4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWRjZDgzNzM2Mzk2MzdmZGM3NDhkMTYxYzIyNTE2MWI0NDBjMjI5NWYzYzlhZjc4Yzk1OTY3MmJlOGI1MjQ5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQwODBhODVlOTk2NzA5MzUyMjgxZDc3NTBlODU0ZTk1MmMzMjg1MzljYzEyNWRlYjljNDlhODE4NTNlYzliNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGY1MWNhZmEwMjEyMTdhMzIwYjBjZmExMjY1OGU3ZjljZDQxMmY2NGU5MmZjYzk3ZmFlNGRhNzFiNmUzYmE2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjRhZWZjN2VhZWJhNThmMGY0ZGY1NzllOTRjNzBkNzA5YWRhNjk1NzA5NDYwZGJjYjlmN2RhNTU5MDMwOWRiZCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L34-L45",
+          "version": "repo-lines-v1:sha256:7b88ea88ea9e7f400c3be7e73b05c83f7369d445c58dfe63d1189b33dd7538b0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2MjY4MzdmZWNjNjIxNGI3ODU1NWM5NGI4MGQ3YmM1ZGYzOGU0MjU5OTBkMzRiMDc3NmE5YTIzM2E1MDMyZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTFjYWZhMDIxMjE3YTMyMGIwY2ZhMTI2NThlN2Y5Y2Q0MTJmNjRlOTJmY2M5N2ZhZTRkYTcxYjZlM2JhNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0OWQ1OTA4MGQ0MzBiZjRhYTBjOWE1MGIyNjU0M2MyNDU2OGNhN2I1YjRjY2Q4NTU5NzYwMTZiODY4NmMxZGUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L45-L82",
+          "version": "repo-lines-v1:sha256:bf3a0baab9379bae7c10ca961a05daf950c653c942cd5112a82c76398cdebd5a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmZTJkMzJhZThiMjk5Yzg3YjNhZDJmNTMxZjM4NzQ0MDMzYzhiNDgwMDYzYzBiNmQwYzllOGU0MzZkZmQ4N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5NWYzZGVjYjgzOTgxMTdkNDY3ZmRhMTVjZjQ1ZmNlMzdmMjlkMWEwNzQwNjE2MjFiYWZlOWE2ZjliOWE0Y2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwNzY4NzZmOGMyMDQwMmY1YzdiMTZlMGJlM2MwZmRhOTFhMjFkNmIwMjQ0MjMyMTc0OWQyN2NmYzMzODYxODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMmE2MWNjNTg5ODJjYzM0NzAwNzE0ZDMxNzk0NWMxYTJiZTNmNzEwZjA2MjQwYjY4MTc0ZWQzZjQ2ZGFmYjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dc2e87a8b8754b0a97abe226a32ff76b",
+      "statement": "Because context() overlays live in a per-instance ContextVar (isolated per OS thread by design), a plain executor.submit(bus.execute, dto) runs execute in a thread that never saw the overlay's set(), so every handler's self.context silently falls back to the usually empty shared context; ThreadContextBus/thread_context() exists as the explicit propagation mechanism for that case.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L28-L42",
+          "version": "repo-lines-v1:sha256:3652d4becfd838425614880988632f9dafbbdbe02444b7b2690e922aa2f00e23:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyMDJmMzhmM2VlN2JjMGU0ODkwZjQ4ZDYzZGQ3NjdhNzRjMGRjZDMzMjkwYTg5OGNhZGExZjI0ZDdhNDM1ZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmMjJjODdmOWY5ZGUwYjVkZWVhNTY3Njk1MzZkMDg4ODRhODcwZWEyYTVjNTJiMzRhOWYwNTczNWExMmUxMWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3OGVjMTVlZDAzOGFkNjg0NjMxZjhmZWQ4ZWYzMGIyZmZiODA3N2Y4ZjJmMGYyNmZjMDQ3YWUzZTBlYjgxMGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxNGE1Njg2YTQ2YmRmYTJkYTcyNjdlMmI3YzA5ZmM1YTI3ZWIxNWRlNDVhZWMxZjAzZTRhNDg2OWFhODhjZmUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L1-L6",
+          "version": "repo-lines-v1:sha256:a964a78a5e4d674ec3af30cf283332b1a0074d3e92843776f2c687816fdbf935:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhmMWRmZGJlYmQ5YTI4MDVhM2NkYjI2MjQwNmFjYWZiMTQ3ZGMyMzk0NGE2NGQyNThjMGI5OTkxZTQzNjFhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTg5M2EyNzI2MzlkZTgwMDk1YmM4OTlhYjVmMGJmN2FkY2ExOTk0N2U3OTg4NmJiMDc1ZTEyYjY3MzQ1ODIyMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzkzNzY3ZmE0NGRmOTZhODZmNWJjZTU0M2YxZjQwMWJjOTgyMTIwYTFmNGYwYzBlOTY0MTg5MWRkNTg4Nzk2NiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L45-L54",
+          "version": "repo-lines-v1:sha256:4f8b8b6dfd558de878ec2bb9c0ec1b3482905a4a4cce5762503114e1cf238822:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmZTJkMzJhZThiMjk5Yzg3YjNhZDJmNTMxZjM4NzQ0MDMzYzhiNDgwMDYzYzBiNmQwYzllOGU0MzZkZmQ4N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzY2Q1OGU1MWU5MGViMzk2Njk1Y2NmYjlmMTBjNjhlMmYyNzhjYmY4YWYyMmNjNDUzNjQzZTMzMDBiNTQ1ODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwNzY4NzZmOGMyMDQwMmY1YzdiMTZlMGJlM2MwZmRhOTFhMjFkNmIwMjQ0MjMyMTc0OWQyN2NmYzMzODYxODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2YWNlOWIyZjFjMjljMTFlZGQzYmFjOTM2YjlkOGQxYjcwODkxNDIzZWVkYTI4M2JkN2ZkZGQ4OWNmMDRiZTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ffb31a9237b4c799f55b118acbad723",
+      "statement": "Bus.thread_context() captures copy_context() at call time in the calling thread, and ThreadContextBus.execute replays that snapshot by wrapping the delegated Bus.execute call in Context.run, which is what lets an executor worker see the original context regardless of which thread calls it.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L34-L40",
+          "version": "repo-lines-v1:sha256:cbfe0a85894af3051c30fc5915301422593bd004f9464abf442033e8d9324aef:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODYyNjgzN2ZlY2M2MjE0Yjc4NTU1Yzk0YjgwZDdiYzVkZjM4ZTQyNTk5MGQzNGIwNzc2YTlhMjMzYTUwMzJkZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzhhNGM0MDI5MWU4YWMyNDI2ZTkxYmY1MDZiZGFhNGQ3YTA5YTJlYmVhNzlkMjcwNTU3YWQxZTZkNjZmMzQ1OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGY1MWNhZmEwMjEyMTdhMzIwYjBjZmExMjY1OGU3ZjljZDQxMmY2NGU5MmZjYzk3ZmFlNGRhNzFiNmUzYmE2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDdlMWQ0MWJjZTcxZmM4M2RjNTRhYmViZWFmMDEwNTI4ODFmMTQxMDFiNDI5YWQ0YWRhYTJiNDZhY2RkNDE2NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L51-L62",
+          "version": "repo-lines-v1:sha256:5cd9bf581f3af7f3c18b66f2740d05616db414778a5eaad46d6937dfe941e44c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmMWRlNzZkY2FlNGQ1NmVmYTJmNmE1YTY1NzhlYzFlY2ZjZDk1NmQwN2UwMTQ4OWIwNWU5MTcyZjE1MDIyYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MGIzMTFhOTBiMDhjZTg5MjNmNDc5ZTljMDFjMDk1MjdiNzc5MjY0OGY5Yzc4ZjRjMDA2N2JlNTczMmQyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0ZWFiYjdjNDVlMGE2ZjE1OWUxOTI0ZTliZWUzNmI1ODExMTM3Mjk4ZjU0MTc1NTA2NWIxOTA5YjNkMzk1NzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmZWQ4ZTI4YTlmNjcxNjY2ZGNhM2I3MzMzZDU5MThiN2NkMTAxNWE5ODlmMmY2ODU1ZDBlYTIwYzdiOGU5MDQifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L66-L70",
+          "version": "repo-lines-v1:sha256:f044f6c4e9bbbd9d3dcfa20de7ea3eb8eb0dbd87d65653afd015d2129c2f2507:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGNhMzU5MmY5ZGZiMDI0MzY1OGM1M2E2ZDk1ODY1MTdkZTE5NTczOGI5M2U3ZWQ2Yjk4YmVmNjczOTlhM2RmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmZjNjU5NGRlMmFkM2FjMzQ0NjNmNWFiOTBlMmI4OTUwN2VmMWFmZTMwZWY2YjBjODZhMTUzMzdmYmNkZGUwNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2UwOWI1M2Y1MWYzOTkwNzc5YTk1MjM1YThhNGMyOTA2YzI0NzNlMjVhMmEzMzc3ZWExZmQ4YzQyMjdjYmM4YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjQ1NWY1Y2ExYmE1MjczYTMzMjc3ZDk5MWNmOWQyNzU0ZGZjZTg4OWRhZGRlMDEwYThkY2FiMjk5ZWI3Yjg4MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c47c55f07b3478f899ae9cc568010cd",
+      "statement": "Because a contextvars.Context can only be entered by one thread at a time, ThreadContextBus.execute catches the RuntimeError from Context.run and re-raises a guided RuntimeError instructing the caller to call bus.thread_context() again for each task submitted instead of reusing one instance across the batch, chaining the original error as __cause__.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L42-L44",
+          "version": "repo-lines-v1:sha256:c23412cd826d38788db489ccce1e98a54819791de2ad6fd27c9083cca0333da4:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmQ5OWQwOTU3ZTUxYmUyNjBlZGZkYWNhZmIxMWFhZmUwNjkxZDQ1N2UzYmJkMDI0NGEyOWNmNWJkY2U5YjY0MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWY4YWZiYTk4NTI0YTczZDI0YjVhMzJkOWM2YzYwMTYzMTc0ZTY1NTUxN2Y5YTgzMGQ4YjQ5YzdhY2E3NzBiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGVhZGZjZDdhMTg5ZjBhYzM4NjM5MDAzNTk2NDIwMTcxZmY5ODQ0MTMzODc0MmM2MzhhMGI5NTAyMWQ4YjVlZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGM3YmRiYzE2YTI5NTk0NmM2ZTVjYjE5ZWUyNGQxMjFjMGFhMjQ1ZTg5ZDlhZjY0M2UzNzNjZDg4ZTY2YzViYiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L61-L70",
+          "version": "repo-lines-v1:sha256:6097bf5d8c5c28d4d00dfa1229fb27a0c877d6bf9f4d5d17c164a60b3262dc47:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2NWU2ZTg4NDAxZDQ1MjNlZjhhZDFjZGQxZWRlYzI1MGZkODg4ODBhMTc2ODAxYjAyNTA1MDUzNTNjZWIyN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0Y2E1NDdiZDFhNmYzMzJiZTc5NTAyZWVmZDYxMWRjMjlkZjFlZjYwZWYwMWExYWRkNmFmNmUzMjI3NmE5YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0YmQyMGYzZTBlMWYwZTdjZDYzMWJiNDU2ZDg1MzZjNDQ0N2QyYzU4NjFkMjQ5NDFhOWFlOWY1Nzc0ZDJiM2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4283f1efe90e455a846a3158b3edff74",
+      "statement": "ThreadContextBus's RuntimeError guard has a documented limitation: it cannot distinguish concurrent snapshot reuse from a RuntimeError raised by a Feature's own business logic inside the replayed call, so such a business error is re-reported as the concurrent-reuse error rather than propagating as-is; AsyncBus avoids the same trap by calling self._bus.execute directly, and the async test suite deliberately uses a non-RuntimeError exception to document this.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L9-L16",
+          "version": "repo-lines-v1:sha256:6eba55777f77513ea7e1a69c0f5860497157c31a1b798e33b94891abed1862d8:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcwYmM5MzJjMWNmODYyZjQ1ODdkNDA5ZjcyYmQ1MTcyYWM5ZDc1NTdlYzQ1NDNlN2U4OWQ1OGZlMzY3NDY1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzIxMzc3NDE3NzI5ZWE5MGRhNWUyYTBiMGVmNWM4ZTU3MDg5YWNmNTAyYWJkNmM1YjhjOWE3MjVlNjViYTIzZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjI1OGUzNWFlMjFhMDgwZWE3MTUxMzFiOTk2MzlmMTNjMDU0NjRiM2YyMTc4NmNmMTZiYzI4MGU4YzdmNWVjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWE2N2ZiOTJmN2ZmNWFjNzlmZTUxNzlhNjAzOTVkOThiOGQ2Mjg4ZWQ4ZmI2YmUwZTczMDhmYjM1OTdiNjNhMCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L61-L70",
+          "version": "repo-lines-v1:sha256:6097bf5d8c5c28d4d00dfa1229fb27a0c877d6bf9f4d5d17c164a60b3262dc47:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2NWU2ZTg4NDAxZDQ1MjNlZjhhZDFjZGQxZWRlYzI1MGZkODg4ODBhMTc2ODAxYjAyNTA1MDUzNTNjZWIyN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0Y2E1NDdiZDFhNmYzMzJiZTc5NTAyZWVmZDYxMWRjMjlkZjFlZjYwZWYwMWExYWRkNmFmNmUzMjI3NmE5YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0YmQyMGYzZTBlMWYwZTdjZDYzMWJiNDU2ZDg1MzZjNDQ0N2QyYzU4NjFkMjQ5NDFhOWFlOWY1Nzc0ZDJiM2YifQ"
+        },
+        {
+          "resource": "repo://tests/test_async_bus.py#L40-L45",
+          "version": "repo-lines-v1:sha256:48395b0a397514cc263d16a257a44e3cc9366e647d8ae0eb69cef13c2f625e69:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTkyN2ZkYmZjNTkwZTVjOTFhY2I4M2M5NDExNWNjOGI3ZTdkZDFhZTY3YTlkOWFhZmJjYTJiNTdkNzgyMjg5OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTQ0NWUxN2FkZWQzMDk3NDVmZmRhMzI5ZmNkNjU4NjJkNTI5NmM0ZWQ3YjBmZWNlYjMzMDQ3NWY2ZTI3NGM2MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODU0MTI3MzA5ZmRlMmJlZTE5ZDM4NjUxZGQ5ZTlmYmJmZDMzYTkwYzZiNzU4OTg2NjgzMzc3ZTViY2M3NTI5ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTIzOTA2YzQwZTY0OTkyZWZmYWYzYTdiMzFkNWVmNWFkNmU2ZTgzMzJkOGY0YTBkNWQxNjhiN2ZmNTk5NDYwZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba410f57198b46ddb30340a203e29ad8",
+      "statement": "AsyncBus.execute dispatches through asyncio.to_thread, which already captures contextvars.copy_context() at the call site and runs the target inside it (stdlib asyncio/threads.py, documented behavior), so no ThreadContextBus is involved and every call gets its own fresh context snapshot; __call__ is pure sugar over execute and return_type is forwarded unchanged.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L69-L91",
+          "version": "repo-lines-v1:sha256:f7ea51f1e38c0c70076c72b866bbe4a945cf92f451df75b7e41e68b8ec4373b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMzlmY2Y3MTA5MjE4YTc0NWUzNWY1MmRmYTAwMThhNzI1ZDdkYmY4YTY5NTI4NzRjYjVlMTI2ZDhmNTRmOWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNzViNGIxNTc1YmExNjhlYjIxNzcyYWUwNGRhNTg2ZDAwYmU2ODFmN2U0ZjdlMzhiYzhjZWE5NDgxYmVkMmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5ZDk4NjA1YTQ2YTY2ODFhYWE0NWI1ZDZlZWI0OTI1ZTUzY2Q0OWU2OWZkODhkMWYzNWJmYWI4YmRiZTU5ZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L9-L16",
+          "version": "repo-lines-v1:sha256:6eba55777f77513ea7e1a69c0f5860497157c31a1b798e33b94891abed1862d8:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcwYmM5MzJjMWNmODYyZjQ1ODdkNDA5ZjcyYmQ1MTcyYWM5ZDc1NTdlYzQ1NDNlN2U4OWQ1OGZlMzY3NDY1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzIxMzc3NDE3NzI5ZWE5MGRhNWUyYTBiMGVmNWM4ZTU3MDg5YWNmNTAyYWJkNmM1YjhjOWE3MjVlNjViYTIzZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjI1OGUzNWFlMjFhMDgwZWE3MTUxMzFiOTk2MzlmMTNjMDU0NjRiM2YyMTc4NmNmMTZiYzI4MGU4YzdmNWVjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWE2N2ZiOTJmN2ZmNWFjNzlmZTUxNzlhNjAzOTVkOThiOGQ2Mjg4ZWQ4ZmI2YmUwZTczMDhmYjM1OTdiNjNhMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d51649bd79ae430f946edf24a0e74209",
+      "statement": "On the async path, cancellation of the awaiting coroutine does not stop in-flight work: the Feature or ApplicationService already running in its worker thread keeps running to completion because Python cannot forcibly kill a thread, so callers are told to design for that (idempotency, no assumption that a timeout aborted the work) rather than rely on cancellation as an abort mechanism.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L226-L229",
+          "version": "repo-lines-v1:sha256:4b05f54a7303b2806af3f8947bff1d0ab8a2d853ad21d6dc7667cd05599464c5:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2I5OGUzZTNiNjJjNGM1MGJjNTNkYTAzOWNjNThlYTA0ZjRkMzU1YmI0ZjExYjM5ZjViMTYwNzkyZTg5MmEzOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDVmMmI4NmQwMTE1MWRlNDRlYjdiNDA0YzJiNWRjYmUzMDI4NmU1ZTg5YzQyODJkYTU5YzlkZjViNzY5OGU5ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjUyZjczMDJiODZmNjViNmU4MjJlNmNhODE5NzlhNTVmYWM3OTFhMTk2MWUxZTM4Yzg5ZGRhNmEyMGZkYTk0MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODljMmUwYTM3YWViZGQyOGU3YWE3NjQ4MjY5YjA2Njc4MmQwNTlhYjFlNjFlMzc2YTE5MzdkOTRjMzQwMzg0ZiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L43-L48",
+          "version": "repo-lines-v1:sha256:2d704565520b0d070be4fdfe91e75a4a3729bdd005e5e33578d0335112846114:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmZiMDM4MWQ3M2FkNWQzYmIwMmI2ODkyZTYxOGI0OTQyMWZlMjA3NGNkMTkzZGY1Y2JmMmQ0N2Y4ZmUyZDk1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGU2M2JkOTdiZjRjNmNiMmY1YTdjOTEzZDdhY2UyMjAwMjBiY2MyMDA0NTBmOTZiODkyY2QwMmE5NmNlNTZlMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQ4YWE0Y2JlNDlhM2JlMzk2OTI3NGZiMzM0YzljNDc0Yjg5OTU0ZmZjMGUyYjkwZDlmMGYxOGYwOGIxYTM2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTAwNTZiMzU2ZmJjYmIxYzIxY2I4ZTBiODM1NTEyZGNmZjQ4YTZkNDFiZjZkYzhiNWVmNzAwZTAzN2FlOWM5NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_69899ced9fbc4bbdbfec960651e86108",
+      "statement": "For fanning out several async calls with proper partial-failure handling, AsyncBus documents preferring asyncio.TaskGroup (3.11+) over asyncio.gather, because TaskGroup cancels sibling tasks on the first failure and raises an ExceptionGroup instead of gather's default of leaving siblings running and swallowing all-but-the-first exception.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L230-L233",
+          "version": "repo-lines-v1:sha256:4c33b8157c3e91638396099e644df31d433fed76c837f59c5df78f383bb21412:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGYyODIxY2YzMTdjYWNmYWY3Yjk4YjJhNDlkYjU5ODYwODYwM2MyMWY5Njg5MjZmYThmMjE1OTUzODliMzM4NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGZiNGQwZTk3MjY2MTFhZDQwYTBlYWZiZWJmZDBjYjk0ZTc1MTFjNWQ5NjhlMGMzYzMzMjZhZWI3NDE0NDA1MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGY5NWRkNzk2MzIxZTFkNGQ4OTM0MDNiM2ZhM2ZlMTUyNDBiMjRlYjBkYWFmNTQ5YTc1ZWIyNTcxOTk0MjM3YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2MyNmM3OGQ5MWE4MWQ2Mzc0YzU0ZTFiYzRiMDBlYTZlMTA0YTI2OThjNzIyNmYxMzMxZjk5ZmQ5YTZkODU5OSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L50-L54",
+          "version": "repo-lines-v1:sha256:20e8aa36d356e2ed20ad1c07dab0146f91a0545cc3f41aec840cc8cf7049bc12:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmE0NDg2OWI0M2Y3NWI3N2ZjN2VjMThkODY3ODhmMTVhYmViYzNmYTgwM2RkN2I2NzQwMmNhM2FmZjI2ZTQwZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTYxZjMyMmMxNjhkYjBkMmZmNDYwOGFlNjkyYjdmYzcyNTlmOTA5YTg4NzFjYjJlN2ZlYmQzZGY2OWFjMTRmNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTA5MjI0MTZkZWZlNTc1MWM2ZDNjMWU2ZTEyNWUxNmE1MjEyODNjMzlmM2IwMzBmOGYwMGEyMjdkMDY4MDNlNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDVjYmVlZWE0N2NmZDBlMjJiYzk0NGZhMDQ4YzA0YTQ3ZmNkNjMwNTA1ZTM4Njk5NmJhNmFmMjI4YThmZTE2MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c0c707ca551e4c56bdc8c879fc59493f",
+      "statement": "AsyncBus runs on the calling event loop's default executor via asyncio.to_thread; an anyio-based host that also dispatches sync work through anyio.to_thread (FastMCP sync tools is the cited example) creates a second, independent thread pool, which the code frames as a pool-sizing concern rather than a correctness concern.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L36-L41",
+          "version": "repo-lines-v1:sha256:8fec97397c991c4ccc0b202ebd5af8275aad2a7c8fd2b9bf2a28ec6916392ee9:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGJlOThiZDBmNGQxMWI4ZTY3ZTNmNDc2YTBjMDk3YjNmYmVmMDE3NmE5NDUzODAyMDRlYzM3MzkyMzJkMWZjYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjIzYjEzMTRhODRjNDU2NTRjYmU2OWIwNWFlMjEzOGEwM2EyYmZlMTAyNDZhYmI0MzlkZGI3MTkwODZhNWFiMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmY1Y2RhMmEyMDU1NDRhZWVkNTFhYzNjMzEzMTc2NWQxMWE3OGQwYWViYTQyMDQ4ZmQ0NzQ2NDBmYWM3MDNjOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2bbbec7ffffb408d9d9a9d3badfb6258",
+      "statement": "UseFramework.get_async_bus() builds the root bus lazily when was_initialized is false — the same lazy behavior as __call__ — and then delegates to self.bus.get_async_bus(); there is no UseFramework.thread_context(), so the sync handle is reached through framework.bus or through the bus a handler already holds.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L359-L371",
+          "version": "repo-lines-v1:sha256:792b88f4a9180f493b109d4ee9762b1f561537fca840be9584073a55e15d519a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzNjRjYTI1YjY3NWFiYWNjM2E3ZGZhY2QwOGVmZTUxMmZlZGFhODg3ZjE1N2IwNWU1MjFhZDBmODMzOTMwMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5NGQ3NTdiOTYzZjkxMzc5YWM2NDcxOThhN2E1ZjViMTcxNWQ4NjAyYjMxNDc1MzYwYWZiOTQwOWI1MTFlZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZTlhNjk2OGZhYjcwYzdiYTYyNDM3OWZhNDcwZGQzZjg4NTdjNDI3MDQyN2E3NWEwOTc0MWVmMGVmMDgzMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiMDQ5NzE5YjE1Yjg4YmU3ODA0YTBkYWU1YmFiZjExYjM1NWExNmVjYzQzMzc3MTMyODU0OTE5MTkyYjFmOTgifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L373-L404",
+          "version": "repo-lines-v1:sha256:f5f6d43b4f2fea57d4f246ca223c69848898f5f62f58d78a3be05833cae29678:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyMmNhYjkzNTQxMWEwNTIzNmU5OGU3NWFjOTJkODcxZDQyOWVkYmMyMzJmOThhMDEwYjQxZTE3ZWIwYTUzYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NWUyMGEzNjE0OGUxOTFhNGNiNGE5ZDcyOWVlMjUwNmQ2Y2QxYjkwMGU1MjBkYjBlNDZlZTRiOGU4YTZjYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjZTg5ZWE1Mjk1ZWQ0OGY4YWQ2MDRlMjUyZjE4ZDI0YjcxMjE3N2IwYzAwYTg0NTg5MzVmMjAyMjQzMDhlNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwM2FjYmJkYjU0YjBlN2EyYWNmNzVlZmYzYzg3MWQwNDBiYTYxZWJkY2VmNWY0MjAyMWU5OWM0ZDkzZWE0YjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_28e4a9ce9fd44f6e94ec17459b895b41",
+      "statement": "Both concurrency handles delegate straight to Bus.execute and therefore bypass UseFramework.__call__: through them the DTO does not pass the middleware pipeline (whose only caller is UseFramework.__call__) and the implicit overlay copy of the shared context is not pushed, so the only context visible is the snapshot the handle itself carries.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L78-L86",
+          "version": "repo-lines-v1:sha256:1af8421c7332a82867a2d69591233a36d1abf87d315a2379af7492e6bb3a5d53:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjgxOTA0ODVlNWJkMTYyNTUyMjYxODMxOWI3Njg4MzIxOTVlYWY4MDMyMDc3MzlkYzc1YmVmNzdiOTZmNDY3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODA0NWJjNGMzNGJiYWZiMWJhMDc0ODcyOWZhYTdjNGU5MzFiY2E4MGI0NTcxNzhlZjU3YTM3YTIzY2Q2MWY1ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTBhODUxY2QyMjRlMmE2YmUzMWRjY2U2ZGY4Zjk3ZjA1NmY0NWZjMmViNjEyNWNlMGE5ZmY2NWE4ZjQ0ODg2YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWNkNDZjMGE2NTE5MDNkMDc4YjIyNDM5YWVkMWQwODRjMDc4MDFjZjdjNjlhNTk2ZDgzMTJkZjZjMDE3YmI2YSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L54-L59",
+          "version": "repo-lines-v1:sha256:7ea3a9f43ba04b9418dd1396550a5c8433eb24476e0ac61253788bd8e892a3ea:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjgxOTA0ODVlNWJkMTYyNTUyMjYxODMxOWI3Njg4MzIxOTVlYWY4MDMyMDc3MzlkYzc1YmVmNzdiOTZmNDY3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2NiZDQxZjc2NjdkNDJkODE1NmFmOWQ3Y2ZkODFlYmRhMmRmYTM4NTJhZDc5NmMzZTI3YTMwMTBjNjFiMmFmMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjE5NGVjYWExY2M4Mzg4YmQxNTViMWY2Mzc5MTc3OTdiMWFhZDY1ZGVhM2I2ZmMxOTE2ZmY1NmI1MjViMzYwZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTBhMGE3NzYyNDE5ZTliNWVjNWQ5YzRiMTE1OGFhMGM0YTNiYWEyNjU3OTU2ZDBkZDVlZmQ0MTAzY2IyZjQ0MyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L388-L404",
+          "version": "repo-lines-v1:sha256:964dba16438673c6213f6706fca3162bba3ed41fed2a0c011d4bf9d137f5db20:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMWM5ODlmMjBjZDVjNjg0M2JkYmQwNzdjMDJjOGU0ZTU0N2FjODI2ZTFjMjQwMGZjNjBkZmY1OTBhZTk1NTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NWUyMGEzNjE0OGUxOTFhNGNiNGE5ZDcyOWVlMjUwNmQ2Y2QxYjkwMGU1MjBkYjBlNDZlZTRiOGU4YTZjYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkZjc4ODhjNWE5NThhZDkzNTZkNjNiZTA4MzkxNjg3OTM2MmM2OTAxODAyM2U0YTFmNTkyYjY4MmNhOGVlYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwM2FjYmJkYjU0YjBlN2EyYWNmNzVlZmYzYzg3MWQwNDBiYTYxZWJkY2VmNWY0MjAyMWU5OWM0ZDkzZWE0YjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_540b3943638f451cbcfe141db7ff7b6d",
+      "statement": "thread_context() and get_async_bus() are concrete methods on the Bus ABC inherited by FeatureBus, ApplicationServiceBus and FrameworkBus, so which bus a handle is captured from decides the routing surface and registry reached: the facade adds feature-vs-application-service routing, while a handle taken from feature_bus goes straight to the feature registry lookup.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L126-L130",
+          "version": "repo-lines-v1:sha256:f7d97711a092629cf70694fc83d0181cafd90122f76ea7ed17b4ff726588cdea:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU1OGE2NDFjYzEwZTM3NGRiMmZmYTY5ZDE4NTQ2NzU3MjZkZjhkNDM1NjA3Zjg1NTFjM2MwZmU0MGExZWY4MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGI4YzI3MWFmNmViZWRjZjFmNjZjZDE5NWQzYTliZTY3Y2UxMjBhZmU3YTdhM2NjN2QwMTZmYjU5MzBjMmI3ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTdjOTAwNTQ3YTg5NmZkNDBiYjQ4OTNiMWQ0YTJkYjljMGM3NDcyNjhmYTU2ZDBjZTlmZjk4M2MwNTZjMDZjYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDVjODdiZDM3MTQ4MjFkNzRkNmRiZDA2ZTMzNjJkZGMyMGU4NzNjMzQ3YmRhODFhZDAyZDMxOWYwYTJmZmY2ZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L17-L18",
+          "version": "repo-lines-v1:sha256:7ab3196896553e8e11d168a328cc00c904dc63283b486b6c76963afdfbcef5ea:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDViNGE5ODFjODM0NWI1YjM1MmVmZTc3ZTllZTMxN2ZhNTdjNTdkOTE1YmNmMjIwN2M2NDRlMmM1OWM4YjhkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjI1NzQwMGY4ZmY5NWYzM2Y0ZmNiY2U5M2Y1ZTcxZWQ4MTVkMzUzN2Y5ZDc3NWRhZTU4NWE1YTllMzYyZjZkZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWVlYzNhMjRmNWUzOWJlNWQxMTI2NmIxOWEwNjZmZmE3YTkxMDhlYTZkNWZjMjllNmVhOWQwMTMyMWE2MTFjMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDMzMTA5NWQ1ZmQ5NDk3ZjQzZGQ2OTAxYTkzZjc0M2JiNjU1NTA2YTA1MGUxNWMyODE1YmYxYzlkNGYxMzI5OCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L45-L82",
+          "version": "repo-lines-v1:sha256:bf3a0baab9379bae7c10ca961a05daf950c653c942cd5112a82c76398cdebd5a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmZTJkMzJhZThiMjk5Yzg3YjNhZDJmNTMxZjM4NzQ0MDMzYzhiNDgwMDYzYzBiNmQwYzllOGU0MzZkZmQ4N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5NWYzZGVjYjgzOTgxMTdkNDY3ZmRhMTVjZjQ1ZmNlMzdmMjlkMWEwNzQwNjE2MjFiYWZlOWE2ZjliOWE0Y2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwNzY4NzZmOGMyMDQwMmY1YzdiMTZlMGJlM2MwZmRhOTFhMjFkNmIwMjQ0MjMyMTc0OWQyN2NmYzMzODYxODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMmE2MWNjNTg5ODJjYzM0NzAwNzE0ZDMxNzk0NWMxYTJiZTNmNzEwZjA2MjQwYjY4MTc0ZWQzZjQ2ZGFmYjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b86bb12e7744084b500735aab8b09b4",
+      "statement": "AsyncBus is exported from the sincpro_framework.aio package, which documents itself as the single place for async-only additions to the framework, and is not part of the public export list in sincpro_framework/__init__.py.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L12-L21",
+          "version": "repo-lines-v1:sha256:1b350901d5519f29458b7ad75e383992f4bd19b7f252fbc0b72ae6e655f5c19d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNGQ3N2EwYTU0MzZiZjIyYjBkOGM3ZmYyMGY3ZmY3N2M0ZjFjYjMyYzZhOGM5MWQ1MDJkODJjYTY2Njc2YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmNWI4OTRkNDg3MzVlZGFjYmYwM2U0OTZjNjUzMjhiMWE4NDY1YjIyMjU5NjI2ZDkwY2M1OGI4YzI2ODFjNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/__init__.py#L1-L10",
+          "version": "repo-lines-v1:sha256:8fac816fdfe32abc6835ef5c74d85c669b7586de35a76ab78241e10c098a65f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4OTViZDAzOThlYWQ3ZmY2ODZjNTRkZjg3ZjhhZmM0MDJkMzYyNGIwYzhkYWY2MTY1ZDRmNDY4MDQ2OGY1OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4MWZjMzkyNGFhMjM2NDRjMzUzZTY2ZDQzNTUzNTE0ODcyMDU2MWVjNzAzZDQwNjkwZWI1YjkzZGY2MDE5YjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ef6484ebf0554619ac2fc0a80f0d4347",
+      "statement": "The repository's stated position is that regular (GIL) Python 3.14 is fully supported with no breaking changes while free-threading is not implemented or targeted yet: the declared interpreter range is python = ^3.12 and the README records CI running 3.12, 3.13 and 3.14.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1280-L1288",
+          "version": "repo-lines-v1:sha256:4cae3081e89741784c1d7da1d6f80076763657b57ad830728360e102230b42ec:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTc1NzRhMjM1Yjk1NWRjMGExM2RjM2NhNzk1ZWU3NzBhYmVlZjU3ZWQ5MjdmZGFkMmI0M2I5ZjdiZjk1MjI1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTlhYjAyMTFlZGM0YmYwNzkyNjc4NDM2YWE2NDM1MDZkNzliNGNiZTRjMDBiMDU4ZDE5ODU2YWQ2NGVmMTY1YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWY4N2EyZjYzYzI0YTc5NGU5ZmQ3ZmFiMDM4OGE1NGY3NWU0YTJkMjg5NjA4M2JlY2FiZDc2MDM0NTlkMjhkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDBjY2IzMTI0ZWU0MzMwOWE3MDA2ZjlhNmJhMjk2MmM5NGYxZGIyYTVhNTlkZTAwYjUxMDAyNTM1MDllNDI1NyJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L24-L26",
+          "version": "repo-lines-v1:sha256:feef8001fff864d2561ca5a85b30c97794d722b6097056625ee554ced7492b80:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2ZmOWYzNzNhZDc3NGQ5ZjgwN2FjMmRlNDMwYWFmODFhYzdlNmIxZmU1ZTEwY2ExMGM2NjY1MDg0OWQxMzY1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGEwNzU0MTgyNjQyNzk0OWE4Yzk4MmE2ZjdiZGM5ZTAzYjQ0ZTk4YWJjNzFjMGFhNzQ5MDJmY2ZkYmU0NWNkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjBhYjU5OGRhZGE0OTI4YzdiMGI1MDI4ZmY4ZGFkYjgzZTdjMTJhYjQ0MGFjZWFiMWE0OTAzNmE2ZWE1NjA2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDUzZDdlODZiMzEwYmQ0MTk2MjRlMTBkZThmYzVjZjdiYTZlMTRlMzUwNWU1OWI1NmZhNWVhY2UwMmM1ODFhNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_987f5d0394a44c93928b2d23a9b7dcbe",
+      "statement": "The recorded free-threading blocker is a dependency gap, not a code gap: dependency-injector 4.49.1 ships an abi3 wheel with no declared free-threading support, so importing it on a python3.14t interpreter makes CPython print a RuntimeWarning and silently re-enable the GIL for the whole process; grpcio (transitive via the optional otlp grpc exporter) behaves the same, while pydantic-core already ships a cp314t wheel.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1290-L1296",
+          "version": "repo-lines-v1:sha256:15f1a4c33acf10866d659cd3f279b179955f1ef49ba99efbb0512a6d6b68f651:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzI3OWExYjIyYTA2Y2MwOGJlNGEzN2E2OThmOTczNzQ2MDNiNTI5NjYxMTVhNDIwZjIwYjhhNDM1ZjNmM2ZjMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWY5ODE5MjRkY2QxNjVkMzczYTNmN2VjM2FmMDkxNDJhZDRhYTgzZWUwODZiNTMwZjJmYTc1YmY0YjhlODMzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmQxZTAwYTdkYjhmMzBhZWUxZGM0MmQwNjYwYzNkZDliMWE3YWFkMTkwYWFmMWRmMGJmODRlMzUyNzQ5MGU3MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTIyMTAzYmE0NTM2MmY5ZWRlMzUzN2EyZTc1OGU1YjUyYWUwMTk0NTlkNzZiZjMwNTUwNWEyNmM3M2U0ZmM2NCJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L15-L23",
+          "version": "repo-lines-v1:sha256:083a8eb5e813766df8b4322fdb01c2aee9ee1d81796022af997ffed3934cd7a0:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzFmMGY4NmY0ZjY3YzFlNDIwNjk0NTRjZWIxOTM2ZWI3ZDNiYjFlZWE5YmM2ZmRjNmI1NDkzYjJkZWE3ZGU0ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTczNmY3Zjg0ZDUxOTA5YWY4ZGRmMmNmMGIyNmNkZDM0YTQxZTE1NGE3NTg0YTFiNTRkMzVjYjgxMGJkZTQ4ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTY3YTViYzhlNzAxZDdjMGQ2ZDljNzhiYTI5MjI1ODc5MGM5MjVhZTBiZjM3MGZiNDI3ZWQxMjllMTQwNjFkYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmVlZjgwMDFmZmY4NjRkMjU2MWNhNWE4NWIzMGM5Nzc5NGQ3MjJiNjA5NzA1NjYyNWVlNTU0Y2VkNzQ5MmI4MCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L7-L14",
+          "version": "repo-lines-v1:sha256:61cb73a371633785837e11b46690667855a16efac48a5b2d6c3c16cc8620c4cb:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVlMjQ1MmFjNDkyOTVkMTQ2MjViYjc5MmM4NTIxYjEzNjMyMWI4ZTI2NjlhNWQ1M2Q3ZGQzZWFkMzQ3NjMxZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjQ5YmRiMGYxMTY4NjZkZmEwZWQwYWYzMTg2NWNiMTlkNjFkNTk4ODRiOWE3ZmE5MTIwMjE1YmRkN2I3YjI1OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2FjYjA5MzNkN2RlNmQyYzZhZjdhNzA0OTIzNWMxZDZiMDVlMDk2MjhkM2Q4MDFjNzdlNTA3NzQ3YzE0NDg4YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGY5YWVmNjBlNmI4YmM1M2JmMDU1OWFkNDMxZWRkN2YxNDUzODI4MGVlNmRiZTk2Y2YxMjYwNmZkOTY5NmJiNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5f014217311a4a1d8cc56f60fcee14b9",
+      "statement": "Verified with a minimal repro outside the framework, contextvars propagation to a bare ThreadPoolExecutor.submit differs by build: GIL builds (3.12.11, 3.14.7) lose the caller's Context exactly as before, while the free-threaded 3.14.7t build already propagates it with no thread_context() involved; ThreadContextBus must stay because most users run a GIL build and code must not silently depend on that free-threaded-only behavior, and two named tests encode the GIL-build assumption and would legitimately fail on a free-threaded interpreter.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1297-L1307",
+          "version": "repo-lines-v1:sha256:6719bc3609b6ff9db06b6934b894973498e44ed0bbda15f784d9b4c6e9c9c608:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyMGVmZmExNTE5ZjgzZjQwNTZmNzdlMWRjNDVhZWY0MzQwOGI3NmNiOTM0YTBjYzM1ZTYxZGVlMGUyYjBkMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4MTc5MDQxODVjMTkwZjM3M2Q1ZGVkMDRjZGJmNjdhODY2ZWZkM2E1NmMyNzcwMTdmYTIyOWM5OWNkZTBmY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxZTY0Yzg4MDZmNDQ3YWE4N2U3MGUzOTYyZDdhYjIyNzUyMzI4YWM5NTYxM2YzYWI1MjBkMTBkNzUyMmVkOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjYmI4YzA2ZWM3YzcyOWQyYTBhMWVmMjBmOGFkMWRiNDFjNGJhMzZlMjIzY2RjOTQzN2VhODkzMTkzYzdjNmMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L8-L21",
+          "version": "repo-lines-v1:sha256:55986ee86f05ebb792b3c1a59108ca2fe044d2861caa98c510922113d5548fca:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YTY1ZTc2ZDc2NmM5MjEwY2I4NDhmOWYzMjk5MGJjZWE4MjM0NjFjZWU2MWYwZDYzMWQxOTM0Y2NkODYzODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4NGRhZmE2MDVkNTQzNjlmNjA2OTRhYzAzMzM2ZjM5MTBhYzcwMGFhNTFiNDYyMjg3NjY5ZGE2ZjEwMGU0YzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhYjk4ZjZkZDE1NGM1OWFkOWI4OTlmNGQ3NjI2ZTM0MmM2MGYxNmI5NmQ5YTlhZmYyOWVlZTdmMzg2OGIyNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjMjg0N2Q0NWU4YzZiYTc1ZmI0MGE5YWJhZDQ3NTg2NTk3M2JiM2U5YjYyYTljODU2YmRhMDcyNTVhMjQ2MDcifQ"
+        },
+        {
+          "resource": "repo://tests/test_thread_context_bus.py#L122-L133",
+          "version": "repo-lines-v1:sha256:41164a635510e8cbe42aea474b7322c10c4eae56c411eac46a8fa2093cf6f2bc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkYjE5YWMwMTIwMWM1NWVjYWMyNTc4NjdkNzlmZmUzOTM4YjFlZDM2NzY3NjY4OTA1MzQzMmExNDdlZDM1ZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZGUyNTg3MTk2MTQ5MjYwNzFjOGZiMTlmZDg2NjE1MDU1NWYxYjAxMzU0ZjhjZDE2MDNhMTA5YTdkZGFlNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0ZmYzYTQzODlkMDZjMDE0NDJmYWYwNmNmYTA0ZmM2MzhiNGZkZTBhYzFmNzkwNjUxM2NkMTAzYThkNjI3ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYmEzZjJjYzA3MDk2ZDBkNDY1MjQxODI3MGRiODRhMmY1ODUwNTFjM2RhOThjYWY2YzNlOTM2YWIwOThkZmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a4c39383ba6e4c03b557eb6860238366",
+      "statement": "asyncio only gained first-class support for free-threaded Python as of 3.14, so the AsyncBus path built on asyncio.to_thread should prefer 3.14+ over 3.13t, which the code describes as still the experimental phase for asyncio.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1308-L1309",
+          "version": "repo-lines-v1:sha256:27b7c383647edecdaea9d7dbd94f902bd2c3f479b8afc30c2c8da9c220f5e064:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWVjNTlmODBkYmZmMmFkMTU2OWRiZjAxNWQ3NDZmMTE4MjQyMjhkNjE4NDI3ZDMxODQwYzkyZDlhYTZjNjQ5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWViYjMxNzI2YzllYmVjMGNmMDMxNDNiZTE5OTUwOTAzNDM3ZGFjM2RmOTFhNjczNDE4OGJjZjU4YmNkMTk1OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmNkNDRiODkzZTc1ZWJmMTM4YTgxYjEzZDRmMGEyMWNkN2QyNjc0ZjM2ZGEyMmZjZjE1ZGYyMzU3YWE4NzdmMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmRiNzI2NThlMGI3NWRiZmQyMWY4ZjFjYmMxZTA2NmM1YmY1NzMzMDViZWUzMWI3MTdiOWU1NjVjZjZlZWVjNCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L56-L63",
+          "version": "repo-lines-v1:sha256:53468308e1fdfc0768c77286f27f8531a82089f0f194db62a5df9bb2cbf39af9:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg5NTVlNmRhNDU1YTYzNWZlNTcxNjIyYTkyMGViNzA1ODYzM2ZiMTUyZTBkYjI3YTdkNmQ1NDBhMDAzYmRmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTczM2EwZGQ0ZTRiNGNiZDFlYzk2YTdlMjU5ZjVmZGQ1NTE5ZmU2ODlhNjE5MjI3NTY3ZmEzY2NmYjg0NzcwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWE1ODNjZTU4MGRjNDI1NTM0NTViZmQ5MzNhMjBlNWY0YTQ4NTc4ODExNDVjYjBkNWU3OGVmMTM3MzExNjUyNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzJiNmQ5ODIyODljZTA4YzViYzg4Y2YxZmUzOGZjNzY2OTdkYTc1NWU3ZjMzMTZhZDQwOTFjMGYwNzRjNzE5NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8688cc34b595461b9a74aac6d22a4816",
+      "statement": "Startup-built shared state is safe only while nothing mutates it concurrently with in-flight executions, and this is documented as true today but not enforced: registries and the middleware list are listed under that caveat, and UseFramework.add_dependency's dynamic_dep_registry is an unlocked plain dict where a late or concurrent call is at worst last-write-wins under the GIL but a genuine data race without it.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1310-L1316",
+          "version": "repo-lines-v1:sha256:a02c59b860bae2dabbd71074d933644cc8d0a4794eb454a3c77a3c54e28184f2:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTliMjA3Y2MxMTYyMGQ1MDhmYTM0YmExYTUxYWNiYzBiZmE0OTkzZjZmNjc1NmJmNTNiNDE2ZjMwOTc3YjY1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUyYjA1YzNlOGQ1ZGFhZjVjMTc2MDY3NWE1OGVjZjE1NTExMDg3MjUxZWFlMzM4MjdmODA2NmNkMmVmZmNhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGRjYmJiYzBjNTk5Mzg3ZWZhNjg0N2Q3MDdmYTA2NTE0OWRmMjVmZjE2MDg2MjlhNDY0ZDc5YTM3ODhkMTk2ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L152-L165",
+          "version": "repo-lines-v1:sha256:62bf3adf4df81f9ebdbb3b6c50237b7dc4a48cf3bad7eaf47310ec792e64a031:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3OTljNzdjOWQ2YjhkZmI2MjAyZDE2YjY4YTM5ODgzZjlhMzljMjQzZjUxOWM1MzM2OTE4NDgwZTkwM2UxZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZGUyNTg3MTk2MTQ5MjYwNzFjOGZiMTlmZDg2NjE1MDU1NWYxYjAxMzU0ZjhjZDE2MDNhMTA5YTdkZGFlNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2OTk5ODZjODg4NmFjMDI3NzVhOWU5NWI1MzJmMjUxOThiM2NiNTVjZGVhZDY4MmI1ZTFmMjc0ZmU1ZWRlZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjYzNjNzk2MDgzZTkxYTlhYTE4OGQwZWYxYjQ1MTY4MzIxMGUwNzkwNjA5YjM5NTgwM2M3ZWI1MmE2NzgwZDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f3e43186f94d47909631dbea93b2359e",
+      "statement": "ContextMixin._live_overlays is a plain unlocked list appended to and removed from per execution; the one place it is iterated (global_scope propagation in FrameworkContext._enter_global) takes list(self._live_overlays) first, which the code justifies by CPython's per-operation thread-safety for list append/remove/copy and explicitly labels current-implementation behavior rather than a permanent guarantee.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L61-L73",
+          "version": "repo-lines-v1:sha256:c82aee850ecae999aace0ec34abe3688f0d13c23c5775da0ba1c5a9dfa6b6d0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNThmOTZhYzUyN2JkNjAxZmRmMWY0YWRjMDM1NTEyMjk4ZDk3ZmU3NTA2NjM3MzdkZjYyNDg5ZjhhZWJlN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYmFjNjY2MGJlOTNmYmViYWI2ZmE5OGE5MjExNzI0ZDlkM2Y4NTNmNDkzZTU4N2ZlYjUxM2ExMWUwZTQzOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3OTVlNGI5MjdlZGRmYmY0OGNhNWM5YWY4ZjUwOWVmYzZiNmYwNTBlMWNjNjQ1MDE4OGIwMmVjYTkwYjU5MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3OGE0YmZjYmRjZTJkYmZmODU0NTY3YjU2NGUzMzI2MTExNGMwNWU0M2M1NjY2MzgwZDY2NWU3ZmEzZGI4MzMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L13-L23",
+          "version": "repo-lines-v1:sha256:69a22622cd8ed851c5fe6e0e60255f379d1f3b02a82ca393d91819dd46677d95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1ZmMwOTRiYTAzNTAzZDg3ZGY2NTk2ZTZmZDgzNmQ2M2FkNjZlMTgzY2I2NDk1ZWI3MDFkMmEyM2M4Y2VmMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkZTZhZThiMWY5ZDJhMWMzNzU3YmUzMDI0YTAxOWI2YWU1MGE0NWZiM2EwY2NmMzY0OTc1MzhlYzhiN2NmYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1YmU5NTQyZmIzODcwZjBmNTM0ZDdjMzU2N2Q2ODY3ZWIzM2I5NDkwMDVjMjRjNDBiNmYyMTRiZWMzMjY4YmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5Y2E1ZWQ3Yzk2N2EzZTFmMjIwOTIzYzAxZGYzZGQ3ZmY0ZWYzZDgyZDQzNGY5YTZjZGFjY2Q3MzE0MWZhN2MifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L52-L63",
+          "version": "repo-lines-v1:sha256:77070549b15b24db790770f816eaa0558077d997a8e1469be9d05c526d2ef47b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NzA5ZTAxZDk1Yjc2MGQ5ZThkOGU0NTZlMzkzOGQxYWZiNGNlNDZkNzUwMjEwNDFmMjAyODUzNDVjODY3ZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MzNjYWFjOWQ4N2YxMjJiOGM1YTUwY2Q1NTQzMGJlY2EyMGY1NTA5Nzk1NGM0YWE5ZmY3M2Y2ZDRkZDhhNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1Y2U3ZWZiZmI1YzhmYzZkZWNiOGFkOTVkYjRmMmViMjcyZmYzMGU2NTAwMjY4YTgwMGRjN2Y5OTUxYTZlMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlNzUyMjY5NTNkOWRjNjBiNTA5ZTYzZDZmZGZhODdjY2U1NzI4MjVkOWY0YjQyNGUwNDQ1YzRjN2JiOGJmM2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0e42c9e09e804c5ca27819f9b71f1a94",
+      "statement": "Two statements in the repository about free-threaded verification are not reconciled: AsyncBus's docstring records the framework being verified end-to-end with the full test suite green on both 3.14.7 and 3.14.7t, while thread_context_bus.py and the README state that two bare-submit tests would legitimately fail on a free-threaded interpreter; the sources do not connect the free-threaded run to the process-wide GIL re-enabled by dependency-injector at import.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1302-L1307",
+          "version": "repo-lines-v1:sha256:47bac1ca4565d41ab6e96d5e4a9a6f8ae88d46b4050f5d06485ac0ed6b1491e0:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA3Y2IyNDljZTU2YzA0NTcwYTU2ZjM2MGFhZjMzMmQyZmFjNjI3MDNlOTk0ZWQzNWMwZTA1OTkwMzk1MDgzYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgxNzkwNDE4NWMxOTBmMzczZDVkZWQwNGNkYmY2N2E4NjZlZmQzYTU2YzI3NzAxN2ZhMjI5Yzk5Y2RlMGZjYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTJhODZjYzEzNGIwNTk1Mzk2NjhiNjM5NmY5OTY0NmZiMjU5ZTg1ODMyNGYwN2Y5MWYyNGM3ODAzM2ZiY2ViMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGNiYjhjMDZlYzdjNzI5ZDJhMGExZWYyMGY4YWQxZGI0MWM0YmEzNmUyMjNjZGM5NDM3ZWE4OTMxOTNjN2M2YyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L56-L63",
+          "version": "repo-lines-v1:sha256:53468308e1fdfc0768c77286f27f8531a82089f0f194db62a5df9bb2cbf39af9:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg5NTVlNmRhNDU1YTYzNWZlNTcxNjIyYTkyMGViNzA1ODYzM2ZiMTUyZTBkYjI3YTdkNmQ1NDBhMDAzYmRmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTczM2EwZGQ0ZTRiNGNiZDFlYzk2YTdlMjU5ZjVmZGQ1NTE5ZmU2ODlhNjE5MjI3NTY3ZmEzY2NmYjg0NzcwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWE1ODNjZTU4MGRjNDI1NTM0NTViZmQ5MzNhMjBlNWY0YTQ4NTc4ODExNDVjYjBkNWU3OGVmMTM3MzExNjUyNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzJiNmQ5ODIyODljZTA4YzViYzg4Y2YxZmUzOGZjNzY2OTdkYTc1NWU3ZjMzMTZhZDQwOTFjMGYwNzRjNzE5NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L16-L21",
+          "version": "repo-lines-v1:sha256:abeed4db106108c17d89e61a488149c0319c7ca1315c635580d760ed47d1c3f6:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmM3YTEwZjQxZWU3ZmJkMDM4ZWNjOTY2NDBhNzIxNmFhMmMxNmI3NzExMmMwYjY4NWI2MTI2ZGVkNGJkNjEwMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDg0ZGFmYTYwNWQ1NDM2OWY2MDY5NGFjMDMzMzZmMzkxMGFjNzAwYWE1MWI0NjIyODc2NjlkYTZmMTAwZTRjOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2MxOTI0ZjY3YWVlZGJhNjdhMGEzZTY5ZWQxMzFkNDc1ZGFjNDAyYzVlM2E5MmI1ZDVlYjgwNGMzM2ZiYjJkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGMyODQ3ZDQ1ZThjNmJhNzVmYjQwYTlhYmFkNDc1ODY1OTczYmIzZTliNjJhOWM4NTZiZGEwNzI1NWEyNDYwNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a1f506c21c724f9e95feacf5f9ce383e",
+      "statement": "Every free-threading observation in the codebase is marked with a '# PYTHON 3.14 FREE-THREADING:' comment in the source, which the README documents as the way to find all of them via grep.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1315-L1316",
+          "version": "repo-lines-v1:sha256:27a3a3e910c3244234cdfacde8fc167b070739bae84d85a64645504b233c7383:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjA3YmFhZmE0YTQ0NmExZmJiZDA1OWVlMGMwYzk3OTQ5YmFmYTMxYmRkY2Q0ZjQ3NTNlMzY4OTdiM2Y3ZjM1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUyYjA1YzNlOGQ1ZGFhZjVjMTc2MDY3NWE1OGVjZjE1NTExMDg3MjUxZWFlMzM4MjdmODA2NmNkMmVmZmNhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2U2MmU2ZTgxMjJmOTc4NzFmZjdiZmNjNzU5MzBiZjdiNWFiYWJlZGUwOGZmZjRmYjMwY2U4YjViOTQ5OWFiNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L56-L63",
+          "version": "repo-lines-v1:sha256:53468308e1fdfc0768c77286f27f8531a82089f0f194db62a5df9bb2cbf39af9:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg5NTVlNmRhNDU1YTYzNWZlNTcxNjIyYTkyMGViNzA1ODYzM2ZiMTUyZTBkYjI3YTdkNmQ1NDBhMDAzYmRmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTczM2EwZGQ0ZTRiNGNiZDFlYzk2YTdlMjU5ZjVmZGQ1NTE5ZmU2ODlhNjE5MjI3NTY3ZmEzY2NmYjg0NzcwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWE1ODNjZTU4MGRjNDI1NTM0NTViZmQ5MzNhMjBlNWY0YTQ4NTc4ODExNDVjYjBkNWU3OGVmMTM3MzExNjUyNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzJiNmQ5ODIyODljZTA4YzViYzg4Y2YxZmUzOGZjNzY2OTdkYTc1NWU3ZjMzMTZhZDQwOTFjMGYwNzRjNzE5NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L13-L23",
+          "version": "repo-lines-v1:sha256:69a22622cd8ed851c5fe6e0e60255f379d1f3b02a82ca393d91819dd46677d95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1ZmMwOTRiYTAzNTAzZDg3ZGY2NTk2ZTZmZDgzNmQ2M2FkNjZlMTgzY2I2NDk1ZWI3MDFkMmEyM2M4Y2VmMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkZTZhZThiMWY5ZDJhMWMzNzU3YmUzMDI0YTAxOWI2YWU1MGE0NWZiM2EwY2NmMzY0OTc1MzhlYzhiN2NmYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1YmU5NTQyZmIzODcwZjBmNTM0ZDdjMzU2N2Q2ODY3ZWIzM2I5NDkwMDVjMjRjNDBiNmYyMTRiZWMzMjY4YmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5Y2E1ZWQ3Yzk2N2EzZTFmMjIwOTIzYzAxZGYzZGQ3ZmY0ZWYzZDgyZDQzNGY5YTZjZGFjY2Q3MzE0MWZhN2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4297a2c26804a91bd22e8003e25af36",
+      "statement": "A framework.context(..., global_scope=True) block is the one case where a plain executor.submit survives without a handle: it writes the keys into _shared_context (and into every live overlay) instead of a thread-local overlay, and _get_context() falls back to _shared_context for any thread with no overlay of its own, so a bare-submit worker reads those global keys. This is not a substitute for thread_context()/AsyncBus, because it only covers the globally published keys and the API is documented as an opt-in that lets concurrent executions of one instance see each other's keys, not as a thread-propagation mechanism.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L61-L73",
+          "version": "repo-lines-v1:sha256:c82aee850ecae999aace0ec34abe3688f0d13c23c5775da0ba1c5a9dfa6b6d0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNThmOTZhYzUyN2JkNjAxZmRmMWY0YWRjMDM1NTEyMjk4ZDk3ZmU3NTA2NjM3MzdkZjYyNDg5ZjhhZWJlN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYmFjNjY2MGJlOTNmYmViYWI2ZmE5OGE5MjExNzI0ZDlkM2Y4NTNmNDkzZTU4N2ZlYjUxM2ExMWUwZTQzOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3OTVlNGI5MjdlZGRmYmY0OGNhNWM5YWY4ZjUwOWVmYzZiNmYwNTBlMWNjNjQ1MDE4OGIwMmVjYTkwYjU5MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3OGE0YmZjYmRjZTJkYmZmODU0NTY3YjU2NGUzMzI2MTExNGMwNWU0M2M1NjY2MzgwZDY2NWU3ZmEzZGI4MzMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L38-L42",
+          "version": "repo-lines-v1:sha256:416ac5f786150aa60ff71c469f03f357e5b168893eeb9f96b88366c0c4a1de19:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTc2YTY5ZThmMDlhNDE2YmExOTAwMjMzNTYyNTA4NTI1ZDUwNGQyYTJiOTExMDE3YzU0MWNkNjcwMjA4NGZkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGYyMmM4N2Y5ZjlkZTBiNWRlZWE1Njc2OTUzNmQwODg4NGE4NzBlYTJhNWM1MmIzNGE5ZjA1NzM1YTEyZTExYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzUzOTdjZDJkMmNjNmU5ZDQwYzBlNmJkYjQ1ODRjOTQ1M2I0NTIxYzEzYjFjNDExMGM2NmExYmNkYzc1N2Y5NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDE0YTU2ODZhNDZiZGZhMmRhNzI2N2UyYjdjMDlmYzVhMjdlYjE1ZGU0NWFlYzFmMDNlNGE0ODY5YWE4OGNmZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L249-L257",
+          "version": "repo-lines-v1:sha256:0a21d57a07d5e01de52164704719404b62084db812a87e18b701e84fda0c4ca6:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTgwNTdjZDA5ZWI3MGQzYjA2ZmE5NTQyZjNjMGUzNTllMzNiMjAwZjc3NTJlODE5ZDljZDc1NDk4NTJiNTY5NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGIyZTIwMjU1NDk5OGI4MGI3YzI4NjNiYTc3YWViZjJjYTg5YThlYjE2MWYwY2Y4ZjQ5ZmM4M2FkYTJjNTFkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmY2MTc2MmQwZmRhMDg3Y2M5OTg5MTA1ZTQ2YWQ2MzQ0ZmYxYWM3N2RjYzM3ZWExYjMyMDkwMGNhNTA5MTYzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjFiM2U3NWIwNzU1NTZlODg0ZWYzYjc5ZmM4YWQxZGU5YWNjNGQxMjYwYzEyYmQ0NTcyY2I3MGM4MzcxNWU5YiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8d874c1aec304e22aaf2f04779673c68",
+      "statement": "Both handles are concrete, non-abstract methods declared on the Bus ABC next to the abstract execute, which is what makes them available on every bus without each subclass implementing them; sincpro_abstractions imports both implementation modules at runtime, so ThreadContextBus and AsyncBus keep their back-reference to Bus behind TYPE_CHECKING with quoted forward references explicitly to break the circular import. As a consequence, each delegation site carries a pyright ignore for reportArgumentType with a comment that it is correct at runtime and covered by the matching test file, and because the package ships py.typed with hand-written stubs, each surface also needs a stub declaration (AsyncBus overloads in aio/bus.pyi, thread_context/get_async_bus on Bus in sincpro_abstractions.pyi) — so a third handle would have to be added in all three places.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L22-L27",
+          "version": "repo-lines-v1:sha256:5451b1b98403666bf14e0f476529f657e48903488b5113e40eecde3fd2da4502:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTIzYTgyMmYyNzhiZGI4ZmZiNjRiZjkyMDk3OTBjMzljMTMyOThhNjAxNmZmMmRkOGFlYmU3OWM3M2Q0YTE0MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjU3Y2ExNmQ2YmY2ZTk0M2U1NWMwNTg1YWE4Y2NkMTVjNTExNGM5NTViYTBiMzhiNGNhMjRjYmViODE0ODJjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWQ3MTU4OTg0MWUyZjhlM2Q4MTU4ZDg4NDEyZmY4MTFiYjFhYzE4ZTNkY2U4ZDNkNGVhZGFjZjI1YWFhYWY0ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmExOWMyZjk0M2MzMjZkOTQ5ZTY5NGQyOGNmNTJlNWYwY2IzMDM3ZGMyMTY2Yzg3OTAzMDk2ZGEyZTIzOTM3NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/aio/bus.pyi#L6-L40",
+          "version": "repo-lines-v1:sha256:17a9affca817decd1c2c633c18db8f7fa2b9d387a4e1c52dfc70f8c29066db1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkY2Q4MzczNjM5NjM3ZmRjNzQ4ZDE2MWMyMjUxNjFiNDQwYzIyOTVmM2M5YWY3OGM5NTk2NzJiZThiNTI0OWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MjBkODVkZTRlZDdhYjgwMjFiNGE4ZGQ0ZmExNWVjNTE5MjVjZGZjY2RlMTgwNTg5NWE0YzhhM2MzYmE0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzNWJkNjkyMmM1MmQ1NzNiM2NjZGEyMDkyOGY2ZGZjYWZhYjA3OTdkYzk5MDQyODI4ZmM0YTJjYmE1OGFiMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L27-L31",
+          "version": "repo-lines-v1:sha256:051fb996811c5f0b7483a5f26907f616af5fe0ebcdc66f6c116944d79153bbbd:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTIzYTgyMmYyNzhiZGI4ZmZiNjRiZjkyMDk3OTBjMzljMTMyOThhNjAxNmZmMmRkOGFlYmU3OWM3M2Q0YTE0MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjU3Y2ExNmQ2YmY2ZTk0M2U1NWMwNTg1YWE4Y2NkMTVjNTExNGM5NTViYTBiMzhiNGNhMjRjYmViODE0ODJjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODE4ZDFjZGE1YmFlZjkwZDc5ZjAyMjY2YjllOTQwYjJmNGJjODkyOGUxNTNlZWZkMzEyMjYzYTk0ODk2NmNiMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzM2NDYwMjQ0ZTgxNGNkNzZhZmVkNWQ0NGQ3N2NmMzA0MDE2N2Q4YTcwMzgxMjU4NGJjYWZlMDFhMjliNzE3NyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L35-L82",
+          "version": "repo-lines-v1:sha256:a981d3640178ee4f52203c0f2359e41ebe59d337afe29482c7253451a07577df:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjNzA2NTVhMDI0OTg1MzI0MWVjMjRhMTQzZDNkMWY1ZTY2NTZiODE4YzE0Yzk0Y2E3NDFhNTU1ODkzOGNjOTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5NWYzZGVjYjgzOTgxMTdkNDY3ZmRhMTVjZjQ1ZmNlMzdmMjlkMWEwNzQwNjE2MjFiYWZlOWE2ZjliOWE0Y2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjYjViMDExMTlhNWZjOWM4YzJmOGFjOWRjZTRmMjJjYzEzZTMxOWEzODg4YTNiOWNkNWQ1N2U2ZTFiM2I2MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMmE2MWNjNTg5ODJjYzM0NzAwNzE0ZDMxNzk0NWMxYTJiZTNmNzEwZjA2MjQwYjY4MTc0ZWQzZjQ2ZGFmYjAifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L8-L10",
+          "version": "repo-lines-v1:sha256:188553366cecc6e2b942cd7022e8cc8d6069bb7fcfa326b21a87b7139d46d697:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzFlMDUwZDY2ZDZlZmY3ZGFhZDIxYmY1ZWUwZjRjMjg2MjdmMTY0MGVlN2NhZmNiMThmZTI0MDU3YzYzYjY0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWFjZWQ1NjRiYzgwNGFlYjljYzBhZmVhMDVjMGZkZWE5YWVlNzQ5ZWY1ZWI3NWQ0NjExNTRhNDU4MWVlNGJlMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjIwMmQ2ZTNiMGU0NGY5YzdhNDFlZTRkZTVhZWQ4OGM0OTJjNzY5OTI3N2ZiN2NjOTc3MDZkYTRkYWRiMjZmYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGJjMjBiMGNmZmFkYWZmMDM4MzFmOGJkOTAzOGY4ZjBiZDE3OWQwMWQwZTgyN2U1NzU1NThlMmYzY2I4YjlmMyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.pyi#L32-L59",
+          "version": "repo-lines-v1:sha256:c8e38e2d57ca6ca2de5811f2be43fca21a7fd03ddbe9bb8dff64c0063b5452cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkY2JhNDYxM2E5ZDI5YTc0MTUwZjVmNTJlMzExM2Y1NDE1YzRmMTg1YTExMDFkMDQ0MzgwMmI3MmNkMGQ1MmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MjBkODVkZTRlZDdhYjgwMjFiNGE4ZGQ0ZmExNWVjNTE5MjVjZGZjY2RlMTgwNTg5NWE0YzhhM2MzYmE0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA3NmQ1MzA1YzNmMzdiNTAzYzA2NDcwN2IxMDhlZjE1NWVlNTM2YjNlNmJkMTU2NTI2NjA1OWE1MDg4MzUyZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmZmM4NzU0ZDljZjhlYWRkZTRkZGYxZTM4NGViZWVjMDRkN2Q3NjljYjc2MTQwZTI4ZDdlYzYwNmYwYzk2OGUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

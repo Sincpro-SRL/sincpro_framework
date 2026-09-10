@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:8a527d1976011734b436394081b1f1a9a016ccb7b657e506a38602f51641390f",
+  "claims": [
+    {
+      "id": "claim_a421da4999fc45929bc9dc604cbc2aa1",
+      "statement": "ContextMixin gives each UseFramework instance four pieces of context state — a ContextVar overlay named f\"sincpro_ctx_overlay_{id(self)}\" defaulting to None, a boolean ContextVar in_global defaulting to False, a plain _shared_context dict, and a plain _live_overlays list — and resolves reads through _get_context(), which returns the active overlay when one is set and _shared_context otherwise.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L28-L42",
+          "version": "repo-lines-v1:sha256:3652d4becfd838425614880988632f9dafbbdbe02444b7b2690e922aa2f00e23:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyMDJmMzhmM2VlN2JjMGU0ODkwZjQ4ZDYzZGQ3NjdhNzRjMGRjZDMzMjkwYTg5OGNhZGExZjI0ZDdhNDM1ZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmMjJjODdmOWY5ZGUwYjVkZWVhNTY3Njk1MzZkMDg4ODRhODcwZWEyYTVjNTJiMzRhOWYwNTczNWExMmUxMWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3OGVjMTVlZDAzOGFkNjg0NjMxZjhmZWQ4ZWYzMGIyZmZiODA3N2Y4ZjJmMGYyNmZjMDQ3YWUzZTBlYjgxMGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxNGE1Njg2YTQ2YmRmYTJkYTcyNjdlMmI3YzA5ZmM1YTI3ZWIxNWRlNDVhZWMxZjAzZTRhNDg2OWFhODhjZmUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L8-L24",
+          "version": "repo-lines-v1:sha256:83f39fcc73a347fc89a27de3c12b2a2429b3135e55871180dfb85016675d97a0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkMjhhYTdiZjJiNGExMmNlYTAwNDRlYzc3Y2Q5MDg0OWEzNzY1NWIyZjhlNDg4ZGNhYjFjMmNjNGRmZjZhNTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3YjFkOTc5ZTE2MWMxNzhkNWFmM2M2OWI4MGM0YWE5MGMwMWI4OWU2NjhhZjM1YWQyOGQ3MDljYmMxMmQyZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3OGVjMTVlZDAzOGFkNjg0NjMxZjhmZWQ4ZWYzMGIyZmZiODA3N2Y4ZjJmMGYyNmZjMDQ3YWUzZTBlYjgxMGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1feb4a76f0a44c5cb3fabdd6be9977b2",
+      "statement": "ContextMixin._set_context applies a whole-dict assignment in place: it clears and updates the dict returned by _get_context() rather than rebinding the attribute, so the live overlay or shared dict keeps its object identity and injected dependency attributes are unaffected.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L44-L50",
+          "version": "repo-lines-v1:sha256:d747a6904e4c8f4db4351af3abd94aef1120ae0acfbd6a3a75915871cb326902:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjAyNmMyOTkwNWIyZmNiMjk0MTFhZjAzODYzZDQ1MmE2ODUwYjc4MzNiMDVlNWMzZTQ0MjYzODFlNjBmYjI1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTM4NDExNmY0NTQ4NmFkZDFlMzIxNzczYjdlYWZiMmFlYjc5MmFmNjczMWE4ZWE5ODI3ZTRkOTliYTFkMmIxNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzg4ZTQ1ODk3NjQ2ZTM1MTQ0NmU3OWRjM2U5YmJlMDM5OTY3YzA2NWQ1YmRkMjkwNjYxNWMwMGIyZGQ5MTYyYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmViOTg4NDZlY2Q0ZWIxNWMxZGU2NmFjM2RiNWU3ZTRmMzBiYThmNTc5MWYwYzU1ZTljYzEzYmU4YTczYjU0YSJ9"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L601-L622",
+          "version": "repo-lines-v1:sha256:34f64cb56e3b69dacf7e3a78c9c123db322db0233966fad37c1a7ebedf9e6c54:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4NzczNDE3MGI5NzkwOWJmNjM1ZTNjMDg0YTY4ZjU4ZjU2MTIxNWU5MzkxOTM2MWM0MTVlZDkxZjc2YzcyYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1M2M3YzVhMTNiMGI0NjdmMTNjMzAyNmMxNDhkMWQ1MTQ5NDBhMWQwNzc4NTVkYjRmOGRlZTRiOTBhY2QyMTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlMjI0YzYzOWJjOGJmZWFlZTYzMDE3MTRhNTNjOGIyZGVhNTIzYWUzNzZkYzliMGFhYWMxNGExMjE2MjM4NWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhM2M0NjFlZTIxZDZhYWFmNzliZTAxYTEwNDg5OWM1NWY1MmUzMTgxMmQxOTJjYjU1YWJiMWIwOWRkM2UwNDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f12c46589e1847a2ae2bad3c5f3b9681",
+      "statement": "ContextConsumer defines the implemented context read/write surface: the .context property resolves binder._get_context() on every access and only falls back to the per-handler _context_fallback dict when no binder was set, while the setter routes to binder._set_context() or replaces the fallback. The attribute is declared for IDEs as `context: ContextT` on the Feature and ApplicationService stubs, not by this class.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context_consumer.py#L4-L31",
+          "version": "repo-lines-v1:sha256:069692d299a7e7531e6a56d57b4ab9a9f1238dda4a9ad81b63c7fa73a4a5d832:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMjIyM2ZkZWRiODk1MmVkNzcwODhlMGVmZDVhYjc2NDc4ZjhhNmIwNmY5MzExNTE1ZTZkMWZkOWViOWFjOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlN2JjZDM2ZWY1M2I0NDUyM2U2NWU5OGQxOTQ0OTkzZTBmZjE3NDZmNTUzNmMxYTUxMTc0NmYzZTAxZTc1NmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkMzdhMzNkMDczYWI4ZGEyOWRjNzRjZTZhODkxMzE4MThhNTJhNWMxNjVkMTZmMzFkOTkxOTk3ZjBlNjZjZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM4YjdkNWZlNjk0NTg2ZGQwZDRkM2Y3Y2IzMTg4YjlhODhjNzhiNTljZDBhZjlhODA2ZDhjYjdlMWZhZmZjNzkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.pyi#L107-L107",
+          "version": "repo-lines-v1:sha256:f4b08eded11acb27e35d753b86359bf7d491f55e4901f9e50bf5aa31c1924f82:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjRiMDhlZGVkMTFhY2IyN2UzNWQ3NTNiODYzNTliZjdkNDkxZjU1ZTQ5MDFmOWU1MGJmNWFhMzFjMTkyNGY4MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjRiMDhlZGVkMTFhY2IyN2UzNWQ3NTNiODYzNTliZjdkNDkxZjU1ZTQ5MDFmOWU1MGJmNWFhMzFjMTkyNGY4MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTNhMzc4ZWIxZjk4NmRkNmJiYzIzNjFkZjMzNGNkMTYwZWVlZWI2YjdmZTc0NjgwZDMxZWJlZTY2YTgyMDI4YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDgyZWUyODk2ZGY2MmQ0ZDdjMTNmN2Q0ZDQ5YjIyNTQ2ZDJiZTlmODVlM2MyNGJiMGRmNWE3NGI4ZTM5NjJhMCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.pyi#L77-L77",
+          "version": "repo-lines-v1:sha256:f4b08eded11acb27e35d753b86359bf7d491f55e4901f9e50bf5aa31c1924f82:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjRiMDhlZGVkMTFhY2IyN2UzNWQ3NTNiODYzNTliZjdkNDkxZjU1ZTQ5MDFmOWU1MGJmNWFhMzFjMTkyNGY4MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjRiMDhlZGVkMTFhY2IyN2UzNWQ3NTNiODYzNTliZjdkNDkxZjU1ZTQ5MDFmOWU1MGJmNWFhMzFjMTkyNGY4MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTNhMzc4ZWIxZjk4NmRkNmJiYzIzNjFkZjMzNGNkMTYwZWVlZWI2YjdmZTc0NjgwZDMxZWJlZTY2YTgyMDI4YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWY5NDc0YWMwNzhhMzU5OGQ2YjdlYjAwZWFiZGNmYjE0ZjY2ZjBmZjM5YTk5MjlkN2ExMjA3NjQ3YWUxNjk4ZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8396ec760364405baba9fc1610689df9",
+      "statement": "The reason self.context resolves to the live dict after the build is that build_root_bus() calls _bind_context_to_handlers(), which calls bind_to_framework(self) on every handler instance in both the feature and app-service registries; a handler materialised without a build (for example via FeatureBus.register_feature or ApplicationServiceBus.register_app_service) has no binder and reads only its own _context_fallback dict.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L65-L71",
+          "version": "repo-lines-v1:sha256:89346307958ded5f440d9032689b1d0502a11c6c678a7c19ff6dd325ea5e02ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzlkNmVjNWY1NWU3ZmQwMjAzYTgzNGJlNGExYzE2OWRiODIwMGI0ZmNhZDc1NzI4MDJiMGUyNGI4N2IyM2Q1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjkzYjlmMTJhMjlkNGJjZGQ1ZTY4MjU2NzVhZDAxYzE5MTM3MWNhODhiZThlNTg5NmVlNjY2Mzg2NjE5NGZkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmU2ZWMwYjliMmQwYmI0NDI4ZDczZjU3OTgzZjJjOTYzN2I3M2U5ZmEzNzhiMmVlYmY5NmJlMTM5MjNiZTY4MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L121-L126",
+          "version": "repo-lines-v1:sha256:c2be5f3fcbbb67f17ee1a8054a502de9f0ceccc36ea13464cae5e39ca8bd8f85:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjRmOGVmOWM1OTJjOTVlMGU4OGU3ZjhkMzBlMDMwY2Y3NjJhOTlmOGI0YzYwN2FiOTc4MzIyMmJiYWIzZjg4ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQ0Zjg0ODVhNWJiMzFiNDFmN2NiMTQ1ZTY5MjRiMDNkY2M1Y2Y2OGU5MDZmODVmOTYzY2UwMDdhNjE4NGNhZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTg5ZGExZDM5OGY5ZWQyMjI2YmM4YTdkYWI0ZjBkODRjNTQ5NzQxZmYyNTg1MTY2ZmJkYmUzN2M2OGMxMjE0YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGFlNDE1NmU3NGQxODk1YjE3OTA5NWU0NTJlZGQ3M2FlNGRjNTgxZTdkOWQ5YmZlYzVkOWRiNmE3MjYwYWVjYiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L123-L131",
+          "version": "repo-lines-v1:sha256:39fe33c20078f2376fd8f4dcb698d521bb79d59c7a363dfb1291efec3be150e6:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGM3Mzg5NjA0YTdjZGVkMmZmNTAzYmVmYmEyMTg0NDJkNWJjOGNiYWRiMjFmNDNlZTI4OWE3NTlkZWM3NmIyYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTExYTcyZWRhNDJjMTg1ODBiNWE0MDQyODAzNGFkODRiNzM2MzBhZjI3YTE1NGUxM2QxMmE3MTIzNTg1ZTRjNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODhmNzU3ODc2MWNiOWY3YmI5OGQwMzc0OWI5YWU3NTdmOTMwNDk3OTBjOTdlMzRmNTU5ZTk0NWMxMzA5Y2E1ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTBmMjZkNmFlMWIzZWQ5MTVhNmZjNDAzOWI5YTA4MWI1ODM4YjllZjdkMDRmMTI5ODNlMmRlZDcxOGQ1ZmExNCJ9"
+        },
+        {
+          "resource": "repo://tests/fixtures.py#L24-L28",
+          "version": "repo-lines-v1:sha256:02d39a0d00435c011c2303fc2ee0068bff334004c14ec571339269cbfb9885d8:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzYxMTMzZGVjZTM4OWQ1YjhjNWJmNDY1MGEwMjVkZjI4YzA2MTBlOTg4OWMxYTM1ZjcyMjNlYTMxMzEwOWM0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmRlOTdjOTliNjdiYTkyMzU3ODRkMmE5Njg1M2NiZWRkYmFiODUyM2NmNTNmYTUwZjcxMWJiNjRiY2JlYzRjNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzM5NmFmYmM4ZDNhZTRlZGNmMDZmMjQzMmFmNGJlNzE4YjY4YmVhM2VjOTEzMWJmODliODQzNWZjMzBiZmMxOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzAxNzAxMzJhOTM1NWQwN2E5YTU1OTRlZTNlZjU2OTA5NjI4MGViODQxNmYxYjVkMjdjYjljY2U5MDk0ZGRiZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b1f36b86b8c74eed990e7760c6c46bb6",
+      "statement": "FrameworkContext.__init__ copies the caller's mapping with dict(context) and takes parent_context as a copy of _get_context() at construction time; no enter or exit path reads parent_context, and restore is token- or snapshot-based instead.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L24-L40",
+          "version": "repo-lines-v1:sha256:41f3ca7ba44839c315df2bc09d49a17feee9d3427da324f6ba85960cf78bb9f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmZDdhMDdhODNkZDE5OTZmYjUxNjg0YjQyYWVjYWY0ZTkwZmI3OGJhNzIzMGU1NDJlZDdiZDAxZDQyMzAxYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1NThjZjNlMjA2NWM5MTM3NTc4N2U4OGRmYjBmMjE5ZjhhZjIzMzk3MTQ4YzMzNTFmMWQ3NDM5MzU1YTg1ZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4ZjFiNDBmMzRmN2ExZDgxNzMyZmFlNTA0ZjdhYmExZjk1NjYyMWRiMzk0OGU0N2E2ZDA2NmJkZjM3NDg3MWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjliZjA4MmY0OWU4OTk5ZjUwZGI3Y2VhMDdiYTI2ZTU2YjUzMWJhMTBmODQ2NjJiNTM4M2Y1YzViZDEyMzQyNWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.pyi#L15-L18",
+          "version": "repo-lines-v1:sha256:4c2a78f92f105a7aad0ccf731c6593cc20bd6a64539087d5985d877bb5a627f7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzVhMTM5NjQ2OTQ2NTgxODA1NjZmNTIwMGNhMWNhZjRkM2ZmOTI4ODk2NDQ3YjBiNDAyNDhmMTBiNmRjOGMzYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmM2ZjEyZGFjYjIyY2VjOTg1MTY2YTMwZDA5YmQ3MTJhMzgyZjcxMWZlZGNhZGIyMzllZWJjYzU1ZmNkMDM5NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2Q2MTRhMWVjNmIyY2FlZmMxNTRjMWE4OWJmMGZiNGVhNGI3NjU4YThlNDliMDAzYTE0OTE5YWE0ZmE1Nzk3NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDMzMTA5NWQ1ZmQ5NDk3ZjQzZGQ2OTAxYTkzZjc0M2JiNjU1NTA2YTA1MGUxNWMyODE1YmYxYzlkNGYxMzI5OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c67d35b7151a40f4989ec382d8c9cc92",
+      "statement": "FrameworkContext.__enter__ is single-use and yields the same UseFramework instance (not a wrapper): a second entry raises RuntimeError(\"Context manager is already entered\"), and __exit__ always returns False so an exception in the block is never suppressed while state is still restored on the exception path.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L42-L55",
+          "version": "repo-lines-v1:sha256:c76fa10aa21e83ded46cd518c62582db1c7db7c4c2c8eff9cfa4d2481ce54975:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiYzNiNThjNTk1MGM5ZTE0ZDM2OWEyMWIxYmI4Y2RmMzYwM2M2MGU3NTFlMjc0OTdmOWQ2ODJkZjk4ZmIyNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2YjlkNjQ1Mjg1NWIyNTkzNjM2MjM1MDRhN2IzMWVmMWY1OTllODA1Nzg4ODE4ZjY4ZGRmMDRmMTc2OTY4NTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwZmFiMDAzMzk3NmQ0ZGIyYTk0ZTMxNTlmNzBmZDE2MjJmNjcyM2Y2NzljZmU5Zjk2YzRlYjBjODBmZDQwYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3YjIwMDg1Njk2Y2Q1YmIxNmQxZjc0OTA1YjQ4ZTFkM2I3MmJhY2Q0OGI5YzJjODA4OWI0ODI4MTQ5ZmE2M2EifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L44-L45",
+          "version": "repo-lines-v1:sha256:68d266e25ade4808d3eb4e4d9a95327cd57254d9b1981f88019fa93477132447:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTUwMTQxNjg2YTI0YjUzYTlkMWZhMzIxMjRiMDc0YWUzYTkzODYwOTdkYTVhODY3OGY4OWY5YjhkNjVjMGM2ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGZhODI2MDQzNmFhZjQ1ZTJlMzUyMTA0MWMxYjU0N2YyYjllYTIyZjVmZjlhYWEwNGQzMzQzM2ZjMTc3NTVjOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWJmMDgyZjQ5ZTg5OTlmNTBkYjdjZWEwN2JhMjZlNTZiNTMxYmExMGY4NDY2MmI1MzgzZjVjNWJkMTIzNDI1YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGNkNjU3ZmY3MjgzNzBmMGViNzJmZDhiMTNiMjljYTQzYzA3MTMxMzQ4YTVkOTcwZjIyYzBmYTM1NzMyNDI3OCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L75-L81",
+          "version": "repo-lines-v1:sha256:c2c8753fbcb4bd4b461f19b4383772062c58652ce12fb9b1ea437f3afb005881:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY0MGNjOGRhYjBlYWVhOWQwZTg0YzJhMTAxZjQ0NGE2ZGE1YmI3MGU4OTE1YzNhNTEyYTdkYjI0YWZhZTgyMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjk3YzcxMjQ3YWYzY2QxZWRmNTU1YTdkMTA3NTkzMTU3ZjZkYzJhMjJhZjBkZTgyZTc3NzRhYmYxMGY4YWRlMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzM5ZWVhYmJhODdlNjgyMGM5ZmU2OTU3NTAxOTYxYjU1OWQwNzE5YzNkMDA3YzA3MzU3ZWY1ZThiZTFmNmU0MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmY2YWNkZjU5YWUxZjI1MTZjZTgyMWRkOWYxYmYwMTg2NGIxYTY1MzE5ZWU2ZDliNWRhMTFkYTYxYTZmYThmYiJ9"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L105-L114",
+          "version": "repo-lines-v1:sha256:46f59f2455254abea54d330cda87cbccffcca344cb9278f8c16525da4a24d451:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1MDliMTQ5ZjFhZjNkODkzYjFlMTY2YjE0YWEwYTRhMDljZTFjOWU0OTBjZWM5NTU3NDBiMDFiNWVlNGZlOTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmOGQ4MGE2NjI0MjVhMGY5ZDBjMWZmODQwMzdiYzU0NWQ2YjYwNDBkNWNmMWQ1NDM3NGZiMmU5YWEzYzZjYTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhYzUyZDhlYTIxZTA2OTg1YmVmZDRhYjUwNmJkM2UwZTRlYzI3ZGJiMGM2YTU0NWM4NDAwYzRmZDMwNmVjMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmZTNiYWM3NjBkZDNmZWY0NjUxZGIwY2UxZmU0ODM1ODI4MDQ4NTAzMGU5ODA3ZmU5MWFjNWI2ODJlZTAxN2QifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L317-L333",
+          "version": "repo-lines-v1:sha256:d2ef4266b96a5242e4dd92a2bd5901f8b4d8cca6418b94a2db30e27a495b4f2a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjNzllMGEzZTlkNDU3NWJkYjk4NmQ5MWZhNDUxMzE0ZGZmZmMzOWU5MDhiMjFmMDc3ZWJiMjg5OWZlMzhjNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNDliYjU0YTE3ZTI3MTVkNWU5NmQ1Yjc0MGMzODczODQ0ODM5MDgwNzhiODRlZDNkZjQxYjdmYzVmODVmNjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ5NWEyZTM4ODU2YjU0OGExMTU3MDcyMjQ2NGY4ZDYwZWFmOGU5OTI3MmZiNjI3MjhlYTI5YTU4OGY5MGU4YjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjMTAwNDQ0MDhkNzA4OTdmOGQ0NjVkNWUyOGFiYjMxYTU0NGNlNWY5NDhiZGEyZWNlZGY1MzNiOTU5MTQ3MmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ef0cfe8a432741118d03ed791c987ef0",
+      "statement": "In the default isolated mode, _enter_isolated merges the currently active context with the block's keys and pushes the result as a new overlay via _push_overlay, which copies the data dict, sets the overlay ContextVar and appends the overlay to _live_overlays; exit calls _pop_overlay, which removes the overlay from _live_overlays and resets the ContextVar token, restoring the previous overlay. This is what makes nested blocks inherit outer keys, allow overrides, and drop keys the inner block alone defined.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L57-L59",
+          "version": "repo-lines-v1:sha256:1f20bcbb7cccb3303c0eb8a5c9a0a15e7dcb38ceeb8ebbb443499fd6f09b1eed:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2NhODExNGE0OTAyZTdmMDE4YzNjMzU0MDYzYTJhYTljMjE2Yjc0ZTFjNGQ4MWIxNzZlM2Q5OWE4OWNjNzg2YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDlmOTM4YjU0ZjE5YThhMDFmMDNmNDgzN2ZhYWI1YmVjNGNmYjQwMDUwNTg4NTIzMjY2ZTA3N2Y3N2Y5NTA2MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTI1ZDRmYzJiYjlmNDg0N2EwYTEwMmU1MWRmYzE5MzEyYjcyMTVjYWExZTI0YTE1ZGY0NDY3NTUyZDMyOTVmZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDgzNmE2Nzk4MWY3NWJhZmU3ZWY5ODZhMWVlNGVhMWYwNTg5YThiMjZhZDcxYmRkNDE4NjE2ZTQ2M2FlMTBmZCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L52-L63",
+          "version": "repo-lines-v1:sha256:77070549b15b24db790770f816eaa0558077d997a8e1469be9d05c526d2ef47b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NzA5ZTAxZDk1Yjc2MGQ5ZThkOGU0NTZlMzkzOGQxYWZiNGNlNDZkNzUwMjEwNDFmMjAyODUzNDVjODY3ZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MzNjYWFjOWQ4N2YxMjJiOGM1YTUwY2Q1NTQzMGJlY2EyMGY1NTA5Nzk1NGM0YWE5ZmY3M2Y2ZDRkZDhhNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1Y2U3ZWZiZmI1YzhmYzZkZWNiOGFkOTVkYjRmMmViMjcyZmYzMGU2NTAwMjY4YTgwMGRjN2Y5OTUxYTZlMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlNzUyMjY5NTNkOWRjNjBiNTA5ZTYzZDZmZGZhODdjY2U1NzI4MjVkOWY0YjQyNGUwNDQ1YzRjN2JiOGJmM2EifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L198-L229",
+          "version": "repo-lines-v1:sha256:f6f98bb497abc289f1ae02ff9495df1b97bba10e6474126041b3b0900e524841:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4ZThjZDk3ZDg1MTJiODQ5NjQ2ZTJhYTIyMmI2ZDRjM2U0N2JhZTMxYTA2ZDE1YmVhM2YyODZjNjdlNzZkMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5N2UxNzhlNTE1M2NmNTlmMTEyYTYxZDU3N2ZkMTZhZjE3NmU2ZGZkNGI1ODdkOTcyMDcyZTg3NmQ2ZGNlZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0MGVmZTc1MDhkMGM0MDA3ZDZiMzI5Njk4NmUwMzcxZjI3OWM0NzM4M2Y5YTc2OTE3OWY0N2NiM2I5ZDJhNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViMzA4Y2ZkYmFkNThkNmFiZjEyN2VhYzk3MTQyN2VlZjYwNDNkNDEzMTUxMzZlNTEyOWY0NGY5OGQ0NmE2NzIifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L404-L443",
+          "version": "repo-lines-v1:sha256:c4aa688faf458bea018ac7e09a8e95976ae9a5abf10c4c0464d00ee69f16a0df:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNTA0ZjJiNWFhMGQ3NmUxM2M1ZDYxMzZjN2Q4NDE3ZDRlNzg3ZTZiZjQyYTVkYTM2M2MwMzRlNjBhYjA3NDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwOGIzYWQ1NTU2NDYxZGZkZTEyMjZhMTFkNGNlZTQ2NWVmMmNkZWU3ZmVkOTJmODM4OWNkZGEzOWE4ZWIwZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1MzA4YTc4OTc0NTY4MDU0ZDRkOGM0ZjE1ZWEzYzA3OGJkMGMwNTA1YjQ0ZDVkYzhiOTAyYjI3OGM5YmEwYTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjMTI2MzM5MzgyMjY5MWE5OGIxMDI5YzdhYWI1ZjYyMTY3NGQ2MDE4MzRkZDE3NTNhOGNlZWU5Zjc3MjhmZDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_585deea2d95444068a4d14263ab9babf",
+      "statement": "global_scope=True publishes on the instance rather than isolating: _enter_global snapshots _shared_context, then for each overlay in list(_live_overlays) records the prior value of every key being published (or an _MISSING sentinel when absent) and updates that overlay, then updates _shared_context and sets the in_global flag. _exit_global reverses all three exactly — restoring the shared dict from the snapshot, restoring or popping each published key per snapshotted overlay, and resetting the flag — so a concurrent execution of the same instance sees the published keys and they are gone afterwards.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L61-L73",
+          "version": "repo-lines-v1:sha256:c82aee850ecae999aace0ec34abe3688f0d13c23c5775da0ba1c5a9dfa6b6d0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNThmOTZhYzUyN2JkNjAxZmRmMWY0YWRjMDM1NTEyMjk4ZDk3ZmU3NTA2NjM3MzdkZjYyNDg5ZjhhZWJlN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYmFjNjY2MGJlOTNmYmViYWI2ZmE5OGE5MjExNzI0ZDlkM2Y4NTNmNDkzZTU4N2ZlYjUxM2ExMWUwZTQzOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3OTVlNGI5MjdlZGRmYmY0OGNhNWM5YWY4ZjUwOWVmYzZiNmYwNTBlMWNjNjQ1MDE4OGIwMmVjYTkwYjU5MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3OGE0YmZjYmRjZTJkYmZmODU0NTY3YjU2NGUzMzI2MTExNGMwNWU0M2M1NjY2MzgwZDY2NWU3ZmEzZGI4MzMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L83-L96",
+          "version": "repo-lines-v1:sha256:c24dd996c96b3871c54df8e2bbfc1e74e470d36241f83215349515f5c111fae8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhOTEyMDc1ZjcwZjk3NTMzOWMxMWNlMjQ4ODA3NWE2MTY5MTI3ZDE0NDA1OGQ4ZThjOTFjNWE4MzJlYmU5NWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhYTdlNTlkODc4NTc4MDgzZTA0M2IyM2Y4YmI2ZWMxODQxN2E5NTcxOTk3MDg3NjY3ZjkyMDBkZmU2MDk2ZGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4ODAzY2ZkZDEwMGYzN2ZmMDk3ZTdiYTA1N2FiYzE0MWEyZWQ4NGZiMTAxYTMyODJlMGZmY2Q5YjlmOGUzNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L525-L557",
+          "version": "repo-lines-v1:sha256:b5027042d4e682c8f0fc09dda812439679f7f8e0a8ebb6dfb3bb5b984af90e3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhZTQ5YzI5MWE2ZjVhYjNlMTBkMzMwNmZiYWNmMDdmZmI5NTgzZDQ4NzJmNjhhNWFmYTA0N2EzZTIzN2M5ZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyZTk4ZDdiN2Q0NjY4YTM1NGUyMWMwOTk5OGEwNjY1NTA2NmRlZTM5YTNiNTE0MmQxZmM1M2RkZGI3ZTQyZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2MDA3ZWNiZTRhYzEwNzI2ZjU2YjdjZDY2MGY0MzM2OGI5MjM4ZjFlZTAzYjRhNWIyNjBiODc3MTY5YzFlYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2OThjZjYyMDEwOGM4NTI1ZjE0NDFmN2UyOTQxMmVjN2E0NWQ2ZmYyZGNhNDBlYjNlOWEyNzNlYWNhZTk2MTgifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L559-L577",
+          "version": "repo-lines-v1:sha256:dea2ff84853fb976ba527892a88a370797267707c9de03d193196bee1085cda7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0YzYxZTlmMTg5YmZiN2YzMDc0YmRmYjZiMzBjMjc0ZTAzNTRkMzY2NGYyZDRhZDE4MjUzZDJkNDIzNGRlODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NjA4ZTdjYTMyNjFiYWY5MDEwNzNjMzJmMzIxYmRhYjhiMzdhNjhjNjhlNjRiMTJlODkyM2UyZTc3YjQ0YWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzYzVhNzY1MGY4NTdhYWRiZDY2MWNlNWNkYjBkMzU2MDU0MGY0NjhlOGViYWU3NDIyMDM0NDJmMGIwODA0ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzYjQzNmQyMGQxNDc5ZGM2OWZkYTRhMWU2ZTRiZDIzMGVlMzE3MDE3YWI2ZjliYzk0MzhlNWQyNzFhNTM3Y2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa92ab5806c64c8c9ec96fec030778dd",
+      "statement": "Only overlays that exist when a global-scope block enters are published to and restored: an overlay pushed later is never added to _overlay_snapshots, is never updated with the published keys, and is never restored.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L67-L72",
+          "version": "repo-lines-v1:sha256:9ad662c3470686f87502d9def64b120428b7f56cbe83f9849d15ac6110eb79e0:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmU0MmFhZDY2YjU4ZTQxMmMzNGRiZDRhNTA3YzdhYzZlNDdiZDBhMWJhMDkyMzA0ZGZhMWU2YTU3M2UyZmQ3YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWM4OTExMjk3MDk0NDk4ZjYwMTAxNjhjYWFlMzMzNGRlMzY1NTQyMDU2NmM1N2U2ZDlhNDUxYjIwNDUzYWE4ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmU0OTNjMWNlMmM1YmEyOGJhZDQ5M2EyOTQ1NmVhZGJhYTA3NjU5ZWI2MGJmNmUwYWQ3MzhjZjliNmUzZGU4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjdlNTZhYWNkNGNmZWVlZjMzMTk1NzQ2YTNkNmQzMjE0YmEyYWNiYWFjNWUwYmRhOGYxMDdjOTc2MzQ5ZTBkOCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L88-L94",
+          "version": "repo-lines-v1:sha256:884599174762701f2ca03da877d48ab3b15d4441edddaf998b2825e430c54f56:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWNjYjJhOTAxN2VlNTliZmU0ZjgzMjFjODc4ZmQ4MmNiMTg4YzIyZDc0Y2U3ZjRiOTI2ZTZlOTRmNWI0MWVmNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGQ3YTZlMWJjMTQ2ZWNlYzAwZDY0NTU4M2Y0ZmI0MmM5ZjA1Zjc1N2FmMmJjYjIwODI0NjVhZjY3MDY1MWU3NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjZmNDkxYmVhZGQ0ZTJkY2M3ZmIxYWJlNWJkY2ViNDAyNjhiN2NlMjI0NjIxODFmN2Q5ZDFhNzAzZmQwZGVlNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8754f0c6abc24343a649c88f2fea4461",
+      "statement": "UseFramework.__call__ pushes at most one implicit overlay per call, and only when it needs to: the guard `self._overlay_var.get() is None and not self._in_global_var.get()` means that when a context() overlay or a global-scope block is already active the call pushes nothing and operates on the caller's scope; otherwise it pushes an isolated overlay seeded from a copy of _shared_context and pops it in a finally, including on failure. Because only __call__ does this, routes that call Bus.execute directly never create one.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L388-L404",
+          "version": "repo-lines-v1:sha256:964dba16438673c6213f6706fca3162bba3ed41fed2a0c011d4bf9d137f5db20:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMWM5ODlmMjBjZDVjNjg0M2JkYmQwNzdjMDJjOGU0ZTU0N2FjODI2ZTFjMjQwMGZjNjBkZmY1OTBhZTk1NTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NWUyMGEzNjE0OGUxOTFhNGNiNGE5ZDcyOWVlMjUwNmQ2Y2QxYjkwMGU1MjBkYjBlNDZlZTRiOGU4YTZjYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkZjc4ODhjNWE5NThhZDkzNTZkNjNiZTA4MzkxNjg3OTM2MmM2OTAxODAyM2U0YTFmNTkyYjY4MmNhOGVlYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwM2FjYmJkYjU0YjBlN2EyYWNmNzVlZmYzYzg3MWQwNDBiYTYxZWJkY2VmNWY0MjAyMWU5OWM0ZDkzZWE0YjEifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L579-L599",
+          "version": "repo-lines-v1:sha256:7dd20e236dd6516eaa0ce03edb02b179a504ac2e4dfb33447c2df89b9e146140:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNzg5MWYzYzQxMDljNzE5MGE2OTQzNjMwYjQ5MWE3NTkzNGJmNzNmNmM2ZjQwNGZlNGZhMDhkMjM5ZjFhZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4Yzk5N2EzNmE1N2Q0ZGVlMGMxYjQ4MDA4OWViODk0Nzk1YmM3OGFlNmM0Y2VjMjM2Y2IxZDJmMDc1YjJhZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzOWEyZDI0OWQ3YWY4ZmU3ZTNjYmVkNDJiM2NmZDBhYzA5ZGM3ZGIwMWRkZDRlZGE4ZTU0NGIzZWZmN2M5YmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYTVjMmE2NWUwZDZiN2ZiNWE0YmIwZjEyZTU2OGMxZjBlMzIxNWIwNjc2NmIzMjA2MGVmMzk4OTZiODg3YTQifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L624-L646",
+          "version": "repo-lines-v1:sha256:31b5fa9a02c595b55edb95695bcef5439b283de24e71daf2fa862bddaa01705b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhNTRjZGRkYWRmMDIyNWE4ZWY4ZmJjZmI2YjFlZDliZWUxMTQ5Yzc5ZGYwOGIzMjhjYmVmZmQwYTY0NTkzODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1NjRkNzkzNDM3YzMzMDdmNjc1ZDhlNzk1YjY3ZjMzZWU0NTdlN2M2YzkzN2MxYTRkZmM1NTY4MWQ5NGQ1ZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjOTAzNTM4ZWYyYjhkOTdiZDg5OWZkMTc4OGE0ZGU1NTNmN2U1OWJkODJmMTExZjhkNWE2MDRmMGM0ZTk2ZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3aa013eede844932afcbd16f7ee9ba84",
+      "statement": "A write through self.context has three different lifetimes: it dies with the call inside a bare framework(dto) (throwaway implicit overlay), lives for the block and is visible to later calls in the same block inside with framework.context({...}), and is discarded on the way out of a with framework.context({...}, global_scope=True) block through the snapshot restore.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L390-L404",
+          "version": "repo-lines-v1:sha256:463c7381f3927d0250ba8b8ab479aa8ab3e7769ec1d966c480b41105529a1eff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiMTg5MjhkODM4YmZjMTBiNDM1ZTk3ZjE4NTE4MWE1NTVlNGM5YmNlZTkyOGY1Y2EyNzJiNjg0M2Y4Y2Y2ZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NWUyMGEzNjE0OGUxOTFhNGNiNGE5ZDcyOWVlMjUwNmQ2Y2QxYjkwMGU1MjBkYjBlNDZlZTRiOGU4YTZjYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0ZDVmYzA2OTMxNmU0MzU3YzQ0NmUxODE4NGIzY2IwZDU5Yzg0NWUxYjEyNTk1ZThjZTcwODNlZmE0ODUyMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwM2FjYmJkYjU0YjBlN2EyYWNmNzVlZmYzYzg3MWQwNDBiYTYxZWJkY2VmNWY0MjAyMWU5OWM0ZDkzZWE0YjEifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L559-L577",
+          "version": "repo-lines-v1:sha256:dea2ff84853fb976ba527892a88a370797267707c9de03d193196bee1085cda7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0YzYxZTlmMTg5YmZiN2YzMDc0YmRmYjZiMzBjMjc0ZTAzNTRkMzY2NGYyZDRhZDE4MjUzZDJkNDIzNGRlODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NjA4ZTdjYTMyNjFiYWY5MDEwNzNjMzJmMzIxYmRhYjhiMzdhNjhjNjhlNjRiMTJlODkyM2UyZTc3YjQ0YWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzYzVhNzY1MGY4NTdhYWRiZDY2MWNlNWNkYjBkMzU2MDU0MGY0NjhlOGViYWU3NDIyMDM0NDJmMGIwODA0ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzYjQzNmQyMGQxNDc5ZGM2OWZkYTRhMWU2ZTRiZDIzMGVlMzE3MDE3YWI2ZjliYzk0MzhlNWQyNzFhNTM3Y2UifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L579-L599",
+          "version": "repo-lines-v1:sha256:7dd20e236dd6516eaa0ce03edb02b179a504ac2e4dfb33447c2df89b9e146140:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNzg5MWYzYzQxMDljNzE5MGE2OTQzNjMwYjQ5MWE3NTkzNGJmNzNmNmM2ZjQwNGZlNGZhMDhkMjM5ZjFhZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4Yzk5N2EzNmE1N2Q0ZGVlMGMxYjQ4MDA4OWViODk0Nzk1YmM3OGFlNmM0Y2VjMjM2Y2IxZDJmMDc1YjJhZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzOWEyZDI0OWQ3YWY4ZmU3ZTNjYmVkNDJiM2NmZDBhYzA5ZGM3ZGIwMWRkZDRlZGE4ZTU0NGIzZWZmN2M5YmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYTVjMmE2NWUwZDZiN2ZiNWE0YmIwZjEyZTU2OGMxZjBlMzIxNWIwNjc2NmIzMjA2MGVmMzk4OTZiODg3YTQifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L624-L646",
+          "version": "repo-lines-v1:sha256:31b5fa9a02c595b55edb95695bcef5439b283de24e71daf2fa862bddaa01705b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhNTRjZGRkYWRmMDIyNWE4ZWY4ZmJjZmI2YjFlZDliZWUxMTQ5Yzc5ZGYwOGIzMjhjYmVmZmQwYTY0NTkzODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1NjRkNzkzNDM3YzMzMDdmNjc1ZDhlNzk1YjY3ZjMzZWU0NTdlN2M2YzkzN2MxYTRkZmM1NTY4MWQ5NGQ1ZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjOTAzNTM4ZWYyYjhkOTdiZDg5OWZkMTc4OGE0ZGU1NTNmN2U1OWJkODJmMTExZjhkNWE2MDRmMGM0ZTk2ZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_683d3aa9735945d1a5f4765e62022659",
+      "statement": "with_trace() and with_parent_trace() publish the trace ids through the same context machinery: FrameworkSpanContext.__enter__ binds the resolved trace_id/span_id to the shared logger and then enters a composed FrameworkContext carrying exactly {\"trace_id\": ..., \"span_id\": ...}, exiting it last, and both entry points build the root bus lazily before delegating to Observability.trace_context. That isolated block is the framework's route to self.context.get(\"trace_id\"); a bare framework(dto) call does not put those keys in the context dict even though each DTO execution binds them to the logger from the span.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/span_context.py#L133-L134",
+          "version": "repo-lines-v1:sha256:18ed7030eb556b9db431ad060b39edfa260e2ae5d9c430fe5c71ae7f0f4e82ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmY4ODFjZDk1OWY1MjQzZGQzMWQxZmU0NjcyZjI0NzE1MTUwNDlhZDliNGUzOTQ4NjkwYzFkOGYwYWYzMDIyZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJkMmMyYTc1YWNiMmM1YzA5Njc5OWJhNmNmNzQ5OTE4YmE3YWY4MGMxMzJlNzhmNDlhMGNiNGNhNjAwZjUzMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2U0ZDA1ZTVmZTQ3N2IwZmVhY2VmYmQ1MjAxMDExM2FlMDkzZTlmNmJmOWQzMTU2MGM4OGU3MGU1NDZjNWI0NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTdhODA0MTIzZmVkN2Y3MDMwY2Y3YTIzOTA3YjQyOWFhMzA1OTdlNDRkN2Y0NTMwMzUxZDI4MDliN2UxYWVhYyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/span_context.py#L72-L80",
+          "version": "repo-lines-v1:sha256:941b584ae8e14ac4c9aa9e5457909866b1268fd6bbd92c31b20fe7b84ad1d518:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjBkMzZlMmY0Yzg0NGQ3OGU0NmVhMzMzYzZkZGNkMWJkOTk0YjI3OWNlODllZTk0MzMyMGIwZDU1OTQyNWU5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTZiOWQ2NDUyODU1YjI1OTM2MzYyMzUwNGE3YjMxZWYxZjU5OWU4MDU3ODg4MThmNjhkZGYwNGYxNzY5Njg1MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThkYjdkYTNlMzUxMTUwNTM1NzBmZGZlOTUzN2I1NWY5MTY5MjBkZDAyNmQwMjQ5NDgzNDZiZTE3ODFlYjdhNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGNmZWU4YTU0Y2IxYmQ3Y2E4OWYzYzk1Mjg5MjM2YjM1MTEzYjFiYTA1NDUyNGE3NmNmNDc1ZmZkMDMwNGQwZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/span_execution.py#L55-L76",
+          "version": "repo-lines-v1:sha256:b0d511fd1fe944fbbd06b2bfea274ceff03de13b6c3bd35cd54b92ab4b7cb14c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiMzllZDM5NGJlMjkwZjVhZmNkNjljMmU0MGMyZGMwMzI3OWViNTA0MDkzMGFkMjBmNzJkODg5MDE2MGZjMzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ZjkyOTExNjY2MDRhMjhiODhmNWE4M2U2MTY0ZjIyNmRjYzlkNzc3NzU3NjU0NDg3ZTViNWNiYWNkNzU1OTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhN2Y2NTMwMThiYmU5ZjMwMDNmNWZhMjRjYTEwNTJkYjhjYTUxODg3MDdhNDU0OGY3NTEwMDlkYjc2ZTE1YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L280-L281",
+          "version": "repo-lines-v1:sha256:3351192d4d2d12d626bae6eb7510c35aebf9831f876df7fef57fe81ae1536d4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWNiNTQ5OTMxZTRhNzg5ZDhhMjQwNDk2ZGU5ZTkyMDhmZTRkMDJkN2RiYWQ4YjU1Yzc5N2IxNGE0NGYzN2JkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDBhODg5NjEwYmYzYTlhNzZjNmEwOWE1ODRkMjVhNWZlOTMxOWJkNjAzYmNjMjA4ZjI5NTg5ZDJkODRjNTk3NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjdiOWEzYjUyYmE4NjUwZjBmNmQ1M2JkNWE2ZmIzMTY4YzM3OTY3YjE2NTQ3NGVmN2YxM2NjNzhjMTEyMjYxZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzg4ZmE5MTFlMDMyMDU0MjVhN2Y3MzBiM2M1N2JiNzZhYTIxNjJmZDIyMzk1NjRmMTc5YzhmODE0MzUzMTk1YSJ9"
+        },
+        {
+          "resource": "repo://tests/observability/tracing/test_tracing.py#L80-L107",
+          "version": "repo-lines-v1:sha256:40593439a46cea7873f927427237b560e5a92b7713dd87c0fddad7f94468d8db:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjZjAxYTE1OTkyNzE0YTk5NmFkYmYwYTE1ZjUyOTE3Y2EwMGU5Y2Q1MjcyNzNkYjA1NzEyMjU1ZTZlN2M5ZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzN2NlYTM2Yzg0OTQ2MzhhM2ViYTEwYzJlNzRjNGNjZmRjZThjYzk2YTFmZDQ0Y2RkOWVkNzVkYTE3NGFlYzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4ZDgzNWVlYzUxNmZkOTlkM2ExNDBjMDA0YjFiOTRiNGU2ZmM5MjEwMjY4OGM1ZmE0OTc1MzBhOGExMzFlNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0OGM3NDc2NzllMTE1MjFmMGNjNjFmOTFjYzFhMThiNTcwODU1ZWI5YzMyOTJkNjdmNTM2NTYzMGU2MzY1YjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9f1c275d35664d969e684c3d81b82f56",
+      "statement": "Host entrypoints translate a wire context into the same two blocks: scalar_executor splits TRACE_KEYS (trace_id, span_id, carrier) out of the supplied map and wraps the run in framework.context(extra) and/or framework.with_trace(**trace_kwargs) according to what remains, and the JSON-RPC gateway folds X-Correlation-Id and traceparent headers into that map first while a body-level context object overrides the header values.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L18-L18",
+          "version": "repo-lines-v1:sha256:21396ce6d44d87d2b90376271e2a149cc098b8eb16172d99bcca1f5bf24a9daa:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjEzOTZjZTZkNDRkODdkMmI5MDM3NjI3MWUyYTE0OWNjMDk4YjhlYjE2MTcyZDk5YmNjYTFmNWJmMjRhOWRhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjEzOTZjZTZkNDRkODdkMmI5MDM3NjI3MWUyYTE0OWNjMDk4YjhlYjE2MTcyZDk5YmNjYTFmNWJmMjRhOWRhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzY1MDQzODVjYzdmYzQ1ODExMTM1NzUzMmFkNWEyZTFmYjQ2YmFjYzMxZmEyYWQ3ZTIwOTdhMDhjMDVkNmM4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODEyMTJjN2UxM2IwYjg5MTA4MzY1MDU5MWUyM2EwMDRlNWY2MDgzMDkzMzA5Yjg5NDY2ZGI4ZGI4MGYxYmJkYyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L34-L48",
+          "version": "repo-lines-v1:sha256:d64a1ce695896ef3999e7240e7dae8634ff2dbe4630f4f9bd35a0cee29f9d4b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmM2JiZWRiZmZhNTdlZmI4ZDU0NGIxZjdhODVlY2FiNTk5MGFlMDYxNGJhNzIzN2E4YjMxZDhmMmUwMWUxODkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3MjE1ODE2NDg3YTEwNGMyOGM0NTM0ZDY2Nzg4OTU2NDYxMGM0MTQwZTFiMjFkMWUwZDUyMjFkOTdmMjExMDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmNzVjM2ZiMDg5MDdiODY3OGIzYmJiM2EwOGJkZDQ2ZDRlZTg3ZWZlNjIzNGZkZjllYTIxNDQ4MjBmMjkzMWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjMmYxNmIyZTZkMzBiMTllNGUwNzk2ODhhOTVkMzViNmVjZDk0YmJhZGY1NWZhOWU0MjBlZTk5YjdkNGRlNzIifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L112-L122",
+          "version": "repo-lines-v1:sha256:6c9010850a8240a4beca0b711a48c0b49421824c64cd3a334c213ab07a1f4207:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMmU1NzNjYWY2NDFjOTNjYTUxN2EwNmE4Y2FiNjc5YWVhZjQxNjI2MTQyMDE0N2Q2NzM2OWQzY2RiNjFhNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4Mzk3ZGExNjAyMjcxYTA1ODRiNjBhYjIwN2UyOTlhODM5Y2ZmMDk2ZTIxY2E0OTkwYzFiMWE1MzU5YTNjM2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NjEzMzgzZDNlODRlYTE2NGI4MmRhZTk5ZWZlNGU2YWVmZWMxMjk0ZWMxZWM4NTJlOTVkMDk4YWM0Y2RkMTYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L77-L109",
+          "version": "repo-lines-v1:sha256:f5686485e813fc021a09e1704f21003db583a05687299cf327231606d231b88a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4OGIxZjg4Mjc3MmYxZDcyMDIwMWZkNzU3NTA3OTAyOTZjM2Y3NzA4M2IwN2FlNTIwZDhmYWE0YmYwMTdkNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZmQzNjU3MWI1YzRkMmM0OGY0MmI0OWNhNWFmNjI4MGNlMGY0YTFhZTUzMDMzYzYxYjg2NTBlYmE1NzA0MzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3NGRlNjBlNmIxYzBkNjA1OTlmMWI3NTU5YzA0M2ZiODBlOTFkYTdlZGNlODdjZjM1Y2JmM2U1NzNkY2FlYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoint_rpc.py#L189-L220",
+          "version": "repo-lines-v1:sha256:aae4809eca964fbe7d2d3450617f7f1aa0d2ebd39c9ec68dea220998e3d54d03:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0NDI2OTdhOWNkYjZkNTRiMTIwMWM3NTVhYTk3OTJmNWNjMDAwZDhmZDU3NmI5MjY1MzU5MWRlNGZhMDY3OTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2OGEyYmFkMmNjNDRjYzUyOGY2YzAzMzU0YWRkN2YwMjhkMTczM2Q2NTRkMTYxYThmZjhjMzg4MTBlZGQ4OGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmYTU4Nzk3Y2NiYTJhMGE4NGViZjYxZTU0MTRjNzBiNzI5YWI1OGYzNTc2ODE1ODU2Njc5NjQ5MGRkNTE5ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzOWY1ODQxZGVlY2Q2YmJhMThkYWE5NzUzODY2NGYwYjM1NGQ2YmExYTI0Zjg5ZTNhMDIzNWEyMjliNGIwZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f46786762cfe484f96941fe903e49de8",
+      "statement": "The context dict is not attached to raised exceptions. On the failure path the bus records the exception on the current span and reports it to the framework's own GlitchTip client tagged with sincpro.kind, sincpro.layer, sincpro.dto, sincpro.instance, sincpro.package and tenant, with the caller's ignore_sentry_exceptions list filtering instance-kind errors; correlation to a request comes from the trace_id/span_id bound to the logs, not from exception attributes.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L101-L118",
+          "version": "repo-lines-v1:sha256:09785ff41d7d70e19419c0ee9936fac02501b10f646160cb6cb3d5e5ff5bde73:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhODQ2ZGYxNWI1YzQ4ZjZkMDdmZGM1Y2NjZDE4OWRmMmE0MWYyZjRkNzljODFmZDAzMzI0YTcyZDJkYjY0MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2MGVlNjBmNjI5M2YyMTE4ZDE5MGY2ZmNmYWM4MmZlZGZlMzk4MzdjNGRkYmI1OWVjODA5MjhhNzg4ZWRjMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3NGVmMDI0MjQ3MWQ5NzY4YTE5NDJmZDllOTIzNGNiZTVkNjQxY2MzN2NkOWE2MjQ4ODk2NTBmY2RmMThlMjkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L29-L62",
+          "version": "repo-lines-v1:sha256:1ee97e567eba6be1936cdccf0ab5d458fefa700d20fa94938ae0d0ea6b31b242:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3MjRlYzYxNTcwZTY3MGVjMGJhZGUxMDUwMmQ4MGZiYjcxNmUxMDcxZjM1MjMxZDQwMzVhZmQ4NGE3ZmE5ZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5YjI4YjFhZGExNDQ4YzI5MDI2NGZlOTA1ODg5OTc3NjNlNWRhZGYwNzhmZTA4YmM1YjhjOTZkMzlhMTYwMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4OGE2MzJjMGQ4MmZmOWFhNzU1MjJhOWYyZDQ4NjY3NmQ3YTU1YzU5ZDNlOTIxMjEwYTA2MDcxMTZkZTFiZTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/span_error.py#L8-L16",
+          "version": "repo-lines-v1:sha256:be5b2de8d9572f0f6f6128225f558dd455877f70e9309453b34bc4659f3459e1:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjVlYjlhNzI4ZTYyMWFmODliMjAzM2JjYmVjZDA1YzM1Y2FmZDZlYjQyNTNlZmE4NDY4OGExMjRmY2M2NmQ2NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWI1YzgyNjMyZmM4MmQ0YjJjMzQwZjQyNTU4YmEzZGZhMzFjNzY1NWRmNmZjYzE2OGI0ZmRjZTU3ZmFjNjA0MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTUwOWZjMWQzYzlmODcxYmRkMmZkMTU3MDMzMjNlYmMyNzJhOTE1ZDE5OTE1OTUzOTA0NmU2N2QxZmFkYzQyYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7886c3055fee40e889cb7b7de5905043",
+      "statement": "docs/design/context_manager.md and examples/context_manager_demo.py document an API that does not exist in the implementation: self.get_context_value(name, default) as the handler read API, a module-level sincpro_framework.get_current_context(), and automatic exception enrichment via e.context_info[\"context_data\"] / [\"timestamp\"]. The implemented read surface is the .context property on ContextConsumer, and sincpro_framework/__init__.py exports neither get_current_context nor any context helper.",
+      "evidence": [
+        {
+          "resource": "repo://docs/design/context_manager.md#L104-L112",
+          "version": "repo-lines-v1:sha256:4d6d618f43dea038f6fe476e837ae08c2ccceedee054f3df648231ebb003cea0:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjM2MGI0MzZjYjEwMmY1MTYwMDdmNjUxOGQyYmI4NzM0OGZkMTc4NWIyZDMwNjBmOWQ1ZDZlNzJkYjAxOWFjNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDdjMDZjNTYxZDVjMzI3MzQzNjg1MjY4YTQ2YjMzOTFmMzk5OGVlZTg5MGQyYmU1MWYwZDIxY2M0YTUzYWU2ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjkzNGQ0ZGNkMjcyMzM1NzBkOWYzMzcxYzk2OGI2YmJlZmNjNGZjZDQ4MGNlMTE4NGE2YjFlYWZmOTVhZWJlYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmM5ZGJlZTIzNGM3OTZmNTdhNzE5ZDUzNzFlODc0OGZmMGYwNTg3MzNiNjRmYjExYmRiYTcwYmM4MjA3ZWI5ZSJ9"
+        },
+        {
+          "resource": "repo://docs/design/context_manager.md#L49-L75",
+          "version": "repo-lines-v1:sha256:f5e5f22ff344751f8ee31826cf2ca3996c274b85f6047641378231d9cd5694ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzNjAzYjgyOTdmZTkwMGJjMTZhMmQ1OTAzOTIwZTNkYWRiYWJhN2I4ODhhZTUxZjNkOTE2ZjM2NTQyYzMxNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyOTM5MmM5ZWI0NGQ5Y2UxZmVkMmQxMGQwYWExNDkxM2Q2Y2UyZWE5YTY0ZGM0N2RiOTNiMTViMzJhN2U3YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1NTA5NmNlOWIyMmJhZDJmY2FlMTM0ZmUzOGI4YjkzMDY4NTU2MjRkOTNlMGZmODE2NjgyYTNhMDMxMDY3YzMifQ"
+        },
+        {
+          "resource": "repo://examples/context_manager_demo.py#L49-L51",
+          "version": "repo-lines-v1:sha256:5c56165d13162811b75132fe3f007a4890d5d54d03ee883893f53508f26a360e:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTFmNzc0ZWRlM2FlNjNkNThhMGQ1YmM4OWYyYjU3MjkxZmE2NTE5OTE5NzY2OGZkM2U5YzUwMzgyNmFlODYxNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVhMDk1NWIyYmNjZTg5ZWU5ZjM5MThkZWE3MDMxNDc4NmFkZDE0ZDMxNTA1NjIxZjAyYWQ2YjQyNjVmN2M4YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTI0NmJkYTZmZGE1ZWEzMzAzZjFhNjNmNThiMWQzYTNiMDM1OGQ5ODQyNDE0NGQ4YmE2OTg0NWZlZjM2OTBmZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjE0ZjgwMjExNzM4YTc4NGE4MDE5NTY1MWVjNGYxNWNjNTcyM2JiM2NkNDZjYzA0NjU3NjYzYjM5OTE5ODczMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L12-L20",
+          "version": "repo-lines-v1:sha256:2ea0ac3b2cd2d93934bd235e953269ef6fd9233608d3fafa48ad36ca09e42eb0:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWQ0ZDc3YTBhNTQzNmJmMjJiMGQ4YzdmZjIwZjdmZjc3YzRmMWNiMzJjNmE4YzkxZDUwMmQ4MmNhNjY2NzZiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2QyNjA2M2QzNWRlYzllYzYzYmFhMzE4MGZiOWI5ZTljODRhOWZmNWE0NDdiYThiZDc2YjRmMDUwZTAxZjNkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmY1Yjg5NGQ0ODczNWVkYWNiZjAzZTQ5NmM2NTMyOGIxYTg0NjViMjIyNTk2MjZkOTBjYzU4YjhjMjY4MWM3MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjk0MTZlMDlmNzhiYTMxNmMwMzI1NjgyMTNiODU1ZWU3NTZlNDE1NjVkOTE4ZjA5NTE5YzgxZmQ2MjBmNDA2MCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/framework_context_consumer.py#L18-L23",
+          "version": "repo-lines-v1:sha256:c5a248503969513b92cd96565adb3fbbfa152d454359d90190f90aaedb1ecaa5:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNkMDBjZjI3MDk2NGQ0NGExM2RmYWM4NzUyYjA5ZmNjNDM1YjBmMTliMzE2YWJjZjgxYTdhYTY0YmIxMjJkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTNhZThjMDliMmFmZDAyNjBiNDI3ZmIyNGY1YzQzZWUzYjc0YjU3ODNkZWI4NWNjOTcyZTU3YWQ3ZGJkZmY0YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGQ3ZWEzYThiNjYzZDA2NmFjOTdmNDJiMmI1OGYzOTdkMmFkZjYyMDM2OGY0NGM2YmYwMmVlZmQ0NDE5ZGI5NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWI2NTEyMzhkNDY0MTUyNTQ4NDBjMGU5ODE2Mzk3YzM1MGJhZjA5NTRkZGUzNzlhMzdhN2EwYWVkMTQyMjM4NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0ea923fa04cd4f1b95c6353679dcc951",
+      "statement": "Every FrameworkContext.__enter__ writes the whole block's data to the instance debug log via self.framework.logger.debug(f\"with context: {self.context}\"), so context values — which in practice carry tokens and correlation ids — leave the process at DEBUG level.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L54-L54",
+          "version": "repo-lines-v1:sha256:858d569e1b07f3d4417ce39d2400b00b4e4edf5bcb24500070c4abe0c50bead9:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODU4ZDU2OWUxYjA3ZjNkNDQxN2NlMzlkMjQwMGIwMGI0ZTRlZGY1YmNiMjQ1MDAwNzBjNGFiZTBjNTBiZWFkOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODU4ZDU2OWUxYjA3ZjNkNDQxN2NlMzlkMjQwMGIwMGI0ZTRlZGY1YmNiMjQ1MDAwNzBjNGFiZTBjNTBiZWFkOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDdiNmM3NGYwYmY1OTY0YTk4OTY5Y2E4NGZhNmE1ZWFiZjQ1MDViZmRhOTJlNWE2N2FjMjYzODdlN2Q0MmE2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODVmYTI5NjAxYzE3NzdjMDViYzNhY2VhZDg2YTc2NmNkODM4MzU5YTliODAzM2ZhZjY5YzJkYjJjYWRkOWZkMCJ9"
+        },
+        {
+          "resource": "repo://tests/test_thread_context_bus.py#L114-L114",
+          "version": "repo-lines-v1:sha256:709974025d00d87457a0baf4a32e5f5bfe63e604e83b1ed854fac58b16a2af91:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzA5OTc0MDI1ZDAwZDg3NDU3YTBiYWY0YTMyZTVmNWJmZTYzZTYwNGU4M2IxZWQ4NTRmYWM1OGIxNmEyYWY5MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzA5OTc0MDI1ZDAwZDg3NDU3YTBiYWY0YTMyZTVmNWJmZTYzZTYwNGU4M2IxZWQ4NTRmYWM1OGIxNmEyYWY5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTgwNWZlN2M2ZmJkMWNmNmQzMDZjNDQxZDg5NDUyYWU3MmVhMWQ2NDkyNjkzMDUyYzI3MmI0MjhmNjllNzIyZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGVlYzRiNDhmNjljMGE3ZTU5ZDRiMTcwMDBmNDkwMzdiNzVlMWI0MmFhNDM5ZTZlZTE0NTZhZTgzOWY2NDljYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_cba6f20ac9544878b2d257b22abf6dd9",
+      "statement": "_shared_context and _live_overlays are plain containers with no lock; the source comment records that the global_scope propagation is the only place _live_overlays is iterated and it copies the list first, relying on per-operation CPython thread-safety for list append/remove/copy as current-implementation behaviour rather than a permanent guarantee.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context.py#L67-L67",
+          "version": "repo-lines-v1:sha256:2e42aad66b58e412c34dbd4a507c7ac6e47bd0a1ba092304dfa1e6a573e2fd7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmU0MmFhZDY2YjU4ZTQxMmMzNGRiZDRhNTA3YzdhYzZlNDdiZDBhMWJhMDkyMzA0ZGZhMWU2YTU3M2UyZmQ3YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmU0MmFhZDY2YjU4ZTQxMmMzNGRiZDRhNTA3YzdhYzZlNDdiZDBhMWJhMDkyMzA0ZGZhMWU2YTU3M2UyZmQ3YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmU0OTNjMWNlMmM1YmEyOGJhZDQ5M2EyOTQ1NmVhZGJhYTA3NjU5ZWI2MGJmNmUwYWQ3MzhjZjliNmUzZGU4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmQzYzUzNjg3YTZlMDMwMTczYzRiOGM2NTUwMjk1NjU3ZTdlYWU3ODM4MDQ4ODMxNTU5OTdhMDQ2MjliMmYyNCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L13-L23",
+          "version": "repo-lines-v1:sha256:69a22622cd8ed851c5fe6e0e60255f379d1f3b02a82ca393d91819dd46677d95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1ZmMwOTRiYTAzNTAzZDg3ZGY2NTk2ZTZmZDgzNmQ2M2FkNjZlMTgzY2I2NDk1ZWI3MDFkMmEyM2M4Y2VmMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkZTZhZThiMWY5ZDJhMWMzNzU3YmUzMDI0YTAxOWI2YWU1MGE0NWZiM2EwY2NmMzY0OTc1MzhlYzhiN2NmYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1YmU5NTQyZmIzODcwZjBmNTM0ZDdjMzU2N2Q2ODY3ZWIzM2I5NDkwMDVjMjRjNDBiNmYyMTRiZWMzMjY4YmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5Y2E1ZWQ3Yzk2N2EzZTFmMjIwOTIzYzAxZGYzZGQ3ZmY0ZWYzZDgyZDQzNGY5YTZjZGFjY2Q3MzE0MWZhN2MifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L35-L36",
+          "version": "repo-lines-v1:sha256:1408d26c487eeb61673beb1f7c1eb057049a7fb437e282cb887df4c0ed80978d:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDI5MGE0NjdkOWIwZDFjZjE2ZWQwODY5MjA1NzJhNTE5MzI4MTQ3ZTFmMTI2NWE5ZjkyYWEyMWY1ZGM4YjMyZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2QwY2U0YTNkYzc4ZjM5YzVhZGM5N2RiOTVlNTQyMTkzODJlODYzNDg2YmNlNzFhOWJkYjA4MjdhNzRjZGNmYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGYzZTA2YWM5MTBlNjQwNjUzMDdiNmE0MjZlYzY5NTQwOWZiOTc0YmUyN2I4NGQ2MGEwYTY5NzI2OGIwNWZjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODdlYzEwZDNmNjE4MmQ1OTEyY2VmMzY3OGQyYWE4OGJhOWIwZGFhNGM0ZTVkMzVkZmRhOGUwZmNjODE0YmVjNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f97b40fb54bf4312bde595c33815facd",
+      "statement": "Per-instance isolation is asserted end to end: two UseFramework instances in one process keep separate context stores and a context block on one is never visible to the other, and concurrent isolated blocks on the same instance do not collide (each thread's overlay ContextVar is its own).",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_context_manager.py#L253-L287",
+          "version": "repo-lines-v1:sha256:17dd3ac9cfd893bdad384859d90b2cdbe62ec2a4e9d8cf92a7b725a97e49e4e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlZDdjNjZhOTg0MTlmMzE0Y2VmNjk2MTExZmExMDk2NzVmMGVjMWEwNzkwNjMzMjJlZjA1NjJhZDFjYzk1OGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkZmM2Y2NiNDM2OTdjNWQyN2IyNGY5NzQ1NGNkZDAyNDc2YjI4N2QyOTQwYmEzNmYzYmY3ZDJjN2ZlMTMyOWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4NWY4ZGU5ZjdlZDA2NGUxYWVkNmIyMmEwMGM4MzNkMjI4NjM4ZDg5YmM5NzNjNjcxMzdhNmQxN2EwMTM3YTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRjNzI0ZDIxZjllZWQ4OGM0MTJhNjExYmY1MDRlMTQxMzlmZTI1N2Q1NWI4Mjg1MDE5MmI0NDE3ZTEyMTIyM2MifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L365-L402",
+          "version": "repo-lines-v1:sha256:08b952035fe102cd2b78b87fa8d2fea5b949392a9b03e37191c5b76899f5a80a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmZjk5MDE2YzFkYWRlZDkyNmI2YzliNTg0M2FjM2ViZmZkOTFhZDk2M2E0MWY2MmRkNDQyYmJiY2FjOTE2ZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMTk4ODI4Mjg2MmU0MjY2OWU4NmQ5MGZlNTg4M2I5ZTY2ZTUwZjFiZWJiMzU2OTQzNDExMjE0ZWIzNjNlNGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyMDM1MjlkNzcxYTE4MDk5Nzk1MGJjMWEyY2FiYzk4OTE2MWZmYTFhNDQ4YTExMDRhZGMzMjdmODkwYzIwZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFkMzIxYTJjNGRiYjk4ZjJlMGQwZDE3ZjlhZmZlNjJlZDFiNjNkYzQ5YmRmNGNjODI4MWM5ZGIyYzNkOWMwMmQifQ"
+        },
+        {
+          "resource": "repo://tests/test_context_manager.py#L492-L523",
+          "version": "repo-lines-v1:sha256:3131bb1dca1a1d146635032344f3cf26454dbfd2286cf1bb815d6a3b85f390f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjODczOWU3ODczM2Y4NDNlZTQwYmU1ZDhjNjI0ZjJhYzkwZTMwNDBjNmNkMDY4NzQ3NzM4ZTI2NGU0YWM5MGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmZjk5OTEwOWVjNWI3NDM2ZjFjNjI4YTI0MTE3NGJjNDFiMGExMzk1ODQzMmM4MGQzYTdiMTU0OTJmZmQ4MmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3YWZiYTRmNWEyNDY5OTk5ZDEzMDZiMDFkNDQ0MDA1YmVjM2JjMThlNmI5NDNkNzNhZWU5Y2JiZTNmNTRjM2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxMjhhNGQ0NmRkZGY1MTg1NTFiYTU3M2ZjYzU2MzNhZTU1YzhmM2I4NWVkMzAyMTBjNzE5ZDhlZjAwNGI2MWIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

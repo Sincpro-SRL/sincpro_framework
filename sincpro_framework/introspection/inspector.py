@@ -2,9 +2,9 @@
 
 Single place that knows the bus's internal shape (feature_bus.feature_registry,
 app_service_bus.app_service_registry, dto_registry) and how to describe a
-registered Feature/ApplicationService/DTO. generate_documentation and
-entrypoints both build on this same metadata; neither reaches into
-FrameworkBus or resolves docstrings on its own.
+registered Feature/ApplicationService/DTO. entrypoints builds on this same
+metadata; it never reaches into FrameworkBus or resolves docstrings on its
+own.
 """
 
 import inspect
