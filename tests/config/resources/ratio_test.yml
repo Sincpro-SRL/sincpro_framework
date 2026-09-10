@@ -1,0 +1,2 @@
+# Numeric field fed from an environment variable
+ratio: "$ENV:TEST_RATIO"

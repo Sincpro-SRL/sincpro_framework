@@ -1262,11 +1262,11 @@ pip install sincpro-framework[sentry]
 export SENTRY_PYTHON_DSN=https://KEY@glitchtip.sincpro.dev/1
 ```
 
-Conf (`sincpro_framework/conf/sincpro_framework_conf.yml`) resolves `sentry_dsn` from `SENTRY_PYTHON_DSN`. If that env is set, `observability_status()["sentry"]` is `on:init`, not `off`. The framework does **not** call `sentry_sdk.init()` and does not reuse the host client.
+Conf (`sincpro_framework/conf/sincpro_framework_conf.yml`) resolves `sentry_dsn` from `SENTRY_PYTHON_DSN`. If that env is set, `app.observability.status.sentry` is `on:init`, not `off`. The framework does **not** call `sentry_sdk.init()` and does not reuse the host client.
 
-Each framework event uses an isolated Sentry `Client` whose `release` is computed once at `UseFramework` init: `{app_name}:{library_version}` (Poetry/installed dist), not the Python version. Example: `payment-cybersource:5.0.3`. Framework-internal errors use `sincpro-framework:<framework version>`.
+Each framework event uses an isolated Sentry `Client` whose `release` is the deployed artifact and its version — literally `APP_RELEASE` (`sincpro_mcp_odoo:0.8.0`), or `{distribution}:{version}` for an SDK (`sincpro-payments-sdk:5.0.3`). The bus is **not** part of the release: two buses of one deployment ship the same release and are told apart by the `sincpro.instance` tag. Framework-internal errors use `sincpro-framework:<framework version>`.
 
-When the caller isn't an installed distribution (e.g. a service entrypoint, not a library) `library_version` can't be resolved and falls back to the `APP_RELEASE` env var, so services still get a real release instead of `payment-cybersource:unknown`.
+`APP_RELEASE` is the standard on every deployed service, so it answers first. Only when there is no artifact at all does the bus name stand in for it, so events stay separable per bounded context.
 
 GlitchTip `environment` is `TENANT` (same value as the `tenant` tag) so events can be filtered by tenant in the UI.
 
@@ -1284,9 +1284,9 @@ Pass `package="sincpro-payments-sdk"` to `UseFramework` when the caller is not t
 Observability is optional and must never break the bus. After `build_root_bus()` (or the first `app(dto)` call) every instance exposes a probe:
 
 ```python
-status = app.observability_status()
-status["sentry"]  # {active, state, reason}  state: off | on | failed
-status["otel"]
+status = app.observability.status          # ObservabilityStatus
+status.sentry.state                        # off | on | failed
+status.otel.reason
 ```
 
 - `off` — extra not installed or conf DSN missing (`sdk_missing`, `dsn_missing`)
@@ -1367,21 +1367,29 @@ Every span produced by the framework carries:
 | Attribute | Value | Purpose |
 |---|---|---|
 | `sincpro.layer` | `"feature"` or `"application_service"` | Identify which bus layer handled the DTO |
-| `sincpro.instance` | The framework instance name (e.g. `"payments"`) | Distinguish bounded contexts — useful when multiple `UseFramework` instances share one process, since the OTLP `service.name` Resource reflects only the first registered instance |
+| `sincpro.instance` | The framework instance name (e.g. `"payments"`) | Distinguish bounded contexts inside one deployment |
 
 ### Embedding sincpro inside another instrumented service (Odoo, FastAPI, etc.)
 
-`setup_otlp_provider` always creates a **private** TracerProvider for sincpro with its own `service.name`. If the host application (Odoo, FastAPI, Celery) already registered the global OTel provider, sincpro leaves it untouched and keeps its provider internal.
+Every bus gets its **own** TracerProvider, whose `service.name` is `artifact:version:bus` — e.g. `sincpro_mcp_odoo:0.8.0:common_mcp`. The root span created by `with_trace()` and the DTO spans under it all come from that provider, so one trace reports one identity. If the host application (Odoo, FastAPI, Celery) already registered the global OTel provider, sincpro leaves it untouched and keeps its own provider internal.
 
 The trace relationship is still preserved: OTel propagates the active parent span via `contextvars` (process-wide), so sincpro spans are automatically children of whatever span the host has active at call time. In Tempo/Jaeger the full tree is visible and filterable:
 
 ```
-service.name=odoo          →  GET /web/dataset/call_kw     (Odoo HTTP span)
-service.name=my-service    →    └── CreateOrderDTO          (application_service)
-service.name=my-service    →         └── ValidateStockDTO   (feature)
+service.name=odoo                            →  GET /web/dataset/call_kw    (Odoo HTTP span)
+service.name=sincpro_mcp_odoo:0.8.0:sales    →    └── CreateOrderDTO         (application_service)
+service.name=sincpro_mcp_odoo:0.8.0:sales    →         └── ValidateStockDTO  (feature)
 ```
 
-Sampling is respected across the boundary: sincpro uses `ParentBased(root=ALWAYS_ON)`, so when the host did not sample a trace, sincpro's spans are also dropped. When running standalone (no host parent span), every span is sampled.
+Sampling is respected across the boundary: sincpro uses `ParentBased`, so a decision already taken upstream — by the host, or by an incoming `traceparent` — always wins and a sampled request is never truncated halfway through.
+
+How much of the traffic this bus starts on its own is recorded comes from OTel's standard variable:
+
+```bash
+export OTEL_TRACES_SAMPLER_ARG=0.1   # record 10% of the traces born in this bus
+```
+
+`1.0` (the default) records everything, `0.0` records nothing. An unusable value falls back to `1.0` with an info log — `settings` is built at import time, so a typo in one deployment variable must not make the framework unimportable.
 
 ## Configuration or settings
 
@@ -1468,7 +1476,11 @@ where you can define some behavior currently we support the following settings:
 
 - `sincpro_framework_log_level`: Log level for the framework logger. Default: `DEBUG`.
 - `otlp_endpoint`: OTLP exporter endpoint for distributed tracing. Resolved from `OTEL_EXPORTER_OTLP_ENDPOINT` env var. Default: `null` (tracing disabled). Requires `sincpro-framework[opentelemetry]`.
-- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release={app_name}:{library_version}` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. Use `UseFramework.ignore_sentry_exceptions(...)` for expected errors.
+- `otlp_traces_sample_rate`: share of new traces to record, `0.0`-`1.0`. Resolved from `OTEL_TRACES_SAMPLER_ARG`. Default: `1.0`. An upstream sampling decision always wins over this ratio.
+- `app_release`: deployed artifact and version, `artifact:version`. Resolved from `APP_RELEASE` — the standard on every Sincpro service. Feeds both the GlitchTip release and the OTel `service.name`.
+- `otel_service_name`: names the artifact when `APP_RELEASE` carries only a version. Resolved from `OTEL_SERVICE_NAME`.
+- `tenant`: GlitchTip `environment` and the `tenant` tag. Resolved from `TENANT`.
+- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release=APP_RELEASE` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. Use `UseFramework.ignore_sentry_exceptions(...)` for expected errors.
 
 Override the config file using another
 

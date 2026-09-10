@@ -16,17 +16,12 @@ regardless of whether opentelemetry is installed.
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 from uuid import uuid4
 
-from ..context.framework_context import FrameworkContext
-
-try:
-    import opentelemetry  # noqa: F401 — existence check only
-
-    _OTEL_AVAILABLE = True
-except ImportError:
-    _OTEL_AVAILABLE = False
+from sincpro_framework.context.framework_context import FrameworkContext
+from sincpro_framework.observability.domain import ObservabilityIdentity
+from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE, tracer_for
 
 if TYPE_CHECKING:
-    from ..use_bus import UseFramework
+    from sincpro_framework.use_bus import UseFramework
 
 
 class FrameworkSpanContext:
@@ -35,14 +30,14 @@ class FrameworkSpanContext:
     def __init__(
         self,
         framework: "UseFramework",
-        service_name: str,
+        identity: ObservabilityIdentity,
         trace_id: Optional[str] = None,
         span_id: Optional[str] = None,
         carrier: Optional[Mapping[str, Any]] = None,
         adopt_active: bool = False,
     ) -> None:
         self.framework = framework
-        self._service_name = service_name
+        self._identity = identity
         self._trace_id = trace_id
         self._span_id = span_id
         self._carrier = carrier
@@ -90,7 +85,7 @@ class FrameworkSpanContext:
         Called on __enter__ failure so the OTel context doesn't leak into
         subsequent requests on this worker thread.
         """
-        if _OTEL_AVAILABLE:
+        if OTEL_AVAILABLE:
             from opentelemetry import context as otel_context
 
             if self._root_span is not None:
@@ -101,7 +96,7 @@ class FrameworkSpanContext:
                 self._otel_token = None
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
-        if _OTEL_AVAILABLE:
+        if OTEL_AVAILABLE:
             from opentelemetry import context as otel_context
 
             if self._root_span is not None:
@@ -128,7 +123,7 @@ class FrameworkSpanContext:
 
     def _setup_trace_context(self) -> tuple[str, str]:
         """Resolve trace_id/span_id and attach OTel context when available."""
-        if not _OTEL_AVAILABLE:
+        if not OTEL_AVAILABLE:
             if self._carrier is not None:
                 import warnings
 
@@ -216,7 +211,10 @@ class FrameworkSpanContext:
     def _setup_root_span(self) -> tuple[str, str]:
         """Create a root container span for this execution block.
 
-        The span name is the UseFramework instance name (bundled_context_name).
+        The span name is the bus name; its ``service.name`` comes from this bus's
+        own provider, so the root span and the DTO spans below it report the same
+        identity even when the host application registered OTel first.
+
         All bus spans (FeatureBus, ApplicationServiceBus) become its children
         because OTel uses contextvars to propagate the active span automatically.
 
@@ -225,8 +223,10 @@ class FrameworkSpanContext:
         from opentelemetry import context as otel_context
         from opentelemetry import trace as otel_trace
 
-        tracer = otel_trace.get_tracer("sincpro_framework")
-        self._root_span = tracer.start_span(self._service_name)
+        tracer = tracer_for(self._identity.bus)
+        if tracer is None:
+            return str(uuid4()), str(uuid4())
+        self._root_span = tracer.start_span(self._identity.bus)
         ctx = otel_trace.set_span_in_context(self._root_span)
         self._otel_token = otel_context.attach(ctx)
 

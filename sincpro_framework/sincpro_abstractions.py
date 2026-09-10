@@ -31,7 +31,6 @@ class DataTransferObject(BaseModel):
 
 class Bus(ABC):
     log_after_execution: bool = True
-    service_name: str = ""
 
     @abstractmethod
     def execute(

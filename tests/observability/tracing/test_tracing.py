@@ -593,9 +593,9 @@ def test_with_parent_trace_fallback_uuids_when_no_active_span(otel_setup):
 
 def test_carrier_without_otel_emits_warning(monkeypatch):
     """carrier=... without OTel installed emits RuntimeWarning and falls back to UUIDs."""
-    import sincpro_framework.tracing.span_context as sc_module
+    import sincpro_framework.observability.tracing.span_context as sc_module
 
-    monkeypatch.setattr(sc_module, "_OTEL_AVAILABLE", False)
+    monkeypatch.setattr(sc_module, "OTEL_AVAILABLE", False)
 
     fw = UseFramework("warn-test", log_after_execution=False)
 
@@ -629,10 +629,10 @@ def test_otel_getter_provides_trace_id_outside_execution(otel_setup):
     from opentelemetry import trace
     from sincpro_log.logger import create_logger
 
-    from sincpro_framework.tracing.provider import _get_current_otel_context
+    from sincpro_framework.observability.tracing.setup import current_otel_context
 
     logger = create_logger("test-outside-exec")
-    logger.set_getter_context(_get_current_otel_context)
+    logger.set_getter_context(current_otel_context)
 
     tracer = trace.get_tracer("host")
     with tracer.start_as_current_span("http-handler") as span:
@@ -649,9 +649,9 @@ def test_otel_getter_provides_trace_id_outside_execution(otel_setup):
 
 def test_otel_getter_empty_when_no_active_span(otel_setup):
     """(OTel) The getter returns {} when no span is active — logger stays clean."""
-    from sincpro_framework.tracing.provider import _get_current_otel_context
+    from sincpro_framework.observability.tracing.setup import current_otel_context
 
-    result = _get_current_otel_context()
+    result = current_otel_context()
     assert result == {}
 
 
@@ -660,7 +660,7 @@ def test_otel_getter_suppressed_during_execution(otel_setup):
     which suppresses the getter — no double-binding or conflict."""
     from opentelemetry import trace
 
-    from sincpro_framework.tracing.provider import _get_current_otel_context
+    from sincpro_framework.observability.tracing.setup import current_otel_context
 
     fw = UseFramework("getter-suppression-test", log_after_execution=False)
 
@@ -678,7 +678,7 @@ def test_otel_getter_suppressed_during_execution(otel_setup):
             captured["fields"] = dict(fw.logger.logger_fields)
             return None
 
-    fw.logger.set_getter_context(_get_current_otel_context)
+    fw.logger.set_getter_context(current_otel_context)
 
     tracer = trace.get_tracer("host")
     with tracer.start_as_current_span("http-handler"):
@@ -695,12 +695,13 @@ def test_logger_getter_not_registered_without_otlp_endpoint():
     the getter — the logger stays unmodified (backwards-compatible behavior)."""
     from sincpro_log.logger import create_logger
 
-    from sincpro_framework.tracing.provider import setup_otlp_provider
+    from sincpro_framework.observability import ObservabilityIdentity
+    from sincpro_framework.observability.tracing.setup import setup
 
     logger = create_logger("no-endpoint-test")
     assert logger._getter_context is None  # no getter before
 
-    setup_otlp_provider("no-endpoint-test", logger)  # no endpoint in env
+    setup(ObservabilityIdentity(bus="no-endpoint-test"), logger)  # no endpoint in env
 
     assert logger._getter_context is None  # getter must NOT be registered
 
@@ -715,8 +716,8 @@ def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):
 
     from unittest.mock import MagicMock
 
+    import sincpro_framework.observability.tracing.setup as otel_module
     from sincpro_framework.sincpro_conf import settings
-    from sincpro_framework.tracing import provider as otel_module
 
     seen: dict = {}
 
@@ -738,10 +739,12 @@ def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):
         fake_processor,
     )
 
-    previous = otel_module._sincpro_provider
+    from sincpro_framework.observability import ObservabilityIdentity, registry
+
+    registry.reset()
     try:
-        status = otel_module.setup_otlp_provider("test-svc")
-        assert status == {"active": True, "state": "on", "reason": "init"}
+        status = otel_module.setup(ObservabilityIdentity(bus="test-svc"))
+        assert status.model_dump() == {"active": True, "state": "on", "reason": "init"}
         assert seen["endpoint"] == "http://collector:4317"
     finally:
-        otel_module._sincpro_provider = previous
+        registry.reset()

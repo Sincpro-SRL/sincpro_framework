@@ -5,13 +5,16 @@ from typing import Any, Dict, List
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.exceptions import UnknownDTOToExecute
-from sincpro_framework.tracing.sentry import (
-    build_release,
-    framework_release,
-    library_version,
-    record_sentry_error,
-    setup_sentry,
-)
+from sincpro_framework.observability import ObservabilityIdentity, registry, resolve_identity
+from sincpro_framework.observability.domain import framework_identity
+from sincpro_framework.observability.domain import installed_version as dist_version
+from sincpro_framework.observability.errors.record_error import record_error
+from sincpro_framework.observability.errors.setup import setup
+from sincpro_framework.sincpro_conf import settings
+
+
+def identity_of(bus: str, version: str = "unknown", artifact: str = "unknown"):
+    return ObservabilityIdentity(artifact=artifact, version=version, bus=bus)
 
 
 class BoomDTO(DataTransferObject):
@@ -33,7 +36,7 @@ class CaptureState:
 
 
 def _install_fake_sentry(monkeypatch, state: CaptureState) -> None:
-    from sincpro_framework.tracing import sentry as sentry_mod
+    from sincpro_framework.observability.errors import setup as sentry_mod
 
     class FakeScope:
         def __enter__(self):
@@ -72,21 +75,20 @@ def _install_fake_sentry(monkeypatch, state: CaptureState) -> None:
         def capture_exception(error: Exception) -> None:
             state.errors.append(error)
 
-    monkeypatch.setattr(sentry_mod, "_SENTRY_SDK_AVAILABLE", True)
-    monkeypatch.setattr(sentry_mod, "_clients", {})
-    monkeypatch.setattr(sentry_mod, "_app_releases", {})
+    registry.reset()
+    monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", "https://key@glitchtip.example/1")
     monkeypatch.setitem(__import__("sys").modules, "sentry_sdk", FakeSentry)
 
 
 def test_setup_sentry_silent_without_dsn(monkeypatch):
-    from sincpro_framework.tracing import sentry as sentry_mod
+    from sincpro_framework.observability.errors import setup as sentry_mod
 
-    monkeypatch.setattr(sentry_mod, "_SENTRY_SDK_AVAILABLE", True)
+    monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", None)
-    status = setup_sentry("test-bc")
-    assert status["state"] == "off"
-    assert status["reason"] == "dsn_missing"
+    status = setup(resolve_identity("test-bc"))
+    assert status.state == "off"
+    assert status.reason == "dsn_missing"
 
 
 def test_setup_sentry_never_calls_global_init(monkeypatch):
@@ -94,11 +96,13 @@ def test_setup_sentry_never_calls_global_init(monkeypatch):
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
 
-    status = setup_sentry("payment-cybersource", release="payment-cybersource:5.0.3")
+    status = setup(
+        identity_of("payment-cybersource", version="5.0.3", artifact="sincpro-payments-sdk")
+    )
     assert state.inits == []
-    assert status["state"] == "on"
-    assert status["reason"] == "init"
-    assert state.clients[0]["release"] == "payment-cybersource:5.0.3"
+    assert status.state == "on"
+    assert status.reason == "init"
+    assert state.clients[0]["release"] == "sincpro-payments-sdk:5.0.3"
     assert state.clients[0]["traces_sample_rate"] == 0.0
     assert state.clients[0]["auto_enabling_integrations"] is False
 
@@ -107,19 +111,19 @@ def test_record_sentry_without_dsn_does_not_capture(monkeypatch):
     """Without conf DSN the framework does not piggyback the host client."""
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
-    from sincpro_framework.tracing import sentry as sentry_mod
+    from sincpro_framework.observability.errors import setup as sentry_mod
 
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", None)
-    monkeypatch.setattr(sentry_mod, "_clients", {})
+    registry.reset()
 
-    record_sentry_error(
-        RuntimeError("from-odoo-init"), "CreateOrderDTO", "feature", "payments"
+    record_error(
+        RuntimeError("from-odoo-init"), "CreateOrderDTO", "feature", identity_of("payments")
     )
     assert state.errors == []
 
 
 def test_record_sentry_error_never_raises():
-    record_sentry_error(ValueError("x"), "BoomDTO", "feature", "payments")
+    record_error(ValueError("x"), "BoomDTO", "feature", identity_of("payments"))
 
 
 def test_bus_error_still_raises_without_sentry():
@@ -143,7 +147,7 @@ def test_record_sentry_captures_when_dsn_configured(monkeypatch):
     _install_fake_sentry(monkeypatch, state)
 
     err = ValueError("from-bus")
-    record_sentry_error(err, "CreateOrderDTO", "feature", "payments")
+    record_error(err, "CreateOrderDTO", "feature", identity_of("payments"))
 
     assert state.errors == [err]
     assert state.tags["sincpro.kind"] == "instance"
@@ -151,46 +155,45 @@ def test_record_sentry_captures_when_dsn_configured(monkeypatch):
     assert state.tags["sincpro.dto"] == "CreateOrderDTO"
     assert state.tags["sincpro.instance"] == "payments"
 
-    record_sentry_error(err, "OtherDTO", "application_service", "payments")
+    record_error(err, "OtherDTO", "application_service", identity_of("payments"))
     assert state.errors == [err, err]
     assert state.tags["sincpro.layer"] == "application_service"
 
 
-def test_library_version_of_installed_framework():
-    assert library_version("sincpro-framework") == installed_version("sincpro-framework")
-    assert library_version("this-dist-does-not-exist") == "unknown"
+def test_package_version_of_installed_framework():
+    assert dist_version("sincpro-framework") == installed_version("sincpro-framework")
+    assert dist_version("this-dist-does-not-exist") == ""
 
 
 def test_framework_release_uses_package_version():
-    assert framework_release() == build_release(
-        "sincpro-framework", installed_version("sincpro-framework")
+    assert framework_identity().release == (
+        f"sincpro-framework:{installed_version('sincpro-framework')}"
     )
 
 
-def test_detect_caller_library_version_falls_back_to_app_release_env(monkeypatch):
-    """A service entrypoint isn't an installed distribution — use APP_RELEASE."""
-    from sincpro_framework.tracing import sentry as sentry_mod
+def test_service_without_a_distribution_still_gets_a_version(monkeypatch):
+    """A service entrypoint isn't an installed distribution — APP_RELEASE answers."""
+    monkeypatch.setattr(settings, "app_release", "2026.08.21")
+    monkeypatch.setattr(settings, "otel_service_name", None)
 
-    monkeypatch.setattr(sentry_mod, "_caller_distribution_version", lambda: "unknown")
-    monkeypatch.setenv("APP_RELEASE", "2026.08.21")
-
-    assert sentry_mod.detect_caller_library_version() == "2026.08.21"
+    assert resolve_identity("payments").release == "payments:2026.08.21"
 
 
-def test_detect_caller_library_version_without_app_release_env_is_unknown(monkeypatch):
-    from sincpro_framework.tracing import sentry as sentry_mod
+def test_without_app_release_the_version_is_unknown(monkeypatch):
+    monkeypatch.setattr(settings, "app_release", None)
+    monkeypatch.setattr(settings, "otel_service_name", None)
+    monkeypatch.setattr(
+        "sincpro_framework.observability.domain._from_caller_distribution", lambda: ("", "")
+    )
 
-    monkeypatch.setattr(sentry_mod, "_caller_distribution_version", lambda: "unknown")
-    monkeypatch.delenv("APP_RELEASE", raising=False)
-
-    assert sentry_mod.detect_caller_library_version() == "unknown"
+    assert resolve_identity("payments").release == "payments:unknown"
 
 
-def test_instance_release_is_app_name_and_library_version(monkeypatch):
+def test_release_is_the_sdk_distribution_and_its_version(monkeypatch):
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
     monkeypatch.setattr(
-        "sincpro_framework.use_bus.library_version",
+        "sincpro_framework.observability.domain.installed_version",
         lambda name: "5.0.3" if name == "sincpro-payments-sdk" else "x",
     )
 
@@ -212,17 +215,50 @@ def test_instance_release_is_app_name_and_library_version(monkeypatch):
         pass
 
     assert state.errors
-    assert state.release == "payment-cybersource:5.0.3"
+    assert state.release == "sincpro-payments-sdk:5.0.3"
     assert state.tags["sincpro.kind"] == "instance"
     assert state.tags["sincpro.instance"] == "payment-cybersource"
+    assert state.tags["sincpro.package"] == "sincpro-payments-sdk"
+    assert state.tags["sincpro.layer"] == "feature"
+    assert state.tags["sincpro.dto"] == "BoomDTO"
 
 
-def test_tenant_tag_from_env(monkeypatch):
+def test_record_error_sends_every_metadata_field(monkeypatch):
+    """GlitchTip event carries release, environment, bus, package, layer and DTO."""
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
-    monkeypatch.setenv("TENANT", "acme")
 
-    record_sentry_error(RuntimeError("x"), "BoomDTO", "feature", "payments")
+    monkeypatch.setattr(settings, "tenant", "acme")
+
+    record_error(
+        RuntimeError("declined"),
+        "CommandPayQR",
+        "feature",
+        ObservabilityIdentity(
+            artifact="sincpro-payments-sdk", version="5.1.0", bus="payment-qr"
+        ),
+        kind="instance",
+    )
+
+    assert state.errors
+    assert state.release == "sincpro-payments-sdk:5.1.0"
+    assert state.clients[0]["environment"] == "acme"
+    assert state.tags == {
+        "sincpro.kind": "instance",
+        "sincpro.layer": "feature",
+        "sincpro.dto": "CommandPayQR",
+        "sincpro.instance": "payment-qr",
+        "sincpro.package": "sincpro-payments-sdk",
+        "tenant": "acme",
+    }
+
+
+def test_tenant_tag_comes_from_conf(monkeypatch):
+    state = CaptureState()
+    _install_fake_sentry(monkeypatch, state)
+    monkeypatch.setattr(settings, "tenant", "acme")
+
+    record_error(RuntimeError("x"), "BoomDTO", "feature", identity_of("payments"))
     assert state.tags["tenant"] == "acme"
     assert state.clients[0]["environment"] == "acme"
 
@@ -283,7 +319,7 @@ def test_framework_error_uses_framework_release(monkeypatch):
     assert len(state.errors) == 1
     assert isinstance(state.errors[0], UnknownDTOToExecute)
     assert state.tags["sincpro.kind"] == "framework"
-    assert state.release == framework_release()
+    assert state.release == framework_identity().release
 
 
 def test_framework_error_is_not_affected_by_ignore_list(monkeypatch):
@@ -306,10 +342,34 @@ def test_framework_error_is_not_affected_by_ignore_list(monkeypatch):
     assert state.tags["sincpro.kind"] == "framework"
 
 
-def test_observability_status_off_without_sdk(monkeypatch):
-    from sincpro_framework.tracing import sentry as sentry_mod
+def test_framework_runs_without_otel_or_sentry_packages(monkeypatch):
+    """A client without extras still executes Features. Observability stays off."""
+    import sys
 
-    monkeypatch.setattr(sentry_mod, "_SENTRY_SDK_AVAILABLE", False)
+    monkeypatch.setitem(sys.modules, "sentry_sdk", None)
+    monkeypatch.setitem(sys.modules, "opentelemetry", None)
+    monkeypatch.setitem(sys.modules, "opentelemetry.trace", None)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk", None)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace", None)
+    monkeypatch.setattr("sincpro_framework.observability.errors.setup.SDK_AVAILABLE", False)
+
+    fw = UseFramework("no-extras-client", log_after_execution=False)
+
+    @fw.feature(BoomDTO)
+    class Ok(Feature):
+        def execute(self, dto: BoomDTO):
+            return "ok"
+
+    assert fw(BoomDTO()) == "ok"
+    status = fw.observability.status
+    assert status.sentry.state == "off"
+    assert status.otel.state == "off"
+
+
+def test_status_is_off_without_the_sentry_sdk(monkeypatch):
+    from sincpro_framework.observability.errors import setup as sentry_mod
+
+    monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", False)
 
     app = UseFramework("payment-cybersource", log_after_execution=False)
 
@@ -319,13 +379,13 @@ def test_observability_status_off_without_sdk(monkeypatch):
             return "ok"
 
     assert app(BoomDTO()) == "ok"
-    status = app.observability_status()
-    assert status["sentry"]["active"] is False
-    assert status["sentry"]["state"] == "off"
-    assert status["sentry"]["reason"] == "sdk_missing"
+    status = app.observability.status
+    assert status.sentry.active is False
+    assert status.sentry.state == "off"
+    assert status.sentry.reason == "sdk_missing"
 
 
-def test_observability_status_on_when_conf_has_dsn(monkeypatch):
+def test_status_is_on_when_conf_has_a_dsn(monkeypatch):
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
 
@@ -337,15 +397,15 @@ def test_observability_status_on_when_conf_has_dsn(monkeypatch):
             return "ok"
 
     assert app(BoomDTO()) == "ok"
-    status = app.observability_status()
-    assert status["sentry"]["active"] is True
-    assert status["sentry"]["state"] == "on"
-    assert status["sentry"]["reason"] == "init"
+    status = app.observability.status
+    assert status.sentry.active is True
+    assert status.sentry.state == "on"
+    assert status.sentry.reason == "init"
     assert state.inits == []
 
 
 def test_client_failure_does_not_break_the_bus(monkeypatch):
-    from sincpro_framework.tracing import sentry as sentry_mod
+    from sincpro_framework.observability.errors import setup as sentry_mod
 
     class BoomClient:
         def __init__(self, **kwargs: Any) -> None:
@@ -362,8 +422,8 @@ def test_client_failure_does_not_break_the_bus(monkeypatch):
         def capture_exception(error: Exception) -> None:
             raise AssertionError("should not capture")
 
-    monkeypatch.setattr(sentry_mod, "_SENTRY_SDK_AVAILABLE", True)
-    monkeypatch.setattr(sentry_mod, "_clients", {})
+    monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
+    registry.reset()
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", "https://key@host/1")
     monkeypatch.setitem(__import__("sys").modules, "sentry_sdk", BoomSentry)
 
@@ -375,46 +435,46 @@ def test_client_failure_does_not_break_the_bus(monkeypatch):
             return "ok"
 
     assert app(BoomDTO()) == "ok"
-    status = app.observability_status()
-    assert status["sentry"]["active"] is False
-    assert status["sentry"]["state"] == "failed"
-    assert "bad dsn" in status["sentry"]["reason"]
+    status = app.observability.status
+    assert status.sentry.active is False
+    assert status.sentry.state == "failed"
+    assert "bad dsn" in status.sentry.reason
 
 
 def test_setup_sentry_reports_dsn_missing(monkeypatch):
-    from sincpro_framework.tracing import sentry as sentry_mod
+    from sincpro_framework.observability.errors import setup as sentry_mod
 
-    monkeypatch.setattr(sentry_mod, "_SENTRY_SDK_AVAILABLE", True)
+    monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", None)
 
-    status = setup_sentry("test-bc")
-    assert status["active"] is False
-    assert status["state"] == "off"
-    assert status["reason"] == "dsn_missing"
+    status = setup(resolve_identity("test-bc"))
+    assert status.active is False
+    assert status.state == "off"
+    assert status.reason == "dsn_missing"
 
 
-def test_observability_status_before_build_is_not_built():
+def test_status_before_build_is_not_built():
     app = UseFramework("payment-cybersource", log_after_execution=False)
-    status = app.observability_status()
-    assert status["sentry"]["reason"] == "not_built"
-    assert status["otel"]["reason"] == "not_built"
+    status = app.observability.status
+    assert status.sentry.reason == "not_built"
+    assert status.otel.reason == "not_built"
 
 
 def test_unusable_dsn_is_dsn_missing(monkeypatch):
-    from sincpro_framework.tracing import sentry as sentry_mod
+    from sincpro_framework.observability.errors import setup as sentry_mod
 
-    monkeypatch.setattr(sentry_mod, "_SENTRY_SDK_AVAILABLE", True)
+    monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", "not-a-dsn")
 
-    status = setup_sentry("test-bc")
-    assert status["reason"] == "dsn_missing"
+    status = setup(resolve_identity("test-bc"))
+    assert status.reason == "dsn_missing"
 
 
 def test_conf_uses_sentry_python_dsn():
     from pathlib import Path
 
     conf = (
-        Path(__file__).resolve().parents[2]
+        Path(__file__).resolve().parents[3]
         / "sincpro_framework"
         / "conf"
         / "sincpro_framework_conf.yml"

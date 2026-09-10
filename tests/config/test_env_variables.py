@@ -11,7 +11,8 @@ import os
 from typing import Optional
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
+from typing_extensions import Annotated
 
 from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj
 
@@ -20,6 +21,7 @@ TEST_RESOURCES_PATH = os.path.join(os.path.dirname(__file__), "resources")
 CONFIG_WITH_ENV_VARS = os.path.join(TEST_RESOURCES_PATH, "env_vars_test.yml")
 CONFIG_WITH_MISSING_ENV_VARS = os.path.join(TEST_RESOURCES_PATH, "missing_env_vars_test.yml")
 CONFIG_WITH_REQUIRED_FIELD = os.path.join(TEST_RESOURCES_PATH, "required_field_test.yml")
+CONFIG_WITH_RATIO = os.path.join(TEST_RESOURCES_PATH, "ratio_test.yml")
 
 
 # Configuration models for testing - prefixed with _ to prevent pytest collection
@@ -81,3 +83,65 @@ def test_validation_error_for_required_fields_with_missing_env_vars():
     """
     with pytest.raises(ValidationError):
         build_config_obj(_ConfigWithRequiredField, CONFIG_WITH_REQUIRED_FIELD)
+
+
+class _ConfigWithOptionalField(SincproConfig):
+    """The shape of otlp_endpoint and sentry_dsn: absent means the feature is off."""
+
+    string_value: Optional[str] = None
+
+
+def test_optional_field_without_env_var_stays_none_and_silent(caplog):
+    """An unset optional env var disables a feature; it is not a misconfiguration.
+
+    This is the branch otlp_endpoint and sentry_dsn rely on: a deployment with no
+    collector and no DSN must build its config without warnings or exceptions.
+    """
+    with caplog.at_level(logging.INFO, logger="sincpro_framework"):
+        config = build_config_obj(_ConfigWithOptionalField, CONFIG_WITH_MISSING_ENV_VARS)
+
+    assert config.string_value is None
+    assert [record for record in caplog.records if "NON_EXISTENT_VAR" in record.message] == []
+
+
+class _ConfigWithRatio(SincproConfig):
+    """A numeric field with bounds — the shape of otlp_traces_sample_rate."""
+
+    ratio: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
+
+
+def build_ratio_config(monkeypatch, env_value: str):
+    monkeypatch.setenv("TEST_RATIO", env_value)
+    return build_config_obj(_ConfigWithRatio, CONFIG_WITH_RATIO)
+
+
+def test_numeric_env_var_is_coerced(monkeypatch):
+    """A sampling rate arrives as a string and must land as a float."""
+    assert build_ratio_config(monkeypatch, "0.1").ratio == 0.1
+
+
+@pytest.mark.parametrize("env_value", ["", "abc", "10%", "2.0", "-1"])
+def test_an_unusable_env_var_falls_back_instead_of_killing_the_import(
+    monkeypatch, caplog, env_value
+):
+    """`settings` is built at import time: a typo in one deployment variable
+    must not make the whole framework unimportable."""
+    with caplog.at_level(logging.INFO, logger="sincpro_framework"):
+        config = build_ratio_config(monkeypatch, env_value)
+
+    assert config.ratio == 1.0
+    assert any("TEST_RATIO" in record.message for record in caplog.records)
+    assert all(record.levelno < logging.WARNING for record in caplog.records)
+
+
+def test_sample_rate_reads_the_standard_otel_variable():
+    """Ops configures sampling with OTel's own variable, not a sincpro-only one."""
+    from pathlib import Path
+
+    conf = (
+        Path(__file__).resolve().parents[2]
+        / "sincpro_framework"
+        / "conf"
+        / "sincpro_framework_conf.yml"
+    )
+    assert "otlp_traces_sample_rate: $ENV:OTEL_TRACES_SAMPLER_ARG" in conf.read_text()
