@@ -84,7 +84,9 @@ def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
     provider = TracerProvider(
-        resource=Resource(attributes={SERVICE_NAME: identity.service_name}),
+        # ``create`` merges OTEL_RESOURCE_ATTRIBUTES and the SDK defaults; the bare
+        # constructor would drop tenant/env and telemetry.sdk.* from every span.
+        resource=Resource.create({SERVICE_NAME: identity.service_name}),
         sampler=ParentBased(root=_root_sampler(settings.otlp_traces_sample_rate)),
     )
     # The endpoint must be passed explicitly: without it the SDK ignores our conf and

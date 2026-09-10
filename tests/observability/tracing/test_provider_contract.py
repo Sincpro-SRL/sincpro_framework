@@ -181,7 +181,7 @@ def test_resource_service_name_keeps_the_bus_as_last_segment(monkeypatch):
     setup_for("common_mcp", artifact="sincpro-odoo-mcp", version="0.8.0")
 
     resource = provider_of("common_mcp").resource
-    assert resource.attributes["service.name"] == "sincpro_odoo_mcp:0.8.0:common_mcp"
+    assert resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0:common_mcp"
 
 
 def test_a_real_host_provider_is_never_replaced(monkeypatch):
@@ -220,8 +220,8 @@ def test_each_bus_keeps_its_own_provider_and_service_name(monkeypatch):
     common = provider_of("common_mcp")
     sales = provider_of("sales_mcp")
     assert common is not sales
-    assert common.resource.attributes["service.name"] == "sincpro_odoo_mcp:0.8.0:common_mcp"
-    assert sales.resource.attributes["service.name"] == "sincpro_odoo_mcp:0.8.0:sales_mcp"
+    assert common.resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0:common_mcp"
+    assert sales.resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0:sales_mcp"
 
 
 def test_setting_up_the_same_bus_twice_reuses_its_provider(monkeypatch):

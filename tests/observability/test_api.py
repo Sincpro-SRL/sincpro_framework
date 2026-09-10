@@ -28,11 +28,22 @@ def no_backends_configured(monkeypatch):
 def test_creating_one_resolves_no_identity_yet(monkeypatch):
     """Every bus builds one at import time; it must not pay for the lookup then."""
     monkeypatch.setattr(
-        "sincpro_framework.observability.domain.resolve_identity",
+        "sincpro_framework.observability.api.resolve_identity",
         lambda *args, **kwargs: pytest.fail("identity resolved too early"),
     )
 
     Observability("common_mcp")
+
+
+def test_the_calling_library_is_captured_at_construction(monkeypatch):
+    """Resolved lazily from a request, the stack belongs to the host, not the library.
+
+    Inside Odoo the first execution is triggered by Odoo's code, so reading the
+    caller then would name Odoo instead of the SDK that built the bus.
+    """
+    observability = Observability("siat-soap-sdk")
+
+    assert observability._module_name.startswith("tests.observability")
 
 
 def test_app_release_answers_without_the_slow_distribution_lookup(monkeypatch):
@@ -43,10 +54,11 @@ def test_app_release_answers_without_the_slow_distribution_lookup(monkeypatch):
     )
     monkeypatch.setattr("sincpro_framework.observability.domain._distributions", None)
 
-    identity = Observability("common_mcp").identity
+    observability = Observability("common_mcp")
+    observability._module_name = "not_a_distribution"
 
-    assert identity.service_name == "sincpro_mcp_odoo:0.8.0:common_mcp"
-    assert identity.release == "sincpro_mcp_odoo:0.8.0"
+    assert observability.identity.service_name == "sincpro_mcp_odoo:0.8.0:common_mcp"
+    assert observability.identity.release == "sincpro_mcp_odoo:0.8.0"
 
 
 def test_status_before_start_says_not_built():

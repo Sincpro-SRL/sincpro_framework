@@ -16,6 +16,7 @@ from sincpro_log.logger import LoggerProxy
 from sincpro_framework.observability.domain import (
     ObservabilityIdentity,
     ObservabilityStatus,
+    caller_module,
     resolve_identity,
 )
 from sincpro_framework.observability.errors.record_error import ErrorKind, record_error
@@ -35,6 +36,9 @@ class Observability:
         self._bus = bus
         self._package = package
         self._version = version
+        # Read here, not on first use: at this point the stack still holds the
+        # library that is building the bus. From a request it would name the host.
+        self._module_name = caller_module()
         self._identity: Optional[ObservabilityIdentity] = None
         self.status: ObservabilityStatus = ObservabilityStatus()
         self.ignored_errors: IgnoredExceptions = ()
@@ -44,7 +48,9 @@ class Observability:
     def identity(self) -> ObservabilityIdentity:
         """Resolved once, on first use — the distribution lookup behind it is not free."""
         if self._identity is None:
-            self._identity = resolve_identity(self._bus, self._package, self._version)
+            self._identity = resolve_identity(
+                self._bus, self._package, self._version, self._module_name
+            )
         return self._identity
 
     def start(self, logger: Optional[LoggerProxy] = None) -> ObservabilityStatus:

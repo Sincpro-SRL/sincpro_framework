@@ -176,17 +176,16 @@ def test_service_without_a_distribution_still_gets_a_version(monkeypatch):
     monkeypatch.setattr(settings, "app_release", "2026.08.21")
     monkeypatch.setattr(settings, "otel_service_name", None)
 
-    assert resolve_identity("payments").release == "payments:2026.08.21"
+    assert resolve_identity("payments", module_name="not_a_dist").release == "2026.08.21"
 
 
 def test_without_app_release_the_version_is_unknown(monkeypatch):
     monkeypatch.setattr(settings, "app_release", None)
     monkeypatch.setattr(settings, "otel_service_name", None)
-    monkeypatch.setattr(
-        "sincpro_framework.observability.domain._from_caller_distribution", lambda: ("", "")
-    )
 
-    assert resolve_identity("payments").release == "payments:unknown"
+    identity = resolve_identity("payments", module_name="not_a_distribution")
+
+    assert identity.release == "payments"
 
 
 def test_release_is_the_sdk_distribution_and_its_version(monkeypatch):
@@ -514,5 +513,5 @@ def test_appservice_feature_error_emits_both_layers(monkeypatch):
 
     assert len(state.errors) == 2
     assert state.layers == ["feature", "application_service"]
-    assert state.release.startswith("payment-cybersource:")
+    assert state.release == "payment-cybersource"
     assert state.inits == []

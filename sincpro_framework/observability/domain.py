@@ -9,7 +9,7 @@ release and the Tempo ``service.name`` from drifting apart.
 import inspect
 from importlib.metadata import packages_distributions
 from importlib.metadata import version as distribution_version
-from typing import Literal, Mapping
+from typing import Iterator, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict
 
@@ -24,35 +24,40 @@ State = Literal["off", "on", "failed"]
 _distributions: Mapping[str, list[str]] | None = None
 
 
-def _slug(value: str) -> str:
-    return (value or "").strip().replace("-", "_")
-
-
 class ObservabilityIdentity(BaseModel):
     """Who is emitting: the deployed artifact, its version, and the bus inside it."""
 
     model_config = ConfigDict(frozen=True)
 
     artifact: str = UNKNOWN
-    version: str = UNKNOWN
+    version: str = ""
     bus: str = DEFAULT_BUS
 
     @property
     def service_name(self) -> str:
-        """Tempo ``service.name``: ``artifact:version:bus``. The bus is never dropped."""
-        return f"{_slug(self.artifact)}:{_slug(self.version)}:{_slug(self.bus)}"
+        """Tempo ``service.name``: ``artifact:version:bus``, empty segments omitted.
+
+        A service is identified by ``APP_RELEASE``, which already carries its
+        version, so it has no separate version segment:
+        ``sincpro-odoo:18.5.0-rc2:common-mcp``. A library contributes name and
+        version apart: ``sincpro-siat-soap:8.0.3:siat-soap-sdk``.
+
+        Values travel verbatim. Rewriting ``-`` to ``_`` used to mangle both the
+        distribution name you would search for and the version itself
+        (``18.5.0-rc2`` became ``18.5.0_rc2``).
+        """
+        return ":".join(part for part in (self.artifact, self.version, self.bus) if part)
 
     @property
     def release(self) -> str:
-        """GlitchTip release: ``artifact:version`` — literally ``APP_RELEASE``.
+        """GlitchTip release: literally ``APP_RELEASE``, or ``distribution:version``.
 
-        For an SDK it is the distribution and its version. The bus is not part of
-        the release: it travels as the ``sincpro.instance`` tag, because two buses
-        of one deployment ship the same release. Only when there is no artifact at
-        all does the bus stand in for it, so events stay separable per context.
+        The bus is not part of it — two buses of one deployment ship the same
+        release and are told apart by the ``sincpro.instance`` tag. Only when there
+        is no artifact at all does the bus stand in, so events stay separable.
         """
         artifact = self.artifact if self.artifact != UNKNOWN else self.bus
-        return f"{artifact}:{self.version}"
+        return ":".join(part for part in (artifact, self.version) if part)
 
 
 class ComponentStatus(BaseModel):
@@ -123,34 +128,28 @@ def _import_to_distribution() -> Mapping[str, list[str]]:
     return _distributions
 
 
-def _from_argument(package: str, version: str) -> tuple[str, str]:
-    artifact = (package or "").strip()
-    resolved = (version or "").strip()
-    if artifact and not resolved:
-        resolved = installed_version(artifact)
-    return artifact, resolved
+def _installed_distribution_of(module_name: str) -> tuple[str, str]:
+    """``(distribution, version)`` of a module, by the ``_`` → ``-`` convention.
 
-
-def _from_app_release() -> tuple[str, str]:
-    """``APP_RELEASE`` is the Sincpro standard on every deployed service."""
-    release = (settings.app_release or "").strip()
-    if not release:
+    Costs ~0.7ms, against ~200ms for the full mapping below, and covers every
+    Sincpro package: ``sincpro_siat_soap`` ships as ``sincpro-siat-soap``.
+    """
+    top = (module_name or "").split(".")[0]
+    if not top:
         return "", ""
-    if ":" in release:
-        artifact, version = release.rsplit(":", 1)
-        return artifact.strip(), version.strip()
-    return "", release
+    for candidate in (top.replace("_", "-"), top):
+        version = installed_version(candidate)
+        if version:
+            return candidate, version
+    return "", ""
 
 
-def _from_env_service_name() -> tuple[str, str]:
-    return (settings.otel_service_name or "").strip(), ""
+def caller_module() -> str:
+    """Module of the first frame outside the framework — whoever built the bus.
 
-
-def _from_caller_distribution() -> tuple[str, str]:
-    """The installed distribution of the first caller outside the framework.
-
-    This is the library case — an SDK creating a bus inside a host that is not
-    itself a distribution. Only reached when nothing cheaper answered.
+    Must be read while that frame is still on the stack (at ``UseFramework``
+    construction). Resolved later, from a request, the stack belongs to the host
+    application and this would name Odoo instead of the library.
     """
     try:
         for frame_info in inspect.stack(0)[1:]:
@@ -160,36 +159,89 @@ def _from_caller_distribution() -> tuple[str, str]:
             name = module.__name__
             if name == "sincpro_framework" or name.startswith("sincpro_framework."):
                 continue
-            distributions = _import_to_distribution().get(name.split(".")[0]) or []
-            if not distributions:
-                return "", ""
-            artifact = distributions[0]
-            return artifact, installed_version(artifact)
+            return name
     except Exception:
         pass
-    return "", ""
+    return ""
 
 
-def resolve_identity(bus: str, package: str = "", version: str = "") -> ObservabilityIdentity:
-    """Resolve who is emitting, cheapest and most explicit source first.
+def _from_caller_library(module_name: str) -> tuple[str, str]:
+    """The installed library that created the bus. The library case."""
+    return _installed_distribution_of(module_name)
 
-    1. What the caller passed to ``UseFramework(package=..., version=...)``.
-    2. ``APP_RELEASE`` — always set on Sincpro services.
-    3. ``OTEL_SERVICE_NAME`` — names the artifact when only a version is known.
-    4. The caller's installed distribution — the library case, and the slow one.
-    Final: anything still missing becomes ``unknown``; the bus segment always survives.
+
+def _from_deployment() -> tuple[str, str]:
+    """``APP_RELEASE``, the Sincpro standard on services. The service case.
+
+    Taken verbatim: it always ships with its version, so there is nothing to
+    split — and nothing to mangle on a release that is not ``name:version``.
+    ``OTEL_SERVICE_NAME`` only names the deployment when ``APP_RELEASE`` is absent.
     """
-    artifact, resolved = _from_argument(package, version)
+    release = (settings.app_release or "").strip()
+    if release:
+        return release, ""
+    return (settings.otel_service_name or "").strip(), ""
 
-    for source in (_from_app_release, _from_env_service_name, _from_caller_distribution):
-        if artifact and resolved:
-            break
-        found_artifact, found_version = source()
-        artifact = artifact or found_artifact
-        resolved = resolved or found_version
 
-    return ObservabilityIdentity(
-        artifact=artifact or UNKNOWN,
-        version=resolved or UNKNOWN,
-        bus=bus or DEFAULT_BUS,
-    )
+def _from_distribution_scan(module_name: str) -> tuple[str, str]:
+    """A distribution whose import name differs from its package name.
+
+    ``packages_distributions()`` costs ~200ms and does not cache on its own, so
+    this runs only when neither the naming convention nor the deployment knew.
+    """
+    top = (module_name or "").split(".")[0]
+    if not top:
+        return "", ""
+    try:
+        distributions = _import_to_distribution().get(top) or []
+    except Exception:
+        return "", ""
+    if not distributions:
+        return "", ""
+    artifact = distributions[0]
+    return artifact, installed_version(artifact)
+
+
+def _identity_sources(module_name: str) -> Iterator[tuple[str, str]]:
+    """Sources in order, evaluated one at a time.
+
+    A generator on purpose: building this as a tuple would run every source —
+    including the ~200ms scan — before the first one had a chance to answer.
+    """
+    yield _from_caller_library(module_name)
+    yield _from_deployment()
+    yield _from_distribution_scan(module_name)
+
+
+def resolve_identity(
+    bus: str, package: str = "", version: str = "", module_name: str = ""
+) -> ObservabilityIdentity:
+    """Resolve who is emitting. The first source that names an artifact wins.
+
+    1. What the caller declared explicitly — rarely used, an escape hatch.
+    2. The library that built the bus, by the module → distribution convention.
+    3. The deployment: ``APP_RELEASE``, named by ``OTEL_SERVICE_NAME`` when needed.
+    4. A distribution whose import name differs from its package name (~200ms).
+    Final: a source contributes its artifact **and its own version** — never one
+    paired with another source's, which is how a library inside Odoo used to end up
+    reporting Odoo's name against the library's version.
+    """
+    explicit_artifact = (package or "").strip()
+    explicit_version = (version or "").strip()
+
+    if explicit_artifact:
+        return ObservabilityIdentity(
+            artifact=explicit_artifact,
+            version=explicit_version or installed_version(explicit_artifact),
+            bus=bus or DEFAULT_BUS,
+        )
+
+    for artifact, resolved in _identity_sources(module_name):
+        if artifact:
+            return ObservabilityIdentity(
+                artifact=artifact,
+                version=explicit_version or resolved,
+                bus=bus or DEFAULT_BUS,
+            )
+
+    return ObservabilityIdentity(version=explicit_version, bus=bus or DEFAULT_BUS)

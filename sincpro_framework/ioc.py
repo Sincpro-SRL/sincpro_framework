@@ -21,6 +21,7 @@ T = TypeVar("T", bound=type)
 
 from .bus import ApplicationServiceBus, FeatureBus, FrameworkBus
 from .exceptions import DTOAlreadyRegistered
+from .observability import Observability
 from .sincpro_abstractions import DataTransferObject
 
 DTOClass = type[DataTransferObject]
@@ -39,17 +40,20 @@ class FrameworkContainer(containers.DeclarativeContainer):
     """
 
     logger_bus: Object[LoggerProxy] = providers.Object()
+    observability: Object[Observability] = providers.Object()
     injected_dependencies: Dict = providers.Dict()
     dto_registry: Dict = Dict({})
 
     # atomic layer
     feature_registry: Dict = providers.Dict({})
-    feature_bus: Singleton[FeatureBus] = providers.Singleton(FeatureBus, logger_bus)  # type: ignore[arg-type]
+    feature_bus: Singleton[FeatureBus] = providers.Singleton(
+        FeatureBus, logger_bus, observability  # type: ignore[arg-type]
+    )
 
     # orchestration layer
     app_service_registry: Dict = providers.Dict({})
     app_service_bus: Singleton[ApplicationServiceBus] = providers.Singleton(
-        ApplicationServiceBus, logger_bus  # type: ignore[arg-type]
+        ApplicationServiceBus, logger_bus, observability  # type: ignore[arg-type]
     )
 
     # Facade
@@ -58,6 +62,7 @@ class FrameworkContainer(containers.DeclarativeContainer):
         feature_bus=feature_bus,
         app_service_bus=app_service_bus,
         logger_bus=logger_bus,  # type: ignore[arg-type]
+        observability=observability,  # type: ignore[arg-type]
     )
 
 

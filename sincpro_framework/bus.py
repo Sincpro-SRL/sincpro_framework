@@ -17,11 +17,15 @@ from .sincpro_logger import is_logger_in_debug, logger
 class FeatureBus(Bus):
     """First layer of the framework, atomic features"""
 
-    def __init__(self, logger_bus: Logger = logger):  # type: ignore[assignment]
+    def __init__(
+        self,
+        logger_bus: Logger = logger,  # type: ignore[assignment]
+        observability: Optional[Observability] = None,
+    ):
         self.feature_registry: Dict[str, Feature] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
-        self.observability = Observability()
+        self.observability = observability or Observability()
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -65,11 +69,15 @@ class ApplicationServiceBus(Bus):
     This object contains the feature bus internally
     """
 
-    def __init__(self, logger_bus: Logger = logger):  # type: ignore[assignment]
+    def __init__(
+        self,
+        logger_bus: Logger = logger,  # type: ignore[assignment]
+        observability: Optional[Observability] = None,
+    ):
         self.app_service_registry: Dict[str, ApplicationService] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
-        self.observability = Observability()
+        self.observability = observability or Observability()
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -131,12 +139,13 @@ class FrameworkBus(Bus):
         feature_bus: FeatureBus,
         app_service_bus: ApplicationServiceBus,
         logger_bus: Logger = logger,  # type: ignore[assignment]
+        observability: Optional[Observability] = None,
     ):
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
-        self.observability = Observability()
+        self.observability = observability or Observability()
 
         registered_features = set(self.feature_bus.feature_registry.keys())
         registered_app_services = set(self.app_service_bus.app_service_registry.keys())

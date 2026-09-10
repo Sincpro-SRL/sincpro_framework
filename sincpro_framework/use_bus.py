@@ -60,7 +60,9 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self._init_context_storage()
 
         # Container
-        self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)  # type: ignore[call-arg]
+        self._sp_container = ioc.FrameworkContainer(  # type: ignore[call-arg]
+            logger_bus=self.logger, observability=self.observability
+        )
         self._sp_container.logger_bus = self.logger  # type: ignore[assignment]
 
         # Decorators
@@ -137,13 +139,13 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             self.log_after_execution and self.log_app_services
         )
 
-        # One observability object for the three buses: same identity, same status.
-        self.bus.feature_bus.observability = self.observability
-        self.bus.app_service_bus.observability = self.observability
-        self.bus.observability = self.observability
-
         # Set the DTO registry Tricky way but it works
         self.bus.dto_registry = dto_registry
+
+        # The container already injects this into the three buses; kept as a guard so
+        # the guarantee does not depend on the provider still being the one the
+        # framework_bus Factory captured.
+        self.bus.observability = self.observability
 
         self.observability.start(self.logger)
 
