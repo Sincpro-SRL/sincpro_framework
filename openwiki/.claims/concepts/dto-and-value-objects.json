@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:13e0593f54f0f31e24d3b0d49f9ce2f9723947ca3782bbf9c4f03358af538faf",
+  "claims": [
+    {
+      "id": "claim_f8c91ddec1f84aedaa9baf751d4cc1dc",
+      "statement": "DataTransferObject is declared exactly once as a pydantic v2 BaseModel in sincpro_framework/sincpro_abstractions.py with model_config setting arbitrary_types_allowed=True and use_attribute_docstrings=True, and is re-exported from the package root so applications do not import the module directly.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L27-L27",
+          "version": "repo-lines-v1:sha256:5542feebd54e84838aded7531f2fab72fe0d1edff8fc293ec2fcdc91f620b3a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTU0MmZlZWJkNTRlODQ4MzhhZGVkNzUzMWYyZmFiNzJmZTBkMWVkZmY4ZmMyOTNlYzJmY2RjOTFmNjIwYjNhMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTU0MmZlZWJkNTRlODQ4MzhhZGVkNzUzMWYyZmFiNzJmZTBkMWVkZmY4ZmMyOTNlYzJmY2RjOTFmNjIwYjNhMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmVlZjgwMDFmZmY4NjRkMjU2MWNhNWE4NWIzMGM5Nzc5NGQ3MjJiNjA5NzA1NjYyNWVlNTU0Y2VkNzQ5MmI4MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmQ1MDAyZmFlNTM0OGU3OGZlMzMwOWNjNmEyMjU0NDAyZjk1MzhiOTM0YWNiNDc4MGUzZDFiNjIwNDAyMGExZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L2-L8",
+          "version": "repo-lines-v1:sha256:a59ad887795a28e650f2b96e846cd94e95cee383148561a634113a406da01d3d:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2RiMDFkNWZkZWMwY2IxYmFlMmE1Mjg4MjBlZTliZGEwMGVhNTQwNmE5Y2Y4ZjU2YmRmNzQzZWQzNmVhMjgxYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjEsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWVlNzViOTgzNmJlMDY2NjVmYjM0ZTJlM2VhNmQ1MDQ1M2Q5ZjBiNGMxZTJhMWI5YTYwZDc3NjQ2OTI0MDljYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmY1Yjg5NGQ0ODczNWVkYWNiZjAzZTQ5NmM2NTMyOGIxYTg0NjViMjIyNTk2MjZkOTBjYzU4YjhjMjY4MWM3MSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L21-L29",
+          "version": "repo-lines-v1:sha256:d877e10a4b9fa68aa1f48a17ecade80553ada2ce6c7c8e1d9ab63f945e516205:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzk3MWJjMmQ1ZjJhYzMzYmY4MDM2N2MwZjM1OWYyOTNhMzJhNTJlOGFhOWM0NjgxNWFkYTc2MmRlODM1NWM3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTk2ZjY0YjIyYTZmZmFiODQzNGZmYzRkOTM4Y2U4ZDMxOTgwODFkOWRkZmFkMGZkMWQ2ZTQ5Yzg3ODliNjBkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWMwOGY0NTgwYTU1N2M4NTI1Mzc2NmEzYmJkMWE3OGRkZDQ2MjM3NWQ3MDg2ZDA1MjUyYzEzZTFjMDllNGNhNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6503853613c74bc48f1a654524c18162",
+      "statement": "use_attribute_docstrings=True makes a bare string literal after a DTO field become that property's JSON Schema description (alongside Field(description=...)), and json_utils.dto_json_schema is the single wrapper over model_json_schema() that the catalog and both JSON hosts publish as the input schema.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L97-L97",
+          "version": "repo-lines-v1:sha256:2a85c7ad7cec7272ca335ead2801376249ab7012571fde80b9c7f091134f1e34:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmE4NWM3YWQ3Y2VjNzI3MmNhMzM1ZWFkMjgwMTM3NjI0OWFiNzAxMjU3MWZkZTgwYjljN2YwOTExMzRmMWUzNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmE4NWM3YWQ3Y2VjNzI3MmNhMzM1ZWFkMjgwMTM3NjI0OWFiNzAxMjU3MWZkZTgwYjljN2YwOTExMzRmMWUzNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWZiZmU5OTdlMmE0M2QyYWYzMGIxZmE5N2U4OTg3Y2NkZTJkYjhiZGRlNDEwYmQ0NGYzYTU2OWY2ZTE5NDYxZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTFiZTRhN2E5MTVhYTg0NThjYzY0ZWY0YmQwMmU3NDJiNWY4MTFiMjc5ZWZhYTg1OGU5NzNiOWIxNDBhZGMxYiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L19-L23",
+          "version": "repo-lines-v1:sha256:e60eeb5489a0c3caf5fda5d2866333e82a6bd694c57819283d6a908ffa8cb4d0:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmU0MTljZWE0MDI3NjAwZmNkOTUyYzNmMjY5Y2MzMzRlY2NkMjFmNjAyOTMxMmY4YTA1YjZjNmRmZGM2YTQ2NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYThhMjJiMTEwMGQ1YzRkZWQ1YTU3YzdhYmUwZDdlZGU1YjVjZGUzYzA0MmM3MGMzM2UzMDZlMDZhMTZmZTVhNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2U4OTI0MDEyYjcxZDhhYjM3MDJhMWVkNjJmOWZiNWRmMDIxZjAzYTc1MzhmODE1M2NiYmY2YjFlZWE5OWMwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzE1ODk2OTYwYjhkNzUwOGExOTRmZDA0ZWM0NmE5OGRjZDc3NTgxNGI3YTAwMDcwYmZlNWEzMzUyMDk2NDQyYyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L26-L29",
+          "version": "repo-lines-v1:sha256:931bc40b58f59aa1dd955b231194e47c2bd1019fe0861113d1f42a27230e2a6d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2NTBiZTIzMmM4ODk3YTIyZjJiMTYyMjE5NDdkZmY0MjdlMjlmMTZiYjJhNDdjN2EzYjYyNmQwNzJlOTllNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmE0MzliNjQwNDVlMjYzNGRmOGFiNTRlMTE1NmY5ZTA2NmYxMTNiZmI1ZjQzNTlhMzVjMTM1ZTc1NWMwMWVjYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWMwOGY0NTgwYTU1N2M4NTI1Mzc2NmEzYmJkMWE3OGRkZDQ2MjM3NWQ3MDg2ZDA1MjUyYzEzZTFjMDllNGNhNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0c8681a285844438a0f51dfa58e5bff4",
+      "statement": "arbitrary_types_allowed=True is what allows the framework's own models to be DTOs while carrying runtime objects: PackedFeatureOrAppService holds run: RunFn (a bound callable, stated in its docstring as the reason the flag is needed) and FeatureOrAppServiceMetadata holds instance: Feature | ApplicationService, so the catalog/metadata models could not be built without it.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L20-L35",
+          "version": "repo-lines-v1:sha256:e19f9444570efdd19bc648877ca4e93369bd8782586055b61b55d2711216db16:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiNTI4Zjk1OTc5MjdjZDkyYTE1M2YyNjg1ZDRhZjFhMTJhOTVmZTZhODRmZjJmODY4MWU0OGMwM2I2Mzg2NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MTNjMzQ3YWNlNjczYTE2ODJiNWE4MDUyZjU0MTE4YzgxMTM5MjljNTgwMzMxMjc2NmRmZjdjMjUyM2JlYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZGU5NTFjOGU5YWVmZmY4Nzc2ZGNhMDA4MTZkMDMzOGZlZTQ1OTMzMzkyYTNjMDc0OGY1NWJjODdjZjEzODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5ZjE3MmQyN2UxZDYzZTA3NDUxODAwZDBlNzc2Y2Y5YTJmYjhlMTExYTY5NmExZGViMjQ1MmNmYTliNjY4OWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/introspection/inspector.py#L26-L33",
+          "version": "repo-lines-v1:sha256:2fabdd866c9f91dcc659f7a415871b17a63e699f09bdd8bd59c9fa2b3c074d11:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDAwMzRlZWQwMTA3NGE4ZmU2YTRjNDkxYzUyZTVjYzViYjdlY2Q4MjE1ZjU4YjcwOWIzOTg4YmViMWI3NzE5OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzIxNTY0NjgwMGRkZTVmY2RhMDg0NTE3ZjUzNTNjMDZjYmM0NzEzN2QwZWQ3MzMzNTk4MmNmY2NiYWQ3NGI3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTBjOWFiZTExNGVkMTA1YjY0ZmU4N2YzNmEyYmI5NWQwYWM2ZDAzZjBmYmE1ZjMxYWUxYmUwZTQ2MjA0ZGQ1MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjU1ZDBlMzc0NDRjNmVlOWQzNjZkYTEwMTE1OWU4NjJlZWI0NmUyMzFmMGRjNDEwM2M3OTlkZjJhOWQ4OGMzNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_219cb31b1d494f1f9fba48c242f03504",
+      "statement": "DTO construction is pydantic validation on both paths — the keyword constructor and model_validate(payload) — and the wire boundary validates the payload into the DTO (dto_type.model_validate(payload)) before calling the framework, so a Feature or ApplicationService never receives an unvalidated dict.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L27-L28",
+          "version": "repo-lines-v1:sha256:83a8095156f4d71c02ddd93703c4d3e5ec2e83c6dce2436dbcd710a33dc5a50b:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I1MWU5ODdmNmE4MGYyY2Q2NmI2Y2E0ZGU2MDdhZWIzYmQ5NWFkODdlMjlhNTdmMTg5MTMyYWI0NjViMmEyOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjQzNjQxYTZlNDhiZDFlNmNjNWRhMjdlNDM4N2FmNjY5MzFhN2RjZmYwN2IwNGNkZDBlM2JiYzA4MzhjNGVjNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDZhY2QxZmM0NTBhZDNiYjAxYzBhMzliMGY3OWJlYWQwNTc0OGU2ZTQzNjMwYTczZmY1YzlkZjliODBlNzk5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzEzNTcxNDY3ZjIxN2MxZGI3YjI5YjgyMjY5ZDYyODVjY2Q4M2NkZGE2OTkxNGViMjliMzllMjZmNjRjODA3MSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L57-L74",
+          "version": "repo-lines-v1:sha256:56bbf29a0bd27bc179a81540d5dc968a96e81849b62be7ecfc876ab05467db91:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwZDEzYThmMzMyMTg1Y2E2YzFlZWE2MzhjYjhlNWYyODM5MjljMDEzNWI1NTM3ZWM2YWJmYjUxNDZhOWM1ZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhOTc0YWU0ZjQyYzhkYzRmYzhjOGQyNWMxOTYwZDM1YmJiMzQ3MGRiZmVkZmVkMzE5ZWY4NGRjYTcxYzAzMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0ZGE4NjZhOTg4OWRiNjBiZjIyYWQxZGQxYjczMmUzZTU1N2M1NGZiNWIxMDRiNjk5ZDM1YTZmMzkyOTE3NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMzliZWI2NzRjMGUyNjUxNzQ4YWY3MTJkZDlmN2Y5NDIzMWYwNDI5M2UwMTNmNzdkNGE0ODZhMTE2N2VkYTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_483b248bc8f649148012304dcff07240",
+      "statement": "A DTO is identified by its class name (__name__), not by an id or registry object, in three places: dto_registry and the layer registries at decoration time (ioc._register_service), the per-layer bus registries (feature_registry/app_service_registry keyed by dto.__name__), and dispatch (feature_registry[dto.__class__.__name__].execute(dto)).",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L30-L39",
+          "version": "repo-lines-v1:sha256:d8c070c09a507301517ac83bf4d2eb886097377c05d96e0a8f1195975760cc95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YTgwNmY2NGZkN2NlNTdlNmM2YThhNDgzMWZmMWQzYzM5NDEwN2ViMjIyMWQ5OWQzNmI2ODBiMGIyMzFiZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMDQyNGJkZTNhZDkxZmY4ZGFlYTgxYTRhYTUwNGIyZmU5ZDM3OTIzZjU5Mzc5MTUyZDU0M2Q3YjRkZWFmNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkZTA0MTFmYjdjNjA4NzExYzJmNmFiZDY4ZTI1YmQyZmUwM2RiZDI1ZmU4ZWQyNDA2NjRjYTkxZmM1ODhmZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NmQzMjNmY2M3N2ViNjhkMTlmOTQ5YjY3NjIyZjNkOWE5NTY4Y2Y3OTc1NjA5NGQ2YzBkZTc1OTY2M2VkNWUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L45-L53",
+          "version": "repo-lines-v1:sha256:397e9419ffd863a22c89beccb5baa997a2e2c9a6f8bfba125753c64e373e3780:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWFiMjI3ZDBhY2ViNDUxOTI1MmZiOTAwMGQ1NDQzNzRhZjYyZTcwMTllM2QzYTk2YzQ1MmEzOWY1Yjg3OGRmNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU4YTM5ZWNlYWFlODllZjNmNmE1MzZiMjM3MGJhMzY1MzhkYWIxY2I1YjgzNjY4Y2EyOWQ4YTViYjdmOGI3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQ4ODNjMDg4NmJlMTgzYzNlMTg1NjA2ZWU1MDczM2E4NmU1ODc2MzQ4ZTBhMDRlMjM4YjAxZTliZWVmMjEwNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzVjMTk5ZTI0Mzc5NWViNGZlYmNjNWNkOWFjZjJiNWQ4NGFjNGQwNGVkNWZjZTU4OTMzMWM0MjAwMTkxMDNlNSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L93-L121",
+          "version": "repo-lines-v1:sha256:2ca69df73c6b63cf892e3aea70661912a8ce94a0e08d8bbf5b9526474902cd14:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNDFhY2M2MjJjNTIyZDdmYWJhZjNiMTBmY2RlMjE5MWEzYWNlODgyMzBkNTVmNmI1YmMxOWNiNWFhMDAyNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlZDJkYTMxYjRiYTQzNmZlZjVhZWJkNWI4NzdhZmU2YWQ5NTk0MTI5N2Q5YTc5ZmMxOGZkYzQ2NDNmNDMyNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZWQwOWNhNTg4MmQ1ODhhOWNiY2E0Y2FhZWRhNmVlNGFhNjg4ZTRiNmMxMDI0NzY5NjdlMmJlYjlmYmEyMGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1748419c84c54ee5b4ac6873822452c9",
+      "statement": "The class-name identity has three enforced consequences: registering a second DTO with the same name in the same layer raises DTOAlreadyRegistered, a name present in both the feature and application-service registries raises DTOAlreadyRegistered at FrameworkBus construction and is re-checked on every execute call, and executing a DTO that is registered nowhere raises UnknownDTOToExecute.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L150-L162",
+          "version": "repo-lines-v1:sha256:ed1f435d2c77cc7b7c37cda33e0b7e0f4b5980ab47d30de61a196a671d63b392:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4N2U2OGJhOTViZGQ0YTEzZDIwMzY0MTg5NjZiMjU5NDM0MjQ5YjAxZGFlNjNlMzA3NmJmYjdiZjc4MThlNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3NGE1YThjMzI4MjM2MDkwMjU0ZGM1ZTFiMjI5M2MyZWRiNGVkMDY1NDAzMjQwZDRlNTI2ZWQxMjk5MWNjZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NmQzMjNmY2M3N2ViNjhkMTlmOTQ5YjY3NjIyZjNkOWE5NTY4Y2Y3OTc1NjA5NGQ2YzBkZTc1OTY2M2VkNWUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L173-L194",
+          "version": "repo-lines-v1:sha256:5c85b7a2c97680bc4aa6ba7881fa36a602ed10a212893ee9e382cbf8ebd90944:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYjIyN2QwYWNlYjQ1MTkyNTJmYjkwMDBkNTQ0Mzc0YWY2MmU3MDE5ZTNkM2E5NmM0NTJhMzlmNWI4NzhkZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNTM3MGY0NWU2Nzg2MjdmZWIyY2M1Y2RmZGY3OTAwYWE0MWYwYTk0MDI5OGE0N2Y5ZTM1ZDZlNDY3MTYxZjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjljZGU4N2ZkMTcyOTcxZTYwYmUwZjY0NGMwODczMDE2MmZjOTAxNTU1MDA3YmE1ZTVjNTk3MTkxZGE5NmEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L99-L113",
+          "version": "repo-lines-v1:sha256:fbbcc95da5a83433923edc8286d413386258fef6ba519bb154cfec36e92d2384:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiZWI3ZmU0NTNmODQzZGMwYzFhZGIzZWZjMWY4YTc5MjA5NWQxYzFkMzkzZWE1YWEwNTFhZDY5NGU2MjY1ZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0NmFhMWRkOTIzZDhiZWNlYjM3NGU0NGU1OTcyMWE2Y2EzZTdhOTE1YTYzMmZlMjhlODQ5Nzk2MGE3YTY0NmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkOWYyMWRlZmRlYWFhNTNiYTNjNjkyNTIxNjVkNGU0YWE1MGUxODViNGUzODc4ZDIwYzk2MjY1ZDMzOWFiMGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6139e98b62b0454cb4556e3883295bfd",
+      "statement": "ValueObject(base, validate_fn=None, name=None) is a factory (not a base class) exported from sincpro_framework.ddd; an internal builder subclasses base at runtime and stamps the generated class: __name__ and __qualname__ become name or base.__name__, __module__ becomes the base type's module, and __repr__ becomes f\"{name}({super().__repr__()})\" so the object still behaves as the primitive while printing with its domain name.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ddd/__init__.py#L1-L1",
+          "version": "repo-lines-v1:sha256:e1cc4da3122026ad31a1fad17ad179522031a65e7d2952f8b045cffac01adbf0:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTFjYzRkYTMxMjIwMjZhZDMxYTFmYWQxN2FkMTc5NTIyMDMxYTY1ZTdkMjk1MmY4YjA0NWNmZmFjMDFhZGJmMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTFjYzRkYTMxMjIwMjZhZDMxYTFmYWQxN2FkMTc5NTIyMDMxYTY1ZTdkMjk1MmY4YjA0NWNmZmFjMDFhZGJmMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/ddd/value_object.py#L50-L74",
+          "version": "repo-lines-v1:sha256:a79921d2744d4a92139a2ca160bfbbe080b28154226a815a7e27869ec9fb327a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1YTQ1NDgzNWIyYTY3YTNmNjAyM2Q5MjQ2OTUyNDI4MzkyZGY1MDgxY2IwYjNjM2I5MzMzNWVlODVlYWYyNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNWYxY2NhM2M3MTA0NDlhZDE2NTJiZGZjYTAwOGU0MzRjNzVhOWMyNmIzMzI2NTU2ZGIxODY1MzdkMjJmMzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ5MjkxZTg2MTk5Y2Y2M2IwNjZmOTE2Y2E1OGVmYjZjODI0NDMwM2M2NGQzOGI0ZjcwZDY0MDVmYjQyMmFiZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1MTY1MDExOTY2MjgxMThjZmEzMDIxN2NiOTJlZGIxNGU0NTE5NTE0ZjhkODg1MTYwYTA3YWMxMWU2MzkxMGUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/ddd/value_object.py#L8-L47",
+          "version": "repo-lines-v1:sha256:ec416cb71628a70e23684c6a3389249fc7f2e5b0c57f0eed2e7ade336dad11d1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNTBiOTVmYzQwMjJkZDgwYmI4NDQ3ZGQ5M2EzMWM4N2NkZDQyODZmNzcyMjc3MzA5ZmYwNWI3ZjhkN2JhNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViM2E4NTBlYzhkOWQzMDc3NjllZDk4ZTU2MGNiOWE0N2QxYjg1YjIwZGQyMDAxOWYxNDEyMWQ0ZGI0OTE2NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhYzM5ODI5NGI0NzYzNmRhYzlmNTM1M2FiYTBmNzIyMGI5NzYxMDJiMmVkNzZlN2U5ZjRmZTBlMmJiMzFjZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE1ODI4NDVhZTllMjg1MDc4MWQ2YWYwNDM5NTMzNTNjODUzNjUzOGNkNTc2OGU4MTVlMzRjZDYwODhjNTljMjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4d2a934554142fcb51ea575b624dfa3",
+      "statement": "validate_fn is a construction-time middleware: it runs in the generated class's __new__, a non-None return replaces the input value, a None return keeps the input (validator-only), and raising ValueError there rejects the object before it ever exists.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ddd/value_object.py#L14-L19",
+          "version": "repo-lines-v1:sha256:530be573a7f6a89cb9ffe761b6ae1a110a464c95ca829f7d70ea1696d218125c:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzk5ZDQwZjQ5Y2Y1NWQ5M2Q3N2NjZjEyNmM3MjE0Y2Y3MzM0MWVhY2RkZmMxMTNkMTEwOGFkNDcwODc2MmJlOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmI2MTllODFjZjE3OWQ4MjJmOGQxMzZmYmNjMGMxMTdlNjdhODE4ODIxM2ZiMjBhMTM0Y2QwYTFlMGNkNjg4OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTE1ZGMxZTNiZjg3YzVlMGNiODA4Y2NmNjY0MDFkZmI0YjEyNjA1ZDU1ZTNiMmVhOGY2MTUwZTZlNGZmZWFhZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjIwZGFhM2FhOWZkODNiYTY2OWNiMTViYTk4ZGY4ZjdkNWZjNGI1ZDZjOTFkMmM5Y2FiYjY4NDY0YzMzMjRjNSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/ddd/value_object.py#L55-L72",
+          "version": "repo-lines-v1:sha256:9a5a5cb77a094fcfa4b753d1395c610912e8cceda0bb64949ca9d9ef43aa308f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwMzE5YmM0MmFkMzhkYjUxYjUwOTFiYzYzMzdkNzA1ODJjOWIxYWVlYWMwODM2NzM0NGIzYzIyODA4MTg2YzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlYjc4NjU4ODZiYzBlODFhZTY0NGE3MWMwNDZjN2UyNTA4OWM5OTY3NTE5Y2Y3NGNmZDQyNDE0ZWZmMDg1NjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3NDY3ZWYxOWRjZjFkMGY4M2IzYzQ4OWU3OGQ3MmMzN2UxODlmZmI1YWJlNTFkYmNmMDA1YmQ2ZDkwYWFkMDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b517982de064f03b556162252f3e731",
+      "statement": "The generated value-object class implements the pydantic v2 hooks itself: __get_pydantic_core_schema__ returns a chain_schema of the base primitive's schema followed by a no_info_plain_validator_function(cls), and __get_pydantic_json_schema__ rewrites only the title to the value-object name, leaving the JSON type primitive.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ddd/value_object.py#L24-L41",
+          "version": "repo-lines-v1:sha256:30cccd095ff38e710b13588f4ecb0db960c72854ef6a9308f6394140dd8aaabb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiOTczODM5MjJjMjY2MzE2MGYxNmVmNzdhOWYxYjI4NjgzMzAxNDQxMmRkOGUwMDFhMzUzZGZiOTE4NjJmNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5MjE0YTY3YTkwMDFlYTUwNGFkMjRlMWRlNjJhYzA1ZWQwMGJkOGMyOWY4ZTJkOTAxYWUyZWEzOWJhOWU0ZjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0MDljNTRiNzc3MTc1YzgxZjI5YzMzNWE2YmMxMTVjYWM5MmM4OTljMDBiYTdhZDAyOGYwOTBiZmI4ZGM3OGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkM2MyNmJiY2Y4MzU0MTNiZDRkMWY1MjcxNzJlODdjOTRkMDdlMTk3ZjQxZDhiMjhiNGJjMmE2ZTIxMzk3ZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5618ccb9024a4124bc7f8d6d7ca0cfc5",
+      "statement": "Because the chain validator is the class constructor, validate_fn runs once when a raw scalar is placed on a DTO field and runs twice when an already-built value-object instance is assigned to that field (once at explicit construction, again when pydantic re-validates by calling the class), so validate_fn must be idempotent.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ddd/value_object.py#L24-L33",
+          "version": "repo-lines-v1:sha256:ea3dbd13272ca240fd81607d9731dbdd5cf4f8bbb44093b690279b937b732249:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiOTczODM5MjJjMjY2MzE2MGYxNmVmNzdhOWYxYjI4NjgzMzAxNDQxMmRkOGUwMDFhMzUzZGZiOTE4NjJmNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0MDljNTRiNzc3MTc1YzgxZjI5YzMzNWE2YmMxMTVjYWM5MmM4OTljMDBiYTdhZDAyOGYwOTBiZmI4ZGM3OGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmYTUyYjQ1Yzc0YTEwYjdmNDQ3ZWI4NzljZmE3NzBmOGJiN2UwYmZiY2NlZjcwMWUyZTNkZGQ0YmU3OWJlM2QifQ"
+        },
+        {
+          "resource": "repo://tests/ddd/test_value_object_pydantic.py#L211-L227",
+          "version": "repo-lines-v1:sha256:45962fdfddf52cfeea6cd4b94db5fb6aa5df88541fefbaea6c5fcea24e89f35c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMzFhZGFhYmI1YjAxZThiYmRhYWRmOTYyNjJhMjcxZDExOTRhZDVmN2UyNWI4NDllMDBhYTMwYzJmMmJmNTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzOTMxZWU5ZjJkNmI4MTA1NGVlZmZjZDJiOThlNWNkN2IzYzc1NmZiYjc3ZTZmMTg2NGVlMThiMTBjODk2ZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1NGRjNjkyYzU1MGMxOThmNmY4YjBjZGI4ZjhiYTRiYTBjMzg4NzhhYjU1NGE5ZWEzZTRkNmU4ZDNmYTllNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYzM5ZDU1YjFjNDA5YWVlN2MzMThhZThmZWU0ZjEyOWVlODM1OWViMjczNjU3NWJlYmI4MDcxN2E1Mzk2OWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_806ad911f59c42d8b3e56c7eff8f37b8",
+      "statement": "A rejecting validate_fn does not propagate as ValueError: pydantic wraps it in ValidationError, and the JSON-RPC dispatch maps ValidationError into -32602 InvalidParams while any other exception becomes -32603 Internal error; json_safe_validation_errors exists because for a value_error pydantic puts the raw exception in ctx.error, which would make json.dumps of the error envelope raise.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L126-L132",
+          "version": "repo-lines-v1:sha256:50eab4e9bb9d0c7a44673750f19de58833f0edb62c2d7d8da08a737a950cb1a5:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWFmNzRkYTlhN2U4ZWMyNTEyNjZjYWFkMmI5MGRjYmE3ZDNhYmU3MWExODMzYTBmYTIyNTUwYmJiZDk3MzI1ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzI2NGIzZDE3OWFmZmViZGNkMTYxYjM1NDI1Njc1YmQ4NGE1NmMzMmRjZGFmZGFkY2RiMjMzYmRiMjg3MmJkOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTg2MTMzODNkM2U4NGVhMTY0YjgyZGFlOTllZmU0ZTZhZWZlYzEyOTRlYzFlYzg1MmU5NWQwOThhYzRjZGQxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzFiYjFlMjE2OTZhMTE4MjI2YjRlMDFjNTFlODI3YmE1NTU5ZDhlMTgwYzIzMmEwYjliMmQxOTdkNjU1YmQ0MiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L42-L47",
+          "version": "repo-lines-v1:sha256:436f2b6a974912f14c8f55019670ccf7ac8e6a88cc7bf35d7ccd9b5c72fd63bf:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWI0ZmE0Y2JjM2RkNjg4YjJmN2UwMjVhZWE0MGViMWNlYzVjNDE1ZjExZWQxYjdhYmVkM2NkYjdiNDEzMThjZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmU3YjhkM2MyY2QzZWUwOTdmNTg3Y2NlZmNkNWExYjExMTQwYTVmOGM5MmJjMGIyYzVkN2M0ZWJmNTM2ZWU5ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzBjMTk5ZjA2MGNhNjNkNTNlNDFlZjcyYTI4NTJmZTYwYmMyZWFmMmY5ZjA0OGM3YmViYzk2MjNiMjRmNmIxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjgwMzhjYzE5NzFjMmU0YzQ1YjRkZWFjMzc4Yzc0ZjEyNWJmYjhlMmIxNWY4ZTM2ZmRhMTc5MDU0MWZlZGMzYiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L90-L93",
+          "version": "repo-lines-v1:sha256:b595a75f28e6093c64ce381c77404c99ac50fcb3cc8b5f10e78f7fa2d56c912d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRhNWM2NmUxN2IxNDUzOTc4MzRiOGM4NTRkYzQxOTNlMjEyNTE4MGE4OTk2YTE0YzMxODgzMzI2YjJlZmJjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJmZDEzMDAxZTBkZmYzYmQ3MDUxNWQ3YTQyMWQ4MWMxYzZhYWRkOWIzZTg1OTdjZmU0YmNkZjU2NWQ3MmQ3MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTYzNTg3M2RkNjk2MDYxNzYxNGViN2JhYjg3ODlhZTA2ODIzNjRhMmMzYjQ0NTFiNmI4OGIzYzI0N2QyMGJiNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTA4NWRlZGE3NTY3NzNlNTdlOTFjMmIxNzViN2UzZjg2MTk3ZDIyNjkzZDhhMmQ3MjFmY2MwZmU5Y2Y0OGMxNCJ9"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoint_rpc.py#L239-L257",
+          "version": "repo-lines-v1:sha256:807fe67f97030fcef3dfd94219e1295e33ff8889c1b34d00ffb60f9d84effcd5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwZTM2ZTYxMzQ1M2Q3ZGM5OGY3NzJiMTRkNWUwYmRiMTgxZTk2YjczNGY2NzI2YzU3MmYzNmI4ZDVkNDI5MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1ZGIzYWNlZmU0YjBiZjViNDRlOWU5ZTQ3YTM0MGU3NjkyNGNjMDhkNTkwOTI1NjMzMmU1MzA2ODRjZThkOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlMjgwZTVhMGQ1NzYxNDIwYzUxMTU4MDQ5Y2U5OTlkZmJkYmFiZmZjNDIzMzJkY2RhODNiZDM1MmZlZjYwN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0ZjI0NDVjNjU5YmJhMjg0M2FkYTdkZDBlNWI5NmZlNWU5MzNkMmYwNmM0OTI5MWZlZDljYzMxYjM5NTkyMmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f449a3be1ecd4249886173ff7572e0eb",
+      "statement": "A DTO whose schema tree or field annotations are not JSON-safe cannot be published on a JSON wire: is_binary_free walks the whole schema (properties, $defs/definitions, items, additionalProperties, anyOf/oneOf/allOf, with a seen set for cyclic $defs) looking for format binary/byte and separately checks the DTO's annotations against BINARY_TYPES (bytes, bytearray, memoryview); Catalog.get_scalar_use_cases(filter_binaries_schema=True) drops such entries with a warning, while dto_is_json_serializable exposes the same decision as a public predicate.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L116-L156",
+          "version": "repo-lines-v1:sha256:6e61044a76b425d0fe25c897a6d673cf44ae5de0e9f709f668dcf417dcd0e703:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0YjIyMTJmOTk4NmQ3YzIxYzVkMjE4YmZjZmIzZmFlNjA5YzYwNzQ3NTgzMGVhZjkzZTQ1NDA0OTg4MWFhMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3MmY5Njk1Yzc0NjdjNzQ3NzNjOWNlN2ZjNDI5YzVkMGQwZTQ4N2YzYzUxZDE1ZDY2NjhhM2QyNDA3MmJiOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxNmM4M2Q3ZjM1OTc2NDg2YTFjZjA4MGU1ZTg2YWIyMjZiNWU4NGE2NzJkNDA5YWQzOTMxM2IwZjg5MjE1MzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L16-L17",
+          "version": "repo-lines-v1:sha256:6474bc72114ed613dfc93e69b5741f1637782a25c7ff32377ad02c4ca40bad43:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzE0OGJiMGI2MTBhNDY3MzViNDgzZWRlNGRmY2FmN2Q5MjNiOTgzNDY4ZWZhYWJmODNlODY3MjRkNmZlNTc3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTQzMWEzMzQwYjMxNjFiYjQwZDY2NDEyMjM0ZWEyYWY3ZDExOGFkMjQyMzgzYTliMTc0YjlhZWYxMDcwYWNhMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODIyNzAwMWNiZWZjOGZlZWM3ZGIxOWYwNzIwODY1ZmQ2YWI5MWExMTY4MzZmNDgyN2ExOTJjNmRiNjIyZDVjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjE2NWQ3NzA5MjEwZjY2YjNiOWI1NmRlMTI1ZWI3MzgzNWZmODI5YzM2NWVlYjNhMjg2MWE0NGZmMDcxOTE3ZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L35-L90",
+          "version": "repo-lines-v1:sha256:0351e61066ab4195c144b730cda951f42de07105cc7e3542014799625f4cb03c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNmUyY2U4NWFjOTE1MWIxYmQ5YTk4MzRjZmNiNzNiZDMyY2UxYmMyMDJhNDRlZjdkMDY5MGUxNGYwNWNlNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5N2M3MTI0N2FmM2NkMWVkZjU1NWE3ZDEwNzU5MzE1N2Y2ZGMyYTIyYWYwZGU4MmU3Nzc0YWJmMTBmOGFkZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjZGY1YjUwODRhOTExMDlhMzIzMGY5ZTQ1YWQzZjRiNGNmMzFhOWJlNDlkZWU5NmM5YjMyNDExMGEwZWIzMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzMzlhN2ZkN2EyZjU1NjhmZDZkN2Y0NGQ0N2I5ODI5ZGVmMDNmMDE1ZWI0MDdmY2MzZTdiNTJiOWE0NWJkY2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ed1056867a3448aeadda27a58dffbb21",
+      "statement": "Only the publishing paths pass filter_binaries_schema=True — the JSON-RPC method index and the MCP server() — whereas the in-process Entrypoint.tools() and to_callables() include binary DTOs because they never serialize, so an excluded DTO stays callable via framework(dto) and is only absent from the JSON surface.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L147-L156",
+          "version": "repo-lines-v1:sha256:26db4ae3d4312f1a6cde89c03ba61196114c4537debb7fb15a833eb803f87bb5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzYzUwNWM0MDY3YjAyNzhkMWMyNDA5NDk0OWNlNmE5ZDExZWQ2NmRiOTY1ZGM2ZDVjMzczNTQwYmJlZDlmYjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3MmY5Njk1Yzc0NjdjNzQ3NzNjOWNlN2ZjNDI5YzVkMGQwZTQ4N2YzYzUxZDE1ZDY2NjhhM2QyNDA3MmJiOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0YjllYjZjYjhhYjZhNmFmOGFlMDhhZmQ2NGNmYzY5YzAyMDU2OGZjN2Y0MzFhMzY5MjAyZjBlMWJjY2Y4ZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L33-L62",
+          "version": "repo-lines-v1:sha256:2e5da219892c9c985db29794e46af8d234d2328587b34ac364cda04d43e534d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyMWEyNGIyNzRhZDU4NDIwY2NhNDM3ZmM4Y2M1NWEzM2U0Y2U5Nzc1OGU0NzA1NGZmMzYxZWExYzE3Y2MyZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZDc5YTRlZTE1YTFlMzZjNjY3YmM1YjQxMTIxZDY0NmRhNDJlYTliZTkyYzk4ZTE3MzZlNjY2ZjAyMWQzNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhZTAwMmNkZmZlYzI3YWU4Y2MxNTk1YWU1ZmM3MGI2MDQwMDRhZjQ2YTFkNTMyZGVmNmU5NGViY2Y4YWIxZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2ZTg4ODU0OTZiNjllYThhY2RlNWFlOWQzMWE0MjUyNzNhNGY3ZGM2YTljMzgyNTVkNmQwYWM5ODU0NzU4NWYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L51-L61",
+          "version": "repo-lines-v1:sha256:756ac7a5da610250c439dd6723ee8cb66d5344382409cbdf5f8c1aa441e643b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiY2QxNDQ5OGRiYjBiZjkxMzU3MGEyZDI3ODVkYzNhZjU2N2U1YzAxMGI1NzY2ZmFlN2Y2MGRhYjEyNDFlYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4NTlmNGUxMWFmNDBlMjk0MmQ2NDk0M2ZmMjIwMGM1MWU5YTdlNmE4ZTkyOWNhOGUxMzNhZjVmY2Q3NDVlMjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0YTNiYWNjMWEyMzI1ODFlMGI4YTE2NzJhZjI3NDA0ZGY2NjE3MmVkYjlmMzRiNmU1NzJiMGYyZTBjZmZkZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjOGYyOWRiOWVjNzhlZWI1OWY0MDE1MTUwYTdlYjA4YTNjY2E4ZDgzOTY0MDg0OWViMzVhYzJkN2YxYjgxN2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_30dd34f3ffe24aaa97613aa15c4a9340",
+      "statement": "dto_json_schema catches any exception from model_json_schema() and falls back to a generic {\"type\": \"object\", \"title\": <class name>} schema, so a DTO whose types pydantic cannot express still gets published as an input with a schema that reveals none of its fields.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L19-L23",
+          "version": "repo-lines-v1:sha256:e60eeb5489a0c3caf5fda5d2866333e82a6bd694c57819283d6a908ffa8cb4d0:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmU0MTljZWE0MDI3NjAwZmNkOTUyYzNmMjY5Y2MzMzRlY2NkMjFmNjAyOTMxMmY4YTA1YjZjNmRmZGM2YTQ2NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYThhMjJiMTEwMGQ1YzRkZWQ1YTU3YzdhYmUwZDdlZGU1YjVjZGUzYzA0MmM3MGMzM2UzMDZlMDZhMTZmZTVhNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2U4OTI0MDEyYjcxZDhhYjM3MDJhMWVkNjJmOWZiNWRmMDIxZjAzYTc1MzhmODE1M2NiYmY2YjFlZWE5OWMwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzE1ODk2OTYwYjhkNzUwOGExOTRmZDA0ZWM0NmE5OGRjZDc3NTgxNGI3YTAwMDcwYmZlNWEzMzUyMDk2NDQyYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8ee94f73050a48e392abf5c661f1e14b",
+      "statement": "The response half mirrors the input filter: dump_scalar_result dumps a pydantic response with model_dump(mode=\"json\"), passes a dict through, wraps any other value as {\"result\": value}, and when json.dumps still rejects the payload it stringifies the offending leaves and logs a warning instead of raising after the side effect already ran.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L21-L54",
+          "version": "repo-lines-v1:sha256:9195ae6d0e8ba4eefb7a2120a3c87726bb72bda71308315b12c72412bdd35204:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExNDAwMjBjOGJhY2RmZmYwY2ZhNjA1NThkYzA1YmQ3NmMzOGFhYmJiYTkwYjJlZmM3YmMyODZmNDY5ZGY2NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YzZhZTI0MzAzMDI2NWM4M2EyMmZjNTE3ZWEwYmQ0ZWI5MzBmOTJiZDdkMmJlNjRhZDViYjZmNmUwZjQyZDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZGU5NTFjOGU5YWVmZmY4Nzc2ZGNhMDA4MTZkMDMzOGZlZTQ1OTMzMzkyYTNjMDc0OGY1NWJjODdjZjEzODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjYWJlZjliMzdkNjM0NGEzZmQxMWY4MjQwZTkwNzM3NjdkYWI3ZGEzN2FkZTc5MzI1ZGYzMTRiYTg1NjUzMTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ff0644438db44a4f9fd61127d3b990ee",
+      "statement": "new_value_object(new_type, validate_fn) is deprecated and will be removed in the next major release: it emits a DeprecationWarning on every call and its docstring names ValueObject(int, fn, name=...) as the replacement; it accepts either a NewType instance (reading __supertype__/__name__/__module__) or a plain type and delegates to the same internal builder.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ddd/value_object.py#L77-L120",
+          "version": "repo-lines-v1:sha256:67c28244e1afcf75276beec1d2dcf79a8819772e43a8f3fbf6f45438d1752f6e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MzZmMDZkMzczN2U1MDhmYTQ5NWE2MzQwZTI0NTc1MzUzZGIwZGQ1ZTg5ZGU1Y2I1ZTFiMDg1YTA5MjYxYmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhYWFkNTI5YjZjNjk3ZTBmMWY3MzI5OGVkODFmZDQyMWFkNDk2ZDk0ODMwZWNjNDQyZDk0NDI3ZDZhNzU3OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2YTRkZTViNTQwYWMzMmFmYzYxNGM3YmM3YjRiMjVhYTVlYzdkYTk3N2Q3MmE4NmY5ZWY5YzBmMTI0YmQyZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce07379226264069a82f93d3f20ce988",
+      "statement": "The hand-written architecture document still presents only the deprecated new_value_object path as the DDD value-object pattern, so its examples no longer match the implemented surface, which is ValueObject(...).",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/ARCHITECTURE.md#L225-L237",
+          "version": "repo-lines-v1:sha256:cfdd0f92ed918add27d18440c87699a83ee97910ea69da69f179b7b59c2e64b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzNjI5YWFlMWFhM2UwNjViYzU2ZmI2YzVhNDM1ZjNkYTYxODFmMzM5YTAxYzY5YzIxMWQzZDZlNDIyMmE4YjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmNTU1NzYzYzY3YzM1YWYxN2U4ZmI0OWY1ZjQ3NGZiY2RmZjMwODUzYjBiODc2Y2Y3N2RhYjA1ZjNjNDNjZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExOTZlMWFiZGMxNzA2ZjY5NmFkNWMwOTdkMmMzZDc4MDlhZWU0MGVjY2M5MDVjMDk5YTU3NDZhYThjMWE3ZmMifQ"
+        },
+        {
+          "resource": "repo://docs/architecture/ARCHITECTURE.md#L661-L677",
+          "version": "repo-lines-v1:sha256:913bda3dfb6f61371ddbe4c080fdcee04e5b2557e82f09c7a637c94f558e7ae5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxNGYyMTYyNDE2NTNjYmJiYTk1ZmZkMTliZmNlYTE1NmZkZWU1NDY0YjZhNzY2Yzg2YjFkY2FmNWUyNDIyNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0ZDNhODMzYzc5OTI5YmZiNTY0YjUxNjgyZjM4ZDhhMjJkYjkzNjUyZWEyZGE3ODgxNTk2Y2JkMjFhMzQ0MWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2MGZmODMzMzM5NGUyOWYzYWQxNjZiNjExNTE1YzZjOWFkZGZiYjRjMTNlNTAzODQwNDEyYzNiZGNiNWVhODUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_92a9d878dbba4ab5a61e276c42b6682a",
+      "statement": "On a JSON wire a value object stays a primitive with the value-object name as title (e.g. title \"UserId\", type \"integer\"), which is what OpenRPC content descriptors read from schema properties and what fastmcp_callable reproduces from the DTO's model_fields — carrying Annotated Field metadata for a default_factory so a per-call default is never frozen into the published signature at import time.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L30-L53",
+          "version": "repo-lines-v1:sha256:1c9291035d54faf4e76ffa9064ca523be9574e132ffdd21124997fd05499b8be:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyOWIzOWRkNWExNDEyYzEyMTZmNDQwMWU1M2Y4MGFiODY0OThmOTI1OWQzZDM1NzQwZDliODdkMWUzZmEyMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YTJmZjhlOTI0NjQzM2Y2MzQwMWM1ZmQ2Nzk4MGRkMWU4N2Y4OTU2N2E4NGNjNDg2ZmVjYTM1ZjFhOGJjZDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwODNlODliYmYzMDRmMzlmNmY4ZDgzZmM2ZGYzMTMwZTQyNTJmNGJjOWNhNTZmNDk1ZmJkNTRlNjY5Y2FhNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzODg5ODQ0N2Y2NDFkMzIwYzk0YmFkZGY2OTkxYmNkZmQ0ZTNkNjFlMGI0MzYyMmI3NWJiODZjODI5ZGEzYjUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L162-L182",
+          "version": "repo-lines-v1:sha256:d234d29391afa1ee5fe125738db5da47e9b149c8c7a001e5f736d34e0a67743c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3NGI2ZWVjZTEyMTE3ZDI0ZGE5MGYxYjZiMmQ3NTUzYTFkYTQ3MDM1ZWNmMzQwY2QzZTcwYWExYmE1YmNjNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5YjBmNDg2YzkwNmYzZjBhN2MzY2ViZjA2NGI1MWExNjU2Mzg2MTdlMzc4ODhiNTc5M2U5ZTUzNTY0ZjBhNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjYmE1MWE1ZjYxZTMyOTU2MzE5ZDdhZTA5MTYyYjBhYjI3YzFhZWE2NDVkMmRlZWIwOTRjZjE0OTQ5YzAwODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllZjE2MTdhNGMwZjA2MTQ1YWMwZjM1ODM4MmViY2FmZWRmNGU2MWI2MWMzZTE0YzFiM2IwNTQ5ODg4OTU5NWYifQ"
+        },
+        {
+          "resource": "repo://tests/ddd/test_value_object_pydantic.py#L273-L296",
+          "version": "repo-lines-v1:sha256:a7c95d6ef094632add1ceeb0211a9f7c246055a315ff95578e94d052d2d130eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiMDM4YzY1OWI3MTc3YzA5MTIwNDU4ZmNlMDViZjkxYjZlNDg5ZDYxZGEzM2ZiZGYzYmZmNzkyNzMwNmY4YjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiODU0OTdiMTVmM2ZhZjhkNzBhYTBkZmY3MWI5ZjU4MDFhOWE0MzlmYzljYTJhZmJiNDhmNTgyZGExYzcxYTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhZjk0M2UyMTI5MWJkZWRkYTAzMjc0M2YwM2YwMGI2ZDMwNTE4Y2JhZDNhYWNhZGRmNjliYzY0NDNlMzJjOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L261-L269",
+          "version": "repo-lines-v1:sha256:04cda3b4142c628a3ebc4a01481cd3cca6e0764e14d10f172cc563ea9ece696d:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY0NzU1YzVjZTlmOWZlNjViNTU1NjlmMjZlZmM5OGFiNGM1YmE0YTQ4NTllMWM3NjUwMzhkMzQ2NGU3ZTY4MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGIwYzBjNWRjZGZlOGM0YTA1YjBiYThiZjQ2ZjBmMDE1YzlhNjUwYzczYjVhNWFkMGY2MTczNzg2NjRiYjk0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2JjM2U2NzRkYWY2NzhjNmFlOTE5MGUwMzI5ZmRkMjMwNjY2ODJiZjQ3MTU3MzE5NmY3Yjk4MDdjNDVhZGI4MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTQ3MzkyZDRmNjkyNWE0Zjk2MDI3ZjFjZDc4NTMyNjE3ZTQ3OTNiZWRkNzQxZDY1ZTM0YTg1YWQzZTdlZDY0MSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

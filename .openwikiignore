@@ -1,0 +1,26 @@
+# What the openwiki agent is NOT allowed to read.
+# gitignore syntax. Do not assume it honours .gitignore: list everything here.
+# This file is the Sincpro pattern — copy it as-is to the other repositories.
+
+# --- Secrets and cryptographic material ---
+.env
+.env.*
+**/*.p12
+**/*.pem
+**/*.key
+**/*.crt
+**/*.csr
+deployment_envs/
+
+# --- Noise: burns tokens and documents nothing ---
+.venv/
+dist/
+site/
+htmlcov/
+poetry.lock
+coverage.xml
+**/__pycache__/
+.mypy_cache/
+.pytest_cache/
+.idea/
+.vscode/

@@ -1,0 +1,296 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:6fd58a0ae0660f898c62884e1061460516ad657a5d46f6b0b1d6a3341bdfda72",
+  "claims": [
+    {
+      "id": "claim_a0d9fdd40b64498a99cca9ed0acc0ec4",
+      "statement": "The framework's settings object is built at import time: `sincpro_conf.settings` is the result of `build_config_obj(DefaultFrameworkConfig, DEFAULT_CONFIG_FILE_PATH)` executed at module scope, and because `sincpro_framework/__init__.py` imports the logger and the bus, importing the package is enough to trigger it.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L1-L10",
+          "version": "repo-lines-v1:sha256:10270fe191adede4abc73e4d73de98f1257589283e004ebef28a7126e7b49da7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlZTc1Yjk4MzZiZTA2NjY1ZmIzNGUyZTNlYTZkNTA0NTNkOWYwYjRjMWUyYTFiOWE2MGQ3NzY0NjkyNDA5Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMDBiNTg4MDk4Y2U0MDMyODdmMzk1ZDc3YmUwYmMwZWYxM2QzOTlmODFjYTBhODc0NWViYTM5MjA0NmUyMzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0OGYxMjgzMTliZTdmMDg4MTFjYjE5MDg1MzNhYjgzMjYwYmZiN2YzODg2MGZiZjI3MzEwYTUyOGI5ZjNjYzMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L124-L124",
+          "version": "repo-lines-v1:sha256:5e2537d075dcac7cf3f1255961058cee32f1e3d7ced0e718fc0d0a98f3201860:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWUyNTM3ZDA3NWRjYWM3Y2YzZjEyNTU5NjEwNThjZWUzMmYxZTNkN2NlZDBlNzE4ZmMwZDBhOThmMzIwMTg2MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWUyNTM3ZDA3NWRjYWM3Y2YzZjEyNTU5NjEwNThjZWUzMmYxZTNkN2NlZDBlNzE4ZmMwZDBhOThmMzIwMTg2MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWE1YzIyNmEzZWM2Njg5YWI2ODM1ZTVkZjI2OTdmNzUyYWUzNmZiNGM4NTEyNDU3MDczOTJkNTY3MDhlYTAyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c77086049bb4ed695f9870853d2d7b8",
+      "statement": "The configuration file path is resolved once at import time from `SINCPRO_FRAMEWORK_CONFIG_FILE` when set and non-empty, otherwise from the packaged `conf/sincpro_framework_conf.yml`, so setting the override variable after the package has been imported has no effect.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1258-L1262",
+          "version": "repo-lines-v1:sha256:16b643ea4a74ca79364951e18991bd6e32912d7816d6c11fb67f05c2c0e4f837:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzBlNjU4MGFhNDk1OTA1N2EzZDYwOTYyY2ExNmM0YTA1OTEwNGEzMTllY2M0NjEzMDk5OTYzZGY0ZjYxODE5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2VjNTY4ZWFkZGNjNDg0MDI2ZjFlMzJhZjIyYzc1ZjM4NTM2MmNmMmM1YzFkZDk2OGMwNTkyZjU3MTk1ODMzMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDVlMWQ4MGNlYzhiNzczYjA5MmViYWY3Y2ZlOGJmM2VjNDRiYjczZTI5NTQzYmU1ODdkZTczNjEwMDFmMTc2NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODA3NzY5MjNlNmY1ZjcwNzI4ZDJjMmEyZDdhYmVhODQyMzVmOTkxNTUxNmM5ZjQ2NjRiYjc1NDgyZTUwMzEwZCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L10-L13",
+          "version": "repo-lines-v1:sha256:7cc4693a2ca66ccf8cf629e2e7b2a122d425d4fc640ea25e5c146f84c3e56220:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2RmYjNjYjYzN2FkYWQzMmQ5NjJlMDAwZjAxN2UwNjQ0NjZiN2U1ZjRkY2JhMTU1OTNjNTc3NTIxNzI0MzQ3YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDFlMTRjMzlkYjcyNDM2NDE3ODJhYmJhNmRmNzAyODRiOGZmYTQwYjY0OWNiMTYxNjRlY2IwMmUxMjgxMmVlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWRlYjViY2FmODg5NjU3OGUzMGFkYzhmMDg2MDlmOTNlNzk0ZDFiZjk3N2UyNGY5YjFkMTc3NDFhZDk2MTdiOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_df9e56a594c544efb1fb4860ebd68607",
+      "statement": "The shipped conf file assigns every field to a `$ENV:` reference rather than a literal, so all effective defaults live in the Python model `DefaultFrameworkConfig`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/conf/sincpro_framework_conf.yml#L1-L9",
+          "version": "repo-lines-v1:sha256:a086952ccd6535c0dafc08a7bf704e71f2d8d4391fd19b2554461859a957d8e1:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWNhNzYwMjY4OGI0MWEwNTM0MWY2YTc1MThhZThiZDkxM2IzYWM5NzFiNDliMDA3NDEwNGE5Nzc2ODc0YmQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWY4ZDcwNThhOTkyNWI5YjRiMGE0ZjIwNmQ0NTk5MTRjYTQzZWJhODBmZWRmMjgxYjMyZDdhNWE4YzUxNTA2YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L90-L101",
+          "version": "repo-lines-v1:sha256:2d655a35af35bdeab95bc4b49a4713853745a37e39c2125a8231442e66e15b56:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyY2M5OWI4N2E0YWM0NGNmMmM2N2UzNTRkMTY1NmJiOTFmNzE4M2EyNTRjMjQzZjllZTczZWM4YTkyNmNiYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhYzg0ZDUxMjk5OTkwZTM0OTVhZjgzMzkwYTYwMmMxZmIxZWU5ZWE0NzA5NzBiYTA2MTU2NzBiNjQzMDgzYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5YTUzNzNjMGY1ZWEyYWNmMjlkY2Y1NDc5ODc2ZGI3MmQwMWYyMWNmNGQwMTU4NzVmNWRhMjJiNWIyNjMwNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4MWViYmQyNzdmYTJkZjA4M2E2ZmRjNjVlOTAyZDE0MWQ2YjhiOWJjNzJlZDQxODBlM2I4NTE0ZDMwOTJlMGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_169b0e44e7cb447aa84325cfd6600f33",
+      "statement": "`SincproConfig` resolves `$ENV:` references through a single Pydantic `model_validator(mode=\"before\")` that rewrites string values whose prefix is `$ENV:`, reading the name after the prefix with `os.getenv`; non-string and nested values are left to normal submodel validation.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L46-L57",
+          "version": "repo-lines-v1:sha256:7f22b241c5bc9f5bf0a7c6fef930c55413f62ddae5aaf20b099ff52cdc5f8c39:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NWQzZjRmNmJlNzRjOTY4MjViZmUxZTVkZGZjMTk2MjI1ZWRlZTBiM2FkZDU4YzYzMjhjMTQ4YWNiNmUyMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2MDQ3OWZhMGUzYTg4ZWYzOTYzNGNhMTgyMjA1NzkwM2NmNDJiZDliNTVlNzU0MjQ2NjUwYjgzZjZiMTA5NjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiZTM0YWEyNDdmNTQ5NjJiMWM2MmU3ZmIzMWM0NGYyOTAwZjE5OTMwNzIyZjZlZjIxM2U5YTJlOWEzOTU0ZmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f63016965d094e4986a2929666c95236",
+      "statement": "When a referenced environment variable is set, the value is used only if `usable_env_value` accepts it for that field; otherwise the field's default is substituted and an info-level log names both the variable and the field. `usable_env_value` re-wraps the annotation with its `Field` metadata in `Annotated[...]` and validates via `TypeAdapter(...).validate_python`, returning False on any exception.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L24-L38",
+          "version": "repo-lines-v1:sha256:fa08e65126e6683865309419a481fa28a3667f038610661792f6bd665c0426f4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0YzY5ODRmYTNkZDAyOWMxZTI2NDc1MDAzNDUzOTc3MDY2ZDAwMTkzOGM3ZmEwY2JkNTk5ODkzYzM0Y2UwYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5N2M3MTI0N2FmM2NkMWVkZjU1NWE3ZDEwNzU5MzE1N2Y2ZGMyYTIyYWYwZGU4MmU3Nzc0YWJmMTBmOGFkZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzYmFkNzcxNDZkM2U4MGFjNjAyZDQ5MzQyYzI4YmNkNTQ4NzBkYWQwNmM1ZTY1NzJkYzkwZWJjYjc3YTUyMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxY2E4ODY5MTg3YjMwZTM3MTgzZDJiNDBiMDYxZGM1NTU3Mzg0Yzc4MGYwM2YyZjY1MjdkNjQzOThiMzBjYjIifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L58-L67",
+          "version": "repo-lines-v1:sha256:17f6d8b758e6922eb1a19434fa65d18b97ab47056736eb5d23176f4f63f5c585:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjZjI2YWE1OWY3NTczZmI4MjEwYjNkZjNhYTgyN2E4OGZiMjM2YjhlYTQ0ODk0ZDFiYmZiNmE3YjIzOWM3YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzY2M1Mjk3YjcyZjRhNDQxMzUxN2E2NGI2NzM3NWMyNWMzOGRlNTQwYzc4YjlkZTUxZGNmNmFmOTY0NmFkN2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2YzczYWVhNTBmN2YxNjNmNzdlY2RiMDYzN2NmYWI0ZjJmYjJkOTRjY2ZiNjY0ZTYzZDVmMDdlMWMzYTdiMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5ZTJiM2RiNDZjMTFmMzVjZjIzMTBiZGY4YzU1ZjdjNWI0ZGU2ZTgzNmM1OTRiY2JiZTU5MTQ3ZWM1ZTM2MmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c61e2f5e5d74b59aaaa837693b065c5",
+      "statement": "When a referenced environment variable is unset, the validator's behaviour depends on the field: a non-None default is used with an info log, a field whose default is None is set to None silently with no log, and a field with no default at all only logs — the literal `$ENV:...` text reaches Pydantic and raises `ValidationError`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L68-L83",
+          "version": "repo-lines-v1:sha256:fde23a7e6dcc7d7a906b364df2a72247983033a540e987aef56b8357c7e8b68a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMGNjZTIyODM1N2QxNjM2MDRhMzllYTM0MTFhNjYzNGJiMmI0MmZjNTFkYWM2YmMyMDQ1ZmQyMGRjOGFjZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhZDZjOGVhYTg1M2RmYjcwNzIwNTFhNWY1OTYyOWJiNzZmMDJkMTMzMDQyZjY0MTQzNDNmYTAxOWFiOGU2ZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjMDIzMjQxZDk3ZTdjZjg2ZjhlNTI1YTVjODJmZmMzZDZkNWQ5ZjIyZjRiZGZkY2Y5ZjRiMmFhMGVhYzIyMjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzNzgwNmM0ODMxYTg1ZDJiYWUwNjk4NDRlYmYzN2FjZmE0MzIzNDFkOTM1OWU3MmJiOWE4YWNmNTg5NjlhZjcifQ"
+        },
+        {
+          "resource": "repo://tests/config/test_env_variables.py#L61-L105",
+          "version": "repo-lines-v1:sha256:205fc71fcb1f5c0775d451fc3af9fcd0669c987ec872a6124fabea1918cb7ddf:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlNTAxMTc4YzRiNjRhNGQ2ODU5OGRiMmFlNGQ2YTNhYzhlNWVkZDQ1N2ZhMDBmMGE1OTMxOGQ4NjdlOTRmYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNjZhYjFkYzE5N2MxMzMxOTEwOGNjM2FiMTNlYTkwMmQxNGQ3Y2RlMTVjM2JjMmJlNGQzZDZiY2FjOGNiM2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4ZTQ1MTAxODFiZGE0YWY1NzYxNTQ1MTgzNjZjMzkyMzA4ZDk4MWI4N2YzYWJiYTc3ZDYxNTk0ZWIyMTMwN2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b82773599aad408da3e48ec05859b182",
+      "statement": "The type check on an environment value exists because `settings` is constructed during import: the documented invariant is that a malformed deployment variable must not raise before the framework is importable, so an unusable optional value degrades to its default instead of aborting the import — the case of `otlp_traces_sample_rate` fed by `OTEL_TRACES_SAMPLER_ARG`, where out-of-range or non-numeric values fall back to 1.0.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L24-L30",
+          "version": "repo-lines-v1:sha256:cf7175726071c8e1171a9414288ee15bfaa36540efd2ac445144a12b03d5e76a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjRjNjk4NGZhM2RkMDI5YzFlMjY0NzUwMDM0NTM5NzcwNjZkMDAxOTM4YzdmYTBjYmQ1OTk4OTNjMzRjZTBiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZhNzE1MjU3MmVlODRmMTA5MDZjNzRiOWYyYTkyNDM0ZGRhYjBlM2M0MjgxM2IwNGU1OTdlZmNlYzk1MWIyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDNiYWQ3NzE0NmQzZTgwYWM2MDJkNDkzNDJjMjhiY2Q1NDg3MGRhZDA2YzVlNjU3MmRjOTBlYmNiNzdhNTIzMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWE2OWQ2YmRhMWZkMzA5OGE3NmQyMTEzZGVjZDNiOWVkNzZhMDU3NDg0ZGI4MzcyN2Y5OTJiNzA4NjZkYmQ5YSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L97-L97",
+          "version": "repo-lines-v1:sha256:f408e0288163de162c7642a9867095ff6c8843b1bed69e479af132717ed10543:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjQwOGUwMjg4MTYzZGUxNjJjNzY0MmE5ODY3MDk1ZmY2Yzg4NDNiMWJlZDY5ZTQ3OWFmMTMyNzE3ZWQxMDU0MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjQwOGUwMjg4MTYzZGUxNjJjNzY0MmE5ODY3MDk1ZmY2Yzg4NDNiMWJlZDY5ZTQ3OWFmMTMyNzE3ZWQxMDU0MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGU2ZWM0ZDI5MjU1MWU4MzA0MTg5OTlhZTU5NjEwN2I1OTljNTBjMjY1YmM4ZGQ3ODA1ZWQ5MTliNmMyMDM2OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjVmNzNmMzkyYmU3YTZkNDAzZWRmMjFkMGVjNzE5NWU3MTNiOTNmYjE0MTkyM2ZmMDdlYjlkMjkwY2FmMDIxNyJ9"
+        },
+        {
+          "resource": "repo://tests/config/test_env_variables.py#L107-L147",
+          "version": "repo-lines-v1:sha256:1a1d6595c1d8a65f993b7968169aee7a003b3ff8bda541c32c74bd8778df0ed2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNDViYjA1MTVmNTE1YjNiNDgxNDVkM2JmMGFjYjE3ZjgxMTg2ZWQzMzQ4NWVhZjU3NTI5NWEyZWFkZmYwZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlOTJhZThmZDQzMWJiYTczYTE0ZGM4ZDMxYzVkZDQzMmQ1YzE0Y2FhNTg4MTkyN2FkOTQyYWZlMDRhYWJlZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkYTgwMzlkOTA5M2MwNTRiZTZlYTY2MDJlMjk4ZGMxMGNmMzA2NmVkOTQ4OGJlZDJjYmUzZmQ1Zjg5ZTRmNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0ODViOTdiZGVkNTQ2YzFiNzNhMzQ3ZGEzNWQxZDBlNzYyZWY1ZDhiZDNlNjBmOThlYzBmOGUxMDlhYjZlZjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b8c648b93284284b7a35336a1bacf98",
+      "statement": "`build_config_obj(class_config_obj, config_path, sub_key=None)` loads the YAML with `yaml.safe_load`, replaces the mapping with the named section when `sub_key` is given (raising `ValueError` naming the missing section and the file otherwise), prints a `read yaml file ... for config <ClassName>` line to stdout via `print`, and then constructs the model class from the mapping.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L104-L121",
+          "version": "repo-lines-v1:sha256:2cfcf8a1d11d9b97b75a0adfa5f69fc3295eec9a15872cbe7d91d56de8d62c62:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1ZjZkY2RkMGI2ZTU2NzgwZTY1M2M5M2MzYjkxOTU0NGEwZmU5NDM4ZDFiYjcxM2MzNjA4NGY0NzU1NTc2OGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMGI2OGYxYWJkNDQ5YmNmMzA5NTk1MzI3MTdkNmU4NmRmZmZhOTBkNzY5M2JkZWVkYjZmYzhiN2FkMzcyZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkNzA2NWQ0YWJjZDQ0MDVhYmEwYmZhOWIxYzkzMzE0ZTk3ODYyMjE3YmY5NjRhNDY4ZWQyODIyODg3Yjk2OGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlOGYyYjdlNzIxNjY0OGMzNTU5MDJkYThiYTZlNDViNzUwYWZjYzdmZWZhMzQwMmM3NzQ2NDFkM2FjNmFmMzMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L18-L21",
+          "version": "repo-lines-v1:sha256:8c2270d7e2fa063c4118078f9e8f7ce1e40c5f443131edb3ee5a81dc12b70db2:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGRmYjVhODFlODE0NDZkM2RhNjZmMGM1NjJmYzY2YzEyOGRiNGZlMmNlOWExMjBlYzZmNjc1MTM0NjBlNWNmNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGQ1YzFlMjdmNWFiMmZmMGU4YTdkNmJjZGFkNGI4M2QwZjQ3NWI4ZmEzMzQ1Nzg1MzJkM2ZlYmZhYWEyOGU1YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWFjYjZhMjYyZWFiMWUyZDM5YzlhZmE5NjY2YjY0ZTc1OGM5ZWU1YjQzNjdmYWQ4MTM2OTU1MTVkMTgxNTMwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWYwZjc1Y2JhMTg2OTJlYjJlZWE2MTYwZDQyMzFlYTQ2MWRhOTBlZjY0YWY3MDA0MTEwMjlkZmMwNmZlNDcwNyJ9"
+        },
+        {
+          "resource": "repo://tests/config/test_config_obj.py#L44-L68",
+          "version": "repo-lines-v1:sha256:e135cffa3be0ac7a8bfcdfba0ce2c5bfc7b05f40d087eed7c82913546a7c72fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNDljYmJiYTlmMTQ2ZjU1N2Q0NTQ1MDliYmNiMWNlZDFiZmNmY2Q5OTE2OGRhZjIyNGM5MjM5MzQ0YjA5ZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMWQzZWJlMjhjY2I4ZGE4MDNmODljYTkyYzE0MGI1NWJlYTZjODVjOTUwOTM5MTg0MGFkY2UwNjM3NTY0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmZWQ2MmMzNWI3YzVmMzExNTFlZjEwODAwNTk5YWQzOThjODhmNTNiMDJjZDE1MjE3Nzk0NmMxZDkxMTk4MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c15e21b241a44c63a9b4266486f925d5",
+      "statement": "`DefaultFrameworkConfig` declares nine fields with their defaults and both resolvers: the log level (`Literal[\"INFO\", \"DEBUG\"]`, default `\"DEBUG\"`), log backend (`Literal[\"print\", \"stdlib\", \"file\"]`, default `\"print\"`), log file path (None), and the optional observability fields `otlp_endpoint`, `otlp_traces_sample_rate` (bounded 0.0-1.0, default 1.0), `sentry_dsn`, `app_release`, `otel_service_name` and `tenant`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_conf.py#L90-L101",
+          "version": "repo-lines-v1:sha256:2d655a35af35bdeab95bc4b49a4713853745a37e39c2125a8231442e66e15b56:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyY2M5OWI4N2E0YWM0NGNmMmM2N2UzNTRkMTY1NmJiOTFmNzE4M2EyNTRjMjQzZjllZTczZWM4YTkyNmNiYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhYzg0ZDUxMjk5OTkwZTM0OTVhZjgzMzkwYTYwMmMxZmIxZWU5ZWE0NzA5NzBiYTA2MTU2NzBiNjQzMDgzYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5YTUzNzNjMGY1ZWEyYWNmMjlkY2Y1NDc5ODc2ZGI3MmQwMWYyMWNmNGQwMTU4NzVmNWRhMjJiNWIyNjMwNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4MWViYmQyNzdmYTJkZjA4M2E2ZmRjNjVlOTAyZDE0MWQ2YjhiOWJjNzJlZDQxODBlM2I4NTE0ZDMwOTJlMGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_29e3294bdab24bfda52f7ca4ffa9a0cb",
+      "statement": "Global logging is configured from `settings` at import time of `sincpro_logger.py`, passing the log level, backend and file path into `configure_global_logging`, so an assignment into `settings` after import neither reconfigures logging nor is the supported way to change it — the environment is.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1251-L1251",
+          "version": "repo-lines-v1:sha256:b710bc230d5a3e624f440a477ff40b0a98e705ef44d0f1c3b4d8631d48391846:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjcxMGJjMjMwZDVhM2U2MjRmNDQwYTQ3N2ZmNDBiMGE5OGU3MDVlZjQ0ZDBmMWMzYjRkODYzMWQ0ODM5MTg0NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjcxMGJjMjMwZDVhM2U2MjRmNDQwYTQ3N2ZmNDBiMGE5OGU3MDVlZjQ0ZDBmMWMzYjRkODYzMWQ0ODM5MTg0NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWEwOTZlZGRmYTA5YTUyNDdiZTk4NzZmMjdlY2NhZWIzYzA4MzUzZDI3MGVmYzA0MmZlYmFjZjliMjUzYzhjOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmRhZTUxNTk2ODFlNWU1YmViNDNmODY0YTYzODk0ZmEyODI0NzE4NGZjYjg2ZjM2OGEwYjMxYjFjYzc5Njk0YiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_logger.py#L5-L11",
+          "version": "repo-lines-v1:sha256:9ecea4c9dcd6c4307e9ce6b5c1162d31aa8a36546b99cdd75f8a4fa42335a645:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODEzYzFmMWMzNzA2YzY0YjQxZGQ0ZTQzMGQwNDUxZGZjNmIxNDNkN2ZmNTM2Yzg4ZTZmY2ZjYmQ0ZWMzOWM3YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWIzOWUwMjJlMGQ4NTQxMjAwMDNkNzkwYzI4Yjc1OTYyZWRkMzAzNzU2ZDUxMzMzZGY3NDVjZmI4NmVhMTFjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTczZDc4MzRjNTgxYjJiZWNjOGI5YTQ5MGZiY2UzNGY5ODY2MDgzNGU4ZjkxNTlkOTg1MzdmZGFmYzYyZjExNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2UwNDdiNmViZjg0Yzg4MzcwOTY3YjU2NzA3ODQ3NzQ0YmE5YTNlMTk0ZTRiNjU1NTY5NzlkNzU4MzFjNzgwMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a73d557467944337b3f37b4817b2153b",
+      "statement": "`is_logger_in_debug()` tests the `sincpro_framework_log_level` settings field rather than the logger's effective level, and the feature and application-service buses use it (alongside their own `log_after_execution` flag) to decide whether to emit the pre-execution info line, so with the default DEBUG that line is on.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L104-L104",
+          "version": "repo-lines-v1:sha256:075d2cdba8a848fb1b86e47051e87fb5632235e96dd15c6141605cc65506eb00:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDc1ZDJjZGJhOGE4NDhmYjFiODZlNDcwNTFlODdmYjU2MzIyMzVlOTZkZDE1YzYxNDE2MDVjYzY1NTA2ZWIwMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDc1ZDJjZGJhOGE4NDhmYjFiODZlNDcwNTFlODdmYjU2MzIyMzVlOTZkZDE1YzYxNDE2MDVjYzY1NTA2ZWIwMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDFlMjMzMTdjNDJmODAzY2Y0YWI4OGNkYmY2NTQ3YTExYzRjYWI1M2ViYjY2MmRjNjkzNGMyMDY3N2NiOTRjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNhM2UyNWRjYTc3NDFiNWQwZjc4N2JjMGRiNzU0NzkyNzg3ZmE5MWIyMjg1NmE2NTc1YzEwZWE1NTdiYzNjOSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L48-L48",
+          "version": "repo-lines-v1:sha256:075d2cdba8a848fb1b86e47051e87fb5632235e96dd15c6141605cc65506eb00:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDc1ZDJjZGJhOGE4NDhmYjFiODZlNDcwNTFlODdmYjU2MzIyMzVlOTZkZDE1YzYxNDE2MDVjYzY1NTA2ZWIwMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDc1ZDJjZGJhOGE4NDhmYjFiODZlNDcwNTFlODdmYjU2MzIyMzVlOTZkZDE1YzYxNDE2MDVjYzY1NTA2ZWIwMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjYzMDQxODE4Y2I2Y2JkMzVlOTZiODkyYWNiNzM4ODQ2Yjc5NjhiOTEwYjNmOGI0MzQzZTU4NWI4MDMwYzc0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWRlNmFmZDdhNTI4Y2VkOTIyNDk2OTc0NzA4NzQ3NTE1ZjVlNGFiYzUxYzk5MmYyZTBiNDg1N2FlZDBlYjI0MSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_logger.py#L14-L16",
+          "version": "repo-lines-v1:sha256:63cd234814e195654d876e955b68e018dbc9619e32b765930efaa08e0ece018d:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmE3NGUzYzgwMTc2YTc1MTVkYmE5YmM4ZWJjOWZhZDhkNjQxODljNWZiMTFiZjM3NzU0ZTA2ZmExNGE0NzdlOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQzNmY2NjAyMmY5N2FhM2YwOWQ4YzJiYmQ0NjQwMGU2N2Q1MjYwYzZlNGZlOTRmYzI1M2E5NzUxYmEyZDRhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGU2Y2QyNGYyZWMxZWY0YmQzOGJjMGRmMDFiOGQ1OGMyMTZkYjYwNjM5OWFlM2QwYmE0NDg0OTM0ZDQxMTZjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNThiZGNiOWNjN2NmZTgxNmUxYTFiNTg3ZGRkOWZiN2FmNzIwZTc3YWEyNTI0YjA4MDUzYTBjOWQxZWVmOWIwNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d3d9a06d65d0456cba7c589dcf47d846",
+      "statement": "`otlp_endpoint` is the exporter destination rather than a boolean gate: when unset the setup either returns `on(\"host\")` if a non-placeholder global provider already exists or `off(\"no_endpoint\")`, and when set the value is passed explicitly as `OTLPSpanExporter(endpoint=endpoint)` because the SDK would otherwise ignore this conf and fall back to its own environment variable or localhost:4317.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/setup.py#L142-L149",
+          "version": "repo-lines-v1:sha256:8e19210a944031e51a5697d363659855f30cda561b4ec6db19daf19721151642:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzVlOWRlOWZjMjljZmQyNDJmNzA5Y2IyYzE3MDRlMjRlMzE0NmE3ODhhODY5Y2EwOGVjNDJjNzJlN2UxZWVlYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNjZjU1MzQzYTZkZjhkMTc1MzEzZmIxZDZmNDY5NDg0ZTI2MzlhNjA1MzFmYjY2ZTYzNTlhYjhhNDY0MTkwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmE5ZGUzNGY3ZTM3ZmIzYjRiYWFkMGRmYTU2NzA3N2U0ZmI3N2FiM2M2YmMwOGM5N2U0MTNkNjNlOTc3N2U2YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGEzMDNlMDkzMWIxMjQzZGEwNjAxYmE2N2RhY2M5OTNjY2ZhNmZmODI0MmUwZDU5NjQ2ZTEzYzlkMjcxZGQ5NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/setup.py#L92-L95",
+          "version": "repo-lines-v1:sha256:91ca53ad1e8ec1e8677794ec1eb49992d2cfc14885e499331123e896b331f4cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjEyMWJiNTZhMTg5MmY2YmUxZTMyYmI1OTM3MGMwMTYwYzNjYTIxNjdlZjVmZWM0NTRkZjcxNDg3Y2RjMGY0NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWJiNjcyODUxMmI0MDA5YTA1NzA3MzEzNjc2YzEyOGNkYmVmOTJjMDc0YTEyNTQ4Mjg3MWQzM2VmYjZhMjRjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmVlOGYwODU1OTgyZjRhMGNmNTA2OTU5MjAyODdlZGQ4YmEwZjhkZTc1MjcwNTFlOTYyYWZmOTQ1Zjg2N2IyNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTE2NmU1ZDMxMWExZjgxN2E2NjkwYzNhYWQ3ZTU3Nzk3YWY4ODMwM2RlMDdhY2Q1YzlkZTRkMjYwNmYyZmEzZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_bc9471337be447029782b7952a04e344",
+      "statement": "`otlp_traces_sample_rate` is converted by `_root_sampler` into `ALWAYS_ON` at 1.0 or above, `ALWAYS_OFF` at 0.0 or below, and `TraceIdRatioBased(ratio)` in between, and the TracerProvider wraps it in `ParentBased` so a sampling decision already taken upstream always wins over this ratio.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/setup.py#L59-L72",
+          "version": "repo-lines-v1:sha256:09f9a0bee94da5881d3d271c5848b58ecefb89b22205439f33b1d5fc9f7a0b9b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViODhkMjE1NDYxYzM0ZWZjNDFkZjE0NmMzMDg0ZDQzOThiZDc0OTcxNDFkYzVmNmZhMGM3NTk0ZDU3MTQ2YzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzYzE4NDFkN2JhZWMyNTA4ZGEwZDBhZDM0NzQyZjg0NjJmNGM0YWNkY2QzNWUwNTA5ZjIxM2FmN2RlMWNlYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5OWVmZWRmZDJkOTcwNmQ4OTFjN2JhOTgzZTdmODRlMDVhZDBlMDE5MWMxMzI3OThiZTVlM2MxY2M1MzA0MjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMmEyOWFjY2I0YmNjMDJkYjBkMzNkOTc2YzY0NzM5MDk3ZWMxMGRjNWFjMGIzNjFjODNjZDJmNDY3OTJiOWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/setup.py#L86-L91",
+          "version": "repo-lines-v1:sha256:45dac83cedbadc043e38762ff3e2a1e82dbff30fea6a5ddd2f9d3c7558aff19e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTExOWFkYTYyODA3NGYxNmJmOTM0M2Q5MzI0ZWIwMGQ5MjRjMzQzOTc3NTUyZWIxNTI0NTBlNWJkNTJjMjU2MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThlZWMxZmQzYTY0MGFiMTA3MjhiZWNmY2ZmMzhlZTQzN2VjZDc0MmM2YmI4NWRjZTIzMTc2MjM5YWIzZTA1ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWIyY2M3YjA3ZDQ0YTQ2MjJiZThjNTZkNTc5NGQ1YTAwNmYwNzA3NmQ5ODczZmZhNTdkZGRjMmM5ZDc3NDU4MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_23e0f8117aae4a78ba61c9a34f2b6ae2",
+      "statement": "`sentry_dsn` is accepted only when it is non-empty, starts with `http://` or `https://` and contains `@`; anything else (and any exception while reading the setting) yields an empty DSN, which makes the error backend report `off(\"dsn_missing\")` while the bus keeps running.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L33-L41",
+          "version": "repo-lines-v1:sha256:399e57d457e97d7a17a8e35a0b33869f32cd24c023769534dc13e2fcfd4e32cf:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmFlMWUzYTkyYjBkYjQwNTI3ZDhiZGQ4YTY3OTUzNGE3NjAxM2ZlZTBkZjljNGI2MDAyZWUyYWZmMDcyYTg1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTUxMjJkM2ViN2ZlMDQ0MzliMmZiYmRkNTYwZmZlNzU5YzU5MWJmY2RjOGFiZjZjM2Y5YWYxZWJhZTI5MzBmYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDE2NTdkYzllNDMwZDBjMDBlOGI5NmQzNWE4NTI5NmM5YjMwMmFhZTYzZDlkNjI0MjBhMWZlMjkxNzViNDZkYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTNmNzEyYzNlMzUzNGE3ODg3OTU2Y2ZjY2E1NDQ5YzVhY2JhYzQxOGFhY2YzOGZmZmJhMDQ0M2FmNzc4MWQ4MiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L72-L83",
+          "version": "repo-lines-v1:sha256:9110d5897aeec891aa8b7d9892cd5bbb640acca332a5249259abe44746f20e55:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkM2MxOGRiMDMyMjY3MjQ1ZDgwM2JlZjgyYjE1ZWM1OGQwNDM1ZWMwNWI5ZDQzNThkNmFlODMzNzhhMGNjYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0Yjc0MGZkMjk3YmU2Y2EyNjVlNWRhMGFjZTg5ZjUxNDQyYzY1MjAyMjg4ODFhNTA4ZGJlMTFlYzZmNGI1YTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkYTNhNzAyYjhmOWUzMTE1MGU0MjY1OTc5NjBjNWEwMjJmYzc1NWNiOWFkMDlmMjhlMzlkNGJkNWNiOGUxMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_04bcfdff707b4cbca1f6b7c325efac5c",
+      "statement": "`tenant` is stripped and used in two places: as the Sentry client's `environment` when non-empty, and as the `tenant` tag applied to every recorded event.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L59-L61",
+          "version": "repo-lines-v1:sha256:6d51ae0b43b843cc541ddec40e4b925b4d9c0eab0d8e4072b948e3ec060643db:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzM1ZWUxMjAzZDg5ZTM1OTA3YmY0MzdjNGFmNzE5NzRkMDJmM2FlYzFiZDEyN2QxYjJiMGE4N2Q1YzVhN2FkZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWQ0ZjRjYmQwOTE0ZjUyMmU3YWNiZDUwODMzYWRiODZlYjJhMDY3ZTBkY2RhZjg3MDFjZGNmZjk5MmM2NDViNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmJlYzMxOTU2YzZlYzg4MDU0ZmViN2U0NzY3MjgxMTFiNWQzNzg4MTE0ZmQ3Mjc5YTY0ZDMwYmJmNDI4OGRhNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDBlNzExNmNiYzUyYzA0YzNhN2I0NzZiNTU1NzQ2ZDFhN2Q1MTc0OTZlZTRhZWEwM2IxMzVhZDRiMDE0NzU3OSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L29-L31",
+          "version": "repo-lines-v1:sha256:fed62c1558c8046d1af49933b3f9f1556e87d4d32187f053f2dc8cac57450aea:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTI1ODk5M2I4MmI0MzdmY2JhN2IxYjkyNTQ4YjdlYTFjNjFiYzczYTZkMTk2YjhhOWIyMTNmMjM3MWQ1ZjZhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWRmNDk2NjdhM2JmN2IyNzY0YjM3MDMwMWNiOWIzYTI5Nzc5NDkzNTMzYTRhZjExNTEzODA4NzQyZmJmNzY2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTYwOTczZmRjYzA2YWE1NmI2MGQ3MDkzMTIwN2NmMmZmZjRjYjk3ZDQwMDNjMzlmZTQ5NmU3ZmFiMWMzNzBjYyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L64-L66",
+          "version": "repo-lines-v1:sha256:2765c9433c509e47afcc6b39a99c833f5aac8800917cd5b9f764a8cdd987a63d:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzc1ZmJkODY4YmY1NzQ0YmFiNDE4OGRmY2I4YWE4ZTQ4OGZlMzEyMTg3OTc4MDliYzkyNGZiZmE3OTI3MzdkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTE0ODllN2NhNDg3ZDJiMWMzMmJjMzM1MzRjMWU2OTEwZDZhZDhmY2M4ZDJlMmJlNWU5ZjM3YWYwNmRkMGI2ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2E5OTZmMDc4ZmY4YmNkZGQyYzU5ZjFiYzBmODhlZDcwZjNjNWFjMGMwMzhiNjJhZTgwMmQ5ZTRhMTI0Y2UzYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWJkMjUxYjNlMGMzYzk5YWYxNmM0NzMzZGYxN2UzNGRkZWZlODQ4YmIzOGQwZWJkMmY3YzE3NGU4ZWMxNjQ2MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_caedf9a548ab494fbdbe73b7b343ed72",
+      "statement": "`app_release` and `otel_service_name` form the deployment branch of identity resolution: `APP_RELEASE` is taken verbatim when non-empty and `OTEL_SERVICE_NAME` only names the deployment when it is absent, and that single resolved artifact feeds both the OTel `service.name` (`artifact:version:bus`) and the GlitchTip release (`artifact:version`, bus excluded).",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L173-L183",
+          "version": "repo-lines-v1:sha256:1282eb0032e014e5fb88c088b019ec74b005cb30a94759d4df327b7b43250049:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxNzk4M2ExMWJiNjU1NzExZDJiMzdlNzViM2JhNzM0NTNmNzMyNzY5MmZhODY4ZWE3OTE0ZmQ5ZjAxMTZlMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NGY0ZWFjYTE2MTkwZjllZDk5OWY3NGUzZGVmMWMxY2M1ODcxNWU1MDBhYzFiNjY3Yzc3ZjgwNzIyODE2NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlYzE3ZWVjMjQ1OTkwMDlhYzgwNDZiODAxMzg4YTBmNGUwMWMwOGFjZjcwMjZlYzk3M2Q5NTdmZTc2MzE2ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5OTc1MzVjMmM4ZGZkYTcyOGYyYWFlZDFmNWEwN2MwMTE0NGJkNzQwYWZiZmM3Y2M0N2M2YmI5M2Q0ZjNmMDYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L36-L60",
+          "version": "repo-lines-v1:sha256:52d9ea609b9b591aa3f94243fbb273aa077b9898992f5f46cf3b4d7d71dfb320:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5M2Y4ODc2OTFkN2RjN2VlN2Q1M2QzMTY1MmYxNWI2MWQzYjg4MDdmYTE4MTRkMTQ0ZjljNTcwOTk1MWUyYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2ODk4MmE2MTE3MTFhMmViNjc2MTlkYTk4NjYzOTk4ZDVlZGE3ODBlNDdkYmVkODNkZDk2Njg1Y2FlOWI4NjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4YTBiMzk3YWIyNDExNGY4NzEwMDMzNGMyMjZmOWMxNzA1NTU5ZjkwZTIyMGJhZWNkNmQxZDdmZTc0Yzk3M2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a206947ff01e4c74b83b499fde16f6d2",
+      "statement": "Only four modules read `settings`: `sincpro_logger.py` (the three log fields), `observability/domain.py` (`app_release`, `otel_service_name`), `observability/errors/setup.py` (`sentry_dsn`, `tenant`) and `observability/tracing/setup.py` (`otlp_endpoint`, `otlp_traces_sample_rate`); the logger consumes them at import, while observability consumes them when a bus is built via `observability.start(self.logger)` in `build_root_bus()`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L16-L16",
+          "version": "repo-lines-v1:sha256:1bb367878d2edb3517296807634d9546c34aee48a750ec2097c9e26192e489e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJiMzY3ODc4ZDJlZGIzNTE3Mjk2ODA3NjM0ZDk1NDZjMzRhZWU0OGE3NTBlYzIwOTdjOWUyNjE5MmU0ODllNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJiMzY3ODc4ZDJlZGIzNTE3Mjk2ODA3NjM0ZDk1NDZjMzRhZWU0OGE3NTBlYzIwOTdjOWUyNjE5MmU0ODllNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzUwMDVjNzk0Zjk2ZTFiYTFkMDA0YWZiMGU2YzcxNDE0Y2ZmYWQ4YjY3NzZmYTA2YThkOGM4Nzg1YWJkOWUxMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzk5MjFjNWQ5NTNmM2E4NmZiZDY0ZTE3OGNmOWY0ZDhiZjlkZTE5NDYzOGExYWNkYWUwM2QxMjJlMzI3MzAxZiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L19-L19",
+          "version": "repo-lines-v1:sha256:1bb367878d2edb3517296807634d9546c34aee48a750ec2097c9e26192e489e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJiMzY3ODc4ZDJlZGIzNTE3Mjk2ODA3NjM0ZDk1NDZjMzRhZWU0OGE3NTBlYzIwOTdjOWUyNjE5MmU0ODllNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJiMzY3ODc4ZDJlZGIzNTE3Mjk2ODA3NjM0ZDk1NDZjMzRhZWU0OGE3NTBlYzIwOTdjOWUyNjE5MmU0ODllNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmJmODNiNzg0NDY3NzU3ZDZhNWNlMGE4YjEyN2MxZjg0NWI3M2U5MDEzZTc3ZGI4OTI0ODk0ZDQxNDA2ZGQ2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2NiNGM2YzgwMGZiYjg3ODg1MTRiZTg2ZjhhZDM4MjY5ODRkZjFkOWNkNmI3NWNmYTk2NDM0NWI5MmEyY2JlZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/tracing/setup.py#L21-L21",
+          "version": "repo-lines-v1:sha256:1bb367878d2edb3517296807634d9546c34aee48a750ec2097c9e26192e489e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJiMzY3ODc4ZDJlZGIzNTE3Mjk2ODA3NjM0ZDk1NDZjMzRhZWU0OGE3NTBlYzIwOTdjOWUyNjE5MmU0ODllNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJiMzY3ODc4ZDJlZGIzNTE3Mjk2ODA3NjM0ZDk1NDZjMzRhZWU0OGE3NTBlYzIwOTdjOWUyNjE5MmU0ODllNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2NkMDBlMGVkNTYxNjg4NmMwY2ExNGFmNjhmZjhmZTE0ZjFlZTRiZGEyMmFiMmRhOGFjYTdjMDc5ODc3YjYyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTFiZDQ2NWE0NmZmM2RkODc0ZjBiNTkzYWExMjY1ZmZmNTk1OWZmMDM4Mzk3ZTYwNDM0YjM0OGNlZDMzN2YwNSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_logger.py#L5-L11",
+          "version": "repo-lines-v1:sha256:9ecea4c9dcd6c4307e9ce6b5c1162d31aa8a36546b99cdd75f8a4fa42335a645:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODEzYzFmMWMzNzA2YzY0YjQxZGQ0ZTQzMGQwNDUxZGZjNmIxNDNkN2ZmNTM2Yzg4ZTZmY2ZjYmQ0ZWMzOWM3YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWIzOWUwMjJlMGQ4NTQxMjAwMDNkNzkwYzI4Yjc1OTYyZWRkMzAzNzU2ZDUxMzMzZGY3NDVjZmI4NmVhMTFjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTczZDc4MzRjNTgxYjJiZWNjOGI5YTQ5MGZiY2UzNGY5ODY2MDgzNGU4ZjkxNTlkOTg1MzdmZGFmYzYyZjExNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2UwNDdiNmViZjg0Yzg4MzcwOTY3YjU2NzA3ODQ3NzQ0YmE5YTNlMTk0ZTRiNjU1NTY5NzlkNzU4MzFjNzgwMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L150-L150",
+          "version": "repo-lines-v1:sha256:c896789bec17a7e9964447f37d45264f34d788f15faa7899865df95266794e43:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg5Njc4OWJlYzE3YTdlOTk2NDQ0N2YzN2Q0NTI2NGYzNGQ3ODhmMTVmYWE3ODk5ODY1ZGY5NTI2Njc5NGU0MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg5Njc4OWJlYzE3YTdlOTk2NDQ0N2YzN2Q0NTI2NGYzNGQ3ODhmMTVmYWE3ODk5ODY1ZGY5NTI2Njc5NGU0MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTlhZDc1NTU4MjZlNTBlYjJkOWRhMjU4MGU0YzBkNTA5ODFmYTY0YjNmNmE0ZDU2MDAzYjhkODBlMzgzZTgxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODM3M2U2NmJjZmY4YzU4M2RmZmY1YjU5ZWY5MTZjNzVhNjI0ZjE4YzExOTU5ZjliZGUzMWY2NzMyM2U1MGRiZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1f03f9f6dc8144cab91dcdc61fd34c7a",
+      "statement": "A service does not assign into the framework's settings: tests fake deployments with `monkeypatch.setattr(settings, ...)`, and configuration fields are the module-level `settings` object's attributes, which is why the supported change surface is the environment.",
+      "evidence": [
+        {
+          "resource": "repo://tests/observability/test_api.py#L22-L25",
+          "version": "repo-lines-v1:sha256:296b2d03552c55c8bbd01904d520acdb35341c28fdd40719be43b810c97a0314:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjNmN2MwZDkzYmJjM2ZjZjRkMTY0YjMwMGQ1OTA2MTVjNGYzNjU4MzcwZjc5MmQwOWU0ZGM0NWQyYzU2OWIxNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjFkZjc4NzMxNzQzNTg2YzI3YjkyMDMxYTRkYWIxYzQ3MDI5NzBmNTc2YWQ3YmExMzQ1ZDdkYWZjZmZkNzc5OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWVmMTFjOWI3MTY3YzBhZGM0MmZlYTg1NGFiNjM0OTk3NzA4MTRiMGU3MTgxMDNhOWVjMGY5YmU3YWY2OTk3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzhkNDkzN2VhMDRjNjgwYzVmY2IxNTVkNzFmOGY4NmRjNTM4M2EzMTc4NTcyZWY5ZmY3OTcxYWFhNTUxM2ExMyJ9"
+        },
+        {
+          "resource": "repo://tests/observability/tracing/test_provider_contract.py#L109-L129",
+          "version": "repo-lines-v1:sha256:fb10bfd9a583088dd7d83eb2717f046cb95576cc61f7fbc999d67aa67308e9aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NTQ1Y2M1NGRkYjU1MWMyNWIxYmRlZGZjNWFkMWJkOTMyN2UxYjE4ZDg0ODM3YjU3OTZjNTQ2YjI0YjEwNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkZWQ2MTQ3N2FjZDc0MzQ2NzBkMTY3MjZiMWYwYTMyOTk0MGFkOTY4MGQ4Y2RiZDM1OTdjZTViMzQ2OTAwNzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjZjBhNDlkMTc1NzUzNzU1NmMwMWMwMjBiN2E1ZDVkNmQ4M2RkOGExNDkyODdhNzJkMGJiM2E1MzA2ZWMwOTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmZjk5MzRhZGM2OWJjMWM4YWJmZjQxMGVlZWM0NDYwMTgyNGY1NDkxMzJmMzViYWVmODFkNDExNjNiMGE2MmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9c4e0fd01f924d7e92208704fb3e68d0",
+      "statement": "The per-layer logging switches `log_after_execution`, `log_app_services` and `log_features` are `UseFramework` constructor arguments rather than settings fields, and they are pushed onto the buses at build time.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L133-L140",
+          "version": "repo-lines-v1:sha256:4198f4074c15ac191f83593747e1225d17c852a08d22f00b49f9fe082952e7b7:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGY2ZGEwNDViNGM1NmNjOWZiMzU1MjI0MzgzM2UyYTcxZjM4YTY1ODgwZTMxZmU2NzM5YWI3MDY2MjYwN2Y3MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWU2NGUxZjlmMDhiZjY1YTliZjdkMDFmNzAzNWFhMzIyMmI0NzFmZjkyODM1NmEzOTYyOTZiNWZhMmFmYTRjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmRiYzcwZThiZGUwMzBiNGUxOGQ5NGNjZTRiNDNhOGM4M2VlYWJhZjg3M2FjM2U5Zjc2MWZlZDFmY2YxYzg5ZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L32-L57",
+          "version": "repo-lines-v1:sha256:9b503d2fc471a613db74d5813f56cc31699d3945d794235d33e8d4b4698ffda9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmZDdhMDdhODNkZDE5OTZmYjUxNjg0YjQyYWVjYWY0ZTkwZmI3OGJhNzIzMGU1NDJlZDdiZDAxZDQyMzAxYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyMmZhNmMyMTVhMmEwZGY0NzBjODA5YzIwOTFjY2M5ZWI0ZWQ4OTc2ODEyYjQwNGJhZmIxNGJlZjczNDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4ZjM0Y2I5YWZiOTc4ODA5NjhjZjRlN2Y5OTZlYTQ1NjIzZWIwOTU3MWQyNTliNDYxMGNiZjY0ZTExOWZlZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyNTM1MmI5ZWE4OTA4NTZkYzJiYjNiZGUwNTMwZDQzYTE1NGJmYzY0ZmJiNDk4YTU3NGM4ZWM2Y2E2M2NkMTcifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

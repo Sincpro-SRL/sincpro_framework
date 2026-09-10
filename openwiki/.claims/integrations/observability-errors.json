@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:8883053f5c37ef79ebe5972c2219bd5fa880f5dfd69c1b006e7c520fd5c24c33",
+  "claims": [
+    {
+      "id": "claim_94a7bf8cbe51400b9aeedd89b5885649",
+      "statement": "Error reporting creates the framework's own isolated sentry_sdk.Client per release and never calls sentry_sdk.init(), so the host's (Odoo's, FastAPI's) global client and its errors stay untouched and keep reporting under the host's own release; consequently the host may capture the same exception object with its own release, which is intended rather than a duplicate to suppress.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L24-L28",
+          "version": "repo-lines-v1:sha256:22a15c65742808f68298d8bdbe8e1871f38307d6b8ab6f537ee0075f32bbae5c:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmE2ZTNhM2FmOWM1YTg2Yjg5MDdhMDE5NDAzZjJiMzEwOGY0NTlmMjM4M2FkOWU0NDc4YTIzMGVmYTQ0YzcxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZhNzE1MjU3MmVlODRmMTA5MDZjNzRiOWYyYTkyNDM0ZGRhYjBlM2M0MjgxM2IwNGU1OTdlZmNlYzk1MWIyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWU2MjA2YWU5MThjNGQ3YjZiMWU4YmVkNDE2MWU5OTcyODZlOTdjMDZlYjhmOThlNzdkMDI1OGFiZWFiYWI2ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDY2NDc3MzM3ZjNlZTQzZmU4MmMxNzA2M2JlYzNmYjVkMjNhM2Q4OGU5NDdkYWQ4N2Y3ZDEwZDRmYjQ4MzcxZiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L1-L6",
+          "version": "repo-lines-v1:sha256:e9032bb9ea67bd45e289000381814adc5bbce9eea549c8a19840803064dd47e4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGM3ZGJkMzNiNTc4NTExMDgxMzc3OGQ3YTdiM2M3Mjc2MDllMTFkM2E4NjE5NDdkZWY3YWZiNmI0ZGZlYTczNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjM3MWEwNTUwZTc2MTFiYTdhMjc1MGI5YTAyY2Y4ZjYxY2UwYjViOTdhNDQzNGY0YWE3YjE4OTg2Yjc0ZTA3YSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L44-L69",
+          "version": "repo-lines-v1:sha256:9c2627a8baa01e608b0462be454c49b36ae8d47a57d77e73faaaac4269aff304:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMzRkN2EyNTI0NTI3YTAyZWNjYzJmOTdhYjFkZjA1NGRkZjg1YTk1YjIyYzEwMmM5ODM3NjU1ZTdhYWY0NzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkMGU5MWM3MjM3YjdhMmNiZmZhY2FkNTRiN2MyZDA2ZDI0YWY4ZmFlMzkwMDc4ZDY5YjQ4ZmE5ZDc4Yzg1NTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNGQ1YTY2MTVmMzczNGRjOGI5OTk5OWI3NGI2ODIyMmQxZWE4MWUwN2FhMTUxNWVlNTNkOGJlNDExNGI4YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NjAwYTFmMGEzYzZmOTJkYjJlMTU1OWQzMDZhYWQ5ZDJlM2U5Y2QzOWE3Y2RhN2MzODQ3YmIwMmI5YjQyZGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5cf82d6b1e4b44069734d8fcd9bd5c2a",
+      "statement": "The framework's Sentry client is constructed with traces_sample_rate=0.0, auto_enabling_integrations=False and send_default_pii=False, so traces are deliberately never sent to GlitchTip and the SDK does not enable integrations or attach PII behind the host's back.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L980-L980",
+          "version": "repo-lines-v1:sha256:f0b089bdcffe6500b36be43d772da44c3053d379ec466fc3b7ce322d96cffefe:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjBiMDg5YmRjZmZlNjUwMGIzNmJlNDNkNzcyZGE0NGMzMDUzZDM3OWVjNDY2ZmMzYjdjZTMyMmQ5NmNmZmVmZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjBiMDg5YmRjZmZlNjUwMGIzNmJlNDNkNzcyZGE0NGMzMDUzZDM3OWVjNDY2ZmMzYjdjZTMyMmQ5NmNmZmVmZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzZmZTQxNDFkMGFlNTAzNjM0MjM4ZmEyNzc4YTIwMTdiYmM5N2ZkYTYwZWIxYTRhNWUzM2ZkMGQ3N2VhYjFhYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGYwZDg5NDVmN2MxY2UwNzhmYWNlOWY1MDFmZTljZGRjZjg0ZjYzMDM0NGI2NzRhZjY3ODM4ZDgxNmM2ZTRiYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L57-L63",
+          "version": "repo-lines-v1:sha256:1ca0c687de0093e30edd1a75a21a78a4ef9831adffa52fcf90fd3b6df7c46550:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZhMmFjOGMxZTUyYzI4YWEzODExMDZjOTY4YTkwNzVkYzMyYzcyZTVkY2QzZGJhMTI3MjE3NWY0NjQyYTc4MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTM0YjBkZDk0OTA1NzAzMzcwNmY3MDJmZmE4Y2UxMWQ4NmE4YzU3MWYzNzA0ZjJkMGU4OTg4MGQ2YjJjZWMwYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjc2NWM5NDMzYzUwOWU0N2FmY2M2YjM5YTk5YzgzM2Y1YWFjODgwMDkxN2NkNWI5Zjc2NGE4Y2RkOTg3YTYzZCJ9"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L94-L108",
+          "version": "repo-lines-v1:sha256:3f88be7967fd186fea792b5463ec3ea8fb8d423221ef773c3be83859b5194153:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlMTBjMjQxYmRlMDY2ZWM5YTUyYWM2MWE4ZjIwNWU3NzM4MTExZTc5NTYzZjA0ZjUyMDM2NWI2NDU4ODg2OWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5NzY2N2JjNTgyZDEzMGQ1ZDBkMzI0MGYzNzcyZjEwZjI1OTg4M2VkODM5MmJmNTY1NDVhMzk2YjAzNzA4YjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkMjE4ODZmNTRlMjdjZTIwNjFhZTBhMWRiZDBiZjhmYThiZjM0MjkzOWQ2ZTNlMjA2MTZjMTlkMzEzZDkyMzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4faff47fbba241ce9bb4d5ac8ab0ac73",
+      "statement": "Error reporting degrades to a ComponentStatus instead of raising: off(\"sdk_missing\") when sentry_sdk is not importable, off(\"dsn_missing\") when the conf DSN is absent or unusable, on(\"init\") when the client exists, failed(\"client_not_created\") when no client came back, and failed(<truncated exception text>) when client construction raised; record_error itself is wrapped so it always returns silently.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L90-L94",
+          "version": "repo-lines-v1:sha256:b971ecf938018dc87b87c16a45cc74156e30f43fb226b1496ca7d84be9332e23:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmUxN2YxMTZhY2MyYmQ4NzNjZmE4NmU0NWU5NGFiNjEzMTdlNTFiNWIwZTlhYTkzNjIwNTg1NmVkNzhkNDNlYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmJjMGYwM2QyZTAxYzRmYWVhYmZhODM2OTAyNWNhOThhZjZkNzg2YzIwMWY3MzgwYzZlODc4ODVhOTE4NDc2NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmJmZmMxNzRiZjJjNTc0YTQ2ZDJjZWFmZGMwM2YzNGYzZDU0ZjNiNDU3YzczY2Q1ZDdlOGE0NDVkMzg5YmUxOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTU3MWQyOTAxYTlkZTM2ZGRiODhkZTNlZTExYTkzN2U5MGVhMGUwNDkyODFmNmEyM2FjNDUzYmFlODlmMzlkYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L29-L31",
+          "version": "repo-lines-v1:sha256:066477337f3ee43fe82c17063bec3fb5d23a3d88e947dad87f7d10d4fb48371f:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRhNWM2NmUxN2IxNDUzOTc4MzRiOGM4NTRkYzQxOTNlMjEyNTE4MGE4OTk2YTE0YzMxODgzMzI2YjJlZmJjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWU3YmNkMzZlZjUzYjQ0NTIzZTY1ZTk4ZDE5NDQ5OTNlMGZmMTc0NmY1NTM2YzFhNTExNzQ2ZjNlMDFlNzU2ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTliMjhiMWFkYTE0NDhjMjkwMjY0ZmU5MDU4ODk5Nzc2M2U1ZGFkZjA3OGZlMDhiYzViOGM5NmQzOWExNjAwMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDk5OGQ1OTAzMzYwM2RkMmI3NTVlMTYyNzUyMWI5ZjI5ODdhODZkNDliYTJlNGY2N2NiNDdmZmYxZGVmOTk1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L72-L83",
+          "version": "repo-lines-v1:sha256:9110d5897aeec891aa8b7d9892cd5bbb640acca332a5249259abe44746f20e55:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkM2MxOGRiMDMyMjY3MjQ1ZDgwM2JlZjgyYjE1ZWM1OGQwNDM1ZWMwNWI5ZDQzNThkNmFlODMzNzhhMGNjYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0Yjc0MGZkMjk3YmU2Y2EyNjVlNWRhMGFjZTg5ZjUxNDQyYzY1MjAyMjg4ODFhNTA4ZGJlMTFlYzZmNGI1YTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkYTNhNzAyYjhmOWUzMTE1MGU0MjY1OTc5NjBjNWEwMjJmYzc1NWNiOWFkMDlmMjhlMzlkNGJkNWNiOGUxMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_eba6c0bf52ec4f9ba2794989f1e03220",
+      "statement": "A DSN is only usable when it starts with http:// or https:// and contains @, and any exception while reading the setting yields the empty string, so a malformed value is reported as dsn_missing (state off) rather than as a failure.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L33-L41",
+          "version": "repo-lines-v1:sha256:399e57d457e97d7a17a8e35a0b33869f32cd24c023769534dc13e2fcfd4e32cf:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmFlMWUzYTkyYjBkYjQwNTI3ZDhiZGQ4YTY3OTUzNGE3NjAxM2ZlZTBkZjljNGI2MDAyZWUyYWZmMDcyYTg1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTUxMjJkM2ViN2ZlMDQ0MzliMmZiYmRkNTYwZmZlNzU5YzU5MWJmY2RjOGFiZjZjM2Y5YWYxZWJhZTI5MzBmYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDE2NTdkYzllNDMwZDBjMDBlOGI5NmQzNWE4NTI5NmM5YjMwMmFhZTYzZDlkNjI0MjBhMWZlMjkxNzViNDZkYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTNmNzEyYzNlMzUzNGE3ODg3OTU2Y2ZjY2E1NDQ5YzVhY2JhYzQxOGFhY2YzOGZmZmJhMDQ0M2FmNzc4MWQ4MiJ9"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L462-L470",
+          "version": "repo-lines-v1:sha256:429f620e1e99508e11f44d6a606fe3837ad2a5609ed48290b52110f3305983a4:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2UyODE2MTcyMjI1MGJiMWE5MzM3OWZkODUzN2RjZjZhNmUzMTYwOWI2NjdhY2JjYTgxN2Q2MDIyYzQzYjE4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjI5MGExMzdkYWIzN2JkZjI1YmRlYjkxNDY3NzljOWJmODI1MDAwYjMwYzkyMmJiNjY1MTQ0OWNiYTQyNzUxYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2NmZjg1MjNjNGZlODJhNGFkNTdhOTQ0MWViZWQ5NDU0M2I1Mjc2MTE2ZmM3ZTkyMmE2ZDhmODk5YzFhZTFmYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_726f39e620124ee489c1c1f61857ad44",
+      "statement": "The GlitchTip release is literally APP_RELEASE when set (taken verbatim, never split into name and version), otherwise artifact:version from whichever source resolved the artifact; the bus is not part of the release and two buses of one deployment are told apart by the sincpro.instance tag, with the bus standing in as the artifact only when nothing else resolves.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L173-L183",
+          "version": "repo-lines-v1:sha256:1282eb0032e014e5fb88c088b019ec74b005cb30a94759d4df327b7b43250049:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxNzk4M2ExMWJiNjU1NzExZDJiMzdlNzViM2JhNzM0NTNmNzMyNzY5MmZhODY4ZWE3OTE0ZmQ5ZjAxMTZlMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NGY0ZWFjYTE2MTkwZjllZDk5OWY3NGUzZGVmMWMxY2M1ODcxNWU1MDBhYzFiNjY3Yzc3ZjgwNzIyODE2NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlYzE3ZWVjMjQ1OTkwMDlhYzgwNDZiODAxMzg4YTBmNGUwMWMwOGFjZjcwMjZlYzk3M2Q5NTdmZTc2MzE2ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5OTc1MzVjMmM4ZGZkYTcyOGYyYWFlZDFmNWEwN2MwMTE0NGJkNzQwYWZiZmM3Y2M0N2M2YmI5M2Q0ZjNmMDYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L51-L60",
+          "version": "repo-lines-v1:sha256:09d3a5069f7309c1b372758118678bfc55ff5a70489be61dd7315cca29992f4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5M2Y4ODc2OTFkN2RjN2VlN2Q1M2QzMTY1MmYxNWI2MWQzYjg4MDdmYTE4MTRkMTQ0ZjljNTcwOTk1MWUyYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiYjM4OTg5ZjhjYTA4YTRiZDIyMjU2OTllYjQzZTUyOTNjYWEyZWI3OTMxNjRhODJlYzdmNWZjZTUxYTY3NjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4YTBiMzk3YWIyNDExNGY4NzEwMDMzNGMyMjZmOWMxNzA1NTU5ZjkwZTIyMGJhZWNkNmQxZDdmZTc0Yzk3M2EifQ"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L191-L222",
+          "version": "repo-lines-v1:sha256:fd0848ecd7cad1ae7ee069677925d7bcb369382d19ce82330454445a29e032b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5Y2MzYzI2NzFjODExZTg0ZDIwNjIzZGEzZTYwMjkxMDMzNDA2Nzg3ODU0MDIwZGVlM2ZlMGM1MmYwYTU1OGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1NzI5M2VlNWY4ZmJmMDI1YjBkMzk1OGE1NTZjODA5ZTM3NmU4MWE1NGMxMWQ4Yzg3OWZhZjExNjI2ZTI0NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmYWNhNDAyZjYxOWZhZTY1YTNlY2EwMmE3MjY2NmJlYWFjMGFjMjIzMGJmYmUxYTllMmE4MzZmNWNkMzIzZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1ZmJlYzcwYmJmZmEwYTgwOGQxNmM4NmQ4MWExZWU0Y2YyNjIwYTVlY2E1OTQ4ZGJhOTUzMWViZTc2YzI5YjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6feb71f256f4472bb87abd614f63f5b9",
+      "statement": "When kind == \"framework\", record_error replaces the identity with framework_identity(bus), which reports artifact sincpro-framework with the installed framework version (\"unknown\" if not installed) while keeping the bus segment, so routing/build failures land under the framework's own release instead of a bounded context's.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L105-L117",
+          "version": "repo-lines-v1:sha256:45c410e807ebc8ab6390d587039df45bf8315a61538de951137caa10afac7002:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YjNmYzc3Yjc2OTlmNWViMjZjNmI1ZWM4MTRhNGQ4MWM3Y2E3NTI1NWYxOTdiYWI2YmZmODYwMzEzNDQwYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkYjE0OTM1NWU3ZjY2NWViNWY0MTM4MWUxZGZhYWIzMjQ5NTEyOGMxMDllOTIyOWZmZjgyMjBlOGUzZmI4ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkMDAzYTA0MmI4NWY2NWRlNjJhNzQ4NTc0NDIyNDI4M2NjNmY1NDQwMTJiNjQzMmRjNzI4NTY4NTJjMzdiYzAifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L35-L36",
+          "version": "repo-lines-v1:sha256:835f753e1c389efeaf3634c07fe311f46872542aac39c459c32e65752b9f8fea:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTA4N2M1MzM2MWFhZTRhYmM1ZDkyM2ZkMTRlZTRiNzJlMDczMjE0M2JhMzM3OTgxMGJjZWQ1ZWU4ODdmOWZlNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNThmZWI4ZDNkYjE0MjljOGQyYjViODU1MGViZDI5ZTUxMWYwZGY0MWQ1MTM5Nzg0ZmUxMWQ5YjE3ZGM2MGE1OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDk5OGQ1OTAzMzYwM2RkMmI3NTVlMTYyNzUyMWI5ZjI5ODdhODZkNDliYTJlNGY2N2NiNDdmZmYxZGVmOTk1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjY5ZjVkMjE3ZGU3YjI0MDZjMGJjOTgzYmM1NzM1N2Y2OTc2ZDgyOGE3YTVhYTIzODQ3OGQ0ZjliM2U5OGEyMiJ9"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L303-L321",
+          "version": "repo-lines-v1:sha256:3af9b516d8e9ef60758b6e43802d7ead29bbd2e388cc8c6f77660fd808846410:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxMzNjY2YwNDVlMGE5N2I1NTg2ZGM5YjU1MjdjOWNjZmMwZjE1OTc0NjU1OTkxYjlkMmFmY2E1MDc4NThjMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3YTQ0MjQyY2UxODhiNDVhOWE5ZjY1NmY5YjUyZDU2NjE3MGMxNzNhOWU3MWI0NDMwMmI0YWJiZDJmMjQwNDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmZDJmMWIwMGYwYTY0ZjE1OTMzYjAxYjBjZmNmY2ZjYzY1MTQ5NmQ4NDhhMjRhZmZmNTkwNDE3YTA1ZTRlZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjZDcxM2JjY2U5ZTU1NTk4YmE3MTE2NDEwNGYyOGYxN2I1YjhkNDUzODc5ZmY1MGJlYWIxMDFlNWY1ZTczMmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_06a68d609c9644f98848ed834ed62455",
+      "statement": "Framework-kind reporting call sites are FrameworkBus.execute for UnknownDTOToExecute/DTOAlreadyRegistered, UseFramework.add_dependency for DependencyAlreadyRegistered, and UseFramework.__call__ for SincproFrameworkNotBuilt, all with layer \"framework\" and no span, so only the facade's unroutable-DTO case carries a sincpro.dto tag.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L196-L200",
+          "version": "repo-lines-v1:sha256:46fa25e87a59e6d36a6b2f5845c34177d7a17f8f0610205f0e7a9f758cee99b4:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDUyMGY1ZWE2ZGY2YWVlYmJkNDVlMTI1OTAyZDE4YTQ4Y2U2ZDBmOGE5Y2Q1OGU3YWMyMWViMjY1ZjI3ZTkzNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTEwMzQ4MWM1N2QwZjBkYzBmNzZjZDJjYzhiMzYwNGM0ZTgyOTZkYTQxMjJhZGQxOWU4MTc0NWRjN2UzMzFhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzU0MmQ5ODg3NDJkM2Q0NmFhOTQ0YmYxNzI3MjQ5OWQ4Y2NhNjkxYjY3MTQwMjUzZmJmM2NkNWFiYWM3NzJhNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzUzNTMyZTA3MGU2YWFmYjI2MTlkZGFlZTJlMzdmYjAxODBmMWI5NjJkOGIyZGZlN2ZmZGQ1YTJjMzUzMjcyMiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L110-L110",
+          "version": "repo-lines-v1:sha256:15140faba33ca175a25d10bc5d700ac835c552ffbc5d8be10726fc164c3785b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTUxNDBmYWJhMzNjYTE3NWEyNWQxMGJjNWQ3MDBhYzgzNWM1NTJmZmJjNWQ4YmUxMDcyNmZjMTY0YzM3ODViNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTUxNDBmYWJhMzNjYTE3NWEyNWQxMGJjNWQ3MDBhYzgzNWM1NTJmZmJjNWQ4YmUxMDcyNmZjMTY0YzM3ODViNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2I2YjI1N2U5MzM3YjYxNmYxYTIxOGZkOTM5Y2U5OGExYTYwY2UyMTQ4YzhlNGUyNWNhMjFkY2UwNWVkZjU4ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjM3ZDUxODg3Y2EwZTgwOTcwM2M4NDk3MDRkNzM5OTIwMTljMGU0YzUxZGVhNmEwNzRlNDNlN2Y5ZDllY2JkYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L166-L169",
+          "version": "repo-lines-v1:sha256:5e20345990d8eaaa61651cb9ef1ebb9e41ba408199c1d7f361a1019f5ce398c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmYyZjQxNGRiNjE3OGNhYTJkYjVkMjQ2MDk5ZWRiOTkyODljYjM2ZTE3OTZiYjMwMDMyYmZiODAzMTZlY2RhMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU4ZWQzNDY2YjM4M2FhNGU2MDcwODY4M2I3NTJmN2U4M2ExYTYzZmVjNGYxYjY0MTBhYTVmNDU5MjQwY2I4MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjBkYTk1MWJiYzE3NTMzOWYyOGMxOWEwNmE3ZWM0OWY5ODFiZTYzYzI5YTUyN2EzNTcxN2U2NTI3M2ZmNjRkMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmQ2NmVlOTM1MjBhNTY3ZDcwNzA1OWNhNjljMzk5MDgyNjAwZTYxMjRmYmYxY2Q4NWMxNTVkNmVjNjA3NzlhNyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L380-L386",
+          "version": "repo-lines-v1:sha256:a12f0e5db314adbc66083dd58c85a0e5cfd79e6f26049f628fffc73d852c4e0b:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDk3ZDQ3NDNiNGRjYjUxMDRjMWEwNTljNzU1NWM3ZTEzM2M4ZDM0MjJhNWI3Yjg2YjI0OWQ3MGQ4YjM1NDlhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU4ZWQzNDY2YjM4M2FhNGU2MDcwODY4M2I3NTJmN2U4M2ExYTYzZmVjNGYxYjY0MTBhYTVmNDU5MjQwY2I4MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTgxYjY1OTY2ZTZmNjg5N2RhMWE4NzM0NTE2MzBiMGU5YjA0NGNhODBmMzVhNTBmY2QwODc5MWE3ZjVjNWRjZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTRkNWZjMDY5MzE2ZTQzNTdjNDQ2ZTE4MTg0YjNjYjBkNTljODQ1ZTFiMTI1OTVlOGNlNzA4M2VmYTQ4NTIyYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6b9a3154b4034bb4b204ae118ea697a5",
+      "statement": "Events are captured inside a sentry_sdk.isolation_scope() whose client is set with scope.set_client(client) when the installed SDK exposes it; the same scope carries the tags sincpro.kind and sincpro.layer always, sincpro.dto when the DTO name is non-empty, sincpro.instance when the bus is non-empty, sincpro.package when the artifact is known and not \"unknown\", and tenant when settings.tenant is non-empty, then sentry_sdk.capture_exception(error).",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L40-L62",
+          "version": "repo-lines-v1:sha256:8f89583d8268b3cbadd865493b8be2126835947f8f04b94ce1218914149e15c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNDBiNzY4ZmY1OTkxOGQyNDZiNWEwYWVjNzg0ZTI0YTI1N2RiZDc5ODE3YzUyZDYzZjA5NTczMGUwYjRiYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3MjRlYzYxNTcwZTY3MGVjMGJhZGUxMDUwMmQ4MGZiYjcxNmUxMDcxZjM1MjMxZDQwMzVhZmQ4NGE3ZmE5ZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2OWY1ZDIxN2RlN2IyNDA2YzBiYzk4M2JjNTczNTdmNjk3NmQ4MjhhN2E1YWEyMzg0NzhkNGY5YjNlOThhMjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4OGE2MzJjMGQ4MmZmOWFhNzU1MjJhOWYyZDQ4NjY3NmQ3YTU1YzU5ZDNlOTIxMjEwYTA2MDcxMTZkZTFiZTUifQ"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L225-L263",
+          "version": "repo-lines-v1:sha256:3fb4c0f7e2adb242163325ff44ef362284f59eb75dae16a3c9b2453de6a55424:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4YjZjZGY5NjM2MmIyNWJhODgzNTI4ZjVjNDg2MTQ3Yjc4ZDA3Yzg0OTJlMjQ4ZTA1NjNjNjBlM2IzOTdmYmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5MzQ5NTA4N2MxZDIxNTI0YmRjZTZjMDYwN2Q4NzM3YmVjODM2ZDgzODg2ODEyYThhNWQ2NmI5OGQyOGUxNDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0M2UzZDY1OTIyY2Q0YzI3YTI2MDFjZGQ5MjA0MGY3NjY2NDQ4ZmU3NjVlNGY0YTQ0ZDVhZGNjYzdjNDRiNGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1aa54e500f7e4383b915b6d84b258c6f",
+      "statement": "record_error has four silent skip conditions, and the ignore check is guarded by kind == \"instance\" and runs before the framework identity swap, so types registered in ignore_sentry_exceptions never filter framework-kind events even when the list contains Exception.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L29-L45",
+          "version": "repo-lines-v1:sha256:4767c6989c6f4d827bf40897e7d61a13c28232c2cc52ff3d83a4a7289b585265:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlN2JjZDM2ZWY1M2I0NDUyM2U2NWU5OGQxOTQ0OTkzZTBmZjE3NDZmNTUzNmMxYTUxMTc0NmYzZTAxZTc1NmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5YjI4YjFhZGExNDQ4YzI5MDI2NGZlOTA1ODg5OTc3NjNlNWRhZGYwNzhmZTA4YmM1YjhjOTZkMzlhMTYwMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyN2ExZWE1YmRhYTVkMTQzZTI3NTQxYzgzYjZlMTE2NjRkMzllZTM4ODYzMzI1Nzg4OTkwOWFlMjU3MzZkNzgifQ"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L324-L342",
+          "version": "repo-lines-v1:sha256:fa5d86cf4966e449fc09ce3c2dcd80850c36927e5e923d3c66ffe64f3aa571c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhNGYzODMxNzc4NTVmOTczMzhlMDZjYzAzZTljMTYzNmYwYmU1MWJlNDc5MGYxY2Q1ZTQ3ZWVmM2Q1OGNhZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczODIwZDM0NmNmMTQyYmJlNjY3MTE3YWVlMGI5NGIwMGI2MGEyMmQ0NWQwOTNjYjk4MWJkY2MwNmZlNzg2MGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxNDk2NjNkZDQ1NjkwNmJmNTEwOGQ2MzVmMzk0MWMzNTQwYTY0MzAxYzE3YWI3ZGY1N2NlOTVhZWNhYmQwYTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_41deb32c136642158cd2c083f26e7157",
+      "statement": "The bus reports the error before consulting handle_error: FeatureBus.execute and ApplicationServiceBus.execute each call observability.record_error inside their except block and only afterwards return handle_error(error) or re-raise, so a handler that swallows an unexpected exception still produces a GlitchTip event, and an exception crossing two delegating layers produces two events (sincpro.layer feature then application_service) with no capture marker to suppress either.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L116-L120",
+          "version": "repo-lines-v1:sha256:7d3f9bd5d6ed2cb14f04ee3393dc7a8806849699d2cad18337bd5a9bfc9f0577:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTI1MWY4YWEzY2Y3ZWU4Mzc1M2YyN2MzYzQ4YTE5NDEzMzYxNTA4NjlkZDZlMDUwNWRiOGVkNmE1NWNhMTNlYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODkxM2MxYmZiNWY2NzA3MzdjNzU3ZDA1OWYwNGNiNDFlMjJkYTNlNjVkMzQzN2Q4MTBlMWE2OTNlMWNlM2RlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2ViYjg2NGRjMGY5MWM4Y2IxNTdjZDJjNTAxOWQzNjdmMDc5ZDE1NmJlMWE3YTBlMzQ2MTRjYTc2MzI3YTA4MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTUyMWZjYTc0ZTVjMTg3MDNmZGFlNTdhNzNiZGM0MDBiN2FkYzNjYWRjOTM2ZWU2MjI2Mzk5NTZjODAyOWMwMiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L60-L64",
+          "version": "repo-lines-v1:sha256:4821f07ebffc1659dbe4be2910354f0e05da27aa3151d14a85a13ca903cc76e6:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTI1MWY4YWEzY2Y3ZWU4Mzc1M2YyN2MzYzQ4YTE5NDEzMzYxNTA4NjlkZDZlMDUwNWRiOGVkNmE1NWNhMTNlYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODkxM2MxYmZiNWY2NzA3MzdjNzU3ZDA1OWYwNGNiNDFlMjJkYTNlNjVkMzQzN2Q4MTBlMWE2OTNlMWNlM2RlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2ViYjg2NGRjMGY5MWM4Y2IxNTdjZDJjNTAxOWQzNjdmMDc5ZDE1NmJlMWE3YTBlMzQ2MTRjYTc2MzI3YTA4MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2JjY2Q0YmUxNWZmN2U5NTJhMmQ0MWQwYjdlMDBkMDBiNGM4OTkxMGVhMjBmZTMwMmFkMDVlNGI2YjI0MzY5YyJ9"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L265-L283",
+          "version": "repo-lines-v1:sha256:312939ef0d4c778c9e15c842103dde9ac915c52ce4ccdbc33e1b5427105a08b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlODc3YTI5MTIzNzU4YTM1YzljZjUzZTA2YjI3NWQyNDU0MjI3Nzk4NWNlMjI1ZjZjY2JhNTUzMGRiYWQ2NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5YTEwYmEzNjg0MWU4ZmM4YWQ5NzlmZmI4NmJjNDIxYTQwNDIwZjY2OTAyYmY2OGM2Yzc2OGI2Y2M0OGU3NGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5YTcwZjU0ZGRkZDA4NWEwZjFhYmU5NGJhMmVkNGZjYmVmNjM5ZTNiNTg5NTdkMWZkZTcxZjllODE3MjZmZGUifQ"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L485-L517",
+          "version": "repo-lines-v1:sha256:9cb05d3913dce757f45a35f190b99ef6efee551d99c1f98807105c1372b11a4a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNzlhNTRlNTgwNzI0YmI2NzU2MjE3ZmQ2NDZmZTliNTZjYTNmNjM3ZTdhODg0N2MxNDcwNzM1YjMxZmQwNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkNTljZWI2YzQ3YmM4M2U4MWU0ODM0MGUxNTVkYjZiMmU3MGYwNzJiMTEyYjk3NTc3NzYwNGVkMjc1NDQ5MjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVjMGQ5MjBmNzRkYzIzOWI5ZmViZDQ0ODJjOWFlNGQ5MmYxOTc0ZGM0MmFlOTBhOThjZjU0ZGVmZTU4Yzg5YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4ebf25a0b2704ad9b0bd5a845b8fd203",
+      "statement": "Expected domain errors must be excluded explicitly with UseFramework.ignore_sentry_exceptions(*exc_types), which forwards to Observability.ignore and accumulates unknown types in a tuple without duplicating; because all three buses share the same Observability object, registering after build_root_bus() takes effect immediately with no propagation step, and error handlers still run for the ignored types.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L117-L117",
+          "version": "repo-lines-v1:sha256:3793d8b7bdb1fa267bdfbdccb7f2077f9f99686995f387592296a97c65e0a906:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzc5M2Q4YjdiZGIxZmEyNjdiZGZiZGNjYjdmMjA3N2Y5Zjk5Njg2OTk1ZjM4NzU5MjI5NmE5N2M2NWUwYTkwNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzc5M2Q4YjdiZGIxZmEyNjdiZGZiZGNjYjdmMjA3N2Y5Zjk5Njg2OTk1ZjM4NzU5MjI5NmE5N2M2NWUwYTkwNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzU1MDFhOTM5MWQ1NDU0ZDZlOTQ1ODRiNTIyZTEzNGI1ZmJkNzhmMDIwY2Y3YjY1YzdhMzY0MmU3ZDc2ZWQyZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2YwZTkzZTc1OTcxYmM5NTI3NTY4Nzk5MzQ1ZmU0OTBkYjZmMTVlNzNiNTYxOGM4ZmQyZWJlYTBlNzE2OTExNiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L89-L95",
+          "version": "repo-lines-v1:sha256:276da5261522f5a7c4169d6f422b56ca4d10e47ad5f90ce5804c4192682ab346:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODJkOGQ5M2U5YjUxY2ZiOTk3NWUyMWY0ZTJiZmNmNTEwZDI5ODU0ZWM5ZGI2ZTc4MTU1MWZmNzdhYjM5YTdmYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTFlZDFiZTBlNWZkNjU5NjFhNTExMDAzNWJlYjVjN2RiMmM4ZWU4MGRjZDg0MTY0Nzc3YWJlYTllM2E3YTdiNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzI5ZTY1YjQzNTRjMmZmMTc5ZjU2ZDc1ZWY2MTU2NDcyZDczNDhmYjVlOTM4NjY5ODZlMzc2NmFiZGIzMzdmZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzhjOTNjNWM4ZDQyZjhjMDYyYzA5ZjkzNzQzYjA2NWVlZWUwMWZjNzQ0NmM0ZWZmNmFmZjZiNmFjOWRjZmM4YSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L240-L247",
+          "version": "repo-lines-v1:sha256:4fc1c42b092dc202de3973f5eef3564c8c2e8790231c0e9a49da1e2c6c3c1517:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGQ5ZGZiYTlmOGExYTExZTNhNDA3OGZlZjI2ZWYzOTk1M2E0ODZmYzI0ZDFkNjgwYTA3MzRhMGQ2MWYzZmE2OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjRmOWMwOTA1MWViZjBjZDA2ZDA3YmMxOTMzYmMzZmZkNmFlNmE1MDhkZmE0MmNmNGRiNjQ2MzI2YmE1YzkyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjkzMTIwNmE2ZGY0MTNjMTFmZjRjNGZkZDg1NWEwZjc3NWI5YjI1Yjk3MzUzNmE5OTBlMjY1NGRmYmFiOWZmOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWIzYWQxODIxN2FlNTZlMWQ5NmZiYTQ1Y2FhYjY4MjhiNTUzOTliMWJiODNjNGVmNGVjNjk1ZWViY2JkYWNlMyJ9"
+        },
+        {
+          "resource": "repo://tests/observability/test_bus_wiring.py#L96-L110",
+          "version": "repo-lines-v1:sha256:e1f9985ba8f3f3550f0c4c2b3b65468021004b0d755a0994c99ecc42765fa24b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwN2I0M2YyZjU1YzE0OTgwOWQwOTA2M2QwZGJhZjliZGEyOTJmNTlkNzU1NDI4MjliNDUyOTE4MDk2OTJiOTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5YWQ2OWI1NmE5MWVhZTU5OTA2YWU2YjZlZTJmMGQ5MzcyNWUzZDM2YTY4NzUyYWVlZTZlMDEwOGU5YTQ5MTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxOWQ3NTUwNTMzZjczMDg5M2NiNzY5NmU3NWIyY2QxODMyMjJkOTM1ZTM4MWYwZWFiZmE0ZWY0YjE2ODg5YWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b064d55aee5145d082ddc41992bb6e6b",
+      "statement": "Error clients are cached in the process-wide registry keyed by the release string (not the bus), so two buses of one deployment share one client object, unlike tracer providers which are keyed per bus; registry.reset() clears the error clients along with the providers and the announced process identity.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/errors/setup.py#L51-L53",
+          "version": "repo-lines-v1:sha256:1e1d39d231d2e9493cebfd3813a71a3b72897020a56c5a6f9280b722da2be352:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzJmMmNhZDgyNDZhYjU4NDM2Y2UxMzhlZTM4OTQxODNmNjk4YzVjYzhkNGViN2E5NzI2NmRmZTc1OTljMWM3NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWUzYzg4MmZlOGE2NmE4ZWRkYzEwZjRjMjdkY2U3MmZiOWM1MGQ2NGJlYjAxNmRjYjY4MzEyNzA1MWY0ODRjZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThlZWMwNzNiNzA3N2E3NTRlMjZiYTBiMTIwZTcwYzQ2Y2I3NTcxNmQ2NmIwNjc3ZGIyYzMwMWRkNmM4ZThmOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTM0YjBkZDk0OTA1NzAzMzcwNmY3MDJmZmE4Y2UxMWQ4NmE4YzU3MWYzNzA0ZjJkMGU4OTg4MGQ2YjJjZWMwYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/registry.py#L41-L50",
+          "version": "repo-lines-v1:sha256:00d81d83b25d759220e1445bdbf610acf71869a63a99d6d81e6e1bd2236fd60b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhMDFmYzZkYjYxMzhmZTNiNjZmYjc2NDliNDFiMzM1MTY4OTdlMWRiMjlkYmE0ODg4MzYzMzZhMjM2NWM3MmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhMDgyNDZjZjBiOTI1OTUyYTZhMjg1YTczNmI5MGY3OGI2MjMxNGVkMjhjODQ2NGMzZjNkYTI0MmRhZTY1MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1YWYxYWU4ZjMwYTkyZDVjNzc0YzYwM2M0Mzc5NjVlZDkyM2IxYWExZDNjYWI0MGUyM2UwNjBiNzYyNGM1MWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2OTY0N2MwZGM3Y2ViZmFkZDhjMjgwNDM5NjcyNDI4MjM5MzkzZjI1NGEwN2I5YThjNjRmM2M1MDU2OGI2MjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3fc55e198be04ffbaf362afe148cd5a1",
+      "statement": "Reporting is wired into the buses, not around them: UseFramework.__call__ runs the middleware pipeline with no except, so a middleware that raises (or anything failing before FrameworkBus.execute) propagates with no record_error call, and every reporting except clause catches only Exception, so KeyboardInterrupt, SystemExit and asyncio.CancelledError skip both reporting and the error handlers.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L196-L205",
+          "version": "repo-lines-v1:sha256:ee12804e3ebe5fbadecaed4ec37dcd8a2b424e80993e5c25ff8ebd0bec718435:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MjBmNWVhNmRmNmFlZWJiZDQ1ZTEyNTkwMmQxOGE0OGNlNmQwZjhhOWNkNThlN2FjMjFlYjI2NWYyN2U5MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlOGVkMzQ2NmIzODNhYTRlNjA3MDg2ODNiNzUyZjdlODNhMWE2M2ZlYzRmMWI2NDEwYWE1ZjQ1OTI0MGNiODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1NDJkOTg4NzQyZDNkNDZhYTk0NGJmMTcyNzI0OTlkOGNjYTY5MWI2NzE0MDI1M2ZiZjNjZDVhYmFjNzcyYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L60-L64",
+          "version": "repo-lines-v1:sha256:4821f07ebffc1659dbe4be2910354f0e05da27aa3151d14a85a13ca903cc76e6:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTI1MWY4YWEzY2Y3ZWU4Mzc1M2YyN2MzYzQ4YTE5NDEzMzYxNTA4NjlkZDZlMDUwNWRiOGVkNmE1NWNhMTNlYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODkxM2MxYmZiNWY2NzA3MzdjNzU3ZDA1OWYwNGNiNDFlMjJkYTNlNjVkMzQzN2Q4MTBlMWE2OTNlMWNlM2RlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2ViYjg2NGRjMGY5MWM4Y2IxNTdjZDJjNTAxOWQzNjdmMDc5ZDE1NmJlMWE3YTBlMzQ2MTRjYTc2MzI3YTA4MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2JjY2Q0YmUxNWZmN2U5NTJhMmQ0MWQwYjdlMDBkMDBiNGM4OTkxMGVhMjBmZTMwMmFkMDVlNGI2YjI0MzY5YyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L373-L404",
+          "version": "repo-lines-v1:sha256:f5f6d43b4f2fea57d4f246ca223c69848898f5f62f58d78a3be05833cae29678:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyMmNhYjkzNTQxMWEwNTIzNmU5OGU3NWFjOTJkODcxZDQyOWVkYmMyMzJmOThhMDEwYjQxZTE3ZWIwYTUzYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NWUyMGEzNjE0OGUxOTFhNGNiNGE5ZDcyOWVlMjUwNmQ2Y2QxYjkwMGU1MjBkYjBlNDZlZTRiOGU4YTZjYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjZTg5ZWE1Mjk1ZWQ0OGY4YWQ2MDRlMjUyZjE4ZDI0YjcxMjE3N2IwYzAwYTg0NTg5MzVmMjAyMjQzMDhlNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwM2FjYmJkYjU0YjBlN2EyYWNmNzVlZmYzYzg3MWQwNDBiYTYxZWJkY2VmNWY0MjAyMWU5OWM0ZDkzZWE0YjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d199753ef66c4f0a8a9a53a220217ccd",
+      "statement": "process.record_error(error, layer=\"process\") reports transport failures under the process identity (artifact:version with no bus segment) with kind=\"instance\" and no ignore list, so such events carry no sincpro.instance tag and are not affected by ignore_sentry_exceptions.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L139-L153",
+          "version": "repo-lines-v1:sha256:1830b939d0d5fa2f3cb9971cc67a9c74aa2a649510fcbcafce58985a1f441dcc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkNGRlNDVlMDVjNWI4MjRiNTc3YWY4Zjc1ZDM5M2NjNGQyZjYzMzQyNjA4MmM2MjczYWZkNmY2MmRmZjY1ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljZTUwY2ZiZTc4YzI0MWVkMzc0ZmZjYzVhMjI3ZjBkODE2YmUwNzA3OWYzNDBkOWUwNmQxYTY1MGQ0YjUyMDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmZDhlMmU0ODRiYjRlMWExMDgyMjJiNzU3MWU4ZDRiZTQzZjZjYWNhMWQ4ZDllMDE5OGNmMDQyNzEwMjllODYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L204-L206",
+          "version": "repo-lines-v1:sha256:f652595d57bb16c58eb9d9e8f455de40343a3872ef1ae3917a25aab4b993b933:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDIzZTFhNDRiYWY2YTk2NDUyZTUxMDg1OWM5MDc2Y2YzOWYxODJiOTVlNDYzNTQxNDU0ZDI1YjU4MmNlZjQ1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI2YWRmNGFmNTExMDBlMjRkMjE2ODczYWExYTc2YTQxYWM0ODY0MzVmMmZhNjQ0YzUyN2I1MjE2MDA1ZWE0MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWZjYjMwZjBjYjZhNWU3YTBiZGFkNTJmYjBkODVjMjUxMzllNzIzMWJmMWIyNGRmZGQ4Njk2ZmUxNDE3MDAxMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjIyNzEzZTlkMmJlNTU4Y2ZmY2IxNzViNTBiYjFmNWFmZjU2MzlkMzVkNTc2ODdlY2Q3MjgzMmQ1NTE0OTY5OSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/errors/record_error.py#L55-L56",
+          "version": "repo-lines-v1:sha256:1dcd3b4377474cb6273929995a8538f1e36fed1cb203e5af86bd39a9b93e1887:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjUyZWYxOWNlY2Y4OTU4N2I0OWY3MGU2ZTI5YmI3NzRlYWU1NTZiZDA3N2Y0MmQ5OGNiNmY4YmNjNWUyNzk3OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTVhNTA4MzYyODA3M2ZhY2ZjMGU5ZWY0N2E0MGRiOGRmMzMzNTU3M2NmMGZlNWRkOWRmYmU3NmM4NGI2MmVhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODlhMjA2NjdmNGNiOTExN2I1MTQ2MTIzMTdmMWYwYTJjZjcyNTgxMzU4OGY1ZmUzNWY2Mzc3ZmQ3NjdlNTU5MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjg1NGQyNmQ2NGQxMTRlZjc1ZDY2NDdkOWQxNjAyODJiMWRkYTYwNGMzYTRhOGJhNjQ3NTg1MGJhZGRlYWNhMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fdd5b7378759422fad2eb25d67b16429",
+      "statement": "Observability.start() stores the per-backend ComponentStatus from setup_errors/setup_tracing and emits one logger line 'observability sentry=<state>:<reason> otel=<state>:<reason>' at warning level when either backend is failed and info otherwise, swallowing any logger exception; before start() the sentry status reason is the field default not_built.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L69-L87",
+          "version": "repo-lines-v1:sha256:241a0aa46c6e758dab4e8ff891a5046ae6d4fceda5d35e0ad47d1ebba6337fcf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiYzdkNmJiZGIyNzFmNGM5NzkyMzcxODllYjgwYmNmMWZmZTY2YzEwOGE0NjM1M2M1NTc2YzMzOWNkMjE0MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ODVmNTU0OTBjZTNmZTBlOTU2NzRjMmFlZWEzNGMzMjdlZDE3YzMxMDhjMWIwNTA5YzllYzFjZjU5MWY1OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0Yjc4NTJjNmY3YjUxMWMwNWUyNzRlYzFiMjRkMTBkNDU5NjE1YzhkNDViNGFkOWE5MGNiOGQ1ODE3ZGMxMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjYmIyZjg4NWJhMWEwODg3Mzc4MDE2OGRlMjliYWIyNzQ1NWZjZTE5YzIyNWE3ODYxYWI3NzMzNzIyZjMyY2MifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L63-L68",
+          "version": "repo-lines-v1:sha256:dd443258db861c2da74c54fc616d8212eca4f5f2a5193b22e028d4d86f191309:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTVmNDM3YmUzZWU0ZmU0Y2E5Yzc5ZGVkYmMyOWZiNjRiZmEwZTI5ZDU3MWFhMmUxYTk0YTI5YzlmOWRjMzljZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjJiZDc5YjcwYzkwZjU2ZGY4OWYwNmE0ZTc0YjVjM2MzOGZlMDU2MzUzOGUwYjlhMzcxNWI3MjVjYzYzNGU3YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTBmMWU0YzMzN2FhN2EyZGJmMDUzOWVlYjU4ODJmZjQ1ZGE0YTgxNDNkNDQwZGRmMmYxMTQ1NTA0YjI2NDA2NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDYxNjkzYTA4NzgyZTg3NmRiYjYzZmVjZjMwODA5MDYzODU3NjI3MzZkNGMzODFmZmMzOTA3NWU3OTU4YzVmZSJ9"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L455-L459",
+          "version": "repo-lines-v1:sha256:48126518f24d89bcf34934d19c3f6485f2fc3394f370f7f9d455deccd804a2e7:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjgwNDE4OWI0ZDk2ZmQ4ZjkxYWUyYjUyYWJkODc5ODlhNjk0ZmUzZWM2MTRjNDRjMjdjNjFhYmY4NTM5YjFiZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWI3MzRjNzJiY2UyOWM2OTJmODBhYWQyOWNlZjJjNTM5ZmZiNmJjMzBiMTk5ZjhkNDY1ZmIyYmRiNmYyZmQ3ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjk3NjY3YmM1ODJkMTMwZDVkMGQzMjQwZjM3NzJmMTBmMjU5ODgzZWQ4MzkyYmY1NjU0NWEzOTZiMDM3MDhiOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWJlYTlhZjE3MGM2ZmNiN2U4NWE3ZDRkMmFhMDEwNjIwZGJlNTk5M2JiNGY3MGQxNTM1ZjA5MGZlYzNlODY0OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d24e09e945f148e795da34ecbc1d54ea",
+      "statement": "The identity — and therefore the release, the environment and the framework swap — is resolved once lazily on first use of Observability.identity, while the caller's module name is captured eagerly at Observability construction because from a request the stack would name the host (Odoo) instead of the library that built the bus.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/observability/api.py#L52-L67",
+          "version": "repo-lines-v1:sha256:0ea4001495f9b5e65145f672534305e048f3c58e2fd28c392079c64c4092c412:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxODEzZGYwZjRhNmI3Nzc5YjA5MWNjYjg2OWM2NmNiYTI0Y2MzNGU3NTMxZjM5Y2RmNmY3Zjc2YTc3Y2I4ODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkZGRiNTg0MDUxYmRmMWJiYmQ3OTE4ZmE4YmU4MmRiZDBlOGQ4NmNlMzc4YjVmNzA0NTQ4NTcwZGI1MDkwNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjYzE5YzgzMjU1Y2VmZjRmMTMxZjdkYjMxNDZiZWY0YzI5ODBkZjU3NDM2NjVjY2U4MjE5ZjZiMTJmMzdjZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE1MjI0OWExNzZlOTM3MWU5ODVmMmZkNjY4MmNkZDBmNjRiMDc0N2Y1OGRiNjM4ZjE2ZjE1MzllNjE4ZTQ3YjQifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/observability/domain.py#L147-L165",
+          "version": "repo-lines-v1:sha256:2065b9bef8a20f9be9882fa4ed03cd08619385e5b0f1dcb96fa0519fb181064b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3YTM3MzU5NzNmZDJhYjkyM2NmYWI5ZGI5MGU2M2RiMWNhMThlMjYwYzU4ZjgxNWNjYzBkYzFmNzM0ZjEwNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MTIyZDNlYjdmZTA0NDM5YjJmYmJkZDU2MGZmZTc1OWM1OTFiZmNkYzhhYmY2YzNmOWFmMWViYWUyOTMwZmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2NGZmZWE2NzQ4YjcxYzRmY2JkOWE0MmM0MDQ3YWJiY2IyOGEzN2YxMjRlNDUzZGEzOWRjYTUwNTYxNmViNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzNmI3OWEwNzYyZTQzYmQ5YmMwMGE0MWE2MDVkOGY3M2RmZTU2N2M4MTEzYWUyYWRjNGMyMDJmNGVlODQxYzQifQ"
+        },
+        {
+          "resource": "repo://tests/observability/test_api.py#L28-L46",
+          "version": "repo-lines-v1:sha256:87b2aa5f04f822b75a6ae5d247b574d987fab0a86624f469a4d5dfeb6a43e004:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwY2I3ZWQ1ZGUzMWYyYjAyOWI0ZGJjZTBjZTRlNjE1OTk3Y2RlMjNjZDQyN2E4ODM0YTU2ZjJjMDg5OTJmYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViODY5YmQzNmVkZWZiNDE1ZDY2ZDU4OGYzMmY1ZTJlNzJjZjEwZjNkOWMwM2NhODUyNWQ5MmQxNWRkNzNjOWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3NGE1ZTFmNTBkYWY4OTU2NzkyYzE2NzRiMDg5NGNjZmZmNGU4YWI4M2E2ODI1MGY5YWZlOGQyOWYzMmZlNWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjMWRiMjk4N2MxMDI1MjlmYWQwMTMxMTUyMGQyNDVlODExYjRhYjNiYzYwZTJkMDA5Nzk0NTVjY2E0ZmI5NzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b506911ca8184c098973d3349f8b91cb",
+      "statement": "Without the sentry extra installed the whole error path is a no-op (status off:sdk_missing) and the bus still executes Features and raises the original exception; sentry-sdk is declared as the optional 'sentry' extra in pyproject.toml.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L34-L46",
+          "version": "repo-lines-v1:sha256:f1cd7d9c44d7332542777ff3ac6aed3fb5936583a328654a87c6ab3ae83f6940:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmZWJiYjBkMmNiNjY3N2M4ODEzYTU2Y2ZmMjg5ODNkZWMyNjAzOTljMDM0ZDM2OGEyNjk5ODE0MTNhYzc4NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4OTlkOTUzNThmYmNlMjliMjZjZjE1MGFkZWQ4NDIwNzQzZGQ5MGExZjhmZDg0ZDJjNzc5YTg5MTA3ZmYzYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyNzNmNzE4NGY0NzAxOTI2MTMyZTI2NzRmZWZlNWY5NjQ1NmNmZWZiYTgzZGIxM2Y3NmJhODQyMGNmYjMyNjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlNGNjYmRhNjYyMThmMGIxNDYyM2I3MmIzMDhiOWJmOTA3ZmJlM2M3NmQ5NzFjN2ZmMGUyNDhkODYyZjc1MDAifQ"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L129-L142",
+          "version": "repo-lines-v1:sha256:ad6658f01584239849486d2f3bf8aa2d9b37a581d153b7a094df7e69875cb3c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTFmMzk1NjU5YTRhYWY5Yjc2MmQ1ZjYzYzM4ZWEzM2IzODJiMjc0MzUxNTlmMjNkNTZjOWMwNTNmMTJjNDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZjNhM2RmMTZiMjhmMzk5Yzk4ZjY5ZTE0N2FiOWVlNTM1MDNmZWM4ODY4ZTEyYmE2NDhlYmY3YmE1YWMxMDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkNDk0NjI0NTY3NmVkZTg5NTA4NjgwN2RiMDc2NzQwYzc2OWNhNjIwYmY1YTA0ZWI0NWZkYzFjZDBlMDZkZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0NjFhZjdiMzAwM2NlOWJkZDhkM2UwN2QwZWY4N2NmZDhkMGViZTYxMmZiNWUzM2EzMzdiYTI4M2IzMDI4ZDUifQ"
+        },
+        {
+          "resource": "repo://tests/observability/errors/test_sentry.py#L368-L384",
+          "version": "repo-lines-v1:sha256:83cdd3b5c60b81893048e73a790b0c436677d3cade9c577ae776b37d7895ea79:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2OWM3NWRkZDM4NjViZTJkZTNkMjYxYjY4NzA1Yjk5N2QzMmY5ZDllYzBiOTc1ZjljMTBiYTE1ZDhmZGE5ZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiNjcwMGIwODJmYTM3OTBkYjA1NzJkYmYxOTg5MGNlY2IzY2YyOGVmMjIxMWRiNmJjNDQ2NGVhZjMzZWUzZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwODAxMWQ5MmNjYzEyZjRlZGYyN2FlMTU5NTM0N2UzMWViNWQ2ZTE4NGE5YThiM2UzNDM4MmI0YmU5OWE0YTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYWQzNGQxZWM1MTJkMjUyMWMxZjE0OThkM2NhOWZjYWQxMTE0MjkxYzRmM2RiMzViMDkwNjE0N2RlNGU5NjYifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

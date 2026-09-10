@@ -3,7 +3,7 @@
 You are a Copilot coding agent for the **sincpro_framework** project. Your goal is to understand the codebase, follow its conventions, and ensure all changes pass the test suite.
 
 ## Before each task
-1. Review `/generated_docs/ai_context/consolidated_frameworks_schema.json`  
+1. Review the generated wiki in `/openwiki` (run `make docs` to refresh it)  
 2. Read the project’s `README.md`  
 3. Check existing tests in `/tests`  
 4. Follow the project’s established code conventions  

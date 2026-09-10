@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:08b5b2397be2b4449e3d9294b737ca1f70344ad5f68dd0acbd86a14b4e28aef5",
+  "claims": [
+    {
+      "id": "claim_b8a11a648d9b4519b7661be86fd0a7a2",
+      "statement": "The MCP entrypoint is a thin facade over the shared, protocol-agnostic Catalog: Entrypoint.__init__ constructs one Catalog over the given UseFramework instance and never reimplements the projection, so layer vocabulary, include/exclude/wrap policies, JSON schema computation and binary filtering stay in sincpro_framework/entrypoints/catalog.py.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L38-L56",
+          "version": "repo-lines-v1:sha256:cf19667685a0a70d13ecc649e35ead401aea0dbad92069c5fa624ebd06945fcd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3M2MyZDdhNWJjZjFjM2JlMTE4YzFhMDMxYmUyZWU5ZjZlNzdjMmE0ZjFmNDRiYjNkOGRjMDE3YjhiZjI2NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlYzZjNzg2OGQyYzE3YzFkMTQzYmZlMjI1MDgxMDdhMDJhNWVjMGNmMTUyMjkyMTM1NWM5NThkNmQ4MTlhYmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyMzgyOWFiMDc3OTMwNWY2OTY5ZDVhNDU3MzdlZDZjZGI2MjBmZjNhODVmZDRlNDFlYTE1YTRlMjkwYTA3YjMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L11-L22",
+          "version": "repo-lines-v1:sha256:f83ec8625e14877385f53996911afa3f7835608ad55917cea0d2ecaa728a82ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4MGMzMDAzNmRiOTljZjJiZWE2M2FlMTNmOTZlMmY2ODViN2NjNjI5MGQ4NTA0OWI5ZTllZjVmMDk0M2FhNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmZmFkNTdjZWEwYjFkMjc4YjdhMjU2N2RjNzhkYTliYjE2YzgxNWE2MGRlNjg4YmE1OWYxOGNmZmY3M2E1MGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZGU5NTFjOGU5YWVmZmY4Nzc2ZGNhMDA4MTZkMDMzOGZlZTQ1OTMzMzkyYTNjMDc0OGY1NWJjODdjZjEzODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5NDk2Y2Y4YjNmYTFkNzRlYWVhODhjYzI0NTg2ZGZhNDJkMGU4M2NiODQ4NzliZDkzNThhN2IwM2VlNjhhZjMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L55-L55",
+          "version": "repo-lines-v1:sha256:a0f407dbf9ee3bc3d1351d5040925ca62d7a012d8557547b21b0386979402adc:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGJmZGFhODQyMDg4YjQ3OTlhOGQ0NWNlMWM2NDJkYzFmN2ViNDQxNGU4ZDkxNjYxZDE1N2NkYzViNTc4YzJjZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTAxYTY1ZGUzZjM2NjUzZjIzNDg1Mzc2ODhhY2ZmMWZiMTE0M2ZlNTdjMjk5ZjQ5YTMxN2I2OTZhYmU0MWJlMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_4fd8cf3669784bd481607aa0f0b3fb37",
+      "statement": "Constructing Entrypoint materialises the bus: the Catalog constructor calls framework_instance.build_root_bus() when was_initialized is false, so a host built from an uninitialised UseFramework still has registries to publish.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L47-L50",
+          "version": "repo-lines-v1:sha256:d5d2625e90df60b2d01b5478cb93efa9a34372082a5de4014df26bc2bd6348d2:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjVlMmE4M2IzMDQzOTVjZmFiOTI4ODkwNTQ1Y2RjZWY5MzgzZmJiMmMyMjNjYjgwY2RkMTI3MWEyNTMzZTUzYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWE4OGU2NzdkMzk2ZjAyNWYyYTIxZWI3Njk3NjJjOGVkZjczZTNmMjRkMjI5MWIwZmViYWExM2IxYmQ2NmE3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDQ0Yjk1YmM4NGJmNmM4OTRjN2YwYWFmMzM4NjQzZjAwZGY0OTcxMzFiYjk5NThmMjA3Y2E1MmZiNGU3ZDRkOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWViZWFmOWMxYzVlMGE0MjU1NDI3MmRkOTJiNDBiNjliODY5MTZhZWNmYzUwY2M2MTBkOGRjNWE0YWEyY2RjOSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L14-L15",
+          "version": "repo-lines-v1:sha256:b81a20852f8863bbad8ce11c450ed75121aa91c4a7d8d19efd0720b3c4e16b69:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjVlMmE4M2IzMDQzOTVjZmFiOTI4ODkwNTQ1Y2RjZWY5MzgzZmJiMmMyMjNjYjgwY2RkMTI3MWEyNTMzZTUzYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxMjcyMTcwM2QzYTM0ZmYwYmJhZGE3OTNhMmU3NjNkYTJlZjhmNDBjMWY3OGUzMDM5NmIzM2Q3NmU2Y2RiZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWRlMTA1ODVjNjEyM2E3MzNjMjI4Y2FkNGIxNTQxODg4ZGEzZjEzY2M5ZmZhYjljNmUwODE0NzQ5ZDY0YmEwZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzg5N2I2YTI0OWY3MzZmZTk0ZTI5ZTVjYzE0MGM5M2E0MzRmODcxNzU5Njg3N2IxYWY5MDVhNDFiNjEzYzZiMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2779599bf59d4ac4a6491b5ef9649b2d",
+      "statement": "FastMCP is an optional dependency only: pyproject declares fastmcp >=3.0,<4 as optional behind the 'mcp' extra, and neither the rest of sincpro_framework nor the mcp package imports it at module import time, so the bus installs and runs without an MCP stack.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L35-L35",
+          "version": "repo-lines-v1:sha256:3b521fa6e524c622c77050a8b7dc70c04a918c1ac40f5ba7ce43dae92395c769:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2I1MjFmYTZlNTI0YzYyMmM3NzA1MGE4YjdkYzcwYzA0YTkxOGMxYWM0MGY1YmE3Y2U0M2RhZTkyMzk1Yzc2OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2I1MjFmYTZlNTI0YzYyMmM3NzA1MGE4YjdkYzcwYzA0YTkxOGMxYWM0MGY1YmE3Y2U0M2RhZTkyMzk1Yzc2OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmNiYjkxYTIyYTdmNTU3M2QzYzljNzUyNmJmNGQwNmI4ZjY5MDY4NTdmOTE5MGIyZTA2MGEzNTZhZmM1YWI0NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTNkN2U1NTM1M2JmZjhiYzY2OGU3NjMxNzIyNDgyZmJlMjVkYTg2ZDkyNTY4N2RmMDA3NTY5NTgwMTJlN2I5MyJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L47-L47",
+          "version": "repo-lines-v1:sha256:047ae1500265e243d915a6b8937e3d6c9bddfacd9dcd081ca4d6dc9091e5e2cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQ3YWUxNTAwMjY1ZTI0M2Q5MTVhNmI4OTM3ZTNkNmM5YmRkZmFjZDlkY2QwODFjYTRkNmRjOTA5MWU1ZTJjYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQ3YWUxNTAwMjY1ZTI0M2Q5MTVhNmI4OTM3ZTNkNmM5YmRkZmFjZDlkY2QwODFjYTRkNmRjOTA5MWU1ZTJjYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjM1OGE1NDUzMWNmM2I3MmQ0NTllMjhhMDkxNTQ0NzAxNjk4NThiMmNlNzM3ZWRmNTMzZjAzZDVhYmE1ZGZkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjJhYTllNWQ5ZTZiMTEzYTIwOTU0NTg1OGZkMjIyMDg5ZGQwZmQ5YzZiZGI3YmVjN2EzOGZkNDZhM2YwNjU5NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L1-L10",
+          "version": "repo-lines-v1:sha256:a73961202cfc0f93ce616903071667c9944d722f39ee483bce4eb65f8dbf4712:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MGJiNDBmZTQyYWFlMzQxMzhlZGE0YzBkYzBiZGNjNDg4ZTIzOTE5OWU3NmRkYjdiZDA3ZTRlODA2YjkzMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlYzkzMmYxOGQyZjI0NWYzYzdmMWU2MzVhMmE2OTk3NTc1YzUzNWVkMmY4M2YwNzIyMzc0ZTFiMDJkOTkzZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4NmIyMjg3NDc0NWY2MzgwMmNlNTdjNjY4MjQ5NzExYmRmZTQ4MWI5NzM5ZTJiMGQ4Njc5MGZmMzEzZTQ0YTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_19c5ce8436424d9c829baaad7418ddde",
+      "statement": "A missing fastmcp extra produces a named ImportError, not a silent failure: Entrypoint.server() defers 'from fastmcp import FastMCP' into its body and re-raises ImportError(FASTMCP_MISSING), whose message names the fix 'pip install sincpro-framework[mcp]', chained from the original import error. It therefore fires when a server is built (server(), run() or build_mcp_server()), not when the package is imported.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L49-L52",
+          "version": "repo-lines-v1:sha256:e5a2ccae4963b70269e36fa2cd92500cbcd8bf56d9c6bcdb4b1bdcdc11fcc1de:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU2OWNiMDkyODBlZTA3ODE5NDVlNDhkNDA0MWJkMmRmYWFlNjkxYWQyZWFiZjVkM2NiYTA4NDZjNzIxNmNhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2Y2NWEwZDVhNWY0YTg4MzU2Y2FjNjJhNDAwOGVmY2E3NDQyODFlZTQ1YjNkZmFmYTk2MWQzN2FmZTM4M2VlNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWI1MjlmYzJkODZjMzUwN2JmNTEzMjQxMzM5OTlkYjFjZTVmMzI1MDAyZjVjNjY0MTAyNWMyOTQyYzkzNTgyZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzU3MGE4MmQ3OWZlMWE2ODU3NjEzMmZkMGQyNjI5ZjY5OTUyZTJjNWY2YjJmNDY5N2YxYzczMzQ0ZDgzMzI3NiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L10-L10",
+          "version": "repo-lines-v1:sha256:fec932f18d2f245f3c7f1e635a2a6997575c535ed2f83f0722374e1b02d993d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmVjOTMyZjE4ZDJmMjQ1ZjNjN2YxZTYzNWEyYTY5OTc1NzVjNTM1ZWQyZjgzZjA3MjIzNzRlMWIwMmQ5OTNkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmVjOTMyZjE4ZDJmMjQ1ZjNjN2YxZTYzNWEyYTY5OTc1NzVjNTM1ZWQyZjgzZjA3MjIzNzRlMWIwMmQ5OTNkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzQzMDU5YWNhNjZlMjQ2NmY1MzIwY2YyMDgzMWYzZTc3ZWE1NGIzYWM5OWJkY2RhNmY1N2M5NjI3ZjhiZmJiMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTg2YjIyODc0NzQ1ZjYzODAyY2U1N2M2NjgyNDk3MTFiZGZlNDgxYjk3MzllMmIwZDg2NzkwZmYzMTNlNDRhMiJ9"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L253-L258",
+          "version": "repo-lines-v1:sha256:d07a297bbdfa926950fff9454efc7b95ca8ef9a47c008f43389ca0b2057ee41c:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I4ZDA2ZWExZmEwMjQ4Y2Q3Mjc2ZjgzOGNiOWI2MTcyZTJjMWZjMGQ5OTUwMzRiMDIzNzg4NzM5NzJjNmNiYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDNlNDZjMDJhZmQ3YjFiYWI1MGI3OGEwNGRhZTgwYjc0YWNhYmY5ODY1YzViNzQ3MTcyNGRhMmViOWFjOTc2MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2FjMmZmOGMwMDNlMGExOTBiOGI3OWEyM2M3ZDgwOGVhNTMwMzViNDQzMDk2Y2YxNWUwYzliMjBlYzQwMWUyOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWI1YWUyOGRhYTlmOGFmODgxZDczMDhlYTQyNTBmZjU1ZWQ2YmFhMzg3ZDQ3ZDU4ZDhlM2UyNmUwM2QxZWFjZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b15bf0474b0046daab1833803e01b771",
+      "statement": "build_mcp_server(instance, name=None) is exactly Entrypoint(instance).server(name=name), and the FastMCP server name defaults to the bounded context's own logger name (framework_instance._logger_name) when no name is passed.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L17-L19",
+          "version": "repo-lines-v1:sha256:7566dc46f568bdb762e8c77f0b5ede8060deedd4c3fe53f913035656d83fed56:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNkMDBjZjI3MDk2NGQ0NGExM2RmYWM4NzUyYjA5ZmNjNDM1YjBmMTliMzE2YWJjZjgxYTdhYTY0YmIxMjJkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU0Y2VmMzNkMzA5N2E5ZWRiNWUxNWZmYzYxODI3NjZmNTYzNWRkZDgyOTk3MjQ5Yzc4OThiMjFmYTJkNmEyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTQ5OThiZDJkZjk1NzAwM2RjYjc1ZDAyNzdkOTk1NjUwY2E4M2RhNjNmMmNmN2Q2MzY2ZjNkNTRiMzZlNjdhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjFlMzMzMDUyMjBkNTI2NjFlOWQzYTJlZDk5NWJiNzkyMmRmOTgzMDAwM2MxN2NhMDJhYWIyODQyYTZkYmFiOCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L54-L54",
+          "version": "repo-lines-v1:sha256:f06ffa26ef0fce940b0587ac844bea029004ca5107ea6dad79fbfade6e92e9a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA2ZmZhMjZlZjBmY2U5NDBiMDU4N2FjODQ0YmVhMDI5MDA0Y2E1MTA3ZWE2ZGFkNzlmYmZhZGU2ZTkyZTlhMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA2ZmZhMjZlZjBmY2U5NDBiMDU4N2FjODQ0YmVhMDI5MDA0Y2E1MTA3ZWE2ZGFkNzlmYmZhZGU2ZTkyZTlhMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGFkYWUwNmI4Zjk5MDQxZDQ1YTlkZTE0YTM2ZWI5OTI5MWVlNTdkMmI0YzRhMjkzM2E4ZGUwNWFkZjNlZWU4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2EzOWU2ZjA1MDRlY2YxNTJkMjc1OWZmOGQ3MzdlYWE0MWQxMDMxMzRhMzYyZDRiNzlmOThlN2M3YWQyZTZmOCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L74-L75",
+          "version": "repo-lines-v1:sha256:44854528a738f88371ad93f2afc43daf4b0c470409e7b1e046d9b42603fbcb40:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2Q4ZmE3YTk1NTAwOWYwNjA5ZTc0ZWM1MmY2NWM4Y2RhYmMzZmZkMTYwNGEwMzI5Nzc3YjFhNmU2MGRhMDE1NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjFjMTFjOTgxYzQyOTUyNzU0ZjZmMmU5Mzc0MGNlZTY4ODU2YzQ3NzMxOTgzOThmZTIxOTEyZGYwYWI3OWZhNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTA2NTMzODMyZDQzYzllNzIxNzBmYzY1ZjIyNjVkOTAwMDY2MzdlYTY3ZTJiZDc1MmFhYTMzMDAwNWIxMGM3ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8e7b1dab8f93492abced8b26fab42a63",
+      "statement": "server() registers each packed operation with the FastMCP 3 direct-function form mcp.tool(fn, name=operation.name, description=operation.description, tags={operation.layer}), so the MCP tool name is the DTO class name (the bus key), the tool description is the introspection-resolved instruction an agent reads on tools/list, and the tag is the layer 'features' or 'app_services'.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L5-L11",
+          "version": "repo-lines-v1:sha256:4de21352f8c9f8c7059d4f6e6b977b70ffa47fb04459648ee2759c97095feb6f:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGZlYTVmNGYzNDE3MjRlMGVlZjIxMGRmZmRmOWYwOGU3YzQwMTA5NjBlYzZmNDQ0OThkODI1M2NhNDQzMzE0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDBmOGVmOTU0MjE1Y2VjMTgxNTdiZmY3ZTVjM2ViZTc4MmQxN2JhZDBiZjdjNmIwOGE2YTI1NDMzN2FlZjM2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmZjZDI4ZDdmNWZjNmE5ZWE3OTk1ZTM3NTgwNjZmMmEyMzllM2M5ZmY2MDg4YTZmZmI3OTkyNGEyZTkwNTAzMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTg4MmZjYzBkN2VkZjBhNjYyYjI1ZmE2Yzk0ODU2ZjA4YWI3Y2U4MGYxZmY1Mjg1MmZiYTA3NjY3MmRlOTUyNiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L55-L61",
+          "version": "repo-lines-v1:sha256:64dca63a6e71e650aff897ed8dda9f73bfe1789b25a1074490339da001732da6:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGJmZGFhODQyMDg4YjQ3OTlhOGQ0NWNlMWM2NDJkYzFmN2ViNDQxNGU4ZDkxNjYxZDE1N2NkYzViNTc4YzJjZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTc2YmU5OTQ5MjdiOWVhZGVhOTgzOTFjYmMzODQ2MTAxZDJhZTk0ZmEyYjFiMTQ1MGM4YWVmN2Y5YjNiMzRjYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/introspection/inspector.py#L52-L69",
+          "version": "repo-lines-v1:sha256:4f42d3114700c1193de1ea8ad0f58aadc5e3e38817960a816205a2ffacb23967:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzYjM2MTI4M2I5YjhiM2VhNTI5MGU5MjEwNmI4ZmJmZTg0MDQ3NDYyY2EyNDEyMGU0Mjg1YWVmODU0YzU2MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhNGE4ZTIzMWNmYTQ4ZmQ5NDdmNTk5YjY2NTVkMmQ3YmQxODY3ZjRkYTdiYTcyMzU2OTdjNzI2MWQ4YTExYWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f5bd3796781847608749fabb0fac150f",
+      "statement": "The FastMCP host and the in-process accessors publish different sets: server() and build_mcp_server() ask the catalog for get_scalar_use_cases(filter_binaries_schema=True), which drops DTOs that cannot travel as JSON with a warning, whereas tools() and to_callables() call get_scalar_use_cases() with the default filter disabled and therefore still list those operations.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L116-L156",
+          "version": "repo-lines-v1:sha256:6e61044a76b425d0fe25c897a6d673cf44ae5de0e9f709f668dcf417dcd0e703:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0YjIyMTJmOTk4NmQ3YzIxYzVkMjE4YmZjZmIzZmFlNjA5YzYwNzQ3NTgzMGVhZjkzZTQ1NDA0OTg4MWFhMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3MmY5Njk1Yzc0NjdjNzQ3NzNjOWNlN2ZjNDI5YzVkMGQwZTQ4N2YzYzUxZDE1ZDY2NjhhM2QyNDA3MmJiOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxNmM4M2Q3ZjM1OTc2NDg2YTFjZjA4MGU1ZTg2YWIyMjZiNWU4NGE2NzJkNDA5YWQzOTMxM2IwZjg5MjE1MzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L33-L39",
+          "version": "repo-lines-v1:sha256:55d8f41ac21574fcdefe1a6390a20828eff4cf89079fc5074500dcec05fb67ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzIxYTI0YjI3NGFkNTg0MjBjY2E0MzdmYzhjYzU1YTMzZTRjZTk3NzU4ZTQ3MDU0ZmYzNjFlYTFjMTdjYzJmOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMDQ0OTE0Njk3MjJlODM2M2E5NGU0MDQ0NTM4ZTAxM2EyYTIxN2UzNmIxZTU2OGJhNjBhY2I3YjRjOGYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmFlMDAyY2RmZmVjMjdhZThjYzE1OTVhZTVmYzcwYjYwNDAwNGFmNDZhMWQ1MzJkZWY2ZTk0ZWJjZjhhYjFkYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTY5ZjJkNTAyODZhNjYzMjliZTk0ZmY3MzhjOGFlZTMxOTRkMzA4MDdiNjcxNzBjNjc3Nzg2N2RiNmQyNmQ2YiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L55-L55",
+          "version": "repo-lines-v1:sha256:a0f407dbf9ee3bc3d1351d5040925ca62d7a012d8557547b21b0386979402adc:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGJmZGFhODQyMDg4YjQ3OTlhOGQ0NWNlMWM2NDJkYzFmN2ViNDQxNGU4ZDkxNjYxZDE1N2NkYzViNTc4YzJjZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTAxYTY1ZGUzZjM2NjUzZjIzNDg1Mzc2ODhhY2ZmMWZiMTE0M2ZlNTdjMjk5ZjQ5YTMxN2I2OTZhYmU0MWJlMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a865ed6c95054c53bb759e740d84c68d",
+      "statement": "fastmcp_callable(operation) returns a plain function that forwards its keyword arguments as one payload dict to operation.run, and stamps FastMCP-visible identity onto it: __name__ from operation.name, __doc__ from operation.description, __annotations__ with the DTO field types plus a dict return, and __signature__ built from inspect.Parameter objects. Nothing in it imports FastMCP, so it is testable standalone.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L13-L28",
+          "version": "repo-lines-v1:sha256:4badc6d67a193f5643835227e21dfa44b2abfc65b7915444f48f94d0382aef16:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmNzIxYWIxMmYzNmI4NjFmMDkyOTkzODM0OWRiZWFkNDNkOWI3ZTJkZWU1YWRiZDUwZTVlNmFlYjAwM2RlZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MzY0MWE2ZTQ4YmQxZTZjYzVkYTI3ZTQzODdhZjY2OTMxYTdkY2ZmMDdiMDRjZGQwZTNiYmMwODM4YzRlYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhMTEyODMwZDgzM2VmYjZmODAwNDdiNGMxYjllOWQwMDgxZjdkN2M4MDdjMWU3ZDQwYTViOTRmMTdlNTYwOGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxMzU3MTQ2N2YyMTdjMWRiN2IyOWI4MjI2OWQ2Mjg1Y2NkODNjZGRhNjk5MTRlYjI5YjM5ZTI2ZjY0YzgwNzEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L50-L53",
+          "version": "repo-lines-v1:sha256:749514bffbb98b9d28be4e8f2668fbca97a314e0cf4e5136deb0284052eaba71:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTZiMTBhZDAwNmVlYTZhMTdhMzQyY2FjZTRjYTFkMDQ0MDJhZGE2OTI4ZGQwZTdiYmE4YzNmOWFhYWViMzY4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDRhMmZmOGU5MjQ2NDMzZjYzNDAxYzVmZDY3OTgwZGQxZTg3Zjg5NTY3YTg0Y2M0ODZmZWNhMzVmMWE4YmNkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTBiMTQ1ZWRkNzdhNmM2Yjk0ZTRjMTBjNWQzOGRlNmI1YzM4ZjRkNGIwNDYwMTU4NDg1YmQwNTBkZmNkMTc4MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTM4ODk4NDQ3ZjY0MWQzMjBjOTRiYWRkZjY5OTFiY2RmZDRlM2Q2MWUwYjQzNjIyYjc1YmI4NmM4MjlkYTNiNSJ9"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L239-L250",
+          "version": "repo-lines-v1:sha256:88cefb55f98c9175c5e3b68c02255778b2cdb8ef3ae47aad667a3f88d07c6734:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmOTMyMjExODJmN2RkMTMyNDhiZjc0ZWU1YWRkMzcyZDIzMjdlOWVhMjc4MjZkNjI1ZDAwZDlhYjYwNWU4N2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNGFiNmZlZWIwMGE4ODc5NmZiZWJlZmQ0ODMyMWEyYTllYWRlYjkwZDQxOTk0YjFjYjc1YjRkYmE4YzgyOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxNmZmZjRlMjNmMThhOTdlZmZjYmMyNWNhOTM0ZmZlMTIxNGU1YmU1MzVkYWY2MjgzNjU5NGZmNDhiZTM0NjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2YjFlZTZiMThiMjA1NWNiOTIxZWEwYjE5ODA2MzU5YTVmZTA2ODBjZGQ4ZjgxMzE0ODQwZGUwMTRlNjk4NWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_89916ff8ed5e4befb60d389ec04e50de",
+      "statement": "fastmcp_callable flattens the DTO: each DTO field becomes a KEYWORD_ONLY parameter of the same name carrying the pydantic field annotation, so FastMCP sees Value Objects, Field descriptions, unions and enums rather than a single nested wrapper parameter typed as the DTO.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L30-L49",
+          "version": "repo-lines-v1:sha256:51604deb089c2560498818ce5244b118d3d480a737f3aa298842cef22a78ab4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyOWIzOWRkNWExNDEyYzEyMTZmNDQwMWU1M2Y4MGFiODY0OThmOTI1OWQzZDM1NzQwZDliODdkMWUzZmEyMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwODNlODliYmYzMDRmMzlmNmY4ZDgzZmM2ZGYzMTMwZTQyNTJmNGJjOWNhNTZmNDk1ZmJkNTRlNjY5Y2FhNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0OTQxMjViZWE0Zjk5MzU1ZGEyMWYzYWM0ZTUwNGRlNDkyZGIyNWVkOWFkYTM3YjRkNzY3YjZmYTNhZjUxYWUifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L242-L250",
+          "version": "repo-lines-v1:sha256:d9cf232b9263b7fe4cbf339fc94e6cc14c4af3276b002af76ef06de60c8bdf62:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJlZDhiYTFkZmFjNGJkMTljZmQ4NDNhNmFlNWQwYjgxNTVjZWExNDgxNDdhNmQ5NjVmN2FiZWJhZDVjYmU4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTM0YWI2ZmVlYjAwYTg4Nzk2ZmJlYmVmZDQ4MzIxYTJhOWVhZGViOTBkNDE5OTRiMWNiNzViNGRiYThjODI5NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjk0ZjE0ODMxMDY0OTU3NjY5ZjIzMDJlNDVkMzE5ZDQ3NDBlZTUxMTk3NDk0NDVjYjE2ZTAxMGYwYmIzOTUyNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODZiMWVlNmIxOGIyMDU1Y2I5MjFlYTBiMTk4MDYzNTlhNWZlMDY4MGNkZDhmODEzMTQ4NDBkZTAxNGU2OTg1YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_795f378357304823b9d770b80d02c6db",
+      "statement": "In the stamped signature a required DTO field gets no default (inspect.Parameter.empty), an ordinary optional field keeps the pydantic default value, and a field declared with default_factory travels as Annotated[annotation, Field(default_factory=...)] metadata with an empty parameter default — so the factory stays callable and runs per call instead of freezing uuid4/datetime.now at import time, while the field is still not required in the published schema.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L34-L49",
+          "version": "repo-lines-v1:sha256:dbf921ac6fc6b430e04a085d6004d5fe9b9361ad5e924ba9e0822576d5195c09:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkMzU4NDg4MTE1YWJhY2NiZjY3OGRmMzJiOWRkYTY1ZTkzZmEzZDEzZTk2MTk4NGY1NTdlOTRmNDFkY2RmZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ5OTA1NDAyY2I1OWIzMjFiYzM3N2Y0ZTM5NWY2NTEyZjc0MDk0YzZiODMyY2FkMDI2N2VlMGViYWQwYmQ0MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0OTQxMjViZWE0Zjk5MzU1ZGEyMWYzYWM0ZTUwNGRlNDkyZGIyNWVkOWFkYTM3YjRkNzY3YjZmYTNhZjUxYWUifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L272-L282",
+          "version": "repo-lines-v1:sha256:77bacfb9c5637fe9772f9ee79835af6dff506b875ca60b6b09b1e60291f567ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzNzk3ZTEyOGFhZjVhZWQwNDVlZDM2MDhmYTkzZjBlMGQ3M2JmYTQxZmE4YTNiZjJlZDliNjczZjhjZDczNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwMzU2ZGEyZWNjY2E3NDllOTdhZmU2Y2U5ZGU2YzQ1OWFhNWEwZTgyOTIxY2I1N2M3MjRkYzYyYWQ1ZDdlYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkZjJjNDAxZWM5M2RjMWVhMTVjOWRjMDViZTVmYzJlNGY3MTg5Mzc0MGIxODkzMzYzMzM2YTVmZjUwOWU1M2MifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L284-L307",
+          "version": "repo-lines-v1:sha256:76e87238f847bd2c23fe04843ecd9075958df6d6e6b69b1980b478cbe63bd916:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MTE2MWIyNjJlYzkzNDIwNzM1OGI4NmQ0NjY4OGFjNjA5ZmI1ODk3NWI5MTlhMTNkMzRmN2Y0NjIzNjhmZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlMjdjOGY4Yzk3ODA5NjYyY2NjNGRiN2M4YzJhZDQxYWQzZTE1ZTgwZjdiMWRkNzNhYWUwMzI3YTE4ZWY0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlNmRkMzUyYTc5YTlmNmViN2MwNWJmODIxMzU0ODNhMzZlMDAwZDM4ODdiN2MxYjZjZWRkM2VlYjRiODc5NGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5MTk0MTkxZWJiMTY4NzBjMzM4MWIxZTk2YWQ0ZWY3MDcwMDFlNjFjODZlZTNjY2JmMTdmOGIxODdjNmNhMmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_836a36d221874adf9c655cd5955b1163",
+      "statement": "The JSON schema the packed entry carries (json_schema, computed once by the catalog) is not passed to mcp.tool; FastMCP derives the advertised input schema from the stamped function signature, and the precomputed schema is what the catalog's binary filter inspects.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L91-L100",
+          "version": "repo-lines-v1:sha256:0613aebf47d05f1aeef843caabbb1bb6f4733d25106720db9fdcc33ac5f952be:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlNzY2N2M1MzBmODU5MDg2NmNiYTY1MjA0ODcxYWJiY2RlMjJhZGQ2MzRmMjE5MTk4YzQ2NjU1MzMwNzUwNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlZmViNThlZjE1NGRlYjYwODRlNmM1NTM5N2E3MjkxMGVmMjE2OTI3MjRiNzc0M2Y3NWViMjFjNjk4Yzk1YzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxYWY1NWRlNDBlNzY4ZTFhNmNhNTBhNDkwN2E4Mjc2MDZjZGFkYTM4OTY4ZmI2MDg2NTliZTBiMTZkYzdkYTEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L55-L61",
+          "version": "repo-lines-v1:sha256:64dca63a6e71e650aff897ed8dda9f73bfe1789b25a1074490339da001732da6:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGJmZGFhODQyMDg4YjQ3OTlhOGQ0NWNlMWM2NDJkYzFmN2ViNDQxNGU4ZDkxNjYxZDE1N2NkYzViNTc4YzJjZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTc2YmU5OTQ5MjdiOWVhZGVhOTgzOTFjYmMzODQ2MTAxZDJhZTk0ZmEyYjFiMTQ1MGM4YWVmN2Y5YjNiMzRjYSJ9"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L239-L241",
+          "version": "repo-lines-v1:sha256:b94f14831064957669f2302e45d319d4740ee5119749445cb16e010f0bb39524:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGY5MzIyMTE4MmY3ZGQxMzI0OGJmNzRlZTVhZGQzNzJkMjMyN2U5ZWEyNzgyNmQ2MjVkMDBkOWFiNjA1ZTg3ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmM4ZDkwZGYwYmZiMGVmZTgyZTlmYWVmZmJiNWNhNTIwMTFlMDY2NDczYzQ1NTdmN2EwMzhkYzQ3NDhkNTNhMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDE2ZmZmNGUyM2YxOGE5N2VmZmNiYzI1Y2E5MzRmZmUxMjE0ZTViZTUzNWRhZjYyODM2NTk0ZmY0OGJlMzQ2NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2NhMjMyZDI1MTRjMDk1YTVlYzZhMGI4NDRmMjYzN2JkZjAyYTQ4YmRjNTM0M2NiZjkyNjcxMzE3YWIzMDhiNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9659b0abe753468f92605285366b4389",
+      "statement": "One MCP tool call runs the shared scalar boundary rather than MCP-specific logic: FastMCP coerces JSON into tool_fn's keyword arguments, tool_fn hands them as a payload dict to the packed run callable (scalar_executor.extract_executor_fn), which validates the payload into the input DTO — running ValueObject validate_fn on wire input — executes it through UseFramework.__call__ (middleware, context, tracing, error handlers unchanged), and dumps the response as a JSON-safe dict.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/mcp.py#L27-L28",
+          "version": "repo-lines-v1:sha256:83a8095156f4d71c02ddd93703c4d3e5ec2e83c6dce2436dbcd710a33dc5a50b:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I1MWU5ODdmNmE4MGYyY2Q2NmI2Y2E0ZGU2MDdhZWIzYmQ5NWFkODdlMjlhNTdmMTg5MTMyYWI0NjViMmEyOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjQzNjQxYTZlNDhiZDFlNmNjNWRhMjdlNDM4N2FmNjY5MzFhN2RjZmYwN2IwNGNkZDBlM2JiYzA4MzhjNGVjNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDZhY2QxZmM0NTBhZDNiYjAxYzBhMzliMGY3OWJlYWQwNTc0OGU2ZTQzNjMwYTczZmY1YzlkZjliODBlNzk5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzEzNTcxNDY3ZjIxN2MxZGI3YjI5YjgyMjY5ZDYyODVjY2Q4M2NkZGE2OTkxNGViMjliMzllMjZmNjRjODA3MSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L21-L54",
+          "version": "repo-lines-v1:sha256:9195ae6d0e8ba4eefb7a2120a3c87726bb72bda71308315b12c72412bdd35204:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExNDAwMjBjOGJhY2RmZmYwY2ZhNjA1NThkYzA1YmQ3NmMzOGFhYmJiYTkwYjJlZmM3YmMyODZmNDY5ZGY2NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YzZhZTI0MzAzMDI2NWM4M2EyMmZjNTE3ZWEwYmQ0ZWI5MzBmOTJiZDdkMmJlNjRhZDViYjZmNmUwZjQyZDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZGU5NTFjOGU5YWVmZmY4Nzc2ZGNhMDA4MTZkMDMzOGZlZTQ1OTMzMzkyYTNjMDc0OGY1NWJjODdjZjEzODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjYWJlZjliMzdkNjM0NGEzZmQxMWY4MjQwZTkwNzM3NjdkYWI3ZGEzN2FkZTc5MzI1ZGYzMTRiYTg1NjUzMTIifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L57-L74",
+          "version": "repo-lines-v1:sha256:56bbf29a0bd27bc179a81540d5dc968a96e81849b62be7ecfc876ab05467db91:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwZDEzYThmMzMyMTg1Y2E2YzFlZWE2MzhjYjhlNWYyODM5MjljMDEzNWI1NTM3ZWM2YWJmYjUxNDZhOWM1ZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhOTc0YWU0ZjQyYzhkYzRmYzhjOGQyNWMxOTYwZDM1YmJiMzQ3MGRiZmVkZmVkMzE5ZWY4NGRjYTcxYzAzMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0ZGE4NjZhOTg4OWRiNjBiZjIyYWQxZGQxYjczMmUzZTU1N2M1NGZiNWIxMDRiNjk5ZDM1YTZmMzkyOTE3NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMzliZWI2NzRjMGUyNjUxNzQ4YWY3MTJkZDlmN2Y5NDIzMWYwNDI5M2UwMTNmNzdkNGE0ODZhMTE2N2VkYTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4665d3aff8564b1a8dcc0dcf4dcf53d3",
+      "statement": "Transport is the only difference between deployments: Entrypoint.run(name=None, **kwargs) is self.server(name=name).run(**kwargs), so omitting transport starts the stdio host used by desktop MCP clients, transport='http' serves MCP Streamable HTTP at /mcp (still MCP tools/list and tools/call, not a REST/OpenAPI API), and all other keywords (host, port, path, ...) pass through to FastMCP unchanged.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_mcp.md#L242-L252",
+          "version": "repo-lines-v1:sha256:cda28cce1d46dc168b2dfd25346159a3fbea91c1973149d6f9dcde0eca14331a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzNzlmZjYxMDNjZDAwZGI0NGFhNDNjOTcwN2U1MzkwMWZlMjg2YzM4MDM2OTgzYTYyZmJlMTA4Y2U1YjQ4ZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4YzcxZGFlNmM0MDk0MjFmNjkyZmFmMjA3YTg4YWM3NTUxMmI0MzE3NWZiZDk3ZjhhY2UyZDI3NzFiNGE4MjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxM2ZjMzdiZjI0YjI1Zjk2YTVmNmZlZGU0YWVjYjg0YzJmNzg3NWRkYmU2MjcxYzdlZWM4Njc2YjYxZTAyYTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L64-L71",
+          "version": "repo-lines-v1:sha256:6814f79765d1f9f91d334009e7f8fa07ac3cd359005d1b2181f6c0e2f1b275e6:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzY3NTE1NzRkYThhMTkyNjRjNmMwMDE3MTdlM2M5NGQ2MTM5MzZkNzA5MzQ5NDUzYjZmMzdkNDlmN2IzZDEyNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGUwZDlhOTc0ZjczYzZlZGQzYTY3MzZiOTMzN2JjMWFmMjdhNjE1ZTVmZjdjNmQ5NjAxMzM2YmM4Y2ViODA4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWZlMDY0NWZkYTBiODM1NDlkY2Y3OWFjODgzMTI3N2MzMDkyNGZiZmE4OTA4MDZmNDE1ZmIxMjVjYWE3MmE0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2JiOWUyZTUwMzFkMDQ0ZDZmNGIxNmU1ZjBiZGRkMDU4YmZiMjE0ZWI0MWI2NmQ5MjA0ODkyNzk4NmE4OGE5ZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a958001ef9ae410d96564fe44cd90e39",
+      "statement": "include/exclude/wrap on Entrypoint do not build anything: they delegate to the same-named Catalog methods and return self, which is what lets policies chain before server()/run() is called, and they are the supported place for authorization, auditing or extra logging because no FastMCP type or transport flag is allowed on Feature or ApplicationService.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_mcp.md#L196-L206",
+          "version": "repo-lines-v1:sha256:dd09b77c3df8b7c413834bba0f079b3850c6e1e97b5620fa48aa5bb8b83c358b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0ZTQ4MzU2NWQ5MmU2OTMzMzQ3OWM4ZDdhMmIxZWQ5OWI3ODBmZDAzMDk1MmNlY2JhYzM5OTc2YTNmM2UyNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwYmM4YzYxMjkyYWZmNjA5ODRmNmViYjA4ZmJlNzVjOWMyOWNmZTFlOWIwYzk1NjE4NWUyM2RhNDVhY2UwMjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L103-L114",
+          "version": "repo-lines-v1:sha256:4ef8367808159eafd390b9300f07870e75a5dedca91840dd8324abb7cf752481:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzOTIxY2M4NGY5NGNmZGM3OTUzNjJlOGNjYjcwMGRjZTZjMGJjM2ZlOGZiNzlmZjA4MDQ1ZGQ0NjhkYTRjZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MzA3ODZiMWYwM2M3ZGUyMGQyZjBmZWVhNTY4YzhlYzVkNTY5NTgwZmUyOTFiNWFiZjAwNDNjYzU4OGY1NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2ZTFmYzhmZTcyZWYyZmEzNzkyOTVjNTQ0ZDAyNzc0NzM5ODUxNThiMDg3OWZkZmZkNTIwZGM3NWRlZGQ1NTkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L21-L31",
+          "version": "repo-lines-v1:sha256:baf9fd3628c97e063dbf444d820bcdcf605599d47ba88fa406876bdd677e28f0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzOTIxY2M4NGY5NGNmZGM3OTUzNjJlOGNjYjcwMGRjZTZjMGJjM2ZlOGZiNzlmZjA4MDQ1ZGQ0NjhkYTRjZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhZGQxZmZjMTVlMWMwMjE0MmVjOGNlZjZkMTUwZmNlMjA3ZmUyMTdkNTcyZjliM2RmNGE5NGUyYTM2YmRmYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwOGY2NjE1N2Q5ZjZkYWVmZjI3NTg1NGQ1OTdjYjFmMTJiYzM5NmNkYjY2ZTk4MGVhMTc3ZTY3NGQ0M2YxYzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_de75c85141d34d4191a33f1f91c336ac",
+      "statement": "The FastMCP-specific code is confined to the mcp subpackage: sincpro_framework/entrypoints/__init__.py re-exports only the protocol-agnostic Catalog and PackedFeatureOrAppService, while Entrypoint and build_mcp_server are re-exported from sincpro_framework/entrypoints/mcp/__init__.py without implementation.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_mcp.md#L196-L207",
+          "version": "repo-lines-v1:sha256:63abe99c8c4ca77863bbbbf7cf778cd5707083febf57a00e561f29e6f7cb51e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0ZTQ4MzU2NWQ5MmU2OTMzMzQ3OWM4ZDdhMmIxZWQ5OWI3ODBmZDAzMDk1MmNlY2JhYzM5OTc2YTNmM2UyNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViZjdjMTcyY2MzOGZiMzczZDZlNjEwMDkxNjY1NTM5MzMwMWQ2N2FlYzFkYjlkZDJjMDA4NWM4NWQxYTNlMTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/__init__.py#L1-L5",
+          "version": "repo-lines-v1:sha256:0c742a47b550142316fd0f27a1ff2a71bd4c0c3609a37b325c7963f0d9a743ac:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmVlMGY0MjEwNjhiMGEwN2VkZGQ3MDE4MGQwZGFhY2RmZDE4ZDBhMzBjMTc0NmExNTcyNjE0NjdjMDk1YzVmMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzFmN2RlNGUyMjkyMTAyMTAyODlmMDJjYzU2OTc5MzQ1OGVkNmE1ODI0MmQ5N2UwMWRmYWEzOTY4YTgwMzhlNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/__init__.py#L1-L3",
+          "version": "repo-lines-v1:sha256:aa4b7789c0d4815875cdfb5cef50196851309bd1050e929647d392b4d52cc526:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTIzMzUxZmZiY2Y3MzJkNGViZTg4YmZiMjNlYjAyYWQ0NDI4ZWYzYWM4NzBlYzI0NzRhODBhMTY3Yzg1MTYyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjljMzgzOWVjNmMwNTQ2NDdjMTY2ZWQxMzFiNWRmY2UzZDNmOGZhZWMyNjE0N2MxYmVjMzM3NGU5YWI1ZDZmNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

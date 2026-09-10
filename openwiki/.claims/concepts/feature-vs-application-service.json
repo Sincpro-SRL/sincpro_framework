@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:aaac6e9f1d21913f0e83e6e8ff88702dbb52d4e52dbae19191db8951406bb61b",
+  "claims": [
+    {
+      "id": "claim_098933237a9e4c02b88752465f1f8b37",
+      "statement": "Feature and ApplicationService are the framework's two public handler abstractions and share one abstract contract — execute(dto) returning a response DTO or None — but only ApplicationService is constructed with an execution handle: its first positional __init__ parameter is feature_bus: Bus, while Feature.__init__ takes only *args, **kwargs and merely prepares the context binder.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L12-L21",
+          "version": "repo-lines-v1:sha256:1b350901d5519f29458b7ad75e383992f4bd19b7f252fbc0b72ae6e655f5c19d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNGQ3N2EwYTU0MzZiZjIyYjBkOGM3ZmYyMGY3ZmY3N2M0ZjFjYjMyYzZhOGM5MWQ1MDJkODJjYTY2Njc2YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmNWI4OTRkNDg3MzVlZGFjYmYwM2U0OTZjNjUzMjhiMWE4NDY1YjIyMjU5NjI2ZDkwY2M1OGI4YzI2ODFjNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L141-L206",
+          "version": "repo-lines-v1:sha256:17482800943a99151cdccffadd5a6c2fc8cf1b6c2b4267e595621c3bf9097e8b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NGIwZTcyYTY4MjFhYzNlMzViZjUyZTI5MmZhM2EzMDNhNGU2OTkxNmVhOWEzMGI3MTI2NmNiMTY2ODc2NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZGUyNTg3MTk2MTQ5MjYwNzFjOGZiMTlmZDg2NjE1MDU1NWYxYjAxMzU0ZjhjZDE2MDNhMTA5YTdkZGFlNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4MzA2YjE3YTFjM2I3MjA4Mzc2OWI4OGM1YjAwN2I5NmEzNWEwNDJmNzllYWI1ODUzMDY3Y2JlZGQ0MWFjOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L85-L138",
+          "version": "repo-lines-v1:sha256:233694985540d9babd5b9f7d9c7d3f1800431f830c82e586df518c02e94efc83:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmYTgyOTcyOTY1ZTFjM2I0NDc5ZDBlMjdiNmFjMWFkYzE3MWMyYTdlOTYzNGY0Y2U0ZmExZWQ2MzRjNjkzMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZGUyNTg3MTk2MTQ5MjYwNzFjOGZiMTlmZDg2NjE1MDU1NWYxYjAxMzU0ZjhjZDE2MDNhMTA5YTdkZGFlNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3YjliYjBlZGYyMDIzNjM2ZDk3ZTJlOTljNGE0NjhmMGRhMjhjNTdjMDk5ZDE4ODdlOTI3NzhiNGNmOTM1MTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmOTM4M2IxYjRiMzE5OGIzNTliYTcyYTczMjA4OGM3YzI2NzQxMTY2ZjU5YzM1Y2U0N2ZhYzljZmY2MTM3ZjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_030b90fe75d447fe959644e5b3ada4fa",
+      "statement": "The IoC container instantiates an ApplicationService with the container's own feature_bus provider as a positional Factory argument, whereas a Feature entry is created with no positional argument at all — so orchestration is possible only for an ApplicationService, and the decorator stores providers rather than instantiating anything.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L126-L147",
+          "version": "repo-lines-v1:sha256:468c60ccd7874d1fbd0ea58456ec462ae407c7ec1d3adc670e9c77399bde4270:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MTZmYjFiOWNjZWI1NTQwZjk4OGQ2ODA4MjIzNDY5N2Q4ZjI5MDlhOGFkYmFkNWVlN2I0ZTgyMzBhMjI1NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5ZmM1MTE5OTI1OTdlZjU0OGYzYTdiZWNhOGUwY2FiYzg0NThkZDAwOTI5MDBlMmEwMzc2NzNlZDEwNjU1OWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiMGJiMDJjZTk5M2JhMWI4YThjM2QzODEyYzRjZGZhODc2OTcwNmMwN2JmMzNlNjNlMjcxOTA4NzUyODI5NzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b4d3bfaa9420450c82e8a37afa632665",
+      "statement": "The FeatureBus an ApplicationService receives is the same object the FrameworkBus facade holds: feature_bus is a Singleton provider fed to the framework_bus Factory and passed to each app-service Factory, and tests/observability/test_bus_wiring.py pins the identity app_service.feature_bus is framework.bus.feature_bus.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L49-L66",
+          "version": "repo-lines-v1:sha256:76c8d4cbeab0e85a5ed437efa7a28ade6214566a9c6fb4cf51b0346ef1bca235:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjODQ0MTEyMjY5Yzg2NjIzNjY1MjdmOTBlNTRlYTg5MDY1OWZjNGMyNjA3ZGQyYzRjNzQ4NDU5Mjc0MDlmYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlNmUwMzdmNDFiMTE3ZDhjZTdlYzgxZTBjYzEwZWY0MzIyZjM4M2U1YWRhZWEwYjFkMDI1OWM2NDFjZGFkYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1MjFmY2E3NGU1YzE4NzAzZmRhZTU3YTczYmRjNDAwYjdhZGMzY2FkYzkzNmVlNjIyNjM5OTU2YzgwMjljMDIifQ"
+        },
+        {
+          "resource": "repo://tests/observability/test_bus_wiring.py#L54-L63",
+          "version": "repo-lines-v1:sha256:2e08e602f32ed4271d62c8945754278bd1ff6c0a43199e28aa5a85ab38fece2a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNmMyYWIzMDVmMmViOWJhMzAxOTRlZWNlMDdhYmRmNjQwZDRhOWJiMzkwY2YyYmFkZWM4MDMwODQ5ODE0NzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczNGNlNWZkN2I0MmRhZDlmYzcxMWJiYTMxN2E1Y2MzODU2NWRmMjYzM2VjMDU1NDg3MjlhMmVlNjEzOWY4MmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0ZGE3NzUzMDIxZGE0OTA1Yjk5YTFjZDg3OGYyNTQ4ZjI5MWMzMjEwZGRmNWMxYTQxMGJjMWExZTJhMzhlYmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiNjg4YjA5YTgwOGI1YTcyOTVhZDE1MjY1OWJlOWNmNThkZTVkZjFkZWVlYTIzMWQ1MmM0M2QzNjJhNzYzYWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ec68994a49944bfc80b7f921dfe3b5c5",
+      "statement": "A DTO name present in both registries is rejected twice: FrameworkBus's constructor raises DTOAlreadyRegistered after intersecting feature_registry and app_service_registry keys, and FrameworkBus.execute re-checks the same intersection on every call before routing.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L150-L162",
+          "version": "repo-lines-v1:sha256:ed1f435d2c77cc7b7c37cda33e0b7e0f4b5980ab47d30de61a196a671d63b392:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4N2U2OGJhOTViZGQ0YTEzZDIwMzY0MTg5NjZiMjU5NDM0MjQ5YjAxZGFlNjNlMzA3NmJmYjdiZjc4MThlNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3NGE1YThjMzI4MjM2MDkwMjU0ZGM1ZTFiMjI5M2MyZWRiNGVkMDY1NDAzMjQwZDRlNTI2ZWQxMjk5MWNjZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NmQzMjNmY2M3N2ViNjhkMTlmOTQ5YjY3NjIyZjNkOWE5NTY4Y2Y3OTc1NjA5NGQ2YzBkZTc1OTY2M2VkNWUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L173-L194",
+          "version": "repo-lines-v1:sha256:5c85b7a2c97680bc4aa6ba7881fa36a602ed10a212893ee9e382cbf8ebd90944:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYjIyN2QwYWNlYjQ1MTkyNTJmYjkwMDBkNTQ0Mzc0YWY2MmU3MDE5ZTNkM2E5NmM0NTJhMzlmNWI4NzhkZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNTM3MGY0NWU2Nzg2MjdmZWIyY2M1Y2RmZGY3OTAwYWE0MWYwYTk0MDI5OGE0N2Y5ZTM1ZDZlNDY3MTYxZjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjljZGU4N2ZkMTcyOTcxZTYwYmUwZjY0NGMwODczMDE2MmZjOTAxNTU1MDA3YmE1ZTVjNTk3MTkxZGE5NmEifQ"
+        },
+        {
+          "resource": "repo://tests/bus/test_framework_bus.py#L50-L63",
+          "version": "repo-lines-v1:sha256:eb162c0f65150121b03f123ae32a5cff1db4cf90bc4e5b10172c6277c6d25070:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhZWRkMjc2NWEwNjFjOGZjOWNjMGRjM2M0NjI5NTNlOWIwMzcyYzQ4ZDlmMmI1MWU1YzRmOWUxYmQ4ZjdhZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwZTJiZWIxYmJhNWY0MDlhNmJlYmRhZjU0ZGM1NjVhNDJhOWZhZjFkODI5YmE3ZGMwMjY5OTQxNTMwZjk1MWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0e6f5352310b46119809d50c2028d1c1",
+      "statement": "Because an ApplicationService's only execution handle is the FeatureBus, delegating to a DTO registered in the application-service layer cannot route back to that layer: FeatureBus looks the name up in feature_registry alone, so the mismatch surfaces as the registry KeyError, wrapped by FeatureBus's own except and its feature-level handle_error.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L41-L64",
+          "version": "repo-lines-v1:sha256:fcffc84fdb4f9650d070070b7f286cfaeb40a92ee6ab666402b672a6bb6d7a18:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiMTA2YTM2MjYzOGQ0Nzc2MGExMWQ4NTRlYWM2OWZiYTJkMjQ0NTZmNTUwNmExYTgzZmYxZWIyMWJjZjg1MzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MTNjMWJmYjVmNjcwNzM3Yzc1N2QwNTlmMDRjYjQxZTIyZGEzZTY1ZDM0MzdkODEwZTFhNjkzZTFjZTNkZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzMGM3ODE5ZGM4MmE1ZTczMzNkMmQzNzk4OWI0MWRkOGQ4NzE4NjA3NWY4NDkxNTg1Mzk5OWM2OGFiNjEyZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiY2NkNGJlMTVmZjdlOTUyYTJkNDFkMGI3ZTAwZDAwYjRjODk5MTBlYTIwZmUzMDJhZDA1ZTRiNmIyNDM2OWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L67-L95",
+          "version": "repo-lines-v1:sha256:60dea93918c59a4a1c70320604b7ac3bb89ca2b2b13910e3dfd281a50d1834a6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0YjYwMjBiY2U1OWVjZjNlZGE4MWFhZDJhMmJmNTVkMWUzOTNjMmI5OTIwNDVhMmZiNDIzOTlkMmM5Yjk4MmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMDQyNGJkZTNhZDkxZmY4ZGFlYTgxYTRhYTUwNGIyZmU5ZDM3OTIzZjU5Mzc5MTUyZDU0M2Q3YjRkZWFmNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4YWQ5NmYwMTY4ZDlmY2IyOTQ1MDE3YWM4MGRiNDkyMTEzY2Q5ZjlkOWNjOWYyMGI2ZWFkNWYwNDc5MDJkZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NmQzMjNmY2M3N2ViNjhkMTlmOTQ5YjY3NjIyZjNkOWE5NTY4Y2Y3OTc1NjA5NGQ2YzBkZTc1OTY2M2VkNWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f57e26119312426488799eef7eccc821",
+      "statement": "Layer membership is a registry membership keyed by the input DTO's class __name__ at both registration and lookup, never by the class object, so two distinct DTO classes sharing a __name__ collide within one layer and dispatch is unaffected by which generics the handler declared.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L109-L109",
+          "version": "repo-lines-v1:sha256:12791ed5ccfba44f607b95b306237abb2ab748e76f999b110eadfd1dd46f3604:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTI3OTFlZDVjY2ZiYTQ0ZjYwN2I5NWIzMDYyMzdhYmIyYWI3NDhlNzZmOTk5YjExMGVhZGZkMWRkNDZmMzYwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTI3OTFlZDVjY2ZiYTQ0ZjYwN2I5NWIzMDYyMzdhYmIyYWI3NDhlNzZmOTk5YjExMGVhZGZkMWRkNDZmMzYwNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThlMzJiZDJhMTVhMjk5MmJmYjAyMmIxYTQ5ZGRiYzlmMDQzNTA2MzZlNjc2M2U1ZTRhODRlMjg1MmNkYTlmNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTlhNDA4ODBlNGZjMjMzZWJhMzFkYmFmYmEwMjM1MTk4YjE4NGQyNmYwYjg4OTllZDlmY2ZjMWU3OGZhNWY1ZCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L30-L39",
+          "version": "repo-lines-v1:sha256:d8c070c09a507301517ac83bf4d2eb886097377c05d96e0a8f1195975760cc95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YTgwNmY2NGZkN2NlNTdlNmM2YThhNDgzMWZmMWQzYzM5NDEwN2ViMjIyMWQ5OWQzNmI2ODBiMGIyMzFiZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMDQyNGJkZTNhZDkxZmY4ZGFlYTgxYTRhYTUwNGIyZmU5ZDM3OTIzZjU5Mzc5MTUyZDU0M2Q3YjRkZWFmNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkZTA0MTFmYjdjNjA4NzExYzJmNmFiZDY4ZTI1YmQyZmUwM2RiZDI1ZmU4ZWQyNDA2NjRjYTkxZmM1ODhmZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NmQzMjNmY2M3N2ViNjhkMTlmOTQ5YjY3NjIyZjNkOWE5NTY4Y2Y3OTc1NjA5NGQ2YzBkZTc1OTY2M2VkNWUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L53-L53",
+          "version": "repo-lines-v1:sha256:b58a39eceaae89ef3f6a536b2370ba36538dab1cb5b83668ca29d8a5bb7f8b78:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU4YTM5ZWNlYWFlODllZjNmNmE1MzZiMjM3MGJhMzY1MzhkYWIxY2I1YjgzNjY4Y2EyOWQ4YTViYjdmOGI3OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU4YTM5ZWNlYWFlODllZjNmNmE1MzZiMjM3MGJhMzY1MzhkYWIxY2I1YjgzNjY4Y2EyOWQ4YTViYjdmOGI3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThlMzJiZDJhMTVhMjk5MmJmYjAyMmIxYTQ5ZGRiYzlmMDQzNTA2MzZlNjc2M2U1ZTRhODRlMjg1MmNkYTlmNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzVjMTk5ZTI0Mzc5NWViNGZlYmNjNWNkOWFjZjJiNWQ4NGFjNGQwNGVkNWZjZTU4OTMzMWM0MjAwMTkxMDNlNSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L93-L121",
+          "version": "repo-lines-v1:sha256:2ca69df73c6b63cf892e3aea70661912a8ce94a0e08d8bbf5b9526474902cd14:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNDFhY2M2MjJjNTIyZDdmYWJhZjNiMTBmY2RlMjE5MWEzYWNlODgyMzBkNTVmNmI1YmMxOWNiNWFhMDAyNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlZDJkYTMxYjRiYTQzNmZlZjVhZWJkNWI4NzdhZmU2YWQ5NTk0MTI5N2Q5YTc5ZmMxOGZkYzQ2NDNmNDMyNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZWQwOWNhNTg4MmQ1ODhhOWNiY2E0Y2FhZWRhNmVlNGFhNjg4ZTRiNmMxMDI0NzY5NjdlMmJlYjlmYmEyMGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a1e14f6b274a42fca317b22b352bc8e3",
+      "statement": "The typed contract of the handler base classes lives in the hand-written stub sincpro_framework/sincpro_abstractions.pyi rather than the runtime module: the stub declares Feature/ApplicationService as Generic[TypeDTO, TypeDTOResponse, ContextT], types self.context as ContextT, and adds __getattr__(self, name: str) -> Any plus bind_to_framework, which is why injected-dependency autocomplete must come from the user's own typed base classes instead of a bare Feature.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L410-L470",
+          "version": "repo-lines-v1:sha256:618e5d8b71699edd834fd08cde5bc27771e942128510df570f86136a17dc64f4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxMmI1OGZiZmJkMjI1MTg4NDI3NDk2MDc2NjA3ZTQxYTA3ZTA3YTczOWMwNjVjMDI3ZTY4YWUzNDY5YmVjMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYzU2OGVhZGRjYzQ4NDAyNmYxZTMyYWYyMmM3NWYzODUzNjJjZjJjNWMxZGQ5NjhjMDU5MmY1NzE5NTgzMzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0N2MzMTFkZjliYzRlNDI2YjIwYmM3NmExNWM4MGVmNDM3MTM3N2I5Y2RlNTEzODE5MDJmM2Y4YzAzNzAwMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjYTY0ZjdlOTEwNGVmYWI0MmZjYzQ3NThlZGY0OWY3NmJmNTY0NzVlM2M3ZDYxMjM4Y2I0M2I0M2I5Y2I2OTMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.pyi#L61-L117",
+          "version": "repo-lines-v1:sha256:e25c518f45b8a010ad1e99a29ef8664dd52b171eed9516294d6794576318dd75:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMmIzMzFiYjIwMGUyMTBjNmM1Mzc5NDg1MDIyNzBiY2ViNTY3NjA5ZGU2ZDVhOTEwYzczYjgxY2IzNTMwZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhN2M1YjA5NWI5NmY0ZDYyMmJiZjlkMDJkNDQwNWY2MzQzYjRmNTZmZWE4ODdiMTBkMTZmZmNhYjI3ZGMxNGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlMmI0NzA4ZjE0NWE3MDE5YmU1MjdhZDgzNTMyNGRkZTM0MzAwY2VjOThhOTg3ZGRkZmZhYjAxNTgyNTNhNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/use_container/test_use_framework.py#L28-L45",
+          "version": "repo-lines-v1:sha256:7265927e7729b89483ebeab154cda073fa0281fbf0c1bb29482a8bc8ebf5406e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5OGFhODU4N2QwMDY0NjIxNGNlNTI0MDEzZGExMTIwNjU0Njc2OWM0MWNiZGM0MmYzOWUzMThlZjZjNTg2YjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NDVlMTdhZGVkMzA5NzQ1ZmZkYTMyOWZjZDY1ODYyZDUyOTZjNGVkN2IwZmVjZWIzMzA0NzVmNmUyNzRjNjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlNjVjMjdjYWFhMmIyMmUyZmQ1MzMwNjVkNGZiOGJmZjlhMWI3Y2M3OTY5OWM1YTVhODNkYmU2ZWY5ZWQ3MmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5N2I2YTA4OGE2ZTgxZmQzOGQ5YTQ5YWZiOTk5MDcxMGRlMzhiYTM5MThmODdlYzJkMzBlMTgwNjE5ZTk5NDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2502cae8525143b9a819c4b332b2914f",
+      "statement": "return_type is a static-typing device only: the .pyi overloads narrow the declared result to TypeDTOResponse when it is passed, while at runtime it travels through the middleware pipeline into an executor closure that ignores it and calls bus.execute(processed_dto), so no handler ever sees it.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.pyi#L24-L31",
+          "version": "repo-lines-v1:sha256:d402f238ed9f09b6e48827751c5355dd30772c2cbc202b739fe7822d57113e81:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmM3MDY1NWEwMjQ5ODUzMjQxZWMyNGExNDNkM2QxZjVlNjY1NmI4MThjMTRjOTRjYTc0MWE1NTU4OTM4Y2M5NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGUyOGIxZGQ2OTVkZjYyMDhmN2QyMjg5YjdiYTAxNjE1MWM4OTUyOGJiOWUzZDE5MGY5OGJlOTg4MTYwMjkyYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjYyMDEyMWMwMDc4ZjJmZmRmNjU0MTBjODgyMmU3ZTMxZjM4YjRjNWRjZDFhY2VjZjZhMTI2ZDVmMzlmNjk2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjRiMjNhZmJiZjAzYmM2ZDg4NGVjMzQxMzk0YjE4OTlmYzU1MzJlYWUyYjAwYjkxNjM4YzY0NjYwYTRlYjQ0NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L393-L401",
+          "version": "repo-lines-v1:sha256:6f9662162ef5ae0867575032559549e19b26c3e3b0c87c8e4f02fb0e3b836b43:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ2ZTAzY2FhYzZjOGI0ZjBhZDlhMzdlNzY2ZDllYmViYTBlNTYxMmViYzE0YjY5YzgxZWEzZjM0NjFjODA1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDdkNDQxMjJkNGNkZWEwOWJiMDgzZjE1ZjVkMmYwN2VjNWZmNTE5M2RiNzA4ZDVjNTI2OTNkMGZjZTg0MzgyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDkyZTY1MGFiNTg4ZDQzZTgzZmJhNTM2NjgzZDEyZWYwOTg2NDJkNWI0Y2ZkMmQ4Y2NlZTVlY2MzZDgzOGMyYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmVkZDUxMTgyMWU0ZDhlNzJkODNmMmUxMDM2OTc4OTg4MzI1ZWY2OTkwZDcyODEyNWNhNGUzYzgxOTNmZTBhMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.pyi#L79-L106",
+          "version": "repo-lines-v1:sha256:f2da040d00d98d105ed9b60b0cdaf043a33bdbe870517f109c2996640f365691:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmMDFhNzQzNzhlMjVhYzIyNTUwZWMwZDViYjlmNTkwOTNmYTk2OTIyNzdkYTNjMjk1YzlhMDVkMjIzYmVkZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MjBkODVkZTRlZDdhYjgwMjFiNGE4ZGQ0ZmExNWVjNTE5MjVjZGZjY2RlMTgwNTg5NWE0YzhhM2MzYmE0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjOTM5NDhkY2YxODE4NzBhYzI1OTEyNGI0NjY4YmY4ZDdhZmNmN2RlMzJjNGIyMjY0MTJmNTA3Mjg5OWZhM2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyMzA3NjEwNmQ5ZWU0N2ZiOTRlNWRmMmNiMTA4MWU1NGIyZWE5YmI0OWY3Y2UzOGVhYTg5ZDNhMDBlMGY3M2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d8c864fe1745418cbed9fd3a065f8465",
+      "statement": "TFeature and TApplicationService are declared as TypeVars bound to Feature and ApplicationService in both the runtime module and the stub but are referenced nowhere else in the package, so they are not part of any public signature.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L12-L18",
+          "version": "repo-lines-v1:sha256:fa18418cc03e3e84aefede28bb4129ddddb5b89fa98babaf4d066d3d2929ca07:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDNlNWJlMTk4MjNhMGRmNWFhYzhiZWRhMGM3N2U3YTZkY2FmOGNmOWJkNTk5ODIxMWZjM2MwMDM2MmI1ZmM0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzI5YzIxMTJiNDc5M2ZiZjRlZWJkOGEwYTg1OWIwYjI2Nzk0ZTc0MTlhNDdkZThhYzgxNjExNjM0MTNhZTA0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmM4NzQ5NGNlZWY0Yzg2M2NhODkwYjk5NjYwYmU4YTMyMzJmNWY4MjcyMWRiYTczZTY3MDFhMjY5Yjg3ZjdmMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2MwZWFkMDU1ZTQzZWI5ZjRhOGQ2MjcyMGVkMTZlYWRmYzkyZDJlMGExYjQyYTc4MWI1ZDkxZTFhN2M0YjIzYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.pyi#L13-L19",
+          "version": "repo-lines-v1:sha256:fa18418cc03e3e84aefede28bb4129ddddb5b89fa98babaf4d066d3d2929ca07:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDNlNWJlMTk4MjNhMGRmNWFhYzhiZWRhMGM3N2U3YTZkY2FmOGNmOWJkNTk5ODIxMWZjM2MwMDM2MmI1ZmM0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzI5YzIxMTJiNDc5M2ZiZjRlZWJkOGEwYTg1OWIwYjI2Nzk0ZTc0MTlhNDdkZThhYzgxNjExNjM0MTNhZTA0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGE4OTNiNzM1Y2VlODcxYzZkYjc2ZGIzZTIxZTdjOTMxYmI2NDkwYWQ0OWRiZWI4NzE2ZDk1MTE5ZTA3NzdkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzNmYzJlZjkwMmUyODJhM2U1Mjc3NWRkMjVhNjVlOTdkYzg5YjEwNzE2YjAyMWY4NWQ5Y2M0YmFlZjY2YjFlOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2082a034eb5c484fb431b729606e6ff0",
+      "statement": "DTOAlreadyRegistered and UnknownDTOToExecute are defined in sincpro_framework/exceptions.py and are not re-exported by the package root, so callers must import that module to catch them; when either reaches the facade's except clause it is reported to observability with kind=\"framework\".",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L12-L21",
+          "version": "repo-lines-v1:sha256:1b350901d5519f29458b7ad75e383992f4bd19b7f252fbc0b72ae6e655f5c19d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNGQ3N2EwYTU0MzZiZjIyYjBkOGM3ZmYyMGY3ZmY3N2M0ZjFjYjMyYzZhOGM5MWQ1MDJkODJjYTY2Njc2YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmNWI4OTRkNDg3MzVlZGFjYmYwM2U0OTZjNjUzMjhiMWE4NDY1YjIyMjU5NjI2ZDkwY2M1OGI4YzI2ODFjNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L196-L205",
+          "version": "repo-lines-v1:sha256:ee12804e3ebe5fbadecaed4ec37dcd8a2b424e80993e5c25ff8ebd0bec718435:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MjBmNWVhNmRmNmFlZWJiZDQ1ZTEyNTkwMmQxOGE0OGNlNmQwZjhhOWNkNThlN2FjMjFlYjI2NWYyN2U5MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlOGVkMzQ2NmIzODNhYTRlNjA3MDg2ODNiNzUyZjdlODNhMWE2M2ZlYzRmMWI2NDEwYWE1ZjQ1OTI0MGNiODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1NDJkOTg4NzQyZDNkNDZhYTk0NGJmMTcyNzI0OTlkOGNjYTY5MWI2NzE0MDI1M2ZiZjNjZDVhYmFjNzcyYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/exceptions.py#L1-L18",
+          "version": "repo-lines-v1:sha256:4581328b9087f74e6b541f7222b3b5f70e70e1f4ec019c20d689d583e86de56f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2ZmY3NTU0N2Q3NmZiODg1MDI5NzZlN2M5YjJmZDEzNTFkMzFiYjdhOTJjMzE2ODZlNmUzYTFkYmVlMmIxOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzNjhiNTkxMzQ1ZTNmN2NiNDJkYTMzMzI1MTMxMGFhNDVhZGEyNTkwZGE0YTdkZmQzYTBhZDkwMDk4NjdiYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a6eff363a52429fb69d13a89bd3098e",
+      "statement": "Both abstractions inherit ContextConsumer, so the build binds every instance in both registries to the framework and self.context resolves to the live overlay or shared dict through ContextConsumer.context; separately, each layer has its own error-handler chain pushed onto its own bus.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/context/framework_context_consumer.py#L15-L31",
+          "version": "repo-lines-v1:sha256:e4e532bfe070397f8ca360bc88dc5113aa43b67b82f8fc65175540aefbfdcf44:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwZjkzYzgxYmIyNTc0ZDRiNDRlMWFjZmQ3OGYzYTM1YmFmOWI0NjYwY2RmNWVkZDQ4OWIwNzA4MDBkMjNiMTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlN2JjZDM2ZWY1M2I0NDUyM2U2NWU5OGQxOTQ0OTkzZTBmZjE3NDZmNTUzNmMxYTUxMTc0NmYzZTAxZTc1NmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE1YjRmNDkzODc3ZTRkZTllMGI5MzQ3MjU2N2VhNTJjMmUxNjBjYTUzNGY4ZmZhOTIwNzYwMWZlOTdjNDRmNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM4YjdkNWZlNjk0NTg2ZGQwZDRkM2Y3Y2IzMTg4YjlhODhjNzhiNTljZDBhZjlhODA2ZDhjYjdlMWZhZmZjNzkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/mixin.py#L65-L71",
+          "version": "repo-lines-v1:sha256:89346307958ded5f440d9032689b1d0502a11c6c678a7c19ff6dd325ea5e02ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzlkNmVjNWY1NWU3ZmQwMjAzYTgzNGJlNGExYzE2OWRiODIwMGI0ZmNhZDc1NzI4MDJiMGUyNGI4N2IyM2Q1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjkzYjlmMTJhMjlkNGJjZGQ1ZTY4MjU2NzVhZDAxYzE5MTM3MWNhODhiZThlNTg5NmVlNjY2Mzg2NjE5NGZkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmU2ZWMwYjliMmQwYmI0NDI4ZDczZjU3OTgzZjJjOTYzN2I3M2U5ZmEzNzhiMmVlYmY5NmJlMTM5MjNiZTY4MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L107-L121",
+          "version": "repo-lines-v1:sha256:38d5deff6c9e4d3203b7d2c0ef7e22a24003ff378a0b2ea1c54edbe8036cb076:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllYmRkMzA0ZDUxNWFmODcxOGIzNWY5NzI1MjYzN2QyZTA3MWI0NDhjYWM2NTEyOWYyZmE2ZjZlMjk2MTdhY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYWQ2ZTAyYjM2Mjg0ZmU4MTdkYTk1OGQ5MDJmZjg5ZTEzNWMwMzA4NjNmOGRiODExYzc0ZDUwY2MyNjg3MzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5NTI3ZjQ5YTYwMzJkMjhlOWRlMzZhY2Y3NTU4OWZkYzFkNWY5NDZjODcwYjVlN2I5ZTBmZGNlZGU5MTdlOTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8ed87711fd5c42bc9271c13a66541e49",
+      "statement": "The chosen layer is part of the framework's outward surface: the Layer enum has exactly the members features and app_services, each catalog entry carries it, the JSON-RPC method name is built as {instance}.{layer}.{dto_name}, and MCP tools are tagged with it, with both layers published by default.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_mcp.md#L198-L204",
+          "version": "repo-lines-v1:sha256:5b8d9c44624470ba54eb49bad1897019f1f22a5669a012e1669821d5aa080286:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTQyNzIxNGJkZjJjNGNmZjQyMjgwZjdkNjlhNWEyNWY3NDdkMTg3ZjJmZmFmZTE3NDM3YzM1NWQyNzUyZTljZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzlhMTQ4NzhmM2FiMGIwOWFlMzYwN2QyYjIxYmE5M2Q4YjViMmE4ZDA5MzgxYTY3YWYyZWJjYWE1NzExMzhmMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzg5NjA4ZmMxNmZlYmJkOTZkYzYwMGMxMWVjZjA2MjlmYzllZmUyNjk5ODYxOGYzNzI5MjJlNTEzODQxZTZiMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGQyMTdjZmVhMzBmZGU4OTA0NDI4ZTIwZjk1ZTdjOTE5ZDViYzFhMGMyMDNhMzk2ZGE4ZjI5ZDU2YWI5MWE4OSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L20-L35",
+          "version": "repo-lines-v1:sha256:e19f9444570efdd19bc648877ca4e93369bd8782586055b61b55d2711216db16:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiNTI4Zjk1OTc5MjdjZDkyYTE1M2YyNjg1ZDRhZjFhMTJhOTVmZTZhODRmZjJmODY4MWU0OGMwM2I2Mzg2NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MTNjMzQ3YWNlNjczYTE2ODJiNWE4MDUyZjU0MTE4YzgxMTM5MjljNTgwMzMxMjc2NmRmZjdjMjUyM2JlYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZGU5NTFjOGU5YWVmZmY4Nzc2ZGNhMDA4MTZkMDMzOGZlZTQ1OTMzMzkyYTNjMDc0OGY1NWJjODdjZjEzODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5ZjE3MmQyN2UxZDYzZTA3NDUxODAwZDBlNzc2Y2Y5YTJmYjhlMTExYTY5NmExZGViMjQ1MmNmYTliNjY4OWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L5-L11",
+          "version": "repo-lines-v1:sha256:4de21352f8c9f8c7059d4f6e6b977b70ffa47fb04459648ee2759c97095feb6f:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGZlYTVmNGYzNDE3MjRlMGVlZjIxMGRmZmRmOWYwOGU3YzQwMTA5NjBlYzZmNDQ0OThkODI1M2NhNDQzMzE0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDBmOGVmOTU0MjE1Y2VjMTgxNTdiZmY3ZTVjM2ViZTc4MmQxN2JhZDBiZjdjNmIwOGE2YTI1NDMzN2FlZjM2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmZjZDI4ZDdmNWZjNmE5ZWE3OTk1ZTM3NTgwNjZmMmEyMzllM2M5ZmY2MDg4YTZmZmI3OTkyNGEyZTkwNTAzMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTg4MmZjYzBkN2VkZjBhNjYyYjI1ZmE2Yzk0ODU2ZjA4YWI3Y2U4MGYxZmY1Mjg1MmZiYTA3NjY3MmRlOTUyNiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L55-L61",
+          "version": "repo-lines-v1:sha256:64dca63a6e71e650aff897ed8dda9f73bfe1789b25a1074490339da001732da6:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGJmZGFhODQyMDg4YjQ3OTlhOGQ0NWNlMWM2NDJkYzFmN2ViNDQxNGU4ZDkxNjYxZDE1N2NkYzViNTc4YzJjZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTc2YmU5OTQ5MjdiOWVhZGVhOTgzOTFjYmMzODQ2MTAxZDJhZTk0ZmEyYjFiMTQ1MGM4YWVmN2Y5YjNiMzRjYSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L38-L39",
+          "version": "repo-lines-v1:sha256:0eba32d89ab4436afea689425419017a4a9681cf55d41b613ddd622869e0a389:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmU5YWYwOWEzNzUyMWY2MjQ5MzM0OTk4ZmNiYjg5YzYxMGFiMzc1ZDdhMGJlNDVlMzUwMGUxZDUxZGEwZDA2NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmI3NjkyNDcxOTNlMDdmZTU4ZWVhYWViNGJkZTQ3YjNjY2U2YzdkNmExNDdjY2UzMDllYjQwYWMxNDk2MmQwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTM1NzgwYzY0NDFjNzg5MGM3Y2Y4NmMzNzhjNzgzMjdkN2Y2NDdiZTA3YTdmN2JhMTRlZGYwNTM0ZDM0NzQ4YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmYyYzFlZjMwMjA5YTQxYTlkZjEyNTBhY2M2OGFiM2EwODhjZDE5NWQyYTI1YjA1ZjAzM2FmNmQ3NGQ1MzVlYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_07a59b7920b44072b961af0132cad26d",
+      "statement": "framework.feature and framework.app_service are partials of the two registration decorators bound to the per-instance FrameworkContainer created in UseFramework.__init__, so decoration registers into exactly one bounded context and the class is returned unchanged rather than wrapped.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L153-L191",
+          "version": "repo-lines-v1:sha256:01f1d5ae18573bb0578fa23427cf8f2e34b053c982110235dabe6dfcccf5b583:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNTI5YjQ0YTVhNTk0MTQ0YTllZmNkYWU0MzBiYWIwNGQ3YmIwZDQ4NzIyM2EzMjRlZDcxZWEyNmZjMzY1YTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3YjI0ZWViZWIyMTkxYWY1ZjFhYzNhYjNkNDJkNzJlMzA3NGE5MGZjMGI3NzI0ZDk1ZThlMmUwYTU0MTJmN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1MDFiYzg4ZmNkMjgzNTU4NjBiZWI3ODYzM2I3ZjBjNzQyZTE1NDU4MDZjMmIzM2Y4MTg2MGZiZWJlYjY0YjkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L63-L70",
+          "version": "repo-lines-v1:sha256:426786ca1c41853e1578354daa9458ef8dc6ab205f2f07ec6c169f2b3e7e53ea:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDJjMTViYzAxMjc0M2U4MWYwMmM5YTQ4YjZmNjQ2N2QxNWU2YzE4MzNjMDEwNzQzNzEwY2QyNjc4MzViNzA5NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzYyN2Q0NTQ0MTA2OWYwY2VjOTUwN2MxYmFjODA1NjBlOWFkNzExNTExZTlmOGI1MTQ5YTJiNDhlMjlmYzYyYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjRjNTJkMTIxMzQ3M2Y3OGJhY2UwZDMxNjQ4N2ZjM2IyODAwODE3OGQwOWUzNzBlYWZkOTQ0NGMwODkzYzMyOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjg4YzAyZjM3N2Q3N2NlMWVmM2RhZWVlZGM5OGIxNzI4Y2YwYTUyMjRmOWY3NzI0NzNkZjZkZjRmOTU4YzgzZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_357b68978bad4ec69821ed99295c4ee3",
+      "statement": "Both layers have their input DTO validated by pydantic before the bus is called and their handler's return value handed back unchanged — no coercion, wrapping or response type check happens in the buses; only the input contract is enforced.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L109-L114",
+          "version": "repo-lines-v1:sha256:7b76099b67643824303bfc2b61bea408df1c7020d14c7d3507a26cab6564ada3:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTI3OTFlZDVjY2ZiYTQ0ZjYwN2I5NWIzMDYyMzdhYmIyYWI3NDhlNzZmOTk5YjExMGVhZGZkMWRkNDZmMzYwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWE2NWFhZmM1NjM3ZGZkNjExZDg3NThhOGM5ZWVmY2U3ZDFiZWQyNmQyZDEyMmQ2MWMyODg0MDJlM2E2OWVjMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThlMzJiZDJhMTVhMjk5MmJmYjAyMmIxYTQ5ZGRiYzlmMDQzNTA2MzZlNjc2M2U1ZTRhODRlMjg1MmNkYTlmNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWY4OGQ1YmQ1YWJmOGM5ODAyMDFjOWRiMGRhOWM1MTgxNjIyNzEwMmQ5NzQ1ZmFkYTcxYjBjYWY1ZmFmMzE3YSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L53-L58",
+          "version": "repo-lines-v1:sha256:52a9cbf896ebcb05c5c4f5cb71635a420a4908800fbb6c8f01fcc4e67dfe2d32:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU4YTM5ZWNlYWFlODllZjNmNmE1MzZiMjM3MGJhMzY1MzhkYWIxY2I1YjgzNjY4Y2EyOWQ4YTViYjdmOGI3OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWE2NWFhZmM1NjM3ZGZkNjExZDg3NThhOGM5ZWVmY2U3ZDFiZWQyNmQyZDEyMmQ2MWMyODg0MDJlM2E2OWVjMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThlMzJiZDJhMTVhMjk5MmJmYjAyMmIxYTQ5ZGRiYzlmMDQzNTA2MzZlNjc2M2U1ZTRhODRlMjg1MmNkYTlmNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDZmZTBhOGMxNjU4MDE4ZTU5NjEwNWVlZGJiNTBhODczMjhiZDdmOWI5M2YzMGNhNDFiZDQ3ZTFlNzE0ZDJkOCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L57-L74",
+          "version": "repo-lines-v1:sha256:56bbf29a0bd27bc179a81540d5dc968a96e81849b62be7ecfc876ab05467db91:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwZDEzYThmMzMyMTg1Y2E2YzFlZWE2MzhjYjhlNWYyODM5MjljMDEzNWI1NTM3ZWM2YWJmYjUxNDZhOWM1ZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhOTc0YWU0ZjQyYzhkYzRmYzhjOGQyNWMxOTYwZDM1YmJiMzQ3MGRiZmVkZmVkMzE5ZWY4NGRjYTcxYzAzMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0ZGE4NjZhOTg4OWRiNjBiZjIyYWQxZGQxYjczMmUzZTU1N2M1NGZiNWIxMDRiNjk5ZDM1YTZmMzkyOTE3NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMzliZWI2NzRjMGUyNjUxNzQ4YWY3MTJkZDlmN2Y5NDIzMWYwNDI5M2UwMTNmNzdkNGE0ODZhMTE2N2VkYTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2ca0019a8fcf492ea10698a1824cec53",
+      "statement": "The concrete buses (FeatureBus, ApplicationServiceBus, FrameworkBus), the container in sincpro_framework/ioc.py and the registry dicts are internals: the framework's public surface is the set re-exported by sincpro_framework/__init__.py — UseFramework, Feature, ApplicationService, DataTransferObject, Middleware, logger, TypeDTO and TypeDTOResponse.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L1-L21",
+          "version": "repo-lines-v1:sha256:0563d98fe795f3c62b4017629f1c1daa360e2cb9a7abec3bec25bfa4be83706b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlZTc1Yjk4MzZiZTA2NjY1ZmIzNGUyZTNlYTZkNTA0NTNkOWYwYjRjMWUyYTFiOWE2MGQ3NzY0NjkyNDA5Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:5219f3af1adaf433ce33329b2b0a009c86d15d39116b4e3a636c58e6ebb86387",
+  "claims": [
+    {
+      "id": "claim_b78db1804aba4428b20eb3203d9cc46c",
+      "statement": "Middleware is a non-runtime-checkable typing.Protocol with a single method __call__(dto) -> dto; anything callable with one positional argument (plain function, lambda, instance implementing __call__) is valid middleware, and there is no base class, no before/after hook and no async variant.",
+      "evidence": [
+        {
+          "resource": "repo://docs/design/middleware.md#L5-L31",
+          "version": "repo-lines-v1:sha256:727f1d1bd25231631d3e2130dc439deb26e3e79bd1cdfa327b8c137cc67ed57a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlN2ZhMTE5OTUyYTg3YzIxYjViMDVlOThiMjI3MWE2MDJlNGI1OTkxOGY2NTk3NGY1Y2JkN2E4NjY2NGYyOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0M2Q0NTFjZDI2ZGJmNjIyZjA0YjgzMTc0NTgxYmYxNWQxMDIwOTU3ODBlODdhMjU1MGQ5MGIzMzE4ZjIxMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5ZTZiODY0OTI2YWZmYzYyOGVhNjViMGNhMDYzYjI3MzZkYjlkMGQ4MTIxMDQ1MDgxZDg2NGI4MWMwMTUwNDgifQ"
+        },
+        {
+          "resource": "repo://examples/middleware_examples.ipynb#L410-L432",
+          "version": "repo-lines-v1:sha256:e3efae0f579fb1daa85f7dff05f8a267f66c4ee3ae22050d9662b72310378365:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhMTUxMjEwZWFkZDU3MjQ0NmI5OWM2N2YwY2IwZDA1ODY5ZmNhM2NjN2IwMzgwZWNiYjVmNDZkNWM4ZGYyNTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiOTRlNmFkZjNhZTY1NzZhM2MwYmU2NjNkMDY5MmYxZWIyZDUzYTk1MGIxYmI2OTY5MDBiMDhkZjU4YzllZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwM2NkOGNmYTRkMTAxMTRiNDI3MWU0NjJiMmQ1NDQ0NDNkMjkwODI1YjFkNzcwODNlYWY4OTkyNzRjY2ZhYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1MjExMTI0NjFiMDUxM2NiMGUyYWY3YmYxMDAwNjVmYTYwZTczN2M4Mzk2MDcwM2VmOWU4ZWZiOTRhN2IzNmEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L4-L21",
+          "version": "repo-lines-v1:sha256:6632fe0408b910dc8b85f524f5ce953da0f41ccee21271768425341b8ff8049c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5YmU4NTRkNjk3Y2JlYWVkNTUwNGVkZTI1YmM5OTU5YWRhMWEzMGY1YzNmZTcwMzAyNjU1MjJiZDk3OTEzZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MjBkODVkZTRlZDdhYjgwMjFiNGE4ZGQ0ZmExNWVjNTE5MjVjZGZjY2RlMTgwNTg5NWE0YzhhM2MzYmE0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4YjZjMDkxZTkzMjI4YjE5ZTg1MjczNTdiMjNkYzI5Y2FiNGI5NzhkNzU1YmRiM2MzYjYwZGE3Y2ZkOTJiZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2MWY2YjVmYjU0NTdmZmY1MmZjMTU5ZWFhYzc2NjcwMjRiMWU2NTFkMWJmZDc3MDhiODVlZjIzMmUwZWNhZmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c1eda4f10fce4ed9ab2d3fd8b3d210db",
+      "statement": "UseFramework.add_middleware only appends to MiddlewarePipeline.middlewares and performs no callable validation, so a non-callable entry fails at execution time inside the pipeline loop rather than at registration; MiddlewarePipeline.execute iterates the list forward and feeds each middleware the previous middleware's return value, making execution order identical to registration order with no priority, reordering, de-duplication or removal support.",
+      "evidence": [
+        {
+          "resource": "repo://docs/design/middleware.md#L58-L64",
+          "version": "repo-lines-v1:sha256:9a47c2d925c8b43a0b4662b1da059b9dd5f6c755088bc8fa64c7196bbb8fe7c2:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzljMjI0MjQ4OTc3OGY4OTFjOTI3NmQ5ZWVhYmE5NjNlODEyY2FhNWJhZmVkNGMzOGFhNjdiYWQ0NTBkZDhhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDdkYmUxMzU4ZGYwNDc3MzViNDBjYTU1NWIzNmFlNDViZmM4ZGRhZGY3OTNlZDBmMWMzYjJmNWI4YjgwMTZiOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzNjYWM0MDdlNDdjYjFiNGVjM2I3ZThjZDE5MzUyN2QwMGZiZWUxOTZlZTQ2ODBkOTI5MTZkN2E1NzhkZDkwZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYThiZWNmNjc4MWQ1OWIyYmUyZTM0YzljMzRiMGVkN2MxYmJiYWE0MjdkODBhOTdjMGVhODUyMDBlMWM1ODVjMCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L27-L46",
+          "version": "repo-lines-v1:sha256:ee85e177f781660025403316bcf214ddf926e4e08faeeff20770aa79a6d44610:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiNmI0YjliMWMzMzAxNDQ0MWZjMGU3OWUzMjQ1MTAyZDIzNDVkNjQ4MWVjMTVkOWYzM2M4NjM2MDVkOTAwOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhMzc3ZDNhMjY4YmY1NWUzZWYxMzJhYmMwMjViZDFjYzhiMGM2YmYyZDMxM2YxZGJhYWJmYzEzYzgzYmZiNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5Nzc5NGM2MWVjZTRiN2RlNzEzOTRjZDBjODdjNDQ4OTg0YmI2ZDk3Y2Q0MTQwODdlMTQ1YWViNzQ0MDI4YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2Y2IxYjM2YTE0OTVlNjA4YThhMzk1OTEzNTM2ZDkxZGZiZjE3ZWU2ZDhlZWNmYTYyY2U4NzcxZjRjYTJmOTYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L183-L185",
+          "version": "repo-lines-v1:sha256:92c14bf00163a95810c93ac5414d4e33e433836f0f8e18e4fa282ba23432497b:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWMxZTZiNTgyMTNlZWI1YmMzZjg3YTQ4MjhiMzZlNTFlMTI5YzcxNjFmOWM3ZjMzZTJmNTZkM2M0NDcyNjg4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGU4NjFkNzk2ZDRiMWJjM2Y3NDBkZmU4ZTRlMGUwMmY2NWM4M2E5NTVlYjE1ODE0ZDdkMTI2M2FiYzkwMDg4YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGZhNWYzODI1OTdiYzMwMDJjMTAzZGVjOGQwNGViZDMxNGRhMzU4YzBhZDJiZDc2NjQ0ZmI5NTQ3Njc1ZWI3YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjU1OGQ4ODE5YjVhNTRhZGNiOTliMTgyYjYxNGRhYWMzN2MzYmM0ZTcxYTczYTM3ZTlmYzdiZDg5MGIzYWE1NyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L207-L208",
+          "version": "repo-lines-v1:sha256:dcfdce23b528f817fe63e18b2957b74f214c1c771b1df70392750b789cddf373:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzNlNTRlNDhlMDgwOWZmYjYyNWFkNDk5MDg3ZmNhZTYyMjYwZTI4OGUzNDY3YWU0NzkxMTFjNzVmY2EyYjc2ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGU2NzM2YTdjYWMzN2FjMzc1OTQ2YjU5YjdlMTU1MGE4NTQ3N2M4ODNmN2NjODMxNTE4NTZkMjYxY2NiNzFlNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTVhMTFkNmJiYTI5MzlhNTkyOTAwNjgxM2RlZmIxYjJjOGEwMjcxOTkxYmZiODVmNTFhMzIzYWMyNTI5OWZlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzg5NDc5MWJhYzIxNDdhNzA2NTU4MjE0MTEyMGM0ZThlMmFkOGQ1OWNiMmEzZGE2NGRkM2E3MmM3ZDFkMTIxYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_16d98f08105642d7bff0c9b75456094e",
+      "statement": "MiddlewarePipeline.execute captures dto.__class__ before the chain, runs the middleware chain, and if a middleware returned an object of a different class reassigns processed_dto.__class__ back to the captured class before calling executor(processed_dto, **kwargs); it has no try/except and no response phase, returning the executor's value directly.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L34-L53",
+          "version": "repo-lines-v1:sha256:c01d35342a5c07b27b05bc1bcac1ca30a3d1d6316874819e207dc752474894a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyODAwMDhkODY0YTIyZDRkZGIyNzcyY2FjMjIyODkzNTQzZjAyYWE3Yjg0YmFiODA0YmM3NGU1MTAwYjUwMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNmQ3ODc3MTY0Yzg1Y2VkYjEzMzg3ZWU0NDgwZTUxZTA0ZGQ4MTc3YjE5YmY5NjMwZTAxZjY3YmZlOWQ1OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlNjRjNDYxNjkzOGJmNTc3YzhmMmRkMjFjMTIzMDRlODc4MGNjMGU1ZGI4ZmY1MzgwNTA3NmJkNWE3YmYxNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_52838c5a2e674626a7ef3f6ef1f94e25",
+      "statement": "The __class__ restore is what keeps a middleware-transformed DTO routable: every bus derives its registry key from dto.__class__.__name__ at lookup time, so without the restore an enriched DTO type would raise UnknownDTOToExecute at the facade; only __class__ is reassigned, so the attributes added by the middleware travel with the instance while isinstance and __class__.__name__ again report the caller's original type.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L173-L194",
+          "version": "repo-lines-v1:sha256:5c85b7a2c97680bc4aa6ba7881fa36a602ed10a212893ee9e382cbf8ebd90944:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYjIyN2QwYWNlYjQ1MTkyNTJmYjkwMDBkNTQ0Mzc0YWY2MmU3MDE5ZTNkM2E5NmM0NTJhMzlmNWI4NzhkZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNTM3MGY0NWU2Nzg2MjdmZWIyY2M1Y2RmZGY3OTAwYWE0MWYwYTk0MDI5OGE0N2Y5ZTM1ZDZlNDY3MTYxZjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjljZGU4N2ZkMTcyOTcxZTYwYmUwZjY0NGMwODczMDE2MmZjOTAxNTU1MDA3YmE1ZTVjNTk3MTkxZGE5NmEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L45-L53",
+          "version": "repo-lines-v1:sha256:397e9419ffd863a22c89beccb5baa997a2e2c9a6f8bfba125753c64e373e3780:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWFiMjI3ZDBhY2ViNDUxOTI1MmZiOTAwMGQ1NDQzNzRhZjYyZTcwMTllM2QzYTk2YzQ1MmEzOWY1Yjg3OGRmNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU4YTM5ZWNlYWFlODllZjNmNmE1MzZiMjM3MGJhMzY1MzhkYWIxY2I1YjgzNjY4Y2EyOWQ4YTViYjdmOGI3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQ4ODNjMDg4NmJlMTgzYzNlMTg1NjA2ZWU1MDczM2E4NmU1ODc2MzQ4ZTBhMDRlMjM4YjAxZTliZWVmMjEwNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzVjMTk5ZTI0Mzc5NWViNGZlYmNjNWNkOWFjZjJiNWQ4NGFjNGQwNGVkNWZjZTU4OTMzMWM0MjAwMTkxMDNlNSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L41-L53",
+          "version": "repo-lines-v1:sha256:0cff5296647a0f57cfc0703a3e574e1871e02598636a27fcbffe6980a87a7a48:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlN2EwODI3ZmJjNmViZDFmNzdmODNmZWY0NDg0ZWU5MjU1NmI3ODM5ZDdjZTg2NTkzY2I5MmFmMjg5OWJiNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNmQ3ODc3MTY0Yzg1Y2VkYjEzMzg3ZWU0NDgwZTUxZTA0ZGQ4MTc3YjE5YmY5NjMwZTAxZjY3YmZlOWQ1OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlODFjMTc1MmUzYmQ2YWU3NDI0MmM1NjhhMDk1MThhMWQxNDBjYTkzY2E3N2Y1NjdjN2VhMzkyYTgwNzRkZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/test_middleware.py#L163-L204",
+          "version": "repo-lines-v1:sha256:646917be975c80fa1c58de4392c99f289741ff390d64902cfee938109fa7c747:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OTEwMDMxYzhjYzExOTQyOWRiODMwNDcwYzcyOWIyYzRmMmVlZGFjZTljOTQ5ZjI3ZDVhMDJkNGJjZGM4NGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMmYyMWRlMmNjMWYxZDlmOTYwZDI2NmUyYzM1NTdmN2MzYTRiY2U2NjFiMjFmZWYwY2IzZGU2YTkwZGQ3NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4MDAyMDNkMzZjMGIwNmEzODljZDIwODY1NjA4Y2JiOGE1MzAxMjY4YTRmNDQzMDAyOTE3MWY3NmEzYjlhM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhMTM4NmIyYmU2YjVhNTkzOTBmYzdlODUwNjllNjY5OGI5NjdlYWQ4M2E3MjJiZmE0NWEyN2I0NDgxZjY1ODMifQ"
+        },
+        {
+          "resource": "repo://tests/test_middleware.py#L206-L279",
+          "version": "repo-lines-v1:sha256:7889b6b3488fb89d67fe140e6ff39b7eeef94079edcc875f35ec6b13dd5c57ad:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMzgyOTdkYzRiNjM1Y2JmZTQwN2M5YjEzZTliZTIwYjdkZGFiZGIyODk2NTNmOGYyMGRlYjJkZGQ4Y2ExZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMDk5OTg0NzBmMzYzMjQyMTNkNDNiMTFmYzNjYjk0YmY0YmJlYmU2ZjQxYzgxMTE4OWMwZDk2YzkyY2RkMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxNjVlNjA1ZjM0OTMyNGVlNTZlMDE2M2JhMWEzYWVmNTNhYWZlN2M4ZjI0Y2MyNTE5OGQ4NGY5M2VmMjRhODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkYjI2ZWMyYTIzMDkyYjAxMjI1MTE0N2UzZWFiYjNlZjlmZWExMWVjM2Q2OGQ4NWJiNWZkYmRlYzA0MzY2ODcifQ"
+        },
+        {
+          "resource": "repo://tests/test_middleware.py#L302-L319",
+          "version": "repo-lines-v1:sha256:8dfc65cd211f690b0d87b875d2bfbde3cbd8753b3e6dfb915ea55bd4bf0cb2ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4YzkzNjY1ZTBiODI5MmFjOGFkYmVmY2U1NGQ5ZDA4MzBjOGIwYTQzODM5ZjViNzRmYzdiM2ZjZTc4YzRhMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiMmY2ODczOTA5NjdiNGFmODhkNjg0MDhjOWY4MWE1ODc2NWFmZmU4ODg1MzE2NGVmMTA1Zjc4MjBmOTk0M2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0MmVkZjk0NGU1NTQwN2VjY2YzNjBkM2VmZmQ0ZjdmYzYwNzcwZjk2YzRlYzhlYjA0M2NhMmFhYmFmYTBiMjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b92a6cec1384cf6b9e7b206bc027a59",
+      "statement": "Because the class restore happens before the executor runs, the registry lookup always uses the name of the class the caller passed, so a transforming middleware requires the handler to be registered against the caller's DTO type rather than the produced type.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L173-L194",
+          "version": "repo-lines-v1:sha256:5c85b7a2c97680bc4aa6ba7881fa36a602ed10a212893ee9e382cbf8ebd90944:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYjIyN2QwYWNlYjQ1MTkyNTJmYjkwMDBkNTQ0Mzc0YWY2MmU3MDE5ZTNkM2E5NmM0NTJhMzlmNWI4NzhkZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNTM3MGY0NWU2Nzg2MjdmZWIyY2M1Y2RmZGY3OTAwYWE0MWYwYTk0MDI5OGE0N2Y5ZTM1ZDZlNDY3MTYxZjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjljZGU4N2ZkMTcyOTcxZTYwYmUwZjY0NGMwODczMDE2MmZjOTAxNTU1MDA3YmE1ZTVjNTk3MTkxZGE5NmEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L49-L53",
+          "version": "repo-lines-v1:sha256:4e2c1a11b505f93fc3495addfbf7a27459d29d85a05760b7783ad2a1a7b8852a:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTcwMjc2MDkxMDZiMDc1YTExYTBhMDQ1NmZlMmUzMTA5NzE2YTZlNzNlZTExNjQ4YTVkMzM5NTYyNjk2MzY0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmQ2ZDc4NzcxNjRjODVjZWRiMTMzODdlZTQ0ODBlNTFlMDRkZDgxNzdiMTliZjk2MzBlMDFmNjdiZmU5ZDU5ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTkxMGU2OGY3NjkwNTcwNWM3ZDY5MjY3ZTk1NjUwNjQxYWJiZjkxZTkyZDNkNmQ5MWI2NWQ3NDAzNTFmZWJlMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://tests/test_middleware.py#L174-L194",
+          "version": "repo-lines-v1:sha256:86b522d6033e11be823dd159ef8a2dff45adc1d34d745786860210dac0e28a7e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NmIyMDQ4Y2Y0ZGI1ZWQyODBiMzU1MzJkZDA5ZmU1ZThiNzNlZjFjNWE2ZGEwYzFiMmQ1YWZjZGJhZjZlMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhZmI0OGY2NzMyODliNzVmYzRjMzllNTgyOWQ4MDMxZjU0ZDkwMWFlNTM5ZTE1NjI1NTExNGE3ZTJlOWEwYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhMjIxOTk4ODkzNDk1NzQxOTQxMDVjYTRmNGY5YWNhYWEwMjk1ZGY3ODA2NzFlNDk1YzM1NDM1M2IyZmNjYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExN2ExZDhmZGFmYzExNWU3ZWJmNTY5YjBiYmQxNjVlYjY4OTIzYWY1Njk0OTZmOWU4Y2M0MDI3MTBlNjgyZTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_27c50143e6e849b7b1c45a9400544811",
+      "statement": "MiddlewarePipeline is constructed once per UseFramework instance in the constructor and its execute is invoked from exactly one place, UseFramework.__call__, after the lazy build and the implicit context overlay are established; the buses never reference middleware, so framework(dto) is the only route that applies the chain and bus.thread_context()/AsyncBus/direct bus calls bypass it.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/aio/bus.py#L78-L86",
+          "version": "repo-lines-v1:sha256:1af8421c7332a82867a2d69591233a36d1abf87d315a2379af7492e6bb3a5d53:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjgxOTA0ODVlNWJkMTYyNTUyMjYxODMxOWI3Njg4MzIxOTVlYWY4MDMyMDc3MzlkYzc1YmVmNzdiOTZmNDY3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODA0NWJjNGMzNGJiYWZiMWJhMDc0ODcyOWZhYTdjNGU5MzFiY2E4MGI0NTcxNzhlZjU3YTM3YTIzY2Q2MWY1ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTBhODUxY2QyMjRlMmE2YmUzMWRjY2U2ZGY4Zjk3ZjA1NmY0NWZjMmViNjEyNWNlMGE5ZmY2NWE4ZjQ0ODg2YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWNkNDZjMGE2NTE5MDNkMDc4YjIyNDM5YWVkMWQwODRjMDc4MDFjZjdjNjlhNTk2ZDgzMTJkZjZjMDE3YmI2YSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/context/thread_context_bus.py#L51-L62",
+          "version": "repo-lines-v1:sha256:5cd9bf581f3af7f3c18b66f2740d05616db414778a5eaad46d6937dfe941e44c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmMWRlNzZkY2FlNGQ1NmVmYTJmNmE1YTY1NzhlYzFlY2ZjZDk1NmQwN2UwMTQ4OWIwNWU5MTcyZjE1MDIyYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MGIzMTFhOTBiMDhjZTg5MjNmNDc5ZTljMDFjMDk1MjdiNzc5MjY0OGY5Yzc4ZjRjMDA2N2JlNTczMmQyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0ZWFiYjdjNDVlMGE2ZjE1OWUxOTI0ZTliZWUzNmI1ODExMTM3Mjk4ZjU0MTc1NTA2NWIxOTA5YjNkMzk1NzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmZWQ4ZTI4YTlmNjcxNjY2ZGNhM2I3MzMzZDU5MThiN2NkMTAxNWE5ODlmMmY2ODU1ZDBlYTIwYzdiOGU5MDQifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L377-L401",
+          "version": "repo-lines-v1:sha256:e06ca5ad450dba5a4f9e0d992225d74f43853deaa0617325000f15ae6641ab31:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4MDVkMGEzZGYxYzFlOThhMDU2MTU0MDhjMjA0MDFkNzhlMTM0MGQ4MTU0NzgwNDY1MTQ4MDU1YWM2NGJlNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3ZDQ0MTIyZDRjZGVhMDliYjA4M2YxNWY1ZDJmMDdlYzVmZjUxOTNkYjcwOGQ1YzUyNjkzZDBmY2U4NDM4MmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyYTIxOWQ0MzI4YjY0MTU3ZTU0NzEzNDFlMzM3YTdhNzgwMjNkMGYyMTg0NTUyNzQ4OTE0ZTQzY2VlNGYyYWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlZGQ1MTE4MjFlNGQ4ZTcyZDgzZjJlMTAzNjk3ODk4ODMyNWVmNjk5MGQ3MjgxMjVjYTRlM2M4MTkzZmUwYTEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L84-L85",
+          "version": "repo-lines-v1:sha256:05f32524cbcca96401c3b2f6c6711b6ac50c9f4a6121c9d5f671f819da62c7ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJkN2ZlZGMzMjBjYTUxYzJjOGNkNmJjZjg2ZWVmNDI2MzE5NGE1M2NlY2U1ZDc5Mzk5NTZlODE5NDQ1NGFmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjkyMDA1NTM3YmVkNTI5NWE0YzRkMzZmYzM0MDZiMGI2M2NjMWJkMzQ3ZDk0MjIyMjRlNWI3OGViZWI3NWY2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTk5ZGIwMTdhZjhhNmE2OTJjMTliMjgxYTQ5ZmU0NjQ2ZjkyZGI5MTI4ZjFjYmQ1YjFhZDljY2MxZWYzMzg0MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGM1YjFmZWRhZjZkYTdhNjFhNTNmOTMxODZhYjJmNGM3NzMwYjI4MmJhYmU3ZWFlMmEzMzk2MWVkYjJmZjM2OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_495c635dbcd3494cb12f1ebf9c9c9aa2",
+      "statement": "The chain runs once per framework(dto) call and before FrameworkBus routing, so it applies identically to DTOs handled by a Feature and by an ApplicationService and cannot know which layer will execute them; there is no per-DTO or per-layer targeting, so a middleware must decide for itself by inspecting the DTO (documented practice uses hasattr/isinstance guards).",
+      "evidence": [
+        {
+          "resource": "repo://docs/design/middleware.md#L66-L99",
+          "version": "repo-lines-v1:sha256:02d84e25073ad131c9e964afd0b508547c70fb7162314c1922b4cf19251fac10:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4MGI5YTBkM2Q5ZThhMzM5NTRlNjYxMTU5MDE0YTlmMjg3MGIxZGU5ZGI4NjQ2ZjBhZGZiZDVlNmM2Nzg2NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2ZmIwZjc0ZjNjNDI2MDZiM2Y4NTM2OGU4MGVjNmYzNmNmY2YwNWE2YjY1MmVjMjYzZmE2Njg1ZjMyNmUxOGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1MTEyMWZiYTBlZDY1NTk3YWE2YWE5YjdhZjVmYTU2NDE1Y2I1MjM0ODRmOTg2YjIwODllYzlhMzhkMDc2NjEifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L164-L205",
+          "version": "repo-lines-v1:sha256:23bd02ab3055341001d409acc8d8b1e20fe85a6d4ade5702ddbfbc7fb248c8a4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiMTA2YTM2MjYzOGQ0Nzc2MGExMWQ4NTRlYWM2OWZiYTJkMjQ0NTZmNTUwNmExYTgzZmYxZWIyMWJjZjg1MzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlOGVkMzQ2NmIzODNhYTRlNjA3MDg2ODNiNzUyZjdlODNhMWE2M2ZlYzRmMWI2NDEwYWE1ZjQ1OTI0MGNiODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzZWE1ZmZjYTRkZWFkZDhjOTM2OTBlZjFjMDc4ZmYzZmUxM2VkZGIyNjRlNmQ0ZThmNGQ5ZDg5ZTk2ZWM4NDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L393-L401",
+          "version": "repo-lines-v1:sha256:6f9662162ef5ae0867575032559549e19b26c3e3b0c87c8e4f02fb0e3b836b43:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ2ZTAzY2FhYzZjOGI0ZjBhZDlhMzdlNzY2ZDllYmViYTBlNTYxMmViYzE0YjY5YzgxZWEzZjM0NjFjODA1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDdkNDQxMjJkNGNkZWEwOWJiMDgzZjE1ZjVkMmYwN2VjNWZmNTE5M2RiNzA4ZDVjNTI2OTNkMGZjZTg0MzgyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDkyZTY1MGFiNTg4ZDQzZTgzZmJhNTM2NjgzZDEyZWYwOTg2NDJkNWI0Y2ZkMmQ4Y2NlZTVlY2MzZDgzOGMyYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmVkZDUxMTgyMWU0ZDhlNzJkODNmMmUxMDM2OTc4OTg4MzI1ZWY2OTkwZDcyODEyNWNhNGUzYzgxOTNmZTBhMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e90df6fb1ca24a98a0958821eeed9678",
+      "statement": "Middleware runs in the implicit context overlay that __call__ pushes before the pipeline and pops in its finally block, and middleware receives no context argument, so it can only read self.context by closing over the framework instance.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L34-L46",
+          "version": "repo-lines-v1:sha256:5ad855660adf5896715c9a381fb0094e0619bb98fa7cdc64cf4e2c387d1005cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyODAwMDhkODY0YTIyZDRkZGIyNzcyY2FjMjIyODkzNTQzZjAyYWE3Yjg0YmFiODA0YmM3NGU1MTAwYjUwMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhMzc3ZDNhMjY4YmY1NWUzZWYxMzJhYmMwMjViZDFjYzhiMGM2YmYyZDMxM2YxZGJhYWJmYzEzYzgzYmZiNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlNjRjNDYxNjkzOGJmNTc3YzhmMmRkMjFjMTIzMDRlODc4MGNjMGU1ZGI4ZmY1MzgwNTA3NmJkNWE3YmYxNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2Y2IxYjM2YTE0OTVlNjA4YThhMzk1OTEzNTM2ZDkxZGZiZjE3ZWU2ZDhlZWNmYTYyY2U4NzcxZjRjYTJmOTYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L388-L404",
+          "version": "repo-lines-v1:sha256:964dba16438673c6213f6706fca3162bba3ed41fed2a0c011d4bf9d137f5db20:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMWM5ODlmMjBjZDVjNjg0M2JkYmQwNzdjMDJjOGU0ZTU0N2FjODI2ZTFjMjQwMGZjNjBkZmY1OTBhZTk1NTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NWUyMGEzNjE0OGUxOTFhNGNiNGE5ZDcyOWVlMjUwNmQ2Y2QxYjkwMGU1MjBkYjBlNDZlZTRiOGU4YTZjYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkZjc4ODhjNWE5NThhZDkzNTZkNjNiZTA4MzkxNjg3OTM2MmM2OTAxODAyM2U0YTFmNTkyYjY4MmNhOGVlYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwM2FjYmJkYjU0YjBlN2EyYWNmNzVlZmYzYzg3MWQwNDBiYTYxZWJkY2VmNWY0MjAyMWU5OWM0ZDkzZWE0YjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_19548dc9ff75453c8a1fbba19de75eea",
+      "statement": "A framework call nested from an ApplicationService through self.feature_bus.execute() goes directly to FeatureBus.execute and bypasses the middleware chain, because the pipeline lives on UseFramework rather than on the bus.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/ioc.py#L137-L145",
+          "version": "repo-lines-v1:sha256:881c074575a06c9a5b96e61c49c1299483650b7f12f6067e02995d6d67b4e680:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTI2YTQyM2U5Yzk4MmU5Nzk4ODFiMmE5NTFkNTYwOGFmMDU0ZTYzODhhZjJhNzNiMDNkNzQ4ZGM3MTFkMWM5NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDlhMTYxZGMxMmJkNzk4YzA3NTU5MmYwZDU2OGZmN2Y2Y2UyYzM0ZTljZTk3YWY0MmUyMDgxYmY4NTk0ZjJhNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjUyOWE2NzEzYTRjNThjODAwZjY3NzJmOTc1NDBjOTMzNjJmZjVhYmRkODQ0MzQ4MzExZmQ5MWFmMTEzYTViNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTlmZjE0OTgxMjBiMTI5MTg0YTk3YTcxOTM1NWIyNTEyMDVlNTcxZWEwM2Y4NzM2MzNmNzgzMzM4YTRiYmY1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L168-L170",
+          "version": "repo-lines-v1:sha256:dc8c1d4458601acd527f786c3e05453b24b01c61814202845d5427bc1f915548:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ3Yjc1YWI3ZGJlZGI2YjQxN2Q1NGE4NTkzZWU2YjM4MTdiYjEyNzAzMWNiMjZlN2Q3OWZiYmIxNWVjODk3NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDczYWQ5ZDAzNGNjYzQ3YmI3OTgxZTU2NjdlMzJiNWQyNDE2Y2EwZjcxZDdjZjlkZTQ0YjE3MjVhYjQwN2ViMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTIyMTVlNWRhZDE5NGZjMzQ2NGMwZTlmNWM5OWM5YjZjZjFiOGFiMDJjMGM4OGI1NDAyMDM5NWRlMzY4OWYyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjIyZmFlYWU5YzhkNGUyYTU2MzkwN2UyYmI5MWUwNDJlYzViNmY2NWM0NDE4ZmE1YWJiZjUwNTMxNThlMDJmOCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L393-L401",
+          "version": "repo-lines-v1:sha256:6f9662162ef5ae0867575032559549e19b26c3e3b0c87c8e4f02fb0e3b836b43:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ2ZTAzY2FhYzZjOGI0ZjBhZDlhMzdlNzY2ZDllYmViYTBlNTYxMmViYzE0YjY5YzgxZWEzZjM0NjFjODA1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDdkNDQxMjJkNGNkZWEwOWJiMDgzZjE1ZjVkMmYwN2VjNWZmNTE5M2RiNzA4ZDVjNTI2OTNkMGZjZTg0MzgyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDkyZTY1MGFiNTg4ZDQzZTgzZmJhNTM2NjgzZDEyZWYwOTg2NDJkNWI0Y2ZkMmQ4Y2NlZTVlY2MzZDgzOGMyYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmVkZDUxMTgyMWU0ZDhlNzJkODNmMmUxMDM2OTc4OTg4MzI1ZWY2OTkwZDcyODEyNWNhNGUzYzgxOTNmZTBhMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e57e44b0e0c547e9b756e66e85f32fe0",
+      "statement": "A middleware exception stops the chain immediately (later middleware and the executor never run) and propagates out of MiddlewarePipeline.execute and UseFramework.__call__ as the middleware's own exception type, with only the implicit overlay pop still executing.",
+      "evidence": [
+        {
+          "resource": "repo://docs/design/middleware.md#L109-L122",
+          "version": "repo-lines-v1:sha256:dc06988961108e74e6f26eb5f7b0f3fe5e20e1edfead53571bd0e99d919ec27c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxY2I5MTViNDg2NTU3Njk4ZmY0NGQ2NWRlZTJmOGRhNTk3N2Y5Y2I0MTE0NTYxMGMwOTQ1NWYyNjI3NzA2MWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1MWI1NGFjMDYwYWQ2YmQxZDdmNjNkYmI1Nzg5NDJmZWNlNWMyMGRlNjZjYzIxODAxZGZhYzE1YjQ5OWVlN2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlNzk1MmI5YTZhZmUzNzQyZDMzNTk2ZDJlYWYyOTBhZDVhMzk1OGYzNzJlZDM3MDEzYTA4OTE5Nzc5YWM2MzYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L44-L46",
+          "version": "repo-lines-v1:sha256:1bcebf5736157a7ed71c1ed9ef351d617bdc3549e2942bdc07e7def7a82446ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJkMGI5ZjlkY2Q5YTgyM2JjOTgxZDY0NmZlZjExMDcwZjEwNzc3YWE3ZGU2ZjhlMjIzOTdlNmE5OTQ4YWViNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGEzNzdkM2EyNjhiZjU1ZTNlZjEzMmFiYzAyNWJkMWNjOGIwYzZiZjJkMzEzZjFkYmFhYmZjMTNjODNiZmI1ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDMzYmE5ZjYzYTk4YjFiMDQzNGQ1ZTRmZDNkMzVjZTdmOTI2MTIwY2IwMmM1ZTI3YTU5ZWQ0OGVhMTg2NzJhMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzZjYjFiMzZhMTQ5NWU2MDhhOGEzOTU5MTM1MzZkOTFkZmJmMTdlZTZkOGVlY2ZhNjJjZTg3NzFmNGNhMmY5NiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L400-L404",
+          "version": "repo-lines-v1:sha256:3cd002e4d1ffc41f57a94b9a13bccfa0d4bfaddf969f9b66b425a8b637f5fa3a:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU2OWNiMDkyODBlZTA3ODE5NDVlNDhkNDA0MWJkMmRmYWFlNjkxYWQyZWFiZjVkM2NiYTA4NDZjNzIxNmNhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk1ZTIwYTM2MTQ4ZTE5MWE0Y2I0YTlkNzI5ZWUyNTA2ZDZjZDFiOTAwZTUyMGRiMGU0NmVlNGI4ZThhNmNhZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDcwZGMxMTc1MTI1YTI4ZTY0OWIwODFhY2VlNWVjMDI2NWVlMzhkNzliYzIwNjA1OTkyYjUyYTQyYjdiMjhhOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDAzYWNiYmRiNTRiMGU3YTJhY2Y3NWVmZjNjODcxZDA0MGJhNjFlYmRjZWY1ZjQyMDIxZTk5YzRkOTNlYTRiMSJ9"
+        },
+        {
+          "resource": "repo://tests/test_middleware.py#L132-L157",
+          "version": "repo-lines-v1:sha256:123509e2f8e205281efffd6553c9db504f6aa88645350b760a50063e79d8633d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlNzJmMmY0NTFhY2Y4ZWRmNzRkMmRmYTU3YWQyNWU3MjY3ZWZlMmEyNDc5Y2Y0MmVkYzIxOWYwYmI3YWEyZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5YzQyYjE2MjNiZTEyY2Q1YWM0OTM4ZmEzYzk3MzlhMTFlMmEzYjI2MTdhMDVhZWZjNjI4YjZhZDJkZTQwYzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2YWRkMTlmZTQ5ZGUzOTI4ODZhMWM0YjdjMzM1NDUzOTUxMDg0ODFhOTFjMWVhNDE2ZDRiMzI5MDdiOTQzOWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3YmVlMjMxY2ZiYjI5ZWY4YTVjZTkzYmZjYzRjZGIzZDc3NTA0ODFlM2ViNjA2NGI1MjQxMDk2MjA3NGMwYjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c7dadb1a3854ff3b8550ec7fa297ead",
+      "statement": "A middleware exception never reaches any error handler and produces no span or error report: the three handle_error chains are consulted only inside FeatureBus.execute, ApplicationServiceBus.execute and FrameworkBus.execute, and the DTO span is opened by whichever sub-bus executes, none of which was reached because routing had not happened.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/bus.py#L116-L120",
+          "version": "repo-lines-v1:sha256:7d3f9bd5d6ed2cb14f04ee3393dc7a8806849699d2cad18337bd5a9bfc9f0577:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTI1MWY4YWEzY2Y3ZWU4Mzc1M2YyN2MzYzQ4YTE5NDEzMzYxNTA4NjlkZDZlMDUwNWRiOGVkNmE1NWNhMTNlYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODkxM2MxYmZiNWY2NzA3MzdjNzU3ZDA1OWYwNGNiNDFlMjJkYTNlNjVkMzQzN2Q4MTBlMWE2OTNlMWNlM2RlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2ViYjg2NGRjMGY5MWM4Y2IxNTdjZDJjNTAxOWQzNjdmMDc5ZDE1NmJlMWE3YTBlMzQ2MTRjYTc2MzI3YTA4MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTUyMWZjYTc0ZTVjMTg3MDNmZGFlNTdhNzNiZGM0MDBiN2FkYzNjYWRjOTM2ZWU2MjI2Mzk5NTZjODAyOWMwMiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L196-L205",
+          "version": "repo-lines-v1:sha256:ee12804e3ebe5fbadecaed4ec37dcd8a2b424e80993e5c25ff8ebd0bec718435:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MjBmNWVhNmRmNmFlZWJiZDQ1ZTEyNTkwMmQxOGE0OGNlNmQwZjhhOWNkNThlN2FjMjFlYjI2NWYyN2U5MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlOGVkMzQ2NmIzODNhYTRlNjA3MDg2ODNiNzUyZjdlODNhMWE2M2ZlYzRmMWI2NDEwYWE1ZjQ1OTI0MGNiODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1NDJkOTg4NzQyZDNkNDZhYTk0NGJmMTcyNzI0OTlkOGNjYTY5MWI2NzE0MDI1M2ZiZjNjZDVhYmFjNzcyYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L47-L47",
+          "version": "repo-lines-v1:sha256:ff2ed9595590dc25dc2f3db169da6b83945896ed7cdff819637cf5819d3bfee8:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmYyZWQ5NTk1NTkwZGMyNWRjMmYzZGIxNjlkYTZiODM5NDU4OTZlZDdjZGZmODE5NjM3Y2Y1ODE5ZDNiZmVlOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmYyZWQ5NTk1NTkwZGMyNWRjMmYzZGIxNjlkYTZiODM5NDU4OTZlZDdjZGZmODE5NjM3Y2Y1ODE5ZDNiZmVlOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTgxODBkODY2YWRiZTkzYTQzN2MwODA4ZjM3NzM4MmJkZWY5OTFlZTk1ZDlhNWU0MzRhYmRiN2ZmZDI0Mzg2ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmRlODJlOWZkMzQ3ODVlZTY5MDQ2ZTdkZWMzYzRhNzhjMWY3MmUyMjhjZTBkMzhmNTgyYjlmZmMxYzM5Mjk1NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/bus.py#L60-L64",
+          "version": "repo-lines-v1:sha256:4821f07ebffc1659dbe4be2910354f0e05da27aa3151d14a85a13ca903cc76e6:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTI1MWY4YWEzY2Y3ZWU4Mzc1M2YyN2MzYzQ4YTE5NDEzMzYxNTA4NjlkZDZlMDUwNWRiOGVkNmE1NWNhMTNlYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODkxM2MxYmZiNWY2NzA3MzdjNzU3ZDA1OWYwNGNiNDFlMjJkYTNlNjVkMzQzN2Q4MTBlMWE2OTNlMWNlM2RlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2ViYjg2NGRjMGY5MWM4Y2IxNTdjZDJjNTAxOWQzNjdmMDc5ZDE1NmJlMWE3YTBlMzQ2MTRjYTc2MzI3YTA4MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2JjY2Q0YmUxNWZmN2U5NTJhMmQ0MWQwYjdlMDBkMDBiNGM4OTkxMGVhMjBmZTMwMmFkMDVlNGI2YjI0MzY5YyJ9"
+        },
+        {
+          "resource": "repo://tests/test_middleware.py#L281-L300",
+          "version": "repo-lines-v1:sha256:8f8eb71e770c66bb322f9f9f664a95414ad7fffe2633c8e81b1dd5d47215cadd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlNWI2MDM4Yzc1NWVkNmQwZDc1MjA4OTc1ODkzYWM3YmI4ZTVjMDU2MjRkOGM2NjU0YmM5Mzg2YzI1MmYzNTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0ZDM4ODk2MzFkOTljYTE0MjRhNWQ5ZjJlNzQ4ODIxMDUyZjdkOGY3MWFjYjRkZjI5NDg1NDVjNmVkZDM1MTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiM2JmOTJmZGZhOTljMzZjZTlhN2FkNTZkNjM0NDg3YWVlMWU1ZDc0MWFlN2I0NjZkZTJiYTgxZWVkZDg3NTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmZTA0YTlmNjNjZTY1Yjg3NzU0OGFkMTRjYzQ0NjZkNTVjZDMzODk4NjQ4NmUzMTUyNTBmZTYxZTJmNWQyMzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_46193a444af847ca8215b2513a9661da",
+      "statement": "Middleware is the only middleware name in the public export list of sincpro_framework/__init__.py; MiddlewarePipeline is not exported, but the instance attribute UseFramework.middleware_pipeline is part of the class stub and is reachable from any framework instance.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/__init__.py#L1-L21",
+          "version": "repo-lines-v1:sha256:0563d98fe795f3c62b4017629f1c1daa360e2cb9a7abec3bec25bfa4be83706b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlZTc1Yjk4MzZiZTA2NjY1ZmIzNGUyZTNlYTZkNTA0NTNkOWYwYjRjMWUyYTFiOWE2MGQ3NzY0NjkyNDA5Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L85-L85",
+          "version": "repo-lines-v1:sha256:692005537bed5295a4c4d36fc3406b0b63cc1bd347d9422224e5b78ebeb75f6b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjkyMDA1NTM3YmVkNTI5NWE0YzRkMzZmYzM0MDZiMGI2M2NjMWJkMzQ3ZDk0MjIyMjRlNWI3OGViZWI3NWY2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjkyMDA1NTM3YmVkNTI5NWE0YzRkMzZmYzM0MDZiMGI2M2NjMWJkMzQ3ZDk0MjIyMjRlNWI3OGViZWI3NWY2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjU4YzkwYjkwYjVhY2NjZjZjZmZmOGU0NDczOTczY2VlYTMxZmZmOWIzOTY1NGQxZmM5MDQ1NmQyMmU3YzI1YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGM1YjFmZWRhZjZkYTdhNjFhNTNmOTMxODZhYjJmNGM3NzMwYjI4MmJhYmU3ZWFlMmEzMzk2MWVkYjJmZjM2OSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.pyi#L19-L19",
+          "version": "repo-lines-v1:sha256:8a63fae38124a0d2578ec2d70c4fddcbb3aaa75708d00f817a6de4da8c7d7a80:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGE2M2ZhZTM4MTI0YTBkMjU3OGVjMmQ3MGM0ZmRkY2JiM2FhYTc1NzA4ZDAwZjgxN2E2ZGU0ZGE4YzdkN2E4MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGE2M2ZhZTM4MTI0YTBkMjU3OGVjMmQ3MGM0ZmRkY2JiM2FhYTc1NzA4ZDAwZjgxN2E2ZGU0ZGE4YzdkN2E4MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWUyOTU1ODZlM2Y4NzgzODlhZjVhODFhOWQ1MDMyYzUzMTM2Mzc3ZjIxZjBiZTFkNWY3MGJiYjU5MzAxMWM3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWExYzg4ZGIwOTRmMjE0ZTJiYmU1MzBlN2Y0NmYzNjlkNmU5N2IyODM1ZmU0YjAwMWZlMGVlN2FiZDc0YWM5OSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.pyi#L48-L48",
+          "version": "repo-lines-v1:sha256:eaa8358ad738d185fd1b504f4e49cde7dbf1b3f541d02d202ae15e667e446bcd:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWFhODM1OGFkNzM4ZDE4NWZkMWI1MDRmNGU0OWNkZTdkYmYxYjNmNTQxZDAyZDIwMmFlMTVlNjY3ZTQ0NmJjZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWFhODM1OGFkNzM4ZDE4NWZkMWI1MDRmNGU0OWNkZTdkYmYxYjNmNTQxZDAyZDIwMmFlMTVlNjY3ZTQ0NmJjZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzlmZjgyYjg0YjE0NjBlYjkwMzc4MzlhODRhMmNmODdjNjYzOTdiN2U4MzI2ZWQ5MzAxYWRmZGY4ZDU5NDU4YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2E1OTQ5MGZiZTYzNGU5MDdjZTBkZDA0NjE2MGVkNjA4ZmYxNTJhYjBiOGFiMTgxY2NhMmZlMzE1MDJiODcxMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_aa80ac241e384316af799f7e645d3381",
+      "statement": "The middleware pipeline is per-instance startup state that build_root_bus() neither creates nor resets, so add_middleware takes effect immediately whether it is called before or after the first execution; middlewares is a plain List that execute iterates live, so mutating it concurrently with in-flight calls is unguarded (the README records the same caveat for all startup-built collections).",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1320-L1323",
+          "version": "repo-lines-v1:sha256:68058e0a6a89fff5db847198a4356e5249210a2d7d9ddd6efd30d6adf2873863:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTliMjA3Y2MxMTYyMGQ1MDhmYTM0YmExYTUxYWNiYzBiZmE0OTkzZjZmNjc1NmJmNTNiNDE2ZjMwOTc3YjY1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEyMmNlYjdhY2JmZjEyNzgwMjgxNmZmODMwMjQ5YTRiOWZlODZmYjFhZTU3NzM4NzE1MjhjODc3MTg0NmJkNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGRjYmJiYzBjNTk5Mzg3ZWZhNjg0N2Q3MDdmYTA2NTE0OWRmMjVmZjE2MDg2MjlhNDY0ZDc5YTM3ODhkMTk2ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWFiMGJkMzM5NzBmMmY1YTYxYzZiODZmOWM3YjVjNGVkZWYzNzQ3YjYzZDBlYmE3OTUyZWRkMGM2ODQwZmQ2NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L27-L32",
+          "version": "repo-lines-v1:sha256:a6a4a067036d283c223c4830b13276cc5c60df2b754cb315e2dff8148081cb25:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGI2YjRiOWIxYzMzMDE0NDQxZmMwZTc5ZTMyNDUxMDJkMjM0NWQ2NDgxZWMxNWQ5ZjMzYzg2MzYwNWQ5MDA5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2NiODczZjQ0NDY2NmZhMzU0NTA2MjY0Yjk2OWZmNTUzY2Y4YjJlZTdhY2Y0Yjc3OTk2MzhmNWJmYWM2NDhkMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTk3Nzk0YzYxZWNlNGI3ZGU3MTM5NGNkMGM4N2M0NDg5ODRiYjZkOTdjZDQxNDA4N2UxNDVhZWI3NDQwMjhiZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGE5NWVlYzRhNzc4NjAyZTZjZjg2M2RkNTM2NWJkYmExMzNkZmVjNTM1YWZkYTgyMmE5YjJlYzgyM2FiMWI1OCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L123-L150",
+          "version": "repo-lines-v1:sha256:7a0876f429fc21f5595c7663aaf2e3b30d1594e8cf547ea729feb87f00282f34:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNzM4OTYwNGE3Y2RlZDJmZjUwM2JlZmJhMjE4NDQyZDViYzhjYmFkYjIxZjQzZWUyODlhNzU5ZGVjNzZiMmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4OTY3ODliZWMxN2E3ZTk5NjQ0NDdmMzdkNDUyNjRmMzRkNzg4ZjE1ZmFhNzg5OTg2NWRmOTUyNjY3OTRlNDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4Zjc1Nzg3NjFjYjlmN2JiOThkMDM3NDliOWFlNzU3ZjkzMDQ5NzkwYzk3ZTM0ZjU1OWU5NDVjMTMwOWNhNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzNzNlNjZiY2ZmOGM1ODNkZmZmNWI1OWVmOTE2Yzc1YTYyNGYxOGMxMTk1OWY5YmRlMzFmNjczMjNlNTBkYmYifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L84-L85",
+          "version": "repo-lines-v1:sha256:05f32524cbcca96401c3b2f6c6711b6ac50c9f4a6121c9d5f671f819da62c7ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJkN2ZlZGMzMjBjYTUxYzJjOGNkNmJjZjg2ZWVmNDI2MzE5NGE1M2NlY2U1ZDc5Mzk5NTZlODE5NDQ1NGFmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjkyMDA1NTM3YmVkNTI5NWE0YzRkMzZmYzM0MDZiMGI2M2NjMWJkMzQ3ZDk0MjIyMjRlNWI3OGViZWI3NWY2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTk5ZGIwMTdhZjhhNmE2OTJjMTliMjgxYTQ5ZmU0NjQ2ZjkyZGI5MTI4ZjFjYmQ1YjFhZDljY2MxZWYzMzg0MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGM1YjFmZWRhZjZkYTdhNjFhNTNmOTMxODZhYjJmNGM3NzMwYjI4MmJhYmU3ZWFlMmEzMzk2MWVkYjJmZjM2OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_95e542640c0e4b1da33c472743bee919",
+      "statement": "The shipped middleware system is the minimal protocol plus a synchronous forward loop; the richer interceptor design described in docs/prd/PRD_02_middleware-system.md (a BaseMiddleware class, priority sorting, per-middleware should_execute, a response pipeline) is not implemented in sincpro_framework/middleware.py, and no post-execution or async middleware exists.",
+      "evidence": [
+        {
+          "resource": "repo://docs/prd/PRD_02_middleware-system.md#L100-L192",
+          "version": "repo-lines-v1:sha256:4b239426fae689dd4c13e2b31bb1867ebcef55840ac5af0d7359c5554ca84208:eyJzZWxlY3RlZExpbmVDb3VudCI6OTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMDIzZjg0ZmRkNmJlOWNjYmM3MDU0NTQzNjM0OTM2ODQ4YThiYTU2OWJjYWVhNGQxMjQ2N2UxZjQzYjVlN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlYTI3NThmOTc3ZWJhYTQyZjQ3YWZiZTdkODhhODdhZTMzNmEwOWZkOGNlZmRhYTg1NDAzYzY4NzkxYWQzMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhZjdmOTZjMTk2YzJhMzY2OGQyMjMyOTIwMjIzYzZkZmE4NmJkM2FmMDMyNjkzMmM1NDJlZDhhMjMyZmY3ZmUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/middleware.py#L4-L53",
+          "version": "repo-lines-v1:sha256:a2c642173ec7992ee58395bf5a3330f58b2f22790e41eb77a37837c590e49b19:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5YmU4NTRkNjk3Y2JlYWVkNTUwNGVkZTI1YmM5OTU5YWRhMWEzMGY1YzNmZTcwMzAyNjU1MjJiZDk3OTEzZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNmQ3ODc3MTY0Yzg1Y2VkYjEzMzg3ZWU0NDgwZTUxZTA0ZGQ4MTc3YjE5YmY5NjMwZTAxZjY3YmZlOWQ1OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4YjZjMDkxZTkzMjI4YjE5ZTg1MjczNTdiMjNkYzI5Y2FiNGI5NzhkNzU1YmRiM2MzYjYwZGE3Y2ZkOTJiZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}

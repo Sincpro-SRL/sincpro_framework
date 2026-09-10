@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:be126bd89bfa2f6d57f38609ccc93989fd197c0bb3e2beb1770ae37f7af77220",
+  "claims": [
+    {
+      "id": "claim_a8f0d780cefc4db3a9036736d9461dfc",
+      "statement": "`sincpro_framework/entrypoints/` is the protocol-agnostic layer every driving adapter shares: its catalog module docstring rules out FastMCP, Starlette and argparse types there, and the package `__init__.py` re-exports only `Catalog` and `PackedFeatureOrAppService`, with the host libraries declared as optional extras.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L35-L48",
+          "version": "repo-lines-v1:sha256:24556bebf7c325c6e6497c27426589bcdb2565e6794e9663f6818d361609d65e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiNTIxZmE2ZTUyNGM2MjJjNzcwNTBhOGI3ZGM3MGMwNGE5MThjMWFjNDBmNWJhN2NlNDNkYWU5MjM5NWM3NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMWJhNDc3ZTE1OGMxNjAxY2YwOGI2ZDYzNGJkMjIwMzk3N2M3NDQyMzM3YzlkMjUwZjBkNDMzNzdlNDI1NDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjYmI5MWEyMmE3ZjU1NzNkM2M5Yzc1MjZiZjRkMDZiOGY2OTA2ODU3ZjkxOTBiMmUwNjBhMzU2YWZjNWFiNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNWY5OWM2YmUwOGRiNGYwMTdhZDZkZTBjY2QzOTlkYWZmOWZkY2EwODMwZTNhNDFkMTU2NGE4MDNmYjAwYWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/__init__.py#L1-L5",
+          "version": "repo-lines-v1:sha256:0c742a47b550142316fd0f27a1ff2a71bd4c0c3609a37b325c7963f0d9a743ac:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmVlMGY0MjEwNjhiMGEwN2VkZGQ3MDE4MGQwZGFhY2RmZDE4ZDBhMzBjMTc0NmExNTcyNjE0NjdjMDk1YzVmMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzFmN2RlNGUyMjkyMTAyMTAyODlmMDJjYzU2OTc5MzQ1OGVkNmE1ODI0MmQ5N2UwMWRmYWEzOTY4YTgwMzhlNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L1-L7",
+          "version": "repo-lines-v1:sha256:3a57207ab7204e0503ddd24f7075eccd8a823c378a7ed302ab5c85e74d174cd6:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjFmOWExZTI0MWVjMzk0NDIxZGUyMTA1MDg5OTA4N2Q3ZDA5N2UxYTJkMTg2YTY0ZjRiYTM2NDM4ZWQ4OGFhZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmYxNTQ4YjBkYTg5MDRjYTNjMWNjMGRmN2YwMDQ4NTRjM2FlNzgxMWM3YWI1NGRhMTQ1YjQ1YjE1NmI1MGZiMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a1344c23f47640a695b0abfc7fac3b76",
+      "statement": "`PackedFeatureOrAppService` is the single DTO a host meets: `name` (the DTO class name / bus key), `layer`, `description`, `dto`, `json_schema` and a bound `run` callable. Its docstring states `json_schema` is the input DTO's schema computed once here and that hosts must not recompute it; being a `DataTransferObject` with `arbitrary_types_allowed=True` is what lets it carry a live callable alongside the JSON-safe fields.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L20-L35",
+          "version": "repo-lines-v1:sha256:e19f9444570efdd19bc648877ca4e93369bd8782586055b61b55d2711216db16:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiNTI4Zjk1OTc5MjdjZDkyYTE1M2YyNjg1ZDRhZjFhMTJhOTVmZTZhODRmZjJmODY4MWU0OGMwM2I2Mzg2NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MTNjMzQ3YWNlNjczYTE2ODJiNWE4MDUyZjU0MTE4YzgxMTM5MjljNTgwMzMxMjc2NmRmZjdjMjUyM2JlYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZGU5NTFjOGU5YWVmZmY4Nzc2ZGNhMDA4MTZkMDMzOGZlZTQ1OTMzMzkyYTNjMDc0OGY1NWJjODdjZjEzODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5ZjE3MmQyN2UxZDYzZTA3NDUxODAwZDBlNzc2Y2Y5YTJmYjhlMTExYTY5NmExZGViMjQ1MmNmYTliNjY4OWMifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L19-L19",
+          "version": "repo-lines-v1:sha256:81bd54a579f905e4d91141ee3ae9db688a701c338716a04b559ceb412df1bcd1:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODFiZDU0YTU3OWY5MDVlNGQ5MTE0MWVlM2FlOWRiNjg4YTcwMWMzMzg3MTZhMDRiNTU5Y2ViNDEyZGYxYmNkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODFiZDU0YTU3OWY5MDVlNGQ5MTE0MWVlM2FlOWRiNjg4YTcwMWMzMzg3MTZhMDRiNTU5Y2ViNDEyZGYxYmNkMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDI2NjA1ODA2NjJhMGY0YjY0OWI2N2EyOGJhYzcxODlkZWRhMjZkNGVkZTEzOWQxZTQ0OGVkMmJjNTZkNmM0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjY3NGY4NGUyZmUyZDBmZmU2NTU4MjMwOGJlZWI3MDlkM2UzODI4ODBkNjgwMmE1MDMyZGMxNjk2N2RkNmFiOCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/sincpro_abstractions.py#L21-L29",
+          "version": "repo-lines-v1:sha256:d877e10a4b9fa68aa1f48a17ecade80553ada2ce6c7c8e1d9ab63f945e516205:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzk3MWJjMmQ1ZjJhYzMzYmY4MDM2N2MwZjM1OWYyOTNhMzJhNTJlOGFhOWM0NjgxNWFkYTc2MmRlODM1NWM3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTk2ZjY0YjIyYTZmZmFiODQzNGZmYzRkOTM4Y2U4ZDMxOTgwODFkOWRkZmFkMGZkMWQ2ZTQ5Yzg3ODliNjBkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWMwOGY0NTgwYTU1N2M4NTI1Mzc2NmEzYmJkMWE3OGRkZDQ2MjM3NWQ3MDg2ZDA1MjUyYzEzZTFjMDllNGNhNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_02075e0d23f04609be8aee6f40d90178",
+      "statement": "Constructing `Catalog(instance)` builds the root bus when `was_initialized` is false, so merely constructing a host materialises the registries; `get_scalar_use_cases()` re-checks the same guard before projecting.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L131-L132",
+          "version": "repo-lines-v1:sha256:06754266288a3e93c1172522e82f300e434c3d78455764f0e2eaefbd6adc5c0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGExMWU5ZmFmNjM1OWMyOTkwZDJhYjNjNGE5MDQyMTEwM2ViZTBiZDUxYWNjYjU1NDZhMjljYWE4MjE4NmFiYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTc5MzNhYmUyM2U2ODlkNzZjZWM1MTMzNDU5ZWQxY2M4NjkxNGU1MmEyNGE1MTY4ZTc2YTI5ZTViNWM0ZjBiNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGZhZjNiYTY0MTA4MmQ4MTlhYzcxNWZmYjEyYjg3YTA2MzQ3NmFmMmJjZDBkNjFhZGQ4OWU5MmRhNzBkM2UyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDg4NWUyMzhkYzk4MjJlYzI3Y2IyMDA0YWViMzhjZDhjODhiY2Y3M2RkMTBlZTQ5NGQ2MDQwOGU0MWRlMWE2ZiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L47-L55",
+          "version": "repo-lines-v1:sha256:a6cb25a0c93d70cda102312e44e95a0423aefba41b777f2f49bd9070fdc5d1d9:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjVlMmE4M2IzMDQzOTVjZmFiOTI4ODkwNTQ1Y2RjZWY5MzgzZmJiMmMyMjNjYjgwY2RkMTI3MWEyNTMzZTUzYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWJmYzI4NDIwMDJlYTMzYWE0ZDQ0M2FkZTU0NDM5NWMxNzA3MjI3ZTM3MmJiOTU1MDQ1YTJmYTIyYzJmOTZmYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDQ0Yjk1YmM4NGJmNmM4OTRjN2YwYWFmMzM4NjQzZjAwZGY0OTcxMzFiYjk5NThmMjA3Y2E1MmZiNGU3ZDRkOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzRlNDIyNGU4MDE3ZjU1OTEyNTE5YWU4NWU2YzNmNTlkMDU1Y2NjZGE3NzE1ZmZjYWE2NTUxNjkyM2FlN2UwMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_11e6049b6f774dc6ad10ede98b1cb9a6",
+      "statement": "`Catalog.include`/`exclude`/`wrap` are fluent policies keyed by DTO class name or the name as a string: `include` and `exclude` assign (replace) rather than accumulate — so `include()` with no arguments publishes nothing — while `wrap` stores one wrapper per DTO name and a later `wrap` for the same name overwrites the earlier one.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L103-L114",
+          "version": "repo-lines-v1:sha256:4ef8367808159eafd390b9300f07870e75a5dedca91840dd8324abb7cf752481:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzOTIxY2M4NGY5NGNmZGM3OTUzNjJlOGNjYjcwMGRjZTZjMGJjM2ZlOGZiNzlmZjA4MDQ1ZGQ0NjhkYTRjZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MzA3ODZiMWYwM2M3ZGUyMGQyZjBmZWVhNTY4YzhlYzVkNTY5NTgwZmUyOTFiNWFiZjAwNDNjYzU4OGY1NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2ZTFmYzhmZTcyZWYyZmEzNzkyOTVjNTQ0ZDAyNzc0NzM5ODUxNThiMDg3OWZkZmZkNTIwZGM3NWRlZGQ1NTkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L57-L59",
+          "version": "repo-lines-v1:sha256:623829ab0779305f6969d5a45737ed6cdb620ff3a85fd4e41ea15a4e290a07b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDFhYmNkMGNjNjkxM2Q0ZjUxZWIyMWU0ZjVhZmMyZTkwZjg2ZDM2YTQ1MGJiNDJjYjA1YzZmM2UwZDcwNmY4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I2ZmY3YjRkNmI4NjRjOTJmN2NkZjY4NjVhNmE5ZGQ4NWYxODIwMDczZDc2MDFlNjE3MWFlY2Y5NjBiNDdhNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjVkZTkyMDBjODVjOTM5MWIwYTAwZTVhMjA5NGI1MDJjMmZjZDYxMTVkZDgwMzM4YTk2MTJiNzIwNDJkMDliZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDJmOWE1OTM2YzQ4MWQzOGY3ZTE3OGJhOTEwY2I1MmU2NDgyZWFkZGVhZTQ3OTdkZjI5YzRmNThjOWVkMWY1NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7637812cfd8b498eadef461ea29c31a9",
+      "statement": "`get_scalar_use_cases(filter_binaries_schema=False)` is the single entry point both hosts call: it projects features then application services (that order) and, when the flag is true, keeps only entries satisfying `json_utils.is_binary_free(entry.json_schema, entry.dto)`, logging `Skipping non-JSON Feature/ApplicationService [%s]` for each drop. The default is permissive, and both MCP (`server()`) and JSON-RPC (`index_methods`) explicitly pass `filter_binaries_schema=True`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L116-L156",
+          "version": "repo-lines-v1:sha256:6e61044a76b425d0fe25c897a6d673cf44ae5de0e9f709f668dcf417dcd0e703:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0YjIyMTJmOTk4NmQ3YzIxYzVkMjE4YmZjZmIzZmFlNjA5YzYwNzQ3NTgzMGVhZjkzZTQ1NDA0OTg4MWFhMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3MmY5Njk1Yzc0NjdjNzQ3NzNjOWNlN2ZjNDI5YzVkMGQwZTQ4N2YzYzUxZDE1ZDY2NjhhM2QyNDA3MmJiOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxNmM4M2Q3ZjM1OTc2NDg2YTFjZjA4MGU1ZTg2YWIyMjZiNWU4NGE2NzJkNDA5YWQzOTMxM2IwZjg5MjE1MzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L55-L55",
+          "version": "repo-lines-v1:sha256:a0f407dbf9ee3bc3d1351d5040925ca62d7a012d8557547b21b0386979402adc:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBmNDA3ZGJmOWVlM2JjM2QxMzUxZDUwNDA5MjVjYTYyZDdhMDEyZDg1NTc1NDdiMjFiMDM4Njk3OTQwMmFkYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGJmZGFhODQyMDg4YjQ3OTlhOGQ0NWNlMWM2NDJkYzFmN2ViNDQxNGU4ZDkxNjYxZDE1N2NkYzViNTc4YzJjZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTAxYTY1ZGUzZjM2NjUzZjIzNDg1Mzc2ODhhY2ZmMWZiMTE0M2ZlNTdjMjk5ZjQ5YTMxN2I2OTZhYmU0MWJlMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L56-L56",
+          "version": "repo-lines-v1:sha256:d56e43d189472129d2f65c427d2ad0f9edc1ac0b0db58766a64cc2a1c719b221:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDU2ZTQzZDE4OTQ3MjEyOWQyZjY1YzQyN2QyYWQwZjllZGMxYWMwYjBkYjU4NzY2YTY0Y2MyYTFjNzE5YjIyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDU2ZTQzZDE4OTQ3MjEyOWQyZjY1YzQyN2QyYWQwZjllZGMxYWMwYjBkYjU4NzY2YTY0Y2MyYTFjNzE5YjIyMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmUyNjZkYjliMWI2NTM1OTQ0ZjU0ZmMzZmE2ZGUxNzQ3MzRiNjZiYTRmNWE0N2E3MDk2NDdlNGQ5YTRjNGY3YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDYzNDc4ZmVhOWNjY2Q3NjNhMWVmZWVlNDFiMjgxZWEzMTdkZWNmOTVkNGNmZDVkNDM4M2VkN2QwOTM4NTI4MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0df053e1f2a54ce293ab8981ac24afba",
+      "statement": "The catalog projection is recomputed on every `get_scalar_use_cases()` call: each call re-walks the registries and builds fresh `PackedFeatureOrAppService` entries, fresh `run` closures and fresh JSON schemas, so policy applied after an earlier projection still takes effect on the next one.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L134-L145",
+          "version": "repo-lines-v1:sha256:8c12f7e76f208148cc71c65bbdf229e195df6099a99512ee4283398d39414eba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2MGFlZjY4OGI3ZWM4ZmNiODVjMzlkYTU0M2ExMjQ5OGExZjc3ZGQ2OTEzMmM3ZDk1MDQ4NDBiMDVhNjZlNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkYzI1ZGNiMDZhNmIzZjYzMTI2YzRmNmM2NmYzYWM4YjQ4YjBhODEzNzIwYzdiOTM4ZmNjOWQ5OGM5MzQ2YTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhkZTNkODA5ZDQ3MzhjZDVjZWM2MTFhNGM1NmI2YTVjNDMxMDE5MWM4MmYzMGFmMWY4Yjk4NTc5NDE1Y2UyZDUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L61-L101",
+          "version": "repo-lines-v1:sha256:00b0eb8850a7f3b9c180b3a8efa901b1d926ec24ff428d4cfc1320cc87d57699:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjZThhNDUwZWExZDM1NDNmNTZmNmEyZWMxYWI0YzUyYmNkZjczMWI4MTNhZWZhZDc0NjVkYTJlZDQ5YTMzMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3MmY5Njk1Yzc0NjdjNzQ3NzNjOWNlN2ZjNDI5YzVkMGQwZTQ4N2YzYzUxZDE1ZDY2NjhhM2QyNDA3MmJiOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1NDg0MzA4OTJiZTFhYzgzNmZkODc5OTMzODMzODY0YzhmM2QyN2ZmOTQ4Mjc0MGM3YzNkYWNjN2U4YjFkMjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5ZjljNTRkYTI4ZTMxMTkyZjdkMjI0N2JiYTZmMGRjOWY3NzgyYzJmMDIwZjQ2ODViMGNjMzJmN2MxM2QyNzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8d5a1afd8004d7cbcb28489b0a51735",
+      "statement": "`json_utils` answers whether a DTO can travel as JSON with two independent checks: a full recursive walk of the pydantic JSON Schema tree (`properties`, `$defs`/`definitions`, `items`, `additionalProperties`, `anyOf`/`oneOf`/`allOf`, with a `seen` set of node ids so cyclic `$defs` terminate) looking for `format` in `BINARY_JSON_FORMATS = {\"binary\", \"byte\"}`, plus a check of the DTO's own field annotations against `BINARY_TYPES = (bytes, bytearray, memoryview)` that recurses through generics so `list[bytes]` or `bytes | None` is caught.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L16-L17",
+          "version": "repo-lines-v1:sha256:6474bc72114ed613dfc93e69b5741f1637782a25c7ff32377ad02c4ca40bad43:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzE0OGJiMGI2MTBhNDY3MzViNDgzZWRlNGRmY2FmN2Q5MjNiOTgzNDY4ZWZhYWJmODNlODY3MjRkNmZlNTc3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTQzMWEzMzQwYjMxNjFiYjQwZDY2NDEyMjM0ZWEyYWY3ZDExOGFkMjQyMzgzYTliMTc0YjlhZWYxMDcwYWNhMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODIyNzAwMWNiZWZjOGZlZWM3ZGIxOWYwNzIwODY1ZmQ2YWI5MWExMTY4MzZmNDgyN2ExOTJjNmRiNjIyZDVjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjE2NWQ3NzA5MjEwZjY2YjNiOWI1NmRlMTI1ZWI3MzgzNWZmODI5YzM2NWVlYjNhMjg2MWE0NGZmMDcxOTE3ZSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L1-L11",
+          "version": "repo-lines-v1:sha256:671409024d194a9b7d434b65a3a37894f250ebe6c46c99cb0a6ee3b9979d47ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NWFjYzc3M2MzNDM1YWRjMDRhMDNkOWEzOWIzZjkyZjg2M2E0OTZhNjg0NzhlNjY5NmZlMWRlNTJhZGM0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3MTI5MzljN2IyMGM1MDhhODBlZTI1NzlmOWE5MjY4ZDIxMDM1MjFhYmZlOTMxMjlmOTE2ZjJjNmZlZDVkODkifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L26-L78",
+          "version": "repo-lines-v1:sha256:6a872b143352e520b5639bca8725000aead2a8a4c64339643e9a8395a8de8631:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhMDMwZWY0Mjk0OGMyZWI5MWQxNmQ3OWI4NWUxZWVhZmZjMDE5MzUxZTQ3NTJhMGI5MzNhZDc0ODUxZjA0ZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxYjkzYTZjNzNkMWQ1MzE0YjE1YjhhZmU4ZDMxYzY1YzdhMTA0Yjg2OGI0ZTJmNTAxMWVlZmIyNjNjMjEwZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkMTJiZGEzOGUyNTI4YjcxNjZmMGViZWJjYTNlNGYwNjI5ZWRkZThlNmZhMDBjYjJlNjE2OGIwOTIwNTI2NmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9439646304d64a4cae4c43dc2f707761",
+      "statement": "The three `json_utils` entry points differ deliberately: `dto_json_schema` degrades to `{\"type\": \"object\", \"title\": dto_type.__name__}` on any exception so the catalog stays total, `is_binary_free` takes an already-built schema and the DTO class so the catalog can avoid building the schema twice, and `dto_is_json_serializable` fails closed because it builds the schema itself.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L152-L152",
+          "version": "repo-lines-v1:sha256:9916214c8a579c76cafd47970fb4a7d08d87e5f4e7105cb33d4a57fd4b4f6f67:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTkxNjIxNGM4YTU3OWM3NmNhZmQ0Nzk3MGZiNGE3ZDA4ZDg3ZTVmNGU3MTA1Y2IzM2Q0YTU3ZmQ0YjRmNmY2NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTkxNjIxNGM4YTU3OWM3NmNhZmQ0Nzk3MGZiNGE3ZDA4ZDg3ZTVmNGU3MTA1Y2IzM2Q0YTU3ZmQ0YjRmNmY2NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjE1Y2ZjYzYyY2RmOTE4NjBlOWVlNzEyN2U1MDkyYjVkZTdmZTMyZDkwZjJmOGJjOGE5NjNjMjM2YThmMWZkYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2VjMjY5MjMyOTc2MDI5ZjE3ODkwMjlkOGM1NDc2NTk1MTRkY2I0N2M3YzZhM2IxNzNmZmM4OTI5NmRlNTk1MSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L19-L23",
+          "version": "repo-lines-v1:sha256:e60eeb5489a0c3caf5fda5d2866333e82a6bd694c57819283d6a908ffa8cb4d0:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmU0MTljZWE0MDI3NjAwZmNkOTUyYzNmMjY5Y2MzMzRlY2NkMjFmNjAyOTMxMmY4YTA1YjZjNmRmZGM2YTQ2NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYThhMjJiMTEwMGQ1YzRkZWQ1YTU3YzdhYmUwZDdlZGU1YjVjZGUzYzA0MmM3MGMzM2UzMDZlMDZhMTZmZTVhNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2U4OTI0MDEyYjcxZDhhYjM3MDJhMWVkNjJmOWZiNWRmMDIxZjAzYTc1MzhmODE1M2NiYmY2YjFlZWE5OWMwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzE1ODk2OTYwYjhkNzUwOGExOTRmZDA0ZWM0NmE5OGRjZDc3NTgxNGI3YTAwMDcwYmZlNWEzMzUyMDk2NDQyYyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/json_utils.py#L67-L91",
+          "version": "repo-lines-v1:sha256:ef4441633ea6a35f01a0c95316ba426dce78fc78d7b4c5ed7b4d3878a620f258:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczMTUyMDUzZWJhYjk2OTQ5MzczNDg2OTgxMWM2MjU3MzMzNDA4MmU1NjkyZGY2MGQ4MzFiNmQzZjlhYWI3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzMzlhN2ZkN2EyZjU1NjhmZDZkN2Y0NGQ0N2I5ODI5ZGVmMDNmMDE1ZWI0MDdmY2MzZTdiNTJiOWE0NWJkY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwYjIxYmY4OTVmYWUyZDczOTIwZDkzMTc4Y2ZkNTg0MWNkZjhmOTUyNDUxNmM4YTU2NTg0MzZhNGFjNDhmM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_91bb5716bb6440c1899a6d1d922f356f",
+      "statement": "`scalar_executor.extract_executor_fn` is a factory, not an inline loop closure, so each bound `run` captures its own `dto_type`; the bound body is exactly `framework_instance(dto_type.model_validate(payload))` followed by `dump_scalar_result(result)`, meaning Value Object `validate_fn` runs on wire input and `UseFramework.__call__` still receives a typed DTO.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L1-L7",
+          "version": "repo-lines-v1:sha256:250c27c1e5c2df94739f783dbd66b68f0f1ca76b1ed50ffa8ab6021ee4b6f0a1:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjczMzE1OWY5NGU0NWQ2YmM4ZDY2ZTJkZmNiYWViZTFlZDBjYzljYWNkODFkNzI2ZmRjNmFiNGEwNWEwOGI1MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTczZGY3YTZkY2JiYThjODEzZDU1YTc4N2VhMTVjOWVjYTNkYzZlMzI0ZjFjZGY5NjdmNTUxODQ0Yjk1NWRlMiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L57-L74",
+          "version": "repo-lines-v1:sha256:56bbf29a0bd27bc179a81540d5dc968a96e81849b62be7ecfc876ab05467db91:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwZDEzYThmMzMyMTg1Y2E2YzFlZWE2MzhjYjhlNWYyODM5MjljMDEzNWI1NTM3ZWM2YWJmYjUxNDZhOWM1ZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhOTc0YWU0ZjQyYzhkYzRmYzhjOGQyNWMxOTYwZDM1YmJiMzQ3MGRiZmVkZmVkMzE5ZWY4NGRjYTcxYzAzMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0ZGE4NjZhOTg4OWRiNjBiZjIyYWQxZGQxYjczMmUzZTU1N2M1NGZiNWIxMDRiNjk5ZDM1YTZmMzkyOTE3NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMzliZWI2NzRjMGUyNjUxNzQ4YWY3MTJkZDlmN2Y5NDIzMWYwNDI5M2UwMTNmNzdkNGE0ODZhMTE2N2VkYTUifQ"
+        },
+        {
+          "resource": "repo://sincpro_framework/use_bus.py#L373-L404",
+          "version": "repo-lines-v1:sha256:f5f6d43b4f2fea57d4f246ca223c69848898f5f62f58d78a3be05833cae29678:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyMmNhYjkzNTQxMWEwNTIzNmU5OGU3NWFjOTJkODcxZDQyOWVkYmMyMzJmOThhMDEwYjQxZTE3ZWIwYTUzYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NWUyMGEzNjE0OGUxOTFhNGNiNGE5ZDcyOWVlMjUwNmQ2Y2QxYjkwMGU1MjBkYjBlNDZlZTRiOGU4YTZjYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjZTg5ZWE1Mjk1ZWQ0OGY4YWQ2MDRlMjUyZjE4ZDI0YjcxMjE3N2IwYzAwYTg0NTg5MzVmMjAyMjQzMDhlNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwM2FjYmJkYjU0YjBlN2EyYWNmNzVlZmYzYzg3MWQwNDBiYTYxZWJkY2VmNWY0MjAyMWU5OWM0ZDkzZWE0YjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c7aa0b0c5a142a69c2ceebab5a7a9fb",
+      "statement": "`dump_scalar_result` makes a bus response JSON-safe without raising after a side effect: `None` becomes `{}`, a pydantic model dumps with `model_dump(mode=\"json\")` (falling back to `model_dump()`), a dict passes through and any other value is wrapped as `{\"result\": value}`; the payload is probed with `json.dumps` and only if that fails are the offending leaves stringified via `default=str` with a warning naming the response type.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L21-L54",
+          "version": "repo-lines-v1:sha256:9195ae6d0e8ba4eefb7a2120a3c87726bb72bda71308315b12c72412bdd35204:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExNDAwMjBjOGJhY2RmZmYwY2ZhNjA1NThkYzA1YmQ3NmMzOGFhYmJiYTkwYjJlZmM3YmMyODZmNDY5ZGY2NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YzZhZTI0MzAzMDI2NWM4M2EyMmZjNTE3ZWEwYmQ0ZWI5MzBmOTJiZDdkMmJlNjRhZDViYjZmNmUwZjQyZDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZGU5NTFjOGU5YWVmZmY4Nzc2ZGNhMDA4MTZkMDMzOGZlZTQ1OTMzMzkyYTNjMDc0OGY1NWJjODdjZjEzODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjYWJlZjliMzdkNjM0NGEzZmQxMWY4MjQwZTkwNzM3NjdkYWI3ZGEzN2FkZTc5MzI1ZGYzMTRiYTg1NjUzMTIifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L310-L317",
+          "version": "repo-lines-v1:sha256:47c47d33987b953581da651063b169cce9b800c684c02fed163f6daa69947d9d:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODYyY2JlN2E5ZDJiYjY5NmExYjQzMWZlZTk2MzdkMWJhYWNlNTkwYTY5ZWNlMzY1MDVkZGQyOWM4NmQyZDkwOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTI1MDEzNjNlZWJlN2NjMWMzYTdjM2FlNWYwYmFmMzNlN2I2YzExMGFmMmY1ZmE1Y2Q4ODVjYThiODBhYjg0ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNjNDQ3ZjhkOWZmOWEzMTQ4ODYxZDE0OTVmM2Y2MmRmNDNmNGUwNTViYjA2NTY3ZWQ1NTA0NDZmNWQ1MTIxMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6591200ee07348a781690efeb59d8653",
+      "statement": "`scalar_executor.execute(framework_instance, run, payload, context=None)` is the optional context/tracing layer over a bound `run`: it pops `TRACE_KEYS = (\"trace_id\", \"span_id\", \"carrier\")` out of the context into `trace_kwargs` and enters `framework.context(extra)` and/or `framework.with_trace(**trace_kwargs)` only when each has content, nesting the context block outside the trace block. JSON-RPC uses it because `context` is a sibling member of its request; the MCP host does not need it.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_rpc.md#L161-L161",
+          "version": "repo-lines-v1:sha256:2a02f9f82ca4acc015924cedae7a05890b52436a093313fc001ab8ee37ff44b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmEwMmY5ZjgyY2E0YWNjMDE1OTI0Y2VkYWU3YTA1ODkwYjUyNDM2YTA5MzMxM2ZjMDAxYWI4ZWUzN2ZmNDRiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmEwMmY5ZjgyY2E0YWNjMDE1OTI0Y2VkYWU3YTA1ODkwYjUyNDM2YTA5MzMxM2ZjMDAxYWI4ZWUzN2ZmNDRiMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGU5M2Q5N2VhYTIyZGFkYmQwYWEzYThhMjgzN2EzOTFkMDgxMzNlNjE1NzQ2MDNlNWUxMjU1ZTU2NjIzN2FmNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDAxZjJlYzE3NTkzYzEwNTRlYjQ2MzY3ZDg0NTNlZjI0YTE3M2NlOTZiNzExN2Q5MWY5YTY4ZDQ0ZmVmOGIwMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L18-L18",
+          "version": "repo-lines-v1:sha256:21396ce6d44d87d2b90376271e2a149cc098b8eb16172d99bcca1f5bf24a9daa:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjEzOTZjZTZkNDRkODdkMmI5MDM3NjI3MWUyYTE0OWNjMDk4YjhlYjE2MTcyZDk5YmNjYTFmNWJmMjRhOWRhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjEzOTZjZTZkNDRkODdkMmI5MDM3NjI3MWUyYTE0OWNjMDk4YjhlYjE2MTcyZDk5YmNjYTFmNWJmMjRhOWRhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzY1MDQzODVjYzdmYzQ1ODExMTM1NzUzMmFkNWEyZTFmYjQ2YmFjYzMxZmEyYWQ3ZTIwOTdhMDhjMDVkNmM4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODEyMTJjN2UxM2IwYjg5MTA4MzY1MDU5MWUyM2EwMDRlNWY2MDgzMDkzMzA5Yjg5NDY2ZGI4ZGI4MGYxYmJkYyJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/jrpc.py#L89-L93",
+          "version": "repo-lines-v1:sha256:902252b427fce44364015932208f98030bbd53b5fefb22a4510e3616067a0d3b:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2FjMTk0ODRhNGRlZmE2MzEzY2M2MmM0ODE0ODhjNDUzMGNiOTQ2MjY1YjJmY2JmMGRjMjhkOTg3ZWRiYTIyYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJmZDEzMDAxZTBkZmYzYmQ3MDUxNWQ3YTQyMWQ4MWMxYzZhYWRkOWIzZTg1OTdjZmU0YmNkZjU2NWQ3MmQ3MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODgwMWY4ZTgwNDI3ODEyZmNhNmZkZWM4NTMwMDViOTRhYjBjZjMzOTg5OGE3ZmE3MjkzNDFiNGRhNGNkYzA2ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTA4NWRlZGE3NTY3NzNlNTdlOTFjMmIxNzViN2UzZjg2MTk3ZDIyNjkzZDhhMmQ3MjFmY2MwZmU5Y2Y0OGMxNCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/scalar_executor.py#L77-L109",
+          "version": "repo-lines-v1:sha256:f5686485e813fc021a09e1704f21003db583a05687299cf327231606d231b88a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4OGIxZjg4Mjc3MmYxZDcyMDIwMWZkNzU3NTA3OTAyOTZjM2Y3NzA4M2IwN2FlNTIwZDhmYWE0YmYwMTdkNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZmQzNjU3MWI1YzRkMmM0OGY0MmI0OWNhNWFmNjI4MGNlMGY0YTFhZTUzMDMzYzYxYjg2NTBlYmE1NzA0MzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3NGRlNjBlNmIxYzBkNjA1OTlmMWI3NTU5YzA0M2ZiODBlOTFkYTdlZGNlODdjZjM1Y2JmM2U1NzNkY2FlYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7d976f59022c442f9c412346a8fa5355",
+      "statement": "Excluding a binary-carrying Feature/ApplicationService from a JSON wire is a publication decision, not a capability removal: the filter warns rather than raises, the handler stays registered and callable in process via `framework(dto)`, and the unfiltered projections (`Entrypoint.tools()` and `.to_callables()`) still include it.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_mcp.md#L124-L126",
+          "version": "repo-lines-v1:sha256:62f025e6ab9032de629b0f775c3d14bf8e5d95c6af24d0e9b9f011af0a97f0be:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjkwMmY5NmM0ZWUwZTI3ZWQ5NmQ0MjhiZmFlYjlkMWQ1MzY5NzM1MGMxNDFlZmYwMGJkOTY4NmJlMjFjYWQ3MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDhkNmJlZWRkY2NiYjRhN2JhNjAyY2E2OGFhYmJkNmE0ZTc4NzM5ZDgzNzlkODRiMjdjYWQ0YTE2MTIzNTU0ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzM1ZjJkNjFhYjhjMzQ4ODMzNGE1NDZkMGE0YTA5Nzk0Nzc0NWRkMmJlZDNjOGQwNTFmNDRiYWUyY2ZjMGJmZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDAxZjJlYzE3NTkzYzEwNTRlYjQ2MzY3ZDg0NTNlZjI0YTE3M2NlOTZiNzExN2Q5MWY5YTY4ZDQ0ZmVmOGIwMSJ9"
+        },
+        {
+          "resource": "repo://docs/architecture/entrypoint_rpc.md#L125-L125",
+          "version": "repo-lines-v1:sha256:0d39fe2c1411bdba0228c34b61603082989d6ba9a4e1496ddac931bab8a4dc5b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQzOWZlMmMxNDExYmRiYTAyMjhjMzRiNjE2MDMwODI5ODlkNmJhOWE0ZTE0OTZkZGFjOTMxYmFiOGE0ZGM1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQzOWZlMmMxNDExYmRiYTAyMjhjMzRiNjE2MDMwODI5ODlkNmJhOWE0ZTE0OTZkZGFjOTMxYmFiOGE0ZGM1YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQ1ZWQ4ZGUxMmNlMDhhYzgzNjZiNDc1YjM5OGE2MWIzOTUyMzczNmZkZTZlYjlhNmNkNTY1ZDNmYzgyNmIxMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODViNzI3MzgzODQzMzI0MWQ4MmU3OWY4ZGI4Zjc0YWU1MWVmMDFjNDI4N2RlZmQ3OWU4ZjZhMDNiODM3OTFhOCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L150-L156",
+          "version": "repo-lines-v1:sha256:96ad6540352ec70747fe1715a8703e402e6ce2a66546c2e877989f6e2c6a5a82:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzBmNGQyZDY2YmJmMDdkZTkzZTMzMDIzN2M4MWJmMmFiYjNkYWJlOGNlMGEwNjYxYmM5M2IzNjFlMDczNjVjMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzcyZjk2OTVjNzQ2N2M3NDc3M2M5Y2U3ZmM0MjljNWQwZDBlNDg3ZjNjNTFkMTVkNjY2OGEzZDI0MDcyYmI5NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDNiYjk1MjZlODU1NGRjZmI4NWRlZjgzMWUyYzAxMGFlY2NjNDFkMDZmZWUyNzNmMzVlNWU1NzJiY2FkYTg1MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L33-L39",
+          "version": "repo-lines-v1:sha256:55d8f41ac21574fcdefe1a6390a20828eff4cf89079fc5074500dcec05fb67ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzIxYTI0YjI3NGFkNTg0MjBjY2E0MzdmYzhjYzU1YTMzZTRjZTk3NzU4ZTQ3MDU0ZmYzNjFlYTFjMTdjYzJmOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMDQ0OTE0Njk3MjJlODM2M2E5NGU0MDQ0NTM4ZTAxM2EyYTIxN2UzNmIxZTU2OGJhNjBhY2I3YjRjOGYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmFlMDAyY2RmZmVjMjdhZThjYzE1OTVhZTVmYzcwYjYwNDAwNGFmNDZhMWQ1MzJkZWY2ZTk0ZWJjZjhhYjFkYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTY5ZjJkNTAyODZhNjYzMjliZTk0ZmY3MzhjOGFlZTMxOTRkMzA4MDdiNjcxNzBjNjc3Nzg2N2RiNmQyNmQ2YiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0c04caf89b9a4326bf4d99f7485660bb",
+      "statement": "A new host is meant to reuse this layer rather than reimplement it: it adds a `{protocol}.py` holding only wire-specific code, a thin `entrypoint.py` facade that builds a `Catalog` and maps `get_scalar_use_cases(filter_binaries_schema=True)` onto the wire, and an optional extra for its own library, imported lazily inside the method that needs it and raised as a named `ImportError` chained from the original one.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_rpc.md#L18-L18",
+          "version": "repo-lines-v1:sha256:8b91190ac1340294c68819b3e8e2dd7787b1666fbb925551df0c6fcf8bc5b74a:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGI5MTE5MGFjMTM0MDI5NGM2ODgxOWIzZThlMmRkNzc4N2IxNjY2ZmJiOTI1NTUxZGYwYzZmY2Y4YmM1Yjc0YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGI5MTE5MGFjMTM0MDI5NGM2ODgxOWIzZThlMmRkNzc4N2IxNjY2ZmJiOTI1NTUxZGYwYzZmY2Y4YmM1Yjc0YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmU4Yjg1MmVmNmQ5MmM4Zjc4YWYxZDFiMTM5YmU0OWMzYjlmMmNiODQ1ZDNhYjZhMzg3NDBkZGZjMmYzNWI1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWUwNTAwZTNkNGRhMTk3MjJkYmY0Nzk2YjBlNDJkYWZmYWI2MjMxZmRkODhlY2NkNTJlYjk4ZjIyYWM3MzY1NCJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L1-L7",
+          "version": "repo-lines-v1:sha256:3a57207ab7204e0503ddd24f7075eccd8a823c378a7ed302ab5c85e74d174cd6:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjFmOWExZTI0MWVjMzk0NDIxZGUyMTA1MDg5OTA4N2Q3ZDA5N2UxYTJkMTg2YTY0ZjRiYTM2NDM4ZWQ4OGFhZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmYxNTQ4YjBkYTg5MDRjYTNjMWNjMGRmN2YwMDQ4NTRjM2FlNzgxMWM3YWI1NGRhMTQ1YjQ1YjE1NmI1MGZiMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/mcp/entrypoint.py#L49-L52",
+          "version": "repo-lines-v1:sha256:e5a2ccae4963b70269e36fa2cd92500cbcd8bf56d9c6bcdb4b1bdcdc11fcc1de:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU2OWNiMDkyODBlZTA3ODE5NDVlNDhkNDA0MWJkMmRmYWFlNjkxYWQyZWFiZjVkM2NiYTA4NDZjNzIxNmNhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2Y2NWEwZDVhNWY0YTg4MzU2Y2FjNjJhNDAwOGVmY2E3NDQyODFlZTQ1YjNkZmFmYTk2MWQzN2FmZTM4M2VlNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWI1MjlmYzJkODZjMzUwN2JmNTEzMjQxMzM5OTlkYjFjZTVmMzI1MDAyZjVjNjY0MTAyNWMyOTQyYzkzNTgyZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzU3MGE4MmQ3OWZlMWE2ODU3NjEzMmZkMGQyNjI5ZjY5OTUyZTJjNWY2YjJmNDY5N2YxYzczMzQ0ZDgzMzI3NiJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/rpc/entrypoint.py#L21-L23",
+          "version": "repo-lines-v1:sha256:5d26f3ca62cf856aca0029a778a191da081c44d2f9a22d6635d7f3610a54b035:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA0OWIwYzYwZDdiNGUyZThjOWI2YTkzZjg3ODA5YjIzOTgwYTkyZjUyNGMxYmI2NGVlN2IxNmY4YTY3ZTU4NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjYwNTA5NGRmMWJkNTMwOTEyMDA5N2M5YTFjOThhMTFkZDU1ZTIzNjlkY2E4YzFhNmNhYjA4OTJiOTY5NzVjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDNiZTgwNTliYTFjOTg1NDNjY2UxOGQ1MTUxMmZiMmExM2E2NTJjZmIwNTBiM2M4NzEyNmJiOWVkMDg5Y2VmNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_32232264a0bf407685d8704bd78a4e3a",
+      "statement": "What a new host must not do: put FastMCP/Starlette/argparse types in the shared layer, walk the DTO schema or recompute `json_schema` instead of using the precomputed one, treat Value Objects as published operations (they are field types), skip `ApplicationService`s (both layers are published by default), or share an HTTP port with FastMCP, which already speaks JSON-RPC with its own methods.",
+      "evidence": [
+        {
+          "resource": "repo://docs/architecture/entrypoint_mcp.md#L81-L81",
+          "version": "repo-lines-v1:sha256:630e3f6b330cce7eb8167f68739eb95205f88959703d5a53670aa27f1737a7cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjMwZTNmNmIzMzBjY2U3ZWI4MTY3ZjY4NzM5ZWI5NTIwNWY4ODk1OTcwM2Q1YTUzNjcwYWEyN2YxNzM3YTdjYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjMwZTNmNmIzMzBjY2U3ZWI4MTY3ZjY4NzM5ZWI5NTIwNWY4ODk1OTcwM2Q1YTUzNjcwYWEyN2YxNzM3YTdjYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzIzMWUzNzdhMTA2YTE2NGM1YjlkMGRmYmJmNGZkZTgwMGUxMDJhMmI4NDJkNzdkODNhODhhNmFiNmE4ZmM3MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTUzNWRiMzhiNjhjODk5MTljZWJkMmM4ZGUxZGZkZmExZjdlMDc0Y2I1NDFjMDM2NmExNWQwZGMzMWE3NWE2OCJ9"
+        },
+        {
+          "resource": "repo://docs/architecture/entrypoint_rpc.md#L20-L20",
+          "version": "repo-lines-v1:sha256:e17f0ba07e672e1efb2941cf4aaac824273fcb4b6ad3771307b85f5817650832:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTE3ZjBiYTA3ZTY3MmUxZWZiMjk0MWNmNGFhYWM4MjQyNzNmY2I0YjZhZDM3NzEzMDdiODVmNTgxNzY1MDgzMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTE3ZjBiYTA3ZTY3MmUxZWZiMjk0MWNmNGFhYWM4MjQyNzNmY2I0YjZhZDM3NzEzMDdiODVmNTgxNzY1MDgzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDIyYTI0NjJhNmI2ZGMyOTUzMWUzMDY0NDk2NTIxZWQyZjdkODI1MDk2ZTQyMDBjNDkwZDMwM2IyZDQ2ZTgxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDAxZjJlYzE3NTkzYzEwNTRlYjQ2MzY3ZDg0NTNlZjI0YTE3M2NlOTZiNzExN2Q5MWY5YTY4ZDQ0ZmVmOGIwMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L1-L7",
+          "version": "repo-lines-v1:sha256:3a57207ab7204e0503ddd24f7075eccd8a823c378a7ed302ab5c85e74d174cd6:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjFmOWExZTI0MWVjMzk0NDIxZGUyMTA1MDg5OTA4N2Q3ZDA5N2UxYTJkMTg2YTY0ZjRiYTM2NDM4ZWQ4OGFhZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmYxNTQ4YjBkYTg5MDRjYTNjMWNjMGRmN2YwMDQ4NTRjM2FlNzgxMWM3YWI1NGRhMTQ1YjQ1YjE1NmI1MGZiMSJ9"
+        },
+        {
+          "resource": "repo://sincpro_framework/entrypoints/catalog.py#L25-L27",
+          "version": "repo-lines-v1:sha256:b2dd8ca899fd463e7c575bea3f9277f93e118e1727199163ab5661a96a12098b:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWNkMWM2NmMxYzMyZjQ1NmRmZmViODQ4NWVlMGU4YTQ4ZTA2YTBlNTFjMTNhNTliNDVhMGE3NGUxYjM5MzhkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDEwNDQ4NmJhZTcxOWQ3MjMzMmJmOWJmZTM0ZWI0ZGY4NjE4ODI5ZjYwZTVmMjRhNzBjNTQ4NDJhZmQxZmM4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjE2OGQ1ZWRhODY5ZGJhMDI5ZTllNzhiYTE3N2Y0MDg4NDVhNThmZTlhNWRkYjZiMDcyNDAyYTVlN2E2Mzg4YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTU2ZDY0NjAyNjJhNjFiN2MyYjU1MjFlN2E5ZmU4OGIwZWQ4MDBhODhlM2QwOThjYmJkNDQzYTU1M2ZkMzA2NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f1f97e803c664152969cefb0c895bf18",
+      "statement": "`entrypoints/const.py` holds the shared vocabulary with no protocol mention: `Layer` (a `StrEnum` of `features`/`app_services`, the bus's own vocabulary that also names the RPC method namespace and the MCP/OpenRPC tag), `Scalar = dict[str, Any]`, `BINARY_TYPES`, `BINARY_JSON_FORMATS`, `TRACE_KEYS`, `RunFn = Callable[[Scalar], Scalar]` and `Wrapper = Callable[[RunFn], RunFn]`.",
+      "evidence": [
+        {
+          "resource": "repo://sincpro_framework/entrypoints/const.py#L1-L20",
+          "version": "repo-lines-v1:sha256:4f35d826c3a4714f52935b26e9cba373d3761e516e4005ee365b6d4dcc0efff3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MjhjNWFiZWI1NTE3MzVmYjFlYTE2YjZjNGM4ZTFhOTNjNDk0OWY5NDlkNTMxZjc0NjkyOTJlZmE3NzMzNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2NzRmODRlMmZlMmQwZmZlNjU1ODIzMDhiZWViNzA5ZDNlMzgyODgwZDY4MDJhNTAzMmRjMTY5NjdkZDZhYjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7652f43b75be4203ba65f9fb9aff830b",
+      "statement": "Tests pin this layer's contract through both hosts: `tests/entrypoint/test_entrypoints.py` covers both layers published with the layer name, own-docstring descriptions, the binary decision in both directions, `to_callables()` executing a real bus call with a Value Object roundtrip, include/exclude/wrap, field descriptions and VO titles in `json_schema`, and non-JSON response coercion; `tests/entrypoint/test_entrypoint_rpc.py` pins that a binary DTO is absent from the method index and that a per-instance `exclude` at mount time removes one DTO only.",
+      "evidence": [
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoint_rpc.py#L271-L282",
+          "version": "repo-lines-v1:sha256:10886c1e5659dbf43478b322db522acc8740202c49e9996086c5a57c9145cf83:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYzI2ODQ1MDMxYzRmY2RjNDlmMmFkY2ZjNjQ0MzA2MmI4YTI4MjdkOWExN2E1ZjZiYzY3OTJmNTQwNGYxMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwNzg2Y2FhNDg5NzYyYjJmYjYzNzA5MDEyY2MwY2Y0MTFmNjExODlkMGI0NGVjM2UyOTM1Y2Y0MWI1YzUzYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkMmM0Zjg5ODIzYzFlOTViNWZjZTU4YWU2NDM1MzY1Nzc0OGM2NDc4ZTFkZjQyNGE5NzZjNTBmOGNlODk5OWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwNjQyMTllOTdmNDhlZGRiMmJjMmE4ZDVhZDc2ZGIzZmRmM2Y1MjUwZWZiZDYyNWIyNzhlMjE3ODU0NGZkZDcifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L145-L167",
+          "version": "repo-lines-v1:sha256:b06c14c098ba772fe779e0752371c89deeb7d2a957bfbd1ffc65e4ef41a3d40b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNDNlNWYxMzdjOTNiM2Q5YzgxNDM3YmQ4YTlhNjIyNDQxMDg2NmY0N2I5MTc0Yzc3ODZmYzk2MTdmMjU1OTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMDEzOGE0ZmMwMTIyOTdkODczYzBhMjQ5OGE1NTkyY2E5OGVlNDQ3ZWRhYmM0ZmI1ODI1YWRlNzNjZjY4ZDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1MzU1OTEwZTBlYzBkMTk1NjU1MGE4ZmRmOTUwYmJjZTg2MTM2NTczYzdlZDQ2NzY3ZjM3ZWM2YTczODRiZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzMDRiNzNkNDMzZGY5YWZlZTdlNjJiMmNmNTRhYmFmNzlkM2JkZmY4MDRlY2RjMDYzZmQ0NTE5ZThmMDJkMDkifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L170-L236",
+          "version": "repo-lines-v1:sha256:6c98f579ada44efe23a44dd28bc77d69109e6da58e26ca9fddbdf238bc948515:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmYjFmY2NkNzc0NmRiOTM4MzJkN2JlYmE3MDkyNTBkNjQ0N2ZiNmY0MWRmMmRmNzNjMDU1MGExYTNkOTEwN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYmNkZjk5MjkyNWE5NmZkNzhiYTE2ZTU2ZjliODA1ZGFhM2Q0ZmE5ZDE5MWZhODU4NmYyMzJiYzMxODc0ZTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZjNTAzODJiMDk0ZTQ4NDE1NDE5YzNhMDY3MzQ3ZmQwOWZiYzhhN2RlOTNmNGNlMTVmMGJjN2VlMDc3YzEwM2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3OGYzOTdhM2FiNmUxNjJhZjRlNGI5Y2YzYTc0OGJjY2RkYTgxNDRhYmFmNDMyOGNiYzg1YjMxNTg5MmZkMjIifQ"
+        },
+        {
+          "resource": "repo://tests/entrypoint/test_entrypoints.py#L261-L317",
+          "version": "repo-lines-v1:sha256:bc7e223e4230f9919cfdbd9efe03a71c9cde25cdff9fe6505f7c0ca9bb5d047e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2NDc1NWM1Y2U5ZjlmZTY1YjU1NTY5ZjI2ZWZjOThhYjRjNWJhNGE0ODU5ZTFjNzY1MDM4ZDM0NjRlN2U2ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyNTAxMzYzZWViZTdjYzFjM2E3YzNhZTVmMGJhZjMzZTdiNmMxMTBhZjJmNWZhNWNkODg1Y2E4YjgwYWI4NGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiYzNlNjc0ZGFmNjc4YzZhZTkxOTBlMDMyOWZkZDIzMDY2NjgyYmY0NzE1NzMxOTZmN2I5ODA3YzQ1YWRiODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-10T08:22:30.590Z"
+  }
+}
