@@ -33,6 +33,29 @@ programmers who **maintain** it. Prioritise the first.
    built bus), `entrypoints/` (exposing the bus over MCP and JSON-RPC), `aio/`
    (async bus), `ddd/` (value objects).
 
+## Page budget — hard rule
+
+**Plan at most 8 pages per run.** This is not a style preference: openwiki aborts
+the whole run when a single page fails, and the failure probability grows with the
+size of the plan. Plans of 15 pages or more fail systematically (see the project's
+issue #826).
+
+Prefer few dense pages over many short ones. If a topic does not fit, leave it for
+a later run instead of growing the plan.
+
+**What to include in the plan, depending on the run mode:**
+
+- **`init`**: the plan defines the **entire** wiki. Anything not in the plan is
+  DELETED at finalization. So in `init` you must plan **every** page the wiki
+  should have, including ones already on disk — never "only the missing ones".
+  If the full scope does not fit the 8-page budget, plan 8 that cover the
+  essentials and leave the rest for a later `update` run, which adds without
+  deleting.
+- **`update`**: adds and refreshes without destroying. Include a page **only if
+  the code it documents changed**, or if it is a new page to add. Existing pages
+  you do not mention **are kept**. If nothing changed, submit an empty plan
+  (`pages: []`).
+
 ## What NOT to do
 
 - **Do not duplicate `docs/architecture/`.** Those documents (`ARCHITECTURE.md`,
