@@ -39,3 +39,26 @@ class TestTypingAndLinter:
             "Pyright reported typing issues in typing_cases.\n"
             f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
         )
+
+    def test_pyright_rejects_a_response_type_that_is_neither(self, tmp_path: Path):
+        """The bound is widened, not dropped: a scalar is still refused.
+
+        Without this the widening could go all the way to no bound at all and nothing here
+        would notice — `typing_cases` only proves what is accepted.
+        """
+        case = tmp_path / "rejected_response_type.py"
+        case.write_text(
+            "from sincpro_framework import DataTransferObject, UseFramework\n"
+            "\n"
+            "class Command(DataTransferObject):\n"
+            "    identifier: str\n"
+            "\n"
+            "framework = UseFramework('rejected')\n"
+            "framework(Command(identifier='x'), int)\n"
+            "framework(Command(identifier='x'), str)\n"
+        )
+
+        result = self._run_pyright(case)
+
+        assert result.returncode != 0, f"pyright accepted a scalar:\n{result.stdout}"
+        assert "int" in result.stdout and "str" in result.stdout

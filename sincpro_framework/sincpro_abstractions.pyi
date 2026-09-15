@@ -2,6 +2,7 @@ import abc
 from abc import ABC, abstractmethod
 from typing import Any, Generic, Type, overload
 
+from _typeshed import DataclassInstance
 from pydantic import BaseModel
 from typing_extensions import TypeVar
 
@@ -11,7 +12,9 @@ from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 class DataTransferObject(BaseModel): ...
 
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
-TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
+TypeDTOResponse = TypeVar(
+    "TypeDTOResponse", bound="DataTransferObject | DataclassInstance | list | dict"
+)
 ContextT = TypeVar("ContextT")
 
 # Additional TypeVars for better dependency injection typing

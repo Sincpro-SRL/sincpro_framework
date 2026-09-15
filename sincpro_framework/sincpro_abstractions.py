@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from contextvars import copy_context
-from typing import Generic, Type
+from typing import TYPE_CHECKING, Generic, Type
 
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypeVar
@@ -9,8 +9,13 @@ from .aio import AsyncBus as AsyncBus
 from .context.framework_context_consumer import ContextConsumer
 from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
+
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
-TypeDTOResponse = TypeVar("TypeDTOResponse", bound="DataTransferObject")
+TypeDTOResponse = TypeVar(
+    "TypeDTOResponse", bound="DataTransferObject | DataclassInstance | list | dict"
+)
 ContextT = TypeVar("ContextT")
 
 # Additional TypeVars for better dependency injection typing
