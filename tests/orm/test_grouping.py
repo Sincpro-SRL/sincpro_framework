@@ -17,8 +17,11 @@ from sincpro_framework.ddd.criteria import (
     Level,
     Operator,
     conditions_of,
+    parse_order,
 )
+from sincpro_framework.ddd.entity_collection import Count
 from sincpro_framework.ddd.exceptions import InvalidCriteria
+from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.sql_translator import bucket_range
 
 from .models import Things
@@ -71,14 +74,16 @@ def test_folds_are_asked_for_by_name(store):
         assert bucket.totals["weight"] == sum(one.size for one in page.items)
 
 
-def test_a_second_level_arrives_only_when_depth_reaches_it(store):
-    two = Grouping(by=(Level(field="owner"), Level(field="size")), depth=2)
-    one = Grouping(by=(Level(field="owner"), Level(field="size")), depth=1)
+def test_every_level_named_is_answered_and_nothing_below_the_last(store):
+    """Two fields are two levels, always; a screen that wants one level at a time names one
+    and opens a bucket with a grouping of its own."""
+    two = Grouping(by=(Level(field="owner"), Level(field="size")))
+    one = Grouping(by=(Level(field="owner"),))
 
     nested = store.group_by_levels(Things, Criteria(grouping=two))
     flat = store.group_by_levels(Things, Criteria(grouping=one))
 
-    assert any(bucket.groups for bucket in nested)
+    assert all(bucket.groups for bucket in nested)
     assert all(bucket.groups == [] for bucket in flat)
     for bucket in nested:
         assert sum(one.count for one in bucket.groups) == bucket.count
@@ -153,7 +158,6 @@ def test_date_levels_add_up_to_what_the_parent_says(store):
     """If one level's range overlapped the next one's, this would not close."""
     nested = Grouping(
         by=(Level(field="made_at", grain="year"), Level(field="made_at", grain="month")),
-        depth=2,
     )
 
     for bucket in store.group_by_levels(Things, Criteria(grouping=nested)):
@@ -187,3 +191,98 @@ def test_the_end_of_a_bucket_is_the_start_of_the_next():
 def test_a_range_grain_that_does_not_exist_is_refused_too():
     with pytest.raises(InvalidCriteria, match="granularity"):
         bucket_range("fortnight", "2026-Q3")
+
+
+# ── a page of ids per group ──────────────────────────────────────────────────
+
+
+def paged_by_owner(limit: int = 2) -> Criteria:
+    return Criteria(
+        order=parse_order("size,thing_id"),
+        pagination=Pagination(limit=limit),
+        grouping=BY_OWNER,
+    )
+
+
+def test_without_a_page_asked_a_bucket_carries_no_ids(store):
+    buckets = store.group_by_levels(Things, Criteria(grouping=BY_OWNER))
+
+    assert all(bucket.ids == [] and bucket.cursor is None for bucket in buckets)
+
+
+def test_with_a_page_asked_every_group_carries_its_first_ids_in_order(store, things):
+    """`grouping` with a page is a page per group: the first two ids of every owner, in the
+    criteria's order, an exact count, and a cursor because there is more."""
+    buckets = store.group_by_levels(Things, paged_by_owner(limit=2))
+
+    for bucket in buckets:
+        mine = sorted(
+            (t for t in things if t.owner == bucket.value), key=lambda t: (t.size, t.thing_id)
+        )
+        assert bucket.ids == [t.thing_id for t in mine[:2]]
+        assert bucket.count == len(mine) and bucket.count > 2
+        assert bucket.cursor is not None
+
+
+def test_a_group_is_opened_with_browse_in_the_same_order(store):
+    bucket = store.group_by_levels(Things, paged_by_owner(limit=3))[0]
+
+    opened = store.browse(Things, bucket.ids)
+
+    assert opened.ids == bucket.ids
+
+
+def test_a_group_goes_on_with_its_own_cursor_without_repeating(store, things):
+    """The bucket's criteria already holds the group's filter, order and limit; the cursor
+    makes it the next page inside that group and nothing else."""
+    bucket = store.group_by_levels(Things, paged_by_owner(limit=2))[1]
+
+    rest = store.search(Things, bucket.criteria.resuming_from(bucket.cursor))
+
+    mine = sorted(
+        (t for t in things if t.owner == bucket.value), key=lambda t: (t.size, t.thing_id)
+    )
+    assert rest.ids == [t.thing_id for t in mine[2:4]]
+    assert not set(rest.ids) & set(bucket.ids)
+
+
+def test_a_group_with_fewer_rows_than_the_page_has_no_cursor(store):
+    buckets = store.group_by_levels(Things, paged_by_owner(limit=50))
+
+    assert all(len(b.ids) == b.count and b.cursor is None for b in buckets)
+
+
+def test_ids_live_on_the_deepest_level_only(store):
+    two = Grouping(by=(Level(field="owner"), Level(field="size")))
+    asked = Criteria(
+        order=parse_order("thing_id"), pagination=Pagination(limit=1), grouping=two
+    )
+
+    for owner in store.group_by_levels(Things, asked):
+        assert owner.ids == []
+        assert all(len(size.ids) == min(1, size.count) for size in owner.groups)
+        assert sum(size.count for size in owner.groups) == owner.count
+
+
+def test_a_page_per_group_costs_one_statement_more(store, queries_run):
+    with queries_run() as statements:
+        store.group_by_levels(Things, paged_by_owner(limit=2))
+
+    assert len(statements) == 2  # the level, and the page of ids of every group in it
+
+
+def test_a_search_with_a_grouping_and_a_page_answers_a_page_per_group(store, things):
+    """What the other side of a relation receives: `limit` rows for EVERY owner, not for the
+    set, ordered inside each, in one statement."""
+    page = store.search(Things, paged_by_owner(limit=2))
+
+    per_owner = {}
+    for thing in page:
+        per_owner.setdefault(thing.owner, []).append(thing)
+    assert set(per_owner) == {t.owner for t in things}
+    assert all(len(mine) == 2 for mine in per_owner.values())
+    assert all(
+        mine == sorted(mine, key=lambda t: (t.size, t.thing_id))
+        for mine in per_owner.values()
+    )
+    assert page.cursor is None and page.count == Count(value=len(page), exact=True)

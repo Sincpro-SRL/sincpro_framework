@@ -160,7 +160,6 @@ def test_the_grouping_declares_its_levels_and_its_folds():
                     {"field": "registered_at", "grain": "month"},
                 ],
                 "totals": {"rows": ["sum", "row_count"]},
-                "depth": 2,
             }
         }
     )

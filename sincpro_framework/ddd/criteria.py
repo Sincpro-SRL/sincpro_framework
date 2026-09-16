@@ -281,22 +281,19 @@ class Level(DataTransferObject):
 
 
 class Grouping(DataTransferObject):
-    """How a result set is split, and how much of the split is answered at once.
+    """How a result set is split: the levels, and the numbers folded out of every group.
 
         in      {"by": ["produced_by", "registered_at:month"], "totals": {"filas": ["sum", "row_count"]}}
-        out     the first level, each bucket counted and folded, carrying how to open it
+        out     every level `by` names, each group counted and folded, carrying how to open it
 
-    `depth` is what keeps this honest: levels are answered one at a time by default, because
-    a tree resolved whole is a cartesian product almost nobody expands. Opening a bucket is
-    an ordinary search with `bucket.criteria`, which already holds the filter that got here.
+    All the levels named are answered, one statement each: grouping by three fields is three
+    statements whatever the number of rows. A screen that drills down one click at a time asks
+    for one level and, on the click, reads `bucket.criteria` with a grouping of its own; it never
+    has to know how deep the whole tree is.
     """
 
     by: tuple[Level, ...] = ()
     totals: dict[str, Fold] = {}
-    depth: int = 1
-    """How many levels to resolve now. Each level is one statement more and, at the bottom,
-    every combination of what came before, so this is the number that makes the size of the
-    answer visible at the call site."""
 
     @property
     def asked(self) -> bool:
@@ -317,6 +314,16 @@ class Bucket(DataTransferObject):
     `criteria` is the whole point. It is this reading plus «and this bucket's value», so
     opening the group is `self.repository.search(Dataset, bucket.criteria)` and nothing else — no client
     rebuilds a filter it did not write.
+
+    **A page of ids, when the criteria asked for a page.** `grouping` together with an explicit
+    `pagination` means «a page per group»: every group of the deepest level answered carries the
+    identities of its first `limit` rows in the criteria's order, an exact `count`, and a
+    `cursor` to go on inside it. Ids and not records, the way Odoo's `search` answers before
+    `browse` does: light enough for four thousand groups, stable enough to select, compare and
+    open later.
+
+        repository.browse(Line, bucket.ids)                            the first page, in order
+        repository.search(Lines, bucket.criteria.resuming_from(bucket.cursor))   the rest
     """
 
     field: str
@@ -324,9 +331,13 @@ class Bucket(DataTransferObject):
     count: int
     totals: dict[str, Any] = {}
     criteria: "Criteria"
+    ids: list[Any] = []
+    """The identities of this group's first page, in the criteria's order; empty unless the
+    criteria asked for a page."""
+    cursor: str | None = None
+    """Where the next page inside this group starts; `None` when there is none, or none asked."""
     groups: list["Bucket"] = []
-    """The level below, when `depth` reached it. Empty means «not resolved», not «none»: the
-    difference is answered by opening the bucket."""
+    """The level below, when the grouping named one. Empty on the deepest level."""
 
 
 class Specification(RootModel[dict[str, "Criteria"]]):

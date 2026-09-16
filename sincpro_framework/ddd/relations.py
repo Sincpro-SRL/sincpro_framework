@@ -17,7 +17,15 @@ to-many (`Dataset.runs` by `Run.dataset_id`), on this one for a to-one (`Run.dat
 from collections.abc import Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from sincpro_framework.ddd.criteria import Condition, CountMode, Criteria, Operator, combined
+from sincpro_framework.ddd.criteria import (
+    Condition,
+    CountMode,
+    Criteria,
+    Grouping,
+    Level,
+    Operator,
+    combined,
+)
 from sincpro_framework.ddd.entity_collection import (
     Count,
     EntityCollection,
@@ -126,29 +134,49 @@ def _keys_for(
 
 
 def _reflected(node: Criteria, field: str, ids: list[Any], limit: int | None) -> Criteria:
-    """The criteria the other side receives: the node's, plus the parents' keys."""
-    asked = (
-        Pagination(limit=limit * len(ids)) if limit is not None else Pagination(limit=10**9)
-    )
+    """The criteria the other side receives: the node's, plus the parents' keys.
+
+    With a limit, `grouping` by the key travels with the page: on a repository of ours that
+    means «`limit` rows for every key», so no parent starves the others. A side that does not
+    know the meaning takes the page as a whole, and the cut per parent happens here afterwards.
+    """
+    keys = Condition(field=field, operator=Operator.IN, value=ids)
+    if limit is None:
+        return Criteria(
+            where=combined(keys, node.expression),
+            order=node.order,
+            pagination=Pagination(limit=10**9),
+            specification=node.specification,
+            count=CountMode.NONE,
+            meta=node.specification is not None,
+        )
     return Criteria(
-        where=combined(
-            Condition(field=field, operator=Operator.IN, value=ids), node.expression
-        ),
+        where=combined(keys, node.expression),
         order=node.order,
-        pagination=asked,
+        pagination=Pagination(limit=limit),
+        grouping=Grouping(by=(Level(field=field),)),
         specification=node.specification,
         count=CountMode.NONE,
         meta=node.specification is not None,
     )
 
 
-def _records_of(answer: Any) -> tuple[list[Any], Meta | None]:
-    """What came back, whatever shape the other side chose to answer in."""
+def _records_of(answer: Any, limit: int | None) -> tuple[list[Any], Meta | None, bool]:
+    """What came back, whatever shape the other side chose to answer in, and whether it cut a
+    page per key: a repository of ours answers a partitioned page with no cursor and an exact
+    count, so a parent with fewer rows than the limit got all of them."""
     if isinstance(answer, ResponsePaginatedQuery):
-        return list(getattr(answer, type(answer).records_field())), answer.model_meta_data
+        records = list(getattr(answer, type(answer).records_field()))
+        partitioned = (
+            answer.cursor is None and answer.count is not None and answer.count.exact
+        )
+        return records, answer.model_meta_data, partitioned and limit is not None
     if isinstance(answer, EntityCollection):
-        return list(answer.items), answer.meta
-    return list(answer or []), None
+        partitioned = (
+            answer.cursor is None and answer.count is not None and answer.count.exact
+        )
+        return list(answer.items), answer.meta, partitioned and limit is not None
+    return list(answer or []), None, False
 
 
 def _regrouped(
@@ -160,10 +188,14 @@ def _regrouped(
     limit: int | None,
     records: list[Any],
     asked_for: int,
+    partitioned: bool,
 ) -> Groups:
-    """Related records back from a resolver, cut per parent in memory. The count is exact
-    unless the other side filled the page it was asked for."""
-    exact = len(records) < asked_for
+    """Related records back from a resolver, cut per parent in memory.
+
+    With the partition honoured, a parent that got fewer than `limit` rows got all of them. A
+    side that ignored the partition and filled the whole page could have starved a parent, so
+    then nothing is claimed exact unless the whole page came back short.
+    """
     by_key: dict[Any, list[Any]] = {}
     for record in records:
         key = getattr(record, relation.identified_by) if many else identity_of(record)
@@ -177,8 +209,11 @@ def _regrouped(
         )
         items = by_key.get(key, [])
         if items or many:
-            # A parent with nothing on a page the other side filled may simply have been
-            # starved by it, so its empty collection carries the same honesty as the rest.
+            exact = (
+                (limit is None or len(items) < limit)
+                if partitioned
+                else len(records) < asked_for
+            )
             groups[getattr(parent, meta.identity)] = cut(
                 items, node, tuple(node.order), limit, exact
             )
@@ -198,8 +233,11 @@ def resolve_elsewhere(
     if not ids or relation.resolver is None:
         return {}, None
     criteria = _reflected(node, field, ids, limit)
-    records, definition = _records_of(relation.resolver(ids, criteria))
+    records, definition, partitioned = _records_of(relation.resolver(ids, criteria), limit)
+    asked_for = limit * len(ids) if limit is not None and not partitioned else criteria.limit
     return (
-        _regrouped(meta, parents, relation, node, many, limit, records, criteria.limit),
+        _regrouped(
+            meta, parents, relation, node, many, limit, records, asked_for, partitioned
+        ),
         definition,
     )

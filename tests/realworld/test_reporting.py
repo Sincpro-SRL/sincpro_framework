@@ -14,8 +14,10 @@ from sincpro_framework.ddd.criteria import (
     Fold,
     Grouping,
     Level,
+    parse_order,
 )
 from sincpro_framework.ddd.model_meta import FieldType, Operator
+from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.repository import Repository
@@ -38,7 +40,6 @@ FOUR_LEVELS = Criteria(
             "debit": Fold(function="sum", field="debit"),
             "credit": Fold(function="sum", field="credit"),
         },
-        depth=4,
     ),
 )
 
@@ -123,7 +124,11 @@ def test_the_four_level_grouping_is_the_hand_written_group_by(
 
 def test_a_bucket_opens_to_exactly_the_rows_it_counted(ledger: Repository):
     one_level = FOUR_LEVELS.model_copy(
-        update={"grouping": FOUR_LEVELS.grouping.model_copy(update={"depth": 1})}
+        update={
+            "grouping": FOUR_LEVELS.grouping.model_copy(
+                update={"by": FOUR_LEVELS.grouping.by[:1]}
+            )
+        }
     )
 
     for bucket in ledger.group_by_levels(Line, one_level):
@@ -168,3 +173,50 @@ def test_the_definition_says_what_a_line_and_an_account_can_be_asked(ledger: Rep
     assert line.field("debit").type is FieldType.NUMBER
     assert account.translations["labels"]["balance"] == {"default": "Balance", "es": "Saldo"}
     assert ZERO == Decimal("0.00")
+
+
+def test_two_levels_with_a_page_of_eighty_ids_per_group_match_a_hand_written_window(
+    ledger: Repository, timed, census: Census
+):
+    """Journal → account, the eighty most recent lines of every account as ids: what a screen
+    that lists groups and lets the user open one needs, in three statements."""
+    asked = Criteria(
+        where=POSTED,
+        order=parse_order("-posted_at"),
+        pagination=Pagination(limit=80),
+        grouping=Grouping(by=(Level(field="journal_id"), Level(field="account_id"))),
+    )
+
+    with timed("grouping, two levels, 80 ids per group", census.lines):
+        tree = ledger.group_by_levels(Line, asked)
+
+    with ledger.context() as unit:
+        position = (
+            func.row_number()
+            .over(
+                partition_by=[Line.journal_id, Line.account_id],  # type: ignore[attr-defined]
+                order_by=[Line.posted_at.desc(), Line.id.desc()],  # type: ignore[attr-defined]
+            )
+            .label("n")
+        )
+        inner = (
+            select(Line.journal_id, Line.account_id, Line.id, position)  # type: ignore[attr-defined]
+            .where(Line.entry_state == "posted")  # type: ignore[attr-defined]
+            .subquery()
+        )
+        rows = unit.session.execute(
+            select(inner)
+            .where(inner.c.n <= 80)
+            .order_by(inner.c.journal_id, inner.c.account_id, inner.c.n)
+        ).all()
+    by_hand: dict[tuple, list] = {}
+    for journal, account, line_id, _ in rows:
+        by_hand.setdefault((journal, account), []).append(line_id)
+
+    for journal in tree:
+        assert journal.ids == []
+        for account in journal.groups:
+            assert account.ids == by_hand[(journal.value, account.value)]
+            assert (account.cursor is not None) == (account.count > 80)
+    opened = ledger.browse(Line, tree[0].groups[0].ids)
+    assert opened.ids == tree[0].groups[0].ids

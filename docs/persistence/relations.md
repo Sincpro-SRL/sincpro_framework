@@ -152,9 +152,14 @@ Where the chain does **not** compose, and is not meant to:
   never answers a listing filtered by the other side.
 - **Exact counts and global order across a bus.** Only per parent, and only as exact as the
   other side's page allows.
-- **Per-parent limit through a bus** is approximated as `limit × parents`. The clean end is for
-  the reflected criteria to carry the partition as a `grouping` by `identified_by`, which the
-  vocabulary already has. Open, and noted in [decisions.md](decisions.md).
+- **Per-parent limit through a bus** travels as `grouping` by `identified_by` with the node's
+  page in the reflected criteria. A repository of ours reads `grouping` with a page as «`limit`
+  rows for every key» and cuts it in SQL, so no parent starves another; its answer has no
+  cursor and an exact count, which is how this side knows the partition was honoured and can
+  say a parent with fewer rows than the limit is complete. A function that ignores `grouping`
+  answers a whole page, `limit × parents` are asked for, and nothing is claimed exact unless
+  the whole page came back short. What a partitioned page cannot say is the total per key
+  beyond the limit: a parent with exactly `limit` rows is reported as «at least `limit`».
 
 ## 7. Lazy inside a unit of work, refused outside
 

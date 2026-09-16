@@ -15,7 +15,7 @@ hands it to the repository. It is JSON, it is typed, and every part of it is opt
   "pagination":    {"limit": 20, "strategy": {"token": "eyJ…"}},
   "specification": {"title": {}, "author": {"specification": {"name": {}}}},
   "grouping":      {"by": [{"field": "author_id"}, {"field": "printed_at", "grain": "month"}],
-                    "totals": {"pages": ["sum", "pages"]}, "depth": 2},
+                    "totals": {"pages": ["sum", "pages"]}},
   "count":         "capped",
   "meta":          true
 }
@@ -27,7 +27,7 @@ hands it to the repository. It is JSON, it is typed, and every part of it is opt
 | `order` | the ordering, `-` for descending | the identity is appended as tiebreaker so a keyset is a total order; a nullable column is refused for ordering because a keyset over NULLs loses rows |
 | `pagination` | how many and from where | `Cursor` (keyset, the default; the token is opaque and typed, it carries datetimes and decimals) or `Offset` (skip rows; costs grow with the offset) |
 | `specification` | what to bring back of each record | field → criteria, recursive; see [specification.md](specification.md) |
-| `grouping` | how to split the set when counting rather than listing | one statement per level, buckets with counts and folds; `depth` says how many levels now |
+| `grouping` | how to split the set when counting rather than listing | one statement per level, every level `by` names, buckets with counts and folds; drilling down one click at a time is opening a bucket with a grouping of its own. **With an explicit `pagination`, a page per group**: every group of the deepest level carries the ids of its first `limit` rows in the criteria's order, an exact count and a cursor; `search` with both answers `limit` rows for every group |
 | `count` | `none`, `capped` (stops at 10 000 and says so), `exact` | free when the first page came back short |
 | `meta` | whether the definition travels | on by default |
 

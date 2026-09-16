@@ -247,6 +247,10 @@ GRAINS: tuple[str, ...] = ("day", "month", "week", "year")
 # extends and not a table the framework closes. Every translator answers the same text for
 # the same grain, which is what lets `bucket_range` read a bucket back without knowing who
 # produced it.
+# Labels for the window a page per group is cut with. Names no column could be called, so a
+# table with a `position` or a `total` column never collides with them.
+POSITION, TOTAL, GROUP_KEY = "_sincpro_position", "_sincpro_total", "_sincpro_group_"
+
 GrainTranslator = Callable[[Any, str], ColumnElement[Any]]
 
 # ISO weeks on both dialects, so a bucket reads the same text whatever the engine: `%G` and

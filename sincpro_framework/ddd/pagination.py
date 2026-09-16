@@ -238,6 +238,18 @@ class Pagination(DataTransferObject):
     strategy: Cursor | Offset = Field(default_factory=lambda: Cursor())
 
     @property
+    def asked(self) -> bool:
+        """Whether a page was asked for at all, as opposed to the default filling in.
+
+        What was said is read off the fields that were set, so an explicit `limit=50` counts
+        although 50 is also the default.
+
+        >>> Pagination().asked, Pagination.model_validate({"limit": 50}).asked
+        (False, True)
+        """
+        return "limit" in self.model_fields_set
+
+    @property
     def cursor(self) -> str | None:
         """The token this page resumes from, or `None` — including when the strategy counts
         rows instead, which resumes from no row at all.

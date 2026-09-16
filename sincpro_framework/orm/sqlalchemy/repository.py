@@ -15,13 +15,14 @@ rules. There is no update or delete by criteria.
         repository.save(run)
 """
 
+import types
 from collections.abc import Generator, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, overload
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.orm.exc import StaleDataError
 
 from sincpro_framework.ddd.criteria import (
@@ -220,9 +221,9 @@ class Repository:
     def _bucketed(
         self, session: Session, model: type, criteria: Criteria, grouping: Grouping
     ) -> list[Bucket]:
-        """The levels `depth` asks for, one statement per level and never one per bucket.
+        """Every level the grouping names, one statement per level and never one per bucket.
 
-            in      Dataset, Criteria(), by (produced_by, registered_at:month), depth 2
+            in      Dataset, Criteria(), by (produced_by, registered_at:month)
             level 1 SELECT produced_by, count(*), sum(row_count) GROUP BY produced_by
             level 2 SELECT produced_by, month, count(*), sum(…) GROUP BY produced_by, month
             out     [Bucket(produced_by, None, 187, {'filas': …}, criteria=…, groups=[…])]
@@ -235,11 +236,11 @@ class Repository:
         4. Final: nest bottom-up, so a bucket is built once with its children in hand.
 
         Two levels over eight buckets is two statements, not nine; four levels over a ledger
-        is four. What `depth` makes visible is the size of the answer, not a query count.
+        is four. The size of the answer is the number of groups, which `by` decides.
         """
         meta = describe(model)
         dialect = self.database.engine.dialect.name
-        resolved = grouping.by[: max(grouping.depth, 1)]
+        resolved = grouping.by
         columns = []
         for level in resolved:
             meta.field(level.field)
@@ -265,15 +266,26 @@ class Repository:
             level = resolved[how_deep - 1]
             for row in rows:
                 path = tuple(row[:how_deep])
-                opens[path] = opens[path[:-1]].merged_with(
-                    Criteria(where=sql.bucket_condition(level, path[-1]), grouping=Grouping())
+                # Opening a group is a plain reading of its rows: the grouping stays behind, or
+                # a page asked on the bucket's criteria would be read as «a page per group».
+                opens[path] = (
+                    opens[path[:-1]]
+                    .merged_with(Criteria(where=sql.bucket_condition(level, path[-1])))
+                    .model_copy(update={"grouping": Grouping()})
                 )
+
+        pages = (
+            self._ids_per_group(session, model, meta, criteria, clause, columns)
+            if criteria.pagination.asked
+            else {}
+        )
 
         children: dict[tuple, list[Bucket]] = {}
         for how_deep in range(len(resolved), 0, -1):
             level = resolved[how_deep - 1]
             for row in rows_by_level[how_deep - 1]:
                 path, count, folds = tuple(row[:how_deep]), row[how_deep], row[how_deep + 1 :]
+                ids, next_cursor = pages.get(path, ([], None))
                 children.setdefault(path[:-1], []).append(
                     Bucket(
                         field=level.field,
@@ -281,10 +293,74 @@ class Repository:
                         count=count,
                         totals=dict(zip(grouping.totals, folds)),
                         criteria=opens[path],
+                        ids=ids,
+                        cursor=next_cursor,
                         groups=children.get(path, []),
                     )
                 )
         return children.get((), [])
+
+    def _ids_per_group(
+        self,
+        session: Session,
+        model: type,
+        meta: Meta,
+        criteria: Criteria,
+        clause: Any,
+        columns: list[Any],
+    ) -> dict[tuple, tuple[list[Any], str | None]]:
+        """The first page of identities of every group of the deepest level, in one statement.
+
+            SELECT id, <sort columns>, <group columns> FROM (
+              SELECT …, row_number() OVER (PARTITION BY <group columns> ORDER BY <order>) AS position,
+                        count(*)     OVER (PARTITION BY <group columns>)                 AS total
+              FROM model WHERE <clause>
+            ) WHERE position <= :limit
+
+        Ids and not rows: the page is a reference the consumer opens with `browse` when it
+        wants, and the specification never runs for rows nobody will look at. The cursor per
+        group is minted from the sort values of its last id, so going on inside the group is an
+        ordinary `search` with `bucket.criteria.resuming_from(bucket.cursor)`.
+        """
+        sorts = sql.ordering_for(criteria, meta)
+        order = sql.order_clauses(model, sorts)
+        keys = [
+            column.label(f"{sql.GROUP_KEY}{index}") for index, column in enumerate(columns)
+        ]
+        sort_columns = [getattr(model, sort.field) for sort in sorts]
+        position = (
+            func.row_number().over(partition_by=columns, order_by=order).label(sql.POSITION)
+        )
+        total = func.count().over(partition_by=columns).label(sql.TOTAL)
+        inner = select(*sort_columns, *keys, position, total).select_from(model)
+        if clause is not None:
+            inner = inner.where(clause)
+        sub = inner.subquery()
+        statement = (
+            select(sub)
+            .where(sub.c[sql.POSITION] <= criteria.limit)
+            .order_by(*(sub.c[key.name] for key in keys), sub.c[sql.POSITION])
+        )
+
+        pages: dict[tuple, tuple[list[Any], str | None]] = {}
+        last: dict[tuple, tuple[Any, int]] = {}
+        for row in session.execute(statement).all():
+            path = tuple(row[len(sorts) + index] for index in range(len(keys)))
+            ids, _ = pages.setdefault(path, ([], None))
+            ids.append(getattr(row, meta.identity))
+            last[path] = (row, row[-1])
+        for path, (row, total_rows) in last.items():
+            ids, _ = pages[path]
+            position = types.SimpleNamespace(
+                **{sort.field: getattr(row, sort.field) for sort in sorts}
+            )
+            cursor = (
+                criteria.pagination.next_from(position, sorts)
+                if total_rows > len(ids)
+                else None
+            )
+            pages[path] = (ids, cursor)
+        return pages
 
     def _written(self, session: Session, record: Any) -> None:
         """Flushes one aggregate and translates the two ways a write loses a race.
@@ -472,11 +548,67 @@ class Repository:
         # describe the model, coerce the values and prune the expression twice per search.
         model, holder = model_and_collection(target)
         prepared = self.prepare(model, criteria)
+        if criteria.grouping.asked and criteria.pagination.asked:
+            with self._session() as session:
+                return self._partitioned_page(session, model, holder, criteria, prepared)
         statement = self._statement_from(model, criteria, prepared)
         if lock is not None:
             statement = statement.with_for_update(skip_locked=skip_locked)
         with self._session() as session:
             return self._page(session, model, holder, statement, criteria, prepared)
+
+    def _partitioned_page(
+        self,
+        session: Session,
+        model: type,
+        holder: type,
+        criteria: Criteria,
+        prepared: Prepared,
+    ) -> EntityCollection:
+        """`grouping` with a page: the first `limit` rows of EVERY group, not of the set.
+
+            in      Run, Criteria(where=dataset_id in (…), order=-started_at,
+                                  pagination=Pagination(limit=5),
+                                  grouping=Grouping(by=(Level(field="dataset_id"),)))
+            out     up to five runs per dataset, ordered inside each, one statement
+
+        This is what the other side of a relation resolved through a bus receives, so that no
+        parent starves the others of a shared page. The count is the number of rows returned,
+        exact; there is no cursor, because a page per group continues inside each group.
+        """
+        clause, sorts, meta, dropped = prepared
+        dialect = self.database.engine.dialect.name
+        columns = [
+            sql.grouping_column(model, level, dialect) for level in criteria.grouping.by
+        ]
+        for level in criteria.grouping.by:
+            meta.field(level.field)
+        keys = [
+            column.label(f"{sql.GROUP_KEY}{index}") for index, column in enumerate(columns)
+        ]
+        position = (
+            func.row_number()
+            .over(partition_by=columns, order_by=sql.order_clauses(model, sorts))
+            .label(sql.POSITION)
+        )
+        inner = select(model, *keys, position)
+        if clause is not None:
+            inner = inner.where(clause)
+        sub = inner.subquery()
+        alias = aliased(model, sub)
+        statement = (
+            select(alias)
+            .where(sub.c[sql.POSITION] <= criteria.limit)
+            .order_by(*(sub.c[key.name] for key in keys), sub.c[sql.POSITION])
+        )
+        rows = list(session.scalars(statement))
+        return holder(
+            items=tuple(rows),
+            cursor=None,
+            count=Count(value=len(rows), exact=True),
+            dropped=tuple(dropped),
+            meta=meta,
+        )
 
     @overload
     def fetch_all[C: EntityCollection](

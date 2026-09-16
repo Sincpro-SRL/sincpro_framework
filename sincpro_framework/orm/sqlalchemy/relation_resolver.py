@@ -32,7 +32,8 @@ from sincpro_framework.orm.sqlalchemy import sql_translator as sql
 from sincpro_framework.orm.sqlalchemy.data_mapper import RESOLVED, Relation, relations_of
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 
-POSITION, TOTAL, PARENT_KEY = "_sincpro_position", "_sincpro_total", "_sincpro_parent_key"
+PARENT_KEY = "_sincpro_parent_key"
+POSITION, TOTAL = sql.POSITION, sql.TOTAL
 """What every kind answers: the related records per parent identity."""
 
 

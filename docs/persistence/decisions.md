@@ -217,6 +217,28 @@ explicit `limit: 50` stays 50 although 50 is also the default.
 
 ---
 
+## 11b. `grouping` with a page is a page per group, and a group answers ids
+
+**Decision.** `grouping` together with an explicit `pagination` means «a page per group». On
+`group_by_levels`, every group of the deepest level carries the identities of its first `limit`
+rows in the criteria's order, an exact `count` and a `cursor`; opening a group is
+`browse(Aggregate, bucket.ids)`, going on inside it is `search(bucket.criteria.resuming_from(
+bucket.cursor))`. On `search`, the same two mean `limit` rows for every group in one statement,
+which is what the reflected criteria of a relation asks the other side for.
+
+**Why.** Groups are consumed by screens that list thousands of them and open a few: ids are light,
+stable references, the way Odoo's `search` answers before `browse` does, and the specification
+never runs for rows nobody opens. One window statement per level gives every group its page,
+its count and its cursor, so the cost does not grow with the number of groups. The same
+statement closes the gap of the bus: the partition travels as vocabulary the other side already
+has instead of a private protocol.
+
+**Rejected.** Records inside the groups: heavy and redundant with `browse`. A separate API for
+"the first N of each": one more thing to learn where two existing words compose.
+
+`Bucket.ids`, `Bucket.cursor`, `Repository._ids_per_group`, `Repository._partitioned_page`,
+`ddd.relations._reflected`.
+
 ## 12. The repository is concrete; the protocol is minimal
 
 **Decision.** Applications inject the concrete `Repository` as `self.repository`. A `Protocol` in
@@ -306,9 +328,6 @@ named after the pattern it implements and against the one it avoids, Active Reco
 
 ## 18. What is deliberately still open
 
-- Per-parent limit through a bus or a function is approximated as `limit × parents` and cut in
-  memory. The clean end is for the reflected criteria to carry the partition as a `grouping` by
-  `identified_by`, which is vocabulary that already exists.
 - Filtering or ordering a parent *by* a relation does not compose; it needs the value in the
   parent's own table, kept current by an event (`Line.entry_state` in the ledger is the pattern).
 - A limit on the number of *buckets* a grouping level returns; today every bucket comes back.

@@ -83,7 +83,7 @@ with self.repository.context() as repository:                         # several 
 | Surface | Reads or writes | Notes |
 |---|---|---|
 | `search`, `browse`, `get`, `stream` | read | A page, records by id in the order given, one by id, every page in turn |
-| `count`, `group_by`, `group_by_levels`, `totals` | read | Answered in SQL over the whole result set, never over a page |
+| `count`, `group_by`, `group_by_levels`, `totals` | read | Answered in SQL over the whole result set, never over a page; `group_by_levels` with a page asked also gives every group the ids of its first page and a cursor |
 | `statement` / `run` | read | The escape hatch: a real `Select` out, the usual envelope back in |
 | `fetch_all` | read | Every page, as one complete collection — hands a bounded set to the in-memory algebra |
 | `save`, `remove` | write | Take the aggregate. **No update or delete by criteria** — a generic write path skips the aggregate's rules |

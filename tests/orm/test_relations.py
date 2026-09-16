@@ -213,7 +213,9 @@ def test_another_context_answers_through_its_bus_with_the_reflected_criteria(she
     books = by_title(page)
 
     assert [(r.stars, r.text) for r in books["Engine"].reviews] == [(5, "great")]
-    assert page_of(books["Engine"].reviews).count == Count(value=2, exact=True)
+    # The other side cut one review per book, as the partition asked; with the page per key
+    # full, the count is «at least one», never a guess at the total.
+    assert page_of(books["Engine"].reviews).count == Count(value=1, exact=False)
     assert [(r.stars, r.text) for r in books["Compiler"].reviews] == [(3, "fine")]
     assert len(books["Memo"].reviews) == 0
     # Three reviews came back for a page of five asked: the other side was not cut, so Memo's
@@ -424,3 +426,27 @@ def test_inside_a_unit_of_work_a_page_left_on_the_record_gives_way_to_the_whole(
     with shelf.context() as unit:
         attached = unit.search(Authors, cut).ensure_one()
         assert len(attached.books) == 3
+
+
+def test_a_page_per_key_travels_to_the_bus_so_no_parent_starves_another(shelf):
+    """Engine has three reviews, Compiler one. One review per book, best first: without the
+    partition the other side would answer Engine's two best and Compiler nothing."""
+    page = shelf.search(
+        Books,
+        Criteria(
+            where=Condition(
+                field="title", value=["Engine", "Compiler"], operator=Operator.IN
+            ),
+            specification=Specification(
+                {
+                    "reviews": Criteria(
+                        order=parse_order("-stars"), pagination=Pagination(limit=1)
+                    )
+                }
+            ),
+        ),
+    )
+    books = by_title(page)
+
+    assert [r.stars for r in books["Engine"].reviews] == [5]
+    assert [r.stars for r in books["Compiler"].reviews] == [3]
