@@ -167,7 +167,7 @@ def test_date_levels_add_up_to_what_the_parent_says(store):
         ("month", "2026-09", datetime(2026, 9, 1), datetime(2026, 10, 1)),
         # December crosses the year: `(12 % 12) + 1` gives January, and the year adds one.
         ("month", "2026-12", datetime(2026, 12, 1), datetime(2027, 1, 1)),
-        ("week", "2026-W37", datetime(2026, 9, 14), datetime(2026, 9, 21)),
+        ("week", "2026-W37", datetime(2026, 9, 7), datetime(2026, 9, 14)),  # ISO week
         ("day", "2026-09-13", datetime(2026, 9, 13), datetime(2026, 9, 14)),
     ],
 )

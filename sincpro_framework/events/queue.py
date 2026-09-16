@@ -16,6 +16,8 @@ from typing import Any, Protocol, runtime_checkable
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.events.subscriber import Subscriber
+from sincpro_framework.observability.api import process
+from sincpro_framework.sincpro_logger import logger
 
 STOP = ("__stop__", {})
 
@@ -50,8 +52,13 @@ def _consume(inbox: Any, build_subscriber: Callable[[], Subscriber]) -> None:
         if (name, payload) == STOP:
             return
         event_type = subscriber.event_type(name)
-        if event_type is not None:
+        if event_type is None:
+            continue
+        try:
             subscriber.handle(event_type.model_validate(payload))
+        except Exception as error:  # noqa: BLE001 - one event failing must not end the worker
+            logger.error(f"event {name} failed in the background worker: {error!r}")
+            process.record_error(error, layer="events")
 
 
 class BackgroundQueue:
@@ -100,4 +107,7 @@ class BackgroundQueue:
             return
         self.inbox.put(STOP)
         self.process.join(timeout)
+        if self.process.is_alive():
+            self.process.terminate()
+            self.process.join(1)
         self.process = None

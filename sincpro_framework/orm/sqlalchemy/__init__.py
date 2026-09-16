@@ -3,7 +3,8 @@
     database.py             `Database`: one engine, one session factory, observed from birth
     repository.py           `Repository`: runs a `Criteria`, keeps what a use case built
     sql_translator.py       `Criteria` → `Select`; the grain registry per dialect
-    data_mapper.py          the Data Mapper: tables and the mapping call, `Entity` columns
+    data_mapper.py          the Data Mapper: tables, the mapping call, `Entity` columns, `Relation`
+    relation_resolver.py    the relations a specification names, once per node for a page
     model_introspection.py  `describe(cls) → Meta`: asks the mapper what a class looks like
     custom_fields.py        column types: `JsonText`, `TranslatedText`
     observability.py        every statement to the logger, the tracer and the error tracker
@@ -14,6 +15,7 @@ package is what a different backend would cost.
 
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText, TranslatedText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
+    Relation,
     entity_columns,
     entity_table,
     map_aggregates,
@@ -26,6 +28,7 @@ from sincpro_framework.orm.sqlalchemy.sql_translator import register_grain_trans
 __all__ = [
     "Database",
     "JsonText",
+    "Relation",
     "Repository",
     "TranslatedText",
     "describe",

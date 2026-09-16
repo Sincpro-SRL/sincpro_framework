@@ -173,3 +173,18 @@ def test_the_entries_of_one_month_page_by_fifty(ledger: Repository, census: Cens
 
 def test_get_answers_none_for_an_unknown_identity(ledger: Repository):
     assert ledger.get(Entry, "ent_nobody") is None
+
+
+def test_a_keyset_walk_ordered_by_an_amount_visits_every_line(
+    ledger: Repository, census: Census
+):
+    """`debit` is a Numeric column: the cursor has to carry a Decimal and give it back as one."""
+    criteria = Criteria(
+        where=POPULATION, order=parse_order("-debit"), pagination=Pagination(limit=PAGE)
+    )
+
+    visited = [line for page in ledger.stream(Lines, criteria) for line in page]
+
+    assert len(visited) == census.lines
+    amounts = [line.debit for line in visited]
+    assert amounts == sorted(amounts, reverse=True)

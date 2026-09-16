@@ -10,6 +10,17 @@ from decimal import Decimal
 
 import pytest
 
+from sincpro_framework.ddd.criteria import Fold
+from sincpro_framework.ddd.exceptions import InvalidCriteria as _InvalidCriteria
+
+
+def test_a_fold_only_takes_a_known_aggregate():
+    """The function name reaches SQL: anything outside the closed list is refused here."""
+    assert Fold(function="sum", field="row_count").function == "sum"
+    with pytest.raises(_InvalidCriteria, match="not a fold"):
+        Fold(function="pg_sleep", field="row_count")
+
+
 from sincpro_framework.ddd import Criteria, Cursor, Pagination
 from sincpro_framework.ddd.criteria import (
     All,

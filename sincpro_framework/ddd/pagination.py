@@ -6,7 +6,7 @@ fields, so an impossible page — a cursor AND an offset — cannot be written d
 `Cursor` is the one this engine is built for: a token names the last row seen instead of a
 position, so a row inserted mid-walk changes nothing. `Offset` is what everybody else does,
 kept because somebody eventually integrates against this and counts pages; it costs what it
-costs, and the cost grows with the offset. See `docs/design/persistence.md` §4.
+costs, and the cost grows with the offset. See `docs/persistence/reference.md`.
 
 **Nothing here knows SQL.** A cursor mints its token and reads it back; what «past that row»
 becomes in a `WHERE` is the adapter's business, and it asks `Pagination.keys_for` for the keys.
@@ -16,6 +16,7 @@ import base64
 import binascii
 import json
 from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
@@ -34,6 +35,7 @@ DEFAULT_LIMIT = 50
 
 _DATETIME_TAG = "__dt__"
 _DATE_TAG = "__d__"
+_DECIMAL_TAG = "__dec__"
 
 
 def _tagged(value: Any) -> Any:
@@ -49,6 +51,8 @@ def _tagged(value: Any) -> Any:
         return {_DATETIME_TAG: value.isoformat()}
     if isinstance(value, date):
         return {_DATE_TAG: value.isoformat()}
+    if isinstance(value, Decimal):
+        return {_DECIMAL_TAG: str(value)}
     return value
 
 
@@ -61,6 +65,8 @@ def _untagged(value: Any) -> Any:
         return datetime.fromisoformat(value[_DATETIME_TAG])
     if isinstance(value, dict) and _DATE_TAG in value:
         return date.fromisoformat(value[_DATE_TAG])
+    if isinstance(value, dict) and _DECIMAL_TAG in value:
+        return Decimal(value[_DECIMAL_TAG])
     return value
 
 

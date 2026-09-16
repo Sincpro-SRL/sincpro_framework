@@ -27,6 +27,7 @@ the standard library where it exists.
 """
 
 import os
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -39,10 +40,15 @@ if TYPE_CHECKING:
 RECORDED = "_recorded_events"
 
 
+_MINTING = threading.Lock()
+_last_millisecond = 0
+_counter = 0
+
+
 def uuid7() -> uuid.UUID:
     """A time-ordered UUID (RFC 9562 version 7).
 
-        layout  48 bits unix milliseconds · 4 bits version · 12 bits random
+        layout  48 bits unix milliseconds · 4 bits version · 12 bits counter within the ms
                 2 bits variant · 62 bits random
 
     >>> uuid7().version
@@ -54,8 +60,17 @@ def uuid7() -> uuid.UUID:
 
     milliseconds = time.time_ns() // 1_000_000
     entropy = int.from_bytes(os.urandom(10), "big")
-    rand_a = (entropy >> 62) & 0xFFF
     rand_b = entropy & ((1 << 62) - 1)
+    with _MINTING:
+        # RFC 9562 method 1: within one millisecond the 12 bits are a counter, so ids minted
+        # in order sort in order; a new millisecond starts the counter at a random point.
+        global _last_millisecond, _counter
+        if milliseconds == _last_millisecond and _counter < 0xFFF:
+            _counter += 1
+        else:
+            _last_millisecond = milliseconds
+            _counter = (entropy >> 62) & 0x7FF
+        rand_a = _counter
     value = (milliseconds << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
     return uuid.UUID(int=value)
 

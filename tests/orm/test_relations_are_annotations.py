@@ -87,14 +87,14 @@ def test_a_singular_annotation_reads_as_one():
     relations = describe(Book).relations
 
     assert set(relations) == {"shelf"}
-    assert relations["shelf"].target == "Shelf"
+    assert relations["shelf"].relation == "Shelf"
     assert relations["shelf"].many is False
 
 
 def test_a_list_annotation_reads_as_many():
     relations = describe(Shelf).relations
 
-    assert relations["books"].target == "Book"
+    assert relations["books"].relation == "Book"
     assert relations["books"].many is True
 
 
@@ -118,12 +118,14 @@ def test_an_attribute_is_a_relation_because_its_type_is_mapped():
     assert describe(Loose).relations == {}
 
 
-def test_a_relation_is_not_also_reported_as_a_field():
-    """`shelf_id` is the column and is filterable; `shelf` is the relation and is not."""
+def test_a_relation_is_a_field_of_its_own_type_beside_its_key():
+    """`shelf_id` is the column and is filterable; `shelf` is the relation, in the same map,
+    with a relational type and no operator of its own."""
     meta = describe(Book)
 
-    assert "shelf_id" in meta.fields
-    assert "shelf" not in meta.fields
+    assert meta.fields["shelf_id"].ops
+    assert meta.fields["shelf"].type.is_relational
+    assert meta.fields["shelf"].ops == () and not meta.fields["shelf"].sortable
 
 
 def test_a_class_that_is_not_mapped_cannot_be_described():

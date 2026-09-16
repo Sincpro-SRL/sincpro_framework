@@ -97,6 +97,25 @@ def failing_bus(name: str = "failing") -> UseFramework:
     return bus
 
 
+class FragileSubscriber:
+    """A worker whose second bus raises on every event: the first one must still report every
+    event, so the worker is proven to survive a failing subscriber."""
+
+    def __init__(self, answers: "multiprocessing.Queue") -> None:
+        self.answers = answers
+
+    def __call__(self) -> Subscriber:
+        answers = self.answers
+        reporting = UseFramework("worker-reporting", log_after_execution=False)
+
+        @reporting.feature(TicketClosed)
+        class Report(Feature):
+            def execute(self, dto: TicketClosed) -> None:
+                answers.put(dto.reason)
+
+        return Subscriber(reporting, failing_bus("worker-failing"))
+
+
 class ReportingSubscriber:
     """A picklable `build_subscriber` for a `BackgroundQueue`: it carries the answers queue into
     the worker and builds there two buses — a Feature on one, an ApplicationService on the

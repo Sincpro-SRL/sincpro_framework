@@ -16,6 +16,7 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Operator,
     Sort,
+    Specification,
 )
 from sincpro_framework.ddd.entity import Entity, Translated, new_entity_id, utc_now
 from sincpro_framework.ddd.entity_collection import Count, Dropped, EntityCollection
@@ -26,16 +27,19 @@ from sincpro_framework.ddd.exceptions import (
     DomainError,
     DuplicateAggregate,
     InvalidCriteria,
+    RelationNotResolved,
     StaleAggregate,
 )
-from sincpro_framework.ddd.model_meta import FieldMeta, FieldType, Meta, RelationMeta
+from sincpro_framework.ddd.model_meta import FieldMeta, FieldType, Meta
 from sincpro_framework.ddd.pagination import Cursor, Offset, Pagination
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
+from sincpro_framework.ddd.relations import BusResolver, Relation, Resolver
 from sincpro_framework.ddd.repository import Repository
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
     "Bucket",
+    "BusResolver",
     "EntityCollection",
     "Condition",
     "Count",
@@ -56,10 +60,13 @@ __all__ = [
     "ContractViolation",
     "Pagination",
     "Query",
-    "RelationMeta",
+    "Relation",
     "Repository",
+    "Resolver",
     "ResponsePaginatedQuery",
     "Sort",
+    "Specification",
+    "RelationNotResolved",
     "StaleAggregate",
     "Translated",
     "ValueObject",

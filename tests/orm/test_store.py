@@ -266,3 +266,14 @@ def test_counting_rows_mints_no_token_to_continue(store):
 def test_the_concrete_repository_honours_the_protocol(store):
     """The use case takes the concrete instance; the protocol holds it to the minimum."""
     assert isinstance(store, RepositoryProtocol)
+
+
+def test_the_last_page_under_an_offset_still_counts_everything(store):
+    """Fewer rows than the limit came back because the offset reached the end, not because
+    the whole set was that small; the count is the set's, not the page's."""
+    last = store.search(
+        Things, Criteria(pagination=Pagination(limit=3, strategy=Offset(rows=ROW_COUNT - 1)))
+    )
+
+    assert len(last) == 1
+    assert last.count is not None and last.count.value == ROW_COUNT and last.count.exact

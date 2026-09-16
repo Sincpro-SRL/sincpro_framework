@@ -86,14 +86,14 @@ def ledger_bus(
         publisher: Publisher
 
         def execute(self, dto: CommandPostEntry) -> ResponsePostEntry:
-            """1. In one unit of work: load the entry and its lines, post, save both.
-            2. Pull what it recorded; the unit of work is committed by then.
+            """1. In one unit of work: load the entry, post it; its lines resolve on first
+               touch, whole, through the relation declared beside the tables.
+            2. Save entry and lines; pull what it recorded once the unit of work committed.
             3. Final: publish each event, stamped with the command's correlation."""
             with self.repository.context() as ledger:
                 entry = ledger.get(Entry, dto.entry_id)
                 if entry is None:
                     raise ContractViolation(f"no entry {dto.entry_id}")
-                entry.lines = list(lines_of(ledger, entry.id))
                 entry.post()
                 ledger.save(entry)
                 for line in entry.lines:

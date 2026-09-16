@@ -9,8 +9,9 @@ which may be NULL, which annotation points at another mapped class.
 Cached, because mappings are applied once at boot and a table grows no column at runtime.
 """
 
+from dataclasses import is_dataclass
 from functools import cache
-from typing import Any, TypeGuard, cast, get_args, get_origin, get_type_hints
+from typing import Any, TypeGuard, cast
 
 from sqlalchemy import inspect
 from sqlalchemy.exc import NoInspectionAvailable
@@ -19,48 +20,59 @@ from sincpro_framework.ddd.entity import Translated
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.model_meta import (
     FieldMeta,
+    FieldType,
     Meta,
-    RelationMeta,
+    annotations_of,
     enum_of,
     logical_type,
+    related_class,
     without_optional,
 )
+from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
 
 
-def _relation(annotation: Any) -> RelationMeta | None:
-    """A relation, if this annotation points at another mapped class.
+def _is_shape(candidate: Any) -> bool:
+    """A dataclass or a pydantic model that is not mapped: a value object with a shape."""
+    if not isinstance(candidate, type) or is_mapped(candidate):
+        return False
+    return is_dataclass(candidate) or hasattr(candidate, "model_fields")
 
-        in  list[Run]    →  out  RelationMeta(target='Run', many=True)
-        in  Shelf | None →  out  RelationMeta(target='Shelf', many=False)
-        in  str          →  out  None                          not a mapped class
 
-    The annotation is the whole declaration: nobody writes a cardinality.
+def describe_shape(value_object: type) -> Meta:
+    """The definition of a value object, read off its annotations alone: no table behind it.
+
+    in      Shape(width: int, height: int, unit: str = "cm")
+    out     Meta(aggregate='Shape', identity='width', fields={width, height, unit})
     """
-    base = without_optional(annotation)
-    many = get_origin(base) is list
-    if many:
-        members = get_args(base)
-        base = members[0] if members else None
+    annotations = annotations_of(value_object)
+    translator = getattr(value_object, "translations", None)
+    words: Translated = (
+        cast(Translated, translator())
+        if callable(translator)
+        else {"name": {"default": value_object.__name__}, "labels": {}}
+    )
+    fields = {
+        name: FieldMeta.for_column(
+            logical_type(annotation),
+            annotation != without_optional(annotation),
+            _members_of(annotation),
+        )
+        for name, annotation in annotations.items()
+    }
+    # A value object has no identity: nothing survives a mask on its own account.
+    return Meta(
+        aggregate=value_object.__name__,
+        identity="",
+        default_order="",
+        fields=fields,
+        translations=words,
+    )
 
-    if not is_mapped(base):
-        return None
-    return RelationMeta(target=base.__name__, many=many)
 
-
-def _annotations_of(entity: type) -> dict[str, Any]:
-    """The class's annotations with forward references resolved.
-
-        in  Dataset  →  out  {'dataset_id': str, 'row_count': int, …}
-
-    A reference that does not resolve fails here, when the aggregate is described at boot,
-    rather than on the first request that asks for it.
-    """
-    try:
-        return get_type_hints(entity)
-    except NameError as error:
-        raise ContractViolation(
-            f"{entity.__name__} names a type that cannot be resolved at runtime: {error}"
-        ) from error
+def _relational_type(kind: str, many: bool) -> FieldType:
+    if kind == "many_to_many":
+        return FieldType.MANY2MANY
+    return FieldType.ONE2MANY if many else FieldType.MANY2ONE
 
 
 def _members_of(annotation: Any) -> list[Any]:
@@ -99,7 +111,11 @@ def describe(entity: type) -> Meta:
     1. Inspect the mapper; refuse a class with no table, since it has no fields to ask about.
     2. Read the annotations for logical types, the columns for nullability, and carry the
        class's `translations()` as it answered it.
-    3. Final: any remaining annotation pointing at a mapped class is a relation.
+    3. A column whose annotation is a value object, a dataclass or a pydantic model with no
+       table, is an embedded field carrying that shape as its definition.
+    4. Final: any other annotation pointing at a mapped class, or any relation the data mapper
+       declared or inferred, is a relational field: `many2one`, `one2many` or `many2many`,
+       with the aggregate on the other side and what identifies the relation.
 
     >>> describe(Dataset).identity
     'dataset_id'
@@ -113,7 +129,7 @@ def describe(entity: type) -> Meta:
             f"{entity.__name__} is not a mapped aggregate; there is nothing to query"
         ) from error
 
-    annotations = _annotations_of(entity)
+    annotations = annotations_of(entity)
     identity = mapper.primary_key[0].name
     translator = getattr(entity, "translations", None)
     words: Translated = (
@@ -122,26 +138,39 @@ def describe(entity: type) -> Meta:
         else {"name": {"default": entity.__name__}, "labels": {}}
     )
 
-    fields = {
-        column.key: FieldMeta.for_column(
-            logical_type(annotations.get(column.key, Any)),
-            bool(column.nullable),
-            _members_of(annotations.get(column.key, Any)),
-        )
-        for column in mapper.columns
-    }
+    fields: dict[str, FieldMeta] = {}
+    for column in mapper.columns:
+        annotation = annotations.get(column.key, Any)
+        shape, many = related_class(annotation)
+        if shape is not None and _is_shape(shape):
+            fields[column.key] = FieldMeta.for_embedded(
+                describe_shape(shape), many, bool(column.nullable)
+            )
+        else:
+            fields[column.key] = FieldMeta.for_column(
+                logical_type(annotation), bool(column.nullable), _members_of(annotation)
+            )
 
-    relations = {
-        name: relation
-        for name, annotation in annotations.items()
-        if name not in fields and (relation := _relation(annotation)) is not None
-    }
+    declared = relations_of(entity)
+    for name, annotation in annotations.items():
+        if name in fields:
+            continue
+        related, many = related_class(annotation)
+        relation = declared.get(name)
+        if relation is None and (related is None or not is_mapped(related)):
+            continue
+        related_name = relation.related.__name__ if relation is not None else related.__name__  # type: ignore[union-attr]
+        logical = _relational_type(relation.kind if relation else "", many)
+        identified_by = relation.identified_by if relation is not None else None
+        nullable = logical is FieldType.MANY2ONE
+        if nullable and identified_by is not None and identified_by in mapper.columns:
+            nullable = bool(mapper.columns[identified_by].nullable)
+        fields[name] = FieldMeta.for_relation(logical, related_name, identified_by, nullable)
 
     return Meta(
         aggregate=entity.__name__,
         identity=identity,
         default_order=f"-{identity}",
         fields=fields,
-        relations=relations,
         translations=words,
     )

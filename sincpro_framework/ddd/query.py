@@ -13,13 +13,47 @@ Without these two, every listing writes the same five fields again and the sixth
 them slightly differently.
 """
 
-from typing import Any
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import cache
+from typing import Any, Literal
 
-from sincpro_framework.ddd.criteria import Criteria
-from sincpro_framework.ddd.entity_collection import Count, Dropped, EntityCollection
+from pydantic import PrivateAttr, SerializationInfo, TypeAdapter, model_serializer
+
+from sincpro_framework.ddd.criteria import Criteria, Specification
+from sincpro_framework.ddd.entity_collection import (
+    Count,
+    Dropped,
+    EntityCollection,
+    identity_name,
+)
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.model_meta import Meta
+from sincpro_framework.ddd.model_meta import FieldType, Meta
 from sincpro_framework.sincpro_abstractions import DataTransferObject
+
+_SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
+
+
+def serialising() -> bool:
+    """Whether a paged answer is being written out right now. A relation attribute read
+    during that answers its default instead of resolving or refusing: the answer writes the
+    relations it resolved itself, from what the specification named."""
+    return _SERIALISING.get()
+
+
+@contextmanager
+def _writing_out() -> Iterator[None]:
+    token = _SERIALISING.set(True)
+    try:
+        yield
+    finally:
+        _SERIALISING.reset(token)
+
+
+@cache
+def _adapter(aggregate: type) -> TypeAdapter:
+    return TypeAdapter(aggregate)
 
 
 class Query(DataTransferObject):
@@ -65,6 +99,37 @@ class ResponsePaginatedQuery(DataTransferObject):
     take. Reported rather than raised: a shared link outlives the schema it was written
     against, and a dropped filter always widens the result."""
 
+    _specification: Specification | None = PrivateAttr(default=None)
+    _meta: Meta | None = PrivateAttr(default=None)
+
+    @model_serializer(mode="plain")
+    def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
+        """On the wire, a record shows what the specification named plus its identity, and each
+        named relation under its own name: a to-one as an object or `null`, a to-many as
+        `{"items", "count", "cursor"}`. Without a specification, every scalar and no relation.
+
+        The mask is applied here and nowhere earlier: inside the process the records stay the
+        typed aggregates they are, so a Feature reading the page still has every field.
+        """
+        mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
+        records = self.records_field()
+        with _writing_out():
+            written = {
+                records: [
+                    _record(item, self._specification, self._meta, mode)
+                    for item in getattr(self, records)
+                ],
+                "cursor": self.cursor,
+                "count": self.count.model_dump(mode=mode) if self.count else None,
+                "model_meta_data": (
+                    self.model_meta_data.model_dump(mode=mode)
+                    if self.model_meta_data
+                    else None
+                ),
+                "dropped": [one.model_dump(mode=mode) for one in self.dropped],
+            }
+        return written
+
     @classmethod
     def records_field(cls) -> str:
         """The one field the subclass added: where its records go.
@@ -97,15 +162,97 @@ class ResponsePaginatedQuery(DataTransferObject):
 
         The page already carries the definition of the model it came from — the engine read it
         to answer — so a use case never has to know that describing a model is a thing that
-        exists. The criteria only says whether the definition was asked for.
+        exists. The criteria says whether the definition was asked for, and its specification
+        is the one mask over the records and the definition alike.
 
         >>> ResponseListDatasets.of(page, criteria).datasets[0].name
         'labs.csv'
         """
-        return cls(
+        response = cls(
             **{cls.records_field(): list(page.items)},
             cursor=page.cursor,
             count=page.count,
-            model_meta_data=page.meta if criteria.meta else None,
+            model_meta_data=(
+                page.meta.only(criteria.specification)
+                if criteria.meta and page.meta is not None
+                else None
+            ),
             dropped=list(page.dropped),
         )
+        response._specification = criteria.specification
+        response._meta = page.meta
+        return response
+
+
+def _shaped(value: Any, specification: Specification, definition: Meta) -> Any:
+    """An embedded value, already written out, cut to what its node named plus its identity;
+    a list of them, each one cut the same way."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [_shaped(one, specification, definition) for one in value]
+    keep = set(specification.named)  # a value object has no identity to keep
+    shaped: dict[str, Any] = {}
+    for name, inner in value.items():
+        if name not in keep:
+            continue
+        node = specification.root.get(name)
+        field = definition.fields.get(name)
+        if (
+            node is not None
+            and node.specification is not None
+            and field is not None
+            and field.definition is not None
+        ):
+            inner = _shaped(inner, node.specification, field.definition)
+        shaped[name] = inner
+    return shaped
+
+
+def _record(
+    record: Any,
+    specification: Specification | None,
+    meta: Meta | None,
+    mode: Literal["json", "python"],
+) -> dict[str, Any]:
+    """One record as the answer shows it: the scalars the mask keeps, then the named relations."""
+    written = _adapter(type(record)).dump_python(record, mode=mode)
+    relations = set(meta.relations) if meta is not None else set()
+    for name in relations:
+        written.pop(name, None)
+    if specification is None:
+        return written
+
+    identity = meta.identity if meta is not None else identity_name(type(record))
+    keep = {identity, *specification.named}
+    written = {name: value for name, value in written.items() if name in keep}
+    for name, node in specification.root.items():
+        if meta is None or name not in meta.fields:
+            continue
+        field = meta.fields[name]
+        if field.type is FieldType.EMBEDDED:
+            if node.specification is not None and field.definition is not None:
+                written[name] = _shaped(
+                    written.get(name), node.specification, field.definition
+                )
+            continue
+        if name not in relations:
+            continue
+        related = field
+        value = record.__dict__.get("_sincpro_resolved", {}).get(name)
+        if related.many:
+            page = value if isinstance(value, EntityCollection) else EntityCollection()
+            written[name] = {
+                "items": [
+                    _record(c, node.specification, related.definition, mode) for c in page
+                ],
+                "count": page.count.model_dump(mode=mode) if page.count else None,
+                "cursor": page.cursor,
+            }
+        else:
+            written[name] = (
+                None
+                if value is None
+                else _record(value, node.specification, related.definition, mode)
+            )
+    return written

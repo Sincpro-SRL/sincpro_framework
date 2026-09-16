@@ -9,7 +9,7 @@ without the extra says which one to install rather than failing on a missing `sq
 One backend today, SQLAlchemy, under `sincpro_framework.orm.sqlalchemy`. There is no
 `Protocol` in front of it on purpose: an interface with one implementation is a promise nobody
 tests, and the second backend is what would earn it. What a project still owns — which database
-each bounded context talks to, and its migrations — is in `docs/design/persistence.md`.
+each bounded context talks to, and its migrations — is in `docs/persistence/reference.md`.
 """
 
 SQLALCHEMY_MISSING = (
@@ -26,6 +26,7 @@ except (
 from sincpro_framework.orm.sqlalchemy import (
     Database,
     JsonText,
+    Relation,
     Repository,
     TranslatedText,
     describe,
@@ -39,6 +40,7 @@ __all__ = [
     "SQLALCHEMY_MISSING",
     "Database",
     "JsonText",
+    "Relation",
     "Repository",
     "TranslatedText",
     "describe",

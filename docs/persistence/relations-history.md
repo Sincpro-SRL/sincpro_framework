@@ -1,9 +1,11 @@
 # Relations: a proposal, not yet built
 
-Status: **design for review.** Nothing below exists in the code. `Meta.relations` is derived from
-the annotations today and nothing resolves it; `Criteria` has no `resolve`. This page is what the
-persistence layer would grow to answer «bring the related records too», and it is written before
-the code so the shape can be argued about without a refactor.
+> **Built.** Relations are asked for through `Criteria.specification` and resolved by
+> `Relation` declarations in the data mapper; see `specification.md` for what exists. This page
+> stays as the reasoning behind it, in particular the rule in §4. Names below (`resolve`,
+> `included`, `Resolver`) are the proposal's, not the code's.
+
+Status: **built**, through `Criteria.specification` and the `Relation` declarations in the data mapper. What follows is the reasoning that led there, kept as written.
 
 ---
 

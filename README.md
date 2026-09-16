@@ -262,19 +262,34 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 
 ### Persistence — `sincpro_framework.ddd` and `sincpro_framework.orm`
 
-One way to ask a database in every Sincpro service: a `Criteria` goes in, a `EntityCollection` comes back
-with its cursor, a typed count and the model's own definition; an aggregate goes to `save` and a
-stale write is refused. The vocabulary needs nothing installed; the SQLAlchemy engine is the
-`[sqlalchemy]` extra. See [docs/design/persistence.md](docs/design/persistence.md).
+One way to ask a database in every Sincpro service: a `Criteria` goes in, an `EntityCollection`
+comes back with its cursor, a typed count and the model's own definition; an aggregate goes to
+`save` and a stale write is refused. The vocabulary needs nothing installed; the SQLAlchemy
+adapter is the `[sqlalchemy]` extra. See [docs/persistence/](docs/persistence/README.md)
+for what it does and [docs/persistence/decisions.md](docs/persistence/decisions.md) for why.
 
 ```python
 from sincpro_framework.ddd import Criteria, Entity
 from sincpro_framework.orm import Database, Repository
 
-orm = Repository(Database("sqlite:///catalog.sqlite3"))
-page = self.repository.search(Dataset, Criteria.model_validate({"where": {"field": "row_count", "operator": ">", "value": 1000}}))
-page.count, page.cursor, page.dropped, page.meta
+repository = Repository(Database("sqlite:///catalog.sqlite3"))   # injected as `self.repository`
+page = repository.search(Dataset, Criteria.model_validate(
+    {"where": {"field": "row_count", "operator": ">", "value": 1000},
+     "specification": {"name": {}, "runs": {"pagination": {"limit": 5}}}}
+))
+page.items, page.count, page.cursor, page.dropped, page.meta
 ```
+
+`specification` says what to bring back of each record: which scalars, and which relations with
+their own filter, order and page, at any depth. Relations are read off the annotations and the
+foreign keys; a table in between, another bounded context's bus or any function are declared once
+beside the tables. Every relation resolves once per page, never per row. See
+[docs/persistence/specification.md](docs/persistence/specification.md).
+
+Domain events are recorded by the aggregate and published by a Feature through
+`sincpro_framework.events`: a `Publisher` over a `SyncQueue` or a `BackgroundQueue`, with buses
+as subscribers. Nothing is stored and nothing is wired by default. See
+[docs/events/](docs/events/README.md).
 
 ### `entrypoint_mcp`
 
@@ -906,9 +921,9 @@ The scope of the wiki is controlled in
 [`openwiki/INSTRUCTIONS.md`](openwiki/INSTRUCTIONS.md), and what the agent is
 not allowed to read, in [`.openwikiignore`](.openwikiignore).
 
-Hand-written architecture decisions stay in
-[`docs/architecture/`](docs/architecture/) and remain authoritative: the wiki
-references them, it does not replace them.
+Hand-written documentation stays in [`docs/`](docs/README.md), organised by layer
+(core, persistence, events, entrypoints, observability), and remains authoritative:
+the wiki references it, it does not replace it.
 
 > **Migration note (4.0.0)** — up to 3.x the framework shipped its own
 > documentation generator (`sincpro_framework.generate_documentation`, with
@@ -1283,7 +1298,7 @@ The `Makefile` is the single entry point — CI calls the same targets you run l
 
 ```bash
 make test                 # unit suites + coverage report in the terminal + coverage.xml
-make test-realworld       # the ledger cases over a populated database (docs/design/real-world-suite.md)
+make test-realworld       # the ledger cases over a populated database (docs/persistence/testing.md)
 make test-stress          # the same at 25 000 entries, timed; SINCPRO_REALWORLD_ENTRIES and DATABASE_URL apply
 make test-coverage        # the above + HTML report in htmlcov/
 make test-coverage-open   # the above + opens htmlcov/index.html in the browser

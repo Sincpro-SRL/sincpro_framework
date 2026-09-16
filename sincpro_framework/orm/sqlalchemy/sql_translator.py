@@ -1,7 +1,7 @@
 """Translates a filter and an ordering into SQLAlchemy constructs.
 
 Nothing here plans a query or builds a join — SQLAlchemy does that. Rewriting this one file is
-what a different backend would cost. See `docs/design/persistence.md` §1–2.
+what a different backend would cost. See `docs/persistence/reference.md`.
 """
 
 from collections.abc import Callable
@@ -249,7 +249,9 @@ GRAINS: tuple[str, ...] = ("day", "month", "week", "year")
 # produced it.
 GrainTranslator = Callable[[Any, str], ColumnElement[Any]]
 
-_SQLITE_FORMATS = {"year": "%Y", "month": "%Y-%m", "day": "%Y-%m-%d", "week": "%Y-W%W"}
+# ISO weeks on both dialects, so a bucket reads the same text whatever the engine: `%G` and
+# `%V` need SQLite 3.44 or later, which every supported Python ships.
+_SQLITE_FORMATS = {"year": "%Y", "month": "%Y-%m", "day": "%Y-%m-%d", "week": "%G-W%V"}
 _POSTGRESQL_FORMATS = {
     "year": "YYYY",
     "month": "YYYY-MM",
@@ -339,8 +341,9 @@ def bucket_range(grain: str, value: str) -> tuple[datetime, datetime]:
         start = datetime(year, month, 1)
         return start, datetime(year + (1 if month == 12 else 0), (month % 12) + 1, 1)
     if grain == "week":
-        # `%W` counts weeks starting on Monday, and `-1` asks for exactly that Monday.
-        start = datetime.strptime(f"{value}-1", "%Y-W%W-%w")
+        # ISO: "2026-W01" is the week holding the year's first Thursday, Monday to Sunday.
+        year, week = (int(part) for part in value.split("-W"))
+        start = datetime.fromisocalendar(year, week, 1)
         return start, start + timedelta(days=7)
     if grain == "day":
         start = datetime.fromisoformat(value)

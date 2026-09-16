@@ -39,3 +39,12 @@ class DuplicateAggregate(DomainError):
     Reported as the vocabulary's own word so a use case can resolve the race it was written
     for, without importing the driver's exception to do it.
     """
+
+
+class RelationNotResolved(ContractViolation):
+    """A relation was read that nobody asked for, outside a unit of work.
+
+    Inside `context()` a relation resolves on first touch. Outside, the record is detached and
+    a loop over two hundred rows would be two hundred queries hidden in an attribute access;
+    name the relation in the criteria's specification instead.
+    """

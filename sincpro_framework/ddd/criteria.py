@@ -1,20 +1,21 @@
 """What a caller sends: the filter, the ordering, the page.
 
 One object and everything that goes inside it. A filter *is* a criteria — what the interface
-calls a saved reading merges into this. See `docs/design/persistence.md` §3.
+calls a saved reading merges into this. See `docs/persistence/reference.md` and `specification.md`.
 
 The filter language is deliberately small: conditions over one aggregate's own fields, combined
 with and/or/not. No joins, no subqueries, no computed expressions — what this cannot say is
-reached through the search engine's escape hatch.
+reached through the repository's escape hatch.
 """
 
 import json
+from collections.abc import Iterator
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Union, cast
 
-from pydantic import Field, JsonValue, field_validator
+from pydantic import Field, JsonValue, RootModel, field_validator
 
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.pagination import Cursor, Pagination
@@ -208,6 +209,11 @@ def parse_order(raw: str) -> tuple[Sort, ...]:
     )
 
 
+FOLD_FUNCTIONS: tuple[str, ...] = ("sum", "avg", "min", "max", "count")
+"""The aggregates a fold may ask for. A closed list, because the name reaches SQL: anything
+outside it is refused before a statement exists."""
+
+
 class Fold(DataTransferObject):
     """One number folded out of a bucket's rows.
 
@@ -220,6 +226,15 @@ class Fold(DataTransferObject):
 
     function: str
     field: str
+
+    @field_validator("function")
+    @classmethod
+    def _one_of_the_known_aggregates(cls, function: str) -> str:
+        if function not in FOLD_FUNCTIONS:
+            raise InvalidCriteria(
+                f"'{function}' is not a fold; use one of {', '.join(FOLD_FUNCTIONS)}"
+            )
+        return function
 
     @classmethod
     def read(cls, written: Any) -> "Fold":
@@ -314,6 +329,66 @@ class Bucket(DataTransferObject):
     difference is answered by opening the bucket."""
 
 
+class Specification(RootModel[dict[str, "Criteria"]]):
+    """Field name → the criteria that says how to bring it.
+
+        in      {"name": {}, "lines": {"pagination": {"limit": 20}}}
+        out     Specification with two fields, the second carrying its own page
+
+    **One type and no union**: every value is a `Criteria`, the same one as outside, so a
+    consumer deserialises `dict[str, Criteria]` in any language and never has to tell a string
+    from an object. A scalar's is empty, because there is nothing to say about how to bring a
+    number. A relation's carries where, order, pagination and its own specification, so the
+    vocabulary inside a node is the vocabulary outside it, at any depth.
+
+    A `RootModel` and not an object with one field inside: in JSON it is the bare mapping,
+    without a key that means nothing, and in here it has the methods that belong to it.
+    """
+
+    root: dict[str, "Criteria"] = {}
+
+    def __iter__(self) -> Iterator[str]:  # type: ignore[override]
+        return iter(self.root)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self.root
+
+    def __len__(self) -> int:
+        return len(self.root)
+
+    def __getitem__(self, name: str) -> "Criteria":
+        return self.root[name]
+
+    @property
+    def named(self) -> list[str]:
+        """The fields asked for, in the order they were asked.
+
+        >>> Specification({"name": Criteria()}).named
+        ['name']
+        """
+        return list(self.root)
+
+    def narrowed_by(self, other: "Specification | None") -> "Specification":
+        """This mask seen through another. **Intersection, never union.**
+
+            in      {id, name, total} ∩ {id, name}      →  out  {id, name}
+            in      {name} ∩ {total}                    →  out  {}   the identity alone
+
+        A filter accumulates with AND because both restrictions hold; a mask intersects because
+        a mask can only take away. That is what makes it safe as a permission: cutting twice can
+        never show more than cutting once.
+        """
+        if other is None:
+            return self
+        return Specification(
+            {
+                name: criteria.merged_with(other[name])
+                for name, criteria in self.root.items()
+                if name in other
+            }
+        )
+
+
 class Criteria(DataTransferObject):
     where: Expression | None = None
     """The filter: a `Condition`, or an `All`/`Any_`/`Not` grouping more of them.
@@ -327,6 +402,16 @@ class Criteria(DataTransferObject):
 
     pagination: Pagination = Field(default_factory=lambda: Pagination())
     """How many, and from where. Always the object: `{"limit": 80, "strategy": {"token": "eyJ…"}}`."""
+
+    specification: Specification | None = None
+    """What to bring back of each record: field name → how to bring it, the value being a
+    criteria exactly like this one. `None` and `{}` are NOT the same thing:
+
+        None    nothing was asked          →  every scalar, no relation expanded
+        {}      asked, nothing survived    →  the identity alone
+
+    Read as one, a mask whose every field was dropped hands back the whole record, which is
+    exactly what it existed to prevent."""
 
     grouping: Grouping = Field(default_factory=lambda: Grouping())
     """How to split the result set, when it is being counted rather than listed. Ignored by a
@@ -356,7 +441,7 @@ class Criteria(DataTransferObject):
             out     Condition(row_count, 1000, GT)
 
         >>> Criteria(where={'field': 'row_count', 'operator': '>', 'value': 1000}).expression
-        Condition(field='row_count', value=1000, operator=<Operator.GT: 'gt'>)
+        Condition(field='row_count', value=1000, operator=<Operator.GT: '>'>)
         """
         if isinstance(value, str):
             try:
@@ -430,7 +515,7 @@ class Criteria(DataTransferObject):
         """The filter. The name internals read it by, because `where` is what a caller writes.
 
         >>> Criteria(where={'field': 'row_count', 'operator': '>', 'value': 1000}).expression
-        Condition(field='row_count', value=1000, operator=<Operator.GT: 'gt'>)
+        Condition(field='row_count', value=1000, operator=<Operator.GT: '>'>)
         >>> Criteria().expression is None
         True
         """
@@ -446,7 +531,8 @@ class Criteria(DataTransferObject):
 
 
         Conditions accumulate, because both filters apply. Scalars are replaced, because
-        "twenty per page" and "fifty per page" have no combination. Sets union.
+        "twenty per page" and "fifty per page" have no combination. Sets union. The
+        specification intersects, because a mask can only take away.
 
         The cursor is replaced and never carried over: it belongs to one ordering over one
         filter, and a merge that changed either would page through a set that no longer exists.
@@ -461,6 +547,11 @@ class Criteria(DataTransferObject):
                     update={"strategy": other.pagination.strategy}
                 )
             ),
+            specification=(
+                other.specification
+                if self.specification is None
+                else self.specification.narrowed_by(other.specification)
+            ),
             grouping=other.grouping if other.grouping.asked else self.grouping,
             count=other.count,
             # AND, not OR: with the definition travelling by default, an OR would mean nobody
@@ -468,3 +559,6 @@ class Criteria(DataTransferObject):
             # the default of the one it refines.
             meta=self.meta and other.meta,
         )
+
+
+Specification.model_rebuild()

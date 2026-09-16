@@ -2,7 +2,7 @@
 
 The collection *is* the page: it carries its records plus the cursor and the count. Two rules
 make that safe — a derived collection carries no metadata, and a partial one refuses to fold
-itself. See `docs/design/persistence.md` §4.
+itself. See `docs/persistence/reference.md`.
 """
 
 from collections.abc import Callable, Hashable, Iterable, Iterator
@@ -41,6 +41,21 @@ class Dropped(DataTransferObject):
 
     field: str
     reason: str
+
+
+def identity_name(aggregate: type) -> str:
+    """The name of the identity field: the first one declared, the convention `identity_of`
+    reads by, for a dataclass or a pydantic model alike.
+
+    >>> identity_name(Dataset)
+    'dataset_id'
+    """
+    if is_dataclass(aggregate):
+        return fields(aggregate)[0].name
+    model_fields = getattr(aggregate, "model_fields", None)
+    if model_fields:
+        return next(iter(model_fields))
+    raise TypeError(f"{aggregate.__name__} declares no identity")
 
 
 def identity_of(record: Any) -> Any:

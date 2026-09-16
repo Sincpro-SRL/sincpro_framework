@@ -51,7 +51,6 @@ def test_a_subclass_declares_its_own_fields_positionally():
 
 def test_the_identity_is_still_the_first_field():
     assert fields(Invoice)[0].name == "id"
-    assert identity_of(Invoice("F-002")) == Invoice("F-002").id or True
     invoice = Invoice("F-003")
     assert identity_of(invoice) == invoice.id
 
@@ -72,7 +71,7 @@ def test_ids_minted_in_order_sort_in_order():
     """The property the default ordering leans on: newest first is highest id first."""
     minted = [new_entity_id() for _ in range(50)]
 
-    assert minted == sorted(minted) or len(set(minted[:8])) == 8
+    assert minted == sorted(minted)  # uuid7: minted in order is sorted in order
     assert len(set(minted)) == 50
 
 

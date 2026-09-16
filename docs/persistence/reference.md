@@ -22,7 +22,7 @@ catalogue before it moved here.
 | `Query` / `ResponsePaginatedQuery` | The two shapes every read inherits | Command and Response bases |
 | `matches(record, expression)` | The filter language evaluated in memory | Tests without a database; `EntityCollection.filtered_by` |
 | `Translated`, `translations()` | The words a screen shows: `{"name": …, "labels": {field: …}, "help": {field: …}}`, every text `{"default": …, …}` | One class method; `Meta.translations` carries it as answered |
-| `DomainEvent`, `Entity.record` / `pull_events` | What happened, said by the aggregate and kept in memory until the Feature pulls it | See [events.md](events.md) |
+| `DomainEvent`, `Entity.record` / `pull_events` | What happened, said by the aggregate and kept in memory until the Feature pulls it | See [events.md](../events/README.md) |
 
 Three rules, each preventing a failure that was observed in real code:
 
@@ -98,7 +98,8 @@ One module per responsibility under `sincpro_framework/orm/sqlalchemy/`, each na
 | `database.py` | `Database`: one engine, one session factory, observed from birth |
 | `repository.py` | `Repository`: runs a `Criteria`, keeps what a use case built |
 | `sql_translator.py` | `Criteria` → `Select`; the grain registry per dialect |
-| `data_mapper.py` | the Data Mapper: tables and the mapping call, with the `Entity` columns; the aggregate never learns its table |
+| `data_mapper.py` | the Data Mapper: tables, the mapping call, the `Entity` columns and `Relation`; the aggregate never learns its table |
+| `relation_resolver.py` | the database kinds of relation a specification names, once per node for a whole page; the vocabulary and the resolver kinds are `ddd/relations.py`; see `specification.md` |
 | `model_introspection.py` | `describe(cls) → Meta`: asks the mapper what a class looks like |
 | `custom_fields.py` | column types: `JsonText`, `TranslatedText` |
 | `observability.py` | every statement to the logger, the tracer and the error tracker |
@@ -182,7 +183,7 @@ map_aggregates(registry, {Dataset: dataset_table},
   escape hatch. `for_update` and `skip_locked` are real here and ignored on SQLite.
 - **Anything else.** `register_grain_translator("mysql", …)` teaches the grain; the rest is
   SQLAlchemy's own portability. The suite runs against SQLite, which needs nothing installed;
-  compile-level tests cover the Postgres translation. Run the suite against your engine before
+  compile-level tests cover the Postgres date grains. Run the suite against your engine before
   relying on it in production.
 
 ### Observability
@@ -202,7 +203,9 @@ SQLAlchemy binds values separately, and that is the only shape allowed.
 
 ---
 
-The end-to-end proof of all of the above is `docs/design/real-world-suite.md`.
+Why each piece is the way it is, decision by decision, is `docs/persistence/decisions.md`.
+What a read brings back of each record, at any depth, is `docs/persistence/specification.md`.
+The end-to-end proof of all of the above is `docs/persistence/testing.md`.
 
 ## 3. What every project owns
 
@@ -229,16 +232,13 @@ alter a column, and an `include_object` that never drops a table Alembic did not
 
 ## 4. Deliberately not provided
 
+What a read brings back, masks, embedded shapes and relations of every kind, is provided: see
+`specification.md`.
+
 Each of these has a concrete reason to wait, and none changes the vocabulary above.
 
-- **A relation resolver.** `Meta.relations` is derived from the annotations (`list[Run]` is many,
-  `Run | None` is one), but nothing loads them: no `selectinload`, no cross-context batch, no
-  `RelationNotResolved`. It lands with the first aggregate that needs a second one mapped.
-- **Field selection in `Criteria`.** A field mask was prototyped and removed: the definition
-  shrank while the payload did not, and a half-applied mask is worse than none. It comes back
-  together with the resolver, which is what it was for.
 - **A message broker, and any event storage.** Events have two in-process buses
-  ([events.md](events.md)); a broker is the third implementation of the same API. The framework
+  ([events.md](../events/README.md)); a broker is the third implementation of the same API. The framework
   keeps no event table: durability is the project's decision, through its own unit of work.
 - **An async engine.** The bus has `AsyncBus`; the engine is synchronous. Add it when a caller is.
 - **A `Protocol` in front of the engine.** One backend. The second one earns the interface.

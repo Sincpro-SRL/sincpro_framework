@@ -1,3 +1,4 @@
+import threading
 from functools import partial
 from typing import Any, Dict, Generic, Mapping, Optional, Type, cast
 
@@ -85,6 +86,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.middleware_pipeline = MiddlewarePipeline()
 
         self.was_initialized: bool = False
+        self._build_lock = threading.RLock()
         self.bus: FrameworkBus | None = None
 
     def _add_dependencies_provided_by_user(self):
@@ -121,10 +123,20 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             )
 
     def build_root_bus(self):
-        """Build the root bus with the dependencies provided by the user"""
+        """Build the root bus with the dependencies provided by the user.
+
+        Under a lock, and only once: two threads that reach a not-yet-built bus at the same
+        time, as an async fan-out or an event fan-out does, would otherwise both build it and
+        one of them would execute against a half-wired registry.
+        """
+        with self._build_lock:
+            if self.was_initialized and self.bus is not None:
+                return
+            self._build_root_bus()
+
+    def _build_root_bus(self):
         self._add_dependencies_provided_by_user()
         self._add_error_handlers_provided_by_user()
-        self.was_initialized = True
         dto_registry = self._sp_container.dto_registry()
 
         self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
@@ -148,6 +160,8 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.bus.observability = self.observability
 
         self.observability.start(self.logger)
+        # Last, so a thread that reads the flag without the lock never sees a bus half wired.
+        self.was_initialized = True
 
     def add_dependency(self, name, dep: Any):
         """

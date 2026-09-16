@@ -5,7 +5,7 @@ class DatasetRegistered(DomainEvent):
     dataset_id: str
 
 dataset.record(DatasetRegistered(dataset_id=dataset.id))     # the aggregate says it; in memory
-self.self.repository.save(dataset)
+self.repository.save(dataset)
 for event in dataset.pull_events():                          # the Feature pulls, explicitly
     self.publisher.publish(event)
 

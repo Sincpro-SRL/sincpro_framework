@@ -24,7 +24,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
-from sincpro_framework.ddd.criteria import Bucket, CountMode, Criteria, Grouping, Sort
+from sincpro_framework.ddd.criteria import (
+    FOLD_FUNCTIONS,
+    Bucket,
+    CountMode,
+    Criteria,
+    Grouping,
+    Sort,
+)
 from sincpro_framework.ddd.entity_collection import Count, Dropped, EntityCollection
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
@@ -34,8 +41,10 @@ from sincpro_framework.ddd.exceptions import (
 )
 from sincpro_framework.ddd.model_meta import Meta
 from sincpro_framework.orm.sqlalchemy import sql_translator as sql
+from sincpro_framework.orm.sqlalchemy.data_mapper import REPOSITORY
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.relation_resolver import resolve_relations
 
 # Where counting stops unless somebody asks for more. Past this nobody is reading a total,
 # they are refining a filter — Odoo settled on the same number for the same reason.
@@ -93,7 +102,7 @@ class Repository:
         with self.database.session() as session:
             yield session
 
-    def _prepared(self, model: type, criteria: Criteria) -> Prepared:
+    def prepare(self, model: type, criteria: Criteria) -> Prepared:
         """Everything a criteria becomes before any statement exists.
 
             in      Dataset, Criteria(where={'field': 'row_count', 'operator': '>', 'value': '1000'})
@@ -107,8 +116,9 @@ class Repository:
         """
         meta = describe(model)
         expression, dropped = meta.accept(criteria.expression)
+        _, unanswerable = meta.accept_specification(criteria.specification)
         clause = sql.where_clause(model, expression)
-        return clause, sql.ordering_for(criteria, meta), meta, dropped
+        return clause, sql.ordering_for(criteria, meta), meta, dropped + unanswerable
 
     def _counted(
         self, session: Session, model: type, clause: Any, criteria: Criteria, held: int | None
@@ -126,7 +136,8 @@ class Repository:
         if criteria.count is CountMode.NONE:
             return None
 
-        if held is not None and criteria.cursor is None and held < criteria.limit:
+        first_page = criteria.cursor is None and criteria.pagination.skipped() == 0
+        if held is not None and first_page and held < criteria.limit:
             return Count(value=held, exact=True)
 
         if criteria.count is CountMode.EXACT:
@@ -168,6 +179,12 @@ class Repository:
         has_more = len(rows) > page.limit
 
         next_cursor = page.next_from(kept[-1], sorts) if has_more and kept else None
+
+        if criteria.specification is not None and kept:
+            dropped = list(dropped)
+            meta = resolve_relations(
+                self, session, model, kept, criteria.specification, meta, dropped
+            )
 
         return holder(
             items=tuple(kept),
@@ -227,13 +244,11 @@ class Repository:
         for level in resolved:
             meta.field(level.field)
             columns.append(sql.grouping_column(model, level, dialect))
-        folded = [
-            getattr(func, fold.function)(
-                getattr(model, meta.field(fold.field) and fold.field)
-            )
-            for fold in grouping.totals.values()
-        ]
-        clause, _, _, _ = self._prepared(model, criteria)
+        folded = []
+        for fold in grouping.totals.values():
+            meta.field(fold.field)
+            folded.append(getattr(func, fold.function)(getattr(model, fold.field)))
+        clause, _, _, _ = self.prepare(model, criteria)
 
         rows_by_level: list[Sequence[Any]] = []
         for how_deep in range(1, len(resolved) + 1):
@@ -365,7 +380,10 @@ class Repository:
             yield self
             return
         with self.database.session() as session:
-            yield Repository(self.database, session=session)
+            bound = Repository(self.database, session=session)
+            # A relation touched inside the block resolves itself through this repository.
+            session.info[REPOSITORY] = bound
+            yield bound
 
     def statement(self, target: type, criteria: Criteria) -> Select:
         """The escape hatch: this criteria as an ordinary `Select`, to take further.
@@ -382,7 +400,7 @@ class Repository:
         >>> page = self.repository.run(Dataset, stmt, criteria)
         """
         model, _ = model_and_collection(target)
-        return self._statement_from(model, criteria, self._prepared(model, criteria))
+        return self._statement_from(model, criteria, self.prepare(model, criteria))
 
     @overload
     def run[C: EntityCollection](
@@ -404,7 +422,7 @@ class Repository:
         the statement.
         """
         model, holder = model_and_collection(target)
-        prepared = self._prepared(model, criteria)
+        prepared = self.prepare(model, criteria)
         with self._session() as session:
             return self._page(session, model, holder, statement, criteria, prepared)
 
@@ -453,7 +471,7 @@ class Repository:
         # Prepared once and carried: going through the public `statement()` and `run()` would
         # describe the model, coerce the values and prune the expression twice per search.
         model, holder = model_and_collection(target)
-        prepared = self._prepared(model, criteria)
+        prepared = self.prepare(model, criteria)
         statement = self._statement_from(model, criteria, prepared)
         if lock is not None:
             statement = statement.with_for_update(skip_locked=skip_locked)
@@ -600,7 +618,7 @@ class Repository:
         """
         criteria = criteria or Criteria()
         model, _ = model_and_collection(target)
-        clause, _, _, _ = self._prepared(model, criteria)
+        clause, _, _, _ = self.prepare(model, criteria)
         with self._session() as session:
             return self._counted(session, model, clause, criteria, None) or Count(
                 value=0, exact=True
@@ -631,7 +649,7 @@ class Repository:
         for field in by:
             meta.field(field)
 
-        clause, _, _, _ = self._prepared(model, criteria)
+        clause, _, _, _ = self.prepare(model, criteria)
         columns = [getattr(model, field) for field in by]
         statement = select(*columns, func.count().label("count")).select_from(model)
         if clause is not None:
@@ -686,7 +704,7 @@ class Repository:
         criteria = criteria or Criteria()
         model, _ = model_and_collection(target)
         meta = describe(model)
-        clause, _, _, _ = self._prepared(model, criteria)
+        clause, _, _, _ = self.prepare(model, criteria)
 
         columns = []
         for name, fold in folds.items():
@@ -694,6 +712,10 @@ class Repository:
             if not field:
                 raise InvalidCriteria(
                     f"'{name}={fold}' should read as 'function:field', e.g. 'sum:row_count'"
+                )
+            if function not in FOLD_FUNCTIONS:
+                raise InvalidCriteria(
+                    f"'{function}' is not a fold; use one of {', '.join(FOLD_FUNCTIONS)}"
                 )
             meta.field(field)
             columns.append(getattr(func, function)(getattr(model, field)).label(name))

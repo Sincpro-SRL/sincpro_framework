@@ -10,7 +10,7 @@ Plain dataclasses in this module, tables at the bottom, one `map_aggregates`; th
 never learn where they live.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
@@ -95,16 +95,9 @@ class Entry(Entity):
     reference: str
     posted_at: datetime
     state: str = "draft"
-
-    @property
-    def lines(self) -> list[Line]:
-        """The lines this entry was loaded or built with. Not a column: the repository hands
-        them to the entry, so a record the mapper rebuilt starts with none."""
-        return self.__dict__.setdefault("_lines", [])
-
-    @lines.setter
-    def lines(self, lines: list[Line]) -> None:
-        self.__dict__["_lines"] = list(lines)
+    lines: list[Line] = field(default_factory=list)
+    """A relation the foreign key on `line.entry_id` already declares: inside a unit of work
+    it resolves whole on first touch; a client asks for it through the specification."""
 
     @property
     def is_balanced(self) -> bool:

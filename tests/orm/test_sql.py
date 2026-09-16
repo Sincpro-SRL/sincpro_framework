@@ -8,12 +8,23 @@ The connectives get the same treatment, because `and_`/`or_`/`not_` over a prune
 an empty branch could quietly widen or empty a result.
 """
 
+from datetime import datetime
+
 import pytest
 
-from sincpro_framework.ddd.criteria import All, Any_, Condition, Criteria, Not, Operator
+from sincpro_framework.ddd.criteria import (
+    All,
+    Any_,
+    Condition,
+    Criteria,
+    Level,
+    Not,
+    Operator,
+)
 from sincpro_framework.ddd.pagination import Pagination
+from sincpro_framework.orm.sqlalchemy.sql_translator import grouping_column
 
-from .models import ROW_COUNT, Things, a_thing
+from .models import ROW_COUNT, Thing, Things, a_thing
 
 EVERYTHING = ROW_COUNT + 10
 
@@ -211,3 +222,26 @@ def test_a_dialect_with_no_grain_translation_is_refused_rather_than_guessed():
 
     with pytest.raises(ContractViolation, match="register_grain_translator"):
         grouping_column(Thing, Level(field="made_at", grain="month"), "oracle")
+
+
+def test_the_week_grain_reads_the_same_on_both_dialects():
+    """ISO weeks on SQLite and Postgres alike, so a bucket opened on one engine is the same
+    bucket on the other; and the range a week bucket opens is its Monday to the next."""
+    from sqlalchemy.dialects import postgresql, sqlite
+
+    from sincpro_framework.orm.sqlalchemy.sql_translator import bucket_range
+
+    weekly_sqlite = grouping_column(Thing, Level(field="made_at", grain="week"), "sqlite")
+    weekly_pg = grouping_column(Thing, Level(field="made_at", grain="week"), "postgresql")
+
+    assert "%G-W%V" in str(
+        weekly_sqlite.compile(
+            dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert 'IYYY-"W"IW' in str(
+        weekly_pg.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert bucket_range("week", "2026-W01") == (datetime(2025, 12, 29), datetime(2026, 1, 5))

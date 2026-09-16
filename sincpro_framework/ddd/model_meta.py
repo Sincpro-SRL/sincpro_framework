@@ -5,18 +5,21 @@ so a filter form can be built without anybody maintaining a schema.
 
 The rules about what may be asked live here rather than in whoever is asking: a field knows
 which operators it takes and how to read a value written as text, and the model knows which of
-its fields can be ordered or grouped by. See `docs/design/persistence.md` §6.
+its fields can be ordered or grouped by. See `docs/persistence/reference.md`.
 
 **Nothing here inspects a mapper.** This module says what a definition *is* and what it
 accepts; reading one off a mapped class is the adapter's job, because that is the half that
 knows the ORM.
 """
 
+import sys
 import types
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum, StrEnum
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
+
+from pydantic import computed_field
 
 from sincpro_framework.ddd.criteria import (
     MULTI_VALUED,
@@ -26,10 +29,11 @@ from sincpro_framework.ddd.criteria import (
     Expression,
     Not,
     Operator,
+    Specification,
 )
 from sincpro_framework.ddd.entity import Translated
 from sincpro_framework.ddd.entity_collection import Dropped
-from sincpro_framework.ddd.exceptions import InvalidCriteria
+from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 TRUTHY = frozenset({"1", "true", "yes", "on", "t"})
@@ -48,7 +52,23 @@ class FieldType(StrEnum):
     DATETIME = "datetime"
     TEXT_LIST = "text[]"
     TRANSLATED = "translated"
+    EMBEDDED = "embedded"
+    """A value object stored inside the row, as JSON: it has a shape, `definition`, and no
+    identity or life of its own."""
+    MANY2ONE = "many2one"
+    ONE2MANY = "one2many"
+    MANY2MANY = "many2many"
     UNKNOWN = "unknown"
+
+    @property
+    def is_relational(self) -> bool:
+        """Whether a field of this type points at another aggregate, one with its own life,
+        that has to be brought: the three Odoo words say the cardinality and the side of the key.
+
+        >>> FieldType.MANY2ONE.is_relational, FieldType.EMBEDDED.is_relational
+        (True, False)
+        """
+        return self in (FieldType.MANY2ONE, FieldType.ONE2MANY, FieldType.MANY2MANY)
 
     def read(self, raw: Any) -> Any:
         """Reads a value written as text into what this type holds.
@@ -112,6 +132,10 @@ OPERATORS_BY_TYPE: dict[FieldType, tuple[Operator, ...]] = {
         Operator.NE,
     ),
     FieldType.TRANSLATED: (Operator.LIKE,),
+    FieldType.EMBEDDED: (),
+    FieldType.MANY2ONE: (),
+    FieldType.ONE2MANY: (),
+    FieldType.MANY2MANY: (),
     FieldType.UNKNOWN: (),
 }
 
@@ -141,6 +165,38 @@ def without_optional(annotation: Any) -> Any:
         if len(real) == 1:
             return real[0]
     return annotation
+
+
+def annotations_of(declared: type) -> dict[str, Any]:
+    """The class's annotations with forward references resolved against its module.
+
+        in  Dataset  →  out  {'dataset_id': str, 'row_count': int, …}
+
+    A reference that does not resolve fails here, at boot, and names the class: a typo in a
+    forward reference should not surface as a missing relation at the first request.
+    """
+    try:
+        return get_type_hints(declared, vars(sys.modules[declared.__module__]))
+    except NameError as error:
+        raise ContractViolation(
+            f"{declared.__name__} names a type that cannot be resolved at runtime: {error}"
+        ) from error
+
+
+def related_class(annotation: Any) -> tuple[type | None, bool]:
+    """The class an annotation points at, and whether it names several of them.
+
+    in  list[Run]    →  out  (Run, True)
+    in  Shelf | None →  out  (Shelf, False)
+    in  str          →  out  (str, False)      a plain type is still a class
+    in  dict[str, str] → out (None, False)
+    """
+    base = without_optional(annotation)
+    many = get_origin(base) is list
+    if many:
+        members = get_args(base)
+        base = members[0] if members else None
+    return (base if isinstance(base, type) else None), many
 
 
 def logical_type(annotation: Any) -> FieldType:
@@ -195,6 +251,67 @@ class FieldMeta(DataTransferObject):
 
     ops: tuple[Operator, ...]
     """Included although derivable from `type`, so a consumer never has to carry the table."""
+    many: bool = False
+    """Several of them: a `one2many`, a `many2many`, or a list of embedded values."""
+    relation: str | None = None
+    """For a relational field, the aggregate on the other side, by name: `Run` for
+    `Dataset.runs`. What Odoo's `fields_get` calls `relation`."""
+    identified_by: str | None = None
+    """For a relational field, the column that identifies the relation: this aggregate's own
+    column for a `many2one` (`Run.dataset` by `Run.dataset_id`), the related aggregate's for a
+    `one2many` (`Dataset.runs` by `Run.dataset_id`), Odoo's `relation_field`. A client filters
+    by it without expanding anything. `None` when nothing said how the relation resolves."""
+    definition: "Meta | None" = None
+    """The shape of the other side: always for an embedded value, and for a relational field
+    once it was expanded, cut by the same mask."""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def kind(self) -> Literal["scalar", "embedded", "relation"]:
+        """The coarse answer to «what is this name», before the finer `type`: a value in the
+        row, a value object inside the row, or another aggregate to bring. Travels with the
+        definition so a client branches on one word.
+
+        >>> describe(Work).fields["author"].kind, describe(Work).fields["size"].kind
+        ('relation', 'embedded')
+        """
+        if self.type.is_relational:
+            return "relation"
+        if self.type is FieldType.EMBEDDED:
+            return "embedded"
+        return "scalar"
+
+    @classmethod
+    def for_relation(
+        cls,
+        logical: FieldType,
+        relation: str,
+        identified_by: str | None,
+        nullable: bool = False,
+    ) -> "FieldMeta":
+        """A field that points at another aggregate. Nothing to filter or order by directly:
+        the key it hangs on is a scalar field of its own, and that one takes the operators."""
+        return cls(
+            type=logical,
+            nullable=nullable,
+            sortable=False,
+            ops=(),
+            many=logical is not FieldType.MANY2ONE,
+            relation=relation,
+            identified_by=identified_by,
+        )
+
+    @classmethod
+    def for_embedded(cls, definition: "Meta", many: bool, nullable: bool) -> "FieldMeta":
+        """A value object inside the row: its shape travels, nothing about it is queried."""
+        return cls(
+            type=FieldType.EMBEDDED,
+            nullable=nullable,
+            sortable=False,
+            ops=(),
+            many=many,
+            definition=definition,
+        )
 
     @classmethod
     def for_column(
@@ -237,7 +354,7 @@ class FieldMeta(DataTransferObject):
         """Context: the same condition with its value in the type this column compares against.
 
         >>> row_count.read(Condition(field="row_count", value="1000", operator=Operator.GT))
-        Condition(field='row_count', value=1000, operator=<Operator.GT: 'gt'>)
+        Condition(field='row_count', value=1000, operator=<Operator.GT: '>'>)
 
 
         1. `is_null` is the exception: its value is the question asked, not the field's type.
@@ -279,20 +396,29 @@ class FieldMeta(DataTransferObject):
         return condition.model_copy(update={"value": self.type.read(condition.value)})
 
 
-class RelationMeta(DataTransferObject):
-    target: str
-    many: bool
-
-
 class Meta(DataTransferObject):
+    """What a caller is told about an aggregate: one map of fields, scalar, embedded and
+    relational alike, each saying with `type` which it is. The shape of Odoo's `fields_get`.
+    """
+
     aggregate: str
     identity: str
     default_order: str
     fields: dict[str, FieldMeta]
-    relations: dict[str, RelationMeta] = {}
     translations: Translated
     """Every word a screen shows for this aggregate and its fields, exactly as the class's
     `translations()` answered it."""
+
+    @property
+    def relations(self) -> dict[str, FieldMeta]:
+        """The relational fields alone, a view over `fields`: what may be expanded.
+
+        >>> set(describe(Dataset).relations)
+        {'runs', 'producer'}
+        """
+        return {
+            name: field for name, field in self.fields.items() if field.type.is_relational
+        }
 
     def _kept(self, condition: Condition) -> tuple[Condition | None, Dropped | None]:
         """One condition, kept and read — or dropped with the reason.
@@ -374,6 +500,80 @@ class Meta(DataTransferObject):
             )
         return found
 
+    def accept_specification(
+        self, specification: Specification | None
+    ) -> tuple[Specification | None, list[Dropped]]:
+        """The part of a specification this model can answer, and what it could not.
+
+            in      {"name": {}, "legacy_flag": {}}
+            out     ({"name": {}}, [Dropped(legacy_flag, 'unknown_field')])
+
+            in      {"legacy_flag": {}}       nothing survives
+            out     ({}, [ … ])               the identity alone, NOT everything
+
+            in      nothing asked
+            out     left alone: the whole record
+
+        A field is kept when the model has it, as a column or as a relation, and dropped and
+        named when it does not. Which of the two it is never reaches the caller: telling them
+        apart is this object's job, which is why a specification has one bucket and not two.
+        """
+        if specification is None:
+            return None, []
+
+        dropped: list[Dropped] = []
+        kept = {}
+        for name, criteria in specification.root.items():
+            if name in self.fields:
+                kept[name] = criteria
+            else:
+                dropped.append(Dropped(field=name, reason="unknown_field"))
+        return Specification(kept), dropped
+
+    def only(self, specification: Specification | None) -> "Meta":
+        """This definition as the masked payload will look: the same shape, narrowed.
+
+            in      {"name": {}}        →  out  fields={identity, name}
+            in      nothing asked       →  out  every scalar and embedded field, no relation
+            in      {"size": {"specification": {"width": {}}}}
+                                        →  out  the embedded shape cut to {width}, identity kept
+
+        **This is what makes the mask one mask.** A client that asked for three fields gets
+        three in the payload AND three in the definition, so its filter builder and its column
+        menu cannot offer what it was not given.
+
+        The identity always stays: a record whose id did not travel cannot be opened,
+        refreshed or cached, so masking it away makes the rest useless.
+        """
+        if specification is None:
+            return self.model_copy(
+                update={
+                    "fields": {
+                        name: field
+                        for name, field in self.fields.items()
+                        if not field.type.is_relational
+                    }
+                }
+            )
+
+        kept: dict[str, FieldMeta] = {}
+        for name in dict.fromkeys([self.identity, *specification.named]):
+            field = self.fields.get(name)
+            if field is None:
+                continue
+            node = specification.root.get(name)
+            if (
+                field.type is FieldType.EMBEDDED
+                and field.definition is not None
+                and node is not None
+                and node.specification is not None
+            ):
+                field = field.model_copy(
+                    update={"definition": field.definition.only(node.specification)}
+                )
+            kept[name] = field
+        return self.model_copy(update={"fields": kept})
+
     def accept(
         self, expression: Expression | None
     ) -> tuple[Expression | None, list[Dropped]]:
@@ -391,3 +591,6 @@ class Meta(DataTransferObject):
             return None, []
         dropped: list[Dropped] = []
         return self._pruned(expression, dropped), dropped
+
+
+FieldMeta.model_rebuild()
