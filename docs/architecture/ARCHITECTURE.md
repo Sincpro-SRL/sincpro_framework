@@ -29,6 +29,7 @@ The **Sincpro Framework** is an implementation of **Hexagonal Architecture** wit
 -   **Integrated observability** with structured logging
 -   **`entrypoint_mcp`** — bus catalog as MCP tools. See [entrypoint_mcp.md](./entrypoint_mcp.md).
 -   **`entrypoint_rpc`** — bus catalog as JSON-RPC 2.0 methods. See [entrypoint_rpc.md](./entrypoint_rpc.md).
+-   **Persistence** — one `Criteria`, one door for reads and one for writes, SQLAlchemy behind an extra. See [persistence.md](../design/persistence.md).
 
 ### Usage Context
 
@@ -53,6 +54,8 @@ The framework is designed for enterprise applications that require:
 | **Configuration Management** | `sincpro_conf.py` | Configuration and environment variable handling | Infrastructure | PyYAML, Pydantic |
 | **Logging Integration** | `sincpro_logger.py` | Logging system integration | Infrastructure | sincpro-log |
 | **Value Objects** | `ddd/value_object.py` | DDD Value Objects implementation | Domain | - |
+| **Domain vocabulary** | `ddd/` | `Entity`, `Criteria`, `EntityCollection`, `Meta`, `Query` — how an aggregate is declared and asked about, with no database | Domain | Pydantic |
+| **Persistence adapter** | `orm/sqlalchemy/` | Runs a `Criteria` against a database, persists aggregates with a version check. See [persistence.md](../design/persistence.md) | Infrastructure | SQLAlchemy (optional extra) |
 | **Exception Handling** | `exceptions.py` | Framework-specific exceptions | Cross-cutting | - |
 | **Introspection** | `introspection/` | Read a built framework's Feature/ApplicationService/DTO registries — used by `entrypoints/` | Cross-cutting | use_bus, bus |
 | **Scalar Executor** | `entrypoints/scalar_executor.py` | Scalar (dict) in/out execution against a UseFramework | Exposure | introspection |

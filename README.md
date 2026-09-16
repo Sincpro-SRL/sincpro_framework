@@ -260,6 +260,22 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
 - Parameterize the bus as `UseFramework[DependencyContextType]`. Features get `self.token_adapter`; callers outside a Feature get the same instance as `framework.deps.token_adapter`.
 
+### Persistence — `sincpro_framework.ddd` and `sincpro_framework.orm`
+
+One way to ask a database in every Sincpro service: a `Criteria` goes in, a `EntityCollection` comes back
+with its cursor, a typed count and the model's own definition; an aggregate goes to `save` and a
+stale write is refused. The vocabulary needs nothing installed; the SQLAlchemy engine is the
+`[sqlalchemy]` extra. See [docs/design/persistence.md](docs/design/persistence.md).
+
+```python
+from sincpro_framework.ddd import Criteria, Entity
+from sincpro_framework.orm import Database, Repository
+
+orm = Repository(Database("sqlite:///catalog.sqlite3"))
+page = self.repository.search(Dataset, Criteria.model_validate({"where": {"field": "row_count", "operator": ">", "value": 1000}}))
+page.count, page.cursor, page.dropped, page.meta
+```
+
 ### `entrypoint_mcp`
 
 See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
@@ -1266,7 +1282,9 @@ export SINCPRO_FRAMEWORK_CONFIG_FILE = /path/to/your/config.yml
 The `Makefile` is the single entry point — CI calls the same targets you run locally.
 
 ```bash
-make test                 # test suite + coverage report in the terminal + coverage.xml
+make test                 # unit suites + coverage report in the terminal + coverage.xml
+make test-realworld       # the ledger cases over a populated database (docs/design/real-world-suite.md)
+make test-stress          # the same at 25 000 entries, timed; SINCPRO_REALWORLD_ENTRIES and DATABASE_URL apply
 make test-coverage        # the above + HTML report in htmlcov/
 make test-coverage-open   # the above + opens htmlcov/index.html in the browser
 make test_one t=tests/test_async_bus.py   # a single file/test, verbose, no coverage

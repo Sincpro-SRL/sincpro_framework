@@ -7,8 +7,10 @@ release and the Tempo ``service.name`` from drifting apart.
 """
 
 import inspect
-from importlib.metadata import packages_distributions
+from importlib.metadata import distribution, packages_distributions
 from importlib.metadata import version as distribution_version
+from importlib.util import find_spec
+from pathlib import Path
 from typing import Iterator, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict
@@ -196,10 +198,35 @@ def _from_distribution_scan(module_name: str) -> tuple[str, str]:
         distributions = _import_to_distribution().get(top) or []
     except Exception:
         return "", ""
-    if not distributions:
-        return "", ""
-    artifact = distributions[0]
-    return artifact, installed_version(artifact)
+    for artifact in distributions:
+        if _ships_the_imported(artifact, top):
+            return artifact, installed_version(artifact)
+    return "", ""
+
+
+def _ships_the_imported(artifact: str, top: str) -> bool:
+    """Whether the ``top`` package Python actually imports is the one this distribution
+    installed, and not a namesake.
+
+    A distribution can ship a generic top-level name: ``caio`` installs a ``tests/``
+    package, and from then on the mapping claims every project's own ``tests`` as caio's.
+    Where the imported package really lives settles it. When either side cannot be
+    located, the mapping is trusted as it was.
+    """
+    try:
+        spec = find_spec(top)
+        if spec is None:
+            return True
+        if spec.submodule_search_locations:
+            imported = Path(next(iter(spec.submodule_search_locations)))
+        elif spec.origin:
+            imported = Path(spec.origin).parent
+        else:
+            return True
+        installed = Path(str(distribution(artifact).locate_file(top)))
+        return imported.resolve() == installed.resolve()
+    except Exception:
+        return True
 
 
 def _identity_sources(module_name: str) -> Iterator[tuple[str, str]]:

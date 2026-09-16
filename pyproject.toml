@@ -12,15 +12,6 @@ name = "fury"
 url = "https://pypi.fury.io/sincpro/"
 priority = "supplemental"
 
-# PYTHON 3.14 FREE-THREADING: verified (3.14.7 / 3.14.7t) that every dependency
-# below installs cleanly on regular (GIL) 3.14 with no code changes — full test
-# suite green. On a free-threaded (`python3.14t`) interpreter, `dependency-injector`
-# (core, required — see ioc.py) and, if the `opentelemetry` extra's grpc exporter
-# is used, `grpcio` (transitive dep of opentelemetry-exporter-otlp-proto-grpc)
-# both lack a free-threaded wheel today and force CPython to silently re-enable
-# the GIL for the whole process on import. Free-threading itself is not
-# implemented/targeted in this codebase yet — this is a known current gap in
-# the dependency ecosystem, not something to work around here.
 [tool.poetry.dependencies]
 python = "^3.12"
 dependency-injector = "^4.49.1"
@@ -35,6 +26,7 @@ sentry-sdk = {version = ">=2.0", optional = true}
 fastmcp = {version = ">=3.0,<4", optional = true}
 starlette = {version = ">=1.0", optional = true}
 uvicorn = {version = ">=0.35", optional = true}
+sqlalchemy = {version = ">=2.0", optional = true}
 
 [tool.poetry.extras]
 opentelemetry = [
@@ -46,6 +38,7 @@ opentelemetry = [
 sentry = ["sentry-sdk"]
 mcp = ["fastmcp"]
 rpc = ["starlette", "uvicorn"]
+sqlalchemy = ["sqlalchemy"]
 
 [tool.poetry.group.dev.dependencies]
 isort = "^9.0.1"
@@ -64,6 +57,9 @@ opentelemetry-sdk = ">=1.20"
 opentelemetry-exporter-otlp-proto-grpc = ">=1.20"
 opentelemetry-exporter-otlp-proto-http = ">=1.20"
 sentry-sdk = ">=2.0"
+sqlalchemy = ">=2.0"
+hypothesis = ">=6.100"
+psycopg = {version = ">=3.2", extras = ["binary"]}
 
 
 [build-system]
@@ -81,6 +77,13 @@ reportInvalidTypeForm = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "realworld: end-to-end cases over a populated ledger; `make test-realworld`",
+    "stress: the real-world cases at volume, timed; `make test-stress`",
+]
+filterwarnings = [
+    "ignore:Dialect sqlite\\+pysqlite does \\*not\\* support Decimal:sqlalchemy.exc.SAWarning",
+]
 
 [tool.coverage.run]
 source = ["sincpro_framework"]

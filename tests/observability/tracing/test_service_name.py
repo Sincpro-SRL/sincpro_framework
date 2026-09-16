@@ -9,6 +9,8 @@ every deployment.
 `package=` exists as an escape hatch and is not used in practice.
 """
 
+from pathlib import Path
+
 import pytest
 
 from sincpro_framework.observability import ObservabilityIdentity, resolve_identity
@@ -224,3 +226,35 @@ def test_a_release_without_a_name_still_identifies_the_deployment(monkeypatch):
 
     assert identity.service_name == "2026.08.21:payments"
     assert identity.release == "2026.08.21"
+
+
+def test_a_distribution_that_ships_a_namesake_package_does_not_claim_ours(monkeypatch):
+    """`caio` installs a top-level `tests/`; the mapping then says every project's `tests`
+    belongs to caio. The package Python imports lives here, not in site-packages, so the
+    claim is refused and the identity falls through to the bus."""
+    from sincpro_framework.observability import domain
+
+    class Impostor:
+        def locate_file(self, path):
+            return Path("/somewhere/else/site-packages") / path
+
+    monkeypatch.setattr(domain, "_distributions", {"tests": ["impostor"]})
+    monkeypatch.setattr(domain, "distribution", lambda name: Impostor())
+
+    assert domain._from_distribution_scan("tests.observability.x") == ("", "")
+
+
+def test_a_distribution_that_really_ships_the_package_is_accepted(monkeypatch):
+    from sincpro_framework.observability import domain
+
+    here = Path(__file__).resolve().parents[2]
+
+    class Owner:
+        def locate_file(self, path):
+            return here.parent / path
+
+    monkeypatch.setattr(domain, "_distributions", {"tests": ["owner"]})
+    monkeypatch.setattr(domain, "distribution", lambda name: Owner())
+    monkeypatch.setattr(domain, "installed_version", lambda name: "1.0.0")
+
+    assert domain._from_distribution_scan("tests.observability.x") == ("owner", "1.0.0")

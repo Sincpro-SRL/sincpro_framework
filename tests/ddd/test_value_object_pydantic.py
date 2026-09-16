@@ -1,4 +1,4 @@
-"""Tests de integración Pydantic v2 para sincpro_framework.ddd.value_object."""
+"""Pydantic v2 integration tests for sincpro_framework.ddd.value_object."""
 
 from typing import NewType
 
@@ -18,7 +18,7 @@ class TestPydanticIntegration:
     """Value objects como tipo nativo de campo Pydantic v2 — sin AfterValidator."""
 
     def test_int_vo_abs_executes(self):
-        """UserIdVO: validate_fn abs() debe ejecutarse al asignar el campo."""
+        """UserIdVO: validate_fn abs() has to run when the field is assigned."""
 
         class OrderDTO(BaseModel):
             order_id: UserIdVO
@@ -27,7 +27,7 @@ class TestPydanticIntegration:
         assert order.order_id == 42
 
     def test_str_vo_strip_and_lowercase_executes(self):
-        """EmailVO: validate_fn strip+lower debe ejecutarse al asignar el campo."""
+        """EmailVO: validate_fn strip+lower has to run when the field is assigned."""
 
         class UserDTO(BaseModel):
             email: EmailVO
@@ -36,7 +36,7 @@ class TestPydanticIntegration:
         assert user.email == "hello@world.com"
 
     def test_float_vo_round_executes(self):
-        """AmountVO: validate_fn round(v, 2) debe ejecutarse al asignar el campo."""
+        """AmountVO: validate_fn round(v, 2) has to run when the field is assigned."""
 
         class PaymentDTO(BaseModel):
             amount: AmountVO
@@ -45,7 +45,7 @@ class TestPydanticIntegration:
         assert payment.amount == 3.14
 
     def test_multiple_vo_fields(self):
-        """Múltiples campos VO en un mismo modelo; cada validate_fn se ejecuta."""
+        """Several VO fields on one model; every validate_fn runs."""
 
         class ProductDTO(BaseModel):
             code: ProductCodeVO
@@ -170,12 +170,12 @@ class TestPydanticValidationErrors:
 
 class TestPydanticConstructorVsInstance:
     """
-    Enfoque 1: pasar el valor crudo → Pydantic construye el VO internamente.
+    Approach 1: pass the raw value → Pydantic builds the VO itself.
     Enfoque 2: instanciar el VO antes → pasar la instancia ya transformada.
     """
 
-    def test_enfoque1_valor_crudo_pydantic_llama_vo(self):
-        """Enfoque 1: Pydantic recibe el escalar crudo y llama al constructor del VO."""
+    def test_approach_1_raw_value_pydantic_calls_the_vo(self):
+        """Approach 1: Pydantic receives the raw scalar and calls the VO constructor."""
 
         class UserDTO(BaseModel):
             email: EmailVO
@@ -183,8 +183,8 @@ class TestPydanticConstructorVsInstance:
         dto = UserDTO(email="  RAW@EXAMPLE.COM  ")
         assert dto.email == "raw@example.com"
 
-    def test_enfoque2_instancia_preconstruida(self):
-        """Enfoque 2: el VO se construye antes; Pydantic recibe la instancia ya transformada."""
+    def test_approach_2_prebuilt_instance(self):
+        """Approach 2: the VO is built first; Pydantic receives the transformed instance."""
 
         class UserDTO(BaseModel):
             email: EmailVO
@@ -195,22 +195,22 @@ class TestPydanticConstructorVsInstance:
         dto = UserDTO(email=email_vo)
         assert dto.email == "pre@example.com"
 
-    def test_ambos_enfoques_mismo_resultado(self):
-        """Enfoque 1 y 2 producen el mismo valor final en el campo."""
+    def test_both_approaches_give_the_same_result(self):
+        """Approaches 1 and 2 leave the same final value in the field."""
 
         class PaymentDTO(BaseModel):
             amount: AmountVO
 
         raw_value = 3.14159
 
-        dto1 = PaymentDTO(amount=raw_value)  # enfoque 1: crudo
-        dto2 = PaymentDTO(amount=AmountVO(raw_value))  # enfoque 2: pre-construido
+        dto1 = PaymentDTO(amount=raw_value)  # approach 1: raw
+        dto2 = PaymentDTO(amount=AmountVO(raw_value))  # approach 2: prebuilt
 
         assert dto1.amount == dto2.amount == 3.14
 
-    def test_enfoque2_validate_fn_se_ejecuta_dos_veces(self):
-        """Con enfoque 2, validate_fn corre al construir el VO y una 2da vez cuando
-        Pydantic pasa el valor por el constructor al asignarlo al campo."""
+    def test_approach_2_runs_validate_fn_twice(self):
+        """Under approach 2, validate_fn runs when the VO is built and a second time when
+        Pydantic passes the value through the constructor on assignment."""
 
         results = []
 
@@ -220,11 +220,11 @@ class TestPydanticConstructorVsInstance:
             value: CounterVO
 
         vo = CounterVO(-5)
-        assert results == [-5]  # 1ra ejecución: abs(-5) = 5
+        assert results == [-5]  # first run: abs(-5) = 5
         assert vo == 5
 
         MyDTO(value=vo)
-        assert results == [-5, 5]  # 2da ejecución: Pydantic llama CounterVO(5)
+        assert results == [-5, 5]  # second run: Pydantic calls CounterVO(5)
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ class TestBothAPIsInPydantic:
         assert Model(rating=3).rating == 3
 
     def test_both_apis_equivalent_in_pydantic(self):
-        """Ambas APIs producen VOs intercambiables dentro de Pydantic."""
+        """Both APIs produce VOs that are interchangeable inside Pydantic."""
         NewApiEmail = ValueObject(str, lambda v: v.strip().lower(), name="Email")
         OldApiEmail = new_value_object(NewType("Email", str), lambda v: v.strip().lower())
 
