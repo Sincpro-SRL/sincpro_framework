@@ -58,7 +58,7 @@ def test_the_feature_bus_injected_into_app_services_is_the_same_one(framework):
     Observability and its spans would carry the wrong ``sincpro.instance``.
     """
     assert framework.bus is not None
-    app_service = framework.bus.app_service_bus.app_service_registry["ParentDTO"]
+    app_service = framework.bus.app_service_bus.app_service_registry[ParentDTO]
 
     assert app_service.feature_bus is framework.bus.feature_bus
 

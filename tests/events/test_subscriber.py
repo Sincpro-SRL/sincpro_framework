@@ -37,7 +37,9 @@ def test_several_framework_instances_each_obey_the_event_their_decorator_names(
     assert answers == [ResponseNotify(sent="fixed"), ResponseAudit(logged="audited fixed")]
     assert heard == {"support": ["fixed"], "audit": ["audited fixed"]}
     assert subscriber.listeners("TicketClosed") == [feature_bus, app_service_bus]
-    assert subscriber.listeners("CommandAudit") == [app_service_bus]
+    assert subscriber.listeners(f"{CommandAudit.__module__}.{CommandAudit.__qualname__}") == [
+        app_service_bus
+    ]
     assert subscriber.listeners("NobodyListens") == []
     assert (
         app_service_bus(CommandAudit(text="by command"), ResponseAudit).logged == "by command"

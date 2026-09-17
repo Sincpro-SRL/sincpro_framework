@@ -8,12 +8,19 @@ fields positional.
 
 import uuid
 from dataclasses import dataclass, fields
+from decimal import Decimal
 
 import pytest
 
 from sincpro_framework.ddd import entity as entity_module
 from sincpro_framework.ddd.entity import Entity, Translated, new_entity_id, uuid7
 from sincpro_framework.ddd.entity_collection import identity_of
+
+
+@dataclass
+class Account(Entity):
+    code: str
+    balance: Decimal = Decimal("0.00")
 
 
 @dataclass
@@ -88,3 +95,30 @@ def test_the_fallback_and_the_native_generator_agree_on_the_shape(monkeypatch, n
     assert minted.version == 7
     assert minted.variant == uuid.RFC_4122
     assert isinstance(uuid7(), uuid.UUID)
+
+
+def test_as_json_round_trips_decimal_and_datetime():
+    account = Account(code="110", balance=Decimal("42.75"))
+
+    rebuilt = Account.from_json(account.as_json())
+
+    assert rebuilt == account
+    assert rebuilt.balance == Decimal("42.75")
+    assert rebuilt.created_at == account.created_at
+
+
+def test_from_json_accepts_an_already_parsed_dict():
+    account = Account(code="110", balance=Decimal("42.75"))
+
+    rebuilt = Account.from_json(
+        {
+            "id": account.id,
+            "created_at": account.created_at.isoformat(),
+            "updated_at": None,
+            "version": 0,
+            "code": "110",
+            "balance": "42.75",
+        }
+    )
+
+    assert rebuilt == account

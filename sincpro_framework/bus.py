@@ -22,27 +22,28 @@ class FeatureBus(Bus):
         logger_bus: Logger = logger,  # type: ignore[assignment]
         observability: Optional[Observability] = None,
     ):
-        self.feature_registry: Dict[str, Feature] = dict()
+        self.feature_registry: Dict[type, Feature] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
         self.observability = observability or Observability()
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
-        if dto.__name__ in self.feature_registry:
+        if dto in self.feature_registry:
             raise DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
             )
 
         self.logger.info(f"Registering feature [{dto.__name__}]")
-        self.feature_registry[dto.__name__] = feature
+        self.feature_registry[dto] = feature
         return True
 
     def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """Execute a feature, and handle error if exists error handler"""
-        dto_name = dto.__class__.__name__
+        dto_type = dto.__class__
+        dto_name = dto_type.__name__
 
         with self.observability.span(dto_name, "feature") as span:
             if is_logger_in_debug() or self.log_after_execution:
@@ -50,7 +51,7 @@ class FeatureBus(Bus):
             self.logger.debug(f"{dto_name}({dto})")
 
             try:
-                response = self.feature_registry[dto.__class__.__name__].execute(dto)
+                response = self.feature_registry[dto_type].execute(dto)
                 if response:
                     self.logger.debug(
                         f"Feature response {response.__class__.__name__}({response})",
@@ -74,7 +75,7 @@ class ApplicationServiceBus(Bus):
         logger_bus: Logger = logger,  # type: ignore[assignment]
         observability: Optional[Observability] = None,
     ):
-        self.app_service_registry: Dict[str, ApplicationService] = dict()
+        self.app_service_registry: Dict[type, ApplicationService] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
         self.observability = observability or Observability()
@@ -85,20 +86,21 @@ class ApplicationServiceBus(Bus):
         """Register an application service to the bus
         This method is not used directly, the decorator inject_app_service_to_bus is used
         """
-        if dto.__name__ in self.app_service_registry:
+        if dto in self.app_service_registry:
             raise DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
             )
 
         self.logger.info(f"Registering application service [{dto.__name__}]")
-        self.app_service_registry[dto.__name__] = app_service
+        self.app_service_registry[dto] = app_service
         return True
 
     def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """Execute an application service, and handle error if exists error handler"""
-        dto_name = dto.__class__.__name__
+        dto_type = dto.__class__
+        dto_name = dto_type.__name__
 
         with self.observability.span(dto_name, "application_service") as span:
             if is_logger_in_debug() or self.log_after_execution:
@@ -106,7 +108,7 @@ class ApplicationServiceBus(Bus):
             self.logger.debug(f"{dto_name}({dto})")
 
             try:
-                response = self.app_service_registry[dto.__class__.__name__].execute(dto)
+                response = self.app_service_registry[dto_type].execute(dto)
                 if response:
                     self.logger.debug(
                         f"Application service response {response.__class__.__name__}({response})"
@@ -153,11 +155,12 @@ class FrameworkBus(Bus):
 
         intersection_dtos = registered_features.intersection(registered_app_services)
         if intersection_dtos:
+            intersection_names = {dto.__name__ for dto in intersection_dtos}
             self.logger.error(
-                f"Features and app services have the same name: {registered_features.intersection(registered_app_services)}",
+                f"Features and app services have the same DTO: {intersection_names}",
             )
             raise DTOAlreadyRegistered(
-                f"Data transfer object {intersection_dtos} is present in application services and features, Change "
+                f"Data transfer object {intersection_names} is present in application services and features, Change "
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
 
@@ -170,21 +173,22 @@ class FrameworkBus(Bus):
         if the DTO is present in the app service bus
         otherwise will execute the DTO in the feature bus
         """
-        dto_name = dto.__class__.__name__
+        dto_type = dto.__class__
+        dto_name = dto_type.__name__
         try:
             if (
-                dto_name in self.app_service_bus.app_service_registry
-                and dto_name in self.feature_bus.feature_registry
+                dto_type in self.app_service_bus.app_service_registry
+                and dto_type in self.feature_bus.feature_registry
             ):
                 raise DTOAlreadyRegistered(
                     f"Data transfer object {dto_name} is present in application services and features, Change the "
                     f"name of the feature or create another framework instance to handle in doupled wat"
                 )
-            if dto_name in self.feature_bus.feature_registry:
+            if dto_type in self.feature_bus.feature_registry:
                 response = self.feature_bus.execute(dto)
                 return response
 
-            if dto_name in self.app_service_bus.app_service_registry:
+            if dto_type in self.app_service_bus.app_service_registry:
                 response = self.app_service_bus.execute(dto)
                 return response
 

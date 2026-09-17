@@ -76,14 +76,11 @@ def built_bus(framework_instance: UseFramework) -> FrameworkBus:
 
 
 def _describe_all(
-    registry: Mapping[DtoName, Feature | ApplicationService],
-    dto_registry: Mapping[DtoName, type[DataTransferObject]],
+    registry: Mapping[type[DataTransferObject], Feature | ApplicationService],
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     metadata: dict[DtoName, FeatureOrAppServiceMetadata] = {}
-    for name, instance in registry.items():
-        dto_type = dto_registry.get(name)
-        if dto_type is None:
-            continue
+    for dto_type, instance in registry.items():
+        name = dto_type.__name__
         feature_or_app_type = instance.__class__
         metadata[name] = FeatureOrAppServiceMetadata(
             name=name,
@@ -98,7 +95,7 @@ def _describe_all(
 def features(framework_instance: UseFramework) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """Feature registry keyed by DTO name, described."""
     bus = built_bus(framework_instance)
-    return _describe_all(bus.feature_bus.feature_registry, bus.dto_registry)
+    return _describe_all(bus.feature_bus.feature_registry)
 
 
 def app_services(
@@ -106,7 +103,7 @@ def app_services(
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """ApplicationService registry keyed by DTO name, described."""
     bus = built_bus(framework_instance)
-    return _describe_all(bus.app_service_bus.app_service_registry, bus.dto_registry)
+    return _describe_all(bus.app_service_bus.app_service_registry)
 
 
 def dtos(framework_instance: UseFramework) -> dict[DtoName, DtoMetadata]:

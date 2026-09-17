@@ -143,6 +143,11 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """
         ...
 
+    @property
+    def dto_registry(self) -> Mapping[str, type]:
+        """Every DTO name this bus answers, mapped to its class — built now if it wasn't yet."""
+        ...
+
     def add_middleware(self, middleware: Middleware) -> None:
         """
         Add middleware function to the execution pipeline.

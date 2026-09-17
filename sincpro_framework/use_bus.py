@@ -194,6 +194,19 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """
         return cast(TDeps, self._deps_locator)
 
+    @property
+    def dto_registry(self) -> Mapping[str, type]:
+        """Every DTO name this bus answers, mapped to its class — built now if it wasn't yet.
+
+        A live query, not a snapshot: it reads straight off the built bus, so it always
+        answers what is registered at the moment it's asked, not what was registered when
+        this property was first read.
+        """
+        if not self.was_initialized:
+            self.build_root_bus()
+        assert self.bus is not None
+        return self.bus.dto_registry
+
     def add_middleware(self, middleware: Middleware):
         """Add middleware function to the execution pipeline"""
         self.middleware_pipeline.add_middleware(middleware)

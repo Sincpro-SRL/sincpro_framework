@@ -10,7 +10,7 @@ def test_application_service_bus(
     app_service_instance_test: ApplicationService,
 ):
     assert (
-        app_service_bus_instance.app_service_registry[CommandApplicationService1.__name__]
+        app_service_bus_instance.app_service_registry[CommandApplicationService1]
         == app_service_instance_test
     )
     assert (
