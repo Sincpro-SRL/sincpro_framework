@@ -2,7 +2,10 @@
 
 from enum import Enum
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import TYPE_CHECKING, Callable, TypeAlias, TypeVar
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
 
 # PYTHON 3.14 FREE-THREADING: dependency-injector 4.49.1 ships an abi3 wheel
 # (works fine on regular 3.14) but has not declared free-threading support.
@@ -24,8 +27,8 @@ from .exceptions import DTOAlreadyRegistered
 from .observability import Observability
 from .sincpro_abstractions import DataTransferObject
 
-DTOClass = type[DataTransferObject]
-DTORegistration = DTOClass | str | list[DTOClass | str]
+DTOClass: TypeAlias = "type[DataTransferObject] | type[DataclassInstance]"
+DTORegistration: TypeAlias = "DTOClass | str | list[DTOClass | str]"
 
 # ---------------------------------------------------------------------------------------------
 # Container Definition

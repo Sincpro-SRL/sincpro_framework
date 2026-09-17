@@ -12,7 +12,7 @@ from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
-TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
+TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject | DataclassInstance")
 TypeDTOResponse = TypeVar(
     "TypeDTOResponse", bound="DataTransferObject | DataclassInstance | list | dict"
 )

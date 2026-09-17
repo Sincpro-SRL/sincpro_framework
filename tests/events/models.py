@@ -16,10 +16,12 @@ from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.events import Subscriber
 
 
+@dataclass(kw_only=True)
 class TicketClosed(DomainEvent):
     reason: str
 
 
+@dataclass(kw_only=True)
 class NobodyListens(DomainEvent):
     pass
 

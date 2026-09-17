@@ -26,12 +26,14 @@ from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggre
 ZERO = Decimal("0.00")
 
 
+@dataclass(kw_only=True)
 class EntryPosted(DomainEvent):
     entry_id: str
     journal_id: str
     account_ids: list[str]
 
 
+@dataclass(kw_only=True)
 class BalanceUpdated(DomainEvent):
     account_id: str
     balance: Decimal

@@ -22,7 +22,7 @@ def test_an_entity_records_and_the_feature_pulls():
     recorded = ticket.pull_events()
 
     assert [one.name for one in recorded] == ["TicketClosed"]
-    assert recorded[0].aggregate_id == ticket.id and recorded[0].aggregate_type == "Ticket"
+    assert recorded[0].entity_id == ticket.id and recorded[0].entity_type == "Ticket"
     assert ticket.pull_events() == [], "pulled once, gone: nothing here stores an event"
 
 

@@ -10,6 +10,7 @@ contexts reacting, with `correlation_id` carrying the command through and `causa
 naming the event that caused each next one.
 """
 
+import dataclasses
 from decimal import Decimal
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
@@ -102,11 +103,11 @@ def ledger_bus(
 
             published = []
             for event in recorded:
-                event = event.model_copy(
-                    update={"correlation_id": dto.correlation_id or event.event_id}
+                event = dataclasses.replace(
+                    event, correlation_id=dto.correlation_id or event.id
                 )
                 self.publisher.publish(event)
-                published.append(event.event_id)
+                published.append(event.id)
             return ResponsePostEntry(entry_id=entry.id, published=published)
 
     return bus
@@ -157,11 +158,10 @@ def reporting_bus(
 
             for update in recorded:
                 self.publisher.publish(
-                    update.model_copy(
-                        update={
-                            "correlation_id": event.correlation_id,
-                            "causation_id": event.event_id,
-                        }
+                    dataclasses.replace(
+                        update,
+                        correlation_id=event.correlation_id,
+                        causation_id=event.id,
                     )
                 )
             return ResponseBalances(balances=balances)
