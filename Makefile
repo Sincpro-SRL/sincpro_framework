@@ -132,8 +132,18 @@ publish: configure-gemfury
 	poetry publish -r fury --build
 	poetry publish -u __token__ -p $(POETRY_PYPI_TOKEN)
 
+STRESS_ENTRIES ?= 25000
+
 test:
-	poetry run pytest tests $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml
+	poetry run pytest tests -m "not realworld" $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml
+
+test-realworld:
+	poetry run pytest tests/realworld -m "realworld and not stress" -p no:cacheprovider
+
+test-stress:
+	SINCPRO_REALWORLD_ENTRIES=$(STRESS_ENTRIES) poetry run pytest tests/realworld -m stress -p no:cacheprovider
+
+test-all: test test-realworld
 
 test-coverage: test
 	poetry run coverage html
@@ -155,5 +165,5 @@ test_one:
 clean-coverage:
 	rm -rf htmlcov coverage.xml .coverage .coverage.*
 
-.PHONY: install start clean test test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
+.PHONY: install start clean test test-realworld test-stress test-all test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
 	docs docs-init docs-view check-openwiki

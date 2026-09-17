@@ -1,4 +1,4 @@
-"""Tests básicos de sincpro_framework.ddd.value_object."""
+"""Basic tests for sincpro_framework.ddd.value_object."""
 
 from typing import NewType
 
@@ -146,7 +146,7 @@ class TestIndependentInstances:
 
 
 # ---------------------------------------------------------------------------
-# Compatibilidad: ambas APIs producen el mismo resultado
+# Compatibility: both APIs produce the same result
 # ---------------------------------------------------------------------------
 
 
@@ -169,7 +169,7 @@ class TestBothAPIs:
         assert UserIdVO.__name__ == "UserId"
 
     def test_both_apis_produce_equivalent_behaviour(self):
-        """Ambas APIs producen value objects con el mismo comportamiento."""
+        """Both APIs produce value objects that behave the same."""
         NewApiVO = ValueObject(str, lambda v: v.strip().lower(), name="Email")
         OldApiVO = new_value_object(NewType("Email", str), lambda v: v.strip().lower())
 

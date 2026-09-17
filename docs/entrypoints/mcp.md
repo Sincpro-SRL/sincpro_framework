@@ -2,7 +2,7 @@
 
 **`entrypoint_mcp`** is the shipped feature: take a `UseFramework` instance and publish its Features / ApplicationServices as MCP tools. Docstrings contextualize the LLM (`tools/list`); `tools/call` is `framework(dto)`.
 
-This is **not** a generic “entrypoints” product. REST is another host. JSON-RPC is **[`entrypoint_rpc`](./entrypoint_rpc.md)**.
+This is **not** a generic “entrypoints” product. REST is another host. JSON-RPC is **[`entrypoint_rpc`](rpc.md)**.
 
 The domain does not know MCP exists. There is no `expose_mcp=True` on a Feature. The bus is the catalog; `entrypoint_mcp` is the MCP host.
 
@@ -15,7 +15,7 @@ stdio / MCP HTTP                  UseFramework                Feature
 Python remains: framework(dto)                                ValueObject
 ```
 
-Real SDK evaluation (SIAT SOAP, not Greeting): **[entrypoint_mcp_use_case.md](./entrypoint_mcp_use_case.md)**.
+Real SDK evaluation (SIAT SOAP, not Greeting): **[entrypoint_mcp_use_case.md](mcp-use-case.md)**.
 
 Package path: `sincpro_framework.entrypoints.mcp` (`build_mcp_server`, `Entrypoint`). The **feature name** in docs and product language is `entrypoint_mcp`.
 

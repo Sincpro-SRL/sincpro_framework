@@ -260,6 +260,43 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
 - Parameterize the bus as `UseFramework[DependencyContextType]`. Features get `self.token_adapter`; callers outside a Feature get the same instance as `framework.deps.token_adapter`.
 
+### Persistence — `sincpro_framework.ddd` and `sincpro_framework.orm`
+
+One way to ask a database in every Sincpro service: a `Criteria` goes in, an `EntityCollection`
+comes back with its cursor, a typed count and the model's own definition; an aggregate goes to
+`save` and a stale write is refused. The vocabulary needs nothing installed; the SQLAlchemy
+adapter is the `[sqlalchemy]` extra. See [docs/persistence/](docs/persistence/README.md)
+for what it does and [docs/persistence/decisions.md](docs/persistence/decisions.md) for why.
+
+```python
+from sincpro_framework.ddd import Criteria, Entity
+from sincpro_framework.orm import Database, Repository
+
+repository = Repository(Database("sqlite:///catalog.sqlite3"))   # injected as `self.repository`
+page = repository.search(Dataset, Criteria.model_validate(
+    {"where": {"field": "row_count", "operator": ">", "value": 1000},
+     "specification": {"name": {}, "runs": {"pagination": {"limit": 5}}}}
+))
+page.items, page.count, page.cursor, page.dropped, page.meta
+```
+
+The repository answers the short questions too — `exists`, `first`, `one`, `get_by`, `pluck`,
+`distinct`, `export` — writes in batches with `save_all`, crosses two axes with `pivot`, says
+what a criteria will cost with `explain`, and can be handed over narrowed to a tenant with
+`narrowed(criteria)`. A Feature is unit-tested against `MemoryRepository`, which answers the
+same vocabulary with no database behind it.
+
+`specification` says what to bring back of each record: which scalars, and which relations with
+their own filter, order and page, at any depth. Relations are read off the annotations and the
+foreign keys; a table in between, another bounded context's bus or any function are declared once
+beside the tables. Every relation resolves once per page, never per row. See
+[docs/persistence/specification.md](docs/persistence/specification.md).
+
+Domain events are recorded by the aggregate and published by a Feature through
+`sincpro_framework.events`: a `Publisher` over a `SyncQueue` or a `BackgroundQueue`, with buses
+as subscribers. Nothing is stored and nothing is wired by default. See
+[docs/events/](docs/events/README.md).
+
 ### `entrypoint_mcp`
 
 See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
@@ -890,9 +927,9 @@ The scope of the wiki is controlled in
 [`openwiki/INSTRUCTIONS.md`](openwiki/INSTRUCTIONS.md), and what the agent is
 not allowed to read, in [`.openwikiignore`](.openwikiignore).
 
-Hand-written architecture decisions stay in
-[`docs/architecture/`](docs/architecture/) and remain authoritative: the wiki
-references them, it does not replace them.
+Hand-written documentation stays in [`docs/`](docs/README.md), organised by layer
+(core, persistence, events, entrypoints, observability), and remains authoritative:
+the wiki references it, it does not replace it.
 
 > **Migration note (4.0.0)** — up to 3.x the framework shipped its own
 > documentation generator (`sincpro_framework.generate_documentation`, with
@@ -1266,7 +1303,9 @@ export SINCPRO_FRAMEWORK_CONFIG_FILE = /path/to/your/config.yml
 The `Makefile` is the single entry point — CI calls the same targets you run locally.
 
 ```bash
-make test                 # test suite + coverage report in the terminal + coverage.xml
+make test                 # unit suites + coverage report in the terminal + coverage.xml
+make test-realworld       # the ledger cases over a populated database (docs/persistence/testing.md)
+make test-stress          # the same at 25 000 entries, timed; SINCPRO_REALWORLD_ENTRIES and DATABASE_URL apply
 make test-coverage        # the above + HTML report in htmlcov/
 make test-coverage-open   # the above + opens htmlcov/index.html in the browser
 make test_one t=tests/test_async_bus.py   # a single file/test, verbose, no coverage

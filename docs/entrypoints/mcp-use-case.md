@@ -1,6 +1,6 @@
 # `entrypoint_mcp` — use case: `sincpro_siat_soap`
 
-This is not the README Greeting example. The contract lives in [entrypoint_mcp.md](./entrypoint_mcp.md). This page evaluates **`entrypoint_mcp`** against the SDK Sincpro actually ships: **SIAT SOAP**. The same pattern applies to `sincpro_payments_sdk` / CyberSource.
+This is not the README Greeting example. The contract lives in [entrypoint_mcp.md](mcp.md). This page evaluates **`entrypoint_mcp`** against the SDK Sincpro actually ships: **SIAT SOAP**. The same pattern applies to `sincpro_payments_sdk` / CyberSource.
 
 **Verdict:** the framework extra is ready. What remains is a **one-file host in the SDK** plus an `exclude` list. Features do not change.
 

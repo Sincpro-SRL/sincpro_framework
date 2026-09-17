@@ -1,6 +1,19 @@
-"""Shared Value Object fixtures for DDD tests."""
+"""Shared Value Object fixtures for DDD tests, and the profile the property tests run under."""
 
 from typing import NewType
+
+from hypothesis import HealthCheck, settings
+
+# One profile for the property suite: deterministic, so a rare counterexample cannot turn
+# into a test that fails on somebody else's branch.
+settings.register_profile(
+    "sincpro",
+    max_examples=50,
+    derandomize=True,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
+)
+settings.load_profile("sincpro")
 
 from sincpro_framework.ddd import ValueObject
 from sincpro_framework.ddd.value_object import new_value_object
@@ -23,7 +36,7 @@ TagVO = ValueObject(str, _validate_non_empty, name="Tag")
 ProductCodeVO = ValueObject(str, lambda v: v.strip().upper(), name="ProductCode")
 StockVO = ValueObject(int, lambda v: v * 2, name="Stock")  # doubles the value
 
-# Collection primitives
+# EntityCollection primitives
 TagsVO = ValueObject(list, lambda v: sorted(set(v)), name="Tags")  # dedup and sort
 MetaVO = ValueObject(dict, lambda v: {k.strip(): val for k, val in v.items()}, name="Meta")
 CoordSetVO = ValueObject(
