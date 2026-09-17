@@ -9,7 +9,7 @@ reached through the repository's escape hatch.
 """
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -295,6 +295,33 @@ class Grouping(DataTransferObject):
     by: tuple[Level, ...] = ()
     totals: dict[str, Fold] = {}
 
+    having: Expression | None = None
+    """A filter over what the groups fold, not over the rows: `count > 10`, `debit > 1000`.
+    The names it may use are the ones in `totals` plus `count`; `where` filters the rows that
+    make the groups, `having` filters the groups the rows made."""
+
+    order: tuple[Sort, ...] = ()
+    """How the groups of each level come back: by the level's own field, by a name in `totals`
+    or by `count`. Empty means by the level's field, ascending, which is how a list of groups
+    reads when nobody asked for anything else."""
+
+    pagination: Pagination | None = None
+    """How many groups of the FIRST level come back, and from where. `None`, the default, is
+    every group: a grouping is a set of counts and a client asked for all of them. When a page
+    is asked, the deeper levels answer only for the groups that survived it.
+
+    A page and not a keyset: ordering by an aggregate has no stable key to resume from, so
+    `Offset` is the honest strategy here and a cursor is not minted."""
+
+    @property
+    def paged(self) -> bool:
+        """Whether only some of the groups were asked for.
+
+        >>> Grouping(by=(Level(field="a"),)).paged
+        False
+        """
+        return self.pagination is not None
+
     @property
     def asked(self) -> bool:
         """Whether anything is being grouped at all.
@@ -338,6 +365,58 @@ class Bucket(DataTransferObject):
     """Where the next page inside this group starts; `None` when there is none, or none asked."""
     groups: list["Bucket"] = []
     """The level below, when the grouping named one. Empty on the deepest level."""
+
+
+class PivotCell(DataTransferObject):
+    """One cell of a pivot: what its rows share on both axes, how many there are, and the
+    numbers folded out of them.
+
+        out     PivotCell(row=['SAL'], column=['2026-01'], count=412, totals={'debit': …})
+
+    A margin is a cell with one axis empty: `column=[]` is the whole row, `row=[]` the whole
+    column, and both empty is the grand total.
+    """
+
+    row: list[Any] = []
+    column: list[Any] = []
+    count: int = 0
+    totals: dict[str, Any] = {}
+
+
+class Pivot(DataTransferObject):
+    """A table of groups crossed by groups: rows down one axis, columns across the other, a
+    folded cell where they meet.
+
+        in      rows=[journal_id], columns=[posted_at:month], totals={'debit': sum debit}
+        out     Pivot(rows=[['SAL'], ['PUR']], columns=[['2026-01'], ['2026-02']], cells=[…])
+
+    `rows` and `columns` are every key that appeared, in order, so a client renders the grid
+    without scanning the cells; `cells` holds only the crossings that have rows, because a
+    pivot is mostly holes. The margins are folded in the database and not added up here: an
+    average of averages is not an average.
+    """
+
+    rows: list[list[Any]] = []
+    columns: list[list[Any]] = []
+    cells: list[PivotCell] = []
+    row_margin: list[PivotCell] = []
+    """One cell per row key, folded over its whole row."""
+    column_margin: list[PivotCell] = []
+    """One cell per column key, folded over its whole column."""
+    total: PivotCell = PivotCell()
+    """Everything the criteria matched, folded once."""
+
+    def cell(self, row: Sequence[Any], column: Sequence[Any]) -> PivotCell | None:
+        """The cell where one row key crosses one column key, or `None` when it is empty.
+
+        >>> pivot.cell(["SAL"], ["2026-01"]).count
+        412
+        """
+        wanted = (list(row), list(column))
+        for one in self.cells:
+            if (one.row, one.column) == wanted:
+                return one
+        return None
 
 
 class Specification(RootModel[dict[str, "Criteria"]]):
@@ -478,6 +557,10 @@ class Criteria(DataTransferObject):
                 value["totals"] = {
                     name: Fold.read(fold) for name, fold in (value["totals"] or {}).items()
                 }
+            if "having" in value:
+                value["having"] = expression_from(value["having"])
+            if isinstance(value.get("order"), str):
+                value["order"] = parse_order(value["order"])
         return value
 
     @property

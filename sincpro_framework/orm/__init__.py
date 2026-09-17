@@ -25,10 +25,13 @@ except (
 
 from sincpro_framework.orm.sqlalchemy import (
     Database,
+    Explained,
     JsonText,
     Relation,
     Repository,
     TranslatedText,
+    archive_columns,
+    audit_columns,
     describe,
     entity_columns,
     entity_table,
@@ -39,10 +42,13 @@ from sincpro_framework.orm.sqlalchemy import (
 __all__ = [
     "SQLALCHEMY_MISSING",
     "Database",
+    "Explained",
     "JsonText",
     "Relation",
     "Repository",
     "TranslatedText",
+    "archive_columns",
+    "audit_columns",
     "describe",
     "entity_columns",
     "entity_table",

@@ -120,6 +120,32 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
             raise InvalidCriteria(f"no SQL translation for operator '{operator}'")
 
 
+def clause_over(
+    resolve: Callable[[str], Any], expression: Expression | None
+) -> ColumnElement[bool] | None:
+    """An expression as a clause, with `resolve` saying what a field name is a column of.
+
+    The tree is the same wherever it is applied; only the name lookup changes. `WHERE` resolves
+    a name to a model column, `HAVING` to the labelled aggregate a group folded.
+    """
+    match expression:
+        case None:
+            return None
+        case Condition():
+            return _comparison(
+                resolve(expression.field), expression.operator, expression.value
+            )
+        case All():
+            parts = (clause_over(resolve, part) for part in expression.all)
+            return and_(*(one for one in parts if one is not None))
+        case Any_():
+            parts = (clause_over(resolve, part) for part in expression.any)
+            return or_(*(one for one in parts if one is not None))
+        case Not():
+            inner = clause_over(resolve, expression.negate)
+            return not_(inner) if inner is not None else None
+
+
 def where_clause(entity: type, expression: Expression | None) -> ColumnElement[bool] | None:
     """A validated expression as a `WHERE` clause.
 
@@ -131,22 +157,7 @@ def where_clause(entity: type, expression: Expression | None) -> ColumnElement[b
 
     Every leaf has already been checked against the model, so nothing here refuses.
     """
-    match expression:
-        case None:
-            return None
-        case Condition():
-            return _comparison(
-                getattr(entity, expression.field), expression.operator, expression.value
-            )
-        case All():
-            parts = (where_clause(entity, part) for part in expression.all)
-            return and_(*(one for one in parts if one is not None))
-        case Any_():
-            parts = (where_clause(entity, part) for part in expression.any)
-            return or_(*(one for one in parts if one is not None))
-        case Not():
-            inner = where_clause(entity, expression.negate)
-            return not_(inner) if inner is not None else None
+    return clause_over(lambda field: getattr(entity, field), expression)
 
 
 def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:

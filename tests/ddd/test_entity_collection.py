@@ -13,9 +13,11 @@ between two identical requests is one nobody can page through.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import pytest
 
+from sincpro_framework.ddd.criteria import Criteria, Specification
 from sincpro_framework.ddd.entity_collection import (
     Count,
     Dropped,
@@ -203,3 +205,107 @@ def test_the_summary_says_what_it_is_holding_without_saying_what_is_in_it():
 
     assert repr(page) == "Rows(1 records of 197+, more, 1 dropped)"
     assert "a" not in repr(page).replace("Rows", "")
+
+
+# ── the lookups a use case does over a page it already has ───────────────────
+
+
+@dataclass
+class Thing:
+    thing_id: str
+    name: str
+    size: int
+    made_at: datetime
+
+
+def a_thing(number: int) -> Thing:
+    return Thing(
+        thing_id=f"th_{number:04d}",
+        name=f"thing {number}",
+        size=number % 5,
+        made_at=datetime(2026, 1, 1, 12, number),
+    )
+
+
+def test_records_are_indexed_by_a_value_of_their_own():
+    page = EntityCollection(items=(a_thing(1), a_thing(2)))
+
+    by_name = page.index_by("name")
+
+    assert by_name["thing 1"].thing_id == "th_0001"
+    assert page.index_by(lambda thing: thing.size)[a_thing(2).size].thing_id == "th_0002"
+
+
+def test_records_become_dictionaries_whole_or_masked():
+    page = EntityCollection(items=(a_thing(3),))
+
+    whole = page.to_records()
+    masked = page.to_records(Specification({"name": Criteria()}))
+
+    assert set(whole[0]) == {"thing_id", "name", "size", "made_at"}
+    assert masked == [{"thing_id": "th_0003", "name": "thing 3"}]
+    assert isinstance(whole[0]["made_at"], datetime)  # Python values, not JSON
+
+
+def test_a_mask_reaches_inside_what_a_record_holds():
+    @dataclass
+    class Line:
+        line_id: str
+        amount: int
+
+    @dataclass
+    class Order:
+        order_id: str
+        lines: list[Line]
+
+    page = EntityCollection(
+        items=(Order(order_id="o1", lines=[Line("l1", 5), Line("l2", 7)]),)
+    )
+
+    masked = page.to_records(
+        Specification(
+            {"lines": Criteria(specification=Specification({"amount": Criteria()}))}
+        )
+    )
+
+    assert masked == [
+        {
+            "order_id": "o1",
+            "lines": [{"line_id": "l1", "amount": 5}, {"line_id": "l2", "amount": 7}],
+        }
+    ]
+
+
+def test_two_collections_differ_by_identity():
+    stored = EntityCollection(items=(a_thing(1), a_thing(2), a_thing(3)))
+    brought = EntityCollection(items=(a_thing(2), a_thing(3), a_thing(4)))
+
+    changes = brought.changes_against(stored)
+
+    assert [one.thing_id for one in changes.added] == ["th_0004"]
+    assert [one.thing_id for one in changes.removed] == ["th_0001"]
+    assert changes.changed == ()
+    assert len(changes.unchanged) == 2
+    assert changes.any is True
+
+
+def test_what_changed_is_what_the_comparison_says_changed():
+    stored = EntityCollection(items=(a_thing(1),))
+    renamed = a_thing(1)
+    renamed.name = "renamed"
+    brought = EntityCollection(items=(renamed,))
+
+    by_everything = brought.changes_against(stored)
+    by_size = brought.changes_against(
+        stored, same=lambda mine, theirs: mine.size == theirs.size
+    )
+
+    assert len(by_everything.changed) == 1
+    assert by_everything.changed[0][0].name == "renamed"
+    assert by_size.changed == () and len(by_size.unchanged) == 1
+
+
+def test_a_collection_against_itself_has_nothing_to_say():
+    page = EntityCollection(items=(a_thing(1), a_thing(2)))
+
+    assert page.changes_against(page).any is False

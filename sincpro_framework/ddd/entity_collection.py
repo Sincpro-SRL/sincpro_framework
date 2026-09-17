@@ -13,7 +13,7 @@ from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 if TYPE_CHECKING:
-    from sincpro_framework.ddd.criteria import Expression
+    from sincpro_framework.ddd.criteria import Expression, Specification
     from sincpro_framework.ddd.model_meta import Meta
 
 
@@ -72,6 +72,97 @@ def identity_of(record: Any) -> Any:
     if model_fields:
         return getattr(record, next(iter(model_fields)))
     return record
+
+
+def model_and_collection(target: type) -> tuple[type, type]:
+    """What was asked for, as the pair everything here works with.
+
+        in      Dataset                 the mapped class
+        out     (Dataset, EntityCollection)   the plain collection holds anything
+
+        in      Datasets                class Datasets(EntityCollection[Dataset])
+        out     (Dataset, Datasets)     the model read off the generic parameter
+
+    A collection subclass is optional, so both spellings work.
+    """
+    if not isinstance(target, type) or not issubclass(target, EntityCollection):
+        return target, EntityCollection
+
+    held = target.holds()
+    if held is None:
+        raise ContractViolation(
+            f"{target.__name__} does not say which aggregate it holds; "
+            "declare it as EntityCollection[TheAggregate]"
+        )
+    return held, target
+
+
+def _declared(record: Any) -> list[str]:
+    """The names a record declares, dataclass or pydantic alike."""
+    if is_dataclass(record):
+        return [declared.name for declared in fields(record)]
+    return list(getattr(type(record), "model_fields", {}))
+
+
+def _flattened(record: Any, specification: "Specification | None") -> dict[str, Any]:
+    """One record as a dictionary, cut by the mask and read attribute by attribute.
+
+    Nothing the mask did not name is read, so a relation the criteria never asked for is not
+    touched — and therefore does not raise.
+    """
+    if specification is None:
+        return {name: getattr(record, name) for name in _declared(record)}
+
+    identity = identity_name(type(record))
+    written: dict[str, Any] = {identity: getattr(record, identity)}
+    for name, node in specification.root.items():
+        value = getattr(record, name, None)
+        if node.specification is None:
+            written[name] = value
+        elif isinstance(value, EntityCollection):
+            written[name] = value.to_records(node.specification)
+        elif isinstance(value, list):
+            written[name] = [_flattened(one, node.specification) for one in value]
+        elif value is None:
+            written[name] = None
+        else:
+            written[name] = _flattened(value, node.specification)
+    return written
+
+
+@dataclass(frozen=True, slots=True)
+class Changes[T]:
+    """What one collection has that another does not, by identity.
+
+        in      what is stored now, against what the import brought
+        out     Changes(added=2, removed=1, changed=3, unchanged=94)
+
+    The four buckets are disjoint and every record of both sides is in exactly one, so a
+    synchronisation writes `added` and `changed` and archives `removed` without counting twice.
+    """
+
+    added: tuple[T, ...] = ()
+    """In this collection, absent from the other: what has to be written."""
+    removed: tuple[T, ...] = ()
+    """In the other, absent from this one: what is gone."""
+    changed: tuple[tuple[T, T], ...] = ()
+    """Same identity on both sides, different content, as `(mine, theirs)`."""
+    unchanged: tuple[T, ...] = ()
+
+    def __repr__(self) -> str:
+        return (
+            f"Changes(added={len(self.added)}, removed={len(self.removed)}, "
+            f"changed={len(self.changed)}, unchanged={len(self.unchanged)})"
+        )
+
+    @property
+    def any(self) -> bool:
+        """Whether anything at all differs.
+
+        >>> page.changes_against(page).any
+        False
+        """
+        return bool(self.added or self.removed or self.changed)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -335,6 +426,66 @@ class EntityCollection[T]:
         if callable(field_or_selector):
             return [field_or_selector(record) for record in self.items]
         return [getattr(record, field_or_selector) for record in self.items]
+
+    def index_by(self, field_or_selector: str | Callable[[T], Hashable]) -> dict[Hashable, T]:
+        """The records by one value of theirs, the last one winning a tie.
+
+            in      "code"                  →  out  {'1010': Account(…), '2010': Account(…)}
+            in      lambda a: (a.kind, a.code)
+
+        For the lookups a use case does over a page it already has: joining two readings by
+        hand, checking what an import brought against what is stored.
+        """
+        read = (
+            field_or_selector
+            if callable(field_or_selector)
+            else (lambda record: getattr(record, field_or_selector))
+        )
+        return {read(record): record for record in self.items}
+
+    def to_records(
+        self, specification: "Specification | None" = None
+    ) -> list[dict[str, Any]]:
+        """The records as dictionaries, masked the way the wire masks them.
+
+            in      nothing asked   →  out  every field the record declares
+            in      {"code": {}}    →  out  [{'id': …, 'code': '1010'}, …]   identity kept
+
+        **Python values, not JSON**: a `datetime` stays a `datetime` and a `Decimal` a
+        `Decimal`, because this is for what the process does next — a CSV, a comparison, a
+        report — and not for a response, which `ResponsePaginatedQuery` writes.
+
+        Only what the mask names is read, so a relation nobody asked for is never touched.
+        """
+        return [_flattened(record, specification) for record in self.items]
+
+    def changes_against(
+        self, other: "EntityCollection[T]", same: Callable[[T, T], bool] | None = None
+    ) -> "Changes[T]":
+        """What this collection has that the other does not, by identity.
+
+            in      what an import brought, against what is stored
+            out     Changes(added=2, removed=1, changed=3, unchanged=94)
+
+        `same` decides what «changed» means and defaults to `==`. For an `Entity` that compares
+        `version` and `updated_at` as well, so a synchronisation that only cares about the
+        fields it owns passes its own comparison:
+
+        >>> brought.changes_against(stored, same=lambda mine, theirs: mine.name == theirs.name)
+        Changes(added=0, removed=0, changed=1, unchanged=24)
+        """
+        alike = same or (lambda mine, theirs: bool(mine == theirs))
+        mine = {identity_of(record): record for record in self.items}
+        theirs = {identity_of(record): record for record in other.items}
+        added = tuple(record for key, record in mine.items() if key not in theirs)
+        removed = tuple(record for key, record in theirs.items() if key not in mine)
+        both = [(mine[key], theirs[key]) for key in mine if key in theirs]
+        return Changes(
+            added=added,
+            removed=removed,
+            changed=tuple((a, b) for a, b in both if not alike(a, b)),
+            unchanged=tuple(a for a, b in both if alike(a, b)),
+        )
 
     def sorted_by(
         self, key: Callable[[T], Any], descending: bool = False

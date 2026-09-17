@@ -7,7 +7,8 @@ aggregate it was built alongside would not be evidence of that.
 `Thing` is a plain dataclass with a nullable column and a list column, the two shapes the
 translator has rules for. `Note` follows the `Entity` convention, so what the convention adds
 — the version check, the stamped `updated_at`, the minted id, the translations — is tested
-beside a class that does not.
+beside a class that does not. `Client` adds the two conventions an aggregate opts into,
+`Audited` and `Archivable`.
 """
 
 from dataclasses import dataclass
@@ -16,10 +17,15 @@ from datetime import datetime, timedelta
 from sqlalchemy import Column, DateTime, Integer, Table, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework.ddd.entity import Entity, Translated
+from sincpro_framework.ddd.entity import Archivable, Audited, Entity, Translated
 from sincpro_framework.ddd.entity_collection import EntityCollection
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
-from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
+from sincpro_framework.orm.sqlalchemy.data_mapper import (
+    archive_columns,
+    audit_columns,
+    entity_table,
+    map_aggregates,
+)
 
 EPOCH = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -66,6 +72,19 @@ class Notes(EntityCollection[Note]):
     pass
 
 
+@dataclass
+class Client(Audited, Archivable, Entity):
+    """The two conventions an aggregate opts into, on one class: who wrote it, and putting it
+    away instead of deleting it."""
+
+    name: str
+    city: str = ""
+
+
+class Clients(EntityCollection[Client]):
+    pass
+
+
 mapper_registry = registry()
 
 thing_table = Table(
@@ -88,7 +107,16 @@ note_table = entity_table(
     Column("body", Text, nullable=False),
 )
 
-map_aggregates(mapper_registry, {Thing: thing_table, Note: note_table})
+client_table = entity_table(
+    "client",
+    mapper_registry.metadata,
+    *audit_columns(),
+    *archive_columns(),
+    Column("name", Text, nullable=False),
+    Column("city", Text, nullable=False),
+)
+
+map_aggregates(mapper_registry, {Thing: thing_table, Note: note_table, Client: client_table})
 
 
 def a_thing(number: int) -> Thing:

@@ -83,10 +83,19 @@ with self.repository.context() as repository:                         # several 
 | Surface | Reads or writes | Notes |
 |---|---|---|
 | `search`, `browse`, `get`, `stream` | read | A page, records by id in the order given, one by id, every page in turn |
+| `exists`, `first`, `one`, `get_by` | read | The short questions: is there any, the one in front, the only one (refusing zero and two), one by a natural key |
+| `pluck`, `distinct` | read | One column of the whole result set, and the values it actually holds — no record is built |
+| `export` | read | Every page as dictionaries, one at a time: a report or a CSV without holding the set |
+| `pivot` | read | Groups crossed by groups with their margins; four statements whatever the volume |
+| `explain` | neither | What the criteria will become, what it dropped and how many statements it costs, without running it |
 | `count`, `group_by`, `group_by_levels`, `totals` | read | Answered in SQL over the whole result set, never over a page; `group_by_levels` with a page asked also gives every group the ids of its first page and a cursor |
 | `statement` / `run` | read | The escape hatch: a real `Select` out, the usual envelope back in |
 | `fetch_all` | read | Every page, as one complete collection — hands a bounded set to the in-memory algebra |
 | `save`, `remove` | write | Take the aggregate. **No update or delete by criteria** — a generic write path skips the aggregate's rules |
+| `save_all`, `remove_all` | write | The same promises in one flush, for an import or a nightly job; one stale record undoes the batch |
+| `purge` | write | The real delete, for what `remove` would only archive |
+| `retrying(work)` | write | Runs a unit of work again when it lost a race, and raises the last failure as it was |
+| `narrowed(criteria)` | both | The same database seen through a filter nothing can widen: a tenant, a branch, a permission |
 | `context` | both | The same engine bound to one session; the block is the transaction |
 | `repository.session`, `flush`, `commit`, `savepoint` | both | Inside a unit of work only: SQLAlchemy whole, a checkpoint, a part that fails on its own |
 | `get(…, for_update=True)`, `search(…, for_update=True)` | read | Row locks held until the unit of work commits; `skip_locked` steps over what another worker holds |
@@ -167,6 +176,23 @@ A table that predates the convention maps its own column names onto the `Entity`
 ```python
 map_aggregates(registry, {Dataset: dataset_table},
                properties={Dataset: {"id": dataset_table.c.dataset_id}})
+```
+
+### Two conventions an aggregate opts into
+
+| Mixin | Columns | What the adapter does |
+|---|---|---|
+| `Audited` | `audit_columns()` → `created_by`, `updated_by` | Stamps them on every flush from `Database(url, actor=lambda: bus.context.get("user.id"))`; without an actor they stay `None` |
+| `Archivable` | `archive_columns()` → `archived_at` | `remove` archives instead of deleting, `purge` deletes, and every reading leaves the archived out unless the criteria names `archived_at` |
+
+```python
+@dataclass
+class Client(Audited, Archivable, Entity):
+    name: str
+
+client_table = entity_table(
+    "client", metadata, *audit_columns(), *archive_columns(), Column("name", Text, nullable=False)
+)
 ```
 
 ### Engines: the provider's choice

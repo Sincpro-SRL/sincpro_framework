@@ -239,6 +239,66 @@ has instead of a private protocol.
 `Bucket.ids`, `Bucket.cursor`, `Repository._ids_per_group`, `Repository._partitioned_page`,
 `ddd.relations._reflected`.
 
+## 11c. The short readings, the batch and the retry are on the repository
+
+**Decision.** `exists`, `first`, `one`, `get_by`, `pluck`, `distinct` and `export` beside
+`search`; `save_all` and `remove_all` beside `save`; `purge` for the delete `remove` would
+otherwise turn into an archive; `retrying(work)` for a unit of work that lost a race.
+
+**Why.** Every one of them was already being written, once per project, as a wrapper around
+`search` or a loop around `save` — and each wrapper is where a page slips in by accident, where
+a batch becomes a thousand round trips, where a retry forgets to back off. The rule that keeps
+them honest is the one the layer already had: what answers over a page says so, and what answers
+over the whole result set says so. `pluck` and `distinct` are in the second group, with `count`
+and `totals`.
+
+`retrying` takes a callable and not a block, because a `with` cannot run its body twice.
+`one` fetches two rows and no more: it never loads a set to discover it was not one.
+
+**Rejected.** A `limit` argument on the short readings: the criteria already has one. Update or
+delete by criteria, again.
+
+## 11d. A repository can be narrowed, and a narrowed one never reads wide
+
+**Decision.** `repository.narrowed(criteria)` answers the same object with that criteria merged
+into every reading and checked against every write, with the evaluator. An aggregate that
+cannot express the scope is refused outright.
+
+**Why.** A tenant, a branch and a permission are all the same shape, and the laws they need are
+the ones `merged_with` already has: `where` accumulates with AND, `specification` intersects.
+Handing a Feature a repository that is already narrowed is stronger than asking it to remember
+a filter, and it composes: narrowing again narrows further.
+
+The refusal is the point. A scope whose field the aggregate does not have would be *dropped* by
+the ordinary rule, and a dropped filter widens — which for a permission means handing over the
+table. So this one place raises instead.
+
+## 11e. Two conventions an aggregate opts into: `Audited` and `Archivable`
+
+**Decision.** `Audited` adds `created_by` / `updated_by`, stamped by the adapter from the
+`Database`'s actor. `Archivable` adds `archived_at`: `remove` archives, `purge` deletes, and a
+reading leaves the archived out unless the criteria names the column.
+
+**Why.** Both are written by hand in every project, and both are wrong in the same way when
+they are: somebody forgets. The actor comes from a callable the provider hands the database,
+usually `lambda: bus.context.get("user.id")`, so the adapter never learns what a bus is. What a
+business calls deleting is almost always archiving, because other records point at the row;
+Odoo spells it `active`, and a column that says *when* it was put away is worth more than a flag.
+
+**Rejected.** Making either one automatic for every `Entity`. A convention that cannot be
+declined is a tax.
+
+## 11f. A repository with no database, for testing a Feature
+
+**Decision.** `MemoryRepository(*records)` answers the vocabulary over records in memory: the
+reads, the short readings, the folds, the groups, and writes with the version check and the
+archive rule. Relations, units of work and date grains are the adapter's and say so.
+
+**Why.** A Feature that reads is most of what a bounded context is, and testing it against a
+double that somebody wrote by hand tests the double. This one filters with `matches`, the same
+evaluator the SQL translator is specified against, so a Feature that passes here and fails
+against the engine has found a bug in the engine.
+
 ## 12. The repository is concrete; the protocol is minimal
 
 **Decision.** Applications inject the concrete `Repository` as `self.repository`. A `Protocol` in
@@ -330,6 +390,7 @@ named after the pattern it implements and against the one it avoids, Active Reco
 
 - Filtering or ordering a parent *by* a relation does not compose; it needs the value in the
   parent's own table, kept current by an event (`Line.entry_state` in the ledger is the pattern).
-- A limit on the number of *buckets* a grouping level returns; today every bucket comes back.
+- A page of groups applies to the first level; a deeper level answers for the groups that
+  survived it. Ordering groups by an aggregate has no stable keyset, so the page is an offset.
 - A message broker as a third `Queue`; an async engine; a second persistence backend, which is
   what would earn a `Protocol` in front of the adapter.

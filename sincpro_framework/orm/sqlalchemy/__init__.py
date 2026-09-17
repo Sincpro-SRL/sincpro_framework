@@ -16,19 +16,24 @@ package is what a different backend would cost.
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText, TranslatedText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
     Relation,
+    archive_columns,
+    audit_columns,
     entity_columns,
     entity_table,
     map_aggregates,
 )
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.repository import Explained, Repository
 from sincpro_framework.orm.sqlalchemy.sql_translator import register_grain_translator
 
 __all__ = [
     "Database",
+    "Explained",
     "JsonText",
     "Relation",
+    "archive_columns",
+    "audit_columns",
     "Repository",
     "TranslatedText",
     "describe",

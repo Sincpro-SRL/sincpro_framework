@@ -61,6 +61,30 @@ def entity_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
     ]
 
 
+def audit_columns() -> list[Column]:
+    """The two columns an `Audited` aggregate adds.
+
+        out     created_by TEXT · updated_by TEXT
+
+        entity_table("invoice", metadata, *audit_columns(), Column("number", Text))
+
+    Written by the adapter from the `Database`'s actor, never by a use case.
+    """
+    return [Column("created_by", Text), Column("updated_by", Text)]
+
+
+def archive_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
+    """The column an `Archivable` aggregate adds.
+
+        out     archived_at TIMESTAMP NULL
+
+    Indexed by the project when the table is large: every reading that did not ask for the
+    archived ones filters on it.
+    """
+    moment = datetime_type if datetime_type is not None else DateTime(timezone=True)
+    return [Column("archived_at", moment)]
+
+
 def entity_table(
     name: str,
     metadata: MetaData,

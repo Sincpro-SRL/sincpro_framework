@@ -17,7 +17,7 @@ import types
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum, StrEnum
-from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
+from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints
 
 from pydantic import computed_field
 
@@ -181,6 +181,48 @@ def annotations_of(declared: type) -> dict[str, Any]:
         raise ContractViolation(
             f"{declared.__name__} names a type that cannot be resolved at runtime: {error}"
         ) from error
+
+
+def members_of(annotation: Any) -> list[Any]:
+    """The values an enum field may hold, in declaration order; empty when it is not one."""
+    members = enum_of(annotation)
+    return [] if members is None else [member.value for member in members]
+
+
+def describe_class(declared: type, identity: str = "") -> "Meta":
+    """A definition read off the annotations alone, with no table behind it.
+
+        in      Shape(width: int, height: int, unit: str = "cm")
+        out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
+
+    What a value object is described by, and what a repository with no database reads to
+    validate a criteria. `identity` is empty for a value object, which has none, and the
+    aggregate's own identity field when a record has one.
+    """
+    annotations = annotations_of(declared)
+    translator = getattr(declared, "translations", None)
+    words: Translated = (
+        cast(Translated, translator())
+        if callable(translator)
+        else {"name": {"default": declared.__name__}, "labels": {}}
+    )
+    fields = {
+        name: FieldMeta.for_column(
+            logical_type(annotation),
+            annotation != without_optional(annotation),
+            members_of(annotation),
+        )
+        for name, annotation in annotations.items()
+        if related_class(annotation)[0] is None
+        or logical_type(annotation) is not FieldType.UNKNOWN
+    }
+    return Meta(
+        aggregate=declared.__name__,
+        identity=identity,
+        default_order=f"-{identity}" if identity else "",
+        fields=fields,
+        translations=words,
+    )
 
 
 def related_class(annotation: Any) -> tuple[type | None, bool]:

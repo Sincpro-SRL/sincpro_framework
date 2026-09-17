@@ -134,8 +134,8 @@ def new_draft(ledger: Repository, masters: dict[str, list]) -> Callable[..., Ent
         if unbalanced:
             lines[-1].credit += 1
         with ledger.context() as unit:
-            unit.session.add(entry)
-            unit.session.add_all(lines)
+            unit.save(entry)
+            unit.save_all(lines)
         entry.lines = lines
         return entry
 

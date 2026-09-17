@@ -23,10 +23,10 @@ from sincpro_framework.ddd.model_meta import (
     FieldType,
     Meta,
     annotations_of,
+    describe_class,
     enum_of,
     logical_type,
     related_class,
-    without_optional,
 )
 from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
 
@@ -39,34 +39,13 @@ def _is_shape(candidate: Any) -> bool:
 
 
 def describe_shape(value_object: type) -> Meta:
-    """The definition of a value object, read off its annotations alone: no table behind it.
+    """The definition of a value object embedded in a row: its annotations, no table, and no
+    identity of its own, so nothing survives a mask on its own account.
 
     in      Shape(width: int, height: int, unit: str = "cm")
-    out     Meta(aggregate='Shape', identity='width', fields={width, height, unit})
+    out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
     """
-    annotations = annotations_of(value_object)
-    translator = getattr(value_object, "translations", None)
-    words: Translated = (
-        cast(Translated, translator())
-        if callable(translator)
-        else {"name": {"default": value_object.__name__}, "labels": {}}
-    )
-    fields = {
-        name: FieldMeta.for_column(
-            logical_type(annotation),
-            annotation != without_optional(annotation),
-            _members_of(annotation),
-        )
-        for name, annotation in annotations.items()
-    }
-    # A value object has no identity: nothing survives a mask on its own account.
-    return Meta(
-        aggregate=value_object.__name__,
-        identity="",
-        default_order="",
-        fields=fields,
-        translations=words,
-    )
+    return describe_class(value_object)
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:

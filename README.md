@@ -280,6 +280,12 @@ page = repository.search(Dataset, Criteria.model_validate(
 page.items, page.count, page.cursor, page.dropped, page.meta
 ```
 
+The repository answers the short questions too — `exists`, `first`, `one`, `get_by`, `pluck`,
+`distinct`, `export` — writes in batches with `save_all`, crosses two axes with `pivot`, says
+what a criteria will cost with `explain`, and can be handed over narrowed to a tenant with
+`narrowed(criteria)`. A Feature is unit-tested against `MemoryRepository`, which answers the
+same vocabulary with no database behind it.
+
 `specification` says what to bring back of each record: which scalars, and which relations with
 their own filter, order and page, at any depth. Relations are read off the annotations and the
 foreign keys; a table in between, another bounded context's bus or any function are declared once

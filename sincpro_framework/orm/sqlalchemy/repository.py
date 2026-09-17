@@ -16,11 +16,12 @@ rules. There is no update or delete by criteria.
 """
 
 import types
-from collections.abc import Generator, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, overload
+from time import sleep
+from typing import Any, cast, overload
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.orm.exc import StaleDataError
@@ -28,12 +29,27 @@ from sqlalchemy.orm.exc import StaleDataError
 from sincpro_framework.ddd.criteria import (
     FOLD_FUNCTIONS,
     Bucket,
+    Condition,
     CountMode,
     Criteria,
     Grouping,
+    Level,
+    Operator,
+    Pivot,
+    PivotCell,
     Sort,
+    Specification,
+    combined,
+    conditions_of,
 )
-from sincpro_framework.ddd.entity_collection import Count, Dropped, EntityCollection
+from sincpro_framework.ddd.entity import Archivable
+from sincpro_framework.ddd.entity_collection import (
+    Count,
+    Dropped,
+    EntityCollection,
+    model_and_collection,
+)
+from sincpro_framework.ddd.evaluate import matches
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
     DuplicateAggregate,
@@ -41,11 +57,13 @@ from sincpro_framework.ddd.exceptions import (
     StaleAggregate,
 )
 from sincpro_framework.ddd.model_meta import Meta
+from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy import sql_translator as sql
-from sincpro_framework.orm.sqlalchemy.data_mapper import REPOSITORY
+from sincpro_framework.orm.sqlalchemy.data_mapper import REPOSITORY, relations_of
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.relation_resolver import resolve_relations
+from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 # Where counting stops unless somebody asks for more. Past this nobody is reading a total,
 # they are refining a filter — Odoo settled on the same number for the same reason.
@@ -55,28 +73,83 @@ DEFAULT_COUNT_CAP = 10_000
 # whatever the caller asked for that this model cannot answer.
 Prepared = tuple[Any, tuple[Sort, ...], Meta, list[Dropped]]
 
+COUNT = "count"
+"""What a grouping's `having` and `order` call the number of rows in a group."""
 
-def model_and_collection(target: type) -> tuple[type, type]:
-    """What was asked for, as the pair everything here works with.
 
-        in      Dataset                 the mapped class
-        out     (Dataset, EntityCollection)   the plain collection holds anything
+class Explained(DataTransferObject):
+    """What a criteria will do, answered without doing it. See `Repository.explain`."""
 
-        in      Datasets                class Datasets(EntityCollection[Dataset])
-        out     (Dataset, Datasets)     the model read off the generic parameter
+    sql: str
+    ordering: list[str] = []
+    dropped: list[Dropped] = []
+    relations: list[str] = []
+    """The relation nodes that will be resolved, by path: `['author', 'author.books']`."""
+    statements: int = 1
+    """How many calls it will cost: the page, its count when one is asked, and one per
+    relation node — whatever the number of rows."""
 
-    A collection subclass is optional, so both spellings work.
+
+def _level(one: str | Level) -> Level:
+    """A level as a caller writes it.
+
+    in  "posted_at:month"  →  out  Level(field='posted_at', grain='month')
+    in  "journal_id"       →  out  Level(field='journal_id')
     """
-    if not isinstance(target, type) or not issubclass(target, EntityCollection):
-        return target, EntityCollection
+    if isinstance(one, Level):
+        return one
+    field, _, grain = one.partition(":")
+    return Level(field=field, grain=grain or None)
 
-    held = target.holds()
-    if held is None:
-        raise ContractViolation(
-            f"{target.__name__} does not say which aggregate it holds; "
-            "declare it as EntityCollection[TheAggregate]"
-        )
-    return held, target
+
+def _folds(model: type, meta: Meta, folds: dict[str, str]) -> list[Any]:
+    """`{'debit': 'sum:debit'}` as labelled aggregate columns, each name checked first."""
+    columns = []
+    for name, fold in folds.items():
+        function, _, field = fold.partition(":")
+        if not field:
+            raise InvalidCriteria(
+                f"'{name}={fold}' should read as 'function:field', e.g. 'sum:row_count'"
+            )
+        if function not in FOLD_FUNCTIONS:
+            raise InvalidCriteria(
+                f"'{function}' is not a fold; use one of {', '.join(FOLD_FUNCTIONS)}"
+            )
+        meta.field(field)
+        columns.append(getattr(func, function)(getattr(model, field)).label(name))
+    return columns
+
+
+def _one_of(column: Any, values: list[Any]) -> Any:
+    """`column IN (values)`, with NULL spelled out: `IN` never matches it."""
+    present = [value for value in values if value is not None]
+    clause = column.in_(present)
+    return or_(clause, column.is_(None)) if len(present) != len(values) else clause
+
+
+def _relations_named(
+    model: type, specification: Specification | None, path: str = ""
+) -> list[str]:
+    """Every relation a specification expands, by path, in the order it will be resolved.
+
+        in      {"author": {"specification": {"books": {}}}, "tags": {}}
+        out     ['author', 'author.books', 'tags']
+
+    Read off what the data mapper declared and not off a definition: at this point nothing has
+    been resolved, so the other side's definition does not exist yet.
+    """
+    if specification is None:
+        return []
+    declared = relations_of(model)
+    named = []
+    for name, node in specification.root.items():
+        relation = declared.get(name)
+        if relation is None:
+            continue
+        here = f"{path}{name}"
+        named.append(here)
+        named.extend(_relations_named(relation.related, node.specification, f"{here}."))
+    return named
 
 
 class Repository:
@@ -88,9 +161,73 @@ class Repository:
     block shares one session and the block is the transaction.
     """
 
-    def __init__(self, database: Database, session: Session | None = None) -> None:
+    def __init__(
+        self,
+        database: Database,
+        session: Session | None = None,
+        scope: Criteria | None = None,
+    ) -> None:
         self.database = database
         self._bound = session
+        self._scope = scope
+
+    def narrowed(self, scope: Criteria) -> "Repository":
+        """The same database seen through a filter nothing can widen: what a tenant, a branch
+        or a permission is.
+
+            books = repository.narrowed(Criteria(where=Condition(field="tenant", value="acme")))
+            books.search(Invoices, criteria)      →  … AND tenant = 'acme'
+            books.save(invoice_of_another_tenant) →  ContractViolation
+
+        Every reading merges the scope with AND, and every write is checked against it before
+        it reaches the database, with the same evaluator the translator is specified by. An
+        aggregate the scope cannot be expressed on is refused outright rather than read wide:
+        a scope that is silently dropped is the one bug this exists to prevent.
+
+        Narrowing again narrows further; the scopes accumulate, they never replace.
+        """
+        return Repository(
+            self.database,
+            session=self._bound,
+            scope=self._scope.merged_with(scope) if self._scope is not None else scope,
+        )
+
+    def _asked(self, model: type, meta: Meta, criteria: Criteria) -> Any:
+        """The filter that actually runs: what the caller asked, and what the repository adds.
+
+        1. The scope, when this repository is narrowed, refused outright if this aggregate
+           cannot answer it.
+        2. Final: the archived left out, unless the caller named `archived_at` itself.
+        """
+        expression = criteria.expression
+        if self._scope is not None:
+            kept, dropped = meta.accept(self._scope.expression)
+            if dropped or kept is None:
+                raise ContractViolation(
+                    f"{meta.aggregate} cannot answer the scope this repository was narrowed "
+                    f"by ({', '.join(one.field for one in dropped) or 'nothing survived'}); "
+                    "reading it wide is not an option"
+                )
+            expression = combined(kept, expression)
+        if issubclass(model, Archivable) and not any(
+            one.field == "archived_at" for one in conditions_of(expression)
+        ):
+            expression = combined(
+                expression,
+                Condition(field="archived_at", operator=Operator.IS_NULL, value=True),
+            )
+        return expression
+
+    def _in_scope(self, record: Any) -> bool:
+        """Whether a record belongs to what this repository may see and write."""
+        return self._scope is None or matches(record, self._scope.expression)
+
+    def _refuse_outside(self, record: Any) -> None:
+        if not self._in_scope(record):
+            raise ContractViolation(
+                f"{type(record).__name__} lies outside what this repository was narrowed to; "
+                "it can neither be written nor removed here"
+            )
 
     @contextmanager
     def _session(self) -> Generator[Session]:
@@ -116,7 +253,7 @@ class Repository:
         a count computed from a different clause than the page it labels is silently wrong.
         """
         meta = describe(model)
-        expression, dropped = meta.accept(criteria.expression)
+        expression, dropped = meta.accept(self._asked(model, meta, criteria))
         _, unanswerable = meta.accept_specification(criteria.specification)
         clause = sql.where_clause(model, expression)
         return clause, sql.ordering_for(criteria, meta), meta, dropped + unanswerable
@@ -245,21 +382,43 @@ class Repository:
         for level in resolved:
             meta.field(level.field)
             columns.append(sql.grouping_column(model, level, dialect))
+        counted = func.count().label(COUNT)
         folded = []
-        for fold in grouping.totals.values():
+        for name, fold in grouping.totals.items():
             meta.field(fold.field)
-            folded.append(getattr(func, fold.function)(getattr(model, fold.field)))
+            folded.append(
+                getattr(func, fold.function)(getattr(model, fold.field)).label(name)
+            )
+        folds = {name: column for name, column in zip(grouping.totals, folded)} | {
+            COUNT: counted
+        }
+        having = self._having(grouping, folds)
         clause, _, _, _ = self.prepare(model, criteria)
 
         rows_by_level: list[Sequence[Any]] = []
+        kept_first: list[Any] | None = None
         for how_deep in range(1, len(resolved) + 1):
             keys = columns[:how_deep]
-            statement = select(*keys, func.count(), *folded).select_from(model)
+            statement = select(*keys, counted, *folded).select_from(model)
             if clause is not None:
                 statement = statement.where(clause)
-            rows_by_level.append(
-                session.execute(statement.group_by(*keys).order_by(*keys)).all()
-            )
+            if kept_first is not None:
+                # The deeper levels answer for the groups the first level's page kept, and for
+                # nothing else: a page of groups that dragged the whole tree behind it would
+                # cost what the page was asked to save.
+                statement = statement.where(_one_of(columns[0], kept_first))
+            statement = statement.group_by(*keys)
+            if having is not None:
+                statement = statement.having(having)
+            statement = statement.order_by(*self._group_order(grouping, keys, folds))
+            if how_deep == 1 and grouping.paged:
+                page = grouping.pagination
+                assert page is not None
+                statement = statement.limit(page.limit).offset(page.skipped())
+            rows = session.execute(statement).all()
+            rows_by_level.append(rows)
+            if how_deep == 1 and grouping.paged:
+                kept_first = [row[0] for row in rows]
 
         opens: dict[tuple, Criteria] = {(): criteria}
         for how_deep, rows in enumerate(rows_by_level, start=1):
@@ -299,6 +458,50 @@ class Repository:
                     )
                 )
         return children.get((), [])
+
+    def _having(self, grouping: Grouping, folds: dict[str, Any]) -> Any:
+        """`having` as a clause over what the groups folded, every name checked first.
+
+            in      Condition(count, GT, 10), totals {'debit': sum(debit)}
+            out     count(*) > 10
+
+        The names it may use are the ones in `totals` and `count`; a name outside them is
+        refused rather than dropped, because a filter that vanishes here would answer groups
+        the caller ruled out.
+        """
+        if grouping.having is None:
+            return None
+        for condition in conditions_of(grouping.having):
+            if condition.field not in folds:
+                raise InvalidCriteria(
+                    f"'{condition.field}' is not something a group folded; `having` reads "
+                    f"{', '.join(sorted(folds))} — a filter over the rows is `where`"
+                )
+        return sql.clause_over(folds.__getitem__, grouping.having)
+
+    def _group_order(
+        self, grouping: Grouping, keys: list[Any], folds: dict[str, Any]
+    ) -> list[Any]:
+        """How the groups of a level come back: by its own columns, or by what they folded.
+
+        in      nothing asked                    →  out  the group columns, ascending
+        in      Sort(count, descending=True)     →  out  count(*) DESC
+        in      Sort("debit", descending=True)   →  out  sum(debit) DESC
+        """
+        if not grouping.order:
+            return list(keys)
+        by_field = {level.field: column for level, column in zip(grouping.by, keys)}
+        clauses = []
+        for sort in grouping.order:
+            # `or` would ask a column for its truth, which SQLAlchemy refuses on purpose.
+            column = folds[sort.field] if sort.field in folds else by_field.get(sort.field)
+            if column is None:
+                raise InvalidCriteria(
+                    f"a grouping is ordered by a level, by a total or by count; "
+                    f"'{sort.field}' is none of those"
+                )
+            clauses.append(column.desc() if sort.descending else column.asc())
+        return clauses
 
     def _ids_per_group(
         self,
@@ -450,13 +653,14 @@ class Repository:
             an exception inside                     →  everything rolled back
 
         The engine handed to the block is this same engine bound to one session, so it
-        answers every method the outer one does. Nesting reuses the session in play.
+        answers every method the outer one does, and what it was narrowed to still holds
+        inside. Nesting reuses the session in play.
         """
         if self._bound is not None:
             yield self
             return
         with self.database.session() as session:
-            bound = Repository(self.database, session=session)
+            bound = Repository(self.database, session=session, scope=self._scope)
             # A relation touched inside the block resolves itself through this repository.
             session.info[REPOSITORY] = bound
             yield bound
@@ -707,9 +911,16 @@ class Repository:
         model, _ = model_and_collection(target)
         lock = self._locking(for_update, skip_locked)
         with self._session() as session:
-            if lock is None:
-                return session.get(model, identity)
-            return session.get(model, identity, with_for_update=lock)
+            found = (
+                session.get(model, identity)
+                if lock is None
+                else session.get(model, identity, with_for_update=lock)
+            )
+        if found is None or not self._in_scope(found):
+            return None
+        if isinstance(found, Archivable) and found.is_archived:
+            return None
+        return cast(Any, found)
 
     @overload
     def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...
@@ -737,6 +948,7 @@ class Repository:
             found = {
                 getattr(record, meta.identity): record
                 for record in session.scalars(select(model).where(column.in_(list(ids))))
+                if self._in_scope(record)
             }
         return holder(items=tuple(found[one] for one in ids if one in found), meta=meta)
 
@@ -859,6 +1071,341 @@ class Repository:
             row = session.execute(statement).one()
         return dict(zip(folds, row))
 
+    # ------------------------------------------------------------------ the short readings
+
+    def exists(self, target: type, criteria: Criteria | None = None) -> bool:
+        """Whether anything at all matches, without counting or fetching.
+
+            in      Account, Criteria(where=Condition(field="code", value="1010"))
+            out     True                       SELECT 1 … LIMIT 1
+
+        The cheapest question there is: a guard before a write, a badge on a screen.
+        """
+        criteria = criteria or Criteria()
+        model, _ = model_and_collection(target)
+        prepared = self.prepare(model, criteria)
+        clause = prepared[0]
+        statement = select(literal(1)).select_from(model).limit(1)
+        if clause is not None:
+            statement = statement.where(clause)
+        with self._session() as session:
+            return session.scalar(statement) is not None
+
+    def first(self, target: type, criteria: Criteria | None = None) -> Any:
+        """The first record the criteria's order puts in front, or `None`.
+
+        >>> self.repository.first(Entries, Criteria(order=parse_order("-posted_at")))
+        Entry(…)
+        """
+        criteria = criteria or Criteria()
+        return self.search(
+            target, criteria.model_copy(update={"count": CountMode.NONE, "meta": False})
+        ).first()
+
+    def one(self, target: type, criteria: Criteria | None = None) -> Any:
+        """The single record this criteria matches, refusing zero and refusing two.
+
+            in      a criteria that matches exactly one   →  out  the record
+            in      one that matches none, or several     →  ContractViolation
+
+        Two rows are fetched and no more: what makes this safe is that it never loads a set to
+        find out it was not one.
+        """
+        criteria = criteria or Criteria()
+        return self.search(
+            target,
+            criteria.model_copy(
+                update={
+                    "pagination": Pagination(limit=2),
+                    "count": CountMode.NONE,
+                    "meta": False,
+                }
+            ),
+        ).ensure_one()
+
+    def get_by(self, target: type, **values: Any) -> Any:
+        """One record by a natural key: the values that identify it besides its id.
+
+            in      Account, code="1010"    →  out  Account(…) or None
+            in      values two rows share   →  ContractViolation
+
+        A natural key names one record; two answers mean it was not one, and guessing which
+        would be the bug.
+        """
+        if not values:
+            raise InvalidCriteria("get_by needs at least one value, e.g. code='1010'")
+        asked = Criteria(
+            where=combined(
+                *(
+                    Condition(field=field, operator=Operator.EQ, value=value)
+                    for field, value in values.items()
+                )
+            ),
+            pagination=Pagination(limit=2),
+            count=CountMode.NONE,
+            meta=False,
+        )
+        page = self.search(target, asked)
+        if len(page) > 1:
+            named = ", ".join(f"{field}={value!r}" for field, value in values.items())
+            raise ContractViolation(
+                f"{len(page)} records answer to {named}; a natural key names one"
+            )
+        return page.first()
+
+    def pluck(self, target: type, field: str, criteria: Criteria | None = None) -> list[Any]:
+        """One column of everything the criteria matches, without building a record.
+
+            in      Line, "account_id", Criteria(where=…)
+            out     ['01a0…', '01a0…', …]          SELECT account_id FROM line WHERE …
+
+        Over the whole result set and not over a page, like `count` and `totals`: a column of
+        values is what fills a select, seeds a `browse` or feeds an in-memory join, and a page
+        of it would be an accident.
+        """
+        criteria = criteria or Criteria()
+        model, _ = model_and_collection(target)
+        clause, sorts, meta, _ = self.prepare(model, criteria)
+        meta.field(field)
+        statement = select(getattr(model, field)).select_from(model)
+        if clause is not None:
+            statement = statement.where(clause)
+        with self._session() as session:
+            return list(session.scalars(statement.order_by(*sql.order_clauses(model, sorts))))
+
+    def distinct(
+        self, target: type, field: str, criteria: Criteria | None = None
+    ) -> list[Any]:
+        """The values one column actually holds, each once, in order.
+
+            in      Line, "entry_state"     →  out  ['draft', 'posted']
+
+        What a filter's select offers, answered by the database rather than by a list somebody
+        keeps in step with it by hand.
+        """
+        criteria = criteria or Criteria()
+        model, _ = model_and_collection(target)
+        clause, _, meta, _ = self.prepare(model, criteria)
+        meta.field(field)
+        column = getattr(model, field)
+        statement = select(column).select_from(model).distinct().order_by(column)
+        if clause is not None:
+            statement = statement.where(clause)
+        with self._session() as session:
+            return list(session.scalars(statement))
+
+    def export(
+        self,
+        target: type,
+        criteria: Criteria | None = None,
+        specification: Specification | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Every record the criteria matches, as dictionaries, one page at a time.
+
+            for row in self.repository.export(Line, criteria, mask):
+                writer.writerow(row)
+
+        A walk and not a list: a report over a year of lines must not be held in memory to be
+        written. Python values, not JSON — see `EntityCollection.to_records`.
+        """
+        criteria = criteria or Criteria()
+        mask = specification if specification is not None else criteria.specification
+        for page in self.stream(target, criteria):
+            yield from page.to_records(mask)
+
+    # ------------------------------------------------------------------ the whole picture
+
+    def pivot(
+        self,
+        target: type,
+        rows: Sequence[str | Level],
+        columns: Sequence[str | Level],
+        criteria: Criteria | None = None,
+        **folds: str,
+    ) -> Pivot:
+        """Groups crossed by groups: a table with folded cells and its margins.
+
+            in      Line, rows=["journal_id"], columns=["posted_at:month"], debit="sum:debit"
+            out     Pivot(rows=[['SAL'], …], columns=[['2026-01'], …], cells=[…],
+                          row_margin=[…], column_margin=[…], total=PivotCell(count=75087, …))
+
+        Four statements, whatever the size: the cells, the row margin, the column margin and
+        the grand total. The margins are folded in the database and never added up from the
+        cells, because an average of averages is not an average and a `min` of `min`s is only
+        right by luck.
+
+        >>> matrix = self.repository.pivot(Line, ["journal_id"], ["posted_at:month"], debit="sum:debit")
+        >>> matrix.cell(["SAL"], ["2026-01"]).totals["debit"]
+        Decimal('18240.50')
+        """
+        if not rows or not columns:
+            raise InvalidCriteria(
+                "a pivot needs a field on each axis; one axis alone is a grouping"
+            )
+        criteria = criteria or Criteria()
+        model, _ = model_and_collection(target)
+        clause, _, meta, _ = self.prepare(model, criteria)
+        dialect = self.database.engine.dialect.name
+        down = [_level(one) for one in rows]
+        across = [_level(one) for one in columns]
+        for level in [*down, *across]:
+            meta.field(level.field)
+        folded = _folds(model, meta, folds)
+        row_columns = [sql.grouping_column(model, level, dialect) for level in down]
+        column_columns = [sql.grouping_column(model, level, dialect) for level in across]
+
+        with self._session() as session:
+            cells = self._cells(
+                session, model, clause, row_columns, column_columns, folded, folds
+            )
+            row_margin = self._cells(session, model, clause, row_columns, [], folded, folds)
+            column_margin = self._cells(
+                session, model, clause, [], column_columns, folded, folds
+            )
+            whole = self._cells(session, model, clause, [], [], folded, folds)
+
+        return Pivot(
+            rows=[one.row for one in row_margin],
+            columns=[one.column for one in column_margin],
+            cells=cells,
+            row_margin=row_margin,
+            column_margin=column_margin,
+            total=whole[0] if whole else PivotCell(totals=dict.fromkeys(folds)),
+        )
+
+    def _cells(
+        self,
+        session: Session,
+        model: type,
+        clause: Any,
+        row_columns: list[Any],
+        column_columns: list[Any],
+        folded: list[Any],
+        folds: dict[str, str],
+    ) -> list[PivotCell]:
+        """One `GROUP BY` over whichever axes were handed in; no axis at all is the total."""
+        keys = [*row_columns, *column_columns]
+        statement = select(*keys, func.count(), *folded).select_from(model)
+        if clause is not None:
+            statement = statement.where(clause)
+        if keys:
+            statement = statement.group_by(*keys).order_by(*keys)
+        return [
+            PivotCell(
+                row=list(row[: len(row_columns)]),
+                column=list(row[len(row_columns) : len(keys)]),
+                count=row[len(keys)],
+                totals=dict(zip(folds, row[len(keys) + 1 :])),
+            )
+            for row in session.execute(statement).all()
+        ]
+
+    def explain(self, target: type, criteria: Criteria | None = None) -> "Explained":
+        """What this criteria will do, without doing it.
+
+            out     Explained(sql='SELECT … WHERE … ORDER BY …', ordering=['-posted_at', '-id'],
+                              dropped=[Dropped(legacy_flag, unknown_field)],
+                              relations=['author', 'author.books'], statements=4)
+
+        For the three questions a criteria raises before it runs: what SQL it becomes, what of
+        it the model refused, and how many calls it will cost. Nothing is executed.
+        """
+        criteria = criteria or Criteria()
+        model, _ = model_and_collection(target)
+        prepared = self.prepare(model, criteria)
+        clause, sorts, meta, dropped = prepared
+        statement = self._statement_from(model, criteria, prepared)
+        relations = _relations_named(model, criteria.specification)
+        counted = criteria.count is not CountMode.NONE
+        return Explained(
+            sql=str(statement.compile(self.database.engine)),
+            ordering=[("-" if sort.descending else "") + sort.field for sort in sorts],
+            dropped=list(dropped),
+            relations=relations,
+            statements=1 + (1 if counted else 0) + len(relations),
+        )
+
+    # ------------------------------------------------------------------ writing
+
+    def retrying[T](
+        self,
+        work: Callable[[], T],
+        attempts: int = 3,
+        on: type[Exception] | tuple[type[Exception], ...] = StaleAggregate,
+        wait: float = 0.05,
+    ) -> T:
+        """Runs a unit of work again when it lost a race, and gives up saying so.
+
+            def post() -> ResponsePostEntry:
+                with self.repository.context() as ledger:
+                    …
+            answer = self.repository.retrying(post)
+
+        A callable and not a block, because a `with` cannot run its body twice. The wait
+        doubles between attempts so two workers that collided do not collide again on the
+        same beat; the last failure is raised as it was, not wrapped.
+        """
+        if attempts < 1:
+            raise ContractViolation("retrying needs at least one attempt")
+        for attempt in range(attempts):
+            try:
+                return work()
+            except on:
+                if attempt == attempts - 1:
+                    raise
+                sleep(wait * (2**attempt))
+        raise AssertionError("unreachable")
+
+    def save_all(self, records: Sequence[Any]) -> None:
+        """Persists many aggregates as one flush.
+
+            in      1 000 lines, all new        →  one INSERT per batch, one round trip
+            in      a mix of new and loaded     →  inserted and updated, versions checked
+            in      one that moved on           →  StaleAggregate, nothing of the batch lands
+
+        The same promises `save` makes, paid once instead of once per record: the version check
+        holds for every one of them, and a batch that fails leaves the transaction to undo as a
+        whole. This is the door an import or a nightly job uses.
+        """
+        if not records:
+            return
+        for record in records:
+            self._refuse_outside(record)
+        with self._session() as session:
+            session.add_all(list(records))
+            self._written(session, records[0])
+
+    def remove_all(self, records: Sequence[Any]) -> None:
+        """Removes many aggregates as one flush; archives the ones that can be archived."""
+        if not records:
+            return
+        archivable = [one for one in records if isinstance(one, Archivable)]
+        for record in archivable:
+            record.archive()
+        if archivable:
+            self.save_all(archivable)
+        rest = [one for one in records if not isinstance(one, Archivable)]
+        if not rest:
+            return
+        for record in rest:
+            self._refuse_outside(record)
+        with self._session() as session:
+            for record in rest:
+                session.delete(record)
+            self._written(session, rest[0])
+
+    def purge(self, record: Any) -> None:
+        """Deletes the row, archivable or not.
+
+        `remove` archives what can be archived, which is what a business means by deleting.
+        This is the other case: the record has to be gone, for a mistake or for a retention
+        rule, and somebody said so.
+        """
+        self._refuse_outside(record)
+        with self._session() as session:
+            session.delete(record)
+            self._written(session, record)
+
     def save(self, record: Any) -> None:
         """Persists one aggregate: an insert if it is new, an update if it was loaded.
 
@@ -873,6 +1420,7 @@ class Repository:
         Not a merge. A record built by hand with an id that already exists is a duplicate,
         not an update — the update path is to read the record and change it.
         """
+        self._refuse_outside(record)
         with self._session() as session:
             session.add(record)
             self._written(session, record)
@@ -884,7 +1432,16 @@ class Repository:
 
         Takes the record and not an id, so nothing is deleted that was not first loaded —
         and so a `version` check applies to a delete the way it does to an update.
+
+        **An `Archivable` aggregate is archived instead**, because that is what a business
+        means by deleting one: it has to stop appearing and cannot be lost, since other
+        records point at it. `purge` is the door for the other case.
         """
+        self._refuse_outside(record)
+        if isinstance(record, Archivable):
+            record.archive()
+            self.save(record)
+            return
         with self._session() as session:
             session.delete(record)
             self._written(session, record)

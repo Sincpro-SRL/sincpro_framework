@@ -220,3 +220,94 @@ def test_two_levels_with_a_page_of_eighty_ids_per_group_match_a_hand_written_win
             assert (account.cursor is not None) == (account.count > 80)
     opened = ledger.browse(Line, tree[0].groups[0].ids)
     assert opened.ids == tree[0].groups[0].ids
+
+
+def test_a_pivot_of_journals_by_month_matches_a_hand_written_group_by(
+    ledger: Repository, database: Database, timed, census: Census
+):
+    """The report a ledger is opened for: journals down, months across, the debit in the cell.
+    Four statements, whatever the volume."""
+    with timed("pivot, journals by month", census.lines):
+        matrix = ledger.pivot(
+            Line,
+            rows=["journal_id"],
+            columns=[Level(field="posted_at", grain="month")],
+            criteria=Criteria(where=POSTED),
+            debit="sum:debit",
+        )
+
+    with ledger.context() as unit:
+        month = month_of(database, Line.posted_at)  # type: ignore[attr-defined]
+        rows = unit.session.execute(
+            select(Line.journal_id, month, func.count(), func.sum(Line.debit))  # type: ignore[attr-defined]
+            .where(Line.entry_state == "posted")  # type: ignore[attr-defined]
+            .group_by(Line.journal_id, month)  # type: ignore[attr-defined]
+        ).all()
+
+    by_hand = {
+        (journal, when): (count, Decimal(debit)) for journal, when, count, debit in rows
+    }
+    assert len(matrix.cells) == len(by_hand)
+    for cell in matrix.cells:
+        count, debit = by_hand[(cell.row[0], cell.column[0])]
+        assert cell.count == count and Decimal(cell.totals["debit"]) == debit
+    assert matrix.total.count == sum(count for count, _ in by_hand.values())
+    assert Decimal(matrix.total.totals["debit"]) == sum(
+        (debit for _, debit in by_hand.values()), Decimal(0)
+    )
+    assert len(matrix.rows) == census.journals
+
+
+def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Repository):
+    """What a dashboard asks: the five accounts that moved the most, and nothing else."""
+    top = Criteria(
+        where=POSTED,
+        grouping=Grouping(
+            by=(Level(field="account_id"),),
+            totals={"debit": Fold(function="sum", field="debit")},
+            having=Condition(field="count", value=10, operator=Operator.GT),
+            order=parse_order("-debit"),
+            pagination=Pagination(limit=5),
+        ),
+    )
+
+    buckets = ledger.group_by_levels(Line, top)
+
+    assert len(buckets) == 5
+    debits = [Decimal(bucket.totals["debit"]) for bucket in buckets]
+    assert debits == sorted(debits, reverse=True)
+    assert all(bucket.count > 10 for bucket in buckets)
+    every = ledger.group_by_levels(
+        Line,
+        Criteria(
+            where=POSTED,
+            grouping=Grouping(
+                by=(Level(field="account_id"),),
+                totals={"debit": Fold(function="sum", field="debit")},
+                order=parse_order("-debit"),
+            ),
+        ),
+    )
+    assert [one.value for one in buckets] == [one.value for one in every[:5]]
+
+
+def test_a_repository_narrowed_to_one_journal_never_sees_another(
+    ledger: Repository, masters: dict[str, list]
+):
+    sales, purchases = masters["journals"][0], masters["journals"][1]
+    only_sales = ledger.narrowed(
+        Criteria(where=Condition(field="journal_id", value=sales.id))
+    )
+
+    assert (
+        only_sales.count(Lines).value
+        == ledger.count(
+            Lines, Criteria(where=Condition(field="journal_id", value=sales.id))
+        ).value
+    )
+    assert only_sales.count(Lines).value < ledger.count(Lines).value
+    assert only_sales.distinct(Lines, "journal_id") == [sales.id]
+    theirs = ledger.first(
+        Lines, Criteria(where=Condition(field="journal_id", value=purchases.id))
+    )
+    assert theirs is not None and only_sales.get(Line, theirs.id) is None

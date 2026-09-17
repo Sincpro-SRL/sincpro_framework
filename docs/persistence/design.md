@@ -15,10 +15,11 @@ sincpro_framework/
 │   ├── events.py                DomainEvent
 │   ├── evaluate.py              matches(): the in-memory evaluator, the specification of the translator
 │   ├── repository.py            the minimal Repository Protocol
+│   ├── memory_repository.py     the same vocabulary answered over records held in memory
 │   └── exceptions.py            DomainError, InvalidCriteria, ContractViolation, StaleAggregate, DuplicateAggregate, RelationNotResolved
 └── orm/sqlalchemy/              the adapter · the [sqlalchemy] extra
     ├── database.py              Database: engine, session factory, observed from birth
-    ├── repository.py            Repository: search/get/browse/stream/fetch_all/count/group_by/totals/save/remove/context
+    ├── repository.py            Repository: the reads, the writes, context, narrowed, pivot, explain
     ├── sql_translator.py        Criteria → Select; grains per dialect
     ├── data_mapper.py           entity_table, map_aggregates, Relation (foreign_key, many_to_many, id_list), foreign-key inference
     ├── model_introspection.py   describe(): the class and its table → Meta
@@ -81,6 +82,10 @@ the checkpoint a batch uses so one failing group does not undo the others.
 | A date grain for another SQL dialect | `register_grain_translator("mysql", translator)` | no |
 | A column type of the project's own | a SQLAlchemy `TypeDecorator`; `describe()` reads the annotation, not the column type | no |
 | A second persistence backend | a package beside `orm/sqlalchemy/` implementing the `Repository` protocol and `describe()` | the `Protocol` it would earn |
+| A tenant, a branch, a permission | `repository.narrowed(criteria)`, handed to the bus instead of the wide one | no |
+| Who wrote a record | `Audited` on the aggregate, `Database(url, actor=…)` | no |
+| Deleting that keeps the row | `Archivable` on the aggregate | no |
+| A Feature tested without a database | `MemoryRepository(*records)` as the dependency | no |
 
 ## The invariants every change must keep
 
@@ -98,3 +103,5 @@ the checkpoint a batch uses so one failing group does not undo the others.
 8. **Defaults, never ceilings.** What the client said is what the client gets.
 9. **Events are recorded in memory and published by a Feature after its unit of work.** The
    framework stores none.
+10. **A narrowed repository never reads wide.** An aggregate that cannot express the scope is
+    refused; a scope that is silently dropped would hand over the whole table.

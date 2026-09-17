@@ -16,6 +16,21 @@ make test-stress       the stress cases at 25 000 entries (~75 000 lines), timed
 | `SINCPRO_REALWORLD_ENTRIES` | `2000`, `25000` under `make test-stress` | how many entries the population writes |
 | `DATABASE_URL` | a SQLite file under the pytest tmp dir | any SQLAlchemy URL; the Postgres-only cases stop skipping |
 
+## Testing a Feature without a database
+
+`MemoryRepository` is the dependency a unit test hands a bus instead of the adapter:
+
+```python
+ledger = MemoryRepository(*accounts)
+bus.add_dependency("repository", ledger)
+```
+
+It answers the reads, the short readings, the folds, the groups and the writes, with the same
+version check and the same archive rule. It filters with `matches`, the evaluator the SQL
+translator is checked against, so the two agree by construction. What it does not have —
+relations, units of work, date grains — it says rather than guesses, and that is where the
+suite below takes over.
+
 ## What is in the directory
 
 | Module | Role |

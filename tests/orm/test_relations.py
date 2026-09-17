@@ -450,3 +450,22 @@ def test_a_page_per_key_travels_to_the_bus_so_no_parent_starves_another(shelf):
 
     assert [r.stars for r in books["Engine"].reviews] == [5]
     assert [r.stars for r in books["Compiler"].reviews] == [3]
+
+
+def test_explain_counts_one_statement_per_relation_node(shelf):
+    """What a page with relations will cost, before it runs: the page, its count, and one
+    call per node however deep the tree."""
+    asked = Criteria(
+        specification=Specification(
+            {
+                "author": Criteria(specification=Specification({"books": Criteria()})),
+                "tags": Criteria(),
+            }
+        )
+    )
+
+    explained = shelf.explain(Books, asked)
+
+    assert explained.relations == ["author", "author.books", "tags"]
+    assert explained.statements == 2 + 3
+    assert "SELECT" in explained.sql

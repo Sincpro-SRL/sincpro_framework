@@ -286,3 +286,131 @@ def test_a_search_with_a_grouping_and_a_page_answers_a_page_per_group(store, thi
         for mine in per_owner.values()
     )
     assert page.cursor is None and page.count == Count(value=len(page), exact=True)
+
+
+# ── groups that filter, order and page ───────────────────────────────────────
+
+
+def test_having_filters_the_groups_the_rows_made(store, things):
+    """`where` filters the rows; `having` filters what those rows added up to."""
+    crowded = Criteria(
+        grouping=Grouping(
+            by=(Level(field="owner"),),
+            having=Condition(field="count", value=8, operator=Operator.GT),
+        )
+    )
+
+    buckets = store.group_by_levels(Things, crowded)
+
+    by_owner = {
+        owner: len([t for t in things if t.owner == owner])
+        for owner in {t.owner for t in things}
+    }
+    assert {bucket.value for bucket in buckets} == {o for o, n in by_owner.items() if n > 8}
+    assert all(bucket.count > 8 for bucket in buckets)
+
+
+def test_having_reads_what_the_groups_folded(store, things):
+    heavy = Criteria(
+        grouping=Grouping(
+            by=(Level(field="owner"),),
+            totals={"weight": Fold(function="sum", field="size")},
+            having=Condition(field="weight", value=15, operator=Operator.GT),
+        )
+    )
+
+    buckets = store.group_by_levels(Things, heavy)
+
+    assert buckets and all(bucket.totals["weight"] > 15 for bucket in buckets)
+
+
+def test_having_over_something_no_group_folded_is_refused(store):
+    with pytest.raises(InvalidCriteria, match="is not something a group folded"):
+        store.group_by_levels(
+            Things,
+            Criteria(
+                grouping=Grouping(
+                    by=(Level(field="owner"),),
+                    having=Condition(field="size", value=1, operator=Operator.GT),
+                )
+            ),
+        )
+
+
+def test_groups_come_back_in_the_order_asked(store, things):
+    asked = Criteria(
+        grouping=Grouping(
+            by=(Level(field="owner"),),
+            totals={"weight": Fold(function="sum", field="size")},
+            order=parse_order("-weight"),
+        )
+    )
+
+    buckets = store.group_by_levels(Things, asked)
+
+    weights = [bucket.totals["weight"] for bucket in buckets]
+    assert weights == sorted(weights, reverse=True)
+    assert len(buckets) == len({t.owner for t in things})
+
+
+def test_groups_can_be_ordered_by_how_many_they_hold(store):
+    buckets = store.group_by_levels(
+        Things,
+        Criteria(
+            grouping=Grouping(by=(Level(field="size"),), order=parse_order("-count,size"))
+        ),
+    )
+
+    counts = [bucket.count for bucket in buckets]
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_ordering_groups_by_something_that_is_not_one_is_refused(store):
+    with pytest.raises(InvalidCriteria, match="ordered by a level"):
+        store.group_by_levels(
+            Things,
+            Criteria(
+                grouping=Grouping(by=(Level(field="owner"),), order=parse_order("name"))
+            ),
+        )
+
+
+def test_a_page_of_groups_answers_the_first_ones_and_no_more(store, things):
+    top = Criteria(
+        grouping=Grouping(
+            by=(Level(field="size"),),
+            order=parse_order("-count,size"),
+            pagination=Pagination(limit=2),
+        )
+    )
+
+    buckets = store.group_by_levels(Things, top)
+    every = store.group_by_levels(
+        Things,
+        Criteria(
+            grouping=Grouping(by=(Level(field="size"),), order=parse_order("-count,size"))
+        ),
+    )
+
+    assert len(buckets) == 2 and len(every) == len({t.size for t in things})
+    assert [b.value for b in buckets] == [b.value for b in every[:2]]
+
+
+def test_a_page_of_groups_carries_the_levels_below_it_and_nothing_else(store, queries_run):
+    """The deeper level answers for the groups that survived the page, so the page saves what
+    it was asked to save."""
+    top = Criteria(
+        grouping=Grouping(
+            by=(Level(field="owner"), Level(field="size")),
+            order=parse_order("-count"),
+            pagination=Pagination(limit=1),
+        )
+    )
+
+    with queries_run() as statements:
+        buckets = store.group_by_levels(Things, top)
+
+    assert len(buckets) == 1 and buckets[0].groups
+    assert sum(one.count for one in buckets[0].groups) == buckets[0].count
+    assert len(statements) == 2
+    assert "IN (" in statements[1] or "IS NULL" in statements[1].upper()

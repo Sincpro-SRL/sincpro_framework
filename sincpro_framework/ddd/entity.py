@@ -89,6 +89,63 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+@dataclass(kw_only=True)
+class Audited:
+    """Who wrote the record, beside when: a mixin an aggregate opts into.
+
+        @dataclass
+        class Invoice(Audited, Entity):
+            number: str
+
+    Nobody writes these two. The adapter stamps them on every flush from the actor the
+    `Database` was given — usually `lambda: bus.context.get("user.id")`, the same id the bus
+    already carries through the call. Without an actor they stay `None`, and the aggregate
+    works unchanged.
+
+    The columns go on the table with `audit_columns()`, beside `entity_columns()`.
+    """
+
+    created_by: str | None = None
+    updated_by: str | None = None
+
+
+@dataclass(kw_only=True)
+class Archivable:
+    """Put away rather than deleted: a mixin an aggregate opts into.
+
+        @dataclass
+        class Account(Archivable, Entity):
+            code: str
+
+        repository.remove(account)          →  archived_at stamped, the row stays
+        repository.purge(account)           →  DELETE, when it really has to go
+        repository.search(Accounts)         →  the live ones
+        Criteria(where=Condition(field="archived_at", operator=Operator.IS_NULL, value=False))
+                                            →  the archived ones, asked for by name
+
+    **A read leaves the archived out unless the criteria names `archived_at`.** What a business
+    calls deleting is almost always this: the record has to stop appearing and cannot be lost,
+    because invoices point at it. Odoo spells it `active`; the column here says when.
+
+    The column goes on the table with `archive_columns()`.
+    """
+
+    archived_at: datetime | None = None
+
+    @property
+    def is_archived(self) -> bool:
+        return self.archived_at is not None
+
+    def archive(self) -> None:
+        """Puts the record away. Already archived, nothing moves: the moment it left is the
+        first one, not the last time somebody asked again."""
+        if self.archived_at is None:
+            self.archived_at = utc_now()
+
+    def restore(self) -> None:
+        self.archived_at = None
+
+
 class Translated(TypedDict):
     """Every word a screen needs for an aggregate, what `Entity.translations()` answers:
 
