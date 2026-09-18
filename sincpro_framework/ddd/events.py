@@ -46,6 +46,7 @@ field instead of the wire name, which is refused at class-declaration time, loud
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, ClassVar
 
 from sincpro_framework.ddd.entity import Entity, new_entity_id, utc_now
@@ -94,3 +95,48 @@ class DomainEvent(Entity):
 
     def __repr__(self) -> str:
         return f"{self.name}(id={self.id}, label={self.label}, entity_type={self.entity_type}, entity_id={self.entity_id}, created_at={self.created_at.isoformat()})"
+
+
+class EventStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    ACKNOWLEDGED = "acknowledged"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass(kw_only=True)
+class TrackableMixin:
+    """Its own delivery status — a `DomainEvent` opts into, the same way it opts into
+    `AuditedMixin` or `ArchivableMixin`:
+
+        @dataclass(kw_only=True)
+        class OrderShipped(TrackableMixin, DomainEvent):
+            order_id: str
+
+    Nobody persists these fields here — that is the `Queue` implementation's job
+    (`BackgroundQueue`, Kafka, RabbitMQ). This is only the vocabulary, the same states
+    `sincpro_mobile`'s own event queue already tracks.
+    """
+
+    status: EventStatus = EventStatus.PENDING
+    attempts: int = 0
+    error_message: str | None = None
+    acknowledged_at: datetime | None = None
+    failed_at: datetime | None = None
+
+    def mark_processing(self) -> None:
+        self.status = EventStatus.PROCESSING
+        self.attempts += 1
+
+    def mark_acknowledged(self) -> None:
+        self.status = EventStatus.ACKNOWLEDGED
+        self.acknowledged_at = utc_now()
+
+    def mark_failed(self, error_message: str) -> None:
+        self.status = EventStatus.FAILED
+        self.error_message = error_message
+        self.failed_at = utc_now()
+
+    def mark_cancelled(self) -> None:
+        self.status = EventStatus.CANCELLED

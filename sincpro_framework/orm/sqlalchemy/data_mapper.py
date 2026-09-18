@@ -62,7 +62,7 @@ def entity_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
 
 
 def audit_columns() -> list[Column]:
-    """The two columns an `Audited` aggregate adds.
+    """The two columns an `AuditedMixin` aggregate adds.
 
         out     created_by TEXT · updated_by TEXT
 
@@ -74,7 +74,7 @@ def audit_columns() -> list[Column]:
 
 
 def archive_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
-    """The column an `Archivable` aggregate adds.
+    """The column an `ArchivableMixin` aggregate adds.
 
         out     archived_at TIMESTAMP NULL
 

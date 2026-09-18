@@ -1,3 +1,4 @@
+import json
 import threading
 from functools import partial
 from typing import Any, Dict, Generic, Mapping, Optional, Type, cast
@@ -11,7 +12,11 @@ from .context.framework_context import FrameworkContext
 from .context.mixin import ContextMixin
 from .deps import DependencyLocator, TDeps
 from .error_handler import ErrorHandler, build_error_handler_chain
-from .exceptions import DependencyAlreadyRegistered, SincproFrameworkNotBuilt
+from .exceptions import (
+    DependencyAlreadyRegistered,
+    SincproFrameworkNotBuilt,
+    UnknownDTOToExecute,
+)
 from .middleware import Middleware, MiddlewarePipeline
 from .observability import FrameworkSpanContext, Observability
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
@@ -206,6 +211,20 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             self.build_root_bus()
         assert self.bus is not None
         return self.bus.dto_registry
+
+    def map_to_dto_or_event(self, name: str, payload: "str | dict[str, Any]") -> Any:
+        """The DTO or event registered under `name`, rebuilt from raw data.
+
+        What a queue consumer has once a message arrives off the wire — Kafka, RabbitMQ,
+        this framework's own `BackgroundQueue` — ready to hand to ``bus(...)``.
+        """
+        dto_type = self.dto_registry.get(name)
+        if dto_type is None:
+            raise UnknownDTOToExecute(f"no DTO or event registered under [{name}]")
+        if hasattr(dto_type, "from_json"):
+            return dto_type.from_json(payload)
+        raw = json.loads(payload) if isinstance(payload, str) else payload
+        return dto_type.model_validate(raw)
 
     def add_middleware(self, middleware: Middleware):
         """Add middleware function to the execution pipeline"""

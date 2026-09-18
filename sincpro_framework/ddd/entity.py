@@ -99,11 +99,11 @@ def utc_now() -> datetime:
 
 
 @dataclass(kw_only=True)
-class Audited:
+class AuditedMixin:
     """Who wrote the record, beside when: a mixin an aggregate opts into.
 
         @dataclass
-        class Invoice(Audited, Entity):
+        class Invoice(AuditedMixin, Entity):
             number: str
 
     Nobody writes these two. The adapter stamps them on every flush from the actor the
@@ -119,11 +119,11 @@ class Audited:
 
 
 @dataclass(kw_only=True)
-class Archivable:
+class ArchivableMixin:
     """Put away rather than deleted: a mixin an aggregate opts into.
 
         @dataclass
-        class Account(Archivable, Entity):
+        class Account(ArchivableMixin, Entity):
             code: str
 
         repository.remove(account)          →  archived_at stamped, the row stays

@@ -84,7 +84,7 @@ class Database:
         as `sincpro_framework.sql`. Tracing and error reporting need no argument: they follow
         what the process already configured.
 
-        `actor` answers who is writing, for an `Audited` aggregate:
+        `actor` answers who is writing, for an `AuditedMixin` aggregate:
         `Database(url, actor=lambda: bus.context.get("user.id"))`. It is read on every flush,
         so one database serves every request of a process.
         """

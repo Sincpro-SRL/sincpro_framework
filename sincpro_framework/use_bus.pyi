@@ -148,6 +148,10 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """Every DTO name this bus answers, mapped to its class — built now if it wasn't yet."""
         ...
 
+    def map_to_dto_or_event(self, name: str, payload: str | dict[str, Any]) -> Any:
+        """The DTO or event registered under `name`, rebuilt from raw data."""
+        ...
+
     def add_middleware(self, middleware: Middleware) -> None:
         """
         Add middleware function to the execution pipeline.

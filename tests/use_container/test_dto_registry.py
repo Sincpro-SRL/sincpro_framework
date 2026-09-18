@@ -10,7 +10,7 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.exceptions import DTOAlreadyRegistered
+from sincpro_framework.exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 
 
 def _make_command() -> type[DataTransferObject]:
@@ -145,3 +145,64 @@ def test_dto_registry_is_a_live_property_built_lazily():
     expected_key = f"{Command.__module__}.{Command.__qualname__}"
     assert expected_key in bus.dto_registry
     assert bus.was_initialized is True
+
+
+def test_map_to_dto_or_event_rebuilds_a_plain_dto_from_json_text():
+    class CommandGreet(DataTransferObject):
+        name: str
+
+    bus = UseFramework("map-dto-json", log_after_execution=False)
+
+    @bus.feature(CommandGreet)
+    class GreetFeature(Feature):
+        def execute(self, dto: CommandGreet) -> str:
+            return f"hello {dto.name}"
+
+    key = f"{CommandGreet.__module__}.{CommandGreet.__qualname__}"
+    rebuilt = bus.map_to_dto_or_event(key, '{"name": "ana"}')
+
+    assert rebuilt == CommandGreet(name="ana")
+    assert bus(rebuilt) == "hello ana"
+
+
+def test_map_to_dto_or_event_rebuilds_a_plain_dto_from_a_dict():
+    class CommandGreet(DataTransferObject):
+        name: str
+
+    bus = UseFramework("map-dto-dict", log_after_execution=False)
+
+    @bus.feature(CommandGreet)
+    class GreetFeature(Feature):
+        def execute(self, dto: CommandGreet) -> str:
+            return f"hello {dto.name}"
+
+    key = f"{CommandGreet.__module__}.{CommandGreet.__qualname__}"
+    rebuilt = bus.map_to_dto_or_event(key, {"name": "ana"})
+
+    assert rebuilt == CommandGreet(name="ana")
+
+
+def test_map_to_dto_or_event_rebuilds_a_domain_event_by_its_wire_name():
+    @dataclass(kw_only=True)
+    class TicketClosed(DomainEvent):
+        reason: str
+
+    bus = UseFramework("map-event", log_after_execution=False)
+
+    @bus.feature(TicketClosed)
+    class CloseFeature(Feature):
+        def execute(self, dto: TicketClosed) -> str:
+            return f"closed: {dto.reason}"
+
+    rebuilt = bus.map_to_dto_or_event("TicketClosed", '{"reason": "fixed"}')
+
+    assert isinstance(rebuilt, TicketClosed)
+    assert rebuilt.reason == "fixed"
+    assert bus(rebuilt) == "closed: fixed"
+
+
+def test_map_to_dto_or_event_raises_for_a_name_nobody_registered():
+    bus = UseFramework("map-unknown", log_after_execution=False)
+
+    with pytest.raises(UnknownDTOToExecute):
+        bus.map_to_dto_or_event("NobodyKnowsThis", "{}")

@@ -11,7 +11,7 @@ holds everything it was given and offers no transaction.
 
 Three things it deliberately does the way the adapter does, because a Feature can see them:
 the version is raised on every save and a stale one is refused, `updated_at` is stamped, and an
-`Archivable` aggregate is archived by `remove` and left out of a reading that did not ask for
+`ArchivableMixin` aggregate is archived by `remove` and left out of a reading that did not ask for
 it. Three it does not have: relations, units of work and date grains, which is where a database
 starts.
 """
@@ -33,7 +33,7 @@ from sincpro_framework.ddd.criteria import (
     conditions_of,
     parse_order,
 )
-from sincpro_framework.ddd.entity import Archivable, Entity, utc_now
+from sincpro_framework.ddd.entity import ArchivableMixin, Entity, utc_now
 from sincpro_framework.ddd.entity_collection import (
     Count,
     Dropped,
@@ -110,7 +110,7 @@ class MemoryRepository:
 
     def _live(self, aggregate: type, criteria: Criteria) -> bool:
         """Whether the archived have to be left out: they do, unless the criteria named them."""
-        if not (isinstance(aggregate, type) and issubclass(aggregate, Archivable)):
+        if not (isinstance(aggregate, type) and issubclass(aggregate, ArchivableMixin)):
             return False
         return not any(
             one.field == "archived_at" for one in conditions_of(criteria.expression)
@@ -142,7 +142,7 @@ class MemoryRepository:
         """One record by its identity, or `None`; an archived one answers `None` too."""
         aggregate, _holder = model_and_collection(target)
         found = self._stored.setdefault(aggregate, {}).get(identity)
-        if found is not None and isinstance(found, Archivable) and found.is_archived:
+        if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
             return None
         return found
 
@@ -340,8 +340,8 @@ class MemoryRepository:
             self.save(record)
 
     def remove(self, record: Any) -> None:
-        """Archives an `Archivable`, deletes anything else."""
-        if isinstance(record, Archivable):
+        """Archives an `ArchivableMixin`, deletes anything else."""
+        if isinstance(record, ArchivableMixin):
             record.archive()
             self.save(record)
             return

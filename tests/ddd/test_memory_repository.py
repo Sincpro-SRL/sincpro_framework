@@ -21,7 +21,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     parse_order,
 )
-from sincpro_framework.ddd.entity import Archivable, Entity
+from sincpro_framework.ddd.entity import ArchivableMixin, Entity
 from sincpro_framework.ddd.entity_collection import EntityCollection
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
@@ -34,7 +34,7 @@ from sincpro_framework.ddd.pagination import Offset, Pagination
 
 
 @dataclass
-class Account(Archivable, Entity):
+class Account(ArchivableMixin, Entity):
     code: str
     kind: str = "asset"
     balance: int = 0

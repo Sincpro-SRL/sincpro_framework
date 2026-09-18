@@ -8,7 +8,7 @@ aggregate it was built alongside would not be evidence of that.
 translator has rules for. `Note` follows the `Entity` convention, so what the convention adds
 — the version check, the stamped `updated_at`, the minted id, the translations — is tested
 beside a class that does not. `Client` adds the two conventions an aggregate opts into,
-`Audited` and `Archivable`.
+`AuditedMixin` and `ArchivableMixin`.
 """
 
 from dataclasses import dataclass
@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import Column, DateTime, Integer, Table, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework.ddd.entity import Archivable, Audited, Entity, Translated
+from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity, Translated
 from sincpro_framework.ddd.entity_collection import EntityCollection
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
@@ -73,7 +73,7 @@ class Notes(EntityCollection[Note]):
 
 
 @dataclass
-class Client(Audited, Archivable, Entity):
+class Client(AuditedMixin, ArchivableMixin, Entity):
     """The two conventions an aggregate opts into, on one class: who wrote it, and putting it
     away instead of deleting it."""
 
