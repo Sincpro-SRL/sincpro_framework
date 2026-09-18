@@ -21,7 +21,7 @@ class FeatureBus(Bus):
     """
 
     log_after_execution: bool
-    feature_registry: Dict[str, Feature]
+    feature_registry: Dict[type, Feature]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability
@@ -52,7 +52,7 @@ class ApplicationServiceBus(Bus):
     """
 
     log_after_execution: bool
-    app_service_registry: Dict[str, ApplicationService]
+    app_service_registry: Dict[type, ApplicationService]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability

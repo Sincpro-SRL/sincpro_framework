@@ -9,6 +9,7 @@ started builds its own subscriber — a bus does not cross a process — and con
 RabbitMQ or Redis are one more queue each, with this same surface.
 """
 
+import dataclasses
 import multiprocessing
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
@@ -55,7 +56,7 @@ def _consume(inbox: Any, build_subscriber: Callable[[], Subscriber]) -> None:
         if event_type is None:
             continue
         try:
-            subscriber.handle(event_type.model_validate(payload))
+            subscriber.handle(event_type(**payload))
         except Exception as error:  # noqa: BLE001 - one event failing must not end the worker
             logger.error(f"event {name} failed in the background worker: {error!r}")
             process.record_error(error, layer="events")
@@ -97,7 +98,7 @@ class BackgroundQueue:
         return self
 
     def put(self, event: DomainEvent) -> None:
-        self.inbox.put((event.name, event.model_dump(mode="json")))
+        self.inbox.put((event.name, dataclasses.asdict(event)))
 
     async def aput(self, event: DomainEvent) -> None:
         self.put(event)

@@ -22,7 +22,7 @@ def test_an_entity_records_and_the_feature_pulls():
     recorded = ticket.pull_events()
 
     assert [one.name for one in recorded] == ["TicketClosed"]
-    assert recorded[0].aggregate_id == ticket.id and recorded[0].aggregate_type == "Ticket"
+    assert recorded[0].entity_id == ticket.id and recorded[0].entity_type == "Ticket"
     assert ticket.pull_events() == [], "pulled once, gone: nothing here stores an event"
 
 
@@ -37,7 +37,9 @@ def test_several_framework_instances_each_obey_the_event_their_decorator_names(
     assert answers == [ResponseNotify(sent="fixed"), ResponseAudit(logged="audited fixed")]
     assert heard == {"support": ["fixed"], "audit": ["audited fixed"]}
     assert subscriber.listeners("TicketClosed") == [feature_bus, app_service_bus]
-    assert subscriber.listeners("CommandAudit") == [app_service_bus]
+    assert subscriber.listeners(f"{CommandAudit.__module__}.{CommandAudit.__qualname__}") == [
+        app_service_bus
+    ]
     assert subscriber.listeners("NobodyListens") == []
     assert (
         app_service_bus(CommandAudit(text="by command"), ResponseAudit).logged == "by command"

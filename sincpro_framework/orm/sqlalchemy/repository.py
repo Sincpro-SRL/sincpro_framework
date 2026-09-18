@@ -42,7 +42,7 @@ from sincpro_framework.ddd.criteria import (
     combined,
     conditions_of,
 )
-from sincpro_framework.ddd.entity import Archivable
+from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity_collection import (
     Count,
     Dropped,
@@ -209,7 +209,7 @@ class Repository:
                     "reading it wide is not an option"
                 )
             expression = combined(kept, expression)
-        if issubclass(model, Archivable) and not any(
+        if issubclass(model, ArchivableMixin) and not any(
             one.field == "archived_at" for one in conditions_of(expression)
         ):
             expression = combined(
@@ -918,7 +918,7 @@ class Repository:
             )
         if found is None or not self._in_scope(found):
             return None
-        if isinstance(found, Archivable) and found.is_archived:
+        if isinstance(found, ArchivableMixin) and found.is_archived:
             return None
         return cast(Any, found)
 
@@ -1379,12 +1379,12 @@ class Repository:
         """Removes many aggregates as one flush; archives the ones that can be archived."""
         if not records:
             return
-        archivable = [one for one in records if isinstance(one, Archivable)]
+        archivable = [one for one in records if isinstance(one, ArchivableMixin)]
         for record in archivable:
             record.archive()
         if archivable:
             self.save_all(archivable)
-        rest = [one for one in records if not isinstance(one, Archivable)]
+        rest = [one for one in records if not isinstance(one, ArchivableMixin)]
         if not rest:
             return
         for record in rest:
@@ -1433,12 +1433,12 @@ class Repository:
         Takes the record and not an id, so nothing is deleted that was not first loaded —
         and so a `version` check applies to a delete the way it does to an update.
 
-        **An `Archivable` aggregate is archived instead**, because that is what a business
+        **An `ArchivableMixin` aggregate is archived instead**, because that is what a business
         means by deleting one: it has to stop appearing and cannot be lost, since other
         records point at it. `purge` is the door for the other case.
         """
         self._refuse_outside(record)
-        if isinstance(record, Archivable):
+        if isinstance(record, ArchivableMixin):
             record.archive()
             self.save(record)
             return

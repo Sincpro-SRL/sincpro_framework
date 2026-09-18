@@ -21,8 +21,8 @@ from sincpro_framework.ddd.criteria import (
     Specification,
 )
 from sincpro_framework.ddd.entity import (
-    Archivable,
-    Audited,
+    ArchivableMixin,
+    AuditedMixin,
     Entity,
     Translated,
     new_entity_id,
@@ -30,7 +30,7 @@ from sincpro_framework.ddd.entity import (
 )
 from sincpro_framework.ddd.entity_collection import Changes, Count, Dropped, EntityCollection
 from sincpro_framework.ddd.evaluate import matches
-from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.ddd.events import DomainEvent, EventStatus, TrackableMixin
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
     DomainError,
@@ -48,8 +48,8 @@ from sincpro_framework.ddd.repository import Repository
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
-    "Archivable",
-    "Audited",
+    "ArchivableMixin",
+    "AuditedMixin",
     "Bucket",
     "BusResolver",
     "EntityCollection",
@@ -63,6 +63,7 @@ __all__ = [
     "Dropped",
     "DuplicateAggregate",
     "Entity",
+    "EventStatus",
     "FieldMeta",
     "FieldType",
     "InvalidCriteria",
@@ -84,6 +85,7 @@ __all__ = [
     "Specification",
     "RelationNotResolved",
     "StaleAggregate",
+    "TrackableMixin",
     "Translated",
     "ValueObject",
     "matches",

@@ -1,6 +1,6 @@
 from typing import Any, Callable, Dict, Generic, Mapping, Optional, Type, overload
 
-from _typeshed import Incomplete
+from _typeshed import DataclassInstance, Incomplete
 from sincpro_log.logger import LoggerProxy
 from typing_extensions import Self
 
@@ -24,7 +24,8 @@ from .sincpro_logger import create_logger as create_logger
 
 # Type alias for decorator functions
 DecoratorFunction = Callable[[Type], Type]
-DTORegistration = Type[DataTransferObject] | list[Type[DataTransferObject]]
+DTOClass = Type[DataTransferObject] | Type[DataclassInstance]
+DTORegistration = DTOClass | list[DTOClass]
 
 class UseFramework(ContextMixin, Generic[TDeps]):
     """
@@ -77,9 +78,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         ...
     # Improved overloads for framework execution
     @overload
-    def __call__(
-        self, dto: DataTransferObject, return_type: Type[TypeDTOResponse]
-    ) -> TypeDTOResponse:
+    def __call__(self, dto: TypeDTO, return_type: Type[TypeDTOResponse]) -> TypeDTOResponse:
         """
         Execute a DTO with specified return type for better IDE support.
 
@@ -93,7 +92,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         ...
 
     @overload
-    def __call__(self, dto: DataTransferObject) -> DataTransferObject | None:
+    def __call__(self, dto: TypeDTO) -> DataTransferObject | None:
         """
         Execute a DTO without specifying return type.
 
@@ -142,6 +141,15 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         Inside a Feature / ApplicationService keep using ``self.<name>``.
         Use this from the bounded-context root (SDK caller, test, entrypoint).
         """
+        ...
+
+    @property
+    def dto_registry(self) -> Mapping[str, type]:
+        """Every DTO name this bus answers, mapped to its class — built now if it wasn't yet."""
+        ...
+
+    def map_to_dto_or_event(self, name: str, payload: str | dict[str, Any]) -> Any:
+        """The DTO or event registered under `name`, rebuilt from raw data."""
         ...
 
     def add_middleware(self, middleware: Middleware) -> None:

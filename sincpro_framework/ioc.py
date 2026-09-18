@@ -1,8 +1,14 @@
 """Inversion of Control (IoC) container for the SincPro Framework"""
 
+import sys
 from enum import Enum
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import TYPE_CHECKING, Callable, TypeAlias, TypeVar
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
+
+    from .ddd.events import DomainEvent
 
 # PYTHON 3.14 FREE-THREADING: dependency-injector 4.49.1 ships an abi3 wheel
 # (works fine on regular 3.14) but has not declared free-threading support.
@@ -15,6 +21,7 @@ from typing import Callable, TypeVar
 from dependency_injector import containers, providers
 from dependency_injector.providers import Dict, Factory, Object, Singleton
 from sincpro_log.logger import LoggerProxy
+from typing_extensions import TypeIs
 
 # Type variable for decorator return type
 T = TypeVar("T", bound=type)
@@ -24,8 +31,8 @@ from .exceptions import DTOAlreadyRegistered
 from .observability import Observability
 from .sincpro_abstractions import DataTransferObject
 
-DTOClass = type[DataTransferObject]
-DTORegistration = DTOClass | str | list[DTOClass | str]
+DTOClass: TypeAlias = "type[DataTransferObject] | type[DataclassInstance]"
+DTORegistration: TypeAlias = "DTOClass | list[DTOClass]"
 
 # ---------------------------------------------------------------------------------------------
 # Container Definition
@@ -76,6 +83,11 @@ class ServiceType(Enum):
     APP_SERVICE = "app_service"
 
 
+def _is_domain_event(cls: type) -> "TypeIs[type[DomainEvent]]":
+    events_module = sys.modules.get("sincpro_framework.ddd.events")
+    return events_module is not None and issubclass(cls, events_module.DomainEvent)
+
+
 # ---------------------------------------------------------------------------------------------
 # Build processes
 # ---------------------------------------------------------------------------------------------
@@ -93,12 +105,19 @@ def _register_service(
     dto_list = dto if isinstance(dto, list) else [dto]
 
     for data_transfer_object in dto_list:
-        dto_name = data_transfer_object.__name__  # type: ignore[union-attr]
+        dto_name = data_transfer_object.__name__
+        if _is_domain_event(data_transfer_object):
+            registry_key = data_transfer_object.name
+            log_label = f'{dto_name}(name="{registry_key}")'
+        else:
+            registry_key = (
+                f"{data_transfer_object.__module__}.{data_transfer_object.__qualname__}"
+            )
+            log_label = dto_name
 
-        # Check if DTO is already registered
         if (
             service_type == ServiceType.FEATURE
-            and dto_name in framework_container.feature_bus.kwargs
+            and data_transfer_object in framework_container.feature_registry.kwargs
         ):
             raise DTOAlreadyRegistered(
                 f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already registered as a feature"
@@ -106,18 +125,28 @@ def _register_service(
 
         if (
             service_type == ServiceType.APP_SERVICE
-            and dto_name in framework_container.app_service_bus.kwargs
+            and data_transfer_object in framework_container.app_service_registry.kwargs
         ):
             raise DTOAlreadyRegistered(
                 f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already registered as an application service"
             )
 
-        # Log registration
-        framework_container.logger_bus.debug(f"Registering {service_type}: [{dto_name}]")  # type: ignore[union-attr]
+        existing = framework_container.dto_registry.kwargs.get(registry_key)
+        if existing is not None and existing is not data_transfer_object:
+            raise DTOAlreadyRegistered(
+                f"The DTO name [{registry_key}] is already used by {existing.__module__}.{existing.__qualname__}; "
+                f"{data_transfer_object.__module__}.{data_transfer_object.__qualname__} needs a different name "
+                "to be introspected and routed by name (Subscriber, BackgroundQueue)"
+            )
 
-        # Update DTO registry with new DTO
+        # Log registration
+        framework_container.logger_bus.debug(f"Registering {service_type}: [{log_label}]")  # type: ignore[union-attr]
+
         framework_container.dto_registry = providers.Dict(
-            {**{dto_name: data_transfer_object}, **framework_container.dto_registry.kwargs}
+            {
+                **{registry_key: data_transfer_object},
+                **framework_container.dto_registry.kwargs,
+            }
         )
 
         # Update container registry and bus attributes
@@ -125,7 +154,7 @@ def _register_service(
             case ServiceType.FEATURE:
                 framework_container.feature_registry = providers.Dict(
                     {
-                        **{dto_name: providers.Factory(decorated_class)},
+                        **{data_transfer_object: providers.Factory(decorated_class)},
                         **framework_container.feature_registry.kwargs,
                     }
                 )
@@ -138,7 +167,7 @@ def _register_service(
                 framework_container.app_service_registry = providers.Dict(
                     {
                         **{
-                            dto_name: providers.Factory(
+                            data_transfer_object: providers.Factory(
                                 decorated_class, framework_container.feature_bus
                             )
                         },

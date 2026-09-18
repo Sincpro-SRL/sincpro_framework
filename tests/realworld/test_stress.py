@@ -30,7 +30,9 @@ POSTINGS = 100
 
 
 def test_walk_every_line_in_pages_of_a_thousand(ledger: Repository, census: Census, timed):
-    criteria = Criteria(order=parse_order("-posted_at"), pagination=Pagination(limit=1000))
+    criteria = Criteria(
+        where=POPULATION, order=parse_order("-posted_at"), pagination=Pagination(limit=1000)
+    )
 
     with timed("stress: keyset walk, pages of 1000", census.lines):
         seen = sum(len(page) for page in ledger.stream(Lines, criteria))
@@ -40,9 +42,9 @@ def test_walk_every_line_in_pages_of_a_thousand(ledger: Repository, census: Cens
 
 def test_exact_and_capped_counts(ledger: Repository, census: Census, timed):
     with timed("stress: capped count", census.lines):
-        capped = ledger.count(Line)
+        capped = ledger.count(Line, Criteria(where=POPULATION))
     with timed("stress: exact count", census.lines):
-        exact = ledger.count(Line, Criteria(count=CountMode.EXACT))
+        exact = ledger.count(Line, Criteria(where=POPULATION, count=CountMode.EXACT))
 
     assert exact.value == census.lines
     assert capped.value <= exact.value

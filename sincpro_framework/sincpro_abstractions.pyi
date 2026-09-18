@@ -11,7 +11,7 @@ from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 
 class DataTransferObject(BaseModel): ...
 
-TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject")
+TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject | DataclassInstance")
 TypeDTOResponse = TypeVar(
     "TypeDTOResponse", bound="DataTransferObject | DataclassInstance | list | dict"
 )

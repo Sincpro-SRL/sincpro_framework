@@ -16,13 +16,6 @@ from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.use_bus import UseFramework
 
 
-def _registry_of(bus: UseFramework) -> dict[str, type]:
-    """The DTO names a bus answers, building it first if nobody has yet."""
-    if not bus.was_initialized:
-        bus.build_root_bus()
-    return getattr(bus.bus, "dto_registry", None) or {}
-
-
 class Subscriber:
 
     def __init__(self, *buses: UseFramework) -> None:
@@ -30,12 +23,12 @@ class Subscriber:
 
     def listeners(self, name: str) -> list[UseFramework]:
         """The buses that answer this event name, in the order they were given."""
-        return [bus for bus in self.buses if name in _registry_of(bus)]
+        return [bus for bus in self.buses if name in bus.dto_registry]
 
     def event_type(self, name: str) -> type[DomainEvent] | None:
         """The class an event of that name rebuilds as, or `None` when no bus knows it."""
         for bus in self.buses:
-            found = _registry_of(bus).get(name)
+            found = bus.dto_registry.get(name)
             if found is not None and issubclass(found, DomainEvent):
                 return found
         return None

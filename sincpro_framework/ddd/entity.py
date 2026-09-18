@@ -26,18 +26,27 @@ Python 3.12 and 3.13 have no `uuid.uuid7`; `uuid7()` below is RFC 9562 by hand a
 the standard library where it exists.
 """
 
+import dataclasses
 import os
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+
+from pydantic import TypeAdapter
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.events import DomainEvent
 
 RECORDED = "_recorded_events"
+
+
+@lru_cache(maxsize=None)
+def json_serializer(cls: type) -> TypeAdapter:
+    return TypeAdapter(cls)
 
 
 _MINTING = threading.Lock()
@@ -90,11 +99,11 @@ def utc_now() -> datetime:
 
 
 @dataclass(kw_only=True)
-class Audited:
+class AuditedMixin:
     """Who wrote the record, beside when: a mixin an aggregate opts into.
 
         @dataclass
-        class Invoice(Audited, Entity):
+        class Invoice(AuditedMixin, Entity):
             number: str
 
     Nobody writes these two. The adapter stamps them on every flush from the actor the
@@ -110,11 +119,11 @@ class Audited:
 
 
 @dataclass(kw_only=True)
-class Archivable:
+class ArchivableMixin:
     """Put away rather than deleted: a mixin an aggregate opts into.
 
         @dataclass
-        class Account(Archivable, Entity):
+        class Account(ArchivableMixin, Entity):
             code: str
 
         repository.remove(account)          →  archived_at stamped, the row stays
@@ -222,12 +231,11 @@ class Entity:
         announce facts a rollback then undoes.
         """
         recorded: list[DomainEvent] = self.__dict__.setdefault(RECORDED, [])
-        stamped = event.model_copy(
-            update={
-                "aggregate_type": event.aggregate_type or type(self).__name__,
-                "aggregate_id": event.aggregate_id or self.id,
-                "sequence": len(recorded),
-            }
+        stamped = dataclasses.replace(
+            event,
+            entity_type=event.entity_type or type(self).__name__,
+            entity_id=event.entity_id or self.id,
+            sequence=len(recorded),
         )
         recorded.append(stamped)
         return stamped
@@ -242,3 +250,29 @@ class Entity:
         """
         recorded = self.__dict__.pop(RECORDED, [])
         return list(recorded)
+
+    def as_json(self) -> str:
+        """This entity as JSON text.
+
+        >>> Note(title="x").as_json()
+        '{"id":"...","created_at":"...","title":"x"}'
+        """
+        return json_serializer(type(self)).dump_json(self).decode()
+
+    @classmethod
+    def from_json(cls, data: "str | dict[str, Any]") -> "Any":
+        """Rebuilds an instance from JSON text or an already-parsed dict — either is
+        accepted, so a caller that already has the dict (a DB row, another service's
+        response) never has to round-trip it through a string first.
+
+        >>> Note.from_json('{"title": "x"}')
+        Note(title='x')
+        >>> Note.from_json({"title": "x"})
+        Note(title='x')
+        """
+        adapter = json_serializer(cls)
+        return (
+            adapter.validate_json(data)
+            if isinstance(data, str)
+            else adapter.validate_python(data)
+        )

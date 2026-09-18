@@ -45,7 +45,10 @@ def test_features_and_app_services_reflect_registrations():
 
     assert set(features(framework)) == {"Ping"}
     assert set(app_services(framework)) == {"Orchestrate"}
-    assert {"Ping", "Orchestrate"} <= set(dtos(framework))
+    assert {
+        f"{Ping.__module__}.{Ping.__qualname__}",
+        f"{Orchestrate.__module__}.{Orchestrate.__qualname__}",
+    } <= set(dtos(framework))
 
 
 def test_feature_or_app_service_metadata_is_described_not_a_bare_instance():
@@ -68,9 +71,11 @@ def test_dto_metadata_carries_its_own_docstring_only():
     framework, _, _ = _build_framework()
 
     dto_metadata = dtos(framework)
-    assert dto_metadata["Ping"].type is Ping
-    assert dto_metadata["Ping"].description == "Ping a name."
-    assert dto_metadata["Orchestrate"].description is None  # no own docstring
+    ping_key = f"{Ping.__module__}.{Ping.__qualname__}"
+    orchestrate_key = f"{Orchestrate.__module__}.{Orchestrate.__qualname__}"
+    assert dto_metadata[ping_key].type is Ping
+    assert dto_metadata[ping_key].description == "Ping a name."
+    assert dto_metadata[orchestrate_key].description is None  # no own docstring
 
 
 def test_raises_when_framework_not_built():
