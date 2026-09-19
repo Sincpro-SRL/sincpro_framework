@@ -154,7 +154,7 @@ def _reflected(node: Criteria, field: str, ids: list[Any], limit: int | None) ->
         where=combined(keys, node.expression),
         order=node.order,
         pagination=Pagination(limit=limit),
-        grouping=Grouping(by=(Level(field=field),)),
+        grouping=Grouping(group_by=(Level(field=field),)),
         specification=node.specification,
         count=CountMode.NONE,
         meta=node.specification is not None,

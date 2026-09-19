@@ -14,9 +14,9 @@ from sincpro_framework.ddd.criteria import (
     All,
     Condition,
     Criteria,
-    Fold,
     Grouping,
     Level,
+    Measure,
     Operator,
     Sort,
     parse_order,
@@ -136,19 +136,21 @@ def test_the_short_readings_answer_the_same_as_the_adapter(ledger, accounts):
 
 
 def test_folds_are_answered_over_the_whole_result_set(ledger, accounts):
-    assert ledger.totals(Accounts, None, all="sum:balance", top="max:balance") == {
+    assert ledger.measures(
+        Accounts, None, all=("sum", "balance"), top=("max", "balance")
+    ) == {
         "all": sum(one.balance for one in accounts),
         "top": max(one.balance for one in accounts),
     }
     with pytest.raises(InvalidCriteria):
-        ledger.totals(Accounts, None, evil="pg_sleep:balance")
+        ledger.measures(Accounts, None, evil="pg_sleep:balance")
 
 
 def test_groups_count_fold_filter_and_order_like_the_adapter(ledger, accounts):
     asked = Criteria(
         grouping=Grouping(
-            by=(Level(field="kind"),),
-            totals={"weight": Fold(function="sum", field="balance")},
+            group_by=(Level(field="kind"),),
+            measures={"weight": Measure(function="sum", field="balance")},
             order=(Sort(field="weight", descending=True),),
         )
     )
@@ -156,7 +158,7 @@ def test_groups_count_fold_filter_and_order_like_the_adapter(ledger, accounts):
     buckets = ledger.group_by_levels(Accounts, asked)
 
     assert [one.value for one in buckets] == ["asset", "debt"]
-    assert buckets[0].totals["weight"] > buckets[1].totals["weight"]
+    assert buckets[0].measures["weight"] > buckets[1].measures["weight"]
     assert sum(one.count for one in buckets) == len(accounts)
     opened = ledger.fetch_all(Accounts, buckets[0].criteria)
     assert len(opened) == buckets[0].count
@@ -166,7 +168,7 @@ def test_a_page_asked_gives_every_group_its_ids(ledger):
     asked = Criteria(
         order=parse_order("code"),
         pagination=Pagination(limit=2),
-        grouping=Grouping(by=(Level(field="kind"),)),
+        grouping=Grouping(group_by=(Level(field="kind"),)),
     )
 
     buckets = ledger.group_by_levels(Accounts, asked)
@@ -180,7 +182,7 @@ def test_a_date_grain_says_it_is_the_database_that_answers_it(ledger):
     with pytest.raises(ContractViolation, match="date grain"):
         ledger.group_by_levels(
             Accounts,
-            Criteria(grouping=Grouping(by=(Level(field="created_at", grain="month"),))),
+            Criteria(grouping=Grouping(group_by=(Level(field="created_at", grain="month"),))),
         )
 
 
@@ -238,3 +240,73 @@ def test_it_stands_in_for_the_protocol_a_use_case_declares():
     from sincpro_framework.ddd.repository import Repository
 
     assert isinstance(MemoryRepository(), Repository)
+
+
+def test_the_memory_repository_computes_the_measures_a_database_would():
+    """**Including the two a plain function does not answer.** A Feature tested here and run
+    against Postgres has to read the same numbers, so the percentile interpolates the way
+    `percentile_cont` does rather than picking the nearest value.
+    """
+    store = MemoryRepository(
+        Account(code="a", kind="asset", balance=10),
+        Account(code="b", kind="asset", balance=20),
+        Account(code="c", kind="asset", balance=30),
+        Account(code="d", kind="asset", balance=40),
+        Account(code="e", kind="liability", balance=40),
+    )
+
+    answered = store.measures(
+        Accounts,
+        None,
+        total=("sum", "balance"),
+        kinds=("count_distinct", "kind"),
+        middle=Measure(function="percentile", field="balance", argument=0.5),
+        p90=Measure(function="percentile", field="balance", argument=0.9),
+    )
+
+    assert answered["total"] == 140
+    assert answered["kinds"] == 2
+    assert answered["middle"] == 30, "the median of 10,20,30,40,40"
+    assert answered["p90"] == 40
+
+
+def test_a_percentile_interpolates_between_the_two_values_it_falls_between():
+    store = MemoryRepository(
+        Account(code="a", balance=1),
+        Account(code="b", balance=2),
+        Account(code="c", balance=3),
+        Account(code="d", balance=4),
+    )
+
+    assert (
+        store.measures(
+            Accounts,
+            None,
+            middle=Measure(function="percentile", field="balance", argument=0.5),
+        )["middle"]
+        == 2.5
+    )
+
+
+def test_count_distinct_over_a_grouping_counts_within_each_bucket():
+    store = MemoryRepository(
+        Account(code="a", kind="asset", balance=10),
+        Account(code="b", kind="asset", balance=10),
+        Account(code="c", kind="asset", balance=20),
+        Account(code="d", kind="liability", balance=30),
+    )
+
+    buckets = store.group_by_levels(
+        Accounts,
+        Criteria(
+            grouping=Grouping(
+                group_by=(Level(field="kind"),),
+                measures={"balances": Measure(function="count_distinct", field="balance")},
+            )
+        ),
+    )
+
+    assert {one.value: one.measures["balances"] for one in buckets} == {
+        "asset": 2,
+        "liability": 1,
+    }

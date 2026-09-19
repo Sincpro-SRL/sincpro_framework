@@ -1,4 +1,4 @@
-"""The questions a ledger is asked in SQL: totals, balances, and a grouping four levels deep,
+"""The questions a ledger is asked in SQL: measures, balances, and a grouping four levels deep,
 each checked against SQL written by hand and against the double-entry invariant.
 """
 
@@ -11,9 +11,9 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
-    Fold,
     Grouping,
     Level,
+    Measure,
     parse_order,
 )
 from sincpro_framework.ddd.model_meta import FieldType, Operator
@@ -30,15 +30,15 @@ POSTED = Condition(field="entry_state", value="posted")
 FOUR_LEVELS = Criteria(
     where=POSTED,
     grouping=Grouping(
-        by=(
+        group_by=(
             Level(field="journal_id"),
             Level(field="account_id"),
             Level(field="partner_id"),
             Level(field="posted_at", grain="month"),
         ),
-        totals={
-            "debit": Fold(function="sum", field="debit"),
-            "credit": Fold(function="sum", field="credit"),
+        measures={
+            "debit": Measure(function="sum", field="debit"),
+            "credit": Measure(function="sum", field="credit"),
         },
     ),
 )
@@ -52,7 +52,7 @@ def leaves(buckets, path=()) -> dict[tuple, tuple[int, Decimal]]:
         if bucket.groups:
             flat.update(leaves(bucket.groups, here))
         else:
-            flat[here] = (bucket.count, Decimal(bucket.totals["debit"] or 0))
+            flat[here] = (bucket.count, Decimal(bucket.measures["debit"] or 0))
     return flat
 
 
@@ -64,12 +64,12 @@ def month_of(database: Database, column):
 
 
 def test_double_entry_holds_over_the_whole_ledger(ledger: Repository, census: Census):
-    totals = ledger.totals(
-        Line, Criteria(where=POSTED), debit="sum:debit", credit="sum:credit"
+    measures = ledger.measures(
+        Line, Criteria(where=POSTED), debit=("sum", "debit"), credit=("sum", "credit")
     )
 
-    assert totals["debit"] == totals["credit"]
-    assert totals["debit"] > 0
+    assert measures["debit"] == measures["credit"]
+    assert measures["debit"] > 0
     assert (
         ledger.count(Line, Criteria(where=POSTED, count=CountMode.EXACT)).value < census.lines
     )
@@ -79,19 +79,19 @@ def test_every_account_balance_is_the_sum_of_its_posted_lines(
     ledger: Repository, masters: dict[str, list]
 ):
     for account in masters["accounts"]:
-        totals = ledger.totals(
+        measures = ledger.measures(
             Line,
             Criteria(
                 where=All(all=[Condition(field="account_id", value=account.id), POSTED])
             ),
-            debit="sum:debit",
-            credit="sum:credit",
+            debit=("sum", "debit"),
+            credit=("sum", "credit"),
         )
         stored = ledger.get(Account, account.id)
 
         assert stored is not None
-        assert stored.balance == Decimal(totals["debit"] or 0) - Decimal(
-            totals["credit"] or 0
+        assert stored.balance == Decimal(measures["debit"] or 0) - Decimal(
+            measures["credit"] or 0
         )
 
 
@@ -126,7 +126,7 @@ def test_a_bucket_opens_to_exactly_the_rows_it_counted(ledger: Repository):
     one_level = FOUR_LEVELS.model_copy(
         update={
             "grouping": FOUR_LEVELS.grouping.model_copy(
-                update={"by": FOUR_LEVELS.grouping.by[:1]}
+                update={"group_by": FOUR_LEVELS.grouping.group_by[:1]}
             )
         }
     )
@@ -142,7 +142,7 @@ def test_a_bucket_opens_to_exactly_the_rows_it_counted(ledger: Repository):
 def test_the_flat_group_by_agrees_with_the_first_level(ledger: Repository):
     flat = ledger.group_by(Line, ["journal_id"], Criteria(where=POSTED))
     first_level = ledger.group_by_levels(
-        Line, Criteria(where=POSTED, grouping=Grouping(by=(Level(field="journal_id"),)))
+        Line, Criteria(where=POSTED, grouping=Grouping(group_by=(Level(field="journal_id"),)))
     )
 
     assert {row["journal_id"]: row["count"] for row in flat} == {
@@ -152,7 +152,7 @@ def test_the_flat_group_by_agrees_with_the_first_level(ledger: Repository):
 
 def test_a_null_partner_is_a_bucket_of_its_own_that_opens(ledger: Repository):
     by_partner = ledger.group_by_levels(
-        Line, Criteria(where=POSTED, grouping=Grouping(by=(Level(field="partner_id"),)))
+        Line, Criteria(where=POSTED, grouping=Grouping(group_by=(Level(field="partner_id"),)))
     )
     without = next(bucket for bucket in by_partner if bucket.value is None)
 
@@ -184,7 +184,7 @@ def test_two_levels_with_a_page_of_eighty_ids_per_group_match_a_hand_written_win
         where=POSTED,
         order=parse_order("-posted_at"),
         pagination=Pagination(limit=80),
-        grouping=Grouping(by=(Level(field="journal_id"), Level(field="account_id"))),
+        grouping=Grouping(group_by=(Level(field="journal_id"), Level(field="account_id"))),
     )
 
     with timed("grouping, two levels, 80 ids per group", census.lines):
@@ -233,7 +233,7 @@ def test_a_pivot_of_journals_by_month_matches_a_hand_written_group_by(
             rows=["journal_id"],
             columns=[Level(field="posted_at", grain="month")],
             criteria=Criteria(where=POSTED),
-            debit="sum:debit",
+            debit=("sum", "debit"),
         )
 
     with ledger.context() as unit:
@@ -250,9 +250,9 @@ def test_a_pivot_of_journals_by_month_matches_a_hand_written_group_by(
     assert len(matrix.cells) == len(by_hand)
     for cell in matrix.cells:
         count, debit = by_hand[(cell.row[0], cell.column[0])]
-        assert cell.count == count and Decimal(cell.totals["debit"]) == debit
+        assert cell.count == count and Decimal(cell.measures["debit"]) == debit
     assert matrix.total.count == sum(count for count, _ in by_hand.values())
-    assert Decimal(matrix.total.totals["debit"]) == sum(
+    assert Decimal(matrix.total.measures["debit"]) == sum(
         (debit for _, debit in by_hand.values()), Decimal(0)
     )
     assert len(matrix.rows) == census.journals
@@ -263,9 +263,9 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
     top = Criteria(
         where=POSTED,
         grouping=Grouping(
-            by=(Level(field="account_id"),),
-            totals={"debit": Fold(function="sum", field="debit")},
-            having=Condition(field="count", value=10, operator=Operator.GT),
+            group_by=(Level(field="account_id"),),
+            measures={"debit": Measure(function="sum", field="debit")},
+            where_measures=Condition(field="count", value=10, operator=Operator.GT),
             order=parse_order("-debit"),
             pagination=Pagination(limit=5),
         ),
@@ -274,7 +274,7 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
     buckets = ledger.group_by_levels(Line, top)
 
     assert len(buckets) == 5
-    debits = [Decimal(bucket.totals["debit"]) for bucket in buckets]
+    debits = [Decimal(bucket.measures["debit"]) for bucket in buckets]
     assert debits == sorted(debits, reverse=True)
     assert all(bucket.count > 10 for bucket in buckets)
     every = ledger.group_by_levels(
@@ -282,8 +282,8 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
         Criteria(
             where=POSTED,
             grouping=Grouping(
-                by=(Level(field="account_id"),),
-                totals={"debit": Fold(function="sum", field="debit")},
+                group_by=(Level(field="account_id"),),
+                measures={"debit": Measure(function="sum", field="debit")},
                 order=parse_order("-debit"),
             ),
         ),

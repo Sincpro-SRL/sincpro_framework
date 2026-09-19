@@ -71,7 +71,7 @@ def test_a_floor_count_makes_it_partial():
     page = Rows(items=(Row("a", 2),), count=Count(value=10_000, exact=False))
 
     assert page.is_partial
-    with pytest.raises(ContractViolation, match="self.repository.totals"):
+    with pytest.raises(ContractViolation, match="self.repository.measures"):
         page.average_by(lambda row: row.size)
 
 

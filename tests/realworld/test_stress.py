@@ -9,9 +9,9 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
-    Fold,
     Grouping,
     Level,
+    Measure,
     Operator,
     parse_order,
 )
@@ -81,7 +81,7 @@ def test_a_pivot_of_journals_by_month(ledger: Repository, census: Census, timed)
             rows=["journal_id"],
             columns=[Level(field="posted_at", grain="month")],
             criteria=Criteria(where=POPULATION),
-            debit="sum:debit",
+            debit=("sum", "debit"),
         )
 
     assert matrix.total.count == census.lines
@@ -93,8 +93,8 @@ def test_the_heaviest_accounts_over_everything(ledger: Repository, census: Censu
     top = Criteria(
         where=POPULATION,
         grouping=Grouping(
-            by=(Level(field="account_id"),),
-            totals={"debit": Fold(function="sum", field="debit")},
+            group_by=(Level(field="account_id"),),
+            measures={"debit": Measure(function="sum", field="debit")},
             order=parse_order("-debit"),
             pagination=Pagination(limit=10),
         ),
@@ -104,7 +104,7 @@ def test_the_heaviest_accounts_over_everything(ledger: Repository, census: Censu
         buckets = ledger.group_by_levels(Line, top)
 
     assert len(buckets) == 10
-    debits = [bucket.totals["debit"] for bucket in buckets]
+    debits = [bucket.measures["debit"] for bucket in buckets]
     assert debits == sorted(debits, reverse=True)
 
 

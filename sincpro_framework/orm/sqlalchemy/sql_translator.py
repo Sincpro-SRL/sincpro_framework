@@ -279,6 +279,14 @@ def _sqlite_grain(column: Any, grain: str) -> ColumnElement[Any]:
     return func.strftime(_SQLITE_FORMATS[grain], column)
 
 
+def _duckdb_grain(column: Any, grain: str) -> ColumnElement[Any]:
+    """DuckDB reads the same format strings SQLite does — and takes them in the other order:
+    `strftime(column, format)` against SQLite's `strftime(format, column)`. Which is the whole
+    reason this is a registry and not one function with an `if`.
+    """
+    return func.strftime(column, _SQLITE_FORMATS[grain])
+
+
 def _postgresql_grain(column: Any, grain: str) -> ColumnElement[Any]:
     """The `CAST` is what makes a timestamp stored as ISO text and a real `timestamp` group
     with the same expression."""
@@ -288,6 +296,7 @@ def _postgresql_grain(column: Any, grain: str) -> ColumnElement[Any]:
 GRAIN_TRANSLATORS: dict[str, GrainTranslator] = {
     "sqlite": _sqlite_grain,
     "postgresql": _postgresql_grain,
+    "duckdb": _duckdb_grain,
 }
 
 

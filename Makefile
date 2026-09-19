@@ -134,6 +134,10 @@ publish: configure-gemfury
 
 STRESS_ENTRIES ?= 25000
 
+criteria-parity:
+	@poetry run python tests/ddd/test_criteria_parity.py
+	@echo "   the TypeScript package reads tests/ddd/criteria-parity.json: copy it over when it changes"
+
 test:
 	poetry run pytest tests -m "not realworld" $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml
 
@@ -165,5 +169,5 @@ test_one:
 clean-coverage:
 	rm -rf htmlcov coverage.xml .coverage .coverage.*
 
-.PHONY: install start clean test test-realworld test-stress test-all test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
+.PHONY: install start clean criteria-parity test test-realworld test-stress test-all test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
 	docs docs-init docs-view check-openwiki

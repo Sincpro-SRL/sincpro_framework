@@ -1,0 +1,412 @@
+{
+  "about": "The cases the filter language must answer the same way in every engine. Written by the Python suite (tests/ddd/test_criteria_parity.py) and read by both: the in-memory evaluator here and the TypeScript engine in @sincpro/criteria. Do not edit by hand.",
+  "rows": [
+    {
+      "id": "a",
+      "name": "labs.csv",
+      "size": 300,
+      "tags": [
+        "raw",
+        "urgent"
+      ],
+      "owner": "ana",
+      "made_at": "2026-01-10T00:00:00Z"
+    },
+    {
+      "id": "b",
+      "name": "sales.csv",
+      "size": 120,
+      "tags": [
+        "raw"
+      ],
+      "owner": "beto",
+      "made_at": "2026-02-04T00:00:00Z"
+    },
+    {
+      "id": "c",
+      "name": "draft.csv",
+      "size": 0,
+      "tags": [],
+      "owner": null,
+      "made_at": "2026-02-18T00:00:00Z"
+    },
+    {
+      "id": "d",
+      "name": "stock.csv",
+      "size": 900,
+      "tags": [
+        "clean"
+      ],
+      "owner": "ana",
+      "made_at": "2026-03-02T00:00:00Z"
+    },
+    {
+      "id": "e",
+      "name": "LABS.TXT",
+      "size": 120,
+      "tags": [
+        "urgent"
+      ],
+      "owner": null,
+      "made_at": "2026-03-27T00:00:00Z"
+    }
+  ],
+  "cases": [
+    {
+      "name": "equality",
+      "where": {
+        "field": "owner",
+        "operator": "=",
+        "value": "ana"
+      },
+      "expected": [
+        "a",
+        "d"
+      ]
+    },
+    {
+      "name": "inequality",
+      "where": {
+        "field": "owner",
+        "operator": "!=",
+        "value": "ana"
+      },
+      "expected": [
+        "b"
+      ]
+    },
+    {
+      "name": "a null is not a value, so it answers neither",
+      "where": {
+        "field": "owner",
+        "operator": "!=",
+        "value": "beto"
+      },
+      "expected": [
+        "a",
+        "d"
+      ]
+    },
+    {
+      "name": "is null",
+      "where": {
+        "field": "owner",
+        "operator": "is null",
+        "value": true
+      },
+      "expected": [
+        "c",
+        "e"
+      ]
+    },
+    {
+      "name": "is not null",
+      "where": {
+        "field": "owner",
+        "operator": "is null",
+        "value": false
+      },
+      "expected": [
+        "a",
+        "b",
+        "d"
+      ]
+    },
+    {
+      "name": "greater than",
+      "where": {
+        "field": "size",
+        "operator": ">",
+        "value": 120
+      },
+      "expected": [
+        "a",
+        "d"
+      ]
+    },
+    {
+      "name": "greater or equal",
+      "where": {
+        "field": "size",
+        "operator": ">=",
+        "value": 120
+      },
+      "expected": [
+        "a",
+        "b",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "name": "less than",
+      "where": {
+        "field": "size",
+        "operator": "<",
+        "value": 120
+      },
+      "expected": [
+        "c"
+      ]
+    },
+    {
+      "name": "less or equal",
+      "where": {
+        "field": "size",
+        "operator": "<=",
+        "value": 120
+      },
+      "expected": [
+        "b",
+        "c",
+        "e"
+      ]
+    },
+    {
+      "name": "zero is a value, not an absence",
+      "where": {
+        "field": "size",
+        "operator": "=",
+        "value": 0
+      },
+      "expected": [
+        "c"
+      ]
+    },
+    {
+      "name": "between, both ends included",
+      "where": {
+        "field": "size",
+        "operator": "between",
+        "value": [
+          120,
+          300
+        ]
+      },
+      "expected": [
+        "a",
+        "b",
+        "e"
+      ]
+    },
+    {
+      "name": "in",
+      "where": {
+        "field": "name",
+        "operator": "in",
+        "value": [
+          "labs.csv",
+          "stock.csv"
+        ]
+      },
+      "expected": [
+        "a",
+        "d"
+      ]
+    },
+    {
+      "name": "not in leaves the nulls out",
+      "where": {
+        "field": "owner",
+        "operator": "not in",
+        "value": [
+          "ana"
+        ]
+      },
+      "expected": [
+        "b"
+      ]
+    },
+    {
+      "name": "like is case-insensitive and partial",
+      "where": {
+        "field": "name",
+        "operator": "like",
+        "value": "labs"
+      },
+      "expected": [
+        "a",
+        "e"
+      ]
+    },
+    {
+      "name": "contains asks about one member of a list",
+      "where": {
+        "field": "tags",
+        "operator": "contains",
+        "value": "raw"
+      },
+      "expected": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "name": "not contains",
+      "where": {
+        "field": "tags",
+        "operator": "not contains",
+        "value": "raw"
+      },
+      "expected": [
+        "c",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "name": "the empty-list question",
+      "where": {
+        "field": "tags",
+        "operator": "=",
+        "value": []
+      },
+      "expected": [
+        "c"
+      ]
+    },
+    {
+      "name": "the empty-list question, negated",
+      "where": {
+        "field": "tags",
+        "operator": "!=",
+        "value": []
+      },
+      "expected": [
+        "a",
+        "b",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "name": "a date compared as text, the way JSON carries it",
+      "where": {
+        "field": "made_at",
+        "operator": ">=",
+        "value": "2026-03-01T00:00:00Z"
+      },
+      "expected": [
+        "d",
+        "e"
+      ]
+    },
+    {
+      "name": "and",
+      "where": {
+        "all": [
+          {
+            "field": "size",
+            "operator": ">",
+            "value": 100
+          },
+          {
+            "field": "owner",
+            "operator": "=",
+            "value": "ana"
+          }
+        ]
+      },
+      "expected": [
+        "a",
+        "d"
+      ]
+    },
+    {
+      "name": "or",
+      "where": {
+        "any": [
+          {
+            "field": "owner",
+            "operator": "=",
+            "value": "beto"
+          },
+          {
+            "field": "size",
+            "operator": ">",
+            "value": 500
+          }
+        ]
+      },
+      "expected": [
+        "b",
+        "d"
+      ]
+    },
+    {
+      "name": "not",
+      "where": {
+        "negate": {
+          "field": "owner",
+          "operator": "=",
+          "value": "ana"
+        }
+      },
+      "expected": [
+        "b",
+        "c",
+        "e"
+      ]
+    },
+    {
+      "name": "not over a null: an absence is not the value, and is not its negation either",
+      "where": {
+        "negate": {
+          "field": "owner",
+          "operator": "is null",
+          "value": true
+        }
+      },
+      "expected": [
+        "a",
+        "b",
+        "d"
+      ]
+    },
+    {
+      "name": "three levels deep",
+      "where": {
+        "all": [
+          {
+            "field": "size",
+            "operator": ">",
+            "value": 0
+          },
+          {
+            "any": [
+              {
+                "field": "tags",
+                "operator": "contains",
+                "value": "urgent"
+              },
+              {
+                "negate": {
+                  "field": "owner",
+                  "operator": "is null",
+                  "value": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "expected": [
+        "a",
+        "b",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "name": "no filter answers everything",
+      "where": null,
+      "expected": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ]
+    }
+  ]
+}

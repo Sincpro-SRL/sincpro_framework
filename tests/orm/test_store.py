@@ -134,7 +134,7 @@ def test_a_page_knows_it_is_a_fragment_and_refuses_to_fold_itself(store):
     page = store.search(Things, Criteria(pagination=Pagination(limit=5)))
 
     assert page.is_partial
-    with pytest.raises(Exception, match="self.repository.totals"):
+    with pytest.raises(Exception, match="self.repository.measures"):
         page.sum_by(lambda thing: thing.size)
 
 
@@ -213,14 +213,14 @@ def test_grouping_by_a_field_that_does_not_exist_is_refused(store):
 
 
 def test_aggregating_folds_the_whole_set_under_the_caller_s_names(store):
-    folded = store.totals(Things, None, total="sum:size", biggest="max:size")
+    folded = store.measures(Things, None, total=("sum", "size"), biggest=("max", "size"))
 
     assert folded == {"total": sum(n % 5 for n in range(ROW_COUNT)), "biggest": 4}
 
 
 def test_a_malformed_fold_says_how_it_should_read(store):
-    with pytest.raises(InvalidCriteria, match="function:field"):
-        store.totals(Things, None, total="size")
+    with pytest.raises(InvalidCriteria, match="is written"):
+        store.measures(Things, None, total="size")
 
 
 def test_counting_on_its_own_never_reports_an_empty_result_as_a_total(store):

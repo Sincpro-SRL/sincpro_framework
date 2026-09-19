@@ -94,3 +94,70 @@ def test_a_response_that_declares_none_is_refused_too():
 
     with pytest.raises(ContractViolation, match="declares 0 fields"):
         Empty.records_field()
+
+
+class TestWhatTheOpenApiPublishes:
+    """A paginated answer has to describe itself, or every client that generates types writes
+    them by hand and drifts from what the engine actually sends."""
+
+    def test_the_answer_is_published_with_every_part_it_carries(self):
+        """**In serialization mode, which is the one a response uses.** A model with a plain
+        serializer tells pydantic only "I write an object"; without the schema hook this comes
+        back as `{"type": "object"}` and a generated client knows nothing.
+        """
+
+        class ResponseListThings(ResponsePaginatedQuery):
+            things: list[Thing] = []
+
+        published = ResponseListThings.model_json_schema(mode="serialization")
+
+        assert sorted(published["properties"]) == [
+            "count",
+            "cursor",
+            "dropped",
+            "model_meta_data",
+            "things",
+        ]
+        assert published["properties"]["things"]["items"]["$ref"].endswith("Thing")
+        assert "Count" in str(published["properties"]["count"])
+        assert "Meta" in str(published["properties"]["model_meta_data"])
+
+    def test_it_says_the_same_thing_in_both_modes(self):
+        """The serializer writes the declared fields and no others, so the two schemas name the
+        same keys. A difference between them would mean a client validating one and receiving
+        the other."""
+
+        class ResponseListThings(ResponsePaginatedQuery):
+            things: list[Thing] = []
+
+        validation = ResponseListThings.model_json_schema(mode="validation")
+        serialization = ResponseListThings.model_json_schema(mode="serialization")
+
+        assert sorted(validation["properties"]) == sorted(serialization["properties"])
+
+    def test_it_warns_that_a_specification_cuts_the_records(self):
+        """The one thing the schema cannot express: a mask removes fields from every record.
+        Saying it in the description is what keeps a generated type from promising a field that
+        will not always arrive."""
+
+        class ResponseListThings(ResponsePaginatedQuery):
+            things: list[Thing] = []
+
+        published = ResponseListThings.model_json_schema(mode="serialization")
+
+        assert "specification" in published["description"]
+
+    def test_what_it_publishes_is_what_it_writes(self):
+        """The claim under the schema: these are the keys a real answer carries."""
+
+        class ResponseListThings(ResponsePaginatedQuery):
+            things: list[Thing] = []
+
+        answer = ResponseListThings.of(
+            EntityCollection(items=(a_thing(1),), count=Count(value=1, exact=True)),
+            Criteria(),
+        )
+        written = answer.model_dump(mode="json")
+        published = ResponseListThings.model_json_schema(mode="serialization")
+
+        assert sorted(written) == sorted(published["properties"])

@@ -10,12 +10,17 @@ from datetime import datetime
 import pytest
 
 from sincpro_framework.ddd.criteria import (
+    All,
+    Any_,
     Condition,
+    CountMode,
     Criteria,
-    Fold,
     Grouping,
     Level,
+    Measure,
+    Not,
     Operator,
+    Sort,
     conditions_of,
     parse_order,
 )
@@ -26,7 +31,7 @@ from sincpro_framework.orm.sqlalchemy.sql_translator import bucket_range
 
 from .models import Things
 
-BY_OWNER = Grouping(by=(Level(field="owner"),))
+BY_OWNER = Grouping(group_by=(Level(field="owner"),))
 
 
 def test_one_level_counts_every_bucket(store):
@@ -63,7 +68,8 @@ def test_the_outer_filter_still_holds_inside_the_bucket(store):
 def test_folds_are_asked_for_by_name(store):
     with_total = Criteria(
         grouping=Grouping(
-            by=(Level(field="owner"),), totals={"weight": Fold(function="sum", field="size")}
+            group_by=(Level(field="owner"),),
+            measures={"weight": Measure(function="sum", field="size")},
         )
     )
 
@@ -71,14 +77,14 @@ def test_folds_are_asked_for_by_name(store):
 
     for bucket in buckets:
         page = store.search(Things, bucket.criteria)
-        assert bucket.totals["weight"] == sum(one.size for one in page.items)
+        assert bucket.measures["weight"] == sum(one.size for one in page.items)
 
 
 def test_every_level_named_is_answered_and_nothing_below_the_last(store):
     """Two fields are two levels, always; a screen that wants one level at a time names one
     and opens a bucket with a grouping of its own."""
-    two = Grouping(by=(Level(field="owner"), Level(field="size")))
-    one = Grouping(by=(Level(field="owner"),))
+    two = Grouping(group_by=(Level(field="owner"), Level(field="size")))
+    one = Grouping(group_by=(Level(field="owner"),))
 
     nested = store.group_by_levels(Things, Criteria(grouping=two))
     flat = store.group_by_levels(Things, Criteria(grouping=one))
@@ -99,13 +105,15 @@ def test_grouping_by_a_field_that_does_not_exist_is_refused(store):
     """Unlike a filter, this is NOT dropped in silence: a grouping by a missing field does not
     answer less, it answers something else."""
     with pytest.raises(InvalidCriteria):
-        store.group_by_levels(Things, Criteria(grouping=Grouping(by=(Level(field="nope"),))))
+        store.group_by_levels(
+            Things, Criteria(grouping=Grouping(group_by=(Level(field="nope"),)))
+        )
 
 
 def test_a_date_is_grouped_at_the_grain_asked_for(store):
     """Without this, grouping a catalogue by date gives one bucket per row: a listing with
     extra steps."""
-    monthly = Grouping(by=(Level(field="made_at", grain="month"),))
+    monthly = Grouping(group_by=(Level(field="made_at", grain="month"),))
 
     buckets = store.group_by_levels(Things, Criteria(grouping=monthly))
 
@@ -114,7 +122,7 @@ def test_a_date_is_grouped_at_the_grain_asked_for(store):
 
 
 def test_a_grain_that_does_not_exist_is_refused_naming_the_ones_that_do(store):
-    odd_grain = Grouping(by=(Level(field="made_at", grain="fortnight"),))
+    odd_grain = Grouping(group_by=(Level(field="made_at", grain="fortnight"),))
 
     with pytest.raises(InvalidCriteria, match="granularity"):
         store.group_by_levels(Things, Criteria(grouping=odd_grain))
@@ -123,9 +131,11 @@ def test_a_grain_that_does_not_exist_is_refused_naming_the_ones_that_do(store):
 def test_a_level_and_a_fold_already_built_pass_through():
     """Written this way from Python; reading them from JSON is the other half."""
     assert Level.read(Level(field="owner")) == Level(field="owner")
-    assert Fold.read(Fold(function="sum", field="size")) == Fold(function="sum", field="size")
+    assert Measure.read(Measure(function="sum", field="size")) == Measure(
+        function="sum", field="size"
+    )
     assert Level.read({"field": "made_at", "grain": "month"}).grain == "month"
-    assert Fold.read({"function": "max", "field": "size"}).function == "max"
+    assert Measure.read({"function": "max", "field": "size"}).function == "max"
 
 
 def test_opening_a_date_bucket_returns_that_bucket(store):
@@ -133,7 +143,7 @@ def test_opening_a_date_bucket_returns_that_bucket(store):
     `strftime` gave — the text "2026" — and the criteria compared it for equality against a
     date column: the model dropped it as an unreadable value, the condition vanished, and
     opening the bucket brought the whole catalogue while the count said otherwise."""
-    monthly = Grouping(by=(Level(field="made_at", grain="month"),))
+    monthly = Grouping(group_by=(Level(field="made_at", grain="month"),))
 
     for bucket in store.group_by_levels(Things, Criteria(grouping=monthly)):
         page = store.search(Things, bucket.criteria)
@@ -146,7 +156,7 @@ def test_a_date_bucket_opens_with_a_half_open_range(store):
     """The end stays out: with an inclusive range, a row saved at 00:00 on the first of the
     next month would fall in two buckets and the levels would stop adding up."""
     bucket = store.group_by_levels(
-        Things, Criteria(grouping=Grouping(by=(Level(field="made_at", grain="year"),)))
+        Things, Criteria(grouping=Grouping(group_by=(Level(field="made_at", grain="year"),)))
     )[0]
 
     leaves = conditions_of(bucket.criteria.expression)
@@ -157,7 +167,10 @@ def test_a_date_bucket_opens_with_a_half_open_range(store):
 def test_date_levels_add_up_to_what_the_parent_says(store):
     """If one level's range overlapped the next one's, this would not close."""
     nested = Grouping(
-        by=(Level(field="made_at", grain="year"), Level(field="made_at", grain="month")),
+        group_by=(
+            Level(field="made_at", grain="year"),
+            Level(field="made_at", grain="month"),
+        ),
     )
 
     for bucket in store.group_by_levels(Things, Criteria(grouping=nested)):
@@ -253,7 +266,7 @@ def test_a_group_with_fewer_rows_than_the_page_has_no_cursor(store):
 
 
 def test_ids_live_on_the_deepest_level_only(store):
-    two = Grouping(by=(Level(field="owner"), Level(field="size")))
+    two = Grouping(group_by=(Level(field="owner"), Level(field="size")))
     asked = Criteria(
         order=parse_order("thing_id"), pagination=Pagination(limit=1), grouping=two
     )
@@ -295,8 +308,8 @@ def test_having_filters_the_groups_the_rows_made(store, things):
     """`where` filters the rows; `having` filters what those rows added up to."""
     crowded = Criteria(
         grouping=Grouping(
-            by=(Level(field="owner"),),
-            having=Condition(field="count", value=8, operator=Operator.GT),
+            group_by=(Level(field="owner"),),
+            where_measures=Condition(field="count", value=8, operator=Operator.GT),
         )
     )
 
@@ -313,15 +326,15 @@ def test_having_filters_the_groups_the_rows_made(store, things):
 def test_having_reads_what_the_groups_folded(store, things):
     heavy = Criteria(
         grouping=Grouping(
-            by=(Level(field="owner"),),
-            totals={"weight": Fold(function="sum", field="size")},
-            having=Condition(field="weight", value=15, operator=Operator.GT),
+            group_by=(Level(field="owner"),),
+            measures={"weight": Measure(function="sum", field="size")},
+            where_measures=Condition(field="weight", value=15, operator=Operator.GT),
         )
     )
 
     buckets = store.group_by_levels(Things, heavy)
 
-    assert buckets and all(bucket.totals["weight"] > 15 for bucket in buckets)
+    assert buckets and all(bucket.measures["weight"] > 15 for bucket in buckets)
 
 
 def test_having_over_something_no_group_folded_is_refused(store):
@@ -330,8 +343,8 @@ def test_having_over_something_no_group_folded_is_refused(store):
             Things,
             Criteria(
                 grouping=Grouping(
-                    by=(Level(field="owner"),),
-                    having=Condition(field="size", value=1, operator=Operator.GT),
+                    group_by=(Level(field="owner"),),
+                    where_measures=Condition(field="size", value=1, operator=Operator.GT),
                 )
             ),
         )
@@ -340,15 +353,15 @@ def test_having_over_something_no_group_folded_is_refused(store):
 def test_groups_come_back_in_the_order_asked(store, things):
     asked = Criteria(
         grouping=Grouping(
-            by=(Level(field="owner"),),
-            totals={"weight": Fold(function="sum", field="size")},
+            group_by=(Level(field="owner"),),
+            measures={"weight": Measure(function="sum", field="size")},
             order=parse_order("-weight"),
         )
     )
 
     buckets = store.group_by_levels(Things, asked)
 
-    weights = [bucket.totals["weight"] for bucket in buckets]
+    weights = [bucket.measures["weight"] for bucket in buckets]
     assert weights == sorted(weights, reverse=True)
     assert len(buckets) == len({t.owner for t in things})
 
@@ -357,7 +370,9 @@ def test_groups_can_be_ordered_by_how_many_they_hold(store):
     buckets = store.group_by_levels(
         Things,
         Criteria(
-            grouping=Grouping(by=(Level(field="size"),), order=parse_order("-count,size"))
+            grouping=Grouping(
+                group_by=(Level(field="size"),), order=parse_order("-count,size")
+            )
         ),
     )
 
@@ -370,7 +385,7 @@ def test_ordering_groups_by_something_that_is_not_one_is_refused(store):
         store.group_by_levels(
             Things,
             Criteria(
-                grouping=Grouping(by=(Level(field="owner"),), order=parse_order("name"))
+                grouping=Grouping(group_by=(Level(field="owner"),), order=parse_order("name"))
             ),
         )
 
@@ -378,7 +393,7 @@ def test_ordering_groups_by_something_that_is_not_one_is_refused(store):
 def test_a_page_of_groups_answers_the_first_ones_and_no_more(store, things):
     top = Criteria(
         grouping=Grouping(
-            by=(Level(field="size"),),
+            group_by=(Level(field="size"),),
             order=parse_order("-count,size"),
             pagination=Pagination(limit=2),
         )
@@ -388,7 +403,9 @@ def test_a_page_of_groups_answers_the_first_ones_and_no_more(store, things):
     every = store.group_by_levels(
         Things,
         Criteria(
-            grouping=Grouping(by=(Level(field="size"),), order=parse_order("-count,size"))
+            grouping=Grouping(
+                group_by=(Level(field="size"),), order=parse_order("-count,size")
+            )
         ),
     )
 
@@ -401,7 +418,7 @@ def test_a_page_of_groups_carries_the_levels_below_it_and_nothing_else(store, qu
     it was asked to save."""
     top = Criteria(
         grouping=Grouping(
-            by=(Level(field="owner"), Level(field="size")),
+            group_by=(Level(field="owner"), Level(field="size")),
             order=parse_order("-count"),
             pagination=Pagination(limit=1),
         )
@@ -414,3 +431,147 @@ def test_a_page_of_groups_carries_the_levels_below_it_and_nothing_else(store, qu
     assert sum(one.count for one in buckets[0].groups) == buckets[0].count
     assert len(statements) == 2
     assert "IN (" in statements[1] or "IS NULL" in statements[1].upper()
+
+
+def test_one_reading_says_everything_at_once(store):
+    """**The complex case, end to end.** Ten things asked in one object: a filter with AND, OR
+    and NOT over four fields; the order and the page of the ROWS; two grouping levels, the
+    second cutting a date; four measures; a filter over what those measures answered; and the
+    order and the page of the GROUPS.
+
+    It is one test because the claim is that they compose — each part is proven alone
+    elsewhere, and what could break here is one part quietly overruling another.
+    """
+    reading = Criteria(
+        # the rows
+        where=All(
+            all=[
+                Condition(field="size", operator=Operator.BETWEEN, value=[1, 1000]),
+                Any_(
+                    any=[
+                        Condition(field="tags", operator=Operator.CONTAINS, value="even"),
+                        Condition(field="size", operator=Operator.GTE, value=10),
+                    ]
+                ),
+                Not(negate=Condition(field="owner", operator=Operator.IS_NULL, value=True)),
+            ]
+        ),
+        order=parse_order("-size,thing_id"),
+        pagination=Pagination(limit=3),
+        # the groups
+        grouping=Grouping(
+            group_by=(Level(field="owner"), Level(field="made_at", grain="month")),
+            measures={
+                "total": Measure(function="sum", field="size"),
+                "biggest": Measure(function="max", field="size"),
+                "average": Measure(function="avg", field="size"),
+                "named": Measure(function="count", field="name"),
+            },
+            where_measures=Condition(field="count", operator=Operator.GTE, value=1),
+            order=(Sort(field="total", descending=True),),
+            pagination=Pagination(limit=5),
+        ),
+        count=CountMode.EXACT,
+    )
+
+    buckets = store.group_by_levels(Things, reading)
+
+    # the groups: at most the page asked for, ordered by what they measured, none empty
+    assert 0 < len(buckets) <= 5
+    assert [one.field for one in buckets] == ["owner"] * len(buckets)
+    totals = [one.measures["total"] for one in buckets]
+    assert totals == sorted(totals, reverse=True), "ordered by -total"
+    for bucket in buckets:
+        assert bucket.count >= 1, "where_measures kept only the groups that answered"
+        assert bucket.measures["biggest"] >= bucket.measures["average"]
+        assert bucket.measures["named"] == bucket.count, "every thing has a name"
+
+        # the rows' page reaches inside every bucket: three ids, in the rows' order
+        assert len(bucket.ids) <= 3
+        inside = store.browse(Things, bucket.ids)
+        assert [one.thing_id for one in inside] == bucket.ids
+        assert [one.size for one in inside] == sorted(
+            (one.size for one in inside), reverse=True
+        ), "the rows' order decides which rows a bucket shows first"
+
+        # the outer filter still holds in there, and the bucket's own value too
+        for one in inside:
+            assert one.owner == bucket.value
+            assert one.owner is not None and 1 <= one.size <= 1000
+
+        # the level below only answers for this bucket's rows
+        assert sum(inner.count for inner in bucket.groups) == bucket.count
+        for inner in bucket.groups:
+            assert inner.field == "made_at"
+
+    # and opening a bucket is a plain search with the criteria it carries
+    opened = store.search(Things, buckets[0].criteria)
+    assert opened.count is not None and opened.count.value == buckets[0].count
+
+
+def test_the_two_orders_and_the_two_pages_do_not_overrule_each_other(store):
+    """`order`/`pagination` are the rows'; `grouping.order`/`grouping.pagination` are the
+    groups'. Same words, one level down, and neither reaches the other.
+    """
+    reading = Criteria(
+        order=parse_order("size,thing_id"),
+        pagination=Pagination(limit=2),
+        grouping=Grouping(
+            group_by=(Level(field="owner"),),
+            measures={"total": Measure(function="sum", field="size")},
+            order=(Sort(field="total", descending=True),),
+            pagination=Pagination(limit=1),
+        ),
+    )
+
+    buckets = store.group_by_levels(Things, reading)
+
+    assert len(buckets) == 1, "the groups' page: one bucket"
+    assert len(buckets[0].ids) == 2, "the rows' page: two ids inside it"
+
+    ascending = store.browse(Things, buckets[0].ids)
+    assert [one.size for one in ascending] == sorted(one.size for one in ascending)
+
+
+class TestTheTwoMeasuresThatAreNotAPlainFunction:
+    """`count_distinct` and `percentile` do not compile to `func.<name>(column)`, and one of
+    them is not available on every engine. Both facts are the test."""
+
+    def test_count_distinct_counts_the_values_once_each(self, store):
+        reading = Criteria(
+            grouping=Grouping(
+                group_by=(Level(field="owner"),),
+                measures={
+                    "rows": Measure(function="count", field="thing_id"),
+                    "sizes": Measure(function="count_distinct", field="size"),
+                },
+            )
+        )
+
+        for bucket in store.group_by_levels(Things, reading):
+            page = store.search(Things, bucket.criteria)
+            assert bucket.measures["sizes"] == len({one.size for one in page.items})
+            assert bucket.measures["sizes"] <= bucket.measures["rows"]
+
+    def test_a_percentile_is_refused_by_name_on_an_engine_that_cannot_compute_it(self, store):
+        """SQLite has no `percentile_cont`. Refusing here says which engine could not; letting
+        it through would come back as "no such function" from somewhere else entirely."""
+        reading = Criteria(
+            grouping=Grouping(
+                group_by=(Level(field="owner"),),
+                measures={
+                    "middle": Measure(function="percentile", field="size", argument=0.5)
+                },
+            )
+        )
+
+        with pytest.raises(InvalidCriteria, match="does not compute percentiles"):
+            store.group_by_levels(Things, reading)
+
+    def test_a_measure_that_takes_no_argument_refuses_one(self):
+        with pytest.raises(InvalidCriteria, match="takes no argument"):
+            Measure(function="sum", field="size", argument=0.5)
+
+    def test_a_percentile_without_its_fraction_is_not_a_percentile(self):
+        with pytest.raises(InvalidCriteria, match="between 0 and 1"):
+            Measure(function="percentile", field="size")

@@ -20,13 +20,13 @@ from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 from sincpro_framework.ddd.criteria import (
-    FOLD_FUNCTIONS,
     Bucket,
     Condition,
     CountMode,
     Criteria,
     Grouping,
     Level,
+    Measure,
     Operator,
     Sort,
     combined,
@@ -50,13 +50,42 @@ from sincpro_framework.ddd.exceptions import (
 from sincpro_framework.ddd.model_meta import Meta, describe_class
 from sincpro_framework.ddd.pagination import CursorKeys
 
-FOLDS: dict[str, Callable[[list[Any]], Any]] = {
-    "count": len,
+
+def _percentile(values: list[Any], fraction: float) -> Any:
+    """The value at a fraction of the sorted values, interpolating between the two it falls
+    between — the same `percentile_cont` a database computes, so a Feature tested here and run
+    against Postgres reads the same number.
+
+    >>> _percentile([1, 2, 3, 4], 0.5)
+    2.5
+    """
+    if not values:
+        return None
+    ordered = sorted(values)
+    at = fraction * (len(ordered) - 1)
+    below, above = int(at), min(int(at) + 1, len(ordered) - 1)
+    if below == above:
+        return ordered[below]
+    return ordered[below] + (ordered[above] - ordered[below]) * (at - below)
+
+
+MEASURES: dict[str, Callable[..., Any]] = {
+    "count": lambda values: len(values),
+    "count_distinct": lambda values: len(set(values)),
     "sum": lambda values: sum(values),
     "min": lambda values: min(values, default=None),
     "max": lambda values: max(values, default=None),
     "avg": lambda values: (sum(values) / len(values)) if values else None,
+    "percentile": _percentile,
 }
+
+
+def _measure_of(values: list[Any], measure: Measure) -> Any:
+    """One measure over the values a group holds. The only place that knows a percentile takes
+    its fraction and every other function takes nothing."""
+    if measure.function == "percentile":
+        return MEASURES["percentile"](values, measure.argument)
+    return MEASURES[measure.function](values)
 
 
 def _sorted(records: list[Any], sorts: tuple[Sort, ...]) -> list[Any]:
@@ -250,32 +279,31 @@ class MemoryRepository:
                 seen.append(value)
         return sorted(seen, key=lambda value: (value is None, str(value)))
 
-    def totals(
-        self, target: type, criteria: Criteria | None = None, **folds: str
+    def measures(
+        self, target: type, criteria: Criteria | None = None, **measures: Any
     ) -> dict[str, Any]:
-        if not folds:
-            raise InvalidCriteria("totals needs at least one fold, e.g. rows='sum:row_count'")
+        """Measures over the whole result set, each named by the caller.
+
+        in      Dataset, None, rows=("sum", "row_count")
+        out     {'rows': 4012933}
+        """
+        if not measures:
+            raise InvalidCriteria(
+                "measures needs at least one measure, e.g. rows=('sum', 'row_count')"
+            )
         aggregate, _holder = model_and_collection(target)
         meta = self.definition(aggregate)
         rows, _ = self._matching(aggregate, criteria or Criteria())
         answer = {}
-        for name, fold in folds.items():
-            function, _, field = fold.partition(":")
-            if not field:
-                raise InvalidCriteria(
-                    f"'{name}={fold}' should read as 'function:field', e.g. 'sum:row_count'"
-                )
-            if function not in FOLD_FUNCTIONS:
-                raise InvalidCriteria(
-                    f"'{function}' is not a fold; use one of {', '.join(FOLD_FUNCTIONS)}"
-                )
-            meta.field(field)
+        for name, written in measures.items():
+            measure = Measure.read(written)
+            meta.field(measure.field)
             values = [
-                getattr(record, field)
+                getattr(record, measure.field)
                 for record in rows
-                if getattr(record, field) is not None
+                if getattr(record, measure.field) is not None
             ]
-            answer[name] = FOLDS[function](values)
+            answer[name] = _measure_of(values, measure)
         return answer
 
     def group_by(
@@ -283,7 +311,7 @@ class MemoryRepository:
     ) -> list[dict[str, Any]]:
         criteria = criteria or Criteria()
         levels = tuple(Level(field=field) for field in by)
-        buckets = self._grouped(target, criteria, Grouping(by=levels))
+        buckets = self._grouped(target, criteria, Grouping(group_by=levels))
         return [
             dict(zip(by, path)) | {"count": bucket.count}
             for path, bucket in _flattened_buckets(buckets)
@@ -304,7 +332,7 @@ class MemoryRepository:
         second implementation to keep in step."""
         aggregate, holder = model_and_collection(target)
         meta = self.definition(aggregate)
-        for level in grouping.by:
+        for level in grouping.group_by:
             meta.field(level.field)
             if level.grain is not None:
                 raise ContractViolation(
@@ -313,7 +341,7 @@ class MemoryRepository:
                 )
         rows, _ = self._matching(aggregate, criteria)
         return _tree(
-            rows, grouping, criteria, tuple(level.field for level in grouping.by), meta
+            rows, grouping, criteria, tuple(level.field for level in grouping.group_by), meta
         )
 
     # ---------------------------------------------------------------- writing
@@ -374,16 +402,17 @@ def _flattened_buckets(buckets: list[Bucket], path: tuple = ()) -> list[tuple[tu
     return flat
 
 
-def _folded(rows: list[Any], grouping: Grouping) -> dict[str, Any]:
+def _measured(rows: list[Any], grouping: Grouping) -> dict[str, Any]:
     return {
-        name: FOLDS[fold.function](
+        name: _measure_of(
             [
-                getattr(record, fold.field)
+                getattr(record, measure.field)
                 for record in rows
-                if getattr(record, fold.field) is not None
-            ]
+                if getattr(record, measure.field) is not None
+            ],
+            measure,
         )
-        for name, fold in grouping.totals.items()
+        for name, measure in grouping.measures.items()
     }
 
 
@@ -408,9 +437,9 @@ def _tree(
         opens = criteria.merged_with(
             Criteria(where=Condition(field=field, operator=Operator.EQ, value=value))
         ).model_copy(update={"grouping": Grouping()})
-        totals = _folded(mine, grouping)
-        if grouping.having is not None and not matches(
-            _Folded(count=len(mine), **totals), grouping.having
+        measures = _measured(mine, grouping)
+        if grouping.where_measures is not None and not matches(
+            _Measured(count=len(mine), **measures), grouping.where_measures
         ):
             continue
         ids, cursor = _page_of_ids(mine, criteria, meta)
@@ -419,7 +448,7 @@ def _tree(
                 field=field,
                 value=value,
                 count=len(mine),
-                totals=totals,
+                measures=measures,
                 criteria=opens,
                 ids=ids,
                 cursor=cursor,
@@ -465,12 +494,12 @@ def _ordered_buckets(buckets: list[Bucket], grouping: Grouping) -> list[Bucket]:
 def _bucket_key(bucket: Bucket, name: str) -> Any:
     if name == "count":
         return bucket.count
-    if name in bucket.totals:
-        return bucket.totals[name]
+    if name in bucket.measures:
+        return bucket.measures[name]
     return (bucket.value is None, str(bucket.value))
 
 
-class _Folded:
+class _Measured:
     """What `having` is evaluated against: the numbers a group folded, as attributes."""
 
     def __init__(self, **values: Any) -> None:
