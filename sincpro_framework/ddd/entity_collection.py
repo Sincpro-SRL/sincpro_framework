@@ -275,13 +275,13 @@ class EntityCollection[T]:
         """The values an aggregation is about, once it is established that it may answer.
 
         complete   EntityCollection([a(2), b(3)]) → [2, 3]
-        partial    a page of 20 out of 8412 → ContractViolation, naming `self.repository.totals(...)`
+        partial    a page of 20 out of 8412 → ContractViolation, naming `self.repository.measures(...)`
         """
         if self.is_partial:
             raise ContractViolation(
                 f"{name} would answer about {len(self.items)} records out of "
                 f"{self.count or 'more'}; ask the engine instead, which folds the whole "
-                f"result set: self.repository.totals(<aggregate>, criteria, total='sum:<field>')"
+                f"result set: self.repository.measures(<aggregate>, criteria, total=('sum', '<field>'))"
             )
         return [selector(record) for record in self.items]
 
@@ -543,7 +543,7 @@ class EntityCollection[T]:
 
         in      EntityCollection([a(2), b(3)]) complete, lambda x: x.size
         out     5
-        but     a page of 20 out of 8412 raises: ask `self.repository.totals(...)` instead
+        but     a page of 20 out of 8412 raises: ask `self.repository.measures(...)` instead
         """
         return sum(self._fold("sum_by", selector))
 

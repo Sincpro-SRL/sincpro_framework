@@ -168,7 +168,7 @@ def reporting_bus(
 
         def rebuild(self, account_id: str) -> ResponseBalances:
             """The balance recomputed from the posted lines, in SQL, over the whole ledger."""
-            totals = self.repository.totals(
+            measures = self.repository.measures(
                 Line,
                 Criteria(
                     where=All(
@@ -178,10 +178,10 @@ def reporting_bus(
                         ]
                     )
                 ),
-                debit="sum:debit",
-                credit="sum:credit",
+                debit=("sum", "debit"),
+                credit=("sum", "credit"),
             )
-            balance = Decimal(totals["debit"] or 0) - Decimal(totals["credit"] or 0)
+            balance = Decimal(measures["debit"] or 0) - Decimal(measures["credit"] or 0)
             return ResponseBalances(balances={account_id: balance})
 
     return bus

@@ -48,7 +48,7 @@ def test_a_record_outside_the_scope_is_not_found_by_id_or_by_browse(
 def test_the_scope_reaches_grouping_and_totals(scoped: Repository, things):
     mine = [one for one in things if one.owner == "owner-1"]
 
-    assert scoped.totals(Things, None, weight="sum:size") == {
+    assert scoped.measures(Things, None, weight=("sum", "size")) == {
         "weight": sum(one.size for one in mine)
     }
     assert {row["owner"] for row in scoped.group_by(Things, ["owner"])} == {"owner-1"}

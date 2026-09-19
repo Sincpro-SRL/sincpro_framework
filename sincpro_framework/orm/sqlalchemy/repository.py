@@ -21,19 +21,19 @@ from contextlib import contextmanager
 from time import sleep
 from typing import Any, cast, overload
 
-from sqlalchemy import Select, func, literal, or_, select
+from sqlalchemy import Select, distinct, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.orm.exc import StaleDataError
 
 from sincpro_framework.ddd.criteria import (
-    FOLD_FUNCTIONS,
     Bucket,
     Condition,
     CountMode,
     Criteria,
     Grouping,
     Level,
+    Measure,
     Operator,
     Pivot,
     PivotCell,
@@ -74,7 +74,11 @@ DEFAULT_COUNT_CAP = 10_000
 Prepared = tuple[Any, tuple[Sort, ...], Meta, list[Dropped]]
 
 COUNT = "count"
-"""What a grouping's `having` and `order` call the number of rows in a group."""
+"""What a grouping's `where_measures` and `order` call the number of rows in a group."""
+
+WITHOUT_PERCENTILES = frozenset({"sqlite"})
+"""The dialects with no `percentile_cont`. Named here so the refusal happens before a
+statement exists, and says which engine could not."""
 
 
 class Explained(DataTransferObject):
@@ -102,21 +106,41 @@ def _level(one: str | Level) -> Level:
     return Level(field=field, grain=grain or None)
 
 
-def _folds(model: type, meta: Meta, folds: dict[str, str]) -> list[Any]:
-    """`{'debit': 'sum:debit'}` as labelled aggregate columns, each name checked first."""
+def _measures(
+    model: type, meta: Meta, measures: dict[str, Any], dialect: str = ""
+) -> list[Any]:
+    """`{'debit': ('sum', 'debit')}` as labelled aggregate columns, each name checked first.
+
+    What a measure IS — which functions exist, how one is written — is `Measure.read` and
+    nowhere else, so there is one answer for a criteria, for a pivot and for this.
+
+    Two of them do not compile to `func.<name>(column)`:
+
+    - `count_distinct` is `count(DISTINCT column)`, which every engine has;
+    - `percentile` is `percentile_cont(f) WITHIN GROUP (ORDER BY column)`, which **SQLite does
+      not have**. It is refused here, by name, rather than reaching the database and coming
+      back as "no such function": a caller reading that message would look for the bug in the
+      wrong place.
+    """
     columns = []
-    for name, fold in folds.items():
-        function, _, field = fold.partition(":")
-        if not field:
-            raise InvalidCriteria(
-                f"'{name}={fold}' should read as 'function:field', e.g. 'sum:row_count'"
+    for name, written in measures.items():
+        measure = Measure.read(written)
+        meta.field(measure.field)
+        column = getattr(model, measure.field)
+
+        if measure.function == "count_distinct":
+            columns.append(func.count(distinct(column)).label(name))
+        elif measure.function == "percentile":
+            if dialect in WITHOUT_PERCENTILES:
+                raise InvalidCriteria(
+                    f"'{dialect}' does not compute percentiles; ask for one over a database "
+                    "that does, or answer it in memory"
+                )
+            columns.append(
+                func.percentile_cont(measure.argument).within_group(column.asc()).label(name)
             )
-        if function not in FOLD_FUNCTIONS:
-            raise InvalidCriteria(
-                f"'{function}' is not a fold; use one of {', '.join(FOLD_FUNCTIONS)}"
-            )
-        meta.field(field)
-        columns.append(getattr(func, function)(getattr(model, field)).label(name))
+        else:
+            columns.append(getattr(func, measure.function)(column).label(name))
     return columns
 
 
@@ -170,6 +194,11 @@ class Repository:
         self.database = database
         self._bound = session
         self._scope = scope
+
+    def _dialect(self) -> str:
+        """The engine underneath, by name. Read for the one decision that depends on it:
+        whether it can compute a percentile."""
+        return self.database.engine.dialect.name
 
     def narrowed(self, scope: Criteria) -> "Repository":
         """The same database seen through a filter nothing can widen: what a tenant, a branch
@@ -377,22 +406,19 @@ class Repository:
         """
         meta = describe(model)
         dialect = self.database.engine.dialect.name
-        resolved = grouping.by
+        resolved = grouping.group_by
         columns = []
         for level in resolved:
             meta.field(level.field)
             columns.append(sql.grouping_column(model, level, dialect))
         counted = func.count().label(COUNT)
-        folded = []
-        for name, fold in grouping.totals.items():
-            meta.field(fold.field)
-            folded.append(
-                getattr(func, fold.function)(getattr(model, fold.field)).label(name)
-            )
-        folds = {name: column for name, column in zip(grouping.totals, folded)} | {
+        # The same `_measures` the standalone folds and the pivot use, so a percentile is
+        # refused here too instead of reaching the database as `percentile(size)`.
+        folded = _measures(model, meta, dict(grouping.measures), dialect)
+        measures = {name: column for name, column in zip(grouping.measures, folded)} | {
             COUNT: counted
         }
-        having = self._having(grouping, folds)
+        where_measures = self._where_measures(grouping, measures)
         clause, _, _, _ = self.prepare(model, criteria)
 
         rows_by_level: list[Sequence[Any]] = []
@@ -408,9 +434,9 @@ class Repository:
                 # cost what the page was asked to save.
                 statement = statement.where(_one_of(columns[0], kept_first))
             statement = statement.group_by(*keys)
-            if having is not None:
-                statement = statement.having(having)
-            statement = statement.order_by(*self._group_order(grouping, keys, folds))
+            if where_measures is not None:
+                statement = statement.having(where_measures)
+            statement = statement.order_by(*self._group_order(grouping, keys, measures))
             if how_deep == 1 and grouping.paged:
                 page = grouping.pagination
                 assert page is not None
@@ -443,14 +469,18 @@ class Repository:
         for how_deep in range(len(resolved), 0, -1):
             level = resolved[how_deep - 1]
             for row in rows_by_level[how_deep - 1]:
-                path, count, folds = tuple(row[:how_deep]), row[how_deep], row[how_deep + 1 :]
+                path, count, measures = (
+                    tuple(row[:how_deep]),
+                    row[how_deep],
+                    row[how_deep + 1 :],
+                )
                 ids, next_cursor = pages.get(path, ([], None))
                 children.setdefault(path[:-1], []).append(
                     Bucket(
                         field=level.field,
                         value=path[-1],
                         count=count,
-                        totals=dict(zip(grouping.totals, folds)),
+                        measures=dict(zip(grouping.measures, measures)),
                         criteria=opens[path],
                         ids=ids,
                         cursor=next_cursor,
@@ -459,28 +489,28 @@ class Repository:
                 )
         return children.get((), [])
 
-    def _having(self, grouping: Grouping, folds: dict[str, Any]) -> Any:
+    def _where_measures(self, grouping: Grouping, measures: dict[str, Any]) -> Any:
         """`having` as a clause over what the groups folded, every name checked first.
 
-            in      Condition(count, GT, 10), totals {'debit': sum(debit)}
+            in      Condition(count, GT, 10), measures {'debit': sum(debit)}
             out     count(*) > 10
 
-        The names it may use are the ones in `totals` and `count`; a name outside them is
+        The names it may use are the ones in `measures` and `count`; a name outside them is
         refused rather than dropped, because a filter that vanishes here would answer groups
         the caller ruled out.
         """
-        if grouping.having is None:
+        if grouping.where_measures is None:
             return None
-        for condition in conditions_of(grouping.having):
-            if condition.field not in folds:
+        for condition in conditions_of(grouping.where_measures):
+            if condition.field not in measures:
                 raise InvalidCriteria(
-                    f"'{condition.field}' is not something a group folded; `having` reads "
-                    f"{', '.join(sorted(folds))} — a filter over the rows is `where`"
+                    f"'{condition.field}' is not something a group folded; `where_measures` reads "
+                    f"{', '.join(sorted(measures))} — a filter over the rows is `where`"
                 )
-        return sql.clause_over(folds.__getitem__, grouping.having)
+        return sql.clause_over(measures.__getitem__, grouping.where_measures)
 
     def _group_order(
-        self, grouping: Grouping, keys: list[Any], folds: dict[str, Any]
+        self, grouping: Grouping, keys: list[Any], measures: dict[str, Any]
     ) -> list[Any]:
         """How the groups of a level come back: by its own columns, or by what they folded.
 
@@ -490,11 +520,13 @@ class Repository:
         """
         if not grouping.order:
             return list(keys)
-        by_field = {level.field: column for level, column in zip(grouping.by, keys)}
+        by_field = {level.field: column for level, column in zip(grouping.group_by, keys)}
         clauses = []
         for sort in grouping.order:
             # `or` would ask a column for its truth, which SQLAlchemy refuses on purpose.
-            column = folds[sort.field] if sort.field in folds else by_field.get(sort.field)
+            column = (
+                measures[sort.field] if sort.field in measures else by_field.get(sort.field)
+            )
             if column is None:
                 raise InvalidCriteria(
                     f"a grouping is ordered by a level, by a total or by count; "
@@ -773,7 +805,7 @@ class Repository:
 
             in      Run, Criteria(where=dataset_id in (…), order=-started_at,
                                   pagination=Pagination(limit=5),
-                                  grouping=Grouping(by=(Level(field="dataset_id"),)))
+                                  grouping=Grouping(group_by=(Level(field="dataset_id"),)))
             out     up to five runs per dataset, ordered inside each, one statement
 
         This is what the other side of a relation resolved through a bus receives, so that no
@@ -783,9 +815,9 @@ class Repository:
         clause, sorts, meta, dropped = prepared
         dialect = self.database.engine.dialect.name
         columns = [
-            sql.grouping_column(model, level, dialect) for level in criteria.grouping.by
+            sql.grouping_column(model, level, dialect) for level in criteria.grouping.group_by
         ]
-        for level in criteria.grouping.by:
+        for level in criteria.grouping.group_by:
             meta.field(level.field)
         keys = [
             column.label(f"{sql.GROUP_KEY}{index}") for index, column in enumerate(columns)
@@ -1007,7 +1039,7 @@ class Repository:
         """The result set split by what its rows share — the question a facet asks.
 
             in      Dataset, Criteria(grouping={"by": ["produced_by"],
-                                                "totals": {"filas": ["sum", "row_count"]}})
+                                                "measures": {"filas": ["sum", "row_count"]}})
             out     [Bucket(produced_by, None, 187, {'filas': 4012933}, criteria=…),
                      Bucket(produced_by, 'run_01a0…', 1, {'filas': 400}, criteria=…)]
 
@@ -1028,48 +1060,39 @@ class Repository:
         with self._session() as session:
             return self._bucketed(session, model, criteria, criteria.grouping)
 
-    def totals(
-        self, target: type, criteria: Criteria | None = None, **folds: str
+    def measures(
+        self, target: type, criteria: Criteria | None = None, **measures: Any
     ) -> dict[str, Any]:
         """Folds over the whole result set, each named by the caller.
 
-            in      Dataset, None, rows="sum:row_count", biggest="max:size_bytes"
+            in      Dataset, None, rows=("sum", "row_count"), biggest=("max", "size_bytes")
             build   SELECT sum(row_count) AS rows, max(size_bytes) AS biggest FROM dataset
             out     {'rows': 4012933, 'biggest': 151487508}
 
-        Each fold reads `function:field` so the two halves never have to be guessed apart, and
-        the names are the caller's so a response reads as what was asked rather than `count_1`.
+        A measure is `{function, field}` or the pair `("sum", "row_count")` — the same thing a
+        criteria carries, read by the same `Measure.read` — and the names are the caller's, so a
+        response reads as what was asked rather than `count_1`.
 
-        This is where a `EntityCollection` sends anyone who tried to fold a page.
+        This is where a `EntityCollection` sends anyone who tried to measure a page.
         """
-        if not folds:
-            raise InvalidCriteria("totals needs at least one fold, e.g. rows='sum:row_count'")
+        if not measures:
+            raise InvalidCriteria(
+                "measures needs at least one measure, e.g. rows=('sum', 'row_count')"
+            )
 
         criteria = criteria or Criteria()
         model, _ = model_and_collection(target)
         meta = describe(model)
         clause, _, _, _ = self.prepare(model, criteria)
 
-        columns = []
-        for name, fold in folds.items():
-            function, _, field = fold.partition(":")
-            if not field:
-                raise InvalidCriteria(
-                    f"'{name}={fold}' should read as 'function:field', e.g. 'sum:row_count'"
-                )
-            if function not in FOLD_FUNCTIONS:
-                raise InvalidCriteria(
-                    f"'{function}' is not a fold; use one of {', '.join(FOLD_FUNCTIONS)}"
-                )
-            meta.field(field)
-            columns.append(getattr(func, function)(getattr(model, field)).label(name))
-
-        statement = select(*columns).select_from(model)
+        statement = select(*_measures(model, meta, measures, self._dialect())).select_from(
+            model
+        )
         if clause is not None:
             statement = statement.where(clause)
         with self._session() as session:
             row = session.execute(statement).one()
-        return dict(zip(folds, row))
+        return dict(zip(measures, row))
 
     # ------------------------------------------------------------------ the short readings
 
@@ -1159,7 +1182,7 @@ class Repository:
             in      Line, "account_id", Criteria(where=…)
             out     ['01a0…', '01a0…', …]          SELECT account_id FROM line WHERE …
 
-        Over the whole result set and not over a page, like `count` and `totals`: a column of
+        Over the whole result set and not over a page, like `count` and `measures`: a column of
         values is what fills a select, seeds a `browse` or feeds an in-memory join, and a page
         of it would be an accident.
         """
@@ -1221,11 +1244,11 @@ class Repository:
         rows: Sequence[str | Level],
         columns: Sequence[str | Level],
         criteria: Criteria | None = None,
-        **folds: str,
+        **measures: Any,
     ) -> Pivot:
         """Groups crossed by groups: a table with folded cells and its margins.
 
-            in      Line, rows=["journal_id"], columns=["posted_at:month"], debit="sum:debit"
+            in      Line, rows=["journal_id"], columns=["posted_at:month"], debit=("sum", "debit")
             out     Pivot(rows=[['SAL'], …], columns=[['2026-01'], …], cells=[…],
                           row_margin=[…], column_margin=[…], total=PivotCell(count=75087, …))
 
@@ -1235,7 +1258,7 @@ class Repository:
         right by luck.
 
         >>> matrix = self.repository.pivot(Line, ["journal_id"], ["posted_at:month"], debit="sum:debit")
-        >>> matrix.cell(["SAL"], ["2026-01"]).totals["debit"]
+        >>> matrix.cell(["SAL"], ["2026-01"]).measures["debit"]
         Decimal('18240.50')
         """
         if not rows or not columns:
@@ -1250,19 +1273,21 @@ class Repository:
         across = [_level(one) for one in columns]
         for level in [*down, *across]:
             meta.field(level.field)
-        folded = _folds(model, meta, folds)
+        folded = _measures(model, meta, measures, self._dialect())
         row_columns = [sql.grouping_column(model, level, dialect) for level in down]
         column_columns = [sql.grouping_column(model, level, dialect) for level in across]
 
         with self._session() as session:
             cells = self._cells(
-                session, model, clause, row_columns, column_columns, folded, folds
+                session, model, clause, row_columns, column_columns, folded, measures
             )
-            row_margin = self._cells(session, model, clause, row_columns, [], folded, folds)
+            row_margin = self._cells(
+                session, model, clause, row_columns, [], folded, measures
+            )
             column_margin = self._cells(
-                session, model, clause, [], column_columns, folded, folds
+                session, model, clause, [], column_columns, folded, measures
             )
-            whole = self._cells(session, model, clause, [], [], folded, folds)
+            whole = self._cells(session, model, clause, [], [], folded, measures)
 
         return Pivot(
             rows=[one.row for one in row_margin],
@@ -1270,7 +1295,7 @@ class Repository:
             cells=cells,
             row_margin=row_margin,
             column_margin=column_margin,
-            total=whole[0] if whole else PivotCell(totals=dict.fromkeys(folds)),
+            total=whole[0] if whole else PivotCell(measures=dict.fromkeys(measures)),
         )
 
     def _cells(
@@ -1281,7 +1306,7 @@ class Repository:
         row_columns: list[Any],
         column_columns: list[Any],
         folded: list[Any],
-        folds: dict[str, str],
+        measures: dict[str, str],
     ) -> list[PivotCell]:
         """One `GROUP BY` over whichever axes were handed in; no axis at all is the total."""
         keys = [*row_columns, *column_columns]
@@ -1295,7 +1320,7 @@ class Repository:
                 row=list(row[: len(row_columns)]),
                 column=list(row[len(row_columns) : len(keys)]),
                 count=row[len(keys)],
-                totals=dict(zip(folds, row[len(keys) + 1 :])),
+                measures=dict(zip(measures, row[len(keys) + 1 :])),
             )
             for row in session.execute(statement).all()
         ]

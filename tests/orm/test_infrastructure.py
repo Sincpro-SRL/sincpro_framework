@@ -52,11 +52,11 @@ def test_grouping_by_nothing_is_refused_rather_than_answered(store):
 
 
 def test_folding_nothing_is_refused_and_says_how_it_should_read(store):
-    with pytest.raises(InvalidCriteria, match="at least one fold"):
-        store.totals(Things)
+    with pytest.raises(InvalidCriteria, match="at least one measure"):
+        store.measures(Things)
 
-    with pytest.raises(InvalidCriteria, match="function:field"):
-        store.totals(Things, None, total="size")
+    with pytest.raises(InvalidCriteria, match="is written"):
+        store.measures(Things, None, total="size")
 
 
 def test_counting_and_grouping_both_honour_the_filter(store):
@@ -66,7 +66,7 @@ def test_counting_and_grouping_both_honour_the_filter(store):
 
     assert store.count(Things, narrow).value == 5
     assert store.group_by(Things, ["size"], narrow) == [{"size": 0, "count": 5}]
-    assert store.totals(Things, narrow, biggest="max:size") == {"biggest": 0}
+    assert store.measures(Things, narrow, biggest=("max", "size")) == {"biggest": 0}
 
 
 def test_an_operator_with_no_sql_is_refused_rather_than_guessed():

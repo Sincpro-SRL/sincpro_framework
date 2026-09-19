@@ -10,15 +10,15 @@ from decimal import Decimal
 
 import pytest
 
-from sincpro_framework.ddd.criteria import Fold
+from sincpro_framework.ddd.criteria import Measure
 from sincpro_framework.ddd.exceptions import InvalidCriteria as _InvalidCriteria
 
 
 def test_a_fold_only_takes_a_known_aggregate():
     """The function name reaches SQL: anything outside the closed list is refused here."""
-    assert Fold(function="sum", field="row_count").function == "sum"
-    with pytest.raises(_InvalidCriteria, match="not a fold"):
-        Fold(function="pg_sleep", field="row_count")
+    assert Measure(function="sum", field="row_count").function == "sum"
+    with pytest.raises(_InvalidCriteria, match="not a measure"):
+        Measure(function="pg_sleep", field="row_count")
 
 
 from sincpro_framework.ddd import Criteria, Cursor, Pagination
@@ -26,9 +26,9 @@ from sincpro_framework.ddd.criteria import (
     All,
     Any_,
     Condition,
-    Fold,
     Grouping,
     Level,
+    Measure,
     Not,
     Operator,
     Sort,
@@ -155,28 +155,28 @@ def test_the_grouping_declares_its_levels_and_its_folds():
     asked = Criteria.model_validate(
         {
             "grouping": {
-                "by": [
+                "group_by": [
                     {"field": "produced_by"},
                     {"field": "registered_at", "grain": "month"},
                 ],
-                "totals": {"rows": ["sum", "row_count"]},
+                "measures": {"rows": ["sum", "row_count"]},
             }
         }
     )
 
-    assert asked.grouping.by == (
+    assert asked.grouping.group_by == (
         Level(field="produced_by"),
         Level(field="registered_at", grain="month"),
     )
-    assert asked.grouping.totals == {"rows": Fold(function="sum", field="row_count")}
+    assert asked.grouping.measures == {"rows": Measure(function="sum", field="row_count")}
 
 
 def test_a_misspelt_level_or_fold_is_refused():
     with pytest.raises(InvalidCriteria, match="a level is written"):
-        Criteria.model_validate({"grouping": {"by": ["produced_by"]}})
-    with pytest.raises(InvalidCriteria, match="a fold is written"):
+        Criteria.model_validate({"grouping": {"group_by": ["produced_by"]}})
+    with pytest.raises(InvalidCriteria, match="a measure is written"):
         Criteria.model_validate(
-            {"grouping": {"by": [{"field": "a"}], "totals": {"n": "sum:row_count"}}}
+            {"grouping": {"group_by": [{"field": "a"}], "measures": {"n": "sum:row_count"}}}
         )
 
 
@@ -238,7 +238,7 @@ def test_a_criteria_survives_its_own_json():
         where=All(all=[OVER_A_THOUSAND, NAMED_LABS]),
         order=(Sort(field="registered_at", descending=True),),
         pagination=Pagination(limit=80, strategy=Cursor(token="eyJ")),
-        grouping=Grouping(by=(Level(field="produced_by"),)),
+        grouping=Grouping(group_by=(Level(field="produced_by"),)),
     )
 
     assert Criteria.model_validate_json(asked.model_dump_json()) == asked

@@ -15,7 +15,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Union, cast
 
-from pydantic import Field, JsonValue, RootModel, field_validator
+from pydantic import Field, JsonValue, RootModel, field_validator, model_validator
 
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.pagination import Cursor, Pagination
@@ -209,47 +209,93 @@ def parse_order(raw: str) -> tuple[Sort, ...]:
     )
 
 
-FOLD_FUNCTIONS: tuple[str, ...] = ("sum", "avg", "min", "max", "count")
-"""The aggregates a fold may ask for. A closed list, because the name reaches SQL: anything
-outside it is refused before a statement exists."""
+MEASURE_FUNCTIONS: tuple[str, ...] = (
+    "sum",
+    "avg",
+    "min",
+    "max",
+    "count",
+    "count_distinct",
+    "percentile",
+)
+"""The five functions a measure may ask for. A closed list, because the name reaches SQL:
+anything outside it is refused before a statement exists. Adding one is a change here, not a
+string a caller can invent."""
 
 
-class Fold(DataTransferObject):
-    """One number folded out of a bucket's rows.
+class Measure(DataTransferObject):
+    """One number a group answers: a function over a field, under a name the caller chose.
 
-        in      ["sum", "row_count"]
-        out     Fold(function='sum', field='row_count')       → sum(row_count) AS <name>
+        in      {"function": "sum", "field": "row_count"}
+        out     Measure(function='sum', field='row_count')       → sum(row_count) AS <name>
 
-    A pair and not `"sum:row_count"`, so nobody has to split a string — the same reason a
-    condition is written as a triple.
+    **Named parts and not `"sum:row_count"`**, so nobody has to split a string in whatever
+    language is reading this — the same reason a condition travels as `{field, operator,
+    value}`. The pair `["sum", "row_count"]` is read as well, because writing one by hand in
+    Python is a pair; what a caller sends over a wire is the object.
+
+    It is called a measure and not an aggregate on purpose: in this codebase an *aggregate* is
+    the DDD root — what `Meta.aggregate` names — and two meanings for one word in the same
+    sentence is how a reader loses an afternoon.
     """
 
     function: str
     field: str
 
+    argument: float | None = None
+    """What the function needs besides a column, when it needs anything.
+
+    Only `percentile` does: the fraction it cuts at, `0.5` for the median and `0.95` for a P95.
+    Every other measure refuses one rather than ignoring it, because a number that is quietly
+    dropped is a report that is quietly wrong."""
+
     @field_validator("function")
     @classmethod
     def _one_of_the_known_aggregates(cls, function: str) -> str:
-        if function not in FOLD_FUNCTIONS:
+        if function not in MEASURE_FUNCTIONS:
             raise InvalidCriteria(
-                f"'{function}' is not a fold; use one of {', '.join(FOLD_FUNCTIONS)}"
+                f"'{function}' is not a measure; use one of {', '.join(MEASURE_FUNCTIONS)}"
             )
         return function
 
-    @classmethod
-    def read(cls, written: Any) -> "Fold":
-        """A fold as it comes in JSON: the pair, and nothing else.
+    @model_validator(mode="after")
+    def _the_argument_belongs_to_the_function(self) -> "Measure":
+        """`percentile` needs its fraction; nothing else takes one.
 
-        >>> Fold.read(["sum", "row_count"])
-        Fold(function='sum', field='row_count')
+        >>> Measure(function="percentile", field="debit", argument=0.95)
+        Measure(function='percentile', field='debit', argument=0.95)
+        >>> Measure(function="sum", field="debit", argument=0.95)
+        InvalidCriteria: 'sum' takes no argument
         """
-        if isinstance(written, Fold):
+        if self.function == "percentile":
+            if self.argument is None or not 0 < self.argument < 1:
+                raise InvalidCriteria(
+                    "a percentile is cut at a fraction between 0 and 1, e.g. 0.5 for the "
+                    f"median; got {self.argument!r}"
+                )
+        elif self.argument is not None:
+            raise InvalidCriteria(f"'{self.function}' takes no argument")
+        return self
+
+    @classmethod
+    def read(cls, written: Any) -> "Measure":
+        """A measure as it comes in: the object on the wire, or the pair written by hand.
+
+        >>> Measure.read({"function": "sum", "field": "row_count"})
+        Measure(function='sum', field='row_count')
+        >>> Measure.read(["sum", "row_count"])
+        Measure(function='sum', field='row_count')
+        """
+        if isinstance(written, Measure):
             return written
         if isinstance(written, dict):
             return cls(**written)
-        if not isinstance(written, list) or len(written) != 2 or not all(written):
+        # A tuple as much as a list: a pair written in Python is `("sum", "row_count")` and
+        # the same pair read from JSON is a list. They mean the same measure.
+        if not isinstance(written, (list, tuple)) or len(written) != 2 or not all(written):
             raise InvalidCriteria(
-                f"a fold is written [function, field], e.g. ['sum', 'row_count']; got {written!r}"
+                "a measure is written {'function': …, 'field': …}, or as the pair "
+                f"['sum', 'row_count']; got {written!r}"
             )
         return cls(function=written[0], field=written[1])
 
@@ -283,7 +329,7 @@ class Level(DataTransferObject):
 class Grouping(DataTransferObject):
     """How a result set is split: the levels, and the numbers folded out of every group.
 
-        in      {"by": ["produced_by", "registered_at:month"], "totals": {"filas": ["sum", "row_count"]}}
+        in      {"by": ["produced_by", "registered_at:month"], "measures": {"filas": ["sum", "row_count"]}}
         out     every level `by` names, each group counted and folded, carrying how to open it
 
     All the levels named are answered, one statement each: grouping by three fields is three
@@ -292,18 +338,24 @@ class Grouping(DataTransferObject):
     has to know how deep the whole tree is.
     """
 
-    by: tuple[Level, ...] = ()
-    totals: dict[str, Fold] = {}
+    group_by: tuple[Level, ...] = ()
+    """The levels the set is split by, one statement each."""
 
-    having: Expression | None = None
-    """A filter over what the groups fold, not over the rows: `count > 10`, `debit > 1000`.
-    The names it may use are the ones in `totals` plus `count`; `where` filters the rows that
-    make the groups, `having` filters the groups the rows made."""
+    measures: dict[str, Measure] = {}
+    """The numbers every group answers, each under a name the caller chose."""
+
+    where_measures: Expression | None = None
+    """A filter over what the groups measured, not over the rows: `count > 10`, `debit > 1000`.
+
+    The names it may use are the ones in `measures` plus `count`. `where` filters the rows that
+    make the groups; this filters the groups those rows made — which is why it is not called
+    `where`: it reads measures, not fields."""
 
     order: tuple[Sort, ...] = ()
-    """How the groups of each level come back: by the level's own field, by a name in `totals`
+    """How the groups of each level come back: by the level's own field, by a name in `measures`
     or by `count`. Empty means by the level's field, ascending, which is how a list of groups
-    reads when nobody asked for anything else."""
+    reads when nobody asked for anything else. It orders the GROUPS; `Criteria.order` orders
+    the rows, and with a page asked for it decides which rows each group shows first."""
 
     pagination: Pagination | None = None
     """How many groups of the FIRST level come back, and from where. `None`, the default, is
@@ -317,7 +369,7 @@ class Grouping(DataTransferObject):
     def paged(self) -> bool:
         """Whether only some of the groups were asked for.
 
-        >>> Grouping(by=(Level(field="a"),)).paged
+        >>> Grouping(group_by=(Level(field="a"),)).paged
         False
         """
         return self.pagination is not None
@@ -329,14 +381,14 @@ class Grouping(DataTransferObject):
         >>> Grouping().asked
         False
         """
-        return bool(self.by)
+        return bool(self.group_by)
 
 
 class Bucket(DataTransferObject):
     """One group: what its rows share, how many there are, and how to see them.
 
         out     Bucket(field='produced_by', value=None, count=187,
-                       totals={'filas': 4012933}, criteria=Criteria(where=…))
+                       measures={'filas': 4012933}, criteria=Criteria(where=…))
 
     `criteria` is the whole point. It is this reading plus «and this bucket's value», so
     opening the group is `self.repository.search(Dataset, bucket.criteria)` and nothing else — no client
@@ -356,7 +408,7 @@ class Bucket(DataTransferObject):
     field: str
     value: Any
     count: int
-    totals: dict[str, Any] = {}
+    measures: dict[str, Any] = {}
     criteria: "Criteria"
     ids: list[Any] = []
     """The identities of this group's first page, in the criteria's order; empty unless the
@@ -371,7 +423,7 @@ class PivotCell(DataTransferObject):
     """One cell of a pivot: what its rows share on both axes, how many there are, and the
     numbers folded out of them.
 
-        out     PivotCell(row=['SAL'], column=['2026-01'], count=412, totals={'debit': …})
+        out     PivotCell(row=['SAL'], column=['2026-01'], count=412, measures={'debit': …})
 
     A margin is a cell with one axis empty: `column=[]` is the whole row, `row=[]` the whole
     column, and both empty is the grand total.
@@ -380,14 +432,14 @@ class PivotCell(DataTransferObject):
     row: list[Any] = []
     column: list[Any] = []
     count: int = 0
-    totals: dict[str, Any] = {}
+    measures: dict[str, Any] = {}
 
 
 class Pivot(DataTransferObject):
     """A table of groups crossed by groups: rows down one axis, columns across the other, a
     folded cell where they meet.
 
-        in      rows=[journal_id], columns=[posted_at:month], totals={'debit': sum debit}
+        in      rows=[journal_id], columns=[posted_at:month], measures={'debit': sum debit}
         out     Pivot(rows=[['SAL'], ['PUR']], columns=[['2026-01'], ['2026-02']], cells=[…])
 
     `rows` and `columns` are every key that appeared, in order, so a client renders the grid
@@ -544,21 +596,22 @@ class Criteria(DataTransferObject):
     @field_validator("grouping", mode="before")
     @classmethod
     def _reads_the_grouping(cls, value: Any) -> Any:
-        """The levels and the folds of the object, each to its type.
+        """The levels and the measures of the object, each to its type.
 
-        in      {"by": [{"field": "produced_by"}], "totals": {"filas": ["sum", "row_count"]}}
-        out     Grouping(by=(Level(produced_by),), totals={'filas': Fold(sum, row_count)})
+        in      {"by": [{"field": "produced_by"}], "measures": {"filas": ["sum", "row_count"]}}
+        out     Grouping(by=(Level(produced_by),), measures={'filas': Measure(sum, row_count)})
         """
         if isinstance(value, dict):
             value = dict(value)
-            if "by" in value:
-                value["by"] = tuple(Level.read(one) for one in value["by"])
-            if "totals" in value:
-                value["totals"] = {
-                    name: Fold.read(fold) for name, fold in (value["totals"] or {}).items()
+            if "group_by" in value:
+                value["group_by"] = tuple(Level.read(one) for one in value["group_by"])
+            if "measures" in value:
+                value["measures"] = {
+                    name: Measure.read(measure)
+                    for name, measure in (value["measures"] or {}).items()
                 }
-            if "having" in value:
-                value["having"] = expression_from(value["having"])
+            if "where_measures" in value:
+                value["where_measures"] = expression_from(value["where_measures"])
             if isinstance(value.get("order"), str):
                 value["order"] = parse_order(value["order"])
         return value

@@ -74,7 +74,7 @@ def test_get_by_answers_a_natural_key(store: Repository):
 
 
 def test_pluck_answers_one_column_over_the_whole_result_set(store: Repository, things):
-    """Over everything the criteria matched, like `count` and `totals`: a column of values
+    """Over everything the criteria matched, like `count` and `measures`: a column of values
     fills a select or seeds a browse, and a page of it would be an accident."""
     every = store.pluck(Things, "thing_id", Criteria(order=parse_order("thing_id")))
 

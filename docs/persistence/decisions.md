@@ -250,7 +250,7 @@ otherwise turn into an archive; `retrying(work)` for a unit of work that lost a 
 a batch becomes a thousand round trips, where a retry forgets to back off. The rule that keeps
 them honest is the one the layer already had: what answers over a page says so, and what answers
 over the whole result set says so. `pluck` and `distinct` are in the second group, with `count`
-and `totals`.
+and `measures`.
 
 `retrying` takes a callable and not a block, because a `with` cannot run its body twice.
 `one` fetches two rows and no more: it never loads a set to discover it was not one.

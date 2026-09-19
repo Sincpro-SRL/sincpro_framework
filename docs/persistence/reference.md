@@ -29,7 +29,7 @@ Three rules, each preventing a failure that was observed in real code:
 - **A dropped filter is reported, never silent.** An unknown field or an operator the type does not
   take goes into `EntityCollection.dropped`; a dropped filter *widens* the result, so it is said out loud.
 - **A partial collection refuses to fold itself.** `sum_by` over a page raises and names
-  `self.repository.totals(...)`, the call that answers about the whole set.
+  `self.repository.measures(...)`, the call that answers about the whole set.
 - **Ordering by a nullable column is refused.** A keyset comparison omits rows holding `NULL`, which
   is the one failure in this design that loses data without raising.
 
@@ -88,7 +88,7 @@ with self.repository.context() as repository:                         # several 
 | `export` | read | Every page as dictionaries, one at a time: a report or a CSV without holding the set |
 | `pivot` | read | Groups crossed by groups with their margins; four statements whatever the volume |
 | `explain` | neither | What the criteria will become, what it dropped and how many statements it costs, without running it |
-| `count`, `group_by`, `group_by_levels`, `totals` | read | Answered in SQL over the whole result set, never over a page; `group_by_levels` with a page asked also gives every group the ids of its first page and a cursor |
+| `count`, `group_by`, `group_by_levels`, `measures` | read | Answered in SQL over the whole result set, never over a page; `group_by_levels` with a page asked also gives every group the ids of its first page and a cursor |
 | `statement` / `run` | read | The escape hatch: a real `Select` out, the usual envelope back in |
 | `fetch_all` | read | Every page, as one complete collection — hands a bounded set to the in-memory algebra |
 | `save`, `remove` | write | Take the aggregate. **No update or delete by criteria** — a generic write path skips the aggregate's rules |
@@ -123,8 +123,8 @@ wrapper:
 ```python
 with self.repository.context() as repository:
     for batch in repository.stream(Line, Criteria(where=…, pagination=Pagination(limit=500))):
-        totals = repository.session.execute(select(Line.account_id, func.sum(Line.amount))…)
-        for group in reconcile(batch, totals):
+        measures = repository.session.execute(select(Line.account_id, func.sum(Line.amount))…)
+        for group in reconcile(batch, measures):
             with repository.savepoint():                 # one group fails, the rest stand
                 for line in repository.search(Lines, group.criteria, for_update=True):
                     line.reconcile(group)
