@@ -19,7 +19,13 @@ from contextvars import ContextVar
 from functools import cache
 from typing import Any, Literal
 
-from pydantic import PrivateAttr, SerializationInfo, TypeAdapter, model_serializer
+from pydantic import (
+    GetJsonSchemaHandler,
+    PrivateAttr,
+    SerializationInfo,
+    TypeAdapter,
+    model_serializer,
+)
 
 from sincpro_framework.ddd.criteria import Criteria, Specification
 from sincpro_framework.ddd.entity_collection import (
@@ -129,6 +135,40 @@ class ResponsePaginatedQuery(DataTransferObject):
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
             }
         return written
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: Any, handler: GetJsonSchemaHandler
+    ) -> dict[str, Any]:
+        """What this answer looks like, said for the OpenAPI as well as for the validator.
+
+        **Without this, every paginated answer is published as `{"type": "object"}`.** A model
+        with a plain serializer tells pydantic "I write an object" and nothing else, so the
+        schema loses `cursor`, `count`, `model_meta_data`, `dropped` and the records — which is
+        exactly what a client generating types needs, and why the TypeScript package had to
+        write those types by hand.
+
+        The shape is not a guess: the serializer writes the declared fields and no others, so
+        the schema is built from them.
+
+        One thing it cannot say: a `specification` cuts the fields of each record, so a record
+        may arrive with fewer than its type declares. Only the identity is always there.
+        """
+        if handler.mode != "serialization":
+            return handler(core_schema)
+
+        fields = core_schema["schema"]["fields"]
+        return {
+            "type": "object",
+            "title": cls.__name__,
+            "description": (
+                "A page of records with what the engine says about it. When the criteria "
+                "carried a specification, each record holds the fields it named plus the "
+                "identity, and nothing else."
+            ),
+            "properties": {name: handler(one["schema"]) for name, one in fields.items()},
+            "required": sorted(fields),
+        }
 
     @classmethod
     def records_field(cls) -> str:
