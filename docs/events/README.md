@@ -23,8 +23,9 @@ memory and dies with the object.
 
 | Piece | Module | What it is |
 |---|---|---|
-| `DomainEvent` | `ddd/events.py` | A `DataTransferObject` with the envelope: `event_id` (UUID v7), `occurred_at`, `aggregate_type`, `aggregate_id`, `correlation_id`, `causation_id`, `sequence` |
-| `Entity.record` / `pull_events` | `ddd/entity.py` | Records with the aggregate's type, id and sequence; pulling hands them back and forgets them |
+| `DomainEvent` | `ddd/events.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `correlation_id`, `causation_id`, `sequence`, `label` |
+| `Entity.record` / `pull_events` | `ddd/entity/entity.py` | Records with the aggregate's type, id and sequence; pulling hands them back and forgets them |
+| `ChangeTrackingMixin` | `ddd/entity/mixins/tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
 | `Publisher` | `events/publisher.py` | Emits to a queue, with the signature of a bus |
 | `Subscriber` | `events/subscriber.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event |
 | `Queue` | `events/queue.py` | The protocol: `put` and `aput` |

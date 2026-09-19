@@ -11,10 +11,10 @@ import pytest
 from sqlalchemy.dialects.sqlite import dialect as SQLiteDialect
 
 from sincpro_framework.ddd.criteria import Condition, CountMode, Criteria, Operator
-from sincpro_framework.ddd.entity_collection import Count, EntityCollection
+from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
+from sincpro_framework.ddd.entity.model_meta import FieldType
 from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
-from sincpro_framework.ddd.model_meta import FieldType
-from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText, TranslatedText
 from sincpro_framework.orm.sqlalchemy.sql_translator import where_clause
 

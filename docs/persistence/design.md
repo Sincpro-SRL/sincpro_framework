@@ -4,28 +4,40 @@
 
 ```
 sincpro_framework/
-├── ddd/                         the vocabulary · no database imported anywhere
-│   ├── entity.py                Entity: id (UUID v7), created_at, updated_at, version, translations()
-│   ├── criteria.py              Criteria, Condition/All/Any_/Not, Sort, Grouping, Fold, Level, Bucket, Specification
-│   ├── pagination.py            Pagination, Cursor (keyset), Offset, CursorKeys
-│   ├── entity_collection.py     EntityCollection, Count, Dropped, identity_of / identity_name
-│   ├── model_meta.py            Meta, FieldMeta, FieldType, annotations_of, related_class
-│   ├── relations.py             Relation (resolved_by, bus), Resolver, BusResolver, resolve_elsewhere
-│   ├── query.py                 Query, ResponsePaginatedQuery (the answer, masked on the wire)
-│   ├── events.py                DomainEvent
-│   ├── evaluate.py              matches(): the in-memory evaluator, the specification of the translator
-│   ├── repository.py            the minimal Repository Protocol
-│   ├── memory_repository.py     the same vocabulary answered over records held in memory
-│   └── exceptions.py            DomainError, InvalidCriteria, ContractViolation, StaleAggregate, DuplicateAggregate, RelationNotResolved
-└── orm/sqlalchemy/              the adapter · the [sqlalchemy] extra
-    ├── database.py              Database: engine, session factory, observed from birth
-    ├── repository.py            Repository: the reads, the writes, context, narrowed, pivot, explain
-    ├── sql_translator.py        Criteria → Select; grains per dialect
-    ├── data_mapper.py           entity_table, map_aggregates, Relation (foreign_key, many_to_many, id_list), foreign-key inference
-    ├── model_introspection.py   describe(): the class and its table → Meta
-    ├── relation_resolver.py     the database kinds of relation, one statement per node
-    ├── custom_fields.py         JsonText, TranslatedText
-    └── observability.py         every statement to the logger, the tracer and the error tracker
+├── ddd/                          the vocabulary · no database imported anywhere
+│   ├── entity/
+│   │   ├── entity.py             Entity: id (UUID v7), created_at, updated_at, version, translations()
+│   │   ├── entity_collection.py  EntityCollection, Count, Dropped, identity_of / identity_name
+│   │   ├── model_meta.py         Meta, FieldMeta, FieldType, annotations_of, related_class
+│   │   ├── relations.py          Relation (resolved_by, bus), Resolver, BusResolver, resolve_elsewhere
+│   │   └── mixins/               what an aggregate opts into, one file each
+│   │       ├── audited.py        AuditedMixin: created_by, updated_by
+│   │       ├── archivable.py     ArchivableMixin: archived_at, archive(), restore()
+│   │       └── tracking.py       ChangeTrackingMixin, EntityUpdated: what counts as a change
+│   ├── criteria/
+│   │   ├── criteria.py           Criteria, Condition/All/Any_/Not, Sort, Grouping, Level, Bucket, Specification
+│   │   ├── pagination.py         Pagination, Cursor (keyset), Offset, CursorKeys
+│   │   └── evaluate.py           matches(): the in-memory evaluator, the specification of the translator
+│   ├── repositories/
+│   │   ├── repository.py         Repository: the abstract store a use case is written against
+│   │   ├── memory_repository.py  the same vocabulary answered over records held in memory
+│   │   ├── hooks.py              Hook, Hooks, Rule: what a project puts around its aggregates
+│   │   └── change_tracking.py    change tracking for a store with no flush to ask
+│   ├── query.py                  Query, ResponsePaginatedQuery (the answer, masked on the wire)
+│   ├── events.py                 DomainEvent, EventTrackableMixin, EventStatus
+│   ├── value_object.py           ValueObject
+│   └── exceptions.py             DomainError, InvalidCriteria, ContractViolation, StaleAggregate, DuplicateAggregate, RelationNotResolved
+└── orm/sqlalchemy/               the adapter · the [sqlalchemy] extra
+    ├── database.py               Database: engine, session factory, observed from birth, and the two
+    │                             things it guarantees about every write — who, and what changed
+    ├── repository.py             Repository: the reads, the writes, context, narrowed, pivot, explain
+    ├── change_tracking.py        the diff the engine is about to write, at before_flush
+    ├── sql_translator.py         Criteria → Select; grains per dialect
+    ├── data_mapper.py            entity_table, map_aggregates, Relation (foreign_key, many_to_many, id_list), foreign-key inference
+    ├── model_introspection.py    describe(): the class and its table → Meta
+    ├── relation_resolver.py      the database kinds of relation, one statement per node
+    ├── custom_fields.py          JsonText, TranslatedText
+    └── observability.py          every statement to the logger, the tracer and the error tracker
 ```
 
 The line between the two is a test: `tests/orm/test_optional_extra.py` imports the vocabulary
@@ -81,10 +93,10 @@ the checkpoint a batch uses so one failing group does not undo the others.
 | Another bounded context as the other side | `Relation.bus(Related, bus, Command, identified_by=…)`; the other side is an ordinary `search` | no |
 | A date grain for another SQL dialect | `register_grain_translator("mysql", translator)` | no |
 | A column type of the project's own | a SQLAlchemy `TypeDecorator`; `describe()` reads the annotation, not the column type | no |
-| A second persistence backend | a package beside `orm/sqlalchemy/` implementing the `Repository` protocol and `describe()` | the `Protocol` it would earn |
+| A second persistence backend | a package beside `orm/sqlalchemy/` inheriting `Repository` and implementing `describe()` | — |
 | A tenant, a branch, a permission | `repository.narrowed(criteria)`, handed to the bus instead of the wide one | no |
-| Who wrote a record | `Audited` on the aggregate, `Database(url, actor=…)` | no |
-| Deleting that keeps the row | `Archivable` on the aggregate | no |
+| Who wrote a record | `AuditedMixin` on the aggregate, `Database(url, actor=…)` | no |
+| Deleting that keeps the row | `ArchivableMixin` on the aggregate | no |
 | A Feature tested without a database | `MemoryRepository(*records)` as the dependency | no |
 
 ## The invariants every change must keep

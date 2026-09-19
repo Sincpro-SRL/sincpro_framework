@@ -16,7 +16,7 @@ rules. There is no update or delete by criteria.
 """
 
 import types
-from collections.abc import Callable, Generator, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from time import sleep
 from typing import Any, cast, overload
@@ -42,22 +42,25 @@ from sincpro_framework.ddd.criteria import (
     combined,
     conditions_of,
 )
+from sincpro_framework.ddd.criteria.evaluate import matches
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity import ArchivableMixin
-from sincpro_framework.ddd.entity_collection import (
+from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
     EntityCollection,
     model_and_collection,
 )
-from sincpro_framework.ddd.evaluate import matches
+from sincpro_framework.ddd.entity.model_meta import Meta
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
     DuplicateAggregate,
     InvalidCriteria,
     StaleAggregate,
 )
-from sincpro_framework.ddd.model_meta import Meta
-from sincpro_framework.ddd.pagination import Pagination
+from sincpro_framework.ddd.repositories.hooks import Rule
+from sincpro_framework.ddd.repositories.repository import Repository as BaseRepository
+from sincpro_framework.ddd.repositories.repository import records_of, refuse_unarchivable
 from sincpro_framework.orm.sqlalchemy import sql_translator as sql
 from sincpro_framework.orm.sqlalchemy.data_mapper import REPOSITORY, relations_of
 from sincpro_framework.orm.sqlalchemy.database import Database
@@ -176,7 +179,19 @@ def _relations_named(
     return named
 
 
-class Repository:
+def _named(records: list[Any]) -> str:
+    """What a batch is called in an error: the aggregate when they are all one kind, and every
+    kind in it when they are not. One flush writes them together and the engine does not say
+    which one lost the race, so a single name would be a guess."""
+    kinds = sorted({type(one).__name__ for one in records})
+    if not kinds:
+        return "the batch"
+    if len(kinds) == 1:
+        return kinds[0] if len(records) == 1 else f"one of {len(records)} {kinds[0]}"
+    return f"one of {len(records)} records ({', '.join(kinds)})"
+
+
+class Repository(BaseRepository):
     """One database, read and written through one object. Implements `ddd.Repository` and
     answers more: a use case takes this instance, the protocol holds it to the minimum.
 
@@ -188,9 +203,17 @@ class Repository:
     def __init__(
         self,
         database: Database,
+        hooks: Iterable[Any] | None = None,
+        deps: Any = None,
         session: Session | None = None,
         scope: Criteria | None = None,
+        rules: Sequence[Rule] | None = None,
+        guard: "BaseRepository | None" = None,
     ) -> None:
+        """`hooks` second so a wiring reads as what it is — `Repository(database, billing_hooks)`
+        — and `deps` beside it, since a hook that resolves dependencies needs both. The rest
+        are what a unit of work and a narrowing carry, named when they are passed."""
+        super().__init__(rules, hooks, deps, guard)
         self.database = database
         self._bound = session
         self._scope = scope
@@ -219,6 +242,9 @@ class Repository:
             self.database,
             session=self._bound,
             scope=self._scope.merged_with(scope) if self._scope is not None else scope,
+            rules=self._rules,
+            deps=self._deps,
+            guard=self._guard,
         )
 
     def _asked(self, model: type, meta: Meta, criteria: Criteria) -> Any:
@@ -342,7 +368,7 @@ class Repository:
         if skipped:
             statement = statement.offset(skipped)
         rows = list(session.scalars(statement.limit(page.limit + 1)))
-        kept = rows[: page.limit]
+        kept = [self._read(row) for row in rows[: page.limit]]
         has_more = len(rows) > page.limit
 
         next_cursor = page.next_from(kept[-1], sorts) if has_more and kept else None
@@ -597,23 +623,27 @@ class Repository:
             pages[path] = (ids, cursor)
         return pages
 
-    def _written(self, session: Session, record: Any) -> None:
-        """Flushes one aggregate and translates the two ways a write loses a race.
+    def _written(self, session: Session, records: list[Any]) -> None:
+        """Flushes the batch and translates the two ways a write loses a race.
 
         a newer version in the row     →  StaleAggregate     read again, decide again
         a unique value already taken   →  DuplicateAggregate  resolve the twin
+
+        **Named for the whole batch, not for its first record.** One flush writes all of them
+        and the engine does not say which one lost, so naming a guess sends somebody to read
+        the wrong aggregate. The engine's own message does name the table; it is carried
+        through rather than summarised away.
         """
         try:
             session.flush()
         except StaleDataError as error:
             raise StaleAggregate(
-                f"{type(record).__name__} changed since it was read; "
-                "read it again before writing"
+                f"{_named(records)} changed since it was read; "
+                f"read it again before writing — {error}"
             ) from error
         except IntegrityError as error:
             raise DuplicateAggregate(
-                f"{type(record).__name__} collides with a record already stored: "
-                f"{error.orig}"
+                f"{_named(records)} collides with a record already stored: {error.orig}"
             ) from error
 
     @property
@@ -692,7 +722,14 @@ class Repository:
             yield self
             return
         with self.database.session() as session:
-            bound = Repository(self.database, session=session, scope=self._scope)
+            bound = Repository(
+                self.database,
+                session=session,
+                scope=self._scope,
+                rules=self._rules,
+                deps=self._deps,
+                guard=self._guard,
+            )
             # A relation touched inside the block resolves itself through this repository.
             session.info[REPOSITORY] = bound
             yield bound
@@ -786,12 +823,16 @@ class Repository:
         prepared = self.prepare(model, criteria)
         if criteria.grouping.asked and criteria.pagination.asked:
             with self._session() as session:
-                return self._partitioned_page(session, model, holder, criteria, prepared)
+                return self._searched(
+                    target, self._partitioned_page(session, model, holder, criteria, prepared)
+                )
         statement = self._statement_from(model, criteria, prepared)
         if lock is not None:
             statement = statement.with_for_update(skip_locked=skip_locked)
         with self._session() as session:
-            return self._page(session, model, holder, statement, criteria, prepared)
+            return self._searched(
+                target, self._page(session, model, holder, statement, criteria, prepared)
+            )
 
     def _partitioned_page(
         self,
@@ -837,7 +878,7 @@ class Repository:
             .where(sub.c[sql.POSITION] <= criteria.limit)
             .order_by(*(sub.c[key.name] for key in keys), sub.c[sql.POSITION])
         )
-        rows = list(session.scalars(statement))
+        rows = [self._read(row) for row in session.scalars(statement)]
         return holder(
             items=tuple(rows),
             cursor=None,
@@ -952,7 +993,7 @@ class Repository:
             return None
         if isinstance(found, ArchivableMixin) and found.is_archived:
             return None
-        return cast(Any, found)
+        return cast(Any, self._read(found))
 
     @overload
     def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...
@@ -973,16 +1014,18 @@ class Repository:
         model, holder = model_and_collection(target)
         meta = describe(model)
         if not ids:
-            return holder(meta=meta)
+            return self._searched(target, holder(meta=meta))
 
         column = getattr(model, meta.identity)
         with self._session() as session:
             found = {
-                getattr(record, meta.identity): record
+                getattr(record, meta.identity): self._read(record)
                 for record in session.scalars(select(model).where(column.in_(list(ids))))
                 if self._in_scope(record)
             }
-        return holder(items=tuple(found[one] for one in ids if one in found), meta=meta)
+        return self._searched(
+            target, holder(items=tuple(found[one] for one in ids if one in found), meta=meta)
+        )
 
     def count(self, target: type, criteria: Criteria | None = None) -> Count:
         """How many match, capped unless the criteria asked for the exact number.
@@ -1381,62 +1424,26 @@ class Repository:
                 sleep(wait * (2**attempt))
         raise AssertionError("unreachable")
 
-    def save_all(self, records: Sequence[Any]) -> None:
-        """Persists many aggregates as one flush.
-
-            in      1 000 lines, all new        →  one INSERT per batch, one round trip
-            in      a mix of new and loaded     →  inserted and updated, versions checked
-            in      one that moved on           →  StaleAggregate, nothing of the batch lands
-
-        The same promises `save` makes, paid once instead of once per record: the version check
-        holds for every one of them, and a batch that fails leaves the transaction to undo as a
-        whole. This is the door an import or a nightly job uses.
-        """
-        if not records:
-            return
-        for record in records:
-            self._refuse_outside(record)
-        with self._session() as session:
-            session.add_all(list(records))
-            self._written(session, records[0])
-
-    def remove_all(self, records: Sequence[Any]) -> None:
-        """Removes many aggregates as one flush; archives the ones that can be archived."""
-        if not records:
-            return
-        archivable = [one for one in records if isinstance(one, ArchivableMixin)]
-        for record in archivable:
-            record.archive()
-        if archivable:
-            self.save_all(archivable)
-        rest = [one for one in records if not isinstance(one, ArchivableMixin)]
-        if not rest:
-            return
-        for record in rest:
-            self._refuse_outside(record)
-        with self._session() as session:
-            for record in rest:
-                session.delete(record)
-            self._written(session, rest[0])
-
-    def purge(self, record: Any) -> None:
-        """Deletes the row, archivable or not.
-
-        `remove` archives what can be archived, which is what a business means by deleting.
-        This is the other case: the record has to be gone, for a mistake or for a retention
-        rule, and somebody said so.
-        """
-        self._refuse_outside(record)
-        with self._session() as session:
-            session.delete(record)
-            self._written(session, record)
-
     def save(self, record: Any) -> None:
-        """Persists one aggregate: an insert if it is new, an update if it was loaded.
+        """Persists one aggregate or several: an insert for what is new, an update for what was
+        loaded.
 
             in      Note(title="x")                 never stored     →  INSERT, version 1
             in      the Note that `get` returned, changed           →  UPDATE … WHERE version = 1
             in      that same Note saved by somebody else first     →  StaleAggregate
+            in      1 000 new lines, or a page      →  one flush, one INSERT
+
+        **One or several is the same call.** Several are written as one flush, with the same
+        promises paid once instead of once per record: the version check holds for every one of
+        them, and a batch that fails leaves the transaction to undo as a whole. This is the door
+        an import or a nightly job uses too.
+
+        **What a batch costs, measured.** A thousand new aggregates are one `INSERT` with a
+        thousand rows. A thousand *loaded* ones are a thousand `UPDATE` statements, one per row,
+        and that is the price of `StaleAggregate`: the engine has to read the affected row count
+        back for each one to know whether somebody moved it first, which is exactly what a
+        batched statement does not report per row. Worth knowing before writing the nightly job
+        — the flush is one, the round trips are not.
 
         The aggregate is handed over whole and already valid: its rules ran before this call,
         and nothing here can change a field the aggregate did not. `updated_at` is stamped by
@@ -1445,28 +1452,59 @@ class Repository:
         Not a merge. A record built by hand with an id that already exists is a duplicate,
         not an update — the update path is to read the record and change it.
         """
-        self._refuse_outside(record)
+        self._refuse_reentrant_write()
+        records = records_of(record)
+        if not records:
+            return
+        for one in records:
+            self._refuse_outside(one)
+        newness = self._before_writes(records)
         with self._session() as session:
-            session.add(record)
-            self._written(session, record)
+            session.add_all(records)
+            self._written(session, records)
+        self._after_writes(records, newness)
 
     def remove(self, record: Any) -> None:
-        """Deletes one aggregate that was read from this database.
+        """Deletes one aggregate or several, read from this database.
 
             in      the Note that `get` returned   →  DELETE … WHERE id = :id
+            in      a list, or a page              →  one flush
 
-        Takes the record and not an id, so nothing is deleted that was not first loaded —
-        and so a `version` check applies to a delete the way it does to an update.
+        Takes records and not ids, so nothing is deleted that was not first loaded — and so a
+        `version` check applies to a delete the way it does to an update.
 
-        **An `ArchivableMixin` aggregate is archived instead**, because that is what a business
-        means by deleting one: it has to stop appearing and cannot be lost, since other
-        records point at it. `purge` is the door for the other case.
+        **It deletes, and only deletes.** Putting a record away without losing it is
+        `archive`: a different fact, and a different method, because other records point at it
+        and a name that lies about which of the two happened is worse than two names.
         """
-        self._refuse_outside(record)
-        if isinstance(record, ArchivableMixin):
-            record.archive()
-            self.save(record)
+        self._refuse_reentrant_write()
+        records = records_of(record)
+        if not records:
             return
+        for one in records:
+            self._refuse_outside(one)
+            self._before_remove(one)
         with self._session() as session:
-            session.delete(record)
-            self._written(session, record)
+            for one in records:
+                session.delete(one)
+            self._written(session, records)
+        for one in records:
+            self._after_remove(one)
+
+    def archive(self, record: Any) -> None:
+        """Stamps when it left and keeps the row — one aggregate or several.
+
+        What a business usually means by deleting: it has to stop appearing and cannot be
+        lost, because invoices point at it. A reading leaves it out unless its criteria names
+        `archived_at`. Refused for an aggregate that is not `ArchivableMixin`, which has
+        nowhere to write it.
+        """
+        self._refuse_reentrant_write()
+        records = records_of(record)
+        refuse_unarchivable(records)
+        for one in records:
+            self._before_archive(one)
+            one.archive()
+        self.save(records)
+        for one in records:
+            self._after_archive(one)

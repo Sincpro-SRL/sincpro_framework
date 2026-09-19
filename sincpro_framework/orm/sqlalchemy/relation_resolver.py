@@ -7,7 +7,7 @@
 
 The kinds only a database has live here, partitioned in SQL with a window function: a foreign
 key, a table in between, a list of ids held in a JSON column. Anything brought from elsewhere,
-a bus, a function, goes through its `Resolver` in `sincpro_framework.ddd.relations`, one call
+a bus, a function, goes through its `Resolver` in `sincpro_framework.ddd.entity.relations`, one call
 per node, cut per parent in memory. Same shape either way, chosen by what the data mapper
 declared.
 
@@ -22,12 +22,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from sincpro_framework.ddd.criteria import Criteria, Specification
-from sincpro_framework.ddd.entity_collection import Count, Dropped, EntityCollection
+from sincpro_framework.ddd.entity.entity_collection import Count, Dropped, EntityCollection
+from sincpro_framework.ddd.entity.model_meta import FieldType, Meta
+from sincpro_framework.ddd.entity.relations import Groups
+from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
+from sincpro_framework.ddd.entity.relations import cut, limit_of, resolve_elsewhere
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.model_meta import FieldType, Meta
-from sincpro_framework.ddd.relations import Groups
-from sincpro_framework.ddd.relations import Relation as DeclaredRelation
-from sincpro_framework.ddd.relations import cut, limit_of, resolve_elsewhere
 from sincpro_framework.orm.sqlalchemy import sql_translator as sql
 from sincpro_framework.orm.sqlalchemy.data_mapper import RESOLVED, Relation, relations_of
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
@@ -35,9 +35,6 @@ from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 PARENT_KEY = "_sincpro_parent_key"
 POSITION, TOTAL = sql.POSITION, sql.TOTAL
 """What every kind answers: the related records per parent identity."""
-
-
-# ---------------------------------------------------------------------------- same database
 
 
 def _partitioned(

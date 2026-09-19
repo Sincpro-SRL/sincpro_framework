@@ -48,7 +48,7 @@ Operators by type:
 `measures` plus `count`. A name outside them is refused rather than dropped, because a filter
 that vanished there would answer groups the caller ruled out.
 
-`matches(record, expression)` in `ddd/evaluate.py` is the in-memory evaluator and the
+`matches(record, expression)` in `ddd/criteria/evaluate.py` is the in-memory evaluator and the
 specification of the translator: every operator has to agree with it on every row, and the
 real-world suite checks exactly that over the whole ledger.
 

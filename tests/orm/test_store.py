@@ -19,9 +19,9 @@ from sincpro_framework.ddd.criteria import (
     Operator,
     parse_order,
 )
+from sincpro_framework.ddd.criteria.pagination import Offset, Pagination
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.ddd.pagination import Offset, Pagination
-from sincpro_framework.ddd.repository import Repository as RepositoryProtocol
+from sincpro_framework.ddd.repositories.repository import Repository as RepositoryProtocol
 
 from .models import ROW_COUNT, Thing, Things, a_thing
 

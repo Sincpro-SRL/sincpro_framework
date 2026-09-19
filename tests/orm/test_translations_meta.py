@@ -14,9 +14,9 @@ from sqlalchemy import Column, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity import Entity, Translated
-from sincpro_framework.ddd.model_meta import FieldType
-from sincpro_framework.ddd.pagination import Pagination
+from sincpro_framework.ddd.entity.model_meta import FieldType
 from sincpro_framework.orm.sqlalchemy.custom_fields import TranslatedText
 from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
 from sincpro_framework.orm.sqlalchemy.database import Database
@@ -31,26 +31,25 @@ class Status(StrEnum):
 
 @dataclass
 class Invoice(Entity):
-    number: str
-    status: Status = Status.DRAFT
-    title: dict[str, str] = field(default_factory=lambda: {"default": "untitled"})
+    number: str = field(metadata={"label": {"default": "Number", "es": "Número"}})
+    status: Status = field(
+        default=Status.DRAFT,
+        metadata={
+            "label": {"default": "Status", "es": "Estado"},
+            "help": {
+                "default": "Where the invoice is in its life",
+                "es": "En qué punto está",
+            },
+        },
+    )
+    title: dict[str, str] = field(
+        default_factory=lambda: {"default": "untitled"},
+        metadata={"label": {"default": "Title", "es": "Título"}},
+    )
 
     @classmethod
     def translations(cls) -> Translated:
-        return {
-            "name": {"default": "Invoice", "es": "Factura"},
-            "labels": {
-                "number": {"default": "Number", "es": "Número"},
-                "status": {"default": "Status", "es": "Estado"},
-                "title": {"default": "Title", "es": "Título"},
-            },
-            "help": {
-                "status": {
-                    "default": "Where the invoice is in its life",
-                    "es": "En qué punto está",
-                }
-            },
-        }
+        return {"default": "Invoice", "es": "Factura"}
 
 
 @dataclass
@@ -95,12 +94,9 @@ def test_the_definition_carries_the_words_exactly_as_the_class_said_them():
     meta = describe(Invoice)
 
     assert meta.aggregate == "Invoice"
-    assert meta.translations == Invoice.translations()
-    assert meta.translations["labels"]["number"]["es"] == "Número"
-    assert (
-        meta.translations.get("help", {})["status"]["default"]
-        == "Where the invoice is in its life"
-    )
+    assert meta.name == Invoice.translations()
+    assert meta.fields["number"].label["es"] == "Número"
+    assert meta.fields["status"].help["default"] == "Where the invoice is in its life"
 
 
 def test_an_enum_field_publishes_its_values_as_choices():
@@ -113,14 +109,14 @@ def test_an_enum_field_publishes_its_values_as_choices():
 def test_the_definition_travels_as_plain_json():
     dumped = describe(Invoice).model_dump(mode="json")
 
-    assert dumped["translations"]["name"] == {"default": "Invoice", "es": "Factura"}
-    assert dumped["translations"]["labels"]["number"]["es"] == "Número"
+    assert dumped["name"] == {"default": "Invoice", "es": "Factura"}
+    assert dumped["fields"]["number"]["label"]["es"] == "Número"
 
 
 def test_a_class_with_no_translator_is_named_after_itself():
     map_aggregates(own, {Bare: bare_table})
 
-    assert describe(Bare).translations == {"name": {"default": "Bare"}, "labels": {}}
+    assert describe(Bare).name == {"default": "Bare"}
 
 
 def test_a_translated_column_round_trips_and_is_searched_in_every_language(invoices):

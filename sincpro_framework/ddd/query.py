@@ -28,14 +28,14 @@ from pydantic import (
 )
 
 from sincpro_framework.ddd.criteria import Criteria, Specification
-from sincpro_framework.ddd.entity_collection import (
+from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
     EntityCollection,
     identity_name,
 )
+from sincpro_framework.ddd.entity.model_meta import FieldType, Meta
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.model_meta import FieldType, Meta
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
@@ -60,6 +60,80 @@ def _writing_out() -> Iterator[None]:
 @cache
 def _adapter(aggregate: type) -> TypeAdapter:
     return TypeAdapter(aggregate)
+
+
+def _shaped(value: Any, specification: Specification, definition: Meta) -> Any:
+    """An embedded value, already written out, cut to what its node named plus its identity;
+    a list of them, each one cut the same way."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [_shaped(one, specification, definition) for one in value]
+    keep = set(specification.named)  # a value object has no identity to keep
+    shaped: dict[str, Any] = {}
+    for name, inner in value.items():
+        if name not in keep:
+            continue
+        node = specification.root.get(name)
+        field = definition.fields.get(name)
+        if (
+            node is not None
+            and node.specification is not None
+            and field is not None
+            and field.definition is not None
+        ):
+            inner = _shaped(inner, node.specification, field.definition)
+        shaped[name] = inner
+    return shaped
+
+
+def _record(
+    record: Any,
+    specification: Specification | None,
+    meta: Meta | None,
+    mode: Literal["json", "python"],
+) -> dict[str, Any]:
+    """One record as the answer shows it: the scalars the mask keeps, then the named relations."""
+    written = _adapter(type(record)).dump_python(record, mode=mode)
+    relations = set(meta.relations) if meta is not None else set()
+    for name in relations:
+        written.pop(name, None)
+    if specification is None:
+        return written
+
+    identity = meta.identity if meta is not None else identity_name(type(record))
+    keep = {identity, *specification.named}
+    written = {name: value for name, value in written.items() if name in keep}
+    for name, node in specification.root.items():
+        if meta is None or name not in meta.fields:
+            continue
+        field = meta.fields[name]
+        if field.type is FieldType.EMBEDDED:
+            if node.specification is not None and field.definition is not None:
+                written[name] = _shaped(
+                    written.get(name), node.specification, field.definition
+                )
+            continue
+        if name not in relations:
+            continue
+        related = field
+        value = record.__dict__.get("_sincpro_resolved", {}).get(name)
+        if related.many:
+            page = value if isinstance(value, EntityCollection) else EntityCollection()
+            written[name] = {
+                "items": [
+                    _record(c, node.specification, related.definition, mode) for c in page
+                ],
+                "count": page.count.model_dump(mode=mode) if page.count else None,
+                "cursor": page.cursor,
+            }
+        else:
+            written[name] = (
+                None
+                if value is None
+                else _record(value, node.specification, related.definition, mode)
+            )
+    return written
 
 
 class Query(DataTransferObject):
@@ -222,77 +296,3 @@ class ResponsePaginatedQuery(DataTransferObject):
         response._specification = criteria.specification
         response._meta = page.meta
         return response
-
-
-def _shaped(value: Any, specification: Specification, definition: Meta) -> Any:
-    """An embedded value, already written out, cut to what its node named plus its identity;
-    a list of them, each one cut the same way."""
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return [_shaped(one, specification, definition) for one in value]
-    keep = set(specification.named)  # a value object has no identity to keep
-    shaped: dict[str, Any] = {}
-    for name, inner in value.items():
-        if name not in keep:
-            continue
-        node = specification.root.get(name)
-        field = definition.fields.get(name)
-        if (
-            node is not None
-            and node.specification is not None
-            and field is not None
-            and field.definition is not None
-        ):
-            inner = _shaped(inner, node.specification, field.definition)
-        shaped[name] = inner
-    return shaped
-
-
-def _record(
-    record: Any,
-    specification: Specification | None,
-    meta: Meta | None,
-    mode: Literal["json", "python"],
-) -> dict[str, Any]:
-    """One record as the answer shows it: the scalars the mask keeps, then the named relations."""
-    written = _adapter(type(record)).dump_python(record, mode=mode)
-    relations = set(meta.relations) if meta is not None else set()
-    for name in relations:
-        written.pop(name, None)
-    if specification is None:
-        return written
-
-    identity = meta.identity if meta is not None else identity_name(type(record))
-    keep = {identity, *specification.named}
-    written = {name: value for name, value in written.items() if name in keep}
-    for name, node in specification.root.items():
-        if meta is None or name not in meta.fields:
-            continue
-        field = meta.fields[name]
-        if field.type is FieldType.EMBEDDED:
-            if node.specification is not None and field.definition is not None:
-                written[name] = _shaped(
-                    written.get(name), node.specification, field.definition
-                )
-            continue
-        if name not in relations:
-            continue
-        related = field
-        value = record.__dict__.get("_sincpro_resolved", {}).get(name)
-        if related.many:
-            page = value if isinstance(value, EntityCollection) else EntityCollection()
-            written[name] = {
-                "items": [
-                    _record(c, node.specification, related.definition, mode) for c in page
-                ],
-                "count": page.count.model_dump(mode=mode) if page.count else None,
-                "cursor": page.cursor,
-            }
-        else:
-            written[name] = (
-                None
-                if value is None
-                else _record(value, node.specification, related.definition, mode)
-            )
-    return written

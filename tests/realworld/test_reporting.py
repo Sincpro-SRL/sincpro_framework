@@ -16,8 +16,8 @@ from sincpro_framework.ddd.criteria import (
     Measure,
     parse_order,
 )
-from sincpro_framework.ddd.model_meta import FieldType, Operator
-from sincpro_framework.ddd.pagination import Pagination
+from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.entity.model_meta import FieldType, Operator
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.repository import Repository
@@ -171,7 +171,7 @@ def test_the_definition_says_what_a_line_and_an_account_can_be_asked(ledger: Rep
     assert line.field("posted_at").accepts(Operator.BETWEEN)
     assert line.field("partner_id").nullable and not line.field("account_id").nullable
     assert line.field("debit").type is FieldType.NUMBER
-    assert account.translations["labels"]["balance"] == {"default": "Balance", "es": "Saldo"}
+    assert account.fields["balance"].label == {"default": "Balance", "es": "Saldo"}
     assert ZERO == Decimal("0.00")
 
 

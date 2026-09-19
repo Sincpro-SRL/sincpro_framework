@@ -23,10 +23,10 @@ from sincpro_framework.ddd.criteria import (
     Specification,
     parse_order,
 )
-from sincpro_framework.ddd.entity_collection import EntityCollection
+from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity.model_meta import FieldType
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.ddd.model_meta import FieldType
-from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe

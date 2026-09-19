@@ -13,7 +13,7 @@ from sincpro_framework import UseFramework, Feature, DataTransferObject
 framework = UseFramework("cybersource")
 
 # 2. Add Dependencies (Example dependencies)
-from sincpro_framework import Database
+from sincpro_framework.orm import Database
 
 db = Database()
 framework.add_dependency("db", db)
@@ -281,7 +281,7 @@ page.items, page.count, page.cursor, page.dropped, page.meta
 ```
 
 The repository answers the short questions too — `exists`, `first`, `one`, `get_by`, `pluck`,
-`distinct`, `export` — writes in batches with `save_all`, crosses two axes with `pivot`, says
+`distinct`, `export` — writes one or many with `save`, crosses two axes with `pivot`, says
 what a criteria will cost with `explain`, and can be handed over narrowed to a tenant with
 `narrowed(criteria)`. A Feature is unit-tested against `MemoryRepository`, which answers the
 same vocabulary with no database behind it.
@@ -1042,15 +1042,12 @@ Or in `sincpro_framework/conf/sincpro_framework_conf.yml`:
 otlp_endpoint: $ENV:OTEL_EXPORTER_OTLP_ENDPOINT
 ```
 
-Register the provider once at startup, before any `framework(dto)` call:
+Nothing registers it by hand: a bus brings tracing up when it starts, from the endpoint the
+configuration names above. The provider is a **process-level singleton** — the first bus to
+start installs it, and a second bounded context in the same process finds it already there.
 
-```python
-from sincpro_framework.tracing import setup_otlp_provider
-
-setup_otlp_provider("payments-service")
-```
-
-The provider is a **process-level singleton** — only the first call registers it. Subsequent calls (e.g. from a second bounded context) are no-ops.
+What each door is for, and how a transport span joins a bus's trace, is in
+[the observability docs](docs/observability/README.md).
 
 ### The `with_trace()` context manager
 

@@ -21,7 +21,7 @@ catalogue before it moved here.
 | `Meta` | What the model publishes: fields, types, operators, what is sortable | Reaches the client as `model_meta_data` |
 | `Query` / `ResponsePaginatedQuery` | The two shapes every read inherits | Command and Response bases |
 | `matches(record, expression)` | The filter language evaluated in memory | Tests without a database; `EntityCollection.filtered_by` |
-| `Translated`, `translations()` | The words a screen shows: `{"name": …, "labels": {field: …}, "help": {field: …}}`, every text `{"default": …, …}` | One class method; `Meta.translations` carries it as answered |
+| `Translated`, `translations()` | The words a screen shows: the aggregate names itself, each field declares its own in `field(metadata=…)` | `Meta.name` and `Meta.fields[x].label` / `.help` |
 | `DomainEvent`, `Entity.record` / `pull_events` | What happened, said by the aggregate and kept in memory until the Feature pulls it | See [events.md](../events/README.md) |
 
 Three rules, each preventing a failure that was observed in real code:
@@ -42,21 +42,34 @@ read from the primary key. What the convention adds is the version check and the
 ```python
 @dataclass
 class Invoice(Entity):
-    number: str
+    number: str = field(
+        default="",
+        metadata={
+            "label": {"default": "Number", "es": "Número"},
+            "help": {"default": "As printed on the document"},
+        },
+    )
 
     @classmethod
     def translations(cls) -> Translated:
-        return {
-            "name": {"default": "Invoice", "es": "Factura"},
-            "labels": {"number": {"default": "Number", "es": "Número"}},
-            "help": {"number": {"default": "As printed on the document"}},
-        }
+        return {"default": "Invoice", "es": "Factura"}
 ```
 
-`Translated` is a `TypedDict` — `name`, `labels`, `help` — and every text is a `dict[str, str]`
-with a `default`. One class method answers it; `describe()` puts it in `Meta.translations`
-exactly as answered, and `Meta.aggregate` is the class name. A class that declares nothing is
-named after itself and says nothing else. The client reads the dictionary and picks the locale.
+**A field's words are declared on the field**, in the `metadata` a dataclass field already
+takes, beside its type and its default — so the one place that says what `number` is also says
+what to call it. The class method answers only the aggregate's own name.
+
+`Translated` is `dict[str, str]`: a text per locale, with a `default`. `describe()` reads both:
+
+```python
+meta.name                     # {"default": "Invoice", "es": "Factura"}
+meta.aggregate                # "Invoice", the class name
+meta.fields["number"].label   # {"default": "Number", "es": "Número"}
+meta.fields["number"].help    # {"default": "As printed on the document"}
+```
+
+A class that declares nothing is named after itself and says nothing else. The client reads the
+dictionary and picks the locale.
 
 A text in several languages is also a column type, `TranslatedText`: a JSON object on disk, searched with `like`
 across every language at once, never ordered.
@@ -92,8 +105,7 @@ with self.repository.context() as repository:                         # several 
 | `statement` / `run` | read | The escape hatch: a real `Select` out, the usual envelope back in |
 | `fetch_all` | read | Every page, as one complete collection — hands a bounded set to the in-memory algebra |
 | `save`, `remove` | write | Take the aggregate. **No update or delete by criteria** — a generic write path skips the aggregate's rules |
-| `save_all`, `remove_all` | write | The same promises in one flush, for an import or a nightly job; one stale record undoes the batch |
-| `purge` | write | The real delete, for what `remove` would only archive |
+| `archive` | write | Stamps `archived_at` and keeps the row, for an `ArchivableMixin` aggregate; refused for anything else |
 | `retrying(work)` | write | Runs a unit of work again when it lost a race, and raises the last failure as it was |
 | `narrowed(criteria)` | both | The same database seen through a filter nothing can widen: a tenant, a branch, a permission |
 | `context` | both | The same engine bound to one session; the block is the transaction |
@@ -108,7 +120,7 @@ One module per responsibility under `sincpro_framework/orm/sqlalchemy/`, each na
 | `repository.py` | `Repository`: runs a `Criteria`, keeps what a use case built |
 | `sql_translator.py` | `Criteria` → `Select`; the grain registry per dialect |
 | `data_mapper.py` | the Data Mapper: tables, the mapping call, the `Entity` columns and `Relation`; the aggregate never learns its table |
-| `relation_resolver.py` | the database kinds of relation a specification names, once per node for a whole page; the vocabulary and the resolver kinds are `ddd/relations.py`; see `specification.md` |
+| `relation_resolver.py` | the database kinds of relation a specification names, once per node for a whole page; the vocabulary and the resolver kinds are `ddd/entity/relations.py`; see `specification.md` |
 | `model_introspection.py` | `describe(cls) → Meta`: asks the mapper what a class looks like |
 | `custom_fields.py` | column types: `JsonText`, `TranslatedText` |
 | `observability.py` | every statement to the logger, the tracer and the error tracker |
@@ -182,12 +194,12 @@ map_aggregates(registry, {Dataset: dataset_table},
 
 | Mixin | Columns | What the adapter does |
 |---|---|---|
-| `Audited` | `audit_columns()` → `created_by`, `updated_by` | Stamps them on every flush from `Database(url, actor=lambda: bus.context.get("user.id"))`; without an actor they stay `None` |
-| `Archivable` | `archive_columns()` → `archived_at` | `remove` archives instead of deleting, `purge` deletes, and every reading leaves the archived out unless the criteria names `archived_at` |
+| `AuditedMixin` | `audit_columns()` → `created_by`, `updated_by` | Stamps them on every flush from `Database(url, actor=lambda: bus.current_context().get("user.id"))`; without an actor they stay `None` |
+| `ArchivableMixin` | `archive_columns()` → `archived_at` | `archive` stamps it and keeps the row, `remove` deletes, and every reading leaves the archived out unless the criteria names `archived_at` |
 
 ```python
 @dataclass
-class Client(Audited, Archivable, Entity):
+class Client(AuditedMixin, ArchivableMixin, Entity):
     name: str
 
 client_table = entity_table(
@@ -267,4 +279,4 @@ Each of these has a concrete reason to wait, and none changes the vocabulary abo
   ([events.md](../events/README.md)); a broker is the third implementation of the same API. The framework
   keeps no event table: durability is the project's decision, through its own unit of work.
 - **An async engine.** The bus has `AsyncBus`; the engine is synchronous. Add it when a caller is.
-- **A `Protocol` in front of the engine.** One backend. The second one earns the interface.
+- **An abstract `Repository`, not a protocol.** Structural typing checked names only — five methods with the wrong signatures passed `isinstance`. Inheriting is what makes the type checker compare them.

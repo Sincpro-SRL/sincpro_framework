@@ -1,7 +1,7 @@
 """Fills a ledger deterministically, at whatever volume the run asks for.
 
 The same seed gives the same ledger, so a failure at 25 000 entries reproduces at 25 000
-entries. Entries are written with `save_all` in batches inside one `context()` each, committed per
+entries. Entries are written with a batched `save` in inside one `context()` each, committed per
 batch: the shape a real import has, and the one that keeps memory flat at the stress volume.
 
 What comes out is a `Census`, the facts the tests compare against without counting again.
@@ -129,7 +129,7 @@ def populate(repository: Repository, entries: int, seed: int = SEED) -> Census:
     span_minutes = MONTHS * 30 * 24 * 60
 
     with repository.context() as ledger:
-        ledger.save_all([*journals, *partners])
+        ledger.save([*journals, *partners])
         ledger.commit()
 
     posted = drafts = line_count = 0
@@ -156,14 +156,14 @@ def populate(repository: Repository, entries: int, seed: int = SEED) -> Census:
             batch_lines.extend(lines)
         line_count += len(batch_lines)
         with repository.context() as ledger:
-            ledger.save_all(batch_entries)
-            ledger.save_all(batch_lines)
+            ledger.save(batch_entries)
+            ledger.save(batch_lines)
             ledger.commit()
 
     for account in accounts:
         account.balance = balances[account.id]
     with repository.context() as ledger:
-        ledger.save_all(accounts)
+        ledger.save(accounts)
         ledger.commit()
 
     return Census(

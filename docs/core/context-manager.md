@@ -52,8 +52,8 @@ with app.context({"correlation_id": "outer", "environment": "prod"}) as outer_ap
 class MyFeature(Feature):
     def execute(self, dto: MyDTO) -> MyResponse:
         # Get specific context value
-        correlation_id = self.get_context_value("correlation_id", "unknown")
-        user_id = self.get_context_value("user.id")
+        correlation_id = self.context.get("correlation_id", "unknown")
+        user_id = self.context.get("user.id")
         
         # Get full context dictionary
         full_context = self.context
@@ -66,7 +66,7 @@ class MyFeature(Feature):
 class MyApplicationService(ApplicationService):
     def execute(self, dto: MyDTO) -> MyResponse:
         # ApplicationServices also have access to context
-        session_id = self.get_context_value("session.id")
+        session_id = self.context.get("session.id")
         
         # Execute features - context is automatically inherited
         feature_result = self.feature_bus.execute(FeatureDTO(...))
@@ -104,10 +104,10 @@ except Exception as e:
 ### Accessing Context from Anywhere
 
 ```python
-from sincpro_framework import get_current_context
+# the bus answers what the context in play says, read-only
 
 # Get current context from anywhere in your code
-current_context = get_current_context()
+current_context = bus.current_context()
 correlation_id = current_context.get("correlation_id")
 ```
 
@@ -174,35 +174,6 @@ class ContextMiddleware:
         with self.app.context(context_attrs) as app_with_context:
             return app_with_context(request_dto)
 ```
-
-## Migration Guide
-
-### From Manual Context Passing
-
-**Before:**
-```python
-class MyFeature(Feature):
-    def execute(self, dto: MyDTO) -> MyResponse:
-        correlation_id = dto.correlation_id  # Manual passing
-        logger.info(f"Processing {correlation_id}")
-        return MyResponse(...)
-```
-
-**After:**
-```python
-class MyFeature(Feature):
-    def execute(self, dto: MyDTO) -> MyResponse:
-        correlation_id = self.get_context_value("correlation_id")  # Automatic
-        logger.info(f"Processing {correlation_id}")
-        return MyResponse(...)
-```
-
-### Integration Steps
-
-1. **Remove manual context passing** from DTOs
-2. **Update handlers** to use `self.get_context_value()` and `self.context`
-3. **Add context scope** around your main execution flows using `with app.context({}) as app_with_context:`
-4. **Update error handling** to use enriched exception information
 
 ## Examples
 

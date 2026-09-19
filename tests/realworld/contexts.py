@@ -15,8 +15,8 @@ from decimal import Decimal
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd.criteria import All, Condition, Criteria
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
-from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.events import Publisher
 from sincpro_framework.orm.sqlalchemy.repository import Repository
 

@@ -11,7 +11,7 @@ happened to be declared first.
 import pytest
 
 from sincpro_framework.ddd.criteria import Criteria
-from sincpro_framework.ddd.entity_collection import Count, Dropped, EntityCollection
+from sincpro_framework.ddd.entity.entity_collection import Count, Dropped, EntityCollection
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 

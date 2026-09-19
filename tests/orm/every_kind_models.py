@@ -35,7 +35,7 @@ from sqlalchemy.orm import registry
 from sqlalchemy.types import TypeDecorator
 
 from sincpro_framework.ddd.entity import Entity, Translated
-from sincpro_framework.ddd.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText, TranslatedText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
     Relation,
@@ -106,7 +106,7 @@ class Tag(Entity):
 
 @dataclass
 class Work(Entity):
-    title: str
+    title: str = field(metadata={"label": {"default": "Title"}})
     pages: int
     price: Decimal
     published: bool
@@ -126,7 +126,7 @@ class Work(Entity):
 
     @classmethod
     def translations(cls) -> Translated:
-        return {"name": {"default": "Work"}, "labels": {"title": {"default": "Title"}}}
+        return {"default": "Work"}
 
 
 class Works(EntityCollection[Work]):

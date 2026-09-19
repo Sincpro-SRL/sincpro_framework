@@ -44,6 +44,7 @@ a typed field (`name: str`) — a typed one would become a real, silently-defaul
 field instead of the wire name, which is refused at class-declaration time, loudly.
 """
 
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -70,8 +71,14 @@ class DomainEvent(Entity):
 
     id: str = field(default_factory=new_entity_id)
     label: dict[str, str] = field(default_factory=dict)
-    """A human text for this one occurrence — `{"default": "Run advanced", "es": "Ejecución
-    avanzada"}`"""
+    """What a person reads when this occurrence is opened — `{"default": "Run advanced",
+    "es": "Ejecución avanzada"}`. A subclass that means one fixed thing sets its own default,
+    the way `EntityUpdated` does.
+
+    Carried on the event rather than looked up later: an event that crossed to another service
+    has no class there to ask, and **an audit says what a person saw at the time** — rename the
+    wording next year and the old records have to keep the old words.
+    """
     created_at: datetime = field(default_factory=utc_now)
     entity_type: str = ""
     entity_id: str = ""
@@ -93,6 +100,32 @@ class DomainEvent(Entity):
         if NAME not in cls.__dict__:
             cls.name = cls.__name__
 
+    def caused_by(self, cause: "DomainEvent") -> "DomainEvent":
+        """This event's place in the chain the other one started.
+
+            for event in invoice.pull_events():
+                self.publisher.publish(event.caused_by(incoming))
+
+        `causation_id` becomes the cause's own id — what directly led here — and
+        `correlation_id` the one the cause already carried, or the cause's id when it carried
+        none, because an event nobody correlated *is* the head of its chain. Three services
+        later, one `correlation_id` names the whole thing and the `causation_id`s put it in
+        order.
+
+        **Explicit on purpose, and it cannot be otherwise.** A bus's context is a `ContextVar`
+        per bus instance (`context/mixin.py`), never process-wide — a process runs several
+        buses and an aggregate belongs to none of them. There is no ambient request an
+        `Entity` could reach for, so the chain is threaded where it is known: by whoever is
+        holding both events.
+
+        A new event comes back; the one handed in is untouched, the way a fact should be.
+        """
+        return dataclasses.replace(
+            self,
+            causation_id=cause.id,
+            correlation_id=cause.correlation_id or cause.id,
+        )
+
     def __repr__(self) -> str:
         return f"{self.name}(id={self.id}, label={self.label}, entity_type={self.entity_type}, entity_id={self.entity_id}, created_at={self.created_at.isoformat()})"
 
@@ -106,12 +139,12 @@ class EventStatus(StrEnum):
 
 
 @dataclass(kw_only=True)
-class TrackableMixin:
+class EventTrackableMixin:
     """Its own delivery status — a `DomainEvent` opts into, the same way it opts into
     `AuditedMixin` or `ArchivableMixin`:
 
         @dataclass(kw_only=True)
-        class OrderShipped(TrackableMixin, DomainEvent):
+        class OrderShipped(EventTrackableMixin, DomainEvent):
             order_id: str
 
     Nobody persists these fields here — that is the `Queue` implementation's job

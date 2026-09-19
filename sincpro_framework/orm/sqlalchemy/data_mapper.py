@@ -27,11 +27,11 @@ from sqlalchemy.orm import object_session, registry
 from sqlalchemy.types import TypeEngine
 
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity.model_meta import annotations_of, related_class
+from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
+from sincpro_framework.ddd.entity.relations import Resolver
 from sincpro_framework.ddd.exceptions import RelationNotResolved
-from sincpro_framework.ddd.model_meta import annotations_of, related_class
-from sincpro_framework.ddd.relations import Relation as DeclaredRelation
-from sincpro_framework.ddd.relations import Resolver
 
 RESOLVED = "_sincpro_resolved"
 """Where a record keeps the relations that were resolved for it, by name."""
@@ -102,7 +102,7 @@ def entity_table(
 
 
 class Relation(DeclaredRelation):
-    """The declaration from `sincpro_framework.ddd.relations`, plus the kinds only a database
+    """The declaration from `sincpro_framework.ddd.entity.relations`, plus the kinds only a database
     has, declared once beside the table:
 
         Relation.foreign_key(Run, identified_by="dataset_id")          Dataset.runs · Run.dataset

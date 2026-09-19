@@ -11,8 +11,8 @@ import pytest
 from sqlalchemy import func, select
 
 from sincpro_framework.ddd.criteria import Condition, Criteria, Level, Operator
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.sql_translator import (
     GRAIN_TRANSLATORS,

@@ -6,10 +6,11 @@ An optional extra, like `[opentelemetry]` and `[rpc]`: the vocabulary in `sincpr
 needs no database, and a service that only speaks it never installs one. Importing this package
 without the extra says which one to install rather than failing on a missing `sqlalchemy`.
 
-One backend today, SQLAlchemy, under `sincpro_framework.orm.sqlalchemy`. There is no
-`Protocol` in front of it on purpose: an interface with one implementation is a promise nobody
-tests, and the second backend is what would earn it. What a project still owns — which database
-each bounded context talks to, and its migrations — is in `docs/persistence/reference.md`.
+One backend today, SQLAlchemy, under `sincpro_framework.orm.sqlalchemy`. What it implements is
+`ddd.repositories.Repository`, an abstract class rather than a `Protocol`: structural typing
+checks names and not signatures, so an implementation with the wrong arguments passed
+`isinstance` and failed where it was called. What a project still owns — which database each
+bounded context talks to, and its migrations — is in `docs/persistence/reference.md`.
 """
 
 SQLALCHEMY_MISSING = (

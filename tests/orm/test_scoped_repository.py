@@ -62,7 +62,7 @@ def test_writing_outside_the_scope_is_refused(scoped: Repository):
     with pytest.raises(ContractViolation):
         scoped.remove(theirs)
     with pytest.raises(ContractViolation):
-        scoped.save_all([a_thing(1), theirs])
+        scoped.save([a_thing(1), theirs])
 
 
 def test_writing_inside_the_scope_goes_through(scoped: Repository):

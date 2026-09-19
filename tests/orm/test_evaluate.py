@@ -9,10 +9,10 @@ from every comparison, and a Python evaluator that answered `None != 'x'` as tru
 import pytest
 
 from sincpro_framework.ddd.criteria import All, Any_, Condition, Criteria, Not, Operator
-from sincpro_framework.ddd.entity_collection import Count
-from sincpro_framework.ddd.evaluate import matches
+from sincpro_framework.ddd.criteria.evaluate import matches
+from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.entity.entity_collection import Count
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 
 from .models import ROW_COUNT, Thing, Things, a_thing
