@@ -11,14 +11,20 @@ beside a class that does not. `Client` adds the two conventions an aggregate opt
 `AuditedMixin` and `ArchivableMixin`.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy import Column, DateTime, Integer, Table, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity, Translated
-from sincpro_framework.ddd.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity import (
+    ArchivableMixin,
+    AuditedMixin,
+    ChangeTrackingMixin,
+    Entity,
+    Translated,
+)
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
     archive_columns,
@@ -54,18 +60,12 @@ class Note(Entity):
     adds — the version check, the stamped `updated_at`, the minted id, the labels.
     """
 
-    title: str
-    body: str = ""
+    title: str = field(metadata={"label": {"default": "Title", "es": "Título"}})
+    body: str = field(default="", metadata={"label": {"default": "Body", "es": "Cuerpo"}})
 
     @classmethod
     def translations(cls) -> Translated:
-        return {
-            "name": {"default": "Note", "es": "Nota"},
-            "labels": {
-                "title": {"default": "Title", "es": "Título"},
-                "body": {"default": "Body", "es": "Cuerpo"},
-            },
-        }
+        return {"default": "Note", "es": "Nota"}
 
 
 class Notes(EntityCollection[Note]):
@@ -82,6 +82,20 @@ class Client(AuditedMixin, ArchivableMixin, Entity):
 
 
 class Clients(EntityCollection[Client]):
+    pass
+
+
+@dataclass
+class TrackedNote(ChangeTrackingMixin, Entity):
+    """`Note`, opted into `ChangeTrackingMixin`, with one field explicitly excluded — the
+    aggregate the tracking tests are written against."""
+
+    title: str
+    body: str = ""
+    render_cache: str = field(default="", metadata={"tracked": False})
+
+
+class TrackedNotes(EntityCollection[TrackedNote]):
     pass
 
 
@@ -116,7 +130,23 @@ client_table = entity_table(
     Column("city", Text, nullable=False),
 )
 
-map_aggregates(mapper_registry, {Thing: thing_table, Note: note_table, Client: client_table})
+tracked_note_table = entity_table(
+    "tracked_note",
+    mapper_registry.metadata,
+    Column("title", Text, nullable=False),
+    Column("body", Text, nullable=False),
+    Column("render_cache", Text, nullable=False),
+)
+
+map_aggregates(
+    mapper_registry,
+    {
+        Thing: thing_table,
+        Note: note_table,
+        Client: client_table,
+        TrackedNote: tracked_note_table,
+    },
+)
 
 
 def a_thing(number: int) -> Thing:

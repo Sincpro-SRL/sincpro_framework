@@ -135,7 +135,7 @@ def new_draft(ledger: Repository, masters: dict[str, list]) -> Callable[..., Ent
             lines[-1].credit += 1
         with ledger.context() as unit:
             unit.save(entry)
-            unit.save_all(lines)
+            unit.save(lines)
         entry.lines = lines
         return entry
 

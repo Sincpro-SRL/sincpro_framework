@@ -8,8 +8,8 @@ import pytest
 
 from sincpro_framework.ddd.criteria import Condition, Criteria, Specification, parse_order
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity_collection import EntityCollection
-from sincpro_framework.ddd.model_meta import FieldType
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity.model_meta import FieldType
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
 from sincpro_framework.orm.sqlalchemy.database import Database

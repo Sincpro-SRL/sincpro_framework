@@ -35,9 +35,9 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     parse_order,
 )
+from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.entity.model_meta import Meta
 from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
-from sincpro_framework.ddd.model_meta import Meta
-from sincpro_framework.ddd.pagination import Pagination
 
 
 def _as_stored_text(column: Any) -> Any:

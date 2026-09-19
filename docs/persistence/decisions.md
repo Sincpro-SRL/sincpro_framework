@@ -47,7 +47,7 @@ a client builds the next criteria from the previous answer without a schema of i
 every project started and how every project ended with sixty methods and no pagination. And a
 full query DSL, which is a second SQL nobody can type-check.
 
-`ddd/criteria.py`, `orm/sqlalchemy/repository.py`, `orm/sqlalchemy/sql_translator.py`.
+`ddd/criteria/criteria.py`, `orm/sqlalchemy/repository.py`, `orm/sqlalchemy/sql_translator.py`.
 
 ---
 
@@ -79,7 +79,7 @@ definition, so the interface cannot offer what it was not given.
 **Rejected.** A separate `describe` endpoint, tried first to save a kilobyte per page. It cost more
 in surprise than it saved in bytes.
 
-`ddd/model_meta.py`, `orm/sqlalchemy/model_introspection.py`.
+`ddd/entity/model_meta.py`, `orm/sqlalchemy/model_introspection.py`.
 
 ---
 
@@ -106,7 +106,7 @@ a `dataset_id` is a scalar, so the client already has it. Naming a bare relation
 record. The identity always travels; a record whose id did not come cannot be opened, refreshed
 or cached. `None` and `{}` are opposite answers: "asked nothing" and "asked, nothing survived".
 
-`ddd/criteria.py` (`Specification`), `Meta.only`, `ResponsePaginatedQuery.of`.
+`ddd/criteria/criteria.py` (`Specification`), `Meta.only`, `ResponsePaginatedQuery.of`.
 
 ---
 
@@ -125,7 +125,7 @@ menu. Odoo has run one namespace with a dozen types for twenty years; the team a
 **Rejected.** A separate `RelationMeta`. It existed for a day. It doubled the lookups, and the
 separation it drew, "relations are different", is already drawn by `type`.
 
-`ddd/model_meta.py`.
+`ddd/entity/model_meta.py`.
 
 ---
 
@@ -185,7 +185,7 @@ was asked for.
 order or limit *per parent* from a criteria, and they tie the mechanism to one database.
 `relationship()` remains the right tool for a Feature's own hand-written joins.
 
-`ddd/relations.py`, `orm/sqlalchemy/relation_resolver.py`.
+`ddd/entity/relations.py`, `orm/sqlalchemy/relation_resolver.py`.
 
 ---
 
@@ -242,7 +242,7 @@ has instead of a private protocol.
 ## 11c. The short readings, the batch and the retry are on the repository
 
 **Decision.** `exists`, `first`, `one`, `get_by`, `pluck`, `distinct` and `export` beside
-`search`; `save_all` and `remove_all` beside `save`; `purge` for the delete `remove` would
+`search`; one `save` and one `remove` that each take one aggregate or several; `archive` for the put-away that `remove` would
 otherwise turn into an archive; `retrying(work)` for a unit of work that lost a race.
 
 **Why.** Every one of them was already being written, once per project, as a wrapper around
@@ -273,15 +273,15 @@ The refusal is the point. A scope whose field the aggregate does not have would 
 the ordinary rule, and a dropped filter widens — which for a permission means handing over the
 table. So this one place raises instead.
 
-## 11e. Two conventions an aggregate opts into: `Audited` and `Archivable`
+## 11e. Two conventions an aggregate opts into: `AuditedMixin` and `ArchivableMixin`
 
-**Decision.** `Audited` adds `created_by` / `updated_by`, stamped by the adapter from the
-`Database`'s actor. `Archivable` adds `archived_at`: `remove` archives, `purge` deletes, and a
+**Decision.** `AuditedMixin` adds `created_by` / `updated_by`, stamped by the adapter from the
+`Database`'s actor. `ArchivableMixin` adds `archived_at`: `archive` stamps it, `remove` deletes, and a
 reading leaves the archived out unless the criteria names the column.
 
 **Why.** Both are written by hand in every project, and both are wrong in the same way when
 they are: somebody forgets. The actor comes from a callable the provider hands the database,
-usually `lambda: bus.context.get("user.id")`, so the adapter never learns what a bus is. What a
+usually `lambda: bus.current_context().get("user.id")`, so the adapter never learns what a bus is. What a
 business calls deleting is almost always archiving, because other records point at the row;
 Odoo spells it `active`, and a column that says *when* it was put away is worth more than a flag.
 
@@ -299,11 +299,14 @@ double that somebody wrote by hand tests the double. This one filters with `matc
 evaluator the SQL translator is specified against, so a Feature that passes here and fails
 against the engine has found a bug in the engine.
 
-## 12. The repository is concrete; the protocol is minimal
+## 12. The repository is concrete; the abstract store is what it answers
 
-**Decision.** Applications inject the concrete `Repository` as `self.repository`. A `Protocol` in
-`ddd/repository.py` lists the minimum (`get`, `search`, `count`, `save`, `remove`) for a test
-double. `context()` is the unit of work; `session`, `flush`, `commit`, `savepoint`, `for_update`
+**Decision.** Applications inject the concrete `Repository` as `self.repository`. An abstract class in
+`ddd/repositories/repository.py` lists what a store answers: the writes (`save`, `remove`,
+`archive`) and the readings a Feature actually makes (`get`, `search`, `count`, `browse`,
+`fetch_all`, `stream`, `first`, `one`, `get_by`, `exists`, `pluck`, `distinct`, `measures`,
+`group_by`, `group_by_levels`). Declaring only the first handful type-checked a `Repository`
+annotation against six methods while the code around it called eighteen. `context()` is the unit of work; `session`, `flush`, `commit`, `savepoint`, `for_update`
 are real only inside it.
 
 **Why.** An interface with one implementation is a promise nobody tests; the concrete class has
@@ -392,5 +395,11 @@ named after the pattern it implements and against the one it avoids, Active Reco
   parent's own table, kept current by an event (`Line.entry_state` in the ledger is the pattern).
 - A page of groups applies to the first level; a deeper level answers for the groups that
   survived it. Ordering groups by an aggregate has no stable keyset, so the page is an offset.
-- A message broker as a third `Queue`; an async engine; a second persistence backend, which is
-  what would earn a `Protocol` in front of the adapter.
+- A message broker as a third `Queue`; an async engine; a second persistence backend.
+- **A bulk write that trades the version check for a batched `UPDATE`.** Measured today: a
+  thousand new aggregates are one `INSERT`; a thousand loaded ones are a thousand `UPDATE`
+  statements, because the optimistic lock has to read the affected row count back per row and a
+  batched statement does not report it. That is the right default — losing a write silently is
+  worse than a slow job. A separate door that says plainly it gives up `StaleAggregate` would
+  serve an import that owns its table, and it is a new capability rather than a fix, so it waits
+  for a real case that needs it.

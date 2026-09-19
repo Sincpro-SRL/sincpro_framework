@@ -14,23 +14,35 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    Cursor,
+    Offset,
     Operator,
+    Pagination,
     Pivot,
     PivotCell,
     Sort,
     Specification,
+    matches,
 )
 from sincpro_framework.ddd.entity import (
     ArchivableMixin,
     AuditedMixin,
+    ChangeTrackingMixin,
     Entity,
+    EntityUpdated,
     Translated,
     new_entity_id,
     utc_now,
 )
-from sincpro_framework.ddd.entity_collection import Changes, Count, Dropped, EntityCollection
-from sincpro_framework.ddd.evaluate import matches
-from sincpro_framework.ddd.events import DomainEvent, EventStatus, TrackableMixin
+from sincpro_framework.ddd.entity.entity_collection import (
+    Changes,
+    Count,
+    Dropped,
+    EntityCollection,
+)
+from sincpro_framework.ddd.entity.model_meta import FieldMeta, FieldType, Meta
+from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
+from sincpro_framework.ddd.events import DomainEvent, EventStatus, EventTrackableMixin
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
     DomainError,
@@ -39,12 +51,13 @@ from sincpro_framework.ddd.exceptions import (
     RelationNotResolved,
     StaleAggregate,
 )
-from sincpro_framework.ddd.memory_repository import MemoryRepository
-from sincpro_framework.ddd.model_meta import FieldMeta, FieldType, Meta
-from sincpro_framework.ddd.pagination import Cursor, Offset, Pagination
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
-from sincpro_framework.ddd.relations import BusResolver, Relation, Resolver
-from sincpro_framework.ddd.repository import Repository
+from sincpro_framework.ddd.repositories import (
+    ChangeTrackingRepositoryMixin,
+    MemoryRepository,
+    Repository,
+)
+from sincpro_framework.ddd.repositories.hooks import Hook, Hooks, Rule
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
@@ -53,6 +66,7 @@ __all__ = [
     "Bucket",
     "BusResolver",
     "EntityCollection",
+    "ChangeTrackingMixin",
     "Condition",
     "Changes",
     "Count",
@@ -63,6 +77,10 @@ __all__ = [
     "Dropped",
     "DuplicateAggregate",
     "Entity",
+    "EntityUpdated",
+    "ChangeTrackingRepositoryMixin",
+    "Hook",
+    "Hooks",
     "EventStatus",
     "FieldMeta",
     "FieldType",
@@ -79,13 +97,14 @@ __all__ = [
     "Query",
     "Relation",
     "Repository",
+    "Rule",
     "Resolver",
     "ResponsePaginatedQuery",
     "Sort",
     "Specification",
     "RelationNotResolved",
     "StaleAggregate",
-    "TrackableMixin",
+    "EventTrackableMixin",
     "Translated",
     "ValueObject",
     "matches",

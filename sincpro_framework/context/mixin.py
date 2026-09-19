@@ -1,4 +1,6 @@
+from collections.abc import Mapping
 from contextvars import ContextVar, Token
+from types import MappingProxyType
 from typing import Any, Dict, List, Optional
 
 from sincpro_framework.bus import FrameworkBus
@@ -34,6 +36,22 @@ class ContextMixin:
         )
         self._shared_context: Dict[str, Any] = {}
         self._live_overlays: List[Dict[str, Any]] = []
+
+    def current_context(self) -> Mapping[str, Any]:
+        """What the context in play says, read-only — empty outside one.
+
+            Database(url, actor=lambda: bus.current_context().get("user.id"))
+
+        `context(...)` is the method that *opens* one and `self.context` is what a Feature
+        reads inside a handler. This is the third thing, and the one an adapter needs: a read
+        from outside a handler, at the moment it is asked, by something wired long before any
+        request existed. `AuditedMixin` stamping `created_by` is exactly that.
+
+        **A live view, not a copy**: it follows the context in play, so a callable stored once
+        at wiring time keeps answering correctly for every later request. Read-only because the
+        framework owns this dict — writing to it is `context(...)`'s job.
+        """
+        return MappingProxyType(self._get_context())
 
     def _get_context(self) -> Dict[str, Any]:
         overlay = self._overlay_var.get()

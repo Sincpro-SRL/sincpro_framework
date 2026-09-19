@@ -15,7 +15,7 @@ from sincpro_framework.ddd.criteria import (
     Operator,
     parse_order,
 )
-from sincpro_framework.ddd.pagination import Pagination
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.repository import Repository
 
 from .contexts import CommandRebuildBalance, ResponseBalances
@@ -130,8 +130,8 @@ def test_a_batch_of_five_thousand_lines(ledger: Repository, masters: dict[str, l
         for index in range(5_000)
     ]
 
-    with timed("stress: save_all, 5 000 lines", len(batch)):
-        ledger.save_all(batch)
+    with timed("stress: save, 5 000 lines", len(batch)):
+        ledger.save(batch)
 
     assert ledger.count(
         Line, Criteria(where=Condition(field="label", value="bulk", operator=Operator.LIKE))

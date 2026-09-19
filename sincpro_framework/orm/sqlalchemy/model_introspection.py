@@ -17,17 +17,18 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import NoInspectionAvailable
 
 from sincpro_framework.ddd.entity import Translated
-from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.model_meta import (
+from sincpro_framework.ddd.entity.model_meta import (
     FieldMeta,
     FieldType,
     Meta,
     annotations_of,
     describe_class,
     enum_of,
+    field_translations,
     logical_type,
     related_class,
 )
+from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
 
 
@@ -111,10 +112,10 @@ def describe(entity: type) -> Meta:
     annotations = annotations_of(entity)
     identity = mapper.primary_key[0].name
     translator = getattr(entity, "translations", None)
-    words: Translated = (
+    aggregate_name: Translated = (
         cast(Translated, translator())
         if callable(translator)
-        else {"name": {"default": entity.__name__}, "labels": {}}
+        else {"default": entity.__name__}
     )
 
     fields: dict[str, FieldMeta] = {}
@@ -146,10 +147,19 @@ def describe(entity: type) -> Meta:
             nullable = bool(mapper.columns[identified_by].nullable)
         fields[name] = FieldMeta.for_relation(logical, related_name, identified_by, nullable)
 
+    labels, helps = field_translations(entity, "label"), field_translations(entity, "help")
+    if labels or helps:
+        fields = {
+            name: meta.model_copy(
+                update={"label": labels.get(name, {}), "help": helps.get(name, {})}
+            )
+            for name, meta in fields.items()
+        }
+
     return Meta(
         aggregate=entity.__name__,
         identity=identity,
         default_order=f"-{identity}",
         fields=fields,
-        translations=words,
+        name=aggregate_name,
     )

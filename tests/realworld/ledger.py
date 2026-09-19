@@ -18,7 +18,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Index, Numeric, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd.entity import Entity, Translated
-from sincpro_framework.ddd.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
@@ -47,22 +47,16 @@ class Journal(Entity):
 
 @dataclass
 class Account(Entity):
-    code: str
-    name: str
-    kind: str
-    balance: Decimal = ZERO
+    code: str = field(metadata={"label": {"default": "Code", "es": "Código"}})
+    name: str = field(metadata={"label": {"default": "Name", "es": "Nombre"}})
+    kind: str = field(metadata={"label": {"default": "Kind", "es": "Tipo"}})
+    balance: Decimal = field(
+        default=ZERO, metadata={"label": {"default": "Balance", "es": "Saldo"}}
+    )
 
     @classmethod
     def translations(cls) -> Translated:
-        return {
-            "name": {"default": "Account", "es": "Cuenta"},
-            "labels": {
-                "code": {"default": "Code", "es": "Código"},
-                "name": {"default": "Name", "es": "Nombre"},
-                "kind": {"default": "Kind", "es": "Tipo"},
-                "balance": {"default": "Balance", "es": "Saldo"},
-            },
-        }
+        return {"default": "Account", "es": "Cuenta"}
 
     def apply(self, debit: Decimal, credit: Decimal) -> None:
         """Moves the balance by what one posted entry put on this account, and says so."""

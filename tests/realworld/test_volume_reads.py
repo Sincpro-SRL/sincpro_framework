@@ -19,8 +19,8 @@ from sincpro_framework.ddd.criteria import (
     Operator,
     parse_order,
 )
-from sincpro_framework.ddd.evaluate import matches
-from sincpro_framework.ddd.pagination import Pagination
+from sincpro_framework.ddd.criteria.evaluate import matches
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.repository import DEFAULT_COUNT_CAP, Repository
 

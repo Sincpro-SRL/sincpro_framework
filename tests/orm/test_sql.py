@@ -21,7 +21,7 @@ from sincpro_framework.ddd.criteria import (
     Not,
     Operator,
 )
-from sincpro_framework.ddd.pagination import Pagination
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.sql_translator import grouping_column
 
 from .models import ROW_COUNT, Thing, Things, a_thing

@@ -207,7 +207,7 @@ writes nothing special: a Feature that takes a `Query` and answers with `Respons
 `_partitioned` and `_grouped`. Keep the invariant: one statement for the whole page.
 
 **A new transport for the same idea** in another backend reuses everything in
-`ddd/relations.py`: `Relation`, `Resolver`, `resolve_elsewhere`, `cut`, `limit_of`. Only the
+`ddd/entity/relations.py`: `Relation`, `Resolver`, `resolve_elsewhere`, `cut`, `limit_of`. Only the
 window-function statement is SQLAlchemy's.
 
 ## 9. A worked example, all kinds at once

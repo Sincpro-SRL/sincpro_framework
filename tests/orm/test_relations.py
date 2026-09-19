@@ -18,9 +18,9 @@ from sincpro_framework.ddd.criteria import (
     Specification,
     parse_order,
 )
-from sincpro_framework.ddd.entity_collection import Count, EntityCollection
+from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.exceptions import RelationNotResolved
-from sincpro_framework.ddd.pagination import Pagination
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 from sincpro_framework.orm.sqlalchemy.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.repository import Repository

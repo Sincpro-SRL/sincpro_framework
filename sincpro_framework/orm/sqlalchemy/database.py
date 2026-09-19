@@ -20,10 +20,11 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from sincpro_framework.ddd.entity import utc_now
+from sincpro_framework.orm.sqlalchemy.change_tracking import _tracking
 from sincpro_framework.orm.sqlalchemy.observability import observe
 
 
-def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session, Any, Any], None]:
+def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], None]:
     """The `before_flush` hook that writes when, and who, without a use case remembering to.
 
         an updated record  →  updated_at, and updated_by when an actor is configured
@@ -43,7 +44,7 @@ def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session, Any,
         except Exception:
             return None
 
-    def stamp(session: Session, _flush_context: Any, _instances: Any) -> None:
+    def stamp(session: Session) -> None:
         now = utc_now()
         acting = who()
         for record in session.dirty:
@@ -85,8 +86,8 @@ class Database:
         what the process already configured.
 
         `actor` answers who is writing, for an `AuditedMixin` aggregate:
-        `Database(url, actor=lambda: bus.context.get("user.id"))`. It is read on every flush,
-        so one database serves every request of a process.
+        `Database(url, actor=lambda: bus.current_context().get("user.id"))`. It is read on
+        every flush, so one database serves every request of a process.
         """
         self.url = url
         self.name = make_url(url).database or ""
@@ -97,7 +98,48 @@ class Database:
             bind=self.engine, expire_on_commit=False, autoflush=True
         )
         self.actor = actor
-        event.listen(self.open_session, "before_flush", _stamping(actor))
+        # The two things the framework guarantees about a write, through the same door anybody
+        # else uses. On the moment that sees every write, rather than on the repository, because
+        # a use case holding a plain session must not be able to step around them.
+        self.before_flush(_stamping(actor))
+        self.before_flush(_tracking)
+
+    def before_flush(self, run: "Callable[[Session], None]") -> "Database":
+        """Runs before this database writes anything, for every session it ever opens.
+
+            database.before_flush(lambda session: ...)
+
+        The moment that sees **every** write — through a repository, through a plain session, a
+        script, a migration. A rule on a repository runs for whoever goes through that
+        repository; this runs for whoever touches this database, which is why the stamping and
+        the change tracking are registered here and not there.
+
+        The session is what the block is handed: `session.new`, `session.dirty` and
+        `session.deleted` are what is about to happen, and the records can still be changed —
+        which is what makes this the moment to stamp one.
+
+        **Not the place to publish.** The transaction has not committed and can still be undone.
+
+        Answers the database, so several read as one wiring.
+        """
+        event.listen(
+            self.open_session,
+            "before_flush",
+            lambda session, _context, _instances: run(session),
+        )
+        return self
+
+    def after_flush(self, run: "Callable[[Session], None]") -> "Database":
+        """Runs once the statements have gone out, before the transaction commits.
+
+            database.after_flush(lambda session: ...)
+
+        What a record looks like now that the database has seen it — a generated id, a default
+        the engine filled. Still inside the transaction, so this is not where the world is told
+        either; a rollback after this leaves nothing behind.
+        """
+        event.listen(self.open_session, "after_flush", lambda session, _context: run(session))
+        return self
 
     @contextmanager
     def session(self) -> Generator[Session]:

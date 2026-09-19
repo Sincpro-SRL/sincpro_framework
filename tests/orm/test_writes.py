@@ -9,8 +9,8 @@ cannot both write version two, and a unit of work either commits everything or n
 import pytest
 
 from sincpro_framework.ddd.criteria import Condition, Criteria
+from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import DuplicateAggregate, StaleAggregate
-from sincpro_framework.ddd.pagination import Pagination
 
 from .models import ROW_COUNT, Note, Notes, Thing, Things, a_thing
 

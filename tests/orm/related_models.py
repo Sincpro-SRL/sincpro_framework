@@ -20,7 +20,7 @@ from sqlalchemy.orm import registry
 from sincpro_framework import Feature, UseFramework
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity_collection import EntityCollection
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
