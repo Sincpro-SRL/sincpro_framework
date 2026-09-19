@@ -71,7 +71,7 @@ def parquet(tmp_path_factory) -> str:
     Deterministic on purpose: the amount cycles with the day, so a month's total is a number
     this test can state rather than a number it reads back from what it just wrote.
     """
-    import duckdb
+    import duckdb  # pyright: ignore[reportMissingImports]
 
     path = tmp_path_factory.mktemp("parquet") / "sales.parquet"
     duckdb.connect().execute(f"""
