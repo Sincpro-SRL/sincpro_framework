@@ -28,10 +28,15 @@ from sqlalchemy.types import TypeEngine
 
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
-from sincpro_framework.ddd.entity.model_meta import annotations_of, related_class
+from sincpro_framework.ddd.entity.model_meta import (
+    annotations_of,
+    related_class,
+    without_optional,
+)
 from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
 from sincpro_framework.ddd.entity.relations import Resolver
 from sincpro_framework.ddd.exceptions import RelationNotResolved
+from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
 
 RESOLVED = "_sincpro_resolved"
 """Where a record keeps the relations that were resolved for it, by name."""
@@ -71,6 +76,52 @@ def audit_columns() -> list[Column]:
     Written by the adapter from the `Database`'s actor, never by a use case.
     """
     return [Column("created_by", Text), Column("updated_by", Text)]
+
+
+def event_columns() -> list[Column]:
+    """The envelope every `DomainEvent` carries, for a table that stores one.
+
+        out     label JSON · entity_type TEXT · entity_id TEXT
+                correlation_id TEXT · causation_id TEXT · sequence INTEGER
+
+        entity_table("run_advanced", metadata, *event_columns(), Column("run_id", Text))
+
+    **A `DomainEvent` is an `Entity`**, so the repository that already exists stores and queries
+    one like any other aggregate — an event store is a table and that repository, not a second
+    abstraction. These are the envelope's own columns; the event's own fields go beside them.
+
+    `label` is a text per locale and needs `JsonText`, which is the one a hand-written table
+    gets wrong: declaring it `Text` fails at the insert with `type 'dict' is not supported`,
+    naming a parameter number rather than the column.
+    """
+    return [
+        Column("label", JsonText),
+        Column("entity_type", Text),
+        Column("entity_id", Text),
+        Column("correlation_id", Text),
+        Column("causation_id", Text),
+        Column("sequence", Integer),
+    ]
+
+
+def delivery_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
+    """What an `EventTrackableMixin` event adds to carry its own delivery state.
+
+        out     status TEXT · attempts INTEGER · failure TEXT · delivered_at DATETIME
+
+        entity_table("outbox", metadata, *event_columns(), *delivery_columns(),
+                     Column("run_id", Text), Index("outbox_pending", "status"))
+
+    What turns a table of events into an outbox: a relay claims the pending rows with
+    `search(..., for_update=True, skip_locked=True)`, marks them, and acknowledges. The index on
+    `status` is what keeps that claim from scanning the whole history.
+    """
+    return [
+        Column("status", Text),
+        Column("attempts", Integer),
+        Column("failure", Text),
+        Column("delivered_at", datetime_type or DateTime),
+    ]
 
 
 def archive_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
@@ -201,7 +252,19 @@ class RelatedAttribute:
         from sincpro_framework.orm.sqlalchemy.relation_resolver import resolve_whole
 
         resolve_whole(repository, session, type(record), record, self.name)
-        return record.__dict__[RESOLVED][self.name]
+        answered = record.__dict__.get(RESOLVED, {})
+        if self.name not in answered:
+            # The resolver ran and wrote nothing, which a correct declaration never does. The
+            # usual cause is a `Relation` pointing the wrong way — `foreign_key` names the
+            # column on *this* aggregate, so declaring it for a to-many reads as a to-one that
+            # matches nothing. Left alone this surfaced as `KeyError: '_sincpro_resolved'`.
+            raise RelationNotResolved(
+                f"{type(record).__name__}.{self.name} resolved to nothing. Check how it is "
+                "declared: `foreign_key` names a column on this aggregate pointing at the "
+                "other one, and a to-many is the foreign key on the other side — which "
+                "`map_aggregates` infers on its own when the column declares it"
+            )
+        return answered[self.name]
 
     def __set__(self, record: Any, value: Any) -> None:
         record.__dict__.setdefault(RESOLVED, {})[self.name] = value
@@ -274,10 +337,22 @@ def _with_transient_defaults(aggregate: type, table: Table) -> Callable[[Any, An
     The mapper builds a record without calling `__init__`, so without this a field like
     `drafts: list[Draft] = field(default_factory=list)` would simply not exist on the record.
     """
+    declared_fields = list(fields(aggregate)) if is_dataclass(aggregate) else []
     transient = {
         declared.name: make
-        for declared in (fields(aggregate) if is_dataclass(aggregate) else ())
+        for declared in declared_fields
         if declared.name not in table.c and (make := _dataclass_default(declared)) is not None
+    }
+    # A column the row left NULL for a field that does not say it may be absent. The mapper
+    # reports the NULL faithfully, and the domain gets `None` where it declares `list[str]` —
+    # the first place that touches it raises, far from the row that caused it. A field that
+    # declared `| None` is left alone: there the NULL is the answer.
+    nullable = {
+        declared.name: make
+        for declared in declared_fields
+        if declared.name in table.c
+        and declared.type is without_optional(declared.type)
+        and (make := _dataclass_default(declared)) is not None
     }
 
     def fill(record: Any, _context: Any) -> None:
@@ -285,6 +360,9 @@ def _with_transient_defaults(aggregate: type, table: Table) -> Callable[[Any, An
             if name in RELATIONS.get(aggregate, {}) or name in record.__dict__:
                 continue
             record.__dict__[name] = make()
+        for name, make in nullable.items():
+            if record.__dict__.get(name, "") is None:
+                record.__dict__[name] = make()
 
     return fill
 

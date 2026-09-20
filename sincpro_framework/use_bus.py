@@ -233,20 +233,34 @@ class UseFramework(ContextMixin, Generic[TDeps]):
     def add_global_error_handler(self, handler: ErrorHandler):
         """Register a global error handler.
 
-        Signature: ``(error) -> Any``.
-        If the handler re-raises, the framework calls the next handler in the chain.
-        First registered = first to execute.
+        Signature: ``(error) -> Any``. First registered = first to execute.
 
-        Example::
+        **What the handler returns becomes the bus's answer, and the error is gone.**
+        Re-raise to pass it on: to the next handler in the chain, or — from the last one — to
+        whoever called the bus. This is the part that catches people out, because a handler
+        written to *watch* errors is the common case and returns ``None`` without meaning to::
+
+            app.add_global_error_handler(lambda error: log.error(error))
+            app(SomeCommand())        # returns None. The failure is gone and nobody knows.
+
+        A handler that only wants to look at the error ends with ``raise``::
+
+            def logger(error):
+                log.error(error)
+                raise error           # seen, and still an error
+
+        With no handler registered at all, the exception simply propagates.
+
+        Example of the two kinds together::
 
             def base(error):
-                return ErrorResponse(str(error))
+                return ErrorResponse(str(error))    # answers, and stops here
 
             app.add_global_error_handler(base)
 
             def logger(error):
                 log.error(error)
-                raise error  # delegates to base
+                raise error                          # delegates to base
 
             app.add_global_error_handler(logger)
         """
@@ -258,9 +272,11 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             self.bus.handle_error = self.global_error_handler
 
     def add_feature_error_handler(self, handler: ErrorHandler):
-        """Register a feature-level error handler.
+        """Register a feature-level error handler, for errors raised inside a `Feature`.
 
-        Same semantics as ``add_global_error_handler``.
+        Same semantics as `add_global_error_handler`, including the one that surprises people:
+        what the handler returns becomes the bus's answer, and only a re-raise passes the error
+        on.
         """
         if not callable(handler):
             raise TypeError("The handler must be a callable")
@@ -270,9 +286,11 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             self.bus.feature_bus.handle_error = self.feature_error_handler
 
     def add_app_service_error_handler(self, handler: ErrorHandler):
-        """Register an app service-level error handler.
+        """Register an error handler for errors raised inside an `ApplicationService`.
 
-        Same semantics as ``add_global_error_handler``.
+        Same semantics as `add_global_error_handler`, including the one that surprises people:
+        what the handler returns becomes the bus's answer, and only a re-raise passes the error
+        on.
         """
         if not callable(handler):
             raise TypeError("The handler must be a callable")

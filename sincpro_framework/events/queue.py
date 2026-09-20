@@ -78,9 +78,38 @@ class Queue(Protocol):
 
 
 class SyncQueue:
+    """The subscriber answers in the same call.
 
-    def __init__(self, subscriber: Subscriber) -> None:
-        self.subscriber = subscriber
+        SyncQueue(Subscriber(planning, assurance))    the buses already exist
+        SyncQueue(build_subscriber)                   they do not yet
+
+    **Both forms, for the same reason `BackgroundQueue` takes a function.** A queue needs a
+    subscriber, a subscriber needs the buses, and a bus needs the publisher the queue is behind
+    — wire that in one breath and it is a circle. Handing over a function instead of a
+    subscriber cuts it: nothing is asked for until somebody publishes, and by then every bus
+    exists. It is the same shape as `Hooks.inject`, and it is why a composition root can build
+    in one direction and never import backwards.
+
+    Built once, on the first publish, and kept.
+    """
+
+    def __init__(self, subscriber: "Subscriber | Callable[[], Subscriber]") -> None:
+        if not hasattr(subscriber, "handle") and not callable(subscriber):
+            raise ContractViolation(
+                f"SyncQueue takes a Subscriber or a function that builds one; "
+                f"{type(subscriber).__name__} is neither"
+            )
+        self._given = subscriber
+        self._built: Subscriber | None = (
+            subscriber if isinstance(subscriber, Subscriber) else None
+        )
+
+    @property
+    def subscriber(self) -> Subscriber:
+        """The subscriber, built on first use when a function was handed over."""
+        if self._built is None:
+            self._built = self._given()  # type: ignore[operator]
+        return self._built
 
     def put(self, event: DomainEvent) -> list[Any]:
         return self.subscriber.handle(event)
@@ -130,6 +159,18 @@ class BackgroundQueue:
                 "BackgroundQueue does not fork: the worker would inherit the parent's database "
                 "connections; use 'spawn' or 'forkserver'"
             )
+        if isinstance(build_subscriber, Subscriber):
+            raise ContractViolation(
+                "BackgroundQueue takes a function that builds a Subscriber, not one already "
+                "built: the worker is another interpreter, and a bus cannot be sent to it — "
+                "it holds context variables that cannot be pickled. Hand over a module-level "
+                "function and it will build its own there"
+            )
+        if not callable(build_subscriber):
+            raise ContractViolation(
+                f"BackgroundQueue takes a function that builds a Subscriber; "
+                f"{type(build_subscriber).__name__} is not callable"
+            )
         self.build_subscriber = build_subscriber
         self._context: Any = multiprocessing.get_context(context)
         self.inbox: Any = self._context.Queue()
@@ -143,7 +184,20 @@ class BackgroundQueue:
         return self
 
     def put(self, event: DomainEvent) -> None:
-        """The event, and the trace it was published under, over to the worker."""
+        """The event, and the trace it was published under, over to the worker.
+
+        **Refused when nobody is on the other end.** The inbox accepts whatever it is handed
+        whether or not a worker was ever spawned, so a process that publishes without calling
+        `start()` — a CLI run, a test, a notebook — used to enqueue every event into a queue no
+        one reads, and say nothing at all. A fact that was supposed to leave the process and
+        did not is worse than a refusal.
+        """
+        if self.process is None:
+            raise ContractViolation(
+                f"{event.name} was published to a BackgroundQueue that was never started: "
+                "call start() where the process begins and stop() where it ends, or use a "
+                "SyncQueue where the work is in-process"
+            )
         self.inbox.put((event.name, dataclasses.asdict(event), _carrier()))
 
     async def aput(self, event: DomainEvent) -> None:

@@ -12,7 +12,20 @@ holds everything it was given and offers no transaction.
 Four things it deliberately does the way the adapter does, because a Feature can see them: the
 version is raised on every save and a stale one is refused, `updated_at` is stamped, who wrote it
 is stamped when an `actor` was given, and an archived aggregate is left out of a reading that did
-not ask for it. Three it does not have: relations, units of work and date grains, which is where
+not ask for it. **What it hands back is the record it holds, not a copy.** Two callers in one process end up
+with the same object, so one's changes are visible to the other before any save — and a
+`StaleAggregate` race, which needs two holders of two versions, cannot happen between them. It
+is what the store is: a dict. Against a database each session builds its own instance, and the
+race is real.
+
+To exercise that race against this double, hold copies:
+
+    first = copy.deepcopy(repository.get(Account, account_id))
+    second = copy.deepcopy(repository.get(Account, account_id))
+    repository.save(first)        # version moves
+    repository.save(second)       # StaleAggregate, the same as the engine
+
+Three things it does not have: relations, units of work and date grains, which is where
 a database starts — and `remove` here deletes, the way it does there; `archive` is the other one.
 """
 

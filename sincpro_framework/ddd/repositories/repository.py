@@ -519,6 +519,27 @@ class Repository(ABC):
     def before_save(self, record: Any) -> None:
         """Each aggregate about to be written. Raise to refuse the write."""
 
+    def record_changes(self, record: Any) -> Any:
+        """Writes down what changed about this aggregate **now**, and hands the event back.
+
+            event = repository.record_changes(invoice)
+            if event is not None:
+                events.save(event)                 # an event store
+                publisher.publish(event)           # or a queue
+
+        The explicit mode. The automatic one is simply this happening on its own as part of the
+        write, and **what comes back is the same event `pull_events()` would hand over, not a
+        second one** — publish one or the other, never both.
+
+        `None` when nothing differs, and when the aggregate has never been stored: a first save
+        is a Created fact, written by hand, not this.
+
+        **On the store and not on the aggregate**, because the diff is the store's answer. One
+        that has an engine asks it; one that does not compares against what it handed out. An
+        aggregate cannot tell which of those it came from.
+        """
+        return record.record_changes() if hasattr(record, "record_changes") else None
+
     def after_search(self, collection: Any) -> Any:
         """Each page a reading answered, once. Answer a collection to put in its place, or
         nothing to leave it alone. Empty here on purpose.

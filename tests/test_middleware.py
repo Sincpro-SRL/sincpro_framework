@@ -317,3 +317,56 @@ class TestMiddlewareIntegration:
         # No middleware applied, so no additional fields
         assert not hasattr(result, "processed")
         assert not hasattr(result, "timestamp")
+
+
+class TestMiddlewareCannotLoseFields:
+    """The guard on the rewrite: enrichment is the point, corruption is not."""
+
+    def test_a_middleware_may_still_enrich_the_dto(self):
+        """The case the rewrite exists for, unchanged: a wider type keeps the registry routing
+        on the one the Feature was registered with."""
+
+        class Order(DataTransferObject):
+            amount: int = 0
+
+        class Enriched(DataTransferObject):
+            amount: int = 0
+            stamped: str = "yes"
+
+        class Answer(DataTransferObject):
+            seen: str = ""
+
+        framework = UseFramework("enriches", log_after_execution=False)
+        framework.add_middleware(lambda dto: Enriched(amount=dto.amount, stamped="x"))
+
+        @framework.feature(Order)
+        class Handles(Feature):
+            def execute(self, dto: Order) -> Answer:
+                return Answer(seen=f"{dto.amount}/{getattr(dto, 'stamped')}")
+
+        assert framework(Order(amount=500)) == Answer(seen="500/x")
+
+    def test_a_middleware_that_answers_something_else_is_refused(self):
+        """Without the guard the rewrite produced an object that said it was `Order` and had
+        none of its fields — and the failure surfaced as `AttributeError` inside the Feature,
+        with nothing pointing back at the middleware."""
+
+        class Order(DataTransferObject):
+            amount: int = 0
+
+        class Unrelated(DataTransferObject):
+            text: str = "nothing to do with it"
+
+        class Answer(DataTransferObject):
+            seen: str = ""
+
+        framework = UseFramework("unrelated", log_after_execution=False)
+        framework.add_middleware(lambda dto: Unrelated())
+
+        @framework.feature(Order)
+        class Handles(Feature):
+            def execute(self, dto: Order) -> Answer:
+                return Answer(seen=str(dto.amount))
+
+        with pytest.raises(TypeError, match="missing amount"):
+            framework(Order(amount=500))

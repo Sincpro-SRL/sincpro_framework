@@ -8,6 +8,8 @@ so it sees **every** route that reaches the database — including the ones that
 `save()` and the ones that never touch a repository at all.
 """
 
+import pytest
+
 from sincpro_framework.ddd.criteria import Criteria, Grouping, Level
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity import EntityUpdated
@@ -178,3 +180,82 @@ def test_a_write_that_changes_nothing_tracked_records_nothing(database: Database
         loaded.title = "before"  # set to what it already was
 
     assert loaded.pull_events() == []
+
+
+# --- the explicit mode, on a store whose diff belongs to the engine ------------------------
+
+
+def test_the_explicit_mode_settles_the_change_and_hands_it_over(database: Database):
+    """`repository.record_changes(record)` is the explicit door. It is on the store and not on
+    the aggregate because the diff is the store's answer: this one asks its engine, and an
+    aggregate cannot tell which kind of store it came from."""
+    repository = Repository(database)
+    note = _stored(repository)
+
+    with repository.context() as unit:
+        loaded = unit.get(TrackedNote, note.id)
+        assert loaded is not None
+        loaded.title = "settled here"
+        recorded = unit.record_changes(loaded)
+
+    assert isinstance(recorded, EntityUpdated)
+    assert recorded.changes == {"title": ("before", "settled here")}
+
+
+def test_it_closes_one_chapter_and_what_moves_after_is_its_own(database: Database):
+    """Settling is not the same as silencing: a field that moves after the call is a change of
+    its own, with its own event, rather than being folded back into the one already handed
+    over."""
+    repository = Repository(database)
+    note = _stored(repository)
+
+    with repository.context() as unit:
+        loaded = unit.get(TrackedNote, note.id)
+        assert loaded is not None
+        loaded.title = "first"
+        unit.record_changes(loaded)
+        loaded.body = "second"
+
+    assert [one.changes for one in loaded.pull_events()] == [  # type: ignore[attr-defined]
+        {"title": ("before", "first")},
+        {"body": ("a", "second")},
+    ]
+
+
+def test_what_it_answers_is_the_same_event_pull_events_hands_over(database: Database):
+    """Not a second one — publish one or the other, never both."""
+    repository = Repository(database)
+    note = _stored(repository)
+
+    with repository.context() as unit:
+        loaded = unit.get(TrackedNote, note.id)
+        assert loaded is not None
+        loaded.title = "once"
+        recorded = unit.record_changes(loaded)
+
+    pulled = loaded.pull_events()
+    assert len(pulled) == 1 and pulled[0] is recorded
+
+
+def test_it_answers_nothing_when_nothing_differs(database: Database):
+    repository = Repository(database)
+    note = _stored(repository)
+
+    with repository.context() as unit:
+        loaded = unit.get(TrackedNote, note.id)
+        assert unit.record_changes(loaded) is None
+
+
+def test_it_is_refused_outside_a_unit_of_work(database: Database):
+    """There is nothing pending in a session that does not hold the aggregate, and answering
+    `None` there would read as "nothing changed" when something had."""
+    from sincpro_framework.ddd.exceptions import ContractViolation
+
+    repository = Repository(database)
+    note = _stored(repository)
+    loaded = repository.get(TrackedNote, note.id)
+    assert loaded is not None
+    loaded.title = "changed"
+
+    with pytest.raises(ContractViolation, match="unit of work"):
+        repository.record_changes(loaded)

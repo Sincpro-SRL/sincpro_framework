@@ -119,7 +119,8 @@ Body `context` wins over headers. Middleware, error handlers, and bus tracing ar
 | Parse / invalid request | `-32700` / `-32600` |
 | Unknown method | `-32601` |
 | DTO / Pydantic | `-32602` Invalid params |
-| Feature raised | `-32603` Internal error |
+| Feature raised a `DomainError` | `-32603` Internal error, with its message in `data` — it was written for the caller |
+| Feature raised anything else | `-32603` Internal error, **and nothing else**. The exception's own text carries connection strings, statements and paths; it goes to the log, not over the wire |
 | Business result on the response DTO | `result` (`isError` does not apply; this is not MCP) |
 
 Binary DTOs (`bytes`) are skipped at catalog time, same as MCP.

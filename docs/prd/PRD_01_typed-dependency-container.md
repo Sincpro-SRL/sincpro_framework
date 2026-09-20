@@ -1,5 +1,9 @@
 # 🔧 PRD_01: Typed Dependency Container
 
+> **This is the proposal it was built from, kept as written — not what shipped.** Names here are
+> the proposal's: `sincpro_framework.typing_extensions` does not exist. What exists is
+> `bus.deps`, typed through `UseFramework[YourDeps]`; see [core/](../core/README.md).
+
 ## 📋 General Information
 
 - **Title**: Strict Typing System for Dependencies

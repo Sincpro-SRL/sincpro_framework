@@ -89,3 +89,11 @@ def test_the_async_publisher_fans_out_concurrently(publisher, heard):
 
     assert sorted(heard["support"]) == [f"t{n}" for n in range(5)]
     assert sorted(heard["audit"]) == [f"audited t{n}" for n in range(5)]
+
+
+def test_a_command_is_refused_because_a_queue_carries_facts(sync_queue):
+    """A command is something one bus is asked to do, and it is asked directly. Published, it
+    used to fail deep inside the queue with `'CommandAudit' object has no attribute 'name'` —
+    true, and no help at all about why."""
+    with pytest.raises(ContractViolation, match="facts rather than orders"):
+        Publisher(sync_queue).publish(CommandAudit(text="do this"))  # type: ignore[arg-type]
