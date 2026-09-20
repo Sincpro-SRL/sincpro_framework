@@ -21,6 +21,21 @@ from sincpro_framework.events.queue import Queue
 Response = TypeVar("Response")
 
 
+def refuse_orders(event: Any) -> None:
+    """Refuses anything that is not a fact, by name rather than by what it lacks.
+
+    A `DataTransferObject` handed here used to fail deep inside the queue with
+    `'CommandStartRun' object has no attribute 'name'` — true, and no help at all about why a
+    command has no business being published.
+    """
+    if not isinstance(event, DomainEvent):
+        raise ContractViolation(
+            f"{type(event).__name__} is not a DomainEvent, and a queue carries facts rather "
+            "than orders: a command is asked of one bus directly, `bus(command)`. If this is "
+            "meant to be a fact, make it a DomainEvent and give it a wire name"
+        )
+
+
 def _one_answer(queue: Queue, event: DomainEvent, answers: Any) -> Any:
     """The single answer a typed publish promised, or the reason there is none."""
     if not isinstance(answers, list):
@@ -52,7 +67,12 @@ class Publisher:
 
         in      DatasetRegistered(...)                  →  None
         in      DatasetRegistered(...), ResponsePlan    →  ResponsePlan(...)
+
+        **A queue carries facts, not orders.** A command is something one bus is asked to do,
+        and it is asked directly — `bus(CommandStartRun(...))`. What goes out here already
+        happened, which is why everybody who hears it may react and nobody has to.
         """
+        refuse_orders(event)
         answers = self.queue.put(event)
         return None if return_type is None else _one_answer(self.queue, event, answers)
 

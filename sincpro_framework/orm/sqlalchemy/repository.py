@@ -218,6 +218,33 @@ class Repository(BaseRepository):
         self._bound = session
         self._scope = scope
 
+    def record_changes(self, record: Any) -> Any:
+        """Flushes what is pending for this aggregate and hands back the fact that was written.
+
+            with repository.context() as unit:
+                invoice.post()
+                event = unit.record_changes(invoice)     # settled here, and handed over
+
+        **The same path the automatic mode takes**, asked for now rather than when the unit of
+        work happens to end. Going around it with a second diff would record the change twice —
+        once here and once at the flush — which is exactly what the one-event promise forbids.
+
+        It closes one chapter: whatever moves after this call is a change of its own, with its
+        own event, rather than being folded back into this one.
+        """
+        if self._bound is None:
+            raise ContractViolation(
+                "record_changes needs the unit of work holding this aggregate — outside "
+                "context() there is nothing pending to write down, and a plain save() is "
+                "what settles it"
+            )
+        seen = len(record.recorded_events()) if hasattr(record, "recorded_events") else 0
+        self._written(self._bound, [record])
+        after: tuple[Any, ...] = (
+            record.recorded_events() if hasattr(record, "recorded_events") else ()
+        )
+        return after[-1] if len(after) > seen else None
+
     def _dialect(self) -> str:
         """The engine underneath, by name. Read for the one decision that depends on it:
         whether it can compute a percentile."""

@@ -1,12 +1,27 @@
 """The two queues the framework ships against one surface: the sync one answers in the call,
 the background one crosses to a worker that built its own subscriber."""
 
+import multiprocessing
+
 import pytest
 
+from sincpro_framework import UseFramework
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.events import BackgroundQueue, Publisher, Queue, Subscriber, SyncQueue
+from sincpro_framework.events import (
+    BackgroundQueue,
+    Publisher,
+    Queue,
+    Subscriber,
+    SyncQueue,
+)
 
-from .models import FragileSubscriber, ResponseNotify, TicketClosed
+from .models import (
+    FragileSubscriber,
+    ReportingSubscriber,
+    ResponseNotify,
+    TicketClosed,
+    auditing_bus,
+)
 
 
 def test_both_queues_honour_the_surface(background_queue):
@@ -142,3 +157,60 @@ def test_put_is_what_actually_sends_the_trace(background_queue):
 
     assert name == "TicketClosed" and payload["reason"] == "traced"
     assert carrier["traceparent"].startswith("00-4bf92f3577b34da6a3ce929d0e0e4736-")
+
+
+# --- wiring mistakes are refused where they are made ---------------------------------------
+
+
+def test_a_queue_that_was_never_started_refuses_rather_than_swallowing(heard):
+    """`inbox.put` accepts whatever it is handed whether or not a worker was spawned. A
+    process that publishes without `start()` — a CLI run, a test, a notebook — enqueued every
+    event into a queue nobody reads and said nothing at all. A fact that was supposed to leave
+    the process and did not is worse than a refusal."""
+    queue = BackgroundQueue(ReportingSubscriber(multiprocessing.get_context("spawn").Queue()))
+    assert queue.process is None
+
+    with pytest.raises(ContractViolation, match="never started"):
+        queue.put(TicketClosed(reason="stale"))
+
+
+def test_the_background_queue_refuses_a_subscriber_that_was_already_built():
+    """The worker is another interpreter and a bus cannot be sent to it — it holds context
+    variables that do not pickle. Handed one anyway, the failure used to come out of
+    `multiprocessing` as `cannot pickle '_contextvars.ContextVar' object`, from a stack that
+    names nothing the caller wrote."""
+    with pytest.raises(ContractViolation, match="builds a Subscriber"):
+        BackgroundQueue(Subscriber(auditing_bus([])))  # type: ignore[arg-type]
+
+    with pytest.raises(ContractViolation, match="not callable"):
+        BackgroundQueue("not a factory")  # type: ignore[arg-type]
+
+
+def test_the_sync_queue_refuses_what_it_cannot_use():
+    with pytest.raises(ContractViolation, match="neither"):
+        SyncQueue(42)  # type: ignore[arg-type]
+
+
+def test_the_sync_queue_takes_a_function_and_builds_it_on_the_first_publish(heard):
+    """The wiring knot a bus forces: a queue needs a subscriber, a subscriber needs the buses,
+    and a bus needs the publisher the queue is behind. Handing over a function cuts it — the
+    queue is built before a single bus exists, and nothing is asked for until somebody
+    publishes."""
+    built: list[int] = []
+    buses: list[UseFramework] = []
+
+    def build_subscriber() -> Subscriber:
+        built.append(1)
+        return Subscriber(*buses)
+
+    queue = SyncQueue(build_subscriber)  # before any bus exists
+    assert built == []
+
+    buses.append(auditing_bus(heard["audit"]))
+    Publisher(queue).publish(TicketClosed(reason="stale"))
+
+    assert built == [1]  # built on the first publish
+    assert heard["audit"] == ["audited stale"]
+
+    Publisher(queue).publish(TicketClosed(reason="again"))
+    assert built == [1]  # and kept

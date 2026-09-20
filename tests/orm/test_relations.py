@@ -469,3 +469,54 @@ def test_explain_counts_one_statement_per_relation_node(shelf):
     assert explained.relations == ["author", "author.books", "tags"]
     assert explained.statements == 2 + 3
     assert "SELECT" in explained.sql
+
+
+def test_a_relation_that_resolves_to_nothing_says_so_instead_of_raising_a_key_error():
+    """The resolver ran and wrote nothing, which a correct declaration never does — a
+    `Relation` pointing the wrong way, or named for a field the aggregate does not declare.
+    Left alone this surfaced as `KeyError: '_sincpro_resolved'`, a framework-internal key the
+    caller has no way to connect to the line they wrote."""
+    from dataclasses import dataclass
+
+    import sqlalchemy as sa
+    from sqlalchemy.orm import registry
+
+    from sincpro_framework.ddd.entity import Entity
+    from sincpro_framework.ddd.exceptions import RelationNotResolved
+    from sincpro_framework.orm.sqlalchemy.data_mapper import (
+        Relation,
+        entity_table,
+        map_aggregates,
+    )
+    from sincpro_framework.orm.sqlalchemy.database import Database
+    from sincpro_framework.orm.sqlalchemy.repository import Repository
+
+    @dataclass
+    class Head(Entity):
+        pass  # declares no `tails` field
+
+    @dataclass
+    class Tail(Entity):
+        head_id: str = ""
+
+    metadata = sa.MetaData()
+    head_table = entity_table("rel_head", metadata)
+    tail_table = entity_table(
+        "rel_tail", metadata, sa.Column("head_id", sa.String, sa.ForeignKey("rel_head.id"))
+    )
+    map_aggregates(
+        registry(),
+        {Head: head_table, Tail: tail_table},
+        relations={Head: {"tails": Relation.foreign_key(Tail, "head_id")}},
+    )
+
+    database = Database("sqlite://")
+    metadata.create_all(database.engine)
+    repository = Repository(database)
+    head = Head()
+    repository.save(head)
+
+    with repository.context() as unit:
+        stored = unit.get(Head, head.id)
+        with pytest.raises(RelationNotResolved, match="resolved to nothing"):
+            stored.tails  # type: ignore[attr-defined]  # noqa: B018

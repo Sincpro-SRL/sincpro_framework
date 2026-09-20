@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.const import Scalar
 from sincpro_framework.entrypoints.scalar_executor import execute
@@ -54,6 +55,22 @@ def jsonrpc_error(
     if data is not None:
         error["data"] = data
     return {"jsonrpc": "2.0", "id": request_id, "error": error}
+
+
+def said_to_the_caller(error: Exception) -> str | None:
+    """What of a failure a client is allowed to read.
+
+    **A `DomainError` was written for whoever asked** — "an invoice has to balance" is the
+    answer, and hiding it helps nobody. Anything else is the inside of the process, and its
+    message routinely carries what must never leave it: a connection string with a password, a
+    statement with the value it was filtering on, a path on the server.
+
+        raise OperationalError("SELECT … WHERE token = 'secret'", …, "postgres://admin:hunter2@…")
+
+    That whole string used to reach the client as the error's `data`. The log still gets all of
+    it — `logger.exception` above runs either way — which is where it belongs.
+    """
+    return str(error) if isinstance(error, DomainError) else None
 
 
 def jsonrpc_result(request_id: Any, result: Any) -> dict[str, Any]:
@@ -128,7 +145,9 @@ def handle_single(
         return None if is_notification else response
     except Exception as error:
         logger.exception("JSON-RPC method [%s] failed", method)
-        response = jsonrpc_error(INTERNAL_ERROR, "Internal error", request_id, str(error))
+        response = jsonrpc_error(
+            INTERNAL_ERROR, "Internal error", request_id, said_to_the_caller(error)
+        )
         return None if is_notification else response
     if is_notification:
         return None

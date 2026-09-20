@@ -2,7 +2,10 @@
 event — a Feature here, an ApplicationService there, nothing on the bus that said nothing."""
 
 import asyncio
+from dataclasses import dataclass
 
+from sincpro_framework import Feature, UseFramework
+from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.events import Subscriber
 
 from .models import (
@@ -66,3 +69,73 @@ def test_a_subscriber_may_be_empty():
 
     assert empty.handle(TicketClosed(reason="x")) == []
     assert empty.listeners("TicketClosed") == []
+
+
+# --- the two identities of an event, and which one travels ---------------------------------
+
+
+def _declaring(wire: str, suffix: str) -> type:
+    """A context's own class for a wire name — what a context that may not import the
+    publisher's module writes for itself."""
+
+    @dataclass(kw_only=True)
+    class Restated(DomainEvent):
+        name = wire
+        reason: str = ""
+
+    Restated.__name__ = f"Restated_{suffix}"
+    return Restated
+
+
+def _listening(name: str, declared: type, into: list[str]) -> UseFramework:
+    bus = UseFramework(name, log_after_execution=False)
+
+    @bus.feature(declared)
+    class Reacts(Feature):
+        def execute(self, dto) -> ResponseNotify:
+            into.append(f"{name}:{type(dto).__name__}")
+            return ResponseNotify(sent="ok")
+
+    return bus
+
+
+def test_each_bus_is_handed_the_class_it_declared_for_that_wire_name():
+    """An event has two identities and only one of them travels: the wire name crosses a
+    process and a bounded context, the Python class cannot. A context that may not import the
+    publisher's module declares its own class under the same name.
+
+    The bus is chosen by name and then dispatches by class, so handing it the publisher's
+    instance used to ask it for a class it never registered — `UnknownDTOToExecute`, and in a
+    background worker that refusal is one log line in another process.
+    """
+    wire = "execution.v1.run_advanced"
+    seen: list[str] = []
+    first = _listening("catalog", _declaring(wire, "catalog"), seen)
+    second = _listening("project", _declaring(wire, "project"), seen)
+
+    published = _declaring(wire, "execution")(reason="fitted")
+    answers = Subscriber(first, second).handle(published)
+
+    assert seen == ["catalog:Restated_catalog", "project:Restated_project"]
+    assert len(answers) == 2
+
+
+def test_a_class_the_bus_itself_declared_is_passed_through_untouched():
+    """Every event that never left its own context, and every project that shares one class
+    across buses — nothing is rebuilt and the instance is the one published."""
+    wire = "execution.v1.run_advanced"
+    shared = _declaring(wire, "shared")
+    seen: list[str] = []
+    bus = _listening("catalog", shared, seen)
+
+    published = shared(reason="fitted")
+    assert Subscriber(bus).as_known_by(bus, published) is published
+
+
+def test_a_bus_that_does_not_know_the_name_leaves_the_event_alone():
+    wire = "execution.v1.run_advanced"
+    stranger = UseFramework("stranger", log_after_execution=False)
+    published = _declaring(wire, "execution")(reason="fitted")
+
+    assert Subscriber(stranger).as_known_by(stranger, published) is published
+    assert Subscriber(stranger).handle(published) == []

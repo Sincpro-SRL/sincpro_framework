@@ -13,7 +13,7 @@ from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.repository import Repository
 
-from .models import Client, Clients, mapper_registry
+from .models import Client, Clients, Draft, StoredEvent, mapper_registry
 
 
 @pytest.fixture
@@ -176,3 +176,76 @@ def test_the_context_is_read_only_from_outside():
     with bus.context({"user.id": "ana"}):
         with pytest.raises(TypeError):
             bus.current_context()["user.id"] = "somebody else"  # type: ignore[index]
+
+
+# --- a NULL column for a field that never said it could be absent --------------------------
+
+
+def test_a_null_column_gives_the_field_the_default_it_declared(database: Database):
+    """A row written before the field existed holds NULL. The mapper reports it faithfully, so
+    the domain got `None` where it declares `list[str]` — and the first place that touches it
+    raises, far from the row that caused it."""
+    import sqlalchemy as sa
+
+    drafts = Repository(database)
+    draft = Draft(labels=["one"], note="something")
+    drafts.save(draft)
+    with database.session() as session:
+        session.execute(sa.text("UPDATE draft SET labels = NULL, note = NULL"))
+
+    stored = drafts.get(Draft, draft.id)
+    assert stored is not None
+    assert stored.labels == []  # it declared list[str] and a default
+
+
+def test_a_field_that_said_it_could_be_absent_still_gets_the_null(database: Database):
+    """`str | None` asked for this. Filling it would be answering a question nobody asked."""
+    import sqlalchemy as sa
+
+    drafts = Repository(database)
+    draft = Draft(labels=["one"], note="something")
+    drafts.save(draft)
+    with database.session() as session:
+        session.execute(sa.text("UPDATE draft SET labels = NULL, note = NULL"))
+
+    stored = drafts.get(Draft, draft.id)
+    assert stored is not None
+    assert stored.note is None
+
+
+def test_an_event_table_is_declared_with_the_envelope_it_carries():
+    """`label` is a text per locale and needs `JsonText`. A hand-written table that declares it
+    `Text` fails at the insert with `type 'dict' is not supported`, naming a parameter number
+    rather than the column — which is why the envelope is a helper and not a thing to remember.
+    """
+    from sqlalchemy import MetaData
+
+    from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
+    from sincpro_framework.orm.sqlalchemy.data_mapper import (
+        delivery_columns,
+        entity_table,
+        event_columns,
+    )
+
+    table = entity_table("some_event", MetaData(), *event_columns(), *delivery_columns())
+
+    assert isinstance(table.c["label"].type, JsonText)
+    for name in ("entity_type", "entity_id", "correlation_id", "causation_id", "sequence"):
+        assert name in table.c
+    for name in ("status", "attempts", "failure", "delivered_at"):
+        assert name in table.c
+    assert "id" in table.c and "version" in table.c  # the Entity columns are still there
+
+
+def test_an_event_declared_that_way_actually_round_trips(database: Database):
+    """The envelope is not decoration: a `DomainEvent` is an `Entity`, so the repository stores
+    and reads one like any other aggregate. An event store is a table and this repository."""
+    stored = Repository(database)
+    recorded = StoredEvent(run_id="r1", stage="fitted", label={"default": "Advanced"})
+
+    stored.save(recorded)
+
+    read_back = stored.get(StoredEvent, recorded.id)
+    assert read_back is not None
+    assert read_back.run_id == "r1"
+    assert read_back.label == {"default": "Advanced"}

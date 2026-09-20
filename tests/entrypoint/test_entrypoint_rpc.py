@@ -395,3 +395,61 @@ def test_request_without_context_headers_inherits_nothing():
     """No headers must not fabricate a context the DTO would have to carry."""
     assert merge_http_context({}) == {}
     assert merge_http_context({"content-type": "application/json"}) == {}
+
+
+# --- what a failure is allowed to tell the caller -------------------------------------------
+
+
+def _blowing_up(error: Exception) -> UseFramework:
+    framework = UseFramework(f"boom-{id(error)}", log_after_execution=False)
+
+    @framework.feature(ChargePayment)
+    class Explodes(Feature):
+        def execute(self, dto: ChargePayment) -> ChargePaymentResponse:
+            raise error
+
+    return framework
+
+
+def _asked(framework: UseFramework) -> Any:
+    return RpcGateway({"pay": framework}).handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "pay.features.ChargePayment",
+            "params": {"amount": 10},
+        }
+    )
+
+
+def test_an_internal_failure_tells_the_caller_nothing_about_the_inside():
+    """**A credential leak, until it was not.** The exception's own text used to be sent as the
+    error's `data`, and a database error's text carries a connection string with its password
+    and the statement with the value it was filtering on. The log still gets all of it."""
+    from sqlalchemy.exc import OperationalError
+
+    answered = _asked(
+        _blowing_up(
+            OperationalError(
+                "SELECT * FROM users WHERE token = 'secret-123'",
+                {},
+                Exception("postgres://admin:hunter2@10.0.0.5/prod refused"),
+            )
+        )
+    )
+
+    assert answered["error"]["code"] == -32603
+    assert answered["error"]["message"] == "Internal error"
+    assert "data" not in answered["error"]
+    assert "hunter2" not in str(answered)
+    assert "secret-123" not in str(answered)
+
+
+def test_a_domain_error_still_answers_the_caller():
+    """The other half: a `DomainError` was written for whoever asked, and hiding it helps
+    nobody."""
+    from sincpro_framework.ddd.exceptions import ContractViolation
+
+    answered = _asked(_blowing_up(ContractViolation("an invoice has to balance")))
+
+    assert answered["error"]["data"] == "an invoice has to balance"

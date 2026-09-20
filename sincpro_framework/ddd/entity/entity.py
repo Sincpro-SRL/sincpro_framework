@@ -180,6 +180,14 @@ class Entity:
         recorded.append(stamped)
         return stamped
 
+    def recorded_events(self) -> tuple["DomainEvent", ...]:
+        """What is recorded right now, **without taking it** — `pull_events` is what takes it.
+
+        For looking while the work is still going on: an assertion in a test, a log line, or a
+        store answering which fact it just wrote down.
+        """
+        return tuple(self.__dict__.get(RECORDED, []))
+
     def pull_events(self) -> list["DomainEvent"]:
         """Everything recorded since the last pull, in order — and nothing afterwards.
 

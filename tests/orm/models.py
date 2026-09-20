@@ -25,11 +25,13 @@ from sincpro_framework.ddd.entity import (
     Translated,
 )
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
+from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
     archive_columns,
     audit_columns,
     entity_table,
+    event_columns,
     map_aggregates,
 )
 
@@ -99,6 +101,32 @@ class TrackedNotes(EntityCollection[TrackedNote]):
     pass
 
 
+@dataclass
+class Draft(Entity):
+    """An aggregate with a field that declares a default and a column that may be NULL.
+
+    What a row written before the field existed looks like: the column is there and empty. The
+    domain says `list[str]`, not `list[str] | None`, and the one beside it says the opposite —
+    together they pin which of the two a NULL answers.
+    """
+
+    labels: list[str] = field(default_factory=list)
+    note: str | None = None
+
+
+class Drafts(EntityCollection[Draft]):
+    pass
+
+
+@dataclass(kw_only=True)
+class StoredEvent(DomainEvent):
+    """A fact kept in a table of its own — what an event store and an outbox both are."""
+
+    name = "orm.v1.stored_event"
+    run_id: str = ""
+    stage: str = ""
+
+
 mapper_registry = registry()
 
 thing_table = Table(
@@ -138,6 +166,22 @@ tracked_note_table = entity_table(
     Column("render_cache", Text, nullable=False),
 )
 
+draft_table = entity_table(
+    "draft",
+    mapper_registry.metadata,
+    # Both nullable: the row predates the fields, which is the case this pins.
+    Column("labels", JsonText),
+    Column("note", Text),
+)
+
+stored_event_table = entity_table(
+    "stored_event",
+    mapper_registry.metadata,
+    *event_columns(),
+    Column("run_id", Text),
+    Column("stage", Text),
+)
+
 map_aggregates(
     mapper_registry,
     {
@@ -145,6 +189,8 @@ map_aggregates(
         Note: note_table,
         Client: client_table,
         TrackedNote: tracked_note_table,
+        Draft: draft_table,
+        StoredEvent: stored_event_table,
     },
 )
 

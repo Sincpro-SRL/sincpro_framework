@@ -19,6 +19,10 @@ Nothing is wired by default and nothing is stored. A project builds the queue it
 buses it names, and publishes when a Feature decides to. What an aggregate recorded lives in
 memory and dies with the object.
 
+**Which of these you need depends on the shape of your system** — one database, a database
+per context, or the facts *as* the state. [shapes.md](../shapes.md) picks the wiring; this page
+is the parts.
+
 ## The pieces
 
 | Piece | Module | What it is |
@@ -57,6 +61,24 @@ forms on the receiving side; the async one runs each bus through its own `get_as
 **`SyncQueue(subscriber)`** — `publish` runs the buses where it was called and returns. For
 development, tests, and the reactions that must be visible at once.
 
+It takes a **function** too, and that form is what a composition root wants:
+
+```python
+BUSES: dict[str, UseFramework] = {}
+publisher = Publisher(SyncQueue(lambda: Subscriber(*BUSES.values())))   # before any bus exists
+```
+
+A queue needs a subscriber, a subscriber needs the buses, and a bus needs the publisher the
+queue is behind — wire that in one breath and it is a circle. Handed a function, the queue asks
+for nothing until somebody publishes, and by then every bus is registered. Built once, on that
+first publish, and kept. It is the same shape `BackgroundQueue` has always had, for a different
+reason: there, the function runs in the worker because a bus cannot cross a process.
+
+**Publishing runs the subscriber in the call**, so a subscriber that publishes re-enters the
+queue depth-first — a listener registered after it hears the *inner* fact first. Where the order
+of facts matters, write the fact down in the context it happened in, or send it through an
+outbox whose relay delivers in order.
+
 **`BackgroundQueue(build_subscriber)`** — the smallest «do it in the background»:
 
 ```python
@@ -70,8 +92,19 @@ queue.stop()
 
 `start()` spawns the worker process. The worker calls `build_subscriber()` — a bus does not cross
 a process, so it builds its own — and then waits on the queue: one event, one `handle`, wait again.
-The event crosses as its class name and JSON and is rebuilt as the class the subscriber knows.
-`stop()` sends the stop signal and waits for the worker.
+The event crosses as its **wire name** and JSON, and is rebuilt as the class the subscriber
+knows. `stop()` sends the stop signal and waits for the worker. A queue that was never started
+refuses a publish rather than accepting the event and dropping it.
+
+## An event has two identities, and only one of them travels
+
+`name` is what an event is called on the wire; the Python class is what it is here. A context
+that may not import the publisher's module declares its own class under the same `name`, and
+the subscriber hands each bus **the class that bus registered** — so a fact reaches every
+listener whether or not they share a class.
+
+Sharing one class across the buses is simpler and cannot drift, and is what most projects
+should do. The rebuild is there for when they genuinely cannot.
 
 Kafka, RabbitMQ and Redis are each one more `Queue`: `put`, `aput`, and whatever `start` / `stop`
 the transport needs.

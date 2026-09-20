@@ -4,6 +4,8 @@ How a Sincpro service declares an aggregate, asks for it, brings what is related
 and tells the world what happened, the same way in every service, from one SQLite file to
 several databases and several bounded contexts.
 
+New here? [What shape is your system](../shapes.md) picks the wiring before you read the parts.
+
 Read in this order:
 
 | Page | What it answers |

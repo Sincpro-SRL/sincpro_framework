@@ -513,3 +513,43 @@ def test_an_actor_that_raises_writes_nothing_rather_than_failing_the_save():
 
     stored = repository.get(AuditedAccount, client.id)
     assert stored is not None and stored.created_by is None
+
+
+def test_what_it_hands_back_is_the_record_it_holds_and_not_a_copy():
+    """It is a dict, and this is what that means. Two callers share one object, so one's
+    changes are visible to the other before any save — and no `StaleAggregate` can happen
+    between them, because a race needs two holders of two versions. Against a database each
+    session builds its own instance and the race is real."""
+    repository = MemoryRepository()
+    account = Account(code="1010", balance=0)
+    repository.save(account)
+
+    first = repository.get(Account, account.id)
+    second = repository.get(Account, account.id)
+
+    assert first is second
+    first.balance = 50
+    assert second.balance == 50  # nothing was saved, and the other caller already sees it
+
+
+def test_a_stale_write_is_refused_the_way_the_engine_refuses_it():
+    """The race the double *can* reproduce, and the shape a test has to write to get it: two
+    holders of two versions, which is what separate sessions give you for free."""
+    import copy
+
+    repository = MemoryRepository()
+    account = Account(code="1010", balance=0)
+    repository.save(account)
+
+    mine = copy.deepcopy(repository.get(Account, account.id))
+    theirs = copy.deepcopy(repository.get(Account, account.id))
+
+    theirs.balance = 10
+    repository.save(theirs)  # moves the version
+
+    mine.balance = 999
+    with pytest.raises(StaleAggregate, match="changed since it was read"):
+        repository.save(mine)
+
+    stored = repository.get(Account, account.id)
+    assert stored is not None and stored.balance == 10  # the first write stands

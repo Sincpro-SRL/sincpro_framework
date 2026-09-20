@@ -101,23 +101,31 @@ for event in invoice.pull_events():    # the Feature still decides what to do wi
     self.publisher.publish(event)
 ```
 
-### Explicit — you do it, and get the event back
+### Explicit — you ask for it, and get the event back
 
 ```python
-event = invoice.record_changes()
+with self.repository.context() as unit:
+    invoice.post()
+    event = unit.record_changes(invoice)   # settled here, and handed over
 if event is not None:
-    self.events.save(event)            # store it
-    self.publisher.publish(event)      # or hand it to a queue
+    self.events.save(event)                # store it
+    self.publisher.publish(event)          # or hand it to a queue
 ```
 
-`record_changes()` answers `None` when nothing differs, and when the aggregate has never been
-saved — a first save is a Created fact, written by hand, not this.
+**On the store, not on the aggregate**, because the diff is the store's answer: one that has an
+engine asks it, one that does not compares against what it handed out, and an aggregate cannot
+tell which of the two it came from.
 
-**What it returns is the same event `pull_events()` will hand over**, not a second one:
-publish one or the other, never both. Either way the baseline moves to the current state, so
-the next cycle compares from there.
+It answers `None` when nothing differs, and when the aggregate has never been stored — a first
+save is a Created fact, written by hand, not this.
 
-The automatic mode *is* this call: the repository's `before_save` is one line, `record.record_changes()`.
+**What it returns is the same event `pull_events()` will hand over**, not a second one: publish
+one or the other, never both. And it closes one chapter: whatever moves after the call is a
+change of its own, with its own event, rather than being folded back into this one.
+
+On the SQLAlchemy store it needs the unit of work holding the aggregate, and is refused outside
+one — there is nothing pending in a session that does not hold it, and answering `None` there
+would read as "nothing changed" when something had.
 
 ### A domain event of your own
 
