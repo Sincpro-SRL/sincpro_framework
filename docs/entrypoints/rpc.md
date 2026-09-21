@@ -123,9 +123,69 @@ Body `context` wins over headers. Middleware, error handlers, and bus tracing ar
 | Feature raised anything else | `-32603` Internal error, **and nothing else**. The exception's own text carries connection strings, statements and paths; it goes to the log, not over the wire |
 | Business result on the response DTO | `result` (`isError` does not apply; this is not MCP) |
 
+The OpenRPC `result.schema` is the **declared** response's JSON Schema — `execute`'s return
+annotation, or `Feature[Command, Response, Ctx]`'s second parameter. A DTO, a dataclass, an
+`Entity`, a `list[...]` all publish; an unannotated `execute` publishes `{"type": "object"}`.
+See [grpc.md](grpc.md#what-comes-back-the-response-shape), which documents the shared rule.
+
 Binary DTOs (`bytes`) are skipped at catalog time, same as MCP.
 
 Notifications (no `id`) run the Feature and return HTTP 204. Batch is JSON-RPC 2.0.
+
+---
+
+## Health — on by default
+
+`.routes()`/`.app()` serve `GET /healthz` unless `health_path=None`: `200 {"status": "ok"}`
+when every registered bus is still built, `503 {"status": "unhealthy"}` otherwise — the same
+question `entrypoint_grpc`'s default health check asks, over plain HTTP for a mesh or load
+balancer that doesn't speak gRPC.
+
+```python
+RpcGateway({"qr": qr}).app()                       # GET /healthz included
+RpcGateway({"qr": qr}).app(health_path=None)        # host wires its own instead
+RpcGateway({"qr": qr}).routes(health_path="/live")  # custom path, for composing
+```
+
+`RpcGateway.is_healthy()` is the check itself, for a host that wants the boolean without the
+route (its own health endpoint, a startup probe before serving traffic).
+
+---
+
+## Composability: routes as data, not an opinion
+
+`entrypoint_rpc` never decides CORS, auth, health checks or process lifecycle — it hands the
+host the same thing FastAPI hands you as `app.routes`: data. Two levels:
+
+- **`.routes()`** — a plain `list[starlette.routing.Route]`, no `Starlette` around it. Mount it
+  into an app the host already owns, alongside its own health check, its own CORS
+  `Middleware`, several gateways under one process, whatever the host's own framework needs.
+- **`.app(middleware=, routes=, lifespan=)`** — the convenience path, for a process that serves
+  only this gateway, still composable: extra `Middleware(...)` instances, extra routes, a
+  Starlette `lifespan` for startup/shutdown (opening a pool, warming a cache).
+
+```python
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.routing import Route
+
+gateway = RpcGateway({"qr": qr, "cybersource": cybersource})
+
+app = Starlette(
+    routes=[Route("/healthz", healthz), *gateway.routes()],
+    middleware=[Middleware(CORSMiddleware, allow_origins=["https://app.example.com"])],
+)
+```
+
+**Per-bus policy at the HTTP layer:** CORS is a property of the *origin/port* a browser talks
+to — a single JSON-RPC `POST /rpc` cannot carry two different CORS answers depending on which
+`method` the body names, a preflight `OPTIONS` never reaches the body. If two sets of buses need
+different browser-facing policies, give them different `RpcGateway`s — each with its own
+`middleware=` — mounted at different paths or served on different ports/subdomains, not one
+gateway trying to branch on `method` after the fact. Auth *can* branch per method (a wrapper via
+`wrap(dto, wrapper)`, or middleware that reads the parsed body), because unlike CORS it is
+enforced after the request already arrived.
 
 ---
 
@@ -137,7 +197,10 @@ Notifications (no `id`) run the Feature and return HTTP 204. Batch is JSON-RPC 2
 | `.add(alias, framework)` | Fluent mount. |
 | `.handle(payload, context=...)` | In-process JSON-RPC (tests, workers). No Starlette. |
 | `.discover()` | OpenRPC 1.4 document. |
-| `.app()` | Starlette: `POST /rpc`, `GET /openrpc.json`. |
+| `.routes(rpc_path=, discover_path=, health_path=)` | This gateway's `Route`s (health included), for a host's own app. |
+| `.app(middleware=, routes=, lifespan=, health_path=, **kwargs)` | Starlette: `POST /rpc`, `GET /openrpc.json`, `GET /healthz`, composable. |
+| `.health_route(path=)` | Just the health `Route`, for a host composing `.routes()` piecemeal. |
+| `.is_healthy()` | The health check itself, no route — every registered bus still built. |
 | `.run(host=..., port=...)` | uvicorn. |
 | `build_rpc_app(instances)` | Same as `RpcGateway(...).app()`. |
 

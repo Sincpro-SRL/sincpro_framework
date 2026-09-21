@@ -1,14 +1,16 @@
 """JSON-RPC 2.0 wire: dispatch over the shared catalog, and the OpenRPC 1.4 document."""
 
-import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.const import Scalar
+from sincpro_framework.entrypoints.errors import (
+    json_safe_validation_errors,
+    said_to_the_caller,
+)
 from sincpro_framework.entrypoints.scalar_executor import execute
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
@@ -40,14 +42,6 @@ def method_name(instance: str, layer: str, dto_name: str) -> str:
     return f"{instance}.{layer}.{dto_name}"
 
 
-def json_safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:
-    """Pydantic puts the raw exception in ctx.error for value_error types (any
-    ValueObject validate_fn that rejects input). json.dumps on that raises, so the
-    JSON-RPC error envelope would crash the host instead of returning -32602.
-    """
-    return json.loads(json.dumps(error.errors(), default=str))
-
-
 def jsonrpc_error(
     code: int, message: str, request_id: Any = None, data: Any = None
 ) -> dict[str, Any]:
@@ -55,22 +49,6 @@ def jsonrpc_error(
     if data is not None:
         error["data"] = data
     return {"jsonrpc": "2.0", "id": request_id, "error": error}
-
-
-def said_to_the_caller(error: Exception) -> str | None:
-    """What of a failure a client is allowed to read.
-
-    **A `DomainError` was written for whoever asked** — "an invoice has to balance" is the
-    answer, and hiding it helps nobody. Anything else is the inside of the process, and its
-    message routinely carries what must never leave it: a connection string with a password, a
-    statement with the value it was filtering on, a path on the server.
-
-        raise OperationalError("SELECT … WHERE token = 'secret'", …, "postgres://admin:hunter2@…")
-
-    That whole string used to reach the client as the error's `data`. The log still gets all of
-    it — `logger.exception` above runs either way — which is where it belongs.
-    """
-    return str(error) if isinstance(error, DomainError) else None
 
 
 def jsonrpc_result(request_id: Any, result: Any) -> dict[str, Any]:
@@ -213,7 +191,7 @@ def method_object(
         "params": content_descriptors(operation.json_schema),
         "result": {
             "name": "result",
-            "schema": {"type": "object"},
+            "schema": operation.response_json_schema or {"type": "object"},
         },
         "x-sincpro-instance": instance,
         "x-sincpro-layer": operation.layer,

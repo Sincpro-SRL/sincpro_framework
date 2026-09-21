@@ -22,16 +22,20 @@ class PackedFeatureOrAppService(DataTransferObject):
 
     `layer` is "features" or "app_services" — the bus's own vocabulary; also names
     the RPC method namespace (`{alias}.{layer}.{DtoName}`) and the MCP/OpenRPC tag.
-    `json_schema` is the input DTO's schema, computed once here — hosts must not
-    recompute it. `run` is a bound callable, not JSON; DataTransferObject allows
-    arbitrary types so it can travel alongside the JSON-safe fields.
+    `json_schema` is the input DTO's schema and `response_json_schema` the declared
+    response's, both computed once here — hosts must not recompute them.
+    `response_json_schema` is None when `execute` declares no return type: a wire
+    then publishes an open object rather than a shape nobody promised.
+    `run` is a bound callable, not JSON; DataTransferObject allows arbitrary types
+    so it can travel alongside the JSON-safe fields.
     """
 
     name: str
     layer: Layer
     description: str
-    dto: type[DataTransferObject]
+    dto: type
     json_schema: dict[str, Any]
+    response_json_schema: dict[str, Any] | None
     run: RunFn
 
 
@@ -95,6 +99,11 @@ class Catalog:
                     description=metadata.description,
                     dto=metadata.dto,
                     json_schema=json_utils.dto_json_schema(metadata.dto),
+                    response_json_schema=(
+                        json_utils.json_schema_for(metadata.response)
+                        if metadata.response is not None
+                        else None
+                    ),
                     run=run,
                 )
             )

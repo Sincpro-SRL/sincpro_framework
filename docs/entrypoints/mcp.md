@@ -65,6 +65,25 @@ pip install sincpro-framework[mcp]
 
 ---
 
+## Composability: `.server()` is a real FastMCP, not a black box
+
+`Entrypoint.server()` returns the FastMCP instance itself, not a wrapper — the same
+composability FastMCP gives any of its users is already here, with no extra API from this
+package: `.add_middleware(...)`, `.auth = ...`, `.mount(...)` for another sub-server, and
+`.http_app()` to get a plain ASGI app (`StarletteWithLifespan`) mountable next to any other
+route, exactly like `entrypoint_rpc`'s `.routes()`/`.app()`.
+
+```python
+mcp = Entrypoint(siat_soap_sdk).server()
+mcp.auth = MyBearerTokenVerifier()          # FastMCP's own auth hook
+app = mcp.http_app()                        # a plain ASGI app — mount it, add middleware, ...
+```
+
+`entrypoint_mcp` adds nothing on top and takes nothing away here; it stops at building the
+tools. Everything about serving that FastMCP instance is between the host and FastMCP.
+
+---
+
 ## Projection: bus → PackedFeatureOrAppService
 
 A `PackedFeatureOrAppService` is a `DataTransferObject` that packages one `introspection.FeatureOrAppServiceMetadata` for a JSON wire (shared with `entrypoint_rpc`; this host maps it to an MCP tool):
@@ -120,6 +139,23 @@ A class with only comments inside `execute` (no `__doc__`) publishes the DTO nam
 2. Pydantic hydrates fields; VO `__get_pydantic_core_schema__` runs `validate_fn`.
 3. `framework(dto)` executes the Feature / ApplicationService (middleware, tracing, error handlers — unchanged).
 4. Response `model_dump(mode="json")` so VOs leave as primitives.
+
+### No `output_schema`, on purpose
+
+The catalog knows the declared response shape (`PackedFeatureOrAppService.response_json_schema`,
+see [grpc.md](grpc.md#what-comes-back-the-response-shape)) and FastMCP's `tool()` would take it
+as `output_schema`. It is deliberately **not** passed.
+
+An MCP `outputSchema` is validated at call time, while the response annotation is only a
+declaration the bus never enforces: a Feature typed `-> ResponseDTO` that returns `None` on a
+branch answers `{}`, and a tool that works today would start failing at the MCP layer. The
+shape is published where it is descriptive — OpenRPC's `result`, gRPC's `Describe` — not where
+it becomes a runtime contract nobody wrote.
+
+A Command that is a **dataclass** does work here: the tool signature is built from
+`dataclasses.fields` when the DTO is not a `DataTransferObject`.
+
+---
 
 ### Binary DTOs
 

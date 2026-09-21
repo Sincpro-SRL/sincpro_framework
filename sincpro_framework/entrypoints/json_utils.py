@@ -10,10 +10,13 @@ This module walks the full schema tree so a Feature/ApplicationService is
 never published as JSON-safe when it secretly carries binary data.
 """
 
+import dataclasses
+from functools import lru_cache
 from typing import Any, get_args, get_origin
 
+from pydantic import BaseModel, TypeAdapter
+
 from sincpro_framework.entrypoints.const import BINARY_JSON_FORMATS, BINARY_TYPES
-from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 def _is_binary_annotation(annotation: Any) -> bool:
@@ -57,14 +60,56 @@ def _schema_has_binary(schema: dict[str, Any], seen: set[int] | None = None) -> 
     return False
 
 
-def dto_json_schema(dto_type: type[DataTransferObject]) -> dict[str, Any]:
+@lru_cache(maxsize=None)
+def adapter(annotation: Any) -> TypeAdapter:
+    """A cached Pydantic adapter for any shape the bus admits.
+
+    `TypeAdapter` is what makes a dataclass — an `Entity` is one — a `list[Model]`
+    or a `Model | None` validatable and schema-able without being a
+    `DataTransferObject`. Building one is expensive; the catalog asks per type,
+    not per call.
+    """
+    return TypeAdapter(annotation)
+
+
+def _is_model(annotation: Any) -> bool:
+    return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+
+
+def field_annotations(dto_type: Any) -> dict[str, Any]:
+    """`{field: annotation}` for a DataTransferObject or a dataclass Command."""
+    if _is_model(dto_type):
+        return {name: field.annotation for name, field in dto_type.model_fields.items()}
+    if dataclasses.is_dataclass(dto_type):
+        return {field.name: field.type for field in dataclasses.fields(dto_type)}
+    return {}
+
+
+def json_schema_for(annotation: Any) -> dict[str, Any]:
+    """JSON Schema for a DTO, a dataclass, `list[...]`, a union — or a fallback.
+
+    A type Pydantic cannot describe (an arbitrary object on an `Any` field, a
+    forward reference that never resolved) becomes a bare object rather than an
+    exception: the catalog still publishes the method, it just cannot promise
+    the shape.
+    """
+    if annotation is None:
+        return {"type": "object"}
     try:
-        return dto_type.model_json_schema()
+        if _is_model(annotation):
+            return annotation.model_json_schema()
+        return adapter(annotation).json_schema()
     except Exception:
-        return {"type": "object", "title": dto_type.__name__}
+        title = getattr(annotation, "__name__", None)
+        return {"type": "object", "title": title} if title else {"type": "object"}
 
 
-def is_binary_free(schema: dict[str, Any], dto_type: type[DataTransferObject]) -> bool:
+def dto_json_schema(dto_type: Any) -> dict[str, Any]:
+    """The input schema of one Command. Same rules as `json_schema_for`."""
+    return json_schema_for(dto_type)
+
+
+def is_binary_free(schema: dict[str, Any], dto_type: Any) -> bool:
     """Decide whether an already-built DTO schema can travel as JSON into a gateway.
 
     1. Fail if the schema tree contains binary formats.
@@ -74,18 +119,15 @@ def is_binary_free(schema: dict[str, Any], dto_type: type[DataTransferObject]) -
     if _schema_has_binary(schema):
         return False
     return not any(
-        _is_binary_annotation(field.annotation) for field in dto_type.model_fields.values()
+        _is_binary_annotation(annotation)
+        for annotation in field_annotations(dto_type).values()
     )
 
 
-def dto_is_json_serializable(dto_type: type[DataTransferObject]) -> bool:
+def dto_is_json_serializable(dto_type: Any) -> bool:
     """Decide whether a DTO can travel as JSON into a gateway.
 
-    Builds the schema itself — Catalog.build_scalar_feature_and_app_services()
-    reuses an already-built one via is_binary_free(), to avoid computing it twice.
+    Builds the schema itself — Catalog.get_scalar_use_cases() reuses an
+    already-built one via is_binary_free(), to avoid computing it twice.
     """
-    try:
-        schema = dto_type.model_json_schema()
-    except Exception:
-        return False
-    return is_binary_free(schema, dto_type)
+    return is_binary_free(dto_json_schema(dto_type), dto_type)

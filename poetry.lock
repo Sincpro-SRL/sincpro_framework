@@ -1602,6 +1602,38 @@ typing-extensions = ">=4.12,<5.0"
 protobuf = ["grpcio-tools (>=1.83.0)"]
 
 [[package]]
+name = "grpcio-health-checking"
+version = "1.83.0"
+description = "Standard Health Checking Service for gRPC"
+optional = false
+python-versions = ">=3.10"
+groups = ["main", "dev"]
+files = [
+    {file = "grpcio_health_checking-1.83.0-py3-none-any.whl", hash = "sha256:7d8b47a5bfbc699d4aee0fc7a27f5d0265eb23a6a64db5ac2d8b749a0f8a9911"},
+    {file = "grpcio_health_checking-1.83.0.tar.gz", hash = "sha256:ad6bc4d5a1103ad704d25ccd82def300dfa27996b185cab3e4cceeef2c6867d4"},
+]
+
+[package.dependencies]
+grpcio = ">=1.83.0"
+protobuf = ">=7.35.1,<8.0.0"
+
+[[package]]
+name = "grpcio-reflection"
+version = "1.83.0"
+description = "Standard Protobuf Reflection Service for gRPC"
+optional = false
+python-versions = ">=3.10"
+groups = ["main", "dev"]
+files = [
+    {file = "grpcio_reflection-1.83.0-py3-none-any.whl", hash = "sha256:9d4151f68f18a85aa5b0eff5d493ad13f9421f96c8d9c01c840b353dc979be93"},
+    {file = "grpcio_reflection-1.83.0.tar.gz", hash = "sha256:6a2a30a462ac2c3c6d149734a8fe655fa7617c17fa2cda9949006f3bf07f5b3e"},
+]
+
+[package.dependencies]
+grpcio = ">=1.83.0"
+protobuf = ">=7.35.1,<8.0.0"
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 description = "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1"
@@ -5335,6 +5367,7 @@ files = [
 
 [extras]
 duckdb = ["duckdb-engine", "sqlalchemy"]
+grpc = ["grpcio", "grpcio-health-checking", "grpcio-reflection", "protobuf"]
 mcp = ["fastmcp"]
 opentelemetry = ["opentelemetry-api", "opentelemetry-exporter-otlp-proto-grpc", "opentelemetry-exporter-otlp-proto-http", "opentelemetry-sdk"]
 rpc = ["starlette", "uvicorn"]
@@ -5344,4 +5377,4 @@ sqlalchemy = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "407d56277420e187482bcc2757c79b0eecd8f72b5c385e9ec850a94294f676bc"
+content-hash = "117fe4280413d4667d82129ecb0e4e867a8183ac31f9cf52b968cc2c205d8e6e"
