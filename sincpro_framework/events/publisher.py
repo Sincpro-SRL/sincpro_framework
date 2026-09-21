@@ -21,6 +21,21 @@ from sincpro_framework.events.queue import Queue
 Response = TypeVar("Response")
 
 
+def _one_answer(queue: Queue, event: DomainEvent, answers: Any) -> Any:
+    """The single answer a typed publish promised, or the reason there is none."""
+    if not isinstance(answers, list):
+        raise ContractViolation(
+            f"{type(queue).__name__} cannot answer in the same call; "
+            "publish(event) without a return type"
+        )
+    if len(answers) != 1:
+        raise ContractViolation(
+            f"{event.name} was answered by {len(answers)} subscribers; a typed publish "
+            "needs exactly one"
+        )
+    return answers[0]
+
+
 def refuse_orders(event: Any) -> None:
     """Refuses anything that is not a fact, by name rather than by what it lacks.
 
@@ -36,19 +51,20 @@ def refuse_orders(event: Any) -> None:
         )
 
 
-def _one_answer(queue: Queue, event: DomainEvent, answers: Any) -> Any:
-    """The single answer a typed publish promised, or the reason there is none."""
-    if not isinstance(answers, list):
-        raise ContractViolation(
-            f"{type(queue).__name__} cannot answer in the same call; "
-            "publish(event) without a return type"
-        )
-    if len(answers) != 1:
-        raise ContractViolation(
-            f"{event.name} was answered by {len(answers)} subscribers; a typed publish "
-            "needs exactly one"
-        )
-    return answers[0]
+class AsyncPublisher:
+
+    def __init__(self, queue: Queue) -> None:
+        self.queue = queue
+
+    @overload
+    async def publish(self, event: DomainEvent) -> None: ...
+
+    @overload
+    async def publish(self, event: DomainEvent, return_type: type[Response]) -> Response: ...
+
+    async def publish(self, event: DomainEvent, return_type: Any = None) -> Any:
+        answers = await self.queue.aput(event)
+        return None if return_type is None else _one_answer(self.queue, event, answers)
 
 
 class Publisher:
@@ -79,19 +95,3 @@ class Publisher:
     def get_async_publisher(self) -> "AsyncPublisher":
         """The same publisher for an `async def` caller."""
         return AsyncPublisher(self.queue)
-
-
-class AsyncPublisher:
-
-    def __init__(self, queue: Queue) -> None:
-        self.queue = queue
-
-    @overload
-    async def publish(self, event: DomainEvent) -> None: ...
-
-    @overload
-    async def publish(self, event: DomainEvent, return_type: type[Response]) -> Response: ...
-
-    async def publish(self, event: DomainEvent, return_type: Any = None) -> Any:
-        answers = await self.queue.aput(event)
-        return None if return_type is None else _one_answer(self.queue, event, answers)

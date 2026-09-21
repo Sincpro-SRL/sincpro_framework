@@ -30,7 +30,7 @@ a database starts — and `remove` here deletes, the way it does there; `archive
 """
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from typing import Any
+from typing import Any, overload
 
 from sincpro_framework.ddd.criteria import (
     Bucket,
@@ -52,6 +52,7 @@ from sincpro_framework.ddd.entity import ArchivableMixin, Entity, utc_now
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
+    EntityCollection,
     identity_name,
     identity_of,
     model_and_collection,
@@ -333,13 +334,13 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
             return sorts
         return sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
 
-    def get(
+    def get[T](
         self,
-        target: type,
+        target: type[T],
         identity: Any,
         for_update: bool = False,
         skip_locked: bool = False,
-    ) -> Any:
+    ) -> T | None:
         """One record by its identity, or `None`; an archived one answers `None` too."""
         refuse_locking(for_update)
         aggregate, _holder = model_and_collection(target)
@@ -347,6 +348,12 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
             return None
         return self._read(found)
+
+    @overload
+    def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...
+
+    @overload
+    def browse[T](self, target: type[T], ids: Sequence[Any]) -> EntityCollection[T]: ...
 
     def browse(self, target: type, ids: Sequence[Any]) -> Any:
         aggregate, holder = model_and_collection(target)
@@ -360,6 +367,24 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
                 meta=self.definition(aggregate),
             ),
         )
+
+    @overload
+    def search[C: EntityCollection](
+        self,
+        target: type[C],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+    ) -> C: ...
+
+    @overload
+    def search[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+    ) -> EntityCollection[T]: ...
 
     def search(
         self,
@@ -405,6 +430,16 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
             ),
         )
 
+    @overload
+    def fetch_all[C: EntityCollection](
+        self, target: type[C], criteria: Criteria | None = None
+    ) -> C: ...
+
+    @overload
+    def fetch_all[T](
+        self, target: type[T], criteria: Criteria | None = None
+    ) -> EntityCollection[T]: ...
+
     def fetch_all(self, target: type, criteria: Criteria | None = None) -> Any:
         """Every record the criteria matches, as one complete collection."""
         criteria = criteria or Criteria()
@@ -420,6 +455,16 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
                 meta=self.definition(aggregate) if criteria.meta else None,
             ),
         )
+
+    @overload
+    def stream[C: EntityCollection](
+        self, target: type[C], criteria: Criteria | None = None
+    ) -> Iterator[C]: ...
+
+    @overload
+    def stream[T](
+        self, target: type[T], criteria: Criteria | None = None
+    ) -> Iterator[EntityCollection[T]]: ...
 
     def stream(self, target: type, criteria: Criteria | None = None) -> Iterator[Any]:
         criteria = criteria or Criteria()
@@ -438,11 +483,33 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
     def exists(self, target: type, criteria: Criteria | None = None) -> bool:
         return self.count(target, criteria).value > 0
 
+    @overload
+    def first[T](
+        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+    ) -> T | None: ...
+
+    @overload
+    def first[T](self, target: type[T], criteria: Criteria | None = None) -> T | None: ...
+
     def first(self, target: type, criteria: Criteria | None = None) -> Any:
         return self.search(target, criteria).first()
 
+    @overload
+    def one[T](
+        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+    ) -> T: ...
+
+    @overload
+    def one[T](self, target: type[T], criteria: Criteria | None = None) -> T: ...
+
     def one(self, target: type, criteria: Criteria | None = None) -> Any:
         return self.fetch_all(target, criteria).ensure_one()
+
+    @overload
+    def get_by[T](self, target: type[EntityCollection[T]], **values: Any) -> T | None: ...
+
+    @overload
+    def get_by[T](self, target: type[T], **values: Any) -> T | None: ...
 
     def get_by(self, target: type, **values: Any) -> Any:
         """One record by a natural key: the values that identify it besides its id."""

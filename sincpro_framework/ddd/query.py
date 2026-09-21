@@ -41,13 +41,6 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
 
 
-def serialising() -> bool:
-    """Whether a paged answer is being written out right now. A relation attribute read
-    during that answers its default instead of resolving or refusing: the answer writes the
-    relations it resolved itself, from what the specification named."""
-    return _SERIALISING.get()
-
-
 @contextmanager
 def _writing_out() -> Iterator[None]:
     token = _SERIALISING.set(True)
@@ -85,6 +78,13 @@ def _shaped(value: Any, specification: Specification, definition: Meta) -> Any:
             inner = _shaped(inner, node.specification, field.definition)
         shaped[name] = inner
     return shaped
+
+
+def serialising() -> bool:
+    """Whether a paged answer is being written out right now. A relation attribute read
+    during that answers its default instead of resolving or refusing: the answer writes the
+    relations it resolved itself, from what the specification named."""
+    return _SERIALISING.get()
 
 
 def _record(

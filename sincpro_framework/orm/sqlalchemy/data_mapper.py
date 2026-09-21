@@ -26,6 +26,7 @@ from sqlalchemy import Column, DateTime, Integer, MetaData, Table, Text, event
 from sqlalchemy.orm import object_session, registry
 from sqlalchemy.types import TypeEngine
 
+from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.model_meta import (
@@ -169,42 +170,74 @@ class Relation(DeclaredRelation):
         self,
         kind: str,
         related: type,
-        identified_by: str,
+        identified_by: str = "",
         resolver: Resolver | None = None,
         through: Table | None = None,
         related_key: str | None = None,
+        scope: Criteria | None = None,
+        parent_field: str | None = None,
+        related_field: str | None = None,
     ) -> None:
-        super().__init__(kind, related, identified_by, resolver)
+        super().__init__(
+            kind,
+            related,
+            identified_by,
+            resolver,
+            scope=scope,
+            parent_field=parent_field,
+            related_field=related_field,
+        )
         self.through = through
         self.related_key = related_key
 
     @classmethod
-    def foreign_key(cls, related: type, identified_by: str) -> "Relation":
+    def foreign_key(
+        cls,
+        related: type,
+        identified_by: str = "",
+        scope: Criteria | None = None,
+        parent_field: str | None = None,
+        related_field: str | None = None,
+    ) -> "Relation":
         """Same database: a column on one side holds the other side's identity."""
-        return cls("foreign_key", related, identified_by)
+        return cls(
+            "foreign_key",
+            related,
+            identified_by,
+            scope=scope,
+            parent_field=parent_field,
+            related_field=related_field,
+        )
 
     @classmethod
     def many_to_many(
-        cls, related: type, through: Table, this_key: str, related_key: str
+        cls,
+        related: type,
+        through: Table,
+        this_key: str,
+        related_key: str,
+        scope: Criteria | None = None,
     ) -> "Relation":
         """Same database: the pairs live in `through`, `this_key` pointing here and
         `related_key` pointing at the related aggregate."""
         return cls(
-            "many_to_many", related, this_key, through=through, related_key=related_key
+            "many_to_many",
+            related,
+            this_key,
+            through=through,
+            related_key=related_key,
+            scope=scope,
         )
 
     @classmethod
-    def id_list(cls, related: type, identified_by: str) -> "Relation":
+    def id_list(
+        cls, related: type, identified_by: str, scope: Criteria | None = None
+    ) -> "Relation":
         """Same database, no foreign key: this aggregate holds a list of the related ids."""
-        return cls("id_list", related, identified_by)
+        return cls("id_list", related, identified_by, scope=scope)
 
 
 RELATIONS: dict[type, dict[str, DeclaredRelation]] = {}
-
-
-def relations_of(aggregate: type) -> dict[str, DeclaredRelation]:
-    """What was declared for this aggregate, by relation name; empty when nothing was."""
-    return RELATIONS.get(aggregate, {})
 
 
 class RelatedAttribute:
@@ -288,46 +321,6 @@ def _default_of(aggregate: type, name: str) -> Callable[[], Any]:
             if declared.name == name:
                 return _dataclass_default(declared) or (lambda: None)
     return lambda: None
-
-
-def map_aggregates(
-    mapper_registry: registry,
-    tables: dict[type, Table],
-    properties: dict[type, dict[str, Any]] | None = None,
-    relations: dict[type, dict[str, DeclaredRelation]] | None = None,
-) -> None:
-    """Maps each class to its table, once, switching on the version check for an `Entity`, and
-    installs the relations on the classes: the declared ones, then the ones the foreign keys
-    already say.
-
-        in      registry, {Note: note_table, Dataset: dataset_table}
-        out     both mapped; calling it again changes nothing
-
-    `properties` is per class and is what `map_imperatively` takes: how to map an attribute
-    onto a column with another name, say `{"id": dataset_table.c.dataset_id}` for a table
-    that predates the `Entity` convention.
-
-    """
-    already = {mapper.class_ for mapper in mapper_registry.mappers}
-    for entity, table in tables.items():
-        if entity in already:
-            continue
-
-        options: dict[str, Any] = {}
-        if properties and entity in properties:
-            options["properties"] = properties[entity]
-        if issubclass(entity, Entity) and "version" in table.c:
-            options["version_id_col"] = table.c.version
-
-        mapper = mapper_registry.map_imperatively(entity, table, **options)
-        event.listen(mapper, "load", _with_transient_defaults(entity, table))
-
-    for aggregate, declared in (relations or {}).items():
-        _install(aggregate, declared)
-    # Every mapped class, not only this call's: a foreign key between a class mapped earlier
-    # and one mapped now is a relation on both, and both are seen on the second call.
-    for mapper in mapper_registry.mappers:
-        _install(mapper.class_, _inferred_foreign_keys(mapper_registry, mapper.class_))
 
 
 def _with_transient_defaults(aggregate: type, table: Table) -> Callable[[Any, Any], None]:
@@ -423,3 +416,50 @@ def _inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[s
         if len(candidates) == 1:
             inferred[name] = Relation.foreign_key(related, identified_by=candidates[0])
     return inferred
+
+
+def relations_of(aggregate: type) -> dict[str, DeclaredRelation]:
+    """What was declared for this aggregate, by relation name; empty when nothing was."""
+    return RELATIONS.get(aggregate, {})
+
+
+def map_aggregates(
+    mapper_registry: registry,
+    tables: dict[type, Table],
+    properties: dict[type, dict[str, Any]] | None = None,
+    relations: dict[type, dict[str, DeclaredRelation]] | None = None,
+) -> None:
+    """Maps each class to its table, once, switching on the version check for an `Entity`, and
+    installs the relations on the classes: the declared ones, then the ones the foreign keys
+    already say.
+
+        in      registry, {Note: note_table, Dataset: dataset_table}
+        out     both mapped; calling it again changes nothing
+
+    `properties` is per class and is what `map_imperatively` takes: how to map an attribute
+    onto a column with another name, say `{"id": dataset_table.c.dataset_id}` for a table
+    that predates the `Entity` convention.
+
+    `relations` is what the tables cannot say on their own — a kind that needs a bus, a
+    function or a scope. Whatever is declared here wins over what a foreign key infers.
+    """
+    already = {mapper.class_ for mapper in mapper_registry.mappers}
+    for entity, table in tables.items():
+        if entity in already:
+            continue
+
+        options: dict[str, Any] = {}
+        if properties and entity in properties:
+            options["properties"] = properties[entity]
+        if issubclass(entity, Entity) and "version" in table.c:
+            options["version_id_col"] = table.c.version
+
+        mapper = mapper_registry.map_imperatively(entity, table, **options)
+        event.listen(mapper, "load", _with_transient_defaults(entity, table))
+
+    for aggregate, declared in (relations or {}).items():
+        _install(aggregate, declared)
+    # Every mapped class, not only this call's: a foreign key between a class mapped earlier
+    # and one mapped now is a relation on both, and both are seen on the second call.
+    for mapper in mapper_registry.mappers:
+        _install(mapper.class_, _inferred_foreign_keys(mapper_registry, mapper.class_))

@@ -130,80 +130,6 @@ def _import_to_distribution() -> Mapping[str, list[str]]:
     return _distributions
 
 
-def _installed_distribution_of(module_name: str) -> tuple[str, str]:
-    """``(distribution, version)`` of a module, by the ``_`` → ``-`` convention.
-
-    Costs ~0.7ms, against ~200ms for the full mapping below, and covers every
-    Sincpro package: ``sincpro_siat_soap`` ships as ``sincpro-siat-soap``.
-    """
-    top = (module_name or "").split(".")[0]
-    if not top:
-        return "", ""
-    for candidate in (top.replace("_", "-"), top):
-        version = installed_version(candidate)
-        if version:
-            return candidate, version
-    return "", ""
-
-
-def caller_module() -> str:
-    """Module of the first frame outside the framework — whoever built the bus.
-
-    Must be read while that frame is still on the stack (at ``UseFramework``
-    construction). Resolved later, from a request, the stack belongs to the host
-    application and this would name Odoo instead of the library.
-    """
-    try:
-        for frame_info in inspect.stack(0)[1:]:
-            module = inspect.getmodule(frame_info.frame)
-            if module is None or not module.__name__:
-                continue
-            name = module.__name__
-            if name == "sincpro_framework" or name.startswith("sincpro_framework."):
-                continue
-            return name
-    except Exception:
-        pass
-    return ""
-
-
-def _from_caller_library(module_name: str) -> tuple[str, str]:
-    """The installed library that created the bus. The library case."""
-    return _installed_distribution_of(module_name)
-
-
-def _from_deployment() -> tuple[str, str]:
-    """``APP_RELEASE``, the Sincpro standard on services. The service case.
-
-    Taken verbatim: it always ships with its version, so there is nothing to
-    split — and nothing to mangle on a release that is not ``name:version``.
-    ``OTEL_SERVICE_NAME`` only names the deployment when ``APP_RELEASE`` is absent.
-    """
-    release = (settings.app_release or "").strip()
-    if release:
-        return release, ""
-    return (settings.otel_service_name or "").strip(), ""
-
-
-def _from_distribution_scan(module_name: str) -> tuple[str, str]:
-    """A distribution whose import name differs from its package name.
-
-    ``packages_distributions()`` costs ~200ms and does not cache on its own, so
-    this runs only when neither the naming convention nor the deployment knew.
-    """
-    top = (module_name or "").split(".")[0]
-    if not top:
-        return "", ""
-    try:
-        distributions = _import_to_distribution().get(top) or []
-    except Exception:
-        return "", ""
-    for artifact in distributions:
-        if _ships_the_imported(artifact, top):
-            return artifact, installed_version(artifact)
-    return "", ""
-
-
 def _ships_the_imported(artifact: str, top: str) -> bool:
     """Whether the ``top`` package Python actually imports is the one this distribution
     installed, and not a namesake.
@@ -227,6 +153,80 @@ def _ships_the_imported(artifact: str, top: str) -> bool:
         return imported.resolve() == installed.resolve()
     except Exception:
         return True
+
+
+def _from_deployment() -> tuple[str, str]:
+    """``APP_RELEASE``, the Sincpro standard on services. The service case.
+
+    Taken verbatim: it always ships with its version, so there is nothing to
+    split — and nothing to mangle on a release that is not ``name:version``.
+    ``OTEL_SERVICE_NAME`` only names the deployment when ``APP_RELEASE`` is absent.
+    """
+    release = (settings.app_release or "").strip()
+    if release:
+        return release, ""
+    return (settings.otel_service_name or "").strip(), ""
+
+
+def caller_module() -> str:
+    """Module of the first frame outside the framework — whoever built the bus.
+
+    Must be read while that frame is still on the stack (at ``UseFramework``
+    construction). Resolved later, from a request, the stack belongs to the host
+    application and this would name Odoo instead of the library.
+    """
+    try:
+        for frame_info in inspect.stack(0)[1:]:
+            module = inspect.getmodule(frame_info.frame)
+            if module is None or not module.__name__:
+                continue
+            name = module.__name__
+            if name == "sincpro_framework" or name.startswith("sincpro_framework."):
+                continue
+            return name
+    except Exception:
+        pass
+    return ""
+
+
+def _installed_distribution_of(module_name: str) -> tuple[str, str]:
+    """``(distribution, version)`` of a module, by the ``_`` → ``-`` convention.
+
+    Costs ~0.7ms, against ~200ms for the full mapping below, and covers every
+    Sincpro package: ``sincpro_siat_soap`` ships as ``sincpro-siat-soap``.
+    """
+    top = (module_name or "").split(".")[0]
+    if not top:
+        return "", ""
+    for candidate in (top.replace("_", "-"), top):
+        version = installed_version(candidate)
+        if version:
+            return candidate, version
+    return "", ""
+
+
+def _from_distribution_scan(module_name: str) -> tuple[str, str]:
+    """A distribution whose import name differs from its package name.
+
+    ``packages_distributions()`` costs ~200ms and does not cache on its own, so
+    this runs only when neither the naming convention nor the deployment knew.
+    """
+    top = (module_name or "").split(".")[0]
+    if not top:
+        return "", ""
+    try:
+        distributions = _import_to_distribution().get(top) or []
+    except Exception:
+        return "", ""
+    for artifact in distributions:
+        if _ships_the_imported(artifact, top):
+            return artifact, installed_version(artifact)
+    return "", ""
+
+
+def _from_caller_library(module_name: str) -> tuple[str, str]:
+    """The installed library that created the bus. The library case."""
+    return _installed_distribution_of(module_name)
 
 
 def _identity_sources(module_name: str) -> Iterator[tuple[str, str]]:

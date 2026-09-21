@@ -1184,6 +1184,14 @@ class Repository(BaseRepository):
         with self._session() as session:
             return session.scalar(statement) is not None
 
+    @overload
+    def first[T](
+        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+    ) -> T | None: ...
+
+    @overload
+    def first[T](self, target: type[T], criteria: Criteria | None = None) -> T | None: ...
+
     def first(self, target: type, criteria: Criteria | None = None) -> Any:
         """The first record the criteria's order puts in front, or `None`.
 
@@ -1194,6 +1202,14 @@ class Repository(BaseRepository):
         return self.search(
             target, criteria.model_copy(update={"count": CountMode.NONE, "meta": False})
         ).first()
+
+    @overload
+    def one[T](
+        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+    ) -> T: ...
+
+    @overload
+    def one[T](self, target: type[T], criteria: Criteria | None = None) -> T: ...
 
     def one(self, target: type, criteria: Criteria | None = None) -> Any:
         """The single record this criteria matches, refusing zero and refusing two.
@@ -1215,6 +1231,12 @@ class Repository(BaseRepository):
                 }
             ),
         ).ensure_one()
+
+    @overload
+    def get_by[T](self, target: type[EntityCollection[T]], **values: Any) -> T | None: ...
+
+    @overload
+    def get_by[T](self, target: type[T], **values: Any) -> T | None: ...
 
     def get_by(self, target: type, **values: Any) -> Any:
         """One record by a natural key: the values that identify it besides its id.

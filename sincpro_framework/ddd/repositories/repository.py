@@ -37,7 +37,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from contextvars import ContextVar
 from copy import copy
 from threading import Lock
-from typing import Any
+from typing import Any, overload
 
 from sincpro_framework.ddd.criteria import Bucket, Criteria
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -395,13 +395,13 @@ class Repository(ABC):
             )
 
     @abstractmethod
-    def get(
+    def get[T](
         self,
-        target: type,
+        target: type[T],
         identity: Any,
         for_update: bool = False,
         skip_locked: bool = False,
-    ) -> Any | None:
+    ) -> T | None:
         """One aggregate by its identity, or `None`.
 
         `for_update` claims the row until the unit of work around it ends, and `skip_locked`
@@ -410,6 +410,24 @@ class Repository(ABC):
         `for_update=True`, and a store that swallowed the word would let that Feature pass its
         tests and lose the race in production.
         """
+
+    @overload
+    def search[C: EntityCollection](
+        self,
+        target: type[C],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+    ) -> C: ...
+
+    @overload
+    def search[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+    ) -> EntityCollection[T]: ...
 
     @abstractmethod
     def search(
@@ -454,28 +472,76 @@ class Repository(ABC):
     # it called eighteen — so a third store could satisfy this class and break every Feature,
     # and a type checker would have said nothing either time.
 
+    @overload
+    def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...
+
+    @overload
+    def browse[T](self, target: type[T], ids: Sequence[Any]) -> EntityCollection[T]: ...
+
     @abstractmethod
     def browse(self, target: type, ids: Sequence[Any]) -> Any:
         """The aggregates with these ids, as one collection — the ids that are not there are
         simply absent, which is what makes this the answer to a list of references."""
+
+    @overload
+    def fetch_all[C: EntityCollection](
+        self, target: type[C], criteria: Criteria | None = None
+    ) -> C: ...
+
+    @overload
+    def fetch_all[T](
+        self, target: type[T], criteria: Criteria | None = None
+    ) -> EntityCollection[T]: ...
 
     @abstractmethod
     def fetch_all(self, target: type, criteria: Criteria | None = None) -> Any:
         """Every aggregate the criteria matches, as one complete collection: the reading that
         does not page, for a result somebody already knows is small."""
 
+    @overload
+    def stream[C: EntityCollection](
+        self, target: type[C], criteria: Criteria | None = None
+    ) -> Iterator[C]: ...
+
+    @overload
+    def stream[T](
+        self, target: type[T], criteria: Criteria | None = None
+    ) -> Iterator[EntityCollection[T]]: ...
+
     @abstractmethod
     def stream(self, target: type, criteria: Criteria | None = None) -> Iterator[Any]:
         """The same aggregates one at a time, for a result too large to hold at once."""
+
+    @overload
+    def first[T](
+        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+    ) -> T | None: ...
+
+    @overload
+    def first[T](self, target: type[T], criteria: Criteria | None = None) -> T | None: ...
 
     @abstractmethod
     def first(self, target: type, criteria: Criteria | None = None) -> Any:
         """The first aggregate the criteria matches, or `None`."""
 
+    @overload
+    def one[T](
+        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+    ) -> T: ...
+
+    @overload
+    def one[T](self, target: type[T], criteria: Criteria | None = None) -> T: ...
+
     @abstractmethod
     def one(self, target: type, criteria: Criteria | None = None) -> Any:
         """The single aggregate the criteria matches; more than one is an error, because the
         caller said there would be one."""
+
+    @overload
+    def get_by[T](self, target: type[EntityCollection[T]], **values: Any) -> T | None: ...
+
+    @overload
+    def get_by[T](self, target: type[T], **values: Any) -> T | None: ...
 
     @abstractmethod
     def get_by(self, target: type, **values: Any) -> Any:

@@ -526,6 +526,7 @@ def test_what_it_hands_back_is_the_record_it_holds_and_not_a_copy():
 
     first = repository.get(Account, account.id)
     second = repository.get(Account, account.id)
+    assert first is not None and second is not None
 
     assert first is second
     first.balance = 50
@@ -541,8 +542,11 @@ def test_a_stale_write_is_refused_the_way_the_engine_refuses_it():
     account = Account(code="1010", balance=0)
     repository.save(account)
 
-    mine = copy.deepcopy(repository.get(Account, account.id))
-    theirs = copy.deepcopy(repository.get(Account, account.id))
+    fetched_mine = repository.get(Account, account.id)
+    fetched_theirs = repository.get(Account, account.id)
+    assert fetched_mine is not None and fetched_theirs is not None
+    mine = copy.deepcopy(fetched_mine)
+    theirs = copy.deepcopy(fetched_theirs)
 
     theirs.balance = 10
     repository.save(theirs)  # moves the version

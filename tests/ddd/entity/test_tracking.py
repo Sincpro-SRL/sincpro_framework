@@ -45,15 +45,18 @@ def test_one_event_carries_every_field_that_changed():
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.title = "after"
     loaded.body = "new"
     repository.save(loaded)
 
     events = loaded.pull_events()
     assert len(events) == 1
-    assert events[0].name == "ddd.entity.v1.updated"
-    assert events[0].changes == {"title": ("before", "after"), "body": ("old", "new")}
-    assert events[0].entity_type == "Note" and events[0].entity_id == note.id
+    event = events[0]
+    assert isinstance(event, EntityUpdated)
+    assert event.name == "ddd.entity.v1.updated"
+    assert event.changes == {"title": ("before", "after"), "body": ("old", "new")}
+    assert event.entity_type == "Note" and event.entity_id == note.id
 
 
 def test_excluded_field_never_shows_up_in_the_diff():
@@ -62,6 +65,7 @@ def test_excluded_field_never_shows_up_in_the_diff():
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.render_cache = "rebuilt"
     repository.save(loaded)
 
@@ -74,6 +78,7 @@ def test_setting_a_field_back_to_its_original_value_nets_to_no_change():
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.title = "draft"
     loaded.title = "original"
     repository.save(loaded)
@@ -87,6 +92,7 @@ def test_a_second_save_in_the_same_object_compares_against_the_last_persisted_st
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.title = "v2"
     repository.save(loaded)
     first_round = loaded.pull_events()
@@ -95,8 +101,11 @@ def test_a_second_save_in_the_same_object_compares_against_the_last_persisted_st
     repository.save(loaded)
     second_round = loaded.pull_events()
 
-    assert first_round[0].changes == {"title": ("v1", "v2")}
-    assert second_round[0].changes == {"title": ("v2", "v3")}
+    first_event, second_event = first_round[0], second_round[0]
+    assert isinstance(first_event, EntityUpdated)
+    assert isinstance(second_event, EntityUpdated)
+    assert first_event.changes == {"title": ("v1", "v2")}
+    assert second_event.changes == {"title": ("v2", "v3")}
 
 
 def test_a_domain_specific_event_class_can_be_declared_instead():
@@ -114,6 +123,7 @@ def test_a_domain_specific_event_class_can_be_declared_instead():
     repository.save(thing)
 
     loaded = repository.get(Renamed, thing.id)
+    assert loaded is not None
     loaded.title = "b"
     repository.save(loaded)
 
@@ -148,7 +158,9 @@ def test_search_snapshots_every_row_it_hands_back():
     found.title = "b"
     repository.save(found)
 
-    assert found.pull_events()[0].changes == {"title": ("a", "b")}
+    event = found.pull_events()[0]
+    assert isinstance(event, EntityUpdated)
+    assert event.changes == {"title": ("a", "b")}
 
 
 def test_archived_at_is_reserved_like_any_entity_bookkeeping_field():
@@ -167,11 +179,12 @@ def test_the_explicit_mode_hands_the_event_back_to_whoever_asked():
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.title = "after"
 
     event = loaded.record_changes()
 
-    assert event is not None
+    assert isinstance(event, EntityUpdated)
     assert event.changes == {"title": ("before", "after")}
     assert event.entity_type == "Note" and event.entity_id == note.id
 
@@ -182,6 +195,7 @@ def test_the_explicit_mode_answers_nothing_when_nothing_changed():
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
 
     assert loaded.record_changes() is None
 
@@ -192,6 +206,7 @@ def test_what_comes_back_is_the_same_event_pull_events_hands_over():
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.title = "after"
     event = loaded.record_changes()
 
@@ -205,6 +220,7 @@ def test_recording_by_hand_moves_the_baseline_so_the_next_save_is_clean():
     repository.save(note)
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.title = "after"
     loaded.record_changes()
     loaded.pull_events()
@@ -246,6 +262,7 @@ def test_changing_a_relation_produces_no_event_but_changing_a_value_object_does(
     repository.save(order)
 
     loaded = repository.get(Order, order.id)
+    assert loaded is not None
     loaded.lines = [Line(amount=10)]
     loaded.owner = Line(amount=20)
 
@@ -254,7 +271,7 @@ def test_changing_a_relation_produces_no_event_but_changing_a_value_object_does(
     loaded.size = Size(width=9)
     event = loaded.record_changes()
 
-    assert event is not None
+    assert isinstance(event, EntityUpdated)
     assert event.changes == {"size": (Size(width=1), Size(width=9))}
 
 
@@ -264,6 +281,7 @@ def test_a_value_object_in_an_event_survives_the_framework_serializer():
     repository.save(order)
 
     loaded = repository.get(Order, order.id)
+    assert loaded is not None
     loaded.size = Size(width=9)
     event = loaded.record_changes()
 
@@ -281,6 +299,7 @@ def test_the_consolidated_event_joins_the_chain_of_whatever_caused_it():
     incoming = EntityUpdated(changes={}, correlation_id="req-42")
 
     loaded = repository.get(Note, note.id)
+    assert loaded is not None
     loaded.title = "after"
     repository.save(loaded)
 
@@ -308,10 +327,13 @@ def _updated(**moved: object) -> EntityUpdated:
     invoice = Invoice(total=0)
     repository.save(invoice)
     loaded = repository.get(Invoice, invoice.id)
+    assert loaded is not None
     for name, value in moved.items():
         setattr(loaded, name, value)
     repository.save(loaded)
-    return loaded.pull_events()[0]
+    event = loaded.pull_events()[0]
+    assert isinstance(event, EntityUpdated)
+    return event
 
 
 def test_the_event_says_in_both_languages_that_it_was_updated():
@@ -348,6 +370,7 @@ def test_a_subclass_can_say_it_in_its_own_words():
     invoice = Settling(total=0)
     repository.save(invoice)
     loaded = repository.get(Settling, invoice.id)
+    assert loaded is not None
     loaded.total = 900
     repository.save(loaded)
 
@@ -414,10 +437,14 @@ def test_a_field_a_rule_computes_is_in_the_same_event_with_the_value_it_ended_on
     said: list[dict] = []
     for heading in ("Second Title", "Third"):
         loaded = repository.get(Article, article.id)
+        assert loaded is not None
         loaded.title = heading
         repository.save(loaded)
-        said.append(loaded.pull_events()[0].changes)
+        event = loaded.pull_events()[0]
+        assert isinstance(event, EntityUpdated)
+        said.append(event.changes)
         stored = repository.get(Article, article.id)
+        assert stored is not None
         # what the event claims the field became is what the store actually holds
         assert said[-1]["slug"][1] == stored.slug
 

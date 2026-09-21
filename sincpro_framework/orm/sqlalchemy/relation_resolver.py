@@ -24,13 +24,15 @@ from sqlalchemy.orm import Session, aliased
 from sincpro_framework.ddd.criteria import Criteria, Specification
 from sincpro_framework.ddd.entity.entity_collection import Count, Dropped, EntityCollection
 from sincpro_framework.ddd.entity.model_meta import FieldType, Meta
-from sincpro_framework.ddd.entity.relations import Groups
+from sincpro_framework.ddd.entity.relations import (
+    Groups,
+)
 from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
-from sincpro_framework.ddd.entity.relations import cut, limit_of, resolve_elsewhere
+from sincpro_framework.ddd.entity.relations import cut, key_pair, limit_of, resolve_elsewhere
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.orm.sqlalchemy import sql_translator as sql
 from sincpro_framework.orm.sqlalchemy.data_mapper import RESOLVED, Relation, relations_of
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.model_introspection import describe, is_mapped
 
 PARENT_KEY = "_sincpro_parent_key"
 POSITION, TOTAL = sql.POSITION, sql.TOTAL
@@ -107,38 +109,47 @@ def _nested(
 def _by_foreign_key_on_related(
     repository, session, meta, parents, relation, node, limit, dropped
 ):
-    """A to-many: the related aggregate holds this one's identity."""
+    """A to-many: the related aggregate holds the field this one is matched by."""
     related = relation.related
+    here, there = key_pair(meta.identity, relation, many=True)
     clause, sorts, definition, node_dropped = repository.prepare(related, node)
     dropped.extend(node_dropped)
-    ids = [getattr(parent, meta.identity) for parent in parents]
-    key = getattr(related, relation.identified_by)
+    ids = [getattr(parent, here) for parent in parents]
+    key = getattr(related, there)
     rows = _partitioned(
         session, key, related, select(related).where(key.in_(ids)), clause, sorts, limit
     )
-    groups = _grouped(rows, node, sorts, limit)
+    grouped = _grouped(rows, node, sorts, limit)
+    # `_grouped` keys by the value the two sides share; a caller reads a parent's records by
+    # its identity, and the two only coincide when the match is the identity-anchored one.
+    groups = {
+        getattr(parent, meta.identity): found
+        for parent in parents
+        if (found := grouped.get(getattr(parent, here))) is not None
+    }
     return groups, _nested(
         repository, session, related, [r[0] for r in rows], node, definition, dropped
     )
 
 
 def _by_foreign_key_here(repository, session, meta, parents, relation, node, dropped):
-    """A to-one: this aggregate holds the related one's identity."""
+    """A to-one: this aggregate holds the field the related one is matched by."""
     related = relation.related
+    here, there = key_pair(meta.identity, relation, many=False)
     clause, sorts, definition, node_dropped = repository.prepare(related, node)
     dropped.extend(node_dropped)
-    wanted = {getattr(parent, relation.identified_by) for parent in parents} - {None}
+    wanted = {getattr(parent, here) for parent in parents} - {None}
     if not wanted:
         return {}, definition.only(node.specification)
-    identity = getattr(related, definition.identity)
-    statement = select(related).where(identity.in_(wanted))
+    matched = getattr(related, there)
+    statement = select(related).where(matched.in_(wanted))
     if clause is not None:
         statement = statement.where(clause)
-    found = {getattr(r, definition.identity): r for r in session.scalars(statement)}
+    found = {getattr(r, there): r for r in session.scalars(statement)}
     groups = {
         getattr(parent, meta.identity): EntityCollection(items=(found[key],))
         for parent in parents
-        if (key := getattr(parent, relation.identified_by)) in found
+        if (key := getattr(parent, here)) in found
     }
     return groups, _nested(
         repository, session, related, list(found.values()), node, definition, dropped
@@ -199,6 +210,32 @@ def _by_id_list(repository, session, meta, parents, relation, node, limit, dropp
     return groups, _nested(repository, session, related, fetched, node, definition, dropped)
 
 
+def _scoped(declared: DeclaredRelation, node: Criteria) -> Criteria:
+    """What the relation declared, with what the caller asked merged on top.
+
+    The declared scope is the base, so its conditions accumulate with AND and a node can only
+    narrow the relation further, never widen it. A scope the related aggregate cannot answer is
+    refused rather than dropped: a filter that quietly disappears widens the answer, which is
+    the one thing a scope exists to prevent — `Repository.narrowed` refuses on the same grounds.
+
+    **The check only reaches what this process can see.** A relation may resolve a type mapped
+    nowhere here — what a function resolver answers, or an aggregate another service owns — and
+    there is no definition to check the scope against. It travels as declared, and honouring it
+    is that provider's business.
+    """
+    if declared.scope is None:
+        return node
+    if declared.scope.expression is not None and is_mapped(declared.related):
+        kept, unknown = describe(declared.related).accept(declared.scope.expression)
+        if unknown or kept is None:
+            raise ContractViolation(
+                f"{declared.related.__name__} cannot answer the scope its relation declares "
+                f"({', '.join(one.field for one in unknown) or 'nothing survived'}); "
+                "resolving it wide is not an option"
+            )
+    return declared.scope.merged_with(node)
+
+
 def _resolve(
     repository: Any,
     session: Session,
@@ -210,7 +247,9 @@ def _resolve(
     dropped: list[Dropped],
     whole: bool,
 ) -> tuple[Groups, Meta | None]:
-    """One node, by the kind the data mapper declared."""
+    """One node, by the kind the data mapper declared, over what the relation itself declares:
+    the scope is merged here and nowhere else, so every kind honours it alike."""
+    node = _scoped(declared, node)
     limit = limit_of(node, whole)
     if declared.kind == "resolver":
         return resolve_elsewhere(meta, parents, declared, node, many, limit)
@@ -295,7 +334,12 @@ def resolve_relations(
                 value = found.first() if found else None
             record.__dict__.setdefault(RESOLVED, {})[name] = value
         fields[name] = field.model_copy(
-            update={"identified_by": declared.identified_by, "definition": definition}
+            update={
+                "identified_by": declared.identified_by,
+                "parent_field": declared.parent_field,
+                "related_field": declared.related_field,
+                "definition": definition,
+            }
         )
     return meta.model_copy(update={"fields": fields})
 
