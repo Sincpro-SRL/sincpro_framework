@@ -30,6 +30,22 @@ except ImportError:
 PROXY_PROVIDERS = ("ProxyTracerProvider", "NoOpTracerProvider")
 
 
+def _root_sampler(ratio: float) -> Any:
+    """How much to record when this bus starts a trace nobody else decided on.
+
+    Wrapped in ``ParentBased`` by the caller: a decision already taken upstream —
+    by Odoo, by an incoming traceparent — always wins over this ratio, so a
+    sampled request is never truncated halfway through.
+    """
+    from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ALWAYS_ON, TraceIdRatioBased
+
+    if ratio >= 1.0:
+        return ALWAYS_ON
+    if ratio <= 0.0:
+        return ALWAYS_OFF
+    return TraceIdRatioBased(ratio)
+
+
 def current_otel_context() -> dict:
     """``trace_id``/``span_id`` of the active span, for the logger to pick up."""
     try:
@@ -56,20 +72,26 @@ def host_provider_is_real() -> bool:
         return False
 
 
-def _root_sampler(ratio: float) -> Any:
-    """How much to record when this bus starts a trace nobody else decided on.
+def tracer_for(bus: str, instrumentation_name: str = "sincpro_framework") -> Any:
+    """The tracer whose spans carry this bus's ``service.name``.
 
-    Wrapped in ``ParentBased`` by the caller: a decision already taken upstream —
-    by Odoo, by an incoming traceparent — always wins over this ratio, so a
-    sampled request is never truncated halfway through.
+    Falls back to the global provider so a bus can ride on the host's OTel setup.
+    A provider this framework built for a *different* bus is never borrowed: a span
+    exported under another service's name is worse than no span at all.
     """
-    from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ALWAYS_ON, TraceIdRatioBased
+    try:
+        provider = registry.tracer_provider(bus)
+        if provider is not None:
+            return provider.get_tracer(instrumentation_name)
 
-    if ratio >= 1.0:
-        return ALWAYS_ON
-    if ratio <= 0.0:
-        return ALWAYS_OFF
-    return TraceIdRatioBased(ratio)
+        from opentelemetry import trace
+
+        host = trace.get_tracer_provider()
+        if registry.owns_tracer_provider(host):
+            return None
+        return host.get_tracer(instrumentation_name)
+    except Exception:
+        return None
 
 
 def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
@@ -95,6 +117,16 @@ def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
     return provider
 
 
+def _bind_log_ids(logger: LoggerProxy | None) -> None:
+    """Teach the logger to stamp the active span's ids on every line. Never raises."""
+    if logger is None:
+        return
+    try:
+        logger.set_getter_context(current_otel_context)
+    except Exception:
+        return
+
+
 def install_process_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
     """Own the global provider with the **process** identity, never a bus's.
 
@@ -116,16 +148,6 @@ def install_process_provider(identity: ObservabilityIdentity, endpoint: str) -> 
         registry.register_process_identity(process_identity)
     trace.set_tracer_provider(provider)
     return provider
-
-
-def _bind_log_ids(logger: LoggerProxy | None) -> None:
-    """Teach the logger to stamp the active span's ids on every line. Never raises."""
-    if logger is None:
-        return
-    try:
-        logger.set_getter_context(current_otel_context)
-    except Exception:
-        return
 
 
 def setup(
@@ -163,25 +185,3 @@ def setup(
         return on("init")
     except Exception as exc:
         return failure_of(exc)
-
-
-def tracer_for(bus: str, instrumentation_name: str = "sincpro_framework") -> Any:
-    """The tracer whose spans carry this bus's ``service.name``.
-
-    Falls back to the global provider so a bus can ride on the host's OTel setup.
-    A provider this framework built for a *different* bus is never borrowed: a span
-    exported under another service's name is worse than no span at all.
-    """
-    try:
-        provider = registry.tracer_provider(bus)
-        if provider is not None:
-            return provider.get_tracer(instrumentation_name)
-
-        from opentelemetry import trace
-
-        host = trace.get_tracer_provider()
-        if registry.owns_tracer_provider(host):
-            return None
-        return host.get_tracer(instrumentation_name)
-    except Exception:
-        return None

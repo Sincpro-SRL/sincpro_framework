@@ -9,9 +9,20 @@ records: a function over HTTP, a command on another context's bus, a lookup in a
 that was serialised somewhere. The persistence adapter adds the kinds only a database has, a
 foreign key, a table in between, a list of ids, on top of this same declaration.
 
-`identified_by` is the column that identifies the relation: on the related aggregate for a
-to-many (`Dataset.runs` by `Run.dataset_id`), on this one for a to-one (`Run.dataset` by
-`Run.dataset_id`). The cardinality is the annotation's: `runs: list[Run]` is a to-many.
+**How the two sides are matched, said in full or said short.**
+
+    parent_field="customer_id", related_field="id"      both sides named, read as written
+    identified_by="dataset_id"                          the short form, anchored to an identity
+
+Naming both sides is the one that never has to be guessed, and the one to reach for on a bus,
+where the other side is a context away and nobody can look the column up. `identified_by` is
+the short form for the common case, and what it means depends on the cardinality: the column
+on the related aggregate for a to-many (`Dataset.runs` by `Run.dataset_id`), the column on this
+one for a to-one (`Run.dataset` by `Run.dataset_id`), matched in both cases against the other
+side's identity. `key_pair` below is the single place that expands it.
+
+The cardinality itself is always the annotation's: `runs: list[Run]` is a to-many, and it
+decides whether a collection or a single record comes back — nothing else.
 """
 
 from collections.abc import Sequence
@@ -70,30 +81,102 @@ class Relation:
 
     `kind` names how it is brought. The two kinds here need no database; a persistence adapter
     subclasses this and adds its own.
+
+    **`scope` is what the relation says before anybody asks.** A `Criteria` like any other: the
+    filter every reading of this relation starts from, and the order and page it falls back to.
+    What a caller names in the specification merges on top and can only narrow it further —
+    conditions accumulate with AND, so a node adds to the declared filter and can never drop
+    it. It is `Repository.narrowed`'s scope at the scale of one relation, and the same rule
+    holds there: a scope the related aggregate cannot answer is refused, never dropped.
+
+        Relation.bus(ProjectEvent, project, CommandSearchEvents, identified_by="entity_id",
+                     scope=Criteria(where=Condition(field="entity_type", value="project")))
+
+    Declaring the order there is what makes «newest first» a property of the relation instead
+    of something every caller repeats: `scope=Criteria(order=parse_order("-created_at"))`.
     """
 
     def __init__(
         self,
         kind: str,
         related: type,
-        identified_by: str,
+        identified_by: str = "",
         resolver: Resolver | None = None,
+        scope: Criteria | None = None,
+        parent_field: str | None = None,
+        related_field: str | None = None,
     ) -> None:
         self.kind = kind
         self.related = related
         self.identified_by = identified_by
         self.resolver = resolver
+        self.scope = scope
+        self.parent_field = parent_field
+        self.related_field = related_field
 
     @classmethod
-    def resolved_by(cls, related: type, identified_by: str, resolver: Resolver) -> "Relation":
+    def resolved_by(
+        cls,
+        related: type,
+        identified_by: str = "",
+        resolver: Resolver | None = None,
+        scope: Criteria | None = None,
+        parent_field: str | None = None,
+        related_field: str | None = None,
+    ) -> "Relation":
         """Whatever the provider wrote: `resolver(keys, criteria)` answers the related records."""
-        return cls("resolver", related, identified_by, resolver)
+        return cls(
+            "resolver",
+            related,
+            identified_by,
+            resolver,
+            scope=scope,
+            parent_field=parent_field,
+            related_field=related_field,
+        )
 
     @classmethod
-    def bus(cls, related: type, bus: Any, command: type, identified_by: str) -> "Relation":
+    def bus(
+        cls,
+        related: type,
+        bus: Any,
+        command: type,
+        identified_by: str = "",
+        scope: Criteria | None = None,
+        parent_field: str | None = None,
+        related_field: str | None = None,
+    ) -> "Relation":
         """Another bounded context: the command carries the reflected criteria, the bus answers
         a paged response whose records are the related aggregate."""
-        return cls("resolver", related, identified_by, BusResolver(bus, command))
+        return cls(
+            "resolver",
+            related,
+            identified_by,
+            BusResolver(bus, command),
+            scope=scope,
+            parent_field=parent_field,
+            related_field=related_field,
+        )
+
+
+def key_pair(identity: str, relation: Relation, many: bool) -> tuple[str, str]:
+    """The two fields a relation matches on: the one read here, and the one read there.
+
+        out     ("id", "entity_id")            Invoice.events, a to-many
+        out     ("customer_id", "id")          Invoice.customer, a to-one
+
+    A relation that named both sides is taken at its word. One that only said `identified_by`
+    gets the convention it has always had, and this is the single place that knows it: this
+    aggregate's identity against that field for a to-many, that field against the related
+    aggregate's own identity for a to-one. Naming both is how a declaration stops depending on
+    the cardinality to be read correctly — and the definition publishes the pair either way,
+    so a client never has to know the convention at all.
+    """
+    if relation.parent_field is not None and relation.related_field is not None:
+        return relation.parent_field, relation.related_field
+    if many:
+        return identity, relation.identified_by
+    return relation.identified_by, identity_name(relation.related)
 
 
 def limit_of(node: Criteria, whole: bool) -> int | None:
@@ -125,12 +208,14 @@ def cut(
 def _keys_for(
     meta: Meta, parents: Sequence[Any], relation: Relation, many: bool
 ) -> tuple[str, list[Any]]:
-    """The field the other side filters by, and the keys to send: the parents' identities for
-    a to-many, the related identities this side holds for a to-one."""
-    if many:
-        return relation.identified_by, [getattr(p, meta.identity) for p in parents]
-    held = {getattr(p, relation.identified_by) for p in parents} - {None}
-    return identity_name(relation.related), sorted(held, key=str)
+    """The field the other side filters by, and the keys to send."""
+    here, there = key_pair(meta.identity, relation, many)
+    held = {getattr(parent, here) for parent in parents} - {None}
+    if relation.parent_field is None and many:
+        # The identity-anchored to-many keeps sending one key per parent, in order: they are
+        # unique already, and the count of what was asked for is read off this list.
+        return there, [getattr(parent, here) for parent in parents]
+    return there, sorted(held, key=str)
 
 
 def _reflected(node: Criteria, field: str, ids: list[Any], limit: int | None) -> Criteria:
@@ -196,18 +281,18 @@ def _regrouped(
     side that ignored the partition and filled the whole page could have starved a parent, so
     then nothing is claimed exact unless the whole page came back short.
     """
+    here, there = key_pair(meta.identity, relation, many)
     by_key: dict[Any, list[Any]] = {}
     for record in records:
-        key = getattr(record, relation.identified_by) if many else identity_of(record)
+        key = (
+            getattr(record, there, None)
+            if relation.parent_field or many
+            else identity_of(record)
+        )
         by_key.setdefault(key, []).append(record)
     groups: Groups = {}
     for parent in parents:
-        key = (
-            getattr(parent, meta.identity)
-            if many
-            else getattr(parent, relation.identified_by)
-        )
-        items = by_key.get(key, [])
+        items = by_key.get(getattr(parent, here), [])
         if items or many:
             exact = (
                 (limit is None or len(items) < limit)

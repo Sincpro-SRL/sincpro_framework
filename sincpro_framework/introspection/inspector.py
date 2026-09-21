@@ -23,6 +23,14 @@ NOT_BUILT = "Framework must be built before introspection"
 type DtoName = str
 
 
+def _own_docstring(cls: type) -> str | None:
+    """Docstring declared on this class, not inherited from a base class."""
+    raw = cls.__dict__.get("__doc__")
+    if raw and str(raw).strip():
+        return inspect.cleandoc(raw)
+    return None
+
+
 class FeatureOrAppServiceMetadata(DataTransferObject):
     """One Feature or ApplicationService registered on the bus."""
 
@@ -41,12 +49,10 @@ class DtoMetadata(DataTransferObject):
     description: str | None
 
 
-def _own_docstring(cls: type) -> str | None:
-    """Docstring declared on this class, not inherited from a base class."""
-    raw = cls.__dict__.get("__doc__")
-    if raw and str(raw).strip():
-        return inspect.cleandoc(raw)
-    return None
+def built_bus(framework_instance: UseFramework) -> FrameworkBus:
+    if not framework_instance.was_initialized or framework_instance.bus is None:
+        raise ValueError(NOT_BUILT)
+    return framework_instance.bus
 
 
 def _resolve_description(feature_or_app_type: type, dto_type: type, dto_name: DtoName) -> str:
@@ -67,12 +73,6 @@ def _resolve_description(feature_or_app_type: type, dto_type: type, dto_name: Dt
         or _own_docstring(dto_type)
         or dto_name
     )
-
-
-def built_bus(framework_instance: UseFramework) -> FrameworkBus:
-    if not framework_instance.was_initialized or framework_instance.bus is None:
-        raise ValueError(NOT_BUILT)
-    return framework_instance.bus
 
 
 def _describe_all(

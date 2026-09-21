@@ -1,26 +1,6 @@
 from typing import Any, Callable, List, Protocol
 
 
-class Middleware(Protocol):
-    """Simple middleware protocol - just a callable that processes DTOs"""
-
-    def __call__(self, dto: Any) -> Any:
-        """
-        Process the DTO and return the (possibly modified) DTO.
-        Can raise exceptions if validation fails or requirements aren't met.
-
-        Args:
-            dto: The data transfer object to process
-
-        Returns:
-            The processed DTO (may be the same object or a modified version)
-
-        Raises:
-            Any exception if processing fails or validation doesn't pass
-        """
-        ...
-
-
 def _refuse_a_type_that_lost_fields(processed: Any, original: type) -> None:
     """Refuses a middleware that answered with something the original type is not.
 
@@ -42,6 +22,26 @@ def _refuse_a_type_that_lost_fields(processed: Any, original: type) -> None:
             f"{', '.join(sorted(missing))} — a middleware may enrich {original.__name__} into "
             "something wider, but what it answers has to still be one"
         )
+
+
+class Middleware(Protocol):
+    """Simple middleware protocol - just a callable that processes DTOs"""
+
+    def __call__(self, dto: Any) -> Any:
+        """
+        Process the DTO and return the (possibly modified) DTO.
+        Can raise exceptions if validation fails or requirements aren't met.
+
+        Args:
+            dto: The data transfer object to process
+
+        Returns:
+            The processed DTO (may be the same object or a modified version)
+
+        Raises:
+            Any exception if processing fails or validation doesn't pass
+        """
+        ...
 
 
 class MiddlewarePipeline:

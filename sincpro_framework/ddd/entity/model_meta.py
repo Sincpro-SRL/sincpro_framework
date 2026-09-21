@@ -184,6 +184,16 @@ def annotations_of(declared: type) -> dict[str, Any]:
         ) from error
 
 
+def enum_of(annotation: Any) -> type[Enum] | None:
+    """The enum an annotation names, if it names one.
+
+    in  Stage | None   →  out  Stage
+    in  str            →  out  None
+    """
+    base = without_optional(annotation)
+    return base if isinstance(base, type) and issubclass(base, Enum) else None
+
+
 def members_of(annotation: Any) -> list[Any]:
     """The values an enum field may hold, in declaration order; empty when it is not one."""
     members = enum_of(annotation)
@@ -203,61 +213,6 @@ def field_translations(declared: type, key: str) -> dict[str, Translated]:
         for one in dataclasses.fields(declared)
         if key in one.metadata
     }
-
-
-def _worded(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
-    """`fields`, each carrying the label/help its own dataclass field declared — a class that
-    declared none gets the defaults `FieldMeta` already has."""
-    labels, helps = field_translations(declared, "label"), field_translations(
-        declared, "help"
-    )
-    if not labels and not helps:
-        return fields
-    return {
-        name: meta.model_copy(
-            update={"label": labels.get(name, {}), "help": helps.get(name, {})}
-        )
-        for name, meta in fields.items()
-    }
-
-
-def describe_class(declared: type, identity: str = "") -> "Meta":
-    """A definition read off the annotations alone, with no table behind it.
-
-        in      Shape(width: int, height: int, unit: str = "cm")
-        out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
-
-    What a value object is described by, and what a repository with no database reads to
-    validate a criteria. `identity` is empty for a value object, which has none, and the
-    aggregate's own identity field when a record has one.
-    """
-    annotations = annotations_of(declared)
-    translator = getattr(declared, "translations", None)
-    name: Translated = (
-        cast(Translated, translator())
-        if callable(translator)
-        else {"default": declared.__name__}
-    )
-    fields = _worded(
-        {
-            field_name: FieldMeta.for_column(
-                logical_type(annotation),
-                annotation != without_optional(annotation),
-                members_of(annotation),
-            )
-            for field_name, annotation in annotations.items()
-            if related_class(annotation)[0] is None
-            or logical_type(annotation) is not FieldType.UNKNOWN
-        },
-        declared,
-    )
-    return Meta(
-        aggregate=declared.__name__,
-        identity=identity,
-        default_order=f"-{identity}" if identity else "",
-        fields=fields,
-        name=name,
-    )
 
 
 def related_class(annotation: Any) -> tuple[type | None, bool]:
@@ -305,16 +260,6 @@ def logical_type(annotation: Any) -> FieldType:
     return LOGICAL_TYPES.get(base, FieldType.UNKNOWN)
 
 
-def enum_of(annotation: Any) -> type[Enum] | None:
-    """The enum an annotation names, if it names one.
-
-    in  Stage | None   →  out  Stage
-    in  str            →  out  None
-    """
-    base = without_optional(annotation)
-    return base if isinstance(base, type) and issubclass(base, Enum) else None
-
-
 class FieldMeta(DataTransferObject):
     type: FieldType
     nullable: bool
@@ -345,6 +290,18 @@ class FieldMeta(DataTransferObject):
     column for a `many2one` (`Run.dataset` by `Run.dataset_id`), the related aggregate's for a
     `one2many` (`Dataset.runs` by `Run.dataset_id`), Odoo's `relation_field`. A client filters
     by it without expanding anything. `None` when nothing said how the relation resolves."""
+    parent_field: str | None = None
+    """The field read on THIS side to match the relation, with `related_field` the one read on
+    the other. The pair says outright what `identified_by` leaves to a convention that depends
+    on the cardinality, and a relation matched on two fields that are neither an identity can
+    only be read here."""
+    related_field: str | None = None
+    """The field read on the OTHER side — see `parent_field`.
+
+    A relation's own scope is deliberately absent from all of this, and not by omission: the
+    scope is not a filter laid over the relation, it is part of what the relation means.
+    `Invoice.lines` is this invoice's lines as the mapper defines them, and that a voided one
+    is not among them is a fact of the model rather than a caveat to disclose."""
     definition: "Meta | None" = None
     """The shape of the other side: always for an embedded value, and for a relational field
     once it was expanded, cut by the same mask."""
@@ -372,6 +329,8 @@ class FieldMeta(DataTransferObject):
         relation: str,
         identified_by: str | None,
         nullable: bool = False,
+        parent_field: str | None = None,
+        related_field: str | None = None,
     ) -> "FieldMeta":
         """A field that points at another aggregate. Nothing to filter or order by directly:
         the key it hangs on is a scalar field of its own, and that one takes the operators."""
@@ -383,6 +342,8 @@ class FieldMeta(DataTransferObject):
             many=logical is not FieldType.MANY2ONE,
             relation=relation,
             identified_by=identified_by,
+            parent_field=parent_field,
+            related_field=related_field,
         )
 
     @classmethod
@@ -675,6 +636,61 @@ class Meta(DataTransferObject):
             return None, []
         dropped: list[Dropped] = []
         return self._pruned(expression, dropped), dropped
+
+
+def _worded(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
+    """`fields`, each carrying the label/help its own dataclass field declared — a class that
+    declared none gets the defaults `FieldMeta` already has."""
+    labels, helps = field_translations(declared, "label"), field_translations(
+        declared, "help"
+    )
+    if not labels and not helps:
+        return fields
+    return {
+        name: meta.model_copy(
+            update={"label": labels.get(name, {}), "help": helps.get(name, {})}
+        )
+        for name, meta in fields.items()
+    }
+
+
+def describe_class(declared: type, identity: str = "") -> "Meta":
+    """A definition read off the annotations alone, with no table behind it.
+
+        in      Shape(width: int, height: int, unit: str = "cm")
+        out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
+
+    What a value object is described by, and what a repository with no database reads to
+    validate a criteria. `identity` is empty for a value object, which has none, and the
+    aggregate's own identity field when a record has one.
+    """
+    annotations = annotations_of(declared)
+    translator = getattr(declared, "translations", None)
+    name: Translated = (
+        cast(Translated, translator())
+        if callable(translator)
+        else {"default": declared.__name__}
+    )
+    fields = _worded(
+        {
+            field_name: FieldMeta.for_column(
+                logical_type(annotation),
+                annotation != without_optional(annotation),
+                members_of(annotation),
+            )
+            for field_name, annotation in annotations.items()
+            if related_class(annotation)[0] is None
+            or logical_type(annotation) is not FieldType.UNKNOWN
+        },
+        declared,
+    )
+    return Meta(
+        aggregate=declared.__name__,
+        identity=identity,
+        default_order=f"-{identity}" if identity else "",
+        fields=fields,
+        name=name,
+    )
 
 
 FieldMeta.model_rebuild()

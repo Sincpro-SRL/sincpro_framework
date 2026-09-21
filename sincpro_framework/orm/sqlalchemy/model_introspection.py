@@ -28,25 +28,9 @@ from sincpro_framework.ddd.entity.model_meta import (
     logical_type,
     related_class,
 )
+from sincpro_framework.ddd.entity.relations import key_pair
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
-
-
-def _is_shape(candidate: Any) -> bool:
-    """A dataclass or a pydantic model that is not mapped: a value object with a shape."""
-    if not isinstance(candidate, type) or is_mapped(candidate):
-        return False
-    return is_dataclass(candidate) or hasattr(candidate, "model_fields")
-
-
-def describe_shape(value_object: type) -> Meta:
-    """The definition of a value object embedded in a row: its annotations, no table, and no
-    identity of its own, so nothing survives a mask on its own account.
-
-    in      Shape(width: int, height: int, unit: str = "cm")
-    out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
-    """
-    return describe_class(value_object)
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:
@@ -78,6 +62,23 @@ def is_mapped(candidate: Any) -> TypeGuard[type]:
         return True
     except NoInspectionAvailable:
         return False
+
+
+def describe_shape(value_object: type) -> Meta:
+    """The definition of a value object embedded in a row: its annotations, no table, and no
+    identity of its own, so nothing survives a mask on its own account.
+
+    in      Shape(width: int, height: int, unit: str = "cm")
+    out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
+    """
+    return describe_class(value_object)
+
+
+def _is_shape(candidate: Any) -> bool:
+    """A dataclass or a pydantic model that is not mapped: a value object with a shape."""
+    if not isinstance(candidate, type) or is_mapped(candidate):
+        return False
+    return is_dataclass(candidate) or hasattr(candidate, "model_fields")
 
 
 @cache
@@ -142,10 +143,22 @@ def describe(entity: type) -> Meta:
         related_name = relation.related.__name__ if relation is not None else related.__name__  # type: ignore[union-attr]
         logical = _relational_type(relation.kind if relation else "", many)
         identified_by = relation.identified_by if relation is not None else None
+        # The pair is published expanded, whichever way it was declared, so a client reads how
+        # the two sides meet without knowing the cardinality convention `identified_by` obeys.
+        here, there = (
+            key_pair(identity, relation, many) if relation is not None else (None, None)
+        )
         nullable = logical is FieldType.MANY2ONE
-        if nullable and identified_by is not None and identified_by in mapper.columns:
-            nullable = bool(mapper.columns[identified_by].nullable)
-        fields[name] = FieldMeta.for_relation(logical, related_name, identified_by, nullable)
+        if nullable and here is not None and here in mapper.columns:
+            nullable = bool(mapper.columns[here].nullable)
+        fields[name] = FieldMeta.for_relation(
+            logical,
+            related_name,
+            identified_by,
+            nullable,
+            parent_field=here,
+            related_field=there,
+        )
 
     labels, helps = field_translations(entity, "label"), field_translations(entity, "help")
     if labels or helps:

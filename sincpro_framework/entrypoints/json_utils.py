@@ -16,13 +16,6 @@ from sincpro_framework.entrypoints.const import BINARY_JSON_FORMATS, BINARY_TYPE
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
-def dto_json_schema(dto_type: type[DataTransferObject]) -> dict[str, Any]:
-    try:
-        return dto_type.model_json_schema()
-    except Exception:
-        return {"type": "object", "title": dto_type.__name__}
-
-
 def _is_binary_annotation(annotation: Any) -> bool:
     if annotation in BINARY_TYPES:
         return True
@@ -62,6 +55,13 @@ def _schema_has_binary(schema: dict[str, Any], seen: set[int] | None = None) -> 
             if isinstance(item, dict) and _schema_has_binary(item, seen):
                 return True
     return False
+
+
+def dto_json_schema(dto_type: type[DataTransferObject]) -> dict[str, Any]:
+    try:
+        return dto_type.model_json_schema()
+    except Exception:
+        return {"type": "object", "title": dto_type.__name__}
 
 
 def is_binary_free(schema: dict[str, Any], dto_type: type[DataTransferObject]) -> bool:

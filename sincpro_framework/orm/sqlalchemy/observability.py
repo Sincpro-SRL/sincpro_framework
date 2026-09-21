@@ -43,6 +43,19 @@ UNKNOWN_OPERATION = "SQL"
 ANONYMOUS = "%("
 
 
+def _elapsed_ms(connection: Any) -> float:
+    started = connection.info.get(STARTED_AT) if connection is not None else None
+    if not started:
+        return 0.0
+    return round((perf_counter() - started.pop()) * 1000, 2)
+
+
+def _error_status(error: BaseException) -> Any:
+    from opentelemetry.trace import Status, StatusCode
+
+    return Status(StatusCode.ERROR, type(error).__name__)
+
+
 def operation_of(statement: str) -> str:
     """The verb a statement opens with.
 
@@ -76,13 +89,6 @@ def table_of(context: Any) -> str:
     return "" if not isinstance(name, str) or ANONYMOUS in name else name
 
 
-def _elapsed_ms(connection: Any) -> float:
-    started = connection.info.get(STARTED_AT) if connection is not None else None
-    if not started:
-        return 0.0
-    return round((perf_counter() - started.pop()) * 1000, 2)
-
-
 def _close_span(connection: Any, error: BaseException | None = None) -> None:
     """Ends the newest open span on this connection, recording the failure when there is one."""
     spans = connection.info.get(OPEN_SPANS) if connection is not None else None
@@ -94,12 +100,6 @@ def _close_span(connection: Any, error: BaseException | None = None) -> None:
         span.record_exception(error)
         span.set_status(_error_status(error))
     span.end()
-
-
-def _error_status(error: BaseException) -> Any:
-    from opentelemetry.trace import Status, StatusCode
-
-    return Status(StatusCode.ERROR, type(error).__name__)
 
 
 def observe(engine: Engine, database: str, logger: LoggerProxy | None = None) -> None:
