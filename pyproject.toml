@@ -25,6 +25,10 @@ opentelemetry-exporter-otlp-proto-http = {version = ">=1.20", optional = true}
 sentry-sdk = {version = ">=2.0", optional = true}
 fastmcp = {version = ">=3.0,<4", optional = true}
 starlette = {version = ">=1.0", optional = true}
+grpcio = {version = ">=1.60", optional = true}
+grpcio-reflection = {version = ">=1.60", optional = true}
+grpcio-health-checking = {version = ">=1.60", optional = true}
+protobuf = {version = ">=4.25", optional = true}
 uvicorn = {version = ">=0.35", optional = true}
 sqlalchemy = {version = ">=2.0", optional = true}
 duckdb-engine = {version = "^0.17.0", optional = true}
@@ -39,6 +43,7 @@ opentelemetry = [
 sentry = ["sentry-sdk"]
 mcp = ["fastmcp"]
 rpc = ["starlette", "uvicorn"]
+grpc = ["grpcio", "grpcio-reflection", "grpcio-health-checking", "protobuf"]
 sqlalchemy = ["sqlalchemy"]
 duckdb = ["sqlalchemy", "duckdb-engine"]
 
@@ -60,6 +65,11 @@ opentelemetry-exporter-otlp-proto-grpc = ">=1.20"
 opentelemetry-exporter-otlp-proto-http = ">=1.20"
 sentry-sdk = ">=2.0"
 sqlalchemy = ">=2.0"
+starlette = ">=1.0"
+uvicorn = ">=0.35"
+grpcio = ">=1.60"
+grpcio-reflection = ">=1.60"
+grpcio-health-checking = ">=1.60"
 hypothesis = ">=6.100"
 psycopg = {version = ">=3.2", extras = ["binary"]}
 

@@ -18,6 +18,8 @@ import pytest
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
+    Grouping,
+    Level,
     Operator,
     Specification,
     parse_order,
@@ -208,6 +210,25 @@ def test_the_definition_publishes_both_sides_of_the_key(world: World):
     # Declared as a pair, published as it was written.
     taxed = meta.relations["taxed_lines"]
     assert (taxed.parent_field, taxed.related_field) == ("tax_code", "tax_code")
+
+
+def test_grouping_inside_a_relation_is_reported_rather_than_ignored(world: World):
+    """A node cannot carry a grouping of its own: that slot is how «so many per parent»
+    reaches the other side. It used to be dropped in silence, which is the one thing this
+    layer promises not to do — an ask it cannot honour is always said out loud."""
+    asked = Criteria(
+        specification=Specification(
+            {"events": Criteria(grouping=Grouping(group_by=(Level(field="said"),)))}
+        )
+    )
+
+    page = world.invoices.search(world.invoices_collection, asked)
+
+    assert [(one.field, one.reason) for one in page.dropped] == [
+        ("events", "not_groupable_in_a_relation")
+    ]
+    # And the relation still resolves, ungrouped: a dropped ask widens, it never breaks.
+    assert page.first().events
 
 
 def test_a_caller_may_narrow_a_scoped_relation_further(world: World):

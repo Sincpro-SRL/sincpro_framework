@@ -85,6 +85,7 @@ Now you are ready to explore more complex use cases! 🚀
 13. [Entrypoints: exposing the bus](#entrypoints-exposing-the-bus) — transport, not domain
     - [MCP tools (`entrypoint_mcp`)](#mcp-tools-entrypoint_mcp)
     - [JSON-RPC (`entrypoint_rpc`)](#json-rpc-entrypoint_rpc)
+    - [gRPC (`entrypoint_grpc`)](#grpc-entrypoint_grpc)
 14. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
 15. [Configuration or settings](#configuration-or-settings)
 16. [Variables](#variables)
@@ -312,6 +313,14 @@ See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
 - One process, several instances: `RpcGateway({"qr": qr, "cybersource": cybersource}).run()`.
 - Methods are `qr.features.CommandCreateQREconomico` / `siat.app_services.CommandGenerateCUFD`.
 - `context` on the JSON-RPC request is `framework.context` + optional `with_trace`. OpenRPC 1.4 discovery.
+
+### `entrypoint_grpc`
+
+See [docs/entrypoints/grpc.md](docs/entrypoints/grpc.md) for the full section.
+
+- Same catalog, gRPC wire: `GrpcGateway({"qr": qr}).run("0.0.0.0:50051")`.
+- Methods are `/qr.Features/CommandCreateQREconomico` — unary, `google.protobuf.Struct` in and out.
+- No `protoc` and no generated stubs: server reflection for discovery, `.write_proto_files()` when a Go/TS client wants the contract.
 
 ### Observability (tracing + errors)
 
@@ -689,6 +698,7 @@ maintainability.
 - **ApplicationServices**: Orchestrate multiple features for cohesive workflows.
 - **`entrypoint_mcp`**: Publish that catalog as MCP tools (`sincpro-framework[mcp]`).
 - **`entrypoint_rpc`**: Publish one or more instances as JSON-RPC 2.0 methods (`sincpro-framework[rpc]`).
+- **`entrypoint_grpc`**: Publish that same catalog as unary gRPC services (`sincpro-framework[grpc]`).
 
 This structured approach ensures high-quality, maintainable software that can adapt to evolving business needs. 🚀
 

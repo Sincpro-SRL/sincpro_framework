@@ -317,6 +317,11 @@ def resolve_relations(
         if declared is None:
             dropped.append(Dropped(field=name, reason="not_expandable"))
             continue
+        if node.grouping.asked:
+            # The slot is already spoken for: a node's `grouping` is how «so many per parent»
+            # travels to the other side, so a caller's own cannot ride there too. Said out loud
+            # rather than ignored — group the related aggregate on its own instead.
+            dropped.append(Dropped(field=name, reason="not_groupable_in_a_relation"))
 
         many = field.many
         groups, definition = _resolve(

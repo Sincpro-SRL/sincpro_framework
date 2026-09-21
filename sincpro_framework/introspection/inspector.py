@@ -9,6 +9,7 @@ own.
 
 import inspect
 from collections.abc import Mapping
+from typing import Any, get_args, get_origin, get_type_hints
 
 from sincpro_framework.bus import FrameworkBus
 from sincpro_framework.sincpro_abstractions import (
@@ -32,20 +33,34 @@ def _own_docstring(cls: type) -> str | None:
 
 
 class FeatureOrAppServiceMetadata(DataTransferObject):
-    """One Feature or ApplicationService registered on the bus."""
+    """One Feature or ApplicationService registered on the bus.
+
+    `dto` is a plain `type`, not `type[DataTransferObject]`: the bus's own
+    `TypeDTO` admits a dataclass, and introspection describes what is registered
+    rather than refusing it.
+
+    `response` is what `execute` declares it answers — a DTO, a dataclass, an
+    `Entity`, `list[...]`, or `None` when nothing is declared. It is an
+    annotation, not necessarily a class, so consumers schema it through
+    Pydantic rather than reading `__name__` off it.
+    """
 
     name: DtoName
     type: type
     instance: Feature | ApplicationService
-    dto: type[DataTransferObject]
+    dto: type
     description: str
+    response: Any | None = None
 
 
 class DtoMetadata(DataTransferObject):
-    """One DTO registered on the bus, as a Feature or ApplicationService input."""
+    """One DTO registered on the bus, as a Feature or ApplicationService input.
+
+    `type` is a plain `type` for the same reason `FeatureOrAppServiceMetadata.dto` is.
+    """
 
     name: DtoName
-    type: type[DataTransferObject]
+    type: type
     description: str | None
 
 
@@ -75,8 +90,38 @@ def _resolve_description(feature_or_app_type: type, dto_type: type, dto_name: Dt
     )
 
 
+def _resolve_response(feature_or_app_type: type) -> Any | None:
+    """What this Feature/ApplicationService says it answers.
+
+    The bus never stores it — `execute(dto, return_type)`'s `return_type` is a
+    typing hint for the caller, discarded at runtime — so it is read off the
+    declaration.
+
+    1. Prefer the execute method's own return annotation.
+    2. Else the second parameter of `Feature[Dto, Response, Ctx]`, for a class
+       that types the generic but not the method.
+    3. Final: None. An undeclared response publishes no result schema, instead of
+       a wrong one.
+    """
+    execute = feature_or_app_type.__dict__.get("execute")
+    if execute is not None:
+        try:
+            hints = get_type_hints(execute)
+        except Exception:
+            hints = {}
+        if "return" in hints:
+            return hints["return"]
+    for base in getattr(feature_or_app_type, "__orig_bases__", ()):
+        if get_origin(base) not in (Feature, ApplicationService):
+            continue
+        args = get_args(base)
+        if len(args) >= 2:
+            return args[1]
+    return None
+
+
 def _describe_all(
-    registry: Mapping[type[DataTransferObject], Feature | ApplicationService],
+    registry: Mapping[type, Feature | ApplicationService],
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     metadata: dict[DtoName, FeatureOrAppServiceMetadata] = {}
     for dto_type, instance in registry.items():
@@ -88,6 +133,7 @@ def _describe_all(
             instance=instance,
             dto=dto_type,
             description=_resolve_description(feature_or_app_type, dto_type, name),
+            response=_resolve_response(feature_or_app_type),
         )
     return metadata
 

@@ -6,14 +6,14 @@ wire host (MCP, JSON-RPC, tomorrow REST/CLI) can call a Feature/ApplicationServi
 with a plain Scalar instead of constructing the DTO itself.
 """
 
-import json
 from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel
+from pydantic_core import to_jsonable_python
 
+from sincpro_framework.entrypoints import json_utils
 from sincpro_framework.entrypoints.const import TRACE_KEYS, RunFn, Scalar
-from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
@@ -21,55 +21,57 @@ from sincpro_framework.use_bus import UseFramework
 def dump_scalar_result(result: Any) -> Scalar:
     """Turn a bus response into a JSON-safe Scalar.
 
-    Pydantic keeps arbitrary objects (a Zeep SOAP response on an ``Any`` field) in
-    the dump instead of raising, so the failure would otherwise surface inside the
+    The bus answers whatever `execute` returns: a DTO, a dataclass (an `Entity`
+    is one), a `list` of either, a dict, a scalar, or nothing. Pydantic's
+    serializer renders all of them, and `fallback` catches the leaf it cannot —
+    a Zeep SOAP response parked on an `Any` field — instead of raising inside the
     host, after the Feature already ran its side effect.
 
     1. None becomes {}.
-    2. A Pydantic model dumps in JSON mode; fall back to Python dump if that fails.
-    3. A dict passes through; any other value is wrapped as {result: value}.
-    4. Return the payload untouched when json.dumps accepts it.
-    5. Final: else stringify the offending leaves and warn naming the response.
+    2. Everything else is rendered in JSON mode, leaf by leaf.
+        2.1 A leaf Pydantic cannot render is stringified, and warned about naming
+            its own type — not the response's, which is rarely the culprit.
+    3. Final: a dict passes through; any other value is wrapped as {result: value}.
     """
     if result is None:
         return {}
-    if isinstance(result, BaseModel):
-        try:
-            dumped = result.model_dump(mode="json")
-        except Exception:
-            dumped = result.model_dump()
-        payload = dumped if isinstance(dumped, dict) else {"result": dumped}
-    elif isinstance(result, dict):
-        payload = result
-    else:
-        payload = {"result": result}
 
-    try:
-        json.dumps(payload)
-        return payload
-    except (TypeError, ValueError):
+    coerced: list[str] = []
+
+    def stringify(value: Any) -> str:
+        coerced.append(type(value).__name__)
+        return str(value)
+
+    payload = to_jsonable_python(result, fallback=stringify, serialize_unknown=True)
+    if coerced:
         logger.warning(
-            "Non-JSON value in [%s] response: coerced to string", type(result).__name__
+            "Non-JSON value in [%s] response: [%s] coerced to string",
+            type(result).__name__,
+            ", ".join(dict.fromkeys(coerced)),
         )
-        return json.loads(json.dumps(payload, default=str))
+    return payload if isinstance(payload, dict) else {"result": payload}
 
 
-def extract_executor_fn(
-    framework_instance: UseFramework, dto_type: type[DataTransferObject]
-) -> RunFn:
+def extract_executor_fn(framework_instance: UseFramework, dto_type: Any) -> RunFn:
     """Close over the DTO so a Scalar becomes a bus call.
 
     A factory, not a closure written inline in a loop: each entry needs its own
     `dto_type` bound at closure-creation time, not the loop variable's final value.
 
-    1. Validate the payload as the DTO (Value Objects run here).
+    1. Validate the payload as the DTO (Value Objects run here). A dataclass
+       Command validates through a TypeAdapter and raises the same
+       `ValidationError` the wires already map to an invalid-params status.
     2. Execute through UseFramework.
     3. Final: dump the response as a Scalar.
     """
+    validate = (
+        dto_type.model_validate
+        if isinstance(dto_type, type) and issubclass(dto_type, BaseModel)
+        else json_utils.adapter(dto_type).validate_python
+    )
 
     def run(payload: Scalar) -> Scalar:
-        result = framework_instance(dto_type.model_validate(payload))
-        return dump_scalar_result(result)
+        return dump_scalar_result(framework_instance(validate(payload)))
 
     return run
 
