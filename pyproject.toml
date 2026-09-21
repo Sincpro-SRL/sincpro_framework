@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sincpro-framework"
-version = "3.8.1"
+version = "3.9.0"
 description = "Sincpro framework to use DDD, Clean architecture, Hexagonal architecture"
 authors = ["Gutierrez Andres <andru1236@gmail.com>"]
 readme = "README.md"
