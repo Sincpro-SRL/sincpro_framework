@@ -17,6 +17,7 @@ import pytest
 ROOT = Path(__file__).parents[2]
 GUIDE = ROOT / "docs" / "persistence" / "guide.md"
 INTERCEPTORS = ROOT / "docs" / "core" / "interceptors.md"
+CRON = ROOT / "docs" / "cron" / "README.md"
 README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -39,7 +40,11 @@ def _failing_line(error: Exception, path: Path) -> int:
     return frames[-1].lineno or 0 if frames else 0
 
 
-@pytest.mark.parametrize("page", [GUIDE, INTERCEPTORS], ids=lambda page: page.name)
+@pytest.mark.parametrize(
+    "page",
+    [GUIDE, INTERCEPTORS, CRON],
+    ids=lambda page: page.parent.name + "/" + page.name,
+)
 def test_every_block_of_a_runnable_page_runs(page, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     blocks = PYTHON_BLOCK.findall(page.read_text())

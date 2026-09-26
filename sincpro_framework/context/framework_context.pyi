@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Dict, Mapping
+from typing import TYPE_CHECKING, Any, Dict, Literal, Mapping
 
 if TYPE_CHECKING:
     from ..use_bus import UseFramework
@@ -43,7 +43,7 @@ class FrameworkContext:
         """
         ...
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Literal[False]:
         """
         Exit the context manager and restore previous context.
 

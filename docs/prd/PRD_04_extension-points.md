@@ -1,6 +1,6 @@
 # PRD_04: Extension points — change a use case without touching it
 
-- **Status**: proposal
+- **Status**: phases 1 and 2 implemented — interceptors, `replaces=`, `introspection.describe()`
 - **Depends on**: nothing
 - **Unblocks**: PRD_06 (runtime definitions), addons
 - **Removes**: the middleware pipeline (`add_middleware`, `Middleware`)

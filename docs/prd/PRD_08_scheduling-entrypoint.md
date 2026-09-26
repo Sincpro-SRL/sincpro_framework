@@ -1,6 +1,6 @@
 # PRD_08: Scheduling — a clock is one more entrypoint
 
-- **Status**: proposal
+- **Status**: phase 1 implemented as `sincpro_framework.cron` — see `docs/cron/`. Differs from this spec: crons are classes on a `Crons` registry per bounded context that call the buses, not Commands scheduled on a bus (`bus.schedule` and `Dispatches` were dropped — a cron's `run` decides, `tick.once(key)` guards a step); two ports, a `Clock` (when to look) and `CronRuns` (the once-per-tick guard, an abstract class; the framework ships only `InMemoryRuns` — no table, no database: crons on several replicas implement it on their own storage), instead of one `PostgresClock`; `CronProcess` runs the orchestrator in a spawned child by default; `overlap` is `SKIP` / `ALLOW` (`QUEUE_ONE` not built). The sections below are the original proposal.
 - **Depends on**: nothing (PRD_06 for schedules defined as data)
 - **Research**: scratchpad `08_webhooks_scheduling_sandbox.md` §B
 

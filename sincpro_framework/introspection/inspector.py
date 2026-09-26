@@ -54,6 +54,8 @@ class FeatureOrAppServiceMetadata(DataTransferObject):
     response: Any | None = None
     interceptors: tuple[str, ...] = ()
     """What wraps it, outermost first, as `module.function`."""
+    replaces: tuple[str, ...] = ()
+    """The handlers it replaced, oldest first, as `module.Class` — empty for the core's own."""
 
 
 class DtoMetadata(DataTransferObject):
@@ -126,6 +128,7 @@ def _resolve_response(feature_or_app_type: type) -> Any | None:
 def _describe_all(
     registry: Mapping[type, Feature | ApplicationService],
     interceptors: Mapping[type, tuple[Interceptor, ...]],
+    replacements: Mapping[type, tuple[str, ...]],
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     metadata: dict[DtoName, FeatureOrAppServiceMetadata] = {}
     for dto_type, instance in registry.items():
@@ -139,6 +142,7 @@ def _describe_all(
             description=_resolve_description(feature_or_app_type, dto_type, name),
             response=_resolve_response(feature_or_app_type),
             interceptors=tuple(name_of(one) for one in interceptors.get(dto_type, ())),
+            replaces=replacements.get(dto_type, ()),
         )
     return metadata
 
@@ -146,7 +150,10 @@ def _describe_all(
 def features(framework_instance: UseFramework) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """Feature registry keyed by DTO name, described."""
     bus = built_bus(framework_instance)
-    return _describe_all(bus.feature_bus.feature_registry, bus.feature_bus.interceptors)
+    feature_bus = bus.feature_bus
+    return _describe_all(
+        feature_bus.feature_registry, feature_bus.interceptors, feature_bus.replacements
+    )
 
 
 def app_services(
@@ -154,8 +161,11 @@ def app_services(
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """ApplicationService registry keyed by DTO name, described."""
     bus = built_bus(framework_instance)
+    app_service_bus = bus.app_service_bus
     return _describe_all(
-        bus.app_service_bus.app_service_registry, bus.app_service_bus.interceptors
+        app_service_bus.app_service_registry,
+        app_service_bus.interceptors,
+        app_service_bus.replacements,
     )
 
 
@@ -166,3 +176,13 @@ def dtos(framework_instance: UseFramework) -> dict[DtoName, DtoMetadata]:
         name: DtoMetadata(name=name, type=dto_type, description=_own_docstring(dto_type))
         for name, dto_type in bus.dto_registry.items()
     }
+
+
+def describe(framework_instance: UseFramework, command: type) -> FeatureOrAppServiceMetadata:
+    """What answers `command` on this bus: the handler that runs, what it replaced, and the
+    interceptors around it."""
+    name = command.__name__
+    answered = {**features(framework_instance), **app_services(framework_instance)}
+    if name not in answered:
+        raise KeyError(f"nothing on '{framework_instance._logger_name}' answers {name}")
+    return answered[name]

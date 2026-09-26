@@ -1,5 +1,6 @@
 """Record an exception on a span. Never raises. Does not touch GlitchTip."""
 
+from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework.observability.failure import CodeLocation
@@ -20,3 +21,10 @@ def span_error(span: Any, error: BaseException, where: CodeLocation | None) -> N
             span.set_attribute("code.line.number", where.line)
     except Exception:
         return
+
+
+def span_attributes(span: Any, attributes: Mapping[str, str]) -> None:
+    if not (OTEL_AVAILABLE and span is not None):
+        return
+    for key, value in attributes.items():
+        span.set_attribute(key, value)

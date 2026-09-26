@@ -1,6 +1,5 @@
 import json
 import threading
-from functools import partial
 from typing import Any, Callable, Dict, Generic, Iterable, Mapping, Optional, Type, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
@@ -77,10 +76,6 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         )
         self._sp_container.logger_bus = self.logger  # type: ignore[assignment]
 
-        # Decorators
-        self.feature = partial(ioc.inject_feature_to_bus, self._sp_container)
-        self.app_service = partial(ioc.inject_app_service_to_bus, self._sp_container)
-
         # Registry for dynamic dep injection
         self.dynamic_dep_registry: Dict[str, Any] = dict()
         self._deps_locator = DependencyLocator(self.dynamic_dep_registry)
@@ -98,6 +93,34 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.was_initialized: bool = False
         self._build_lock = threading.RLock()
         self.bus: FrameworkBus | None = None
+
+    def _refuse_when_built(self, what: str) -> None:
+        if self.was_initialized:
+            raise BusAlreadyBuilt(
+                f"{what} registered late: '{self._logger_name}' is already built, so it would "
+                "never be used — register it before the first execution"
+            )
+
+    def feature(
+        self, dto: ioc.DTORegistration, replaces: type | None = None
+    ) -> Callable[[ioc.T], ioc.T]:
+        """Register the decorated class as the Feature that answers `dto` (or each DTO listed).
+
+            @billing.feature(CommandComputeTax, replaces=ComputeTax)
+
+        Context: `replaces` names the Feature registered now; that one is skipped from then on,
+        and the build log and introspection say who replaced it.
+        """
+        self._refuse_when_built(f"Feature for {ioc.names_of(dto)}")
+        return ioc.inject_feature_to_bus(self._sp_container, dto, replaces)
+
+    def app_service(
+        self, dto: ioc.DTORegistration, replaces: type | None = None
+    ) -> Callable[[ioc.T], ioc.T]:
+        """Register the decorated class as the ApplicationService that answers `dto`; with
+        `replaces`, instead of the one registered now."""
+        self._refuse_when_built(f"ApplicationService for {ioc.names_of(dto)}")
+        return ioc.inject_app_service_to_bus(self._sp_container, dto, replaces)
 
     def _context_for_logs(self) -> Dict[str, Any]:
         """The execution's context, as fields on every log line this bus writes."""
@@ -124,7 +147,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             for _, app_service in app_service_registry.items():
                 app_service.add_attributes(**self.dynamic_dep_registry)
 
-    def _add_interceptors_provided_by_user(self, bus: FrameworkBus) -> None:
+    def _assemble_handlers(self, bus: FrameworkBus) -> None:
         feature_bus, app_service_bus = bus.feature_bus, bus.app_service_bus
         answered = {*feature_bus.feature_registry, *app_service_bus.app_service_registry}
         for registration in self._interceptors:
@@ -134,6 +157,18 @@ class UseFramework(ContextMixin, Generic[TDeps]):
                         f"interceptor {registration.name} wraps {command.__name__}, which no "
                         f"Feature or ApplicationService on '{self._logger_name}' answers"
                     )
+        replacements = self._sp_container.replacements()
+        for command, replaced in replacements.items():
+            handler = (
+                feature_bus.feature_registry.get(command)
+                or app_service_bus.app_service_registry[command]
+            )
+            self.logger.info(
+                f"{command.__name__} is handled by {type(handler).__name__} "
+                f"(replaces {', '.join(name.rsplit('.', 1)[-1] for name in replaced)})"
+            )
+        feature_bus.replacements = dict(replacements)
+        app_service_bus.replacements = dict(replacements)
         feature_bus.interceptors = {
             command: chain_for(command, self._interceptors)
             for command in feature_bus.feature_registry
@@ -177,7 +212,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         dto_registry = self._sp_container.dto_registry()
 
         self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
-        self._add_interceptors_provided_by_user(self.bus)
+        self._assemble_handlers(self.bus)
         self._bind_context_to_handlers()
 
         # Set the loggers
@@ -206,15 +241,11 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         Add a dependency to the framework where
         The Feature and App Service have as attribute
 
-        Call this during startup, before the first execution — not
-        concurrently with in-flight requests. `dynamic_dep_registry` is a
-        plain dict with no lock: under the GIL, a late/concurrent call is at
-        worst "last write wins"; without it (a free-threaded build; see
-        `ioc.py` for why that's not in scope yet for this codebase's other
-        dependencies anyway) it becomes a genuine data race. Not enforced
-        today to avoid a breaking change — documented so it isn't a surprise
-        later.
+        Context: refused once the bus is built (`BusAlreadyBuilt`) — the
+        Features were already wired, so a dependency added later would never
+        reach them.
         """
+        self._refuse_when_built(f"dependency {name}")
         if name in self.dynamic_dep_registry:
             error = DependencyAlreadyRegistered(f"The dependency {name} is already injected")
             self.observability.record_error(error, "", "framework", kind="framework")
@@ -272,11 +303,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """
 
         def register(interceptor: T) -> T:
-            if self.was_initialized:
-                raise BusAlreadyBuilt(
-                    f"interceptor {interceptor.__qualname__} registered late: '{self._logger_name}' "
-                    "is already built, so it would never run — register it before the first execution"
-                )
+            self._refuse_when_built(f"interceptor {interceptor.__qualname__}")
             self._interceptors.append(InterceptorRegistration(interceptor, commands))
             return interceptor
 
@@ -504,10 +531,13 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         implicit_token = None
         implicit_overlay = None
         if self._overlay_var.get() is None and not self._in_global_var.get():
-            implicit_token, implicit_overlay = self._push_overlay(dict(self._shared_context))
+            implicit_token, implicit_overlay = self._push_overlay(
+                {**self._inherited_context(), **self._shared_context}
+            )
 
         try:
-            return self.bus.execute(dto)
+            with self._executing_with_context():
+                return self.bus.execute(dto)
         finally:
             if implicit_token is not None and implicit_overlay is not None:
                 self._pop_overlay(implicit_token, implicit_overlay)
