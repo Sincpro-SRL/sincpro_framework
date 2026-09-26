@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Generic, Mapping, Optional, Type, overload
+from typing import Any, Callable, Dict, Generic, Iterable, Mapping, Optional, Type, overload
 
 from _typeshed import DataclassInstance, Incomplete
 from sincpro_log.logger import LoggerProxy
@@ -64,6 +64,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         log_app_services: bool = True,
         log_features: bool = True,
         package: Optional[str] = None,
+        hide_in_logs: Iterable[str] = (),
     ) -> None:
         """
         Initialize the framework.

@@ -338,7 +338,7 @@ def test_logger_starts_emitting_trace_ids_once_otlp_is_on(monkeypatch):
 
     setup_for("payment", logger=logger)
 
-    assert logger._getter_context is provider_module.current_otel_context
+    assert provider_module.current_otel_context in logger._context_sources
 
 
 # ---------------------------------------------------------------------------

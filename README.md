@@ -7,36 +7,39 @@ Here's a quick example to get you started with the Sincpro Framework:
 ### 🏁 Quick Example
 
 ```python
-from sincpro_framework import UseFramework, Feature, DataTransferObject
+from sincpro_framework import DataTransferObject, Feature, UseFramework
 
-# 1. Initialize the framework
-framework = UseFramework("cybersource")
-
-# 2. Add Dependencies (Example dependencies)
-from sincpro_framework.orm import Database
-
-db = Database()
-framework.add_dependency("db", db)
-
-# 3. Error Handler (Optional)
-framework.add_global_error_handler(lambda e: print(f"Error: {e}"))
+# 1. The bus of one bounded context
+framework = UseFramework("greetings")
 
 
-# 4. Create a Use Case with DTOs
-class GreetingParams(DataTransferObject):
+# 2. A dependency: every Feature reads it as self.greeter
+class Greeter:
+    def greet(self, name: str) -> str:
+        return f"Hello, {name}!"
+
+
+framework.add_dependency("greeter", Greeter())
+
+
+# 3. A use case: its command, its response, and the Feature that answers it
+class CommandGreet(DataTransferObject):
     name: str
 
 
-@framework.feature(GreetingParams)
-class GreetingFeature(Feature):
-    def execute(self, dto: GreetingParams) -> str:
-        self.db.store(f"Greeting {dto.name}")
-        return f"Hello, {dto.name}!"
+class ResponseGreet(DataTransferObject):
+    message: str
 
 
-# 5. Execute the Use Case
-result = framework(GreetingParams(name="Alice"))
-print(result)  # Hello, Alice!
+@framework.feature(CommandGreet)
+class Greet(Feature):
+    def execute(self, dto: CommandGreet) -> ResponseGreet:
+        return ResponseGreet(message=self.greeter.greet(dto.name))
+
+
+# 4. Execute it through the bus
+result = framework(CommandGreet(name="Alice"), ResponseGreet)
+print(result.message)  # Hello, Alice!
 ```
 
 That is the whole framework: a use case, its DTO, and a bus that executes it. Observability
@@ -44,53 +47,60 @@ comes with it — a span per DTO, errors reported, logs correlated — without c
 anything.
 
 When the same catalog has to be reachable from outside the process, an
-[entrypoint](#entrypoints-exposing-the-bus) publishes it over a protocol without touching
+[entrypoint](docs/entrypoints/README.md) publishes it over a protocol without touching
 the use case. That is transport, and it comes later.
 
 Now you are ready to explore more complex use cases! 🚀
 
 ## 📑 Table of Contents
 
-1. [Overview of Hexagonal Architecture](#overview-of-hexagonal-architecture)
-    - [Key Layers of Hexagonal Architecture](#key-layers-of-hexagonal-architecture)
-    - [Why Use a Unified Bus Pattern?](#why-use-a-unified-bus-pattern)
-2. [Key Features of the Sincpro Framework](#key-features-of-the-sincpro-framework)
-    - [DTO Validation with Pydantic](#dto-validation-with-pydantic)
-    - [Dependency Injection](#dependency-injection)
-    - [Inversion of Control (IoC)](#inversion-of-control-ioc)
-    - [Context Manager for Metadata Propagation](#context-manager-for-metadata-propagation)
-    - [Middleware System](#middleware-system)
-    - [Error Handling at Different Levels](#error-handling-at-different-levels)
-    - [Bus Pattern for Component Communication](#bus-pattern-for-component-communication)
-    - [Decoupled Logic Execution](#decoupled-logic-execution)
-    - [Application Service Orchestration](#application-service-orchestration)
-    - [IDE Support with Typing](#ide-support-with-typing)
-3. [Features vs. Application Service](#features-vs-application-service)
-4. [Example Usage for a Payment Gateway](#example-usage-for-a-payment-gateway)
-    - [Configuring the Framework](#configuring-the-framework)
-    - [Best Practices for Imports](#best-practices-for-imports)
-    - [Sample Configuration in `__init__.py`](#sample-configuration-in-__init__py)
-5. [Recommended Infrastructure Structure](#recommended-infrastructure-structure)
+1. [Overview of Hexagonal Architecture](#-overview-of-hexagonal-architecture)
+    - [Key Layers of Hexagonal Architecture](#-key-layers-of-hexagonal-architecture)
+    - [Why Use a Unified Bus Pattern?](#-why-use-a-unified-bus-pattern)
+2. [Key Features of the Sincpro Framework](#-key-features-of-the-sincpro-framework)
+    - [DTO Validation with Pydantic](#-dto-validation-with-pydantic)
+    - [Dependency Injection](#-dependency-injection)
+    - [Inversion of Control (IoC)](#-inversion-of-control-ioc)
+    - [Context Manager for Metadata Propagation](#-context-manager-for-metadata-propagation)
+    - [Middleware System](#-middleware-system)
+    - [Error Handling at Different Levels](#-error-handling-at-different-levels)
+    - [Bus Pattern for Component Communication](#-bus-pattern-for-component-communication)
+    - [Decoupled Logic Execution](#-decoupled-logic-execution)
+    - [Application Service Orchestration](#-application-service-orchestration)
+    - [IDE Support with Typing](#-ide-support-with-typing)
+    - [Persistence and the ORM](#persistence-and-the-orm)
+3. [Features vs. Application Service](#-features-vs-application-service)
+4. [Example Usage for a Payment Gateway](#-example-usage-for-a-payment-gateway)
+    - [Configuring the Framework](#-configuring-the-framework)
+    - [Best Practices for Imports](#-best-practices-for-imports)
+    - [Sample Configuration in `__init__.py`](#-sample-configuration-in-__init__py)
+5. [Recommended Infrastructure Structure](#-recommended-infrastructure-structure)
     - [dependencies.py — Adapter Registration](#dependenciespy--adapter-registration)
     - [framework.py — Wiring with DependencyContextType](#frameworkpy--wiring-with-dependencycontexttype)
     - [\_\_init\_\_.py — Bootstrap the Bounded Context](#__init__py--bootstrap-the-bounded-context)
     - [Testing Dependency Consistency](#testing-dependency-consistency)
-6. [Creating a Feature](#creating-a-feature)
-7. [Creating an Application Service](#creating-an-application-service)
-8. [Executing a Use Case](#executing-a-use-case)
-9. [Summary](#summary)
-10. [Middleware System](#middleware-system-1)
-11. [Error Handling](#error-handling)
-12. [Documentation](#-documentation)
-13. [Entrypoints: exposing the bus](#entrypoints-exposing-the-bus) — transport, not domain
-    - [MCP tools (`entrypoint_mcp`)](#mcp-tools-entrypoint_mcp)
-    - [JSON-RPC (`entrypoint_rpc`)](#json-rpc-entrypoint_rpc)
-    - [gRPC (`entrypoint_grpc`)](#grpc-entrypoint_grpc)
-14. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
-15. [Configuration or settings](#configuration-or-settings)
-16. [Variables](#variables)
-17. [Tests & coverage](#tests--coverage)
-18. [Python 3.14 & Free-Threading Notes](#python-314--free-threading-notes)
+    - [Handler Lifetime — one instance serves every execution](#handler-lifetime--one-instance-serves-every-execution)
+    - [Swapping a Dependency in a Test](#swapping-a-dependency-in-a-test)
+    - [Checking Imports and Layers](#checking-imports-and-layers)
+6. [Creating a Feature](#-creating-a-feature)
+7. [Creating an Application Service](#-creating-an-application-service)
+8. [Executing a Use Case](#-executing-a-use-case)
+9. [Summary](#-summary)
+10. [Middleware System](#-middleware-system-1)
+11. [Error Handling](#-error-handling)
+12. [Persistence (ORM)](#persistence-orm) — aggregates, repository, queries, hooks, events
+    - [What it covers](#what-it-covers)
+    - [How to, by topic](#how-to-by-topic)
+13. [Documentation](#-documentation)
+14. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
+    - [MCP tools](docs/entrypoints/mcp.md)
+    - [JSON-RPC](docs/entrypoints/rpc.md)
+    - [gRPC](docs/entrypoints/grpc.md)
+15. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
+16. [Configuration or settings](#configuration-or-settings)
+17. [Variables](#-variables)
+18. [Tests & coverage](#-tests--coverage)
+19. [Python 3.14 & Free-Threading Notes](#-python-314--free-threading-notes)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -261,46 +271,17 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
 - Parameterize the bus as `UseFramework[DependencyContextType]`. Features get `self.token_adapter`; callers outside a Feature get the same instance as `framework.deps.token_adapter`.
 
-### Persistence — `sincpro_framework.ddd` and `sincpro_framework.orm`
+### Persistence and the ORM
 
-One way to ask a database in every Sincpro service: a `Criteria` goes in, an `EntityCollection`
-comes back with its cursor, a typed count and the model's own definition; an aggregate goes to
-`save` and a stale write is refused. The vocabulary needs nothing installed; the SQLAlchemy
-adapter is the `[sqlalchemy]` extra. See [docs/persistence/](docs/persistence/README.md)
-for what it does and [docs/persistence/decisions.md](docs/persistence/decisions.md) for why.
+See [Persistence (ORM)](#persistence-orm) for the full section.
 
-```python
-from sincpro_framework.ddd import Criteria, Entity
-from sincpro_framework.orm import Database, Repository
-
-repository = Repository(Database("sqlite:///catalog.sqlite3"))   # injected as `self.repository`
-page = repository.search(Dataset, Criteria.model_validate(
-    {"where": {"field": "row_count", "operator": ">", "value": 1000},
-     "specification": {"name": {}, "runs": {"pagination": {"limit": 5}}}}
-))
-page.items, page.count, page.cursor, page.dropped, page.meta
-```
-
-The repository answers the short questions too — `exists`, `first`, `one`, `get_by`, `pluck`,
-`distinct`, `export` — writes one or many with `save`, crosses two axes with `pivot`, says
-what a criteria will cost with `explain`, and can be handed over narrowed to a tenant with
-`narrowed(criteria)`. A Feature is unit-tested against `MemoryRepository`, which answers the
-same vocabulary with no database behind it.
-
-`specification` says what to bring back of each record: which scalars, and which relations with
-their own filter, order and page, at any depth. Relations are read off the annotations and the
-foreign keys; a table in between, another bounded context's bus or any function are declared once
-beside the tables. Every relation resolves once per page, never per row. See
-[docs/persistence/specification.md](docs/persistence/specification.md).
-
-Domain events are recorded by the aggregate and published by a Feature through
-`sincpro_framework.events`: a `Publisher` over a `SyncQueue` or a `BackgroundQueue`, with buses
-as subscribers. Nothing is stored and nothing is wired by default. See
-[docs/events/](docs/events/README.md).
+- An aggregate is a plain dataclass; a Feature reads and writes it through `self.repository`.
+- One way to ask — `Criteria` — and one shape back — a page with its cursor, count and definition.
+- Hooks, domain events, change tracking, event sourcing and an outbox on the same repository.
 
 ### `entrypoint_mcp`
 
-See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
+See [docs/entrypoints/](docs/entrypoints/README.md) for the full section.
 
 - One line publishes the bus as MCP tools: `build_mcp_server(instance).run()`.
 - Features and ApplicationServices become typed tools. Docstrings are the LLM context.
@@ -308,7 +289,7 @@ See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
 
 ### `entrypoint_rpc`
 
-See [Entrypoints](#entrypoints-exposing-the-bus) for the full section.
+See [docs/entrypoints/](docs/entrypoints/README.md) for the full section.
 
 - One process, several instances: `RpcGateway({"qr": qr, "cybersource": cybersource}).run()`.
 - Methods are `qr.features.CommandCreateQREconomico` / `siat.app_services.CommandGenerateCUFD`.
@@ -562,6 +543,106 @@ def test_declared_deps_are_registered():
   the context covers it in the test without any manual edits.
 - Catches mismatches between what is declared in `DependencyContextType` and what is actually
   registered via `add_dependency`.
+
+### Handler Lifetime — one instance serves every execution
+
+A `Feature` or `ApplicationService` is built **once** per `UseFramework` and reused by every
+execution, on every thread. Anything written to `self` inside `execute` is therefore shared:
+two concurrent calls overwrite each other's value, and the next call sees the last one.
+
+```python
+# ❌ request data on self — concurrent executions read each other's value
+def execute(self, dto):
+    self.order = self.repository.get(dto.order_id)
+    return self._total()
+
+# ✅ request data in locals — self holds only the injected dependencies
+def execute(self, dto):
+    order = self.repository.get(dto.order_id)
+    return self._total(order)
+```
+
+`self.context` is safe: it is isolated per execution.
+
+### Swapping a Dependency in a Test
+
+`override_dependencies` keeps the production wiring and replaces only the adapters the test
+names, for the length of the block. Every Feature and ApplicationService of that bus sees the
+double, and so does `framework.deps`; the real adapter is back afterwards, even if the test
+fails. A name that was never registered is refused, so a typo cannot leave the real adapter
+talking to the outside world.
+
+```python
+from sincpro_framework.testing import override_dependencies
+
+from my_sdk.apps.payments import payments
+
+
+def test_declined_card_is_not_retried():
+    gateway = FakeGateway(declines=True)
+
+    with override_dependencies(payments, gateway=gateway):
+        result = payments(CommandCharge(amount=10), ResponseCharge)
+
+    assert result.status == "declined"
+    assert gateway.calls == 1
+```
+
+It patches the instances the bus holds, so it is meant for tests, not for live traffic.
+
+### Checking Imports and Layers
+
+Two checks read the package's source — without importing it, so an SDK that opens a network
+connection on import is safe to check — and return what they find:
+
+```python
+from sincpro_framework.testing import import_cycles, layer_violations
+
+
+def test_no_import_cycles():
+    assert import_cycles("my_sdk") == []
+
+
+def test_layers():
+    assert layer_violations("my_sdk") == []
+```
+
+`import_cycles` reports modules that import each other while loading, e.g.
+`my_sdk.domain.codes → my_sdk → my_sdk.domain.codes`. Imports inside a function or under
+`if TYPE_CHECKING:` are not counted — they are how a cycle is deliberately broken. The
+bootstrap this framework asks for (the context `__init__` creates the bus, then imports
+`services`, which take the bus back) is not a cycle while the bus is bound before that import.
+
+`layer_violations` applies the layering conventions. A module belongs to the first
+`domain` / `adapters` / `services` / `infrastructure` / `entrypoints` in its path, and to the
+context named by the path before it:
+
+| Rule | Meaning |
+|---|---|
+| `domain-is-vocabulary` | `domain/` imports only `domain/` of its own context |
+| `adapters-are-independent` | an adapter does not import a different adapter |
+| `services-reused-through-bus` | a registered Feature/ApplicationService class, or a function, is never imported from a service module — its DTO goes on the bus. DTO names are free (`Command…`, `Query…`, anything) |
+| `entrypoints-are-outermost` | only entrypoints import entrypoints |
+| `contexts-are-acyclic` | two contexts never depend on each other |
+| `common-imports-no-context` | a context named `common` imports no sibling context |
+
+They are conventions, not a cage: pass the ones a project does not follow in `ignore`.
+
+```python
+assert layer_violations("my_sdk", ignore=["adapters-are-independent"]) == []
+```
+
+**Fixing a cycle.** Break it where the dependency points the wrong way, not with a local
+import:
+
+- **Two modules share a type** → move the type down, into the `domain/` both already import.
+- **A module takes a name from its package `__init__`** → bind that name before the
+  `__init__` imports anything that leads back to the module (the bus goes first), or import
+  it from the module that defines it.
+- **Two contexts need each other** → the more foundational one stops reaching up: move the
+  shared piece into it, or pass the value in the Command.
+- **An adapter needs another adapter** → a Feature composes both; the record they exchange
+  goes to `domain/`.
 
 ---
 
@@ -906,6 +987,94 @@ framework.add_global_error_handler(observability_handler) # 2nd
 framework.add_global_error_handler(base_handler)          # 3rd = final fallback
 ```
 
+## Persistence (ORM)
+
+`sincpro_framework.ddd` is the vocabulary — aggregates, `Criteria`, repositories, events — and
+needs nothing installed. `sincpro_framework.orm` is the SQLAlchemy adapter:
+`pip install sincpro-framework[sqlalchemy]`.
+
+### What it covers
+
+| Capability | How |
+|---|---|
+| Aggregates | A plain `@dataclass` that inherits `Entity`: `id` (UUID v7), `created_at`, `updated_at`, `version` |
+| Relations | Read from the annotations and the foreign keys: many2one, one2many, many2many, another context's bus, any function |
+| Writes | `save` one or many, `remove`, `archive`; a stale write is refused (`StaleAggregate`) |
+| Transactions | `repository.context()`: one unit of work, commits together or not at all |
+| Reads | `get`, `get_by`, `exists`, `first`, `one`, `count`, `pluck`, `distinct`, `search`, `fetch_all`, `stream` |
+| Queries | `Criteria`: filters, `all` / `any` / `negate`, ordering, cursor or offset pages, what to bring back of each record |
+| Aggregation | `measures`, `group_by`, `pivot`, `export`, `explain` |
+| Multi-tenant | `narrowed(criteria)`: a repository that only sees — and writes — what the criteria allows |
+| Hooks | `Rule` functions and `Hook` classes on `before_*` / `after_*` of every write and read |
+| Mixins | `ArchivableMixin`, `AuditedMixin` (who wrote it), `ChangeTrackingMixin` (what changed) |
+| Domain events | Recorded by the aggregate, published by a Feature, answered by other buses |
+| Event sourcing | Events stored as the state (`event_columns()`) and folded back |
+| Outbox | `EventTrackableMixin` + `delivery_columns()` and a relay with `for_update` / `skip_locked` |
+| Testing | `MemoryRepository`: the same vocabulary with no database |
+
+### Example
+
+```python
+from dataclasses import dataclass
+
+from sqlalchemy import Column, Integer, Text
+from sqlalchemy.orm import registry
+
+from sincpro_framework.ddd import Criteria, Entity, EntityCollection
+from sincpro_framework.orm import Database, Repository, entity_table, map_aggregates
+
+
+@dataclass
+class Product(Entity):                     # id, created_at, updated_at, version come from Entity
+    name: str = ""
+    price: int = 0
+
+
+class Products(EntityCollection[Product]): ...
+
+
+catalog = registry()
+product_table = entity_table(
+    "product",
+    catalog.metadata,
+    Column("name", Text, nullable=False),
+    Column("price", Integer, nullable=False),   # a page is only ordered by NOT NULL columns
+)
+map_aggregates(catalog, {Product: product_table})
+
+database = Database("sqlite:///catalog.sqlite3")
+catalog.metadata.create_all(database.engine)          # a project runs its migrations instead
+repository = Repository(database)                     # add_dependency("repository", repository)
+
+repository.save([Product(name="Coffee", price=30), Product(name="Tea", price=20)])
+
+page = repository.search(Products, Criteria.model_validate({
+    "where": {"field": "price", "operator": ">", "value": 25},
+    "order": [{"field": "price", "descending": True}],
+    "pagination": {"limit": 10},
+}))
+print([product.name for product in page.items])        # ['Coffee']
+```
+
+### How to, by topic
+
+Every row links the step-by-step section of **[the guide](docs/persistence/guide.md)** — where
+every example runs as part of the test suite — and the page that explains it in depth.
+
+| Topic | How to | In depth |
+|---|---|---|
+| Aggregates, tables, repository | [Guide §1–3](docs/persistence/guide.md#1-the-aggregate) | [introduction.md](docs/persistence/introduction.md), [reference.md](docs/persistence/reference.md) |
+| Writing and units of work | [Guide §4–5](docs/persistence/guide.md#4-writing) | [lifecycle.md](docs/persistence/lifecycle.md) |
+| Reading with `Criteria` | [Guide §6](docs/persistence/guide.md#6-reading) | [criteria.md](docs/persistence/criteria.md) |
+| Related records | [Guide §7](docs/persistence/guide.md#7-relations) | [specification.md](docs/persistence/specification.md), [relations.md](docs/persistence/relations.md) |
+| Hooks | [Guide §8](docs/persistence/guide.md#8-hooks) | [hooks.md](docs/persistence/hooks.md) |
+| Domain events | [Guide §9](docs/persistence/guide.md#9-domain-events) | [events/README.md](docs/events/README.md) |
+| Change tracking | [Guide §10](docs/persistence/guide.md#10-change-tracking) | [change-tracking.md](docs/events/change-tracking.md) |
+| Event sourcing | [Guide §11](docs/persistence/guide.md#11-event-sourcing) | [shapes.md §3](docs/shapes.md#3-the-facts-are-the-state) |
+| Outbox | [Guide §12](docs/persistence/guide.md#12-an-outbox) | [shapes.md §2](docs/shapes.md#2-a-database-per-context) |
+| Testing | [Guide §13](docs/persistence/guide.md#13-testing) | [testing.md](docs/persistence/testing.md) |
+| Why it is designed this way | — | [design.md](docs/persistence/design.md), [decisions.md](docs/persistence/decisions.md) |
+
 ## 📖 Documentation
 
 This repository's documentation is generated with
@@ -982,6 +1151,46 @@ This installs:
 - `opentelemetry-exporter-otlp-proto-grpc` (primary)
 - `opentelemetry-exporter-otlp-proto-http` (fallback)
 
+### When a use case fails
+
+A failure is described by the handler that raised it and logged **once**, by the outermost
+bus — however many ApplicationServices or other bounded contexts' buses it crossed:
+
+```json
+{
+  "event": "SendInvoice failed: Fault: CUFD vencido",
+  "dto": "CommandSendInvoice(nit=123, cuf='ABC')",
+  "failed_in": "siat-soap-sdk",
+  "handler": "SendInvoice",
+  "layer": "feature",
+  "chain": "CommandBillOrder → CommandSendInvoice",
+  "error_type": "Fault",
+  "error_at": "sincpro_siat_soap.infrastructure.soap_client:88 in SoapClient._send",
+  "raised_at": "zeep.proxy:52 in OperationProxy.__call__",
+  "correlation_id": "req-42",
+  "exception": "Traceback ..."
+}
+```
+
+- `app_name` is the bus that logged it — the outermost — and `failed_in` the bus whose
+  handler raised: siat called from inside another context's Feature still says
+  `failed_in: "siat-soap-sdk"`.
+- `error_at` is the last line of the handler's own package the error went through;
+  `raised_at` is the line that raised, when it is somewhere else (a SOAP or HTTP library).
+  The logger's own `filename` / `func_name` name whoever executed the DTO, never `bus.py`.
+- The exception leaving the bus carries a note with the same facts, so whoever catches it —
+  Odoo, a test, an error handler that maps it to the SDK's own exception — sees where it
+  came from at the end of the traceback:
+  `[sincpro] CommandBillOrder → CommandSendInvoice: SendInvoice (siat-soap-sdk) failed at …`.
+- Every key set with `context()` is on every log line. Keep some out:
+  `UseFramework("siat", hide_in_logs=["TOKEN"])`.
+- An error handler that re-raises changes nothing above. One that answers leaves a
+  `warning` — `… (answered by an error handler)` — because the caller never sees the error.
+- An expected error, one passed to `ignore_sentry_exceptions`, is logged at `info` with no
+  traceback: it is traffic, not a fault.
+- A transport (JSON-RPC, gRPC, the background queue) logs only what no bus logged:
+  `process.was_reported(error)`.
+
 ### Sentry / GlitchTip (errors)
 
 Same silent contract as OTel. The bus **always** tries to report exceptions; if `sentry-sdk` is missing or the DSN in conf is unset, it is a no-op.
@@ -1001,7 +1210,7 @@ GlitchTip `environment` is `TENANT` (same value as the `tenant` tag) so events c
 
 Odoo may capture the same exception with Odoo's release. That second event is intended — two products, two releases, same traceback.
 
-The bus reports **before** the error handler runs. A handler that swallows an unexpected exception still produces a GlitchTip event. Expected domain errors can be excluded per instance:
+The bus reports **before** the error handler runs, once, from the handler that raised: an ApplicationService the error crosses sends nothing more. The event carries a `sincpro.handler` tag and a `sincpro` context with the DTO, the chain, `error_at` and the execution's context. A handler that swallows an unexpected exception still produces a GlitchTip event. Expected domain errors can be excluded per instance:
 
 ```python
 app = UseFramework("payment-cybersource")  # release auto-detected from the caller package
@@ -1094,6 +1303,8 @@ Every span produced by the framework carries:
 |---|---|---|
 | `sincpro.layer` | `"feature"` or `"application_service"` | Identify which bus layer handled the DTO |
 | `sincpro.instance` | The framework instance name (e.g. `"payments"`) | Distinguish bounded contexts inside one deployment |
+| `error.type` | Exception class, on the span of the handler that raised | Filter failed spans by cause |
+| `code.function.name` / `code.file.path` / `code.line.number` | The consumer's line that failed (`error_at`) | Jump from the trace to the code |
 
 ### The observability API: automatic first, two doors when you need them
 

@@ -33,6 +33,7 @@ class CaptureState:
         self.inits: List[str] = []
         self.clients: List[Dict[str, Any]] = []
         self.layers: List[str] = []
+        self.contexts: Dict[str, Dict[str, Any]] = {}
 
 
 def _install_fake_sentry(monkeypatch, state: CaptureState) -> None:
@@ -53,6 +54,9 @@ def _install_fake_sentry(monkeypatch, state: CaptureState) -> None:
             state.tags[key] = value
             if key == "sincpro.layer":
                 state.layers.append(value)
+
+        def set_context(self, key: str, value: Dict[str, Any]) -> None:
+            state.contexts[key] = value
 
     class FakeClient:
         def __init__(self, **kwargs: Any) -> None:
@@ -482,8 +486,9 @@ def test_conf_uses_sentry_python_dsn():
     assert "sentry_dsn: $ENV:SENTRY_PYTHON_DSN" in text
 
 
-def test_appservice_feature_error_emits_both_layers(monkeypatch):
-    """No capture markers: Feature then AppService each send the same error."""
+def test_appservice_feature_error_is_sent_once_from_where_it_happened(monkeypatch):
+    """The Feature that raised reports it; the ApplicationService it crosses adds nothing,
+    and the event says which command chain led there."""
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
 
@@ -511,7 +516,9 @@ def test_appservice_feature_error_emits_both_layers(monkeypatch):
     except RuntimeError:
         pass
 
-    assert len(state.errors) == 2
-    assert state.layers == ["feature", "application_service"]
+    assert len(state.errors) == 1
+    assert state.layers == ["feature"]
+    assert state.tags["sincpro.handler"] == "Child"
+    assert state.contexts["sincpro"]["chain"] == "ParentDTO → ChildDTO"
     assert state.release == "payment-cybersource"
     assert state.inits == []

@@ -97,6 +97,9 @@ class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT])
     Features automatically receive injected dependencies as attributes through the framework's
     dependency injection system. These dependencies can be accessed via self.dependency_name.
 
+    One instance is built per UseFramework and serves every execution, on every thread: keep
+    request data in local variables, never on ``self``. ``self.context`` is per execution.
+
     For better IDE support with typed dependencies, inherit with specific DTO types:
 
     Example:
@@ -150,6 +153,9 @@ class ApplicationService(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse,
     ApplicationServices coordinate multiple Features to accomplish complex business workflows.
     They have access to all injected dependencies (same as Features) plus an exclusive
     feature_bus for executing other Features.
+
+    Like a Feature, one instance serves every execution: request data stays in local
+    variables, never on ``self``.
 
     ApplicationServices are ideal for:
     - Non-atomic operations requiring multiple steps

@@ -1,6 +1,6 @@
 """Send one exception to GlitchTip. Never raises. Does not touch spans."""
 
-from typing import Literal, Tuple, Type
+from typing import Any, Literal, Mapping, Optional, Tuple, Type
 
 from sincpro_framework.observability.domain import (
     UNKNOWN,
@@ -20,8 +20,12 @@ def record_error(
     identity: ObservabilityIdentity,
     kind: ErrorKind = "instance",
     ignored_exceptions: IgnoredExceptions = (),
+    details: Optional[Mapping[str, Any]] = None,
 ) -> None:
     """Capture on the framework's own client, tagged with who and where.
+
+    ``details`` (handler, DTO chain, where it failed, the execution's context) travel as
+    the event's ``sincpro`` context; the handler is also a searchable tag.
 
     The host (Odoo) may capture the same exception object with its own release —
     that is a separate product event, and intentionally not suppressed here.
@@ -56,6 +60,10 @@ def record_error(
                 scope.set_tag("sincpro.instance", identity.bus)
             if identity.artifact and identity.artifact != UNKNOWN:
                 scope.set_tag("sincpro.package", identity.artifact)
+            if details:
+                scope.set_context("sincpro", dict(details))
+                if details.get("handler"):
+                    scope.set_tag("sincpro.handler", details["handler"])
             environment = errors_setup.tenant()
             if environment:
                 scope.set_tag("tenant", environment)

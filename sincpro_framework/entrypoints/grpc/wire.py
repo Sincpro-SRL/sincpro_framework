@@ -24,6 +24,7 @@ from sincpro_framework.entrypoints.errors import (
 from sincpro_framework.entrypoints.grpc import proto
 from sincpro_framework.entrypoints.grpc.proto import GrpcMethodSpec
 from sincpro_framework.entrypoints.scalar_executor import execute
+from sincpro_framework.observability import process
 from sincpro_framework.sincpro_logger import logger
 
 GRPC_MISSING = "grpcio is not installed. Install with: pip install sincpro-framework[grpc]"
@@ -150,7 +151,8 @@ def method_handler(spec: GrpcMethodSpec) -> Any:
                 json.dumps(json_safe_validation_errors(error)),
             )
         except Exception as error:
-            logger.exception("gRPC method [%s] failed", spec.path)
+            if not process.was_reported(error):
+                logger.exception("gRPC method [%s] failed", spec.path)
             code, details = status_for(error)
             context.abort(code, details)
         return scalar_to_struct(result)

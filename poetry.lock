@@ -4665,14 +4665,14 @@ unleash = ["UnleashClient (>=6.0.1)"]
 
 [[package]]
 name = "sincpro-log"
-version = "1.2.1"
+version = "1.2.2"
 description = "A logging module for sincpro applications"
 optional = false
 python-versions = "<4.0,>=3.12"
 groups = ["main"]
 files = [
-    {file = "sincpro_log-1.2.1-py3-none-any.whl", hash = "sha256:8bab391babb425a2f2a5278dc651c78002c75b8b867e42bde1bbc367e73d76de"},
-    {file = "sincpro_log-1.2.1.tar.gz", hash = "sha256:3378a78fe0254eec7a3de07e14774d57dfb6c5efa27ce18a25a880e18a12ff81"},
+    {file = "sincpro_log-1.2.2-py3-none-any.whl", hash = "sha256:ac73f588e32059298e34b09181fd58fdd07b93ab65383d8fecc495ae633d9b77"},
+    {file = "sincpro_log-1.2.2.tar.gz", hash = "sha256:ec890365179798d12da59988f6151d21d6b0bc109b9f34cdf2eae02ff98451f9"},
 ]
 
 [package.dependencies]
@@ -5372,4 +5372,4 @@ sqlalchemy = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "9d18813b4c80e157f6abac20a604bd0258f81c440f37070a9cfdd28552a37f37"
+content-hash = "680b9d1dde2ba0108df812ef7bb687bc02edb5783600aca500f93005e13f69a3"

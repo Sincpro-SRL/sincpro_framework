@@ -122,7 +122,7 @@ def _bind_log_ids(logger: LoggerProxy | None) -> None:
     if logger is None:
         return
     try:
-        logger.set_getter_context(current_otel_context)
+        logger.add_context_source(current_otel_context)
     except Exception:
         return
 
