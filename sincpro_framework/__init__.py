@@ -1,4 +1,4 @@
-from .middleware import Middleware
+from .interceptors import CallNext
 from .sincpro_abstractions import (
     ApplicationService,
     DataTransferObject,
@@ -11,11 +11,11 @@ from .use_bus import UseFramework
 
 __all__ = [
     "ApplicationService",
+    "CallNext",
     "DataTransferObject",
     "Feature",
     "UseFramework",
     "logger",
-    "Middleware",
     "TypeDTO",
     "TypeDTOResponse",
 ]

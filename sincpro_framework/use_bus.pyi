@@ -16,7 +16,7 @@ from .deps import TDeps
 from .error_handler import ErrorHandler as ErrorHandler
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
-from .middleware import Middleware, MiddlewarePipeline
+from .interceptors import Interceptor
 from .sincpro_abstractions import ApplicationService, DataTransferObject, Feature
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
@@ -46,7 +46,6 @@ class UseFramework(ContextMixin, Generic[TDeps]):
     feature: Callable[[DTORegistration], DecoratorFunction]
     app_service: Callable[[DTORegistration], DecoratorFunction]
 
-    middleware_pipeline: MiddlewarePipeline
     dynamic_dep_registry: Dict[str, Any]
     observability: Observability
     global_error_handler: ErrorHandler | None
@@ -153,12 +152,9 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """The DTO or event registered under `name`, rebuilt from raw data."""
         ...
 
-    def add_middleware(self, middleware: Middleware) -> None:
-        """
-        Add middleware function to the execution pipeline.
-
-        Args:
-            middleware: The middleware function to add
+    def interceptor[T: Interceptor](self, *commands: type) -> Callable[[T], T]:
+        """Run the decorated function around every execution of these Commands (all of this
+        bus's when none is named). Registered in order, outermost first; refused after build.
         """
         ...
 

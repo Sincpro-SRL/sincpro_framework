@@ -20,7 +20,6 @@ PUBLIC_NAMES_BEFORE_PERSISTENCE = {
     "Feature",
     "UseFramework",
     "logger",
-    "Middleware",
     "TypeDTO",
     "TypeDTOResponse",
 }
