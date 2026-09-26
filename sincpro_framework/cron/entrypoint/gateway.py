@@ -1,13 +1,13 @@
-"""The cron entrypoint: a clock looks, the gateway runs what is due.
+"""`CronGateway`: the in-memory orchestrator — a clock looks, the gateway runs what is due.
 
-    CronGateway([cron_payments, cron_billing], runs=DatabaseRuns(database, table)).run()
+    CronGateway([cron_payments, cron_billing]).run()
 
 Context: like `RpcGateway` or `GrpcGateway`, a transport in front of the buses — the crons call
 the buses, the buses never learn they were called by a clock. A tick is claimed in `runs` before
-anything runs, so every replica may look and each tick runs once. Each run has a thread of its
-own, so a long cron never delays another's tick; `workers` caps how many run at once. The ticks
-of one cron run in order, and with `overlap=SKIP` a tick that comes while the previous run is
-still going is recorded as skipped.
+anything runs; with a `CronRuns` the replicas share, every replica may look and each tick runs
+once. Each run has a thread of its own, so a long cron never delays another's tick; `workers`
+caps how many run at once. The ticks of one cron run in order, and with `overlap=SKIP` a tick
+that comes while the previous run is still going is recorded as skipped.
 """
 
 from collections.abc import Sequence
@@ -16,9 +16,18 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import BoundedSemaphore, Lock, Thread, current_thread
 
-from sincpro_framework.cron.clocks import Clock, InProcessClock
-from sincpro_framework.cron.registry import CronDefinition, Crons, Missed, Overlap, Tick
-from sincpro_framework.cron.runs import CronRuns, InMemoryRuns, Run, RunOutcome
+from sincpro_framework.cron.adapters import InMemoryRuns, InProcessClock
+from sincpro_framework.cron.domain import (
+    Clock,
+    CronDefinition,
+    CronRuns,
+    Missed,
+    Overlap,
+    Run,
+    RunOutcome,
+    Tick,
+)
+from sincpro_framework.cron.registry import Crons
 
 LATE_AFTER = timedelta(minutes=1)
 """A tick this far behind the clock counts as missed, and its `missed` policy decides."""
@@ -72,11 +81,16 @@ class CronGateway:
     def __init__(
         self,
         crons: Sequence[Crons],
-        clock: Clock | None = None,
         runs: CronRuns | None = None,
         workers: int | None = None,
+        look_every: timedelta = timedelta(seconds=5),
+        jitter: timedelta = timedelta(0),
+        clock: Clock | None = None,
     ) -> None:
-        self.clock: Clock = clock or InProcessClock()
+        """Context: looks every `look_every`, plus up to `jitter` so replicas started together
+        do not claim at the same instant. `clock` replaces that loop — a `ManualClock` in tests.
+        """
+        self.clock: Clock = clock or InProcessClock(look_every, jitter)
         self.runs: CronRuns = runs or InMemoryRuns()
         self._entries: list[_Entry] = []
         for registry in crons:

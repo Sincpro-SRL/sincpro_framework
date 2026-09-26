@@ -45,11 +45,25 @@ class IssueInvoice(Feature):
 
 ## A registry per bounded context, a class per cron
 
-```python
-from sincpro_framework.cron import Cron, Crons, Missed, Overlap, Tick
+The same shape as a bus: the bounded context declares its dependencies once, in a
+`CronDependencyContextType`, and a base `Cron` of its own gives them to every cron — typed.
 
-cron_payments = Crons("cron-payments")                      # its logger and trace identity
-cron_payments.add_dependency("cybersource", cybersource)    # the real buses, by their name
+```python
+from sincpro_framework.cron import Cron as _Cron
+from sincpro_framework.cron import Crons, Missed, Overlap, Tick
+
+
+class CronDependencyContextType:                             # dependencies.py
+    cybersource: UseFramework
+    siat_soap_sdk: UseFramework
+
+
+class Cron(_Cron, CronDependencyContextType):                # framework.py
+    """Base cron of this bounded context — typed dependencies included."""
+
+
+cron_payments = Crons[CronDependencyContextType]("cron-payments")   # its logger and trace identity
+cron_payments.add_dependency("cybersource", cybersource)            # the real buses, by their name
 cron_payments.add_dependency("siat_soap_sdk", siat_soap_sdk)
 
 
@@ -61,9 +75,6 @@ cron_payments.add_dependency("siat_soap_sdk", siat_soap_sdk)
     missed_window=timedelta(days=1),
 )
 class ReconcileTransactions(Cron):
-    cybersource: UseFramework
-    siat_soap_sdk: UseFramework
-
     def run(self, tick: Tick) -> None:
         pending = self.cybersource(QueryPending(day=tick.scheduled_for), ResponsePending)
         for transaction in pending.transactions:
@@ -73,11 +84,13 @@ class ReconcileTransactions(Cron):
 
 - `@crons.cron("…", timezone=…)` — the five standard cron fields with `*`, lists, ranges, steps
   and names (`MON-FRI`, `JAN,JUL`). A timezone is required; DST is evaluated in it: a tick inside
-  the spring-forward gap runs at the next valid instant, one inside the fall-back repeat runs once.
+  the spring-forward gap runs shifted past the gap, the hour repeated on fall back counts once.
 - `@crons.cron(every=timedelta(minutes=15))` — at :00, :15, :30 and :45 UTC: an interval counts
   from the Unix epoch, so every replica computes the same ticks whenever it started.
-- The dependencies are annotated attributes, injected like a Feature's. A cron that declares one
-  the registry does not have fails when the registry is built, not at 02:00.
+- Every dependency of the registry is injected into every cron, like a bus does for its
+  Features; `cron_payments.deps.cybersource` reaches the same instance from outside. A cron — or
+  its base — that declares one the registry does not have fails when the registry is built, not
+  at 02:00.
 - One instance serves every tick: state lives in locals.
 - `tick.once(key)` — `True` the first time `key` is asked for this tick, on any replica: a step
   that must not be repeated when the tick is.
@@ -91,7 +104,7 @@ from sincpro_framework.cron import CronGateway, CronProcess
 
 
 def build_crons() -> CronGateway:        # a module-level function: it runs in the child
-    return CronGateway([cron_payments])  # + runs=DatabaseRuns(...) in production
+    return CronGateway([cron_payments])
 
 
 # crons = CronProcess(build_crons).start()      at service startup
@@ -107,7 +120,7 @@ the process on the clock; `stop()` ends it and waits for the runs in progress.
 
 Inside, the gateway is an in-memory orchestrator for every cron of every registry it is given:
 
-- **when to look** — `InProcessClock` looks every 5 seconds (`resolution=`); `jitter=` adds up to
+- **when to look** — every 5 seconds (`look_every=`); `jitter=` adds up to
   that much to each wait, so replicas started together do not claim at the same instant;
 - **what is due** — each look asks every cron's trigger, and a due tick is claimed in `runs`
   before it runs, so it runs once across replicas;
@@ -118,14 +131,15 @@ Inside, the gateway is an in-memory orchestrator for every cron of every registr
 ```
 service process ── CronProcess ──▶ child process
                                     └─ CronGateway (in memory)
-                                        ├─ InProcessClock: looks every 5 s (+ jitter)
+                                        ├─ looks every 5 s (+ jitter)
                                         └─ a thread per run ─▶ Cron.run(tick) ─▶ buses
 ```
 
 Here the clock is a `ManualClock`, so time moves when the example says so:
 
 ```python
-from sincpro_framework.cron import ManualClock, InMemoryRuns, RunOutcome
+from sincpro_framework.cron import InMemoryRuns, RunOutcome
+from sincpro_framework.testing import ManualClock
 
 clock = ManualClock(datetime(2026, 9, 26, 5, 59, tzinfo=UTC))       # 01:59 in La Paz
 gateway = CronGateway([cron_payments], clock=clock, runs=InMemoryRuns())
@@ -144,16 +158,19 @@ failure, even one inside a bus, is logged once by the registry, with `failed_in`
 ## One run per tick
 
 Before a cron runs, its tick is **claimed** in `runs`: the first claim of `(name, scheduled_for)`
-wins, every other returns without running. Every replica may tick — no leader election, no
-singleton pod.
+wins, every other returns without running.
 
-| `runs` | For |
-|---|---|
-| `InMemoryRuns()` | one process: development, tests |
-| `DatabaseRuns(database, cron_run_table(metadata))` | every replica, and across restarts — the table is the project's, created by its migrations |
+The crons themselves are code, loaded at runtime — nothing about them is stored. What `runs`
+keeps is which ticks ran, and the default, `InMemoryRuns`, keeps it in the process:
 
-A restarted gateway starts from where each cron last ran, so `missed` sees the ticks that passed
-while it was down.
+- **One replica runs the crons** — the usual case: `InMemoryRuns` is all it needs. A restart
+  starts from now, so a tick that fell while it was down is not run again.
+- **Several replicas run the crons**: each would run every tick. They need a record they share —
+  the project implements `CronRuns` (an abstract class: `claim`, `finish`, `running`, `last`,
+  `last_success`) on the storage those replicas already have, and passes it as `runs=`. The
+  behaviours it owes are the ones `tests/cron/test_runs.py` checks on `InMemoryRuns`. A gateway
+  on shared runs also starts from where each cron last ran, so `missed` sees the ticks that
+  passed while it was down.
 
 | Policy | Values | Default |
 |---|---|---|

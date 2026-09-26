@@ -1,14 +1,12 @@
 """Crons: one registry per bounded context, one class per cron, its dependencies injected.
 
-    cron_payments = Crons("cron-payments")
+    cron_payments = Crons[CronDependencyContextType]("cron-payments")
     cron_payments.add_dependency("cybersource", cybersource)
 
     @cron_payments.cron("0 2 * * *", timezone="America/La_Paz")
-    class Reconcile(Cron):
-        cybersource: UseFramework
-
+    class Reconcile(Cron):          # the bounded context's base: Cron + CronDependencyContextType
         def run(self, tick: Tick) -> None:
-            ...
+            self.cybersource(...)
 
 Context: a cron is not a use case — it is a caller of use cases, like an RPC method or an MCP
 tool, so it lives beside the buses and not on one. The registry has the shape of a bus on
@@ -17,18 +15,25 @@ registers, and nothing accepted once it is built.
 """
 
 import inspect
-from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import StrEnum
-from typing import Any
+from datetime import timedelta
+from typing import Any, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
 from sincpro_framework.context.mixin import carrying
-from sincpro_framework.cron.runs import CronRuns, RunOutcome
-from sincpro_framework.cron.triggers import CronExpression, Every, Trigger
+from sincpro_framework.cron.domain import (
+    Cron,
+    CronDefinition,
+    CronExpression,
+    Every,
+    Missed,
+    Overlap,
+    RunOutcome,
+    Tick,
+    Trigger,
+)
+from sincpro_framework.deps import DependencyLocator
 from sincpro_framework.exceptions import (
     BusAlreadyBuilt,
     DependencyAlreadyRegistered,
@@ -37,62 +42,10 @@ from sincpro_framework.exceptions import (
 from sincpro_framework.observability import Observability
 
 
-class Overlap(StrEnum):
-    """What a tick does while the previous run of its cron has not finished."""
-
-    SKIP = "skip"
-    ALLOW = "allow"
-
-
-class Missed(StrEnum):
-    """What happens to ticks that passed while nothing ran — a deploy, an outage."""
-
-    SKIP = "skip"
-    RUN_LATEST = "run_latest"
-    RUN_ALL = "run_all"
-
-
-@dataclass(frozen=True)
-class Tick:
-    """The run in progress: which cron, and the tick it answers."""
-
-    cron: str
-    scheduled_for: datetime
-    runs: CronRuns = field(repr=False, compare=False)
-
-    def once(self, key: str) -> bool:
-        """Context: `True` the first time `key` is asked for this tick, on any replica; `False`
-        after — a step that must not be repeated when the tick is. At most once: a step that
-        fails after `once` is not retried by the next run of the same tick."""
-        return self.runs.claim(self.cron, self.scheduled_for, key)
-
-
-class Cron(ABC):
-    """A cron: its dependencies are annotated attributes, injected by its registry; `run` is
-    what happens at each tick. One instance serves every tick — state lives in locals."""
-
-    @abstractmethod
-    def run(self, tick: Tick) -> None: ...
-
-
-@dataclass(frozen=True)
-class CronDefinition:
-    name: str
-    cron_class: type[Cron]
-    trigger: Trigger
-    overlap: Overlap
-    missed: Missed
-    missed_window: timedelta
-    stale_after: timedelta
-
-
-def _declared_dependencies(cron: type[Cron]) -> set[str]:
-    return {
-        name
-        for klass in cron.__mro__
-        if issubclass(klass, Cron) and klass is not Cron
-        for name in inspect.get_annotations(klass)
-    }
+def _declared_dependencies(cron_class: type[Cron]) -> set[str]:
+    """Every attribute the cron and its bases annotate — the bounded context's
+    `CronDependencyContextType` included."""
+    return {name for klass in cron_class.__mro__ for name in inspect.get_annotations(klass)}
 
 
 def _trigger(
@@ -107,12 +60,16 @@ def _trigger(
     return CronExpression(expression, timezone)
 
 
-class Crons:
+class Crons[TDeps]:
+    """Parameterize with the bounded context's `CronDependencyContextType` so `deps` is typed,
+    the way a bus is `UseFramework[DependencyContextType]`."""
+
     def __init__(self, name: str) -> None:
         self.name = name
         self.logger: LoggerProxy = create_logger(name)
         self.observability = Observability(name)
         self._dependencies: dict[str, Any] = {}
+        self._deps_locator = DependencyLocator(self._dependencies)
         self._definitions: dict[str, CronDefinition] = {}
         self._instances: dict[str, Cron] = {}
         self._built = False
@@ -164,12 +121,18 @@ class Crons:
         return register
 
     @property
+    def deps(self) -> TDeps:
+        """The dependencies registered with `add_dependency`; inside a cron, `self.<name>`."""
+        return cast(TDeps, self._deps_locator)
+
+    @property
     def definitions(self) -> tuple[CronDefinition, ...]:
         return tuple(self._definitions.values())
 
     def build(self) -> None:
-        """Build one instance per cron with its dependencies — refused when a cron declares one
-        the registry does not have. Idempotent."""
+        """Build one instance per cron with every dependency of the registry, as a bus does for
+        its Features — refused when a cron declares one the registry does not have. Idempotent.
+        """
         if self._built:
             return
         for definition in self._definitions.values():
@@ -181,8 +144,8 @@ class Crons:
                     f"'{self.name}' does not have — add_dependency it before the gateway starts"
                 )
             instance = definition.cron_class()
-            for dependency in declared:
-                setattr(instance, dependency, self._dependencies[dependency])
+            for dependency, value in self._dependencies.items():
+                setattr(instance, dependency, value)
             self._instances[definition.name] = instance
         self.observability.start(self.logger)
         self._built = True

@@ -4,9 +4,6 @@
     CronExpression("*/15 8-18 * * MON-FRI", timezone="UTC")   every quarter hour, office hours
     Every(timedelta(minutes=15))                               at :00, :15, :30 and :45, UTC
 
-Built by `@crons.cron("0 2 * * *", timezone=...)` / `@crons.cron(every=timedelta(...))`; a
-project rarely names these.
-
 Context: the standard five fields — minute, hour, day of month, month, day of week — with `*`,
 lists, ranges, steps and names. A timezone is required: a cron that says "02:00" means 02:00
 somewhere. Daylight saving is evaluated in that zone: a tick inside the spring-forward gap runs
@@ -21,12 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
 WEEKDAYS = ("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
 SEARCH_YEARS = 5
-
-
-class Trigger(Protocol):
-    def next_after(self, moment: datetime) -> datetime:
-        """The first tick strictly after `moment`, timezone-aware."""
-        ...
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _refuse_naive(moment: datetime) -> None:
@@ -68,7 +60,15 @@ def _field(
     return frozenset(values)
 
 
+class Trigger(Protocol):
+    def next_after(self, moment: datetime) -> datetime:
+        """The first tick strictly after `moment`, timezone-aware."""
+        ...
+
+
 class CronExpression:
+    """`CronExpression("0 2 * * *", timezone="America/La_Paz")`: every day at 02:00, La Paz time."""
+
     def __init__(self, expression: str, timezone: str) -> None:
         parts = expression.split()
         if len(parts) != 5:
@@ -125,9 +125,6 @@ class CronExpression:
                     if instant > moment:
                         return instant
         raise ValueError(f"cron: {self} has no tick in the next {SEARCH_YEARS} years")
-
-
-EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class Every:

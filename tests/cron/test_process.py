@@ -10,7 +10,7 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from sincpro_framework.cron import Cron, CronGateway, CronProcess, Crons, InProcessClock, Tick
+from sincpro_framework.cron import Cron, CronGateway, CronProcess, Crons, Tick
 
 OUTPUT = "SINCPRO_CRON_TEST_OUTPUT"
 
@@ -26,7 +26,7 @@ def build_crons() -> CronGateway:
             with output.open("a") as marks:
                 marks.write(f"{os.getpid()}\n")
 
-    return CronGateway([crons], clock=InProcessClock(resolution=timedelta(milliseconds=5)))
+    return CronGateway([crons], look_every=timedelta(milliseconds=5))
 
 
 def test_the_crons_run_in_their_own_process_until_stopped(tmp_path, monkeypatch):

@@ -17,13 +17,13 @@ from sincpro_framework.cron import (
     CronGateway,
     Crons,
     InMemoryRuns,
-    ManualClock,
     Missed,
     Overlap,
     RunOutcome,
     Tick,
 )
 from sincpro_framework.exceptions import BusAlreadyBuilt, DependencyNotRegistered
+from sincpro_framework.testing import ManualClock
 
 START = datetime(2026, 9, 26, 1, 59, tzinfo=UTC)
 
@@ -504,6 +504,57 @@ def test_a_cron_gets_the_dependencies_its_parent_cron_declares():
     gateway.wait()
 
     assert [invoice for invoice, _ in issued] == ["F-1", "F-2"]
+
+
+class CronDependencyContextType:
+    billing: UseFramework
+    siat: UseFramework
+
+
+class BillingCron(Cron, CronDependencyContextType):
+    """The bounded context's base: its dependencies declared once, for every cron."""
+
+
+def test_a_bounded_context_base_hands_its_dependencies_to_every_cron():
+    issued: list = []
+    billing, siat = _buses(issued)
+    crons = Crons[CronDependencyContextType]("cron-context")
+    crons.add_dependency("billing", billing)
+    crons.add_dependency("siat", siat)
+
+    @crons.cron(every=timedelta(minutes=1))
+    class IssueOverdue(BillingCron):
+        def run(self, tick: Tick) -> None:
+            for invoice in self.billing(QueryOverdue(), ResponseOverdue).invoices:
+                self.siat(CommandIssue(invoice_id=invoice))
+
+    clock = ManualClock(START)
+    gateway = _running(crons, clock=clock)
+    clock.advance(minutes=1)
+    gateway.wait()
+
+    assert [invoice for invoice, _ in issued] == ["F-1", "F-2"]
+
+
+def test_the_registry_answers_its_dependencies_typed():
+    billing, siat = _buses([])
+    crons = Crons[CronDependencyContextType]("cron-deps")
+    crons.add_dependency("billing", billing)
+    crons.add_dependency("siat", siat)
+
+    assert crons.deps.billing is billing
+
+
+def test_a_dependency_the_context_base_declares_but_the_registry_lacks_fails_the_build():
+    crons = Crons[CronDependencyContextType]("cron-context-missing")
+    crons.add_dependency("billing", _buses([])[0])
+
+    @crons.cron(every=timedelta(minutes=1))
+    class NeedsSiat(BillingCron):
+        def run(self, tick: Tick) -> None: ...
+
+    with pytest.raises(DependencyNotRegistered, match="NeedsSiat needs siat"):
+        crons.build()
 
 
 def test_a_cron_registered_after_the_build_is_refused():

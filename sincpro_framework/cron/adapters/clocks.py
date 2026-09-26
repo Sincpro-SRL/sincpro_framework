@@ -1,39 +1,25 @@
-"""What decides *when* the gateway looks at its crons. A clock never executes anything itself:
-it calls `look(now)`, and the gateway decides what is due."""
+"""The clocks: `InProcessClock` looks on a loop of its own, `ManualClock` when a test says so."""
 
 import random
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from threading import Event
-from typing import Protocol
 
-type OnLook = Callable[[datetime], None]
-
-
-class Clock(Protocol):
-    def now(self) -> datetime: ...
-
-    def run(self, look: OnLook) -> None:
-        """Start calling `look`. Blocks for a clock that owns a loop; returns for one driven from
-        outside."""
-        ...
-
-    def stop(self) -> None: ...
+from sincpro_framework.cron.domain import OnLook
 
 
 class InProcessClock:
-    """Looks every `resolution`, on the thread that called `run`, until `stop` — also when
+    """Looks every `look_every`, on the thread that called `run`, until `stop` — also when
     `stop` came first: a stopped clock does not start again.
 
     Context: `jitter` adds up to that much to each wait, so replicas started together stop
-    claiming the same tick at the same instant. A cron runs within `resolution + jitter` of its
+    claiming the same tick at the same instant. A cron runs within `look_every + jitter` of its
     time — seconds, for schedules measured in minutes.
     """
 
     def __init__(
-        self, resolution: timedelta = timedelta(seconds=5), jitter: timedelta = timedelta(0)
+        self, look_every: timedelta = timedelta(seconds=5), jitter: timedelta = timedelta(0)
     ) -> None:
-        self.resolution = resolution
+        self.look_every = look_every
         self.jitter = jitter
         self._stopped = Event()
 
@@ -42,7 +28,7 @@ class InProcessClock:
 
     def interval(self) -> timedelta:
         """How long until the next look."""
-        return self.resolution + self.jitter * random.random()
+        return self.look_every + self.jitter * random.random()
 
     def run(self, look: OnLook) -> None:
         while not self._stopped.is_set():
@@ -54,7 +40,8 @@ class InProcessClock:
 
 
 class ManualClock:
-    """Time moves when the test says so: `advance(minutes=2)` makes every gateway that runs on it."""
+    """Time moves when the test says so: `advance(minutes=2)` makes every gateway that runs on
+    it look at that moment."""
 
     def __init__(self, start: datetime) -> None:
         if start.tzinfo is None:

@@ -1,49 +1,43 @@
 """Crons: callers of use cases on a clock, beside the buses and not on them.
 
-cron_payments = Crons("cron-payments")
-cron_payments.add_dependency("cybersource", cybersource)
+    cron_payments = Crons[CronDependencyContextType]("cron-payments")
+    cron_payments.add_dependency("cybersource", cybersource)
 
-@cron_payments.cron("0 2 * * *", timezone="America/La_Paz")
-class Reconcile(Cron):
-    cybersource: UseFramework
+    @cron_payments.cron("0 2 * * *", timezone="America/La_Paz")
+    class Reconcile(Cron):
+        def run(self, tick: Tick) -> None: ...
 
-    def run(self, tick: Tick) -> None: ...
+    CronProcess(build_crons).start()             # its own process, beside the service
 
-CronProcess(build_crons).start()             # its own process, beside the service
+`domain/` holds the vocabulary and the contracts, `adapters/` what the framework ships behind
+them, `registry` the `Crons` of a bounded context, `entrypoint/` how they run. This package answers
+what a project uses; `ManualClock`, for tests, is in `sincpro_framework.testing`.
 """
 
-from sincpro_framework.cron.clocks import Clock, InProcessClock, ManualClock
-from sincpro_framework.cron.gateway import CronGateway, CronStatus
-from sincpro_framework.cron.process import CronProcess
-from sincpro_framework.cron.registry import (
+from sincpro_framework.cron.adapters import InMemoryRuns
+from sincpro_framework.cron.domain import (
     Cron,
-    CronDefinition,
-    Crons,
+    CronRuns,
     Missed,
     Overlap,
+    Run,
+    RunOutcome,
     Tick,
 )
-from sincpro_framework.cron.runs import CronRuns, InMemoryRuns, Run, RunOutcome
-from sincpro_framework.cron.triggers import CronExpression, Every, Trigger
+from sincpro_framework.cron.entrypoint import CronGateway, CronProcess, CronStatus
+from sincpro_framework.cron.registry import Crons
 
 __all__ = [
-    "Clock",
     "Cron",
-    "CronDefinition",
-    "CronExpression",
     "CronGateway",
     "CronProcess",
     "CronRuns",
     "CronStatus",
     "Crons",
-    "Every",
-    "InProcessClock",
-    "ManualClock",
     "InMemoryRuns",
     "Missed",
     "Overlap",
     "Run",
     "RunOutcome",
     "Tick",
-    "Trigger",
 ]

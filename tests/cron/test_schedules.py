@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from sincpro_framework.cron import CronExpression, Every
+from sincpro_framework.cron.domain import CronExpression, Every
 
 LA_PAZ = ZoneInfo("America/La_Paz")
 NEW_YORK = ZoneInfo("America/New_York")

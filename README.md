@@ -983,23 +983,30 @@ A cron is one more caller of the buses, like an RPC method: a class registered o
 its bounded context, the buses it orchestrates injected by name.
 
 ```python
-from sincpro_framework.cron import Cron, CronGateway, CronProcess, Crons, Tick
-from sincpro_framework.cron.database import DatabaseRuns, cron_run_table
+from sincpro_framework.cron import Cron as _Cron
+from sincpro_framework.cron import CronGateway, CronProcess, Crons, Tick
 
-cron_payments = Crons("cron-payments")
+
+class CronDependencyContextType:
+    cybersource: UseFramework
+
+
+class Cron(_Cron, CronDependencyContextType):          # the bounded context's base cron
+    pass
+
+
+cron_payments = Crons[CronDependencyContextType]("cron-payments")
 cron_payments.add_dependency("cybersource", cybersource)
 
 
 @cron_payments.cron("0 2 * * *", timezone="America/La_Paz")
 class ReconcileTransactions(Cron):
-    cybersource: UseFramework
-
     def run(self, tick: Tick) -> None:
         self.cybersource(CommandReconcile(day=tick.scheduled_for.date()))
 
 
 def build_crons() -> CronGateway:                       # module-level: runs in the child
-    return CronGateway([cron_payments], runs=DatabaseRuns(database, runs_table))
+    return CronGateway([cron_payments])
 
 
 crons = CronProcess(build_crons).start()                # at startup; crons.stop() at shutdown
@@ -1009,7 +1016,7 @@ crons = CronProcess(build_crons).start()                # at startup; crons.stop
 |---|---|
 | When | a five-field expression in a timezone (DST handled) or `every=timedelta(…)` |
 | Where | `CronProcess`: a spawned child running the in-memory orchestrator — looks every 5 s (`jitter=` optional), a thread per run (`workers=` caps them) |
-| Once per tick | every replica ticks; the first claim of `(name, scheduled_for)` in `runs` wins; `tick.once(key)` for one step |
+| Once per tick | the first claim of `(name, scheduled_for)` in `runs` wins; `tick.once(key)` for one step. In memory by default; crons on several replicas share a `CronRuns` the project implements |
 | Policies | `overlap` (`SKIP` / `ALLOW`), `missed` (`SKIP` / `RUN_LATEST` / `RUN_ALL`) within `missed_window` |
 | Seeing it | the registry's own logger and spans; `gateway.plan(until)`, `gateway.status()` |
 | Testing | `ManualClock` — time moves when the test says so |

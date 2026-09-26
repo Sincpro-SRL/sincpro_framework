@@ -3,14 +3,8 @@
 from datetime import datetime, timedelta
 from threading import Event, Thread
 
-from sincpro_framework.cron import (
-    Cron,
-    CronGateway,
-    Crons,
-    InMemoryRuns,
-    InProcessClock,
-    Tick,
-)
+from sincpro_framework.cron import Cron, CronGateway, Crons, InMemoryRuns, Tick
+from sincpro_framework.cron.adapters import InProcessClock
 
 
 def test_the_clock_ticks_on_its_thread_until_it_is_stopped():
@@ -27,7 +21,7 @@ def test_the_clock_ticks_on_its_thread_until_it_is_stopped():
 
     gateway = CronGateway(
         [crons],
-        clock=InProcessClock(resolution=timedelta(milliseconds=5)),
+        look_every=timedelta(milliseconds=5),
         runs=InMemoryRuns(),
     )
     worker = Thread(target=gateway.run)
@@ -45,8 +39,8 @@ def test_the_clock_looks_every_five_seconds_by_default():
     assert InProcessClock().interval() == timedelta(seconds=5)
 
 
-def test_jitter_spreads_each_look_after_the_resolution():
-    clock = InProcessClock(resolution=timedelta(seconds=5), jitter=timedelta(seconds=2))
+def test_jitter_spreads_each_look_after_look_every():
+    clock = InProcessClock(look_every=timedelta(seconds=5), jitter=timedelta(seconds=2))
 
     intervals = {clock.interval() for _ in range(50)}
 
@@ -55,7 +49,7 @@ def test_jitter_spreads_each_look_after_the_resolution():
 
 
 def test_a_clock_stopped_before_it_runs_does_not_start():
-    clock = InProcessClock(resolution=timedelta(milliseconds=5))
+    clock = InProcessClock(look_every=timedelta(milliseconds=5))
     clock.stop()
 
     looks: list[datetime] = []

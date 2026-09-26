@@ -2,7 +2,7 @@
 service.
 
     def build_crons() -> CronGateway:           # a module-level function: it runs in the child
-        return CronGateway([cron_payments], runs=DatabaseRuns(database, table))
+        return CronGateway([cron_payments])
 
     crons = CronProcess(build_crons).start()    # at service startup
     ...
@@ -21,7 +21,7 @@ from multiprocessing.synchronize import Event
 from threading import Thread
 from typing import Literal
 
-from sincpro_framework.cron.gateway import CronGateway
+from sincpro_framework.cron.entrypoint.gateway import CronGateway
 
 
 def _serve(build: Callable[[], CronGateway], stop: Event) -> None:
