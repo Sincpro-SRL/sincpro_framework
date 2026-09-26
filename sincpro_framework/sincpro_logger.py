@@ -1,8 +1,11 @@
 """Logger module for framework."""
 
-from sincpro_log import configure_global_logging, create_logger
+from sincpro_log import configure_global_logging, create_logger, ignore_callsite_of
 
 from .sincpro_conf import settings
+
+# The bus logs on behalf of whoever executed the DTO: its lines name that caller, not bus.py.
+ignore_callsite_of("sincpro_framework")
 
 configure_global_logging(
     settings.sincpro_framework_log_level,

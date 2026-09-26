@@ -36,7 +36,7 @@ def compose_handler(
         except Exception as exc:
             if next_handler:
                 return next_handler(exc)
-            raise exc
+            raise
 
     return _wrapped
 

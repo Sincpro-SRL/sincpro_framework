@@ -47,7 +47,11 @@ def _span_for(dto_name: str, layer: str, bus: str) -> Any:
         attributes = {"sincpro.layer": layer}
         if bus:
             attributes["sincpro.instance"] = bus
-        return tracer.start_as_current_span(dto_name, attributes=attributes)
+        # The exception is recorded once, by span_error, on the handler that raised it; the
+        # span only takes the error status as the exception crosses it.
+        return tracer.start_as_current_span(
+            dto_name, attributes=attributes, record_exception=False
+        )
     except Exception:
         return nullcontext()
 

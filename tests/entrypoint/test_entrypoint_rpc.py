@@ -453,3 +453,15 @@ def test_a_domain_error_still_answers_the_caller():
     answered = _asked(_blowing_up(ContractViolation("an invoice has to balance")))
 
     assert answered["error"]["data"] == "an invoice has to balance"
+
+
+def test_a_failure_the_bus_logged_is_not_logged_again_by_the_transport():
+    from structlog.testing import capture_logs
+
+    with capture_logs() as logs:
+        _asked(_blowing_up(RuntimeError("gateway down")))
+
+    errors = [line for line in logs if line["log_level"] == "error"]
+    assert [line["event"] for line in errors] == [
+        "Explodes failed: RuntimeError: gateway down"
+    ]

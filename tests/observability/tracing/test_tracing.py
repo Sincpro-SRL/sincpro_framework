@@ -655,44 +655,33 @@ def test_otel_getter_empty_when_no_active_span(otel_setup):
     assert result == {}
 
 
-def test_otel_getter_suppressed_during_execution(otel_setup):
-    """(OTel) The ids bound for the execution answer; the ambient getter is not asked.
-
-    Both would say the same thing here — the point is that a DTO execution has one
-    source for its ids, not two that could disagree.
-    """
+def test_execution_ids_win_over_an_ambient_source(otel_setup):
+    """(OTel) Inside a DTO execution the trace ids are the execution's own span, even when
+    another context source answers different ones; that source's other fields remain."""
     from opentelemetry import trace
 
-    from sincpro_framework.observability.tracing.setup import current_otel_context
-
-    fw = UseFramework("getter-suppression-test", log_after_execution=False)
+    fw = UseFramework("ambient-source-test", log_after_execution=False)
 
     class GS_DTO(DataTransferObject):
         pass
 
-    getter_calls: list[int] = []
     captured: dict = {}
-
-    def counting_getter() -> dict:
-        getter_calls.append(1)
-        return current_otel_context()
 
     @fw.feature(GS_DTO)
     class GS_Feature(Feature):
         def execute(self, dto: GS_DTO) -> None:
-            before = len(getter_calls)
             captured["fields"] = dict(fw.logger.logger_fields)
-            captured["getter_calls"] = len(getter_calls) - before
+            captured["span"] = trace.get_current_span().get_span_context()
             return None
 
-    fw.logger.set_getter_context(counting_getter)
+    fw.logger.add_context_source(lambda: {"trace_id": "ambient", "request": "r-1"})
 
     tracer = trace.get_tracer("host")
     with tracer.start_as_current_span("http-handler"):
         fw(GS_DTO())
 
-    assert "trace_id" in captured["fields"]
-    assert captured["getter_calls"] == 0
+    assert captured["fields"]["trace_id"] == format(captured["span"].trace_id, "032x")
+    assert captured["fields"]["request"] == "r-1"
 
 
 def test_logger_getter_not_registered_when_there_are_no_spans_to_read(monkeypatch):
@@ -704,11 +693,11 @@ def test_logger_getter_not_registered_when_there_are_no_spans_to_read(monkeypatc
 
     monkeypatch.setattr(setup_module, "host_provider_is_real", lambda: False)
     logger = create_logger("no-endpoint-test")
-    assert logger._getter_context is None
+    assert logger._context_sources == []
 
     setup_module.setup(ObservabilityIdentity(bus="no-endpoint-test"), logger)
 
-    assert logger._getter_context is None
+    assert logger._context_sources == []
 
 
 def test_logger_getter_is_registered_when_riding_the_host_provider(monkeypatch):
@@ -729,7 +718,7 @@ def test_logger_getter_is_registered_when_riding_the_host_provider(monkeypatch):
     status = setup_module.setup(ObservabilityIdentity(bus="host-provider-test"), logger)
 
     assert status.reason == "host"
-    assert logger._getter_context is setup_module.current_otel_context
+    assert setup_module.current_otel_context in logger._context_sources
 
 
 def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):

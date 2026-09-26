@@ -45,24 +45,30 @@ class FeatureBus(Bus):
         dto_type = dto.__class__
         dto_name = dto_type.__name__
 
+        feature = self.feature_registry.get(dto_type)
+        if feature is None:
+            raise UnknownDTOToExecute(f"{dto_name} is not registered as a feature")
         with self.observability.span(dto_name, "feature") as span:
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing feature dto: [{dto_name}]")
             self.logger.debug(f"{dto_name}({dto})")
 
-            try:
-                response = self.feature_registry[dto_type].execute(dto)
-                if response:
-                    self.logger.debug(
-                        f"Feature response {response.__class__.__name__}({response})",
-                    )
-                return response
+            with self.observability.handling(dto_name):
+                try:
+                    response = feature.execute(dto)
+                except Exception as error:
+                    self.observability.failed(error, dto, feature, "feature", span)
+                    if not self.handle_error:
+                        raise
+                    answer = self.handle_error(error)
+                    self.observability.handled(error, dto)
+                    return answer
 
-            except Exception as error:
-                self.observability.record_error(error, dto_name, "feature", span)
-                if self.handle_error:
-                    return self.handle_error(error)
-                raise error
+            if response:
+                self.logger.debug(
+                    f"Feature response {response.__class__.__name__}({response})",
+                )
+            return response
 
 
 class ApplicationServiceBus(Bus):
@@ -102,24 +108,34 @@ class ApplicationServiceBus(Bus):
         dto_type = dto.__class__
         dto_name = dto_type.__name__
 
+        app_service = self.app_service_registry.get(dto_type)
+        if app_service is None:
+            raise UnknownDTOToExecute(
+                f"{dto_name} is not registered as an application service"
+            )
         with self.observability.span(dto_name, "application_service") as span:
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing app service dto: [{dto_name}]")
             self.logger.debug(f"{dto_name}({dto})")
 
-            try:
-                response = self.app_service_registry[dto_type].execute(dto)
-                if response:
-                    self.logger.debug(
-                        f"Application service response {response.__class__.__name__}({response})"
+            with self.observability.handling(dto_name):
+                try:
+                    response = app_service.execute(dto)
+                except Exception as error:
+                    self.observability.failed(
+                        error, dto, app_service, "application_service", span
                     )
-                return response
+                    if not self.handle_error:
+                        raise
+                    answer = self.handle_error(error)
+                    self.observability.handled(error, dto)
+                    return answer
 
-            except Exception as error:
-                self.observability.record_error(error, dto_name, "application_service", span)
-                if self.handle_error:
-                    return self.handle_error(error)
-                raise error
+            if response:
+                self.logger.debug(
+                    f"Application service response {response.__class__.__name__}({response})"
+                )
+            return response
 
 
 # ---------------------------------------------------------------------------------------------
@@ -164,6 +180,28 @@ class FrameworkBus(Bus):
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
 
+    def _dispatch(self, dto: TypeDTO) -> TypeDTOResponse | None:
+        dto_type = dto.__class__
+        dto_name = dto_type.__name__
+        if (
+            dto_type in self.app_service_bus.app_service_registry
+            and dto_type in self.feature_bus.feature_registry
+        ):
+            raise DTOAlreadyRegistered(
+                f"Data transfer object {dto_name} is present in application services and features, Change the "
+                f"name of the feature or create another framework instance to handle in doupled wat"
+            )
+        if dto_type in self.feature_bus.feature_registry:
+            return self.feature_bus.execute(dto)
+
+        if dto_type in self.app_service_bus.app_service_registry:
+            return self.app_service_bus.execute(dto)
+
+        raise UnknownDTOToExecute(
+            f"the DTO {dto_name} was not able to execute nothing review if the decorators are used properly, "
+            f"otherwise the DTO {dto_name} was never register using the decorator"
+        )
+
     def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
@@ -173,37 +211,23 @@ class FrameworkBus(Bus):
         if the DTO is present in the app service bus
         otherwise will execute the DTO in the feature bus
         """
-        dto_type = dto.__class__
-        dto_name = dto_type.__name__
-        try:
-            if (
-                dto_type in self.app_service_bus.app_service_registry
-                and dto_type in self.feature_bus.feature_registry
-            ):
-                raise DTOAlreadyRegistered(
-                    f"Data transfer object {dto_name} is present in application services and features, Change the "
-                    f"name of the feature or create another framework instance to handle in doupled wat"
-                )
-            if dto_type in self.feature_bus.feature_registry:
-                response = self.feature_bus.execute(dto)
-                return response
-
-            if dto_type in self.app_service_bus.app_service_registry:
-                response = self.app_service_bus.execute(dto)
-                return response
-
-            raise UnknownDTOToExecute(
-                f"the DTO {dto_name} was not able to execute nothing review if the decorators are used properly, "
-                f"otherwise the DTO {dto_name} was never register using the decorator"
-            )
-
-        except Exception as error:
-            if isinstance(error, (UnknownDTOToExecute, DTOAlreadyRegistered)):
-                self.observability.record_error(
-                    error, dto_name, "framework", kind="framework"
-                )
-            if self.handle_error:
-                return self.handle_error(error)
-
-            self.logger.exception(f"Error with DTO {dto_name}({dto})")
-            raise error
+        with self.observability.execution() as outermost:
+            try:
+                return self._dispatch(dto)
+            except Exception as error:
+                if isinstance(error, (UnknownDTOToExecute, DTOAlreadyRegistered)):
+                    self.observability.record_error(
+                        error, dto.__class__.__name__, "framework", kind="framework"
+                    )
+                if not self.handle_error:
+                    if outermost:
+                        self.observability.escaped(error, dto)
+                    raise
+                try:
+                    answer = self.handle_error(error)
+                except Exception as raised:
+                    if outermost:
+                        self.observability.escaped(raised, dto)
+                    raise
+                self.observability.handled(error, dto)
+                return answer

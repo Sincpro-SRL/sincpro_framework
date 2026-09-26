@@ -15,8 +15,9 @@ method is a no-op and the bus runs exactly as it would without observability.
 
 from typing import Any, ContextManager, Optional, Tuple, Type
 
-from sincpro_log.logger import LoggerProxy
+from sincpro_log.logger import LoggerProxy, create_logger
 
+from sincpro_framework.observability import failure
 from sincpro_framework.observability.domain import (
     ComponentStatus,
     ObservabilityIdentity,
@@ -55,7 +56,7 @@ class Observability:
         self._identity: Optional[ObservabilityIdentity] = None
         self.status: ObservabilityStatus = ObservabilityStatus()
         self.ignored_errors: IgnoredExceptions = ()
-        self.logger: Optional[LoggerProxy] = None
+        self.logger: LoggerProxy = create_logger(bus or "sincpro_framework")
 
     @property
     def identity(self) -> ObservabilityIdentity:
@@ -68,7 +69,8 @@ class Observability:
 
     def start(self, logger: Optional[LoggerProxy] = None) -> ObservabilityStatus:
         """Bring both backends up for this bus. Each one degrades on its own."""
-        self.logger = logger
+        if logger is not None:
+            self.logger = logger
         self.status = ObservabilityStatus(
             sentry=setup_errors(self.identity),
             otel=setup_tracing(self.identity, logger),
@@ -107,7 +109,7 @@ class Observability:
         kind: ErrorKind = "instance",
     ) -> None:
         """Report a failure everywhere it belongs: on the span and in GlitchTip."""
-        span_error(span, error)
+        span_error(span, error, None)
         record_error(
             error,
             dto_name,
@@ -116,6 +118,69 @@ class Observability:
             kind=kind,
             ignored_exceptions=self.ignored_errors,
         )
+
+    # -----------------------------------------------------------------------------------------
+    # One failure, reported once
+    # -----------------------------------------------------------------------------------------
+
+    def _is_expected(self, error: BaseException) -> bool:
+        return isinstance(error, self.ignored_errors)
+
+    def _describe(self, error: BaseException, dto: object) -> tuple[str, dict[str, Any]]:
+        recorded = failure.failure_of(error)
+        if recorded is None:
+            fields = {"dto": repr(dto), "error_type": type(error).__name__}
+            return f"{type(dto).__name__} failed: {type(error).__name__}: {error}", fields
+        fields = recorded.fields()
+        if error is not recorded.error:
+            fields["raised_as"] = type(error).__name__
+        return recorded.summary, fields
+
+    def execution(self) -> ContextManager[bool]:
+        return failure.execution()
+
+    def handling(self, dto_name: str) -> ContextManager[None]:
+        return failure.handling(dto_name)
+
+    def failed(
+        self, error: Exception, dto: object, handler: object, layer: str, span: Any
+    ) -> None:
+        """Context: the handler that raised describes the failure, puts it on its span and
+        sends it to GlitchTip. An outer handler the same error crosses adds nothing."""
+        recorded = failure.remember(error, dto, self._bus, handler, layer)
+        if recorded is None:
+            return
+        span_error(span, error, recorded.error_at)
+        record_error(
+            error,
+            type(dto).__name__,
+            layer,
+            self.identity,
+            ignored_exceptions=self.ignored_errors,
+            details={**self.logger.logger_fields, **recorded.fields()},
+        )
+
+    def escaped(self, error: BaseException, dto: object) -> None:
+        """Context: called by the outermost bus only, so an error is logged once. An expected
+        error — kept out of GlitchTip with ``ignore`` — is traffic: info, no traceback."""
+        recorded = failure.failure_of(error)
+        if recorded is not None:
+            failure.annotate(error, recorded)
+        summary, fields = self._describe(error, dto)
+        if self._is_expected(error) or (recorded and self._is_expected(recorded.error)):
+            self.logger.info(summary, **fields)
+        else:
+            self.logger.error(summary, exc_info=error, **fields)
+
+    def handled(self, error: BaseException, dto: object) -> None:
+        """Context: an error handler answered instead of raising; the caller never sees the
+        error, so this line is its only trace."""
+        summary, fields = self._describe(error, dto)
+        message = f"{summary} (answered by an error handler)"
+        if self._is_expected(error):
+            self.logger.info(message, **fields)
+        else:
+            self.logger.warning(message, **fields)
 
     def trace_context(
         self,
@@ -189,17 +254,26 @@ class ProcessObservability:
         does not support it simply keeps logging.
         """
         try:
-            logger.set_getter_context(self.trace_ids)
+            logger.add_context_source(self.trace_ids)
         except Exception:
             return
 
     def trace_ids(self) -> dict:
         """``trace_id``/``span_id`` of the active span, for a process logger.
 
-        Hand it to ``logger.set_getter_context(...)`` so an access log line, or a
+        Hand it to ``logger.add_context_source(...)`` so an access log line, or a
         line from uvicorn, lands on the same trace as the request that caused it.
         """
         return current_otel_context()
+
+    def was_reported(self, error: BaseException) -> bool:
+        """Whether a bus already logged ``error`` on its way out.
+
+        A transport that catches what a bus raised answers the caller, but logging it again
+        would put the same failure in the logs twice. What no bus saw — a malformed
+        request, a failure before any Feature ran — is still the transport's to log.
+        """
+        return failure.was_reported(error)
 
     def record_error(self, error: Exception, layer: str = "process") -> None:
         """Report a transport failure under the process release. Never raises."""

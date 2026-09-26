@@ -1,7 +1,7 @@
 import json
 import threading
 from functools import partial
-from typing import Any, Dict, Generic, Mapping, Optional, Type, cast
+from typing import Any, Dict, Generic, Iterable, Mapping, Optional, Type, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -42,6 +42,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         log_app_services: bool = True,
         log_features: bool = True,
         package: Optional[str] = None,
+        hide_in_logs: Iterable[str] = (),
     ):
         """Initialize the framework
 
@@ -53,6 +54,8 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             package: Optional Poetry distribution name used for Sentry
                 release and OTel ``service.name``. When omitted, the
                 caller outside ``sincpro_framework`` is detected.
+            hide_in_logs: Context keys kept out of every log line and GlitchTip event
+                (e.g. ``["TOKEN"]``). Everything else set with ``context()`` is logged.
         """
         # Logger
         self._is_logger_configured: bool = False
@@ -64,6 +67,8 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.observability = Observability(bundled_context_name, package=package or "")
 
         self._init_context_storage()
+        self._hidden_in_logs: frozenset[str] = frozenset(hide_in_logs)
+        self.logger.add_context_source(self._context_for_logs)
 
         # Container
         self._sp_container = ioc.FrameworkContainer(  # type: ignore[call-arg]
@@ -93,6 +98,14 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.was_initialized: bool = False
         self._build_lock = threading.RLock()
         self.bus: FrameworkBus | None = None
+
+    def _context_for_logs(self) -> Dict[str, Any]:
+        """The execution's context, as fields on every log line this bus writes."""
+        return {
+            key: value
+            for key, value in self._get_context().items()
+            if key not in self._hidden_in_logs
+        }
 
     def _add_dependencies_provided_by_user(self):
         if "feature_registry" in self._sp_container.feature_bus.attributes:

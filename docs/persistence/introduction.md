@@ -101,7 +101,7 @@ The request, from anywhere:
 
 ```json
 {"where": {"field": "pages", "operator": ">", "value": 200},
- "order": "-pages",
+ "order": [{"field": "pages", "descending": true}],
  "pagination": {"limit": 20},
  "specification": {"title": {}, "author": {"specification": {"name": {}}}}}
 ```

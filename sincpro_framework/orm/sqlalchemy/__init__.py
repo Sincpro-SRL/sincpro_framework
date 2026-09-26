@@ -18,8 +18,10 @@ from sincpro_framework.orm.sqlalchemy.data_mapper import (
     Relation,
     archive_columns,
     audit_columns,
+    delivery_columns,
     entity_columns,
     entity_table,
+    event_columns,
     map_aggregates,
 )
 from sincpro_framework.orm.sqlalchemy.database import Database
@@ -34,10 +36,12 @@ __all__ = [
     "Relation",
     "archive_columns",
     "audit_columns",
+    "delivery_columns",
     "Repository",
     "TranslatedText",
     "describe",
     "entity_columns",
+    "event_columns",
     "entity_table",
     "map_aggregates",
     "register_grain_translator",

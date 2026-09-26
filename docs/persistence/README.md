@@ -10,6 +10,7 @@ Read in this order:
 
 | Page | What it answers |
 |---|---|
+| [**Guide**](guide.md) | **Start here.** Every use case step by step — aggregate, repository, writes, reads, relations, hooks, events, change tracking, event sourcing, outbox, testing — all runnable and tested |
 | [Introduction](introduction.md) | What problem this solves, the mental model in one page, a first end-to-end example |
 | [Design](design.md) | The two packages, the flow of a read and of a write, the module map, the invariants, where to extend |
 | [Criteria](criteria.md) | The boundary language: its grammar, what *reflexive* means, how two criterias merge, what `dropped` is |

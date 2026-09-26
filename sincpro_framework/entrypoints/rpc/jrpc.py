@@ -12,6 +12,7 @@ from sincpro_framework.entrypoints.errors import (
     said_to_the_caller,
 )
 from sincpro_framework.entrypoints.scalar_executor import execute
+from sincpro_framework.observability import process
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
@@ -122,7 +123,8 @@ def handle_single(
         response = jsonrpc_error(INVALID_PARAMS, "Invalid params", request_id, error.data)
         return None if is_notification else response
     except Exception as error:
-        logger.exception("JSON-RPC method [%s] failed", method)
+        if not process.was_reported(error):
+            logger.exception("JSON-RPC method [%s] failed", method)
         response = jsonrpc_error(
             INTERNAL_ERROR, "Internal error", request_id, said_to_the_caller(error)
         )

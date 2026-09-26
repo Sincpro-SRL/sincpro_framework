@@ -132,7 +132,8 @@ def _consume(inbox: Any, build_subscriber: Callable[[], Subscriber]) -> None:
             with _adopted(carrier):
                 subscriber.handle(event_type(**payload))
         except Exception as error:  # noqa: BLE001 - one event failing must not end the worker
-            logger.error(f"event {name} failed in the background worker: {error!r}")
+            if not process.was_reported(error):
+                logger.exception(f"event {name} failed in the background worker")
             process.record_error(error, layer="events")
 
 
