@@ -24,6 +24,7 @@ class FeatureBus(Bus):
     log_after_execution: bool
     feature_registry: Dict[type, Feature]
     interceptors: Dict[type, tuple[Interceptor, ...]]
+    replacements: Dict[type, tuple[str, ...]]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability
@@ -56,6 +57,7 @@ class ApplicationServiceBus(Bus):
     log_after_execution: bool
     app_service_registry: Dict[type, ApplicationService]
     interceptors: Dict[type, tuple[Interceptor, ...]]
+    replacements: Dict[type, tuple[str, ...]]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability

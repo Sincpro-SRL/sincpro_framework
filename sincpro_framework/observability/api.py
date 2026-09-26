@@ -13,6 +13,7 @@ Nothing here raises and nothing here is required: with neither extra installed e
 method is a no-op and the bus runs exactly as it would without observability.
 """
 
+from collections.abc import Mapping
 from typing import Any, ContextManager, Optional, Tuple, Type
 
 from sincpro_log.logger import LoggerProxy, create_logger
@@ -37,7 +38,7 @@ from sincpro_framework.observability.tracing.setup import (
 )
 from sincpro_framework.observability.tracing.setup import setup as setup_tracing
 from sincpro_framework.observability.tracing.span_context import FrameworkSpanContext
-from sincpro_framework.observability.tracing.span_error import span_error
+from sincpro_framework.observability.tracing.span_error import span_attributes, span_error
 from sincpro_framework.observability.tracing.span_execution import span_execution
 
 IgnoredExceptions = Tuple[Type[Exception], ...]
@@ -135,6 +136,10 @@ class Observability:
         if error is not recorded.error:
             fields["raised_as"] = type(error).__name__
         return recorded.summary, fields
+
+    def annotate(self, span: Any, attributes: Mapping[str, str]) -> None:
+        """Extra attributes on the span of one execution — who handled it, what it replaced."""
+        span_attributes(span, attributes)
 
     def execution(self) -> ContextManager[bool]:
         return failure.execution()

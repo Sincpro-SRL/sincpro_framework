@@ -96,7 +96,7 @@ billing.reload()                                         # build → check → s
 
 ## Entrypoints
 
-`RpcGateway`, `McpGateway`, `GrpcGateway` and `SchedulerGateway` accept a `BusRegistry` wherever they
+`RpcGateway`, `McpGateway` and `GrpcGateway` accept a `BusRegistry` wherever they
 accept a `UseFramework`, and resolve the current generation per call. MCP and gRPC, which publish
 their tool list when the server starts, re-publish it on swap (MCP `tools/list_changed`, gRPC
 reflection) or keep a stable generic `execute`.

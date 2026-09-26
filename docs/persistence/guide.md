@@ -21,6 +21,7 @@ The other pages explain *why* each piece is the way it is. This one is *how*.
 | Keep the facts as the state | [11. Event sourcing](#11-event-sourcing) |
 | Deliver events reliably to another process | [12. An outbox](#12-an-outbox) |
 | Test a Feature without a database | [13. Testing](#13-testing) |
+| Extend an aggregate with fields of its own | [14. Extending an aggregate](#14-extending-an-aggregate) |
 
 Install the adapter with `pip install sincpro-framework[sqlalchemy]`. The vocabulary —
 `sincpro_framework.ddd` — needs nothing installed; `sincpro_framework.orm` is the SQLAlchemy
@@ -704,6 +705,54 @@ test_registering_a_customer_stores_it()
 `MemoryRepository(*records)` starts with records already in it. What only a database can
 prove — a unique index, a foreign key, a lock — needs the real one; see
 [testing.md](testing.md) for the suite that runs this layer under volume and concurrency.
+
+## 14. Extending an aggregate
+
+A subclass of an aggregate — an addon's `CreditInvoice` that is an `Invoice` with a credit
+reason — keeps what it inherits in the parent's table and only its own columns in its table,
+which references the parent's key:
+
+```python
+from sqlalchemy import Table
+
+credit = registry()
+credit_invoice_table = entity_table(
+    "credit_note",
+    credit.metadata,
+    Column("number", Text, nullable=False),
+    Column("total", Integer, nullable=False),
+)
+
+
+@dataclass
+class Note(Entity):
+    number: str = ""
+    total: int = 0
+
+
+@dataclass
+class CreditNote(Note):
+    reason: str = ""
+
+
+credit_reason_table = Table(
+    "credit_note_reason",
+    credit.metadata,
+    Column("id", Text, ForeignKey("credit_note.id"), primary_key=True),
+    Column("reason", Text, nullable=False),
+)
+map_aggregates(credit, {Note: credit_invoice_table, CreditNote: credit_reason_table})
+credit.metadata.create_all(database.engine)
+
+note = CreditNote(number="NC-1", total=50, reason="returned goods")
+repository.save(note)
+stored = repository.get(CreditNote, note.id)
+assert (stored.number, stored.total, stored.reason) == ("NC-1", 50, "returned goods")
+```
+
+`map_aggregates` maps the parent first whatever the order, versions the extension like its
+parent, and refuses a table that does not reference the parent's key. A `Criteria` filters and
+orders by inherited and own fields alike.
 
 ---
 

@@ -55,7 +55,11 @@ class FrameworkContext:
         return self.framework
 
     def _enter_isolated(self) -> None:
-        merged = {**self.framework._get_context(), **self.context}
+        merged = {
+            **self.framework._inherited_context(),
+            **self.framework._get_context(),
+            **self.context,
+        }
         self._overlay_token, self._overlay = self.framework._push_overlay(merged)
 
     def _enter_global(self) -> None:

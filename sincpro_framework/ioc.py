@@ -3,7 +3,7 @@
 import sys
 from enum import Enum
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias, TypeVar, get_type_hints
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -27,7 +27,7 @@ from typing_extensions import TypeIs
 T = TypeVar("T", bound=type)
 
 from .bus import ApplicationServiceBus, FeatureBus, FrameworkBus
-from .exceptions import DTOAlreadyRegistered
+from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 from .observability import Observability
 from .sincpro_abstractions import DataTransferObject
 
@@ -50,6 +50,8 @@ class FrameworkContainer(containers.DeclarativeContainer):
     observability: Object[Observability] = providers.Object()
     injected_dependencies: Dict = providers.Dict()
     dto_registry: Dict = Dict({})
+    replacements: Dict = providers.Dict({})
+    """DTO → the handlers it replaced, oldest first, as `module.Class`."""
 
     # atomic layer
     feature_registry: Dict = providers.Dict({})
@@ -179,14 +181,129 @@ def _register_service(
                 )
 
 
+def _qualified(cls: type) -> str:
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def _declared_response(handler: type) -> Any:
+    try:
+        return get_type_hints(handler.execute).get("return")
+    except NameError:
+        return None
+
+
+def _refuse_an_incompatible_response(replacement: type, replaced: type) -> None:
+    """Context: a replacement keeps the contract of the handler it replaces (Liskov) — when both
+    declare a response class, the replacement's is that class or a narrower one."""
+    new, old = _declared_response(replacement), _declared_response(replaced)
+    if isinstance(new, type) and isinstance(old, type) and not issubclass(new, old):
+        raise TypeError(
+            f"{replacement.__name__} answers {new.__name__}, but {replaced.__name__} answers "
+            f"{old.__name__} — a replacement keeps the contract of what it replaces"
+        )
+
+
+def _refuse_a_wrong_replacement(
+    framework_container: FrameworkContainer,
+    registry: providers.Dict,
+    data_transfer_object: type,
+    replacement: type,
+    replaced: type,
+) -> None:
+    name = data_transfer_object.__name__
+    current = registry.kwargs.get(data_transfer_object)
+    if current is None:
+        raise UnknownDTOToExecute(
+            f"{replacement.__name__} replaces {replaced.__name__}, but nothing answers {name} "
+            "yet — register the core handler first"
+        )
+    answering = current.provides
+    if answering is replaced:
+        return
+    chain: tuple[str, ...] = framework_container.replacements.kwargs.get(
+        data_transfer_object, ()
+    )
+    if _qualified(replaced) in chain:
+        raise DTOAlreadyRegistered(
+            f"{replacement.__name__} replaces {replaced.__name__}, but "
+            f"{answering.__name__} already did — replace {answering.__name__} or remove it"
+        )
+    raise DTOAlreadyRegistered(
+        f"{replacement.__name__} replaces {replaced.__name__}, but {name} is handled by "
+        f"{answering.__name__}"
+    )
+
+
+def _replace_service(
+    framework_container: FrameworkContainer,
+    service_type: ServiceType,
+    dto: DTORegistration,
+    replacement: type,
+    replaced: type,
+) -> None:
+    """Context: the handler registered for each DTO becomes `replacement`, and only when it is
+    `replaced` — so a replacement cannot land on the wrong handler, before the core registered
+    its own, or on top of another replacement it does not name.
+
+    1. Every DTO is answered by `replaced` — checked for all before any is swapped, so a refused
+       replacement leaves every handler as it was.
+    2. The replacement keeps the replaced handler's response contract.
+    3. Final: swap the factories and record what was replaced, for the build log and
+       introspection.
+    """
+    registry = (
+        framework_container.feature_registry
+        if service_type == ServiceType.FEATURE
+        else framework_container.app_service_registry
+    )
+    data_transfer_objects = dto if isinstance(dto, list) else [dto]
+    for data_transfer_object in data_transfer_objects:
+        _refuse_a_wrong_replacement(
+            framework_container, registry, data_transfer_object, replacement, replaced
+        )
+    _refuse_an_incompatible_response(replacement, replaced)
+
+    factory = (
+        providers.Factory(replacement)
+        if service_type == ServiceType.FEATURE
+        else providers.Factory(replacement, framework_container.feature_bus)
+    )
+    updated = providers.Dict(
+        {**registry.kwargs, **{one: factory for one in data_transfer_objects}}
+    )
+    if service_type == ServiceType.FEATURE:
+        framework_container.feature_registry = updated
+        framework_container.feature_bus.add_attributes(feature_registry=updated)
+    else:
+        framework_container.app_service_registry = updated
+        framework_container.app_service_bus.add_attributes(app_service_registry=updated)
+    replacements = framework_container.replacements.kwargs
+    framework_container.replacements = providers.Dict(
+        {
+            **replacements,
+            **{
+                one: (*replacements.get(one, ()), _qualified(replaced))
+                for one in data_transfer_objects
+            },
+        }
+    )
+
+
+def names_of(dto: DTORegistration) -> str:
+    return ", ".join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))
+
+
 def inject_feature_to_bus(
-    framework_container: FrameworkContainer, dto: DTORegistration
+    framework_container: FrameworkContainer,
+    dto: DTORegistration,
+    replaces: type | None = None,
 ) -> Callable[[T], T]:
     """Decorator to register a feature to the framework bus
 
     Args:
         framework_container: The IoC container instance
         dto: DTO or list of DTOs to register with the feature
+        replaces: The Feature currently registered for them, when this one answers instead
 
     Returns:
         Decorated class with feature registration functionality
@@ -194,20 +311,29 @@ def inject_feature_to_bus(
 
     @wraps(inject_feature_to_bus)
     def decorator(decorated_class: T) -> T:
-        _register_service(framework_container, ServiceType.FEATURE, dto, decorated_class)
+        if replaces is None:
+            _register_service(framework_container, ServiceType.FEATURE, dto, decorated_class)
+        else:
+            _replace_service(
+                framework_container, ServiceType.FEATURE, dto, decorated_class, replaces
+            )
         return decorated_class
 
     return decorator
 
 
 def inject_app_service_to_bus(
-    framework_container: FrameworkContainer, dto: DTORegistration
+    framework_container: FrameworkContainer,
+    dto: DTORegistration,
+    replaces: type | None = None,
 ) -> Callable[[T], T]:
     """Decorator to register an application service to the framework bus
 
     Args:
         framework_container: The IoC container instance
         dto: DTO or list of DTOs to register with the application service
+        replaces: The ApplicationService currently registered for them, when this one answers
+            instead
 
     Returns:
         Decorated class with app service registration functionality
@@ -215,7 +341,14 @@ def inject_app_service_to_bus(
 
     @wraps(inject_app_service_to_bus)
     def decorator(decorated_class: T) -> T:
-        _register_service(framework_container, ServiceType.APP_SERVICE, dto, decorated_class)
+        if replaces is None:
+            _register_service(
+                framework_container, ServiceType.APP_SERVICE, dto, decorated_class
+            )
+        else:
+            _replace_service(
+                framework_container, ServiceType.APP_SERVICE, dto, decorated_class, replaces
+            )
         return decorated_class
 
     return decorator

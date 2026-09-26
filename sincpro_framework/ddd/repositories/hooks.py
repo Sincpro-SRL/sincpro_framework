@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import Any, ClassVar, cast
 
 from sincpro_framework.ddd.events import DomainEvent  # noqa: F401  (documented in Rule)
+from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.exceptions import DependencyNotRegistered
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -180,7 +181,7 @@ class Hooks:
     named at the wiring rather than discovered.
     """
 
-    __slots__ = ("_hooks", "_package", "_loaded", "_deps")
+    __slots__ = ("_hooks", "_package", "_loaded", "_read", "_deps")
 
     def __init__(self, package: "str | None" = INFER) -> None:
         """Remembers the package it was built in, and walks it the first time somebody reads
@@ -197,12 +198,23 @@ class Hooks:
         """
         self._hooks: list[type[Hook]] = []
         self._loaded = False
+        self._read = False
         self._deps: Any = None
         self._package = _calling_package() if package is INFER else package
 
     def __call__(self, hook: "type[Hook]") -> "type[Hook]":
         """Registers the class and answers it unchanged, so the decorator is invisible to
-        everything else that uses it."""
+        everything else that uses it.
+
+        Context: a repository reads the collection once, when it is built; a hook decorated
+        after that would never run, so it is refused.
+        """
+        if self._read:
+            raise ContractViolation(
+                f"{hook.__name__} decorated late: this collection was already read by a "
+                "repository, so it would never run — import its module before building the "
+                "repository"
+            )
         self._hooks.append(hook)
         return hook
 
@@ -223,6 +235,7 @@ class Hooks:
         so the second read answered a half-filled collection, quietly, and every hook after the
         broken module was simply gone. Now the failure comes back every time it is asked.
         """
+        self._read = True
         if self._loaded:
             return
         if self._package is not None:

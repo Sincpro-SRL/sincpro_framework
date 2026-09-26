@@ -25,6 +25,7 @@ class FeatureBus(Bus):
     ):
         self.feature_registry: Dict[type, Feature] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
+        self.replacements: Dict[type, tuple[str, ...]] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
         self.observability = observability or Observability()
@@ -51,6 +52,10 @@ class FeatureBus(Bus):
         if feature is None:
             raise UnknownDTOToExecute(f"{dto_name} is not registered as a feature")
         with self.observability.span(dto_name, "feature") as span:
+            if dto_type in self.replacements:
+                self.observability.annotate(
+                    span, {"sincpro.replaces": ", ".join(self.replacements[dto_type])}
+                )
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing feature dto: [{dto_name}]")
             self.logger.debug(f"{dto_name}({dto})")
@@ -86,6 +91,7 @@ class ApplicationServiceBus(Bus):
     ):
         self.app_service_registry: Dict[type, ApplicationService] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
+        self.replacements: Dict[type, tuple[str, ...]] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
         self.observability = observability or Observability()
@@ -118,6 +124,10 @@ class ApplicationServiceBus(Bus):
                 f"{dto_name} is not registered as an application service"
             )
         with self.observability.span(dto_name, "application_service") as span:
+            if dto_type in self.replacements:
+                self.observability.annotate(
+                    span, {"sincpro.replaces": ", ".join(self.replacements[dto_type])}
+                )
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing app service dto: [{dto_name}]")
             self.logger.debug(f"{dto_name}({dto})")

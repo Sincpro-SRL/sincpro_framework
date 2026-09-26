@@ -130,6 +130,19 @@ with ThreadPoolExecutor(max_workers=5) as executor:
     results = [f.result() for f in futures]
 ```
 
+### Across buses
+
+The context of a request follows it into every bus it reaches. A bus executed from inside
+another one — a Feature calling `self.common(...)`, a subscriber reached through a `SyncQueue` —
+starts from the caller's context, adds its own `context(...)` on top (its keys win), and nothing
+it adds flows back to the caller. Outside an execution nothing is inherited.
+
+```python
+with sales.context({"tenant": "acme", "user.id": "ana"}):
+    sales(CommandCreateQuotation())       # its Feature calls self.common(...):
+                                          # common's Features read tenant and user.id too
+```
+
 ## Best Practices
 
 ### 1. Context Key Naming

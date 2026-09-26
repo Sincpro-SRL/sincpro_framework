@@ -1,9 +1,30 @@
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from types import MappingProxyType
 from typing import Any, Dict, List, Optional
 
 from sincpro_framework.bus import FrameworkBus
+
+# The context of the execution in progress, whichever bus runs it — a frozen copy, so what the
+# caller changes afterwards never reaches a bus it already handed it to.
+_executing: ContextVar[Mapping[str, Any]] = ContextVar(
+    "sincpro_executing_context", default=MappingProxyType({})
+)
+
+
+@contextmanager
+def carrying(context: Mapping[str, Any]) -> Generator[None, None, None]:
+    """Every bus executed inside the block starts from `context`.
+
+    Context: what a caller that is not a bus — a cron, a worker — uses to hand its context to
+    the buses it calls, the way one bus hands its own to the next.
+    """
+    token = _executing.set(MappingProxyType({**_executing.get(), **context}))
+    try:
+        yield
+    finally:
+        _executing.reset(token)
 
 
 class ContextMixin:
@@ -52,6 +73,18 @@ class ContextMixin:
         framework owns this dict — writing to it is `context(...)`'s job.
         """
         return MappingProxyType(self._get_context())
+
+    def _inherited_context(self) -> Dict[str, Any]:
+        """What the execution in progress — on this bus or the one that called it — carries."""
+        return dict(_executing.get())
+
+    @contextmanager
+    def _executing_with_context(self) -> Generator[None, None, None]:
+        token = _executing.set(MappingProxyType(dict(self._get_context())))
+        try:
+            yield
+        finally:
+            _executing.reset(token)
 
     def _get_context(self) -> Dict[str, Any]:
         overlay = self._overlay_var.get()

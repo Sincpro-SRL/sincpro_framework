@@ -68,6 +68,7 @@ Now you are ready to explore more complex use cases! 🚀
     - [Decoupled Logic Execution](#-decoupled-logic-execution)
     - [Application Service Orchestration](#-application-service-orchestration)
     - [IDE Support with Typing](#-ide-support-with-typing)
+    - [Crons](#crons)
     - [Persistence and the ORM](#persistence-and-the-orm)
 3. [Features vs. Application Service](#-features-vs-application-service)
 4. [Example Usage for a Payment Gateway](#-example-usage-for-a-payment-gateway)
@@ -90,16 +91,17 @@ Now you are ready to explore more complex use cases! 🚀
 11. [Persistence (ORM)](#persistence-orm) — aggregates, repository, queries, hooks, events
     - [What it covers](#what-it-covers)
     - [How to, by topic](#how-to-by-topic)
-12. [Documentation](#-documentation)
-13. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
+12. [Crons](#crons-1) — a registry per bounded context, a background process, one run per tick
+13. [Documentation](#-documentation)
+14. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
     - [MCP tools](docs/entrypoints/mcp.md)
     - [JSON-RPC](docs/entrypoints/rpc.md)
     - [gRPC](docs/entrypoints/grpc.md)
-14. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
-15. [Configuration or settings](#configuration-or-settings)
-16. [Variables](#-variables)
-17. [Tests & coverage](#-tests--coverage)
-18. [Python 3.14 & Free-Threading Notes](#-python-314--free-threading-notes)
+15. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
+16. [Configuration or settings](#configuration-or-settings)
+17. [Variables](#-variables)
+18. [Tests & coverage](#-tests--coverage)
+19. [Python 3.14 & Free-Threading Notes](#-python-314--free-threading-notes)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -158,6 +160,8 @@ See [docs/core/interceptors.md](docs/core/interceptors.md) for the contract and 
   never changes their class.
 - Recipes: credit check, audit trail, idempotency, cache, retry on a stale write, feature flags,
   timing.
+- `@bus.feature(CommandX, replaces=CoreFeature)` has another handler answer **instead** of the
+  core's — explicitly: the build log, the span and `introspection.describe()` say who replaced it.
 
 ### 📡 Context Manager for Metadata Propagation
 
@@ -274,6 +278,16 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
 - Parameterize the bus as `UseFramework[DependencyContextType]`. Features get `self.token_adapter`; callers outside a Feature get the same instance as `framework.deps.token_adapter`.
+
+### Crons
+
+See [Crons](#crons-1) for the full section.
+
+- A registry per bounded context (`cron_payments = Crons("cron-payments")`), one `Cron` class per
+  cron, the buses it calls injected by their own names — a component beside the buses, not on one.
+- By default in a background process: an in-memory orchestrator looks every 5 seconds and gives
+  each run a thread of its own; one run per tick across replicas, explicit policies for
+  overlapping and missed ticks.
 
 ### Persistence and the ORM
 
@@ -885,6 +899,7 @@ needs nothing installed. `sincpro_framework.orm` is the SQLAlchemy adapter:
 |---|---|
 | Aggregates | A plain `@dataclass` that inherits `Entity`: `id` (UUID v7), `created_at`, `updated_at`, `version` |
 | Relations | Read from the annotations and the foreign keys: many2one, one2many, many2many, another context's bus, any function |
+| Extension | A subclass of an aggregate keeps its inherited fields in the parent's table, its own in its table |
 | Writes | `save` one or many, `remove`, `archive`; a stale write is refused (`StaleAggregate`) |
 | Transactions | `repository.context()`: one unit of work, commits together or not at all |
 | Reads | `get`, `get_by`, `exists`, `first`, `one`, `count`, `pluck`, `distinct`, `search`, `fetch_all`, `stream` |
@@ -959,7 +974,47 @@ every example runs as part of the test suite — and the page that explains it i
 | Event sourcing | [Guide §11](docs/persistence/guide.md#11-event-sourcing) | [shapes.md §3](docs/shapes.md#3-the-facts-are-the-state) |
 | Outbox | [Guide §12](docs/persistence/guide.md#12-an-outbox) | [shapes.md §2](docs/shapes.md#2-a-database-per-context) |
 | Testing | [Guide §13](docs/persistence/guide.md#13-testing) | [testing.md](docs/persistence/testing.md) |
+| Extending an aggregate | [Guide §14](docs/persistence/guide.md#14-extending-an-aggregate) | [reference.md](docs/persistence/reference.md) |
 | Why it is designed this way | — | [design.md](docs/persistence/design.md), [decisions.md](docs/persistence/decisions.md) |
+
+## Crons
+
+A cron is one more caller of the buses, like an RPC method: a class registered on the registry of
+its bounded context, the buses it orchestrates injected by name.
+
+```python
+from sincpro_framework.cron import Cron, CronGateway, CronProcess, Crons, Tick
+from sincpro_framework.cron.database import DatabaseRuns, cron_run_table
+
+cron_payments = Crons("cron-payments")
+cron_payments.add_dependency("cybersource", cybersource)
+
+
+@cron_payments.cron("0 2 * * *", timezone="America/La_Paz")
+class ReconcileTransactions(Cron):
+    cybersource: UseFramework
+
+    def run(self, tick: Tick) -> None:
+        self.cybersource(CommandReconcile(day=tick.scheduled_for.date()))
+
+
+def build_crons() -> CronGateway:                       # module-level: runs in the child
+    return CronGateway([cron_payments], runs=DatabaseRuns(database, runs_table))
+
+
+crons = CronProcess(build_crons).start()                # at startup; crons.stop() at shutdown
+```
+
+| | |
+|---|---|
+| When | a five-field expression in a timezone (DST handled) or `every=timedelta(…)` |
+| Where | `CronProcess`: a spawned child running the in-memory orchestrator — looks every 5 s (`jitter=` optional), a thread per run (`workers=` caps them) |
+| Once per tick | every replica ticks; the first claim of `(name, scheduled_for)` in `runs` wins; `tick.once(key)` for one step |
+| Policies | `overlap` (`SKIP` / `ALLOW`), `missed` (`SKIP` / `RUN_LATEST` / `RUN_ALL`) within `missed_window` |
+| Seeing it | the registry's own logger and spans; `gateway.plan(until)`, `gateway.status()` |
+| Testing | `ManualClock` — time moves when the test says so |
+
+The whole of it, runnable: [docs/cron/](docs/cron/README.md).
 
 ## 📖 Documentation
 

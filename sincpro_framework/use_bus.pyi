@@ -22,8 +22,6 @@ from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
 from .sincpro_logger import create_logger as create_logger
 
-# Type alias for decorator functions
-DecoratorFunction = Callable[[Type], Type]
 DTOClass = Type[DataTransferObject] | Type[DataclassInstance]
 DTORegistration = DTOClass | list[DTOClass]
 
@@ -41,10 +39,6 @@ class UseFramework(ContextMixin, Generic[TDeps]):
     log_after_execution: bool
     log_app_services: bool
     log_features: bool
-
-    # Decorators with better typing
-    feature: Callable[[DTORegistration], DecoratorFunction]
-    app_service: Callable[[DTORegistration], DecoratorFunction]
 
     dynamic_dep_registry: Dict[str, Any]
     observability: Observability
@@ -150,6 +144,20 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     def map_to_dto_or_event(self, name: str, payload: str | dict[str, Any]) -> Any:
         """The DTO or event registered under `name`, rebuilt from raw data."""
+        ...
+
+    def feature[T: type](
+        self, dto: DTORegistration, replaces: type | None = None
+    ) -> Callable[[T], T]:
+        """Register the decorated class as the Feature that answers `dto`; with `replaces`,
+        instead of the Feature registered now, which is skipped from then on."""
+        ...
+
+    def app_service[T: type](
+        self, dto: DTORegistration, replaces: type | None = None
+    ) -> Callable[[T], T]:
+        """Register the decorated class as the ApplicationService that answers `dto`; with
+        `replaces`, instead of the one registered now."""
         ...
 
     def interceptor[T: Interceptor](self, *commands: type) -> Callable[[T], T]:

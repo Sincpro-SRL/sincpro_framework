@@ -280,3 +280,27 @@ def test_an_application_service_executing_an_unregistered_dto_is_told_so():
     assert str(error) == "CommandNeverRegistered is not registered as a feature"
     [line] = _errors(logs)
     assert line["handler"] == "Checkout"
+
+
+def test_the_span_of_a_replaced_use_case_names_what_it_replaced(otel_setup):
+    billing = _payments()
+
+    class CommandRefund(DataTransferObject):
+        pass
+
+    @billing.feature(CommandRefund)
+    class Refund(Feature):
+        def execute(self, dto: CommandRefund) -> None:
+            return None
+
+    @billing.feature(CommandRefund, replaces=Refund)
+    class InstantRefund(Feature):
+        def execute(self, dto: CommandRefund) -> None:
+            return None
+
+    billing(CommandRefund())
+
+    [span] = [
+        span for span in otel_setup.get_finished_spans() if span.name == "CommandRefund"
+    ]
+    assert span.attributes["sincpro.replaces"].endswith("Refund")

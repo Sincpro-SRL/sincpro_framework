@@ -18,7 +18,7 @@ row that moved on answers zero rows, which the engine reports as `StaleAggregate
 already had the machinery; this is the line that switches it on.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import MISSING, fields, is_dataclass
 from typing import Any
 
@@ -323,7 +323,9 @@ def _default_of(aggregate: type, name: str) -> Callable[[], Any]:
     return lambda: None
 
 
-def _with_transient_defaults(aggregate: type, table: Table) -> Callable[[Any, Any], None]:
+def _with_transient_defaults(
+    aggregate: type, columns: Collection[str]
+) -> Callable[[Any, Any], None]:
     """What a loaded record is missing: the dataclass fields that are neither a column nor a
     relation, a derived or in-memory value, get the default their `__init__` would have given.
 
@@ -334,7 +336,7 @@ def _with_transient_defaults(aggregate: type, table: Table) -> Callable[[Any, An
     transient = {
         declared.name: make
         for declared in declared_fields
-        if declared.name not in table.c and (make := _dataclass_default(declared)) is not None
+        if declared.name not in columns and (make := _dataclass_default(declared)) is not None
     }
     # A column the row left NULL for a field that does not say it may be absent. The mapper
     # reports the NULL faithfully, and the domain gets `None` where it declares `list[str]` —
@@ -343,7 +345,7 @@ def _with_transient_defaults(aggregate: type, table: Table) -> Callable[[Any, An
     nullable = {
         declared.name: make
         for declared in declared_fields
-        if declared.name in table.c
+        if declared.name in columns
         and declared.type is without_optional(declared.type)
         and (make := _dataclass_default(declared)) is not None
     }
@@ -423,6 +425,27 @@ def relations_of(aggregate: type) -> dict[str, DeclaredRelation]:
     return RELATIONS.get(aggregate, {})
 
 
+def _parent_table(mapper_registry: registry, parent: type) -> Table:
+    for mapper in mapper_registry.mappers:
+        if mapper.class_ is parent and isinstance(mapper.local_table, Table):
+            return mapper.local_table
+    raise ValueError(f"{parent.__name__} is not mapped to a table")
+
+
+def _refuse_a_table_that_does_not_extend(
+    entity: type, table: Table, parent: type, parent_table: Table
+) -> None:
+    """Context: an extension's row is joined to its parent's by the key, so its table must
+    reference the parent's primary key; without that there is nothing to join on."""
+    keys = {column for column in parent_table.primary_key.columns}
+    if not any(fk.column in keys for fk in table.foreign_keys):
+        wanted = ", ".join(f"{parent_table.name}.{column.name}" for column in keys)
+        raise ValueError(
+            f"{entity.__name__} extends {parent.__name__}, so its table {table.name} holds only "
+            f"its own columns and must reference {wanted} as its primary key"
+        )
+
+
 def map_aggregates(
     mapper_registry: registry,
     tables: dict[type, Table],
@@ -442,20 +465,33 @@ def map_aggregates(
 
     `relations` is what the tables cannot say on their own — a kind that needs a bus, a
     function or a scope. Whatever is declared here wins over what a foreign key infers.
+
+    A class that extends another mapped aggregate is mapped as its extension: the fields it
+    inherits stay in the parent's table, its table holds only its own columns and references
+    the parent's key. Parents are mapped first, whatever the order of `tables`.
     """
     already = {mapper.class_ for mapper in mapper_registry.mappers}
-    for entity, table in tables.items():
+    for entity, table in sorted(tables.items(), key=lambda item: len(item[0].__mro__)):
         if entity in already:
             continue
 
         options: dict[str, Any] = {}
         if properties and entity in properties:
             options["properties"] = properties[entity]
-        if issubclass(entity, Entity) and "version" in table.c:
+        parent = next((base for base in entity.__mro__[1:] if base in already), None)
+        if parent is not None:
+            _refuse_a_table_that_does_not_extend(
+                entity, table, parent, _parent_table(mapper_registry, parent)
+            )
+            options["inherits"] = parent
+        elif issubclass(entity, Entity) and "version" in table.c:
             options["version_id_col"] = table.c.version
 
         mapper = mapper_registry.map_imperatively(entity, table, **options)
-        event.listen(mapper, "load", _with_transient_defaults(entity, table))
+        event.listen(
+            mapper, "load", _with_transient_defaults(entity, set(mapper.columns.keys()))
+        )
+        already.add(entity)
 
     for aggregate, declared in (relations or {}).items():
         _install(aggregate, declared)

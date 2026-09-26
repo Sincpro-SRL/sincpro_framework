@@ -11,9 +11,10 @@ the tutorial; these pages are the reference and the reasoning behind it.
 | **Core: the bus** | `sincpro_framework` | [core/](core/README.md) | `UseFramework`, Features and ApplicationServices, dependencies, the context manager, interceptors, error handling |
 | **Persistence** | `ddd`, `orm` | [persistence/](persistence/README.md) | Aggregates, `Criteria` and `Specification`, relations, the SQLAlchemy adapter, the ledger that proves it, the decisions |
 | **Events** | `events` | [events/](events/README.md) | `DomainEvent`, `Publisher`, `Subscriber` made of buses, `SyncQueue` and `BackgroundQueue` |
+| **Crons** | `cron` | [cron/](cron/README.md) | `Crons` registry per bounded context, `Cron` classes with their buses injected, `CronProcess` in the background, one run per tick across replicas |
 | **Entrypoints** | `entrypoints` | [entrypoints/](entrypoints/README.md) | The bus catalog as JSON-RPC 2.0 methods and as MCP tools, with a real use case |
 | **Observability** | `observability` | [observability/](observability/README.md) | Tracing and errors: what works with no extra, what OpenTelemetry and Sentry add, the two doors |
-| **PRDs** | history | [prd/](prd/) | The product requirement documents the typed container, middleware and observability were built from |
+| **PRDs** | history and proposals | [prd/](prd/) | The requirement documents each layer was built from, and the proposals for what comes next (PRD_04–09) |
 
 ## Conventions
 

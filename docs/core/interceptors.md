@@ -1,4 +1,4 @@
-# Interceptors: around one use case, from outside it
+# Interceptors and replacements: change a use case from outside it
 
 An interceptor is a function that runs **around** the execution of a Command. It sees the
 Command and the response; it can veto, adjust either, or answer by itself — and it never changes
@@ -23,7 +23,7 @@ that stops working fails the build.
 | **the aggregate**, whoever writes it | a repository hook | "an invoice has to balance" |
 | an error turned into an answer | an error handler | a SOAP fault → the SDK's exception |
 | something **after**, in another context | an event | "when posted, email the customer" |
-| **another handler answering instead** | `replaces=` (PRD_04) | the Bolivian tax rules |
+| **another handler answering instead** | `replaces=` ([below](#replacing-a-use-case-replaces)) | the Bolivian tax rules |
 
 ## The contract
 
@@ -296,6 +296,49 @@ assert "CommandCreateInvoice" in durations
 The framework already puts a span on every Command when OpenTelemetry is on; this is for a number
 you want to act on inside the process.
 
+## Replacing a use case: `replaces=`
+
+An interceptor wraps the core's handler. When another handler must answer **instead** — the core
+is closed to modification, and the addon changes the use case for good — register it naming the
+one it replaces:
+
+```python
+class CommandComputeTax(DataTransferObject):
+    amount: int
+
+
+class ResponseComputeTax(DataTransferObject):
+    tax: int
+
+
+tax = UseFramework("tax", log_after_execution=False)
+
+
+@tax.feature(CommandComputeTax)
+class ComputeTax(Feature):                                   # the core
+    def execute(self, dto: CommandComputeTax) -> ResponseComputeTax:
+        return ResponseComputeTax(tax=dto.amount * 13 // 100)
+
+
+@tax.feature(CommandComputeTax, replaces=ComputeTax)         # an addon
+class ComputeTaxBolivia(Feature):
+    def execute(self, dto: CommandComputeTax) -> ResponseComputeTax:
+        return ResponseComputeTax(tax=dto.amount * 16 // 100)
+
+
+assert tax(CommandComputeTax(amount=100), ResponseComputeTax).tax == 16
+```
+
+- The core handler **does not run**. Interceptors still wrap whichever handler answers.
+- `replaces=` must name the handler registered **now**: naming another class, replacing before the
+  core registered its own, or replacing what another addon already replaced is refused, naming
+  both. A replacement of a replacement names the one it replaces (`replaces=ComputeTaxBolivia`).
+- **The contract stays** (Liskov): when both declare their response, the replacement answers that
+  class or a narrower one.
+- It shows: building the bus logs `CommandComputeTax is handled by ComputeTaxBolivia (replaces
+  ComputeTax)`, the span carries `sincpro.replaces`, and introspection says it (below).
+- The same parameter on `@bus.app_service(...)`.
+
 ## What runs, answered
 
 ```python
@@ -310,6 +353,17 @@ assert [name.rsplit(".", 1)[-1] for name in features(billing)["CommandCreateInvo
     "timed",
     "credit_check",
 ]
+```
+
+`describe(bus, Command)` answers one Command — the handler that runs, what it replaced, the
+interceptors around it:
+
+```python
+from sincpro_framework.introspection import describe
+
+handling = describe(tax, CommandComputeTax)
+assert handling.type is ComputeTaxBolivia
+assert [name.rsplit(".", 1)[-1] for name in handling.replaces] == ["ComputeTax"]
 ```
 
 ## Migration note: middleware (removed)

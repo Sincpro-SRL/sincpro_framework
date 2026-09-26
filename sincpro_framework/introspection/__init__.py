@@ -10,6 +10,7 @@ from sincpro_framework.introspection.inspector import (
     FeatureOrAppServiceMetadata,
     app_services,
     built_bus,
+    describe,
     dtos,
     features,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "FeatureOrAppServiceMetadata",
     "app_services",
     "built_bus",
+    "describe",
     "dtos",
     "features",
 ]
