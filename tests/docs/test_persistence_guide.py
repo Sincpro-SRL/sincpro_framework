@@ -38,3 +38,16 @@ def test_the_readme_quick_start_runs(tmp_path, monkeypatch, capsys):
     exec(compile(quick_start, "README.md quick start", "exec"), {"__name__": "quick_start"})
 
     assert "Hello, Alice!" in capsys.readouterr().out
+
+
+def test_the_readme_persistence_example_runs(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    readme = (GUIDE.parents[2] / "README.md").read_text()
+    section = readme[readme.index("## Persistence (ORM)\n\n`sincpro_framework.ddd`") :]
+    example = PYTHON_BLOCK.findall(section)[0]
+    module = types.ModuleType("readme_persistence")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    exec(compile(example, "README.md persistence", "exec"), module.__dict__)
+
+    assert "['Coffee']" in capsys.readouterr().out
