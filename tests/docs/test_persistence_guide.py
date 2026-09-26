@@ -1,53 +1,77 @@
-"""docs/persistence/guide.md runs, block after block, as one program.
+"""The examples people copy from run, exactly as written.
 
-The guide is the page people copy from, so every example on it is executed here: a change
-that breaks one fails this test instead of the next reader's first attempt.
+docs/persistence/guide.md runs block after block as one program, and the two README examples
+run on their own. Each is written to a real module and imported: a `DataTransferObject` reads
+its field docstrings from the source, so code with no file behind it would not even define.
 """
 
+import importlib.util
 import re
 import sys
-import types
+import traceback
 from pathlib import Path
 
 import pytest
 
-GUIDE = Path(__file__).parents[2] / "docs" / "persistence" / "guide.md"
+ROOT = Path(__file__).parents[2]
+GUIDE = ROOT / "docs" / "persistence" / "guide.md"
+README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
+
+
+def _import_as_module(name: str, source: str, folder: Path) -> None:
+    path = folder / f"{name}.py"
+    path.write_text(source)
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        del sys.modules[name]
+
+
+def _failing_line(error: Exception, path: Path) -> int:
+    frames = [f for f in traceback.extract_tb(error.__traceback__) if f.filename == str(path)]
+    return frames[-1].lineno or 0 if frames else 0
 
 
 def test_every_block_of_the_persistence_guide_runs(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    guide = types.ModuleType("persistence_guide")
-    monkeypatch.setitem(sys.modules, guide.__name__, guide)
-
     blocks = PYTHON_BLOCK.findall(GUIDE.read_text())
     assert blocks, "the guide has no python blocks"
+    starts = []
+    source = ""
+    for block in blocks:
+        starts.append(source.count("\n") + 1)
+        source += block + "\n"
 
-    for number, source in enumerate(blocks, 1):
-        try:
-            exec(compile(source, f"{GUIDE.name} block {number}", "exec"), guide.__dict__)
-        except Exception as error:
-            pytest.fail(f"block {number} of {GUIDE.name} failed: {error!r}\n\n{source}")
+    try:
+        _import_as_module("persistence_guide", source, tmp_path)
+    except Exception as error:
+        line = _failing_line(error, tmp_path / "persistence_guide.py")
+        number = max(i for i, start in enumerate(starts, 1) if start <= max(line, 1))
+        pytest.fail(
+            f"block {number} of {GUIDE.name} failed: {error!r}\n\n{blocks[number - 1]}"
+        )
 
 
 def test_the_readme_quick_start_runs(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    readme = GUIDE.parents[2] / "README.md"
-    quick_start = PYTHON_BLOCK.findall(readme.read_text())[0]
+    quick_start = PYTHON_BLOCK.findall(README.read_text())[0]
 
-    exec(compile(quick_start, "README.md quick start", "exec"), {"__name__": "quick_start"})
+    _import_as_module("readme_quick_start", quick_start, tmp_path)
 
     assert "Hello, Alice!" in capsys.readouterr().out
 
 
 def test_the_readme_persistence_example_runs(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    readme = (GUIDE.parents[2] / "README.md").read_text()
+    readme = README.read_text()
     section = readme[readme.index("## Persistence (ORM)\n\n`sincpro_framework.ddd`") :]
     example = PYTHON_BLOCK.findall(section)[0]
-    module = types.ModuleType("readme_persistence")
-    monkeypatch.setitem(sys.modules, module.__name__, module)
 
-    exec(compile(example, "README.md persistence", "exec"), module.__dict__)
+    _import_as_module("readme_persistence", example, tmp_path)
 
     assert "['Coffee']" in capsys.readouterr().out
