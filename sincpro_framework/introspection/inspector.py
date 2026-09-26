@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from typing import Any, get_args, get_origin, get_type_hints
 
 from sincpro_framework.bus import FrameworkBus
+from sincpro_framework.interceptors import Interceptor, name_of
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
     DataTransferObject,
@@ -51,6 +52,8 @@ class FeatureOrAppServiceMetadata(DataTransferObject):
     dto: type
     description: str
     response: Any | None = None
+    interceptors: tuple[str, ...] = ()
+    """What wraps it, outermost first, as `module.function`."""
 
 
 class DtoMetadata(DataTransferObject):
@@ -122,6 +125,7 @@ def _resolve_response(feature_or_app_type: type) -> Any | None:
 
 def _describe_all(
     registry: Mapping[type, Feature | ApplicationService],
+    interceptors: Mapping[type, tuple[Interceptor, ...]],
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     metadata: dict[DtoName, FeatureOrAppServiceMetadata] = {}
     for dto_type, instance in registry.items():
@@ -134,6 +138,7 @@ def _describe_all(
             dto=dto_type,
             description=_resolve_description(feature_or_app_type, dto_type, name),
             response=_resolve_response(feature_or_app_type),
+            interceptors=tuple(name_of(one) for one in interceptors.get(dto_type, ())),
         )
     return metadata
 
@@ -141,7 +146,7 @@ def _describe_all(
 def features(framework_instance: UseFramework) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """Feature registry keyed by DTO name, described."""
     bus = built_bus(framework_instance)
-    return _describe_all(bus.feature_bus.feature_registry)
+    return _describe_all(bus.feature_bus.feature_registry, bus.feature_bus.interceptors)
 
 
 def app_services(
@@ -149,7 +154,9 @@ def app_services(
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """ApplicationService registry keyed by DTO name, described."""
     bus = built_bus(framework_instance)
-    return _describe_all(bus.app_service_bus.app_service_registry)
+    return _describe_all(
+        bus.app_service_bus.app_service_registry, bus.app_service_bus.interceptors
+    )
 
 
 def dtos(framework_instance: UseFramework) -> dict[DtoName, DtoMetadata]:

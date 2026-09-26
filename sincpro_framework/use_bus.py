@@ -1,7 +1,7 @@
 import json
 import threading
 from functools import partial
-from typing import Any, Dict, Generic, Iterable, Mapping, Optional, Type, cast
+from typing import Any, Callable, Dict, Generic, Iterable, Mapping, Optional, Type, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -13,11 +13,12 @@ from .context.mixin import ContextMixin
 from .deps import DependencyLocator, TDeps
 from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import (
+    BusAlreadyBuilt,
     DependencyAlreadyRegistered,
     SincproFrameworkNotBuilt,
     UnknownDTOToExecute,
 )
-from .middleware import Middleware, MiddlewarePipeline
+from .interceptors import Interceptor, InterceptorRegistration, chain_for
 from .observability import FrameworkSpanContext, Observability
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
@@ -92,8 +93,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.feature_error_handler: Optional[ErrorHandler] = None
         self.app_service_error_handler: Optional[ErrorHandler] = None
 
-        # Middleware pipeline
-        self.middleware_pipeline = MiddlewarePipeline()
+        self._interceptors: list[InterceptorRegistration] = []
 
         self.was_initialized: bool = False
         self._build_lock = threading.RLock()
@@ -123,6 +123,25 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
             for _, app_service in app_service_registry.items():
                 app_service.add_attributes(**self.dynamic_dep_registry)
+
+    def _add_interceptors_provided_by_user(self, bus: FrameworkBus) -> None:
+        feature_bus, app_service_bus = bus.feature_bus, bus.app_service_bus
+        answered = {*feature_bus.feature_registry, *app_service_bus.app_service_registry}
+        for registration in self._interceptors:
+            for command in registration.commands:
+                if command not in answered:
+                    raise UnknownDTOToExecute(
+                        f"interceptor {registration.name} wraps {command.__name__}, which no "
+                        f"Feature or ApplicationService on '{self._logger_name}' answers"
+                    )
+        feature_bus.interceptors = {
+            command: chain_for(command, self._interceptors)
+            for command in feature_bus.feature_registry
+        }
+        app_service_bus.interceptors = {
+            command: chain_for(command, self._interceptors)
+            for command in app_service_bus.app_service_registry
+        }
 
     def _add_error_handlers_provided_by_user(self):
         if self.global_error_handler:
@@ -158,6 +177,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         dto_registry = self._sp_container.dto_registry()
 
         self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
+        self._add_interceptors_provided_by_user(self.bus)
         self._bind_context_to_handlers()
 
         # Set the loggers
@@ -239,9 +259,28 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         raw = json.loads(payload) if isinstance(payload, str) else payload
         return dto_type.model_validate(raw)
 
-    def add_middleware(self, middleware: Middleware):
-        """Add middleware function to the execution pipeline"""
-        self.middleware_pipeline.add_middleware(middleware)
+    def interceptor[T: Interceptor](self, *commands: type) -> Callable[[T], T]:
+        """Run the decorated function around every execution of these Commands — all of this
+        bus's when none is named — however they are reached.
+
+            @billing.interceptor(CommandCreateInvoice)
+            def credit_check(dto, call_next): ...
+
+        Context: registered in order, outermost first, and fixed when the bus is built; one
+        registered later would never run, so it is refused. See `sincpro_framework.interceptors`
+        for what an interceptor may and may not do.
+        """
+
+        def register(interceptor: T) -> T:
+            if self.was_initialized:
+                raise BusAlreadyBuilt(
+                    f"interceptor {interceptor.__qualname__} registered late: '{self._logger_name}' "
+                    "is already built, so it would never run — register it before the first execution"
+                )
+            self._interceptors.append(InterceptorRegistration(interceptor, commands))
+            return interceptor
+
+        return register
 
     def add_global_error_handler(self, handler: ErrorHandler):
         """Register a global error handler.
@@ -467,15 +506,8 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         if self._overlay_var.get() is None and not self._in_global_var.get():
             implicit_token, implicit_overlay = self._push_overlay(dict(self._shared_context))
 
-        def executor(processed_dto, **exec_kwargs) -> TypeDTOResponse | None:
-            assert (
-                self.bus is not None
-            )  # Help mypy understand this is safe after the check above
-
-            return self.bus.execute(processed_dto)
-
         try:
-            return self.middleware_pipeline.execute(dto, executor, return_type=return_type)
+            return self.bus.execute(dto)
         finally:
             if implicit_token is not None and implicit_overlay is not None:
                 self._pop_overlay(implicit_token, implicit_overlay)

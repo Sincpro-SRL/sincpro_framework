@@ -108,7 +108,7 @@ JSON-RPC 2.0 allows extra members on the request. **`context`** is a sibling of 
 | HTTP `X-Correlation-Id` | `correlation_id` if the body omitted it |
 | HTTP `traceparent` | `carrier.traceparent` for OTel parent adoption |
 
-Body `context` wins over headers. Middleware, error handlers, and bus tracing are unchanged.
+Body `context` wins over headers. Interceptors, error handlers, and bus tracing are unchanged.
 
 ---
 

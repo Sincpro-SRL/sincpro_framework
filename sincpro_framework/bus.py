@@ -2,6 +2,7 @@ from logging import Logger
 from typing import Callable, Dict, Optional, Type
 
 from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
+from .interceptors import Interceptor, run_through
 from .observability import Observability
 from .sincpro_abstractions import (
     ApplicationService,
@@ -23,6 +24,7 @@ class FeatureBus(Bus):
         observability: Optional[Observability] = None,
     ):
         self.feature_registry: Dict[type, Feature] = dict()
+        self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
         self.observability = observability or Observability()
@@ -55,7 +57,8 @@ class FeatureBus(Bus):
 
             with self.observability.handling(dto_name):
                 try:
-                    response = feature.execute(dto)
+                    chain = self.interceptors.get(dto_type, ())
+                    response = run_through(chain, feature.execute, dto)
                 except Exception as error:
                     self.observability.failed(error, dto, feature, "feature", span)
                     if not self.handle_error:
@@ -82,6 +85,7 @@ class ApplicationServiceBus(Bus):
         observability: Optional[Observability] = None,
     ):
         self.app_service_registry: Dict[type, ApplicationService] = dict()
+        self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
         self.observability = observability or Observability()
@@ -120,7 +124,8 @@ class ApplicationServiceBus(Bus):
 
             with self.observability.handling(dto_name):
                 try:
-                    response = app_service.execute(dto)
+                    chain = self.interceptors.get(dto_type, ())
+                    response = run_through(chain, app_service.execute, dto)
                 except Exception as error:
                     self.observability.failed(
                         error, dto, app_service, "application_service", span

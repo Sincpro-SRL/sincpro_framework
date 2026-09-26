@@ -62,7 +62,7 @@ Now you are ready to explore more complex use cases! 🚀
     - [Dependency Injection](#-dependency-injection)
     - [Inversion of Control (IoC)](#-inversion-of-control-ioc)
     - [Context Manager for Metadata Propagation](#-context-manager-for-metadata-propagation)
-    - [Middleware System](#-middleware-system)
+    - [Interceptors](#interceptors)
     - [Error Handling at Different Levels](#-error-handling-at-different-levels)
     - [Bus Pattern for Component Communication](#-bus-pattern-for-component-communication)
     - [Decoupled Logic Execution](#-decoupled-logic-execution)
@@ -86,21 +86,20 @@ Now you are ready to explore more complex use cases! 🚀
 7. [Creating an Application Service](#-creating-an-application-service)
 8. [Executing a Use Case](#-executing-a-use-case)
 9. [Summary](#-summary)
-10. [Middleware System](#-middleware-system-1)
-11. [Error Handling](#-error-handling)
-12. [Persistence (ORM)](#persistence-orm) — aggregates, repository, queries, hooks, events
+10. [Error Handling](#-error-handling)
+11. [Persistence (ORM)](#persistence-orm) — aggregates, repository, queries, hooks, events
     - [What it covers](#what-it-covers)
     - [How to, by topic](#how-to-by-topic)
-13. [Documentation](#-documentation)
-14. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
+12. [Documentation](#-documentation)
+13. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
     - [MCP tools](docs/entrypoints/mcp.md)
     - [JSON-RPC](docs/entrypoints/rpc.md)
     - [gRPC](docs/entrypoints/grpc.md)
-15. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
-16. [Configuration or settings](#configuration-or-settings)
-17. [Variables](#-variables)
-18. [Tests & coverage](#-tests--coverage)
-19. [Python 3.14 & Free-Threading Notes](#-python-314--free-threading-notes)
+14. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
+15. [Configuration or settings](#configuration-or-settings)
+16. [Variables](#-variables)
+17. [Tests & coverage](#-tests--coverage)
+18. [Python 3.14 & Free-Threading Notes](#-python-314--free-threading-notes)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -148,12 +147,17 @@ efficiency. Here are its core features:
 - Automates the instantiation and configuration of components, reducing boilerplate code.
 - Encourages loose coupling, making systems more adaptable and maintainable.
 
-### 🧬 Middleware System
+### Interceptors
 
-- Allows registering custom functions that run before every Feature or ApplicationService execution.
-- Middleware execute **in order**: each one receives the DTO output from the previous step.
-- Common uses: validation, authentication checks, data enrichment, and logging.
-- Any middleware that raises an exception stops the pipeline immediately.
+See [docs/core/interceptors.md](docs/core/interceptors.md) for the contract and runnable recipes.
+
+- `@bus.interceptor(CommandX)` runs a function **around** one use case — `@bus.interceptor()`
+  around all of them — however it is executed: at the entry, from an ApplicationService, a workflow
+  step or a scheduled tick.
+- It can veto, adjust the Command (`model_copy`), adjust the response, or answer by itself; it
+  never changes their class.
+- Recipes: credit check, audit trail, idempotency, cache, retry on a stale write, feature flags,
+  timing.
 
 ### 📡 Context Manager for Metadata Propagation
 
@@ -782,124 +786,6 @@ maintainability.
 - **`entrypoint_grpc`**: Publish that same catalog as unary gRPC services (`sincpro-framework[grpc]`).
 
 This structured approach ensures high-quality, maintainable software that can adapt to evolving business needs. 🚀
-
-## 🧬 Middleware System
-
-The Sincpro Framework provides a simple and flexible middleware system that lets you add custom processing logic **before** your Features and ApplicationServices are executed.
-
-### Philosophy
-
-The middleware system follows the framework's core principles:
-- **Simple**: Middleware is just a function that processes DTOs.
-- **Agnostic**: The framework doesn't dictate how you implement middleware.
-- **Developer Control**: You have complete control over what your middleware does.
-
-### How It Works
-
-Middleware are plain functions that:
-1. Receive a DTO as input.
-2. Can validate, transform, or enhance the DTO.
-3. Return the (possibly modified) DTO.
-4. Can raise exceptions if validation fails.
-
-```python
-from typing import Any
-
-def my_middleware(dto: Any) -> Any:
-    """Simple middleware that validates or transforms a DTO."""
-    if hasattr(dto, 'amount') and dto.amount <= 0:
-        raise ValueError("Amount must be positive")
-    return dto
-```
-
-### Usage
-
-```python
-from sincpro_framework import UseFramework
-
-def validate_payment(dto):
-    if hasattr(dto, 'amount') and dto.amount <= 0:
-        raise ValueError("Amount must be positive")
-    return dto
-
-def add_timestamp(dto):
-    import time
-    if hasattr(dto, '__dict__'):
-        dto.timestamp = time.time()
-    return dto
-
-framework = UseFramework("my_app")
-framework.add_middleware(validate_payment)
-framework.add_middleware(add_timestamp)
-
-# All DTOs are processed by middleware before reaching the Feature/Service
-result = framework(my_dto)
-```
-
-### Execution Order
-
-Middleware execute **in the order they are added**:
-1. First middleware processes the original DTO.
-2. Second middleware processes the result from the first.
-3. And so on…
-4. Finally, your Feature or ApplicationService receives the fully processed DTO.
-
-### Common Use Cases
-
-#### Validation
-```python
-def validate_user_input(dto):
-    if hasattr(dto, 'email') and '@' not in dto.email:
-        raise ValueError("Invalid email format")
-    return dto
-```
-
-#### Authentication
-```python
-def check_authentication(dto):
-    if hasattr(dto, 'user_id') and not is_authenticated(dto.user_id):
-        raise PermissionError("User not authenticated")
-    return dto
-```
-
-#### Data Enrichment
-```python
-def enrich_user_data(dto):
-    if hasattr(dto, 'user_id'):
-        dto.user_profile = get_user_profile(dto.user_id)
-    return dto
-```
-
-#### Logging
-```python
-import logging
-
-def log_requests(dto):
-    logging.info(f"Processing DTO: {type(dto).__name__}")
-    return dto
-```
-
-### Error Handling
-
-If any middleware raises an exception, the entire pipeline stops and the exception propagates to the caller:
-
-```python
-def strict_validation(dto):
-    if not hasattr(dto, 'required_field'):
-        raise ValueError("required_field is missing")
-    return dto
-
-framework.add_middleware(strict_validation)
-result = framework(my_dto)  # Raises ValueError if required_field is missing
-```
-
-### Best Practices
-
-1. **Keep it simple**: Each middleware should do one thing well.
-2. **Fail fast**: Raise exceptions early when validation fails.
-3. **Be safe**: Always check if attributes exist before accessing them.
-4. **Return the DTO**: Always return the DTO (modified or unchanged).
-5. **Don't break the chain**: Ensure your middleware doesn't silently swallow exceptions.
 
 ## ⚠️ Error Handling
 
@@ -1575,7 +1461,7 @@ attempts it.** Everything below was verified hands-on (3.14.7 vs. 3.14.7t), not 
 - **`asyncio`'s free-threading support only matured in 3.14.** Relevant to `get_async_bus()`
   / `AsyncBus`, which is built on `asyncio.to_thread`: prefer 3.14+ over 3.13t for that path.
 - Registries built once at startup (`feature_registry`, `app_service_registry`,
-  `dynamic_dep_registry`, the middleware list) are safe as long as nothing mutates them
+  `dynamic_dep_registry`, the interceptor chains) are safe as long as nothing mutates them
   concurrently with in-flight executions — true today, not enforced. See the docstring on
   `UseFramework.add_dependency`.
 

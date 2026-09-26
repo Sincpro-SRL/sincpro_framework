@@ -4,6 +4,7 @@ from sincpro_log.logger import LoggerProxy
 
 from .exceptions import DTOAlreadyRegistered as DTOAlreadyRegistered
 from .exceptions import UnknownDTOToExecute as UnknownDTOToExecute
+from .interceptors import Interceptor
 from .observability import Observability
 from .sincpro_abstractions import ApplicationService as ApplicationService
 from .sincpro_abstractions import Bus as Bus
@@ -22,6 +23,7 @@ class FeatureBus(Bus):
 
     log_after_execution: bool
     feature_registry: Dict[type, Feature]
+    interceptors: Dict[type, tuple[Interceptor, ...]]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability
@@ -53,6 +55,7 @@ class ApplicationServiceBus(Bus):
 
     log_after_execution: bool
     app_service_registry: Dict[type, ApplicationService]
+    interceptors: Dict[type, tuple[Interceptor, ...]]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability

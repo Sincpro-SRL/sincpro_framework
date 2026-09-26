@@ -1,6 +1,7 @@
 """The examples people copy from run, exactly as written.
 
-docs/persistence/guide.md runs block after block as one program, and the two README examples
+docs/persistence/guide.md and docs/core/interceptors.md each run block after block as one
+program, and the two README examples
 run on their own. Each is written to a real module and imported: a `DataTransferObject` reads
 its field docstrings from the source, so code with no file behind it would not even define.
 """
@@ -15,6 +16,7 @@ import pytest
 
 ROOT = Path(__file__).parents[2]
 GUIDE = ROOT / "docs" / "persistence" / "guide.md"
+INTERCEPTORS = ROOT / "docs" / "core" / "interceptors.md"
 README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -37,10 +39,11 @@ def _failing_line(error: Exception, path: Path) -> int:
     return frames[-1].lineno or 0 if frames else 0
 
 
-def test_every_block_of_the_persistence_guide_runs(tmp_path, monkeypatch):
+@pytest.mark.parametrize("page", [GUIDE, INTERCEPTORS], ids=lambda page: page.name)
+def test_every_block_of_a_runnable_page_runs(page, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    blocks = PYTHON_BLOCK.findall(GUIDE.read_text())
-    assert blocks, "the guide has no python blocks"
+    blocks = PYTHON_BLOCK.findall(page.read_text())
+    assert blocks, f"{page.name} has no python blocks"
     starts = []
     source = ""
     for block in blocks:
@@ -48,12 +51,12 @@ def test_every_block_of_the_persistence_guide_runs(tmp_path, monkeypatch):
         source += block + "\n"
 
     try:
-        _import_as_module("persistence_guide", source, tmp_path)
+        _import_as_module(page.stem, source, tmp_path)
     except Exception as error:
-        line = _failing_line(error, tmp_path / "persistence_guide.py")
+        line = _failing_line(error, tmp_path / f"{page.stem}.py")
         number = max(i for i, start in enumerate(starts, 1) if start <= max(line, 1))
         pytest.fail(
-            f"block {number} of {GUIDE.name} failed: {error!r}\n\n{blocks[number - 1]}"
+            f"block {number} of {page.name} failed: {error!r}\n\n{blocks[number - 1]}"
         )
 
 

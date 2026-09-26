@@ -151,7 +151,7 @@ with GrpcClient("localhost:50051") as client:
     )
 ```
 
-Middleware, error handlers and bus tracing are unchanged.
+Interceptors, error handlers and bus tracing are unchanged.
 
 ---
 

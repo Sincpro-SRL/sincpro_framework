@@ -137,7 +137,7 @@ A class with only comments inside `execute` (no `__doc__`) publishes the DTO nam
 
 1. JSON payload → `dto.model_validate(payload)`.
 2. Pydantic hydrates fields; VO `__get_pydantic_core_schema__` runs `validate_fn`.
-3. `framework(dto)` executes the Feature / ApplicationService (middleware, tracing, error handlers — unchanged).
+3. `framework(dto)` executes the Feature / ApplicationService (interceptors, tracing, error handlers — unchanged).
 4. Response `model_dump(mode="json")` so VOs leave as primitives.
 
 ### No `output_schema`, on purpose
