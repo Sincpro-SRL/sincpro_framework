@@ -22,6 +22,7 @@ from sincpro_framework.ddd.criteria import (
     PivotCell,
     Sort,
     Specification,
+    holds,
     matches,
 )
 from sincpro_framework.ddd.entity import (
@@ -107,6 +108,7 @@ __all__ = [
     "EventTrackableMixin",
     "Translated",
     "ValueObject",
+    "holds",
     "matches",
     "new_entity_id",
     "utc_now",

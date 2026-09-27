@@ -160,6 +160,20 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         `replaces`, instead of the one registered now."""
         ...
 
+    def handler_of(self, dto: type) -> type | None:
+        """The Feature or ApplicationService registered now for `dto` — what a `replaces=` names."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """The bounded context's name — its logger, its GlitchTip app, its OTel service."""
+        ...
+
+    def fresh(self) -> "UseFramework[TDeps]":
+        """A new bus of this context, not built, with everything registered on this one again,
+        in order — the same settings, dependencies and observability."""
+        ...
+
     def interceptor[T: Interceptor](self, *commands: type) -> Callable[[T], T]:
         """Run the decorated function around every execution of these Commands (all of this
         bus's when none is named). Registered in order, outermost first; refused after build.

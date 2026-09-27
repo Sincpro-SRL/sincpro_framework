@@ -13,6 +13,8 @@ Values are expected as the field's own type. A condition that arrived as text fr
 through `Meta.accept` first, which is what reads `"1000"` into `1000`.
 """
 
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from sincpro_framework.ddd.criteria.criteria import (
@@ -78,6 +80,27 @@ def _holds(actual: Any, operator: Operator, value: Any) -> bool:
             raise InvalidCriteria(f"no in-memory evaluation for operator '{operator}'")
 
 
+def holds(expression: Expression | None, read: Callable[[str], Any]) -> bool:
+    """Whether the filter holds over values `read` answers by field name — a column of a row,
+    a reference into a workflow's results.
+
+        in      {"size": 3}.get, Condition(size, GT, 1)                  →  True
+        in      anything, None                                          →  True   no filter
+    """
+    match expression:
+        case None:
+            return True
+        case Condition():
+            return _holds(read(expression.field), expression.operator, expression.value)
+        case All():
+            return all(holds(part, read) for part in expression.all)
+        case Any_():
+            return any(holds(part, read) for part in expression.any)
+        case Not():
+            return not holds(expression.negate, read)
+    raise InvalidCriteria(f"not a filter expression: {expression!r}")
+
+
 def matches(record: Any, expression: Expression | None) -> bool:
     """Whether this record answers the filter.
 
@@ -88,17 +111,4 @@ def matches(record: Any, expression: Expression | None) -> bool:
     >>> matches(thing, criteria.expression)
     True
     """
-    match expression:
-        case None:
-            return True
-        case Condition():
-            return _holds(
-                getattr(record, expression.field), expression.operator, expression.value
-            )
-        case All():
-            return all(matches(record, part) for part in expression.all)
-        case Any_():
-            return any(matches(record, part) for part in expression.any)
-        case Not():
-            return not matches(record, expression.negate)
-    raise InvalidCriteria(f"not a filter expression: {expression!r}")
+    return holds(expression, partial(getattr, record))

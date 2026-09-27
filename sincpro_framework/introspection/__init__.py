@@ -14,14 +14,17 @@ from sincpro_framework.introspection.inspector import (
     dtos,
     features,
 )
+from sincpro_framework.introspection.operations import Operation, operations_of
 
 __all__ = [
     "DtoMetadata",
     "DtoName",
     "FeatureOrAppServiceMetadata",
+    "Operation",
     "app_services",
     "built_bus",
     "describe",
     "dtos",
     "features",
+    "operations_of",
 ]

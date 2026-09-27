@@ -69,6 +69,10 @@ Now you are ready to explore more complex use cases! 🚀
     - [Application Service Orchestration](#-application-service-orchestration)
     - [IDE Support with Typing](#-ide-support-with-typing)
     - [Crons](#crons)
+    - [Migrations](#migrations)
+    - [Data analysis](#data-analysis)
+    - [Runtime use cases](#runtime-use-cases)
+    - [Workflows (experimental)](#workflows-experimental)
     - [Persistence and the ORM](#persistence-and-the-orm)
 3. [Features vs. Application Service](#-features-vs-application-service)
 4. [Example Usage for a Payment Gateway](#-example-usage-for-a-payment-gateway)
@@ -92,16 +96,20 @@ Now you are ready to explore more complex use cases! 🚀
     - [What it covers](#what-it-covers)
     - [How to, by topic](#how-to-by-topic)
 12. [Crons](#crons-1) — a registry per bounded context, a background process, one run per tick
-13. [Documentation](#-documentation)
-14. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
+13. [Migrations](#migrations-1) — every context and store on one timeline, one command
+14. [Data analysis](#data-analysis-1) — a query read once, merged page by page, handed to pandas, polars or DuckDB
+15. [Runtime use cases](#runtime-use-cases-1) — use cases stored as source, loaded onto the bus without a deploy
+16. [Workflows (experimental)](#workflows-experimental-1) — Commands composed as data, for a node editor's preview
+17. [Documentation](#-documentation)
+18. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
     - [MCP tools](docs/entrypoints/mcp.md)
     - [JSON-RPC](docs/entrypoints/rpc.md)
     - [gRPC](docs/entrypoints/grpc.md)
-15. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
-16. [Configuration or settings](#configuration-or-settings)
-17. [Variables](#-variables)
-18. [Tests & coverage](#-tests--coverage)
-19. [Python 3.14 & Free-Threading Notes](#-python-314--free-threading-notes)
+18. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
+19. [Configuration or settings](#configuration-or-settings)
+20. [Variables](#-variables)
+21. [Tests & coverage](#-tests--coverage)
+22. [Python 3.14 & Free-Threading Notes](#-python-314--free-threading-notes)
 
 ## 🔍 Overview of Hexagonal Architecture
 
@@ -288,6 +296,41 @@ See [Crons](#crons-1) for the full section.
 - By default in a background process: an in-memory orchestrator looks every 5 seconds and gives
   each run a thread of its own; one run per tick across replicas, explicit policies for
   overlapping and missed ticks.
+
+### Migrations
+
+See [Migrations](#migrations-1) for the full section.
+
+- Every context and every store on one timeline: `status` says where the whole system stands,
+  `upgrade` and `downgrade --to` move it as one, from a Makefile.
+- The core needs no database: `MigrationEngine` is one abstract class for any store; Alembic is
+  the engine shipped for SQL, behind the `[migrations]` extra.
+
+### Data analysis
+
+See [Data analysis](#data-analysis-1) for the full section.
+
+- What a `Criteria` answered, held as a `DataFrame` under the repository's fingerprint of the
+  read: the next page continues it, asking again reads nothing, a narrower filter is answered
+  from a complete read.
+- Handed on as Parquet or Arrow to a client, or through the Arrow PyCapsule interface to pandas,
+  polars and DuckDB — pyarrow behind the `[data-analysis]` extra.
+
+### Runtime use cases
+
+See [Runtime use cases](#runtime-use-cases-1) for the full section.
+
+- Commands, Responses and a Feature or ApplicationService stored as Python source, loaded onto
+  the bus while the service runs; a stored handler may `replaces=` one in code.
+- A new generation of the bus is built, checked and swapped in whole; a refused one leaves the
+  bus as it was.
+
+### Workflows (experimental)
+
+See [Workflows (experimental)](#workflows-experimental-1) for the full section.
+
+- The Commands a bus answers composed as JSON — `execute`, `code`, `for_each`, `fail`, `when` —
+  validated against the live bus, run with a trace, drawn as a graph for a node editor.
 
 ### Persistence and the ORM
 
@@ -1022,6 +1065,105 @@ crons = CronProcess(build_crons).start()                # at startup; crons.stop
 | Testing | `ManualClock` — time moves when the test says so |
 
 The whole of it, runnable: [docs/cron/](docs/cron/README.md).
+
+## Migrations
+
+The project writes each migration step; the framework orders every chain of every context and
+store into one timeline and moves the whole system along it.
+
+```python
+from sincpro_framework.migrations import ContextMigrations, Migrations, command_line
+from sincpro_framework.orm.migrations import AlembicEngine            # the [migrations] extra
+
+billing_migrations = ContextMigrations("billing", Path("domains/billing/entrypoints/migrations"))
+billing_migrations.store("main", AlembicEngine(billing_tables, database))
+
+migrations = Migrations([common_migrations, billing_migrations])      # entrypoints/migrations.py
+raise SystemExit(command_line(migrations))                           # status, upgrade, downgrade …
+```
+
+| | |
+|---|---|
+| Order | each chain in its own order, `requires` first, the oldest UUIDv7 among the rest |
+| Where it stands | per store, read from the store: up to date, behind, ahead, dirty |
+| Moving | `upgrade [--to]`, `downgrade --to` across every context and store; irreversible steps refuse |
+| Any store | implement `MigrationEngine` — five methods; `InMemoryEngine` for tests |
+| CI | `check`: edited bodies, forked chains, drift |
+
+The whole of it, runnable: [docs/migrations/](docs/migrations/README.md).
+
+## Data analysis
+
+The same question never sent to the database twice: a read is held, continued page by page, and
+narrowed without asking again. A utility, not an engine — the computing is pandas', polars' or
+DuckDB's.
+
+```python
+from sincpro_framework.data_analysis import QueryCache
+
+cache = QueryCache(max_rows=2_000_000)
+page = cache.fetch(repository, InvoiceLine, posted)                  # one read
+more = cache.fetch(repository, InvoiceLine, posted, pages=3)         # only pages 2 and 3
+sales = cache.fetch_all(repository, InvoiceLine, posted)             # complete
+sales.narrow({"field": "journal", "operator": "=", "value": "SAL"})  # no read at all
+polars.DataFrame(sales)                                              # or sales.to_parquet()
+```
+
+| | |
+|---|---|
+| Key | `repository.fingerprint(target, criteria)` — filter, order, mask and scope; never the page |
+| Pages | read with the keyset cursor and without a count, merged by `id` |
+| Narrowing | only on a complete frame — `NotComplete` otherwise |
+| Out | Parquet, Arrow IPC, columnar JSON with exact decimals, `__arrow_c_stream__`; `version` is an ETag |
+| Extra | the core needs nothing; Parquet and Arrow need `[data-analysis]` (pyarrow) |
+
+The whole of it, runnable: [docs/data_analysis/](docs/data_analysis/README.md).
+
+## Runtime use cases
+
+A use case stored as source — its Commands, its Responses and the one handler that answers them
+— loaded onto the bus without a deploy.
+
+```python
+from sincpro_framework.runtime_use_cases import BusRegistry, RuntimeUseCase
+
+registry = BusRegistry(billing, store)                              # the code's bus + what is stored
+registry.check(RuntimeUseCase("quote", source, version=2))          # refused before it is saved
+store.save(RuntimeUseCase("quote", source, version=2))
+registry.reload()                                                   # a new generation, swapped in whole
+registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100})
+```
+
+| | |
+|---|---|
+| Truth | the Python source; the Command is the one `execute` declares |
+| Generations | `billing.fresh()` plus what is stored, built beside the one answering, swapped with one assignment |
+| Refused | syntax, imports, module body, a Command the code already answers — named with its version |
+| Code | a stored use case imports the code's Commands, calls its Features, `replaces=` one of them |
+| Store | `UseCaseStore` (`active`, `save`) — `InMemoryUseCases` in the core, `SqlUseCases` in `orm` (`[sqlalchemy]`), or yours |
+
+The whole of it, runnable: [docs/runtime_use_cases/](docs/runtime_use_cases/README.md).
+
+## Workflows (experimental)
+
+The Commands a bus answers composed as JSON — what a node editor previews and an agent tries. The
+vocabulary may change.
+
+```python
+from sincpro_framework.workflows import FileWorkflows, Workflows
+
+workflows = Workflows(billing, FileWorkflows(Path("workflows")))    # one <name>.json each
+run = workflows.run("bill_order", {"order_id": 1})                    # a trace of every step
+workflows.draw("bill_order")                                          # the graph, as Mermaid
+```
+
+| | |
+|---|---|
+| Steps | `execute` a Command, `code` (a snippet), `for_each`, `fail` — each with an optional `when` |
+| References | whole values only: `$input.x`, `$steps.<id>.x`, `$item.x` — checked before anything runs |
+| For agents | `Workflows.schema()`, `catalog()`, `validate()` (every issue at once), `dry_run()`, `draw()` |
+
+The whole of it, runnable: [docs/workflows/](docs/workflows/README.md).
 
 ## 📖 Documentation
 

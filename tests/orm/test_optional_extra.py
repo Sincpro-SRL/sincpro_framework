@@ -43,3 +43,33 @@ def test_the_vocabulary_needs_no_database_and_the_adapter_names_its_extra():
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ok" in result.stdout
+
+
+MIGRATIONS_PROGRAM = r"""
+import sys
+
+sys.modules["alembic"] = None
+
+from sincpro_framework.migrations import ContextMigrations, InMemoryEngine, Migrations
+
+try:
+    import sincpro_framework.orm.migrations
+except ImportError as error:
+    assert "sincpro-framework[migrations]" in str(error), error
+    print("ok")
+else:
+    raise AssertionError("the Alembic engine imported without Alembic")
+"""
+
+
+def test_the_orchestrator_needs_no_alembic_and_the_engine_names_its_extra():
+    result = subprocess.run(
+        [sys.executable, "-c", MIGRATIONS_PROGRAM],
+        cwd=str(Path(__file__).resolve().parents[2]),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ok" in result.stdout
