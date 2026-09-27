@@ -411,3 +411,18 @@ def test_a_checksum_of_an_algorithm_this_framework_does_not_know_fails_the_check
     manifest_path.write_text(json.dumps(manifest))
 
     assert any("algorithm this framework does not know" in one for one in migrations.check())
+
+
+def test_adopt_is_refused_by_an_engine_that_cannot_tell_drift(tmp_path):
+    migrations, _ = _project(tmp_path)
+    migrations.revision("common", "main", "baseline")
+
+    with pytest.raises(MigrationRefused, match="resolve common main --at"):
+        migrations.adopt("common", "main")
+
+
+def test_adopt_is_refused_for_a_chain_without_steps(tmp_path):
+    migrations, _ = _project(tmp_path)
+
+    with pytest.raises(MigrationRefused, match="baseline"):
+        migrations.adopt("common", "main")

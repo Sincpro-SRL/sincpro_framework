@@ -22,6 +22,9 @@ BLOCKED = (
     "duckdb",
     "deltalake",
     "pyarrow",
+    "faststream",
+    "redis",
+    "pymemcache",
 )
 
 PROGRAM = r"""
@@ -113,6 +116,49 @@ store = InMemoryUseCases()
 store.save(RuntimeUseCase("echo", ECHO))
 registry = BusRegistry(bus, store)
 assert registry.execute("sincpro_runtime.core-only.echo.CommandEcho", {"said": "hi"}).said == "hi"
+
+from dataclasses import dataclass as _dataclass
+from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
+from sincpro_framework.cron import KeyValueRuns
+from sincpro_framework.ddd import Entity, MemoryRepository
+
+
+@_dataclass
+class Note(Entity):
+    text: str = ""
+
+
+class QueryNotes(DataTransferObject):
+    pass
+
+
+class ResponseNotes(DataTransferObject):
+    count: int
+
+
+notes = UseFramework("core-only-cache", log_after_execution=False)
+notes.add_dependency("repository", MemoryRepository())
+asked: list[int] = []
+
+
+@notes.feature(QueryNotes)
+class CountNotes(Feature):
+    def execute(self, dto: QueryNotes) -> ResponseNotes:
+        asked.append(1)
+        return ResponseNotes(count=self.repository.count(Note).value)
+
+
+QueryCaching(InMemoryKeyValue()).on(notes, QueryNotes, CachePolicy(ttl=timedelta(minutes=1)))
+assert notes(QueryNotes(), ResponseNotes).count == notes(QueryNotes(), ResponseNotes).count == 0
+assert asked == [1]
+assert KeyValueRuns(InMemoryKeyValue()).claim("core", datetime(2026, 9, 27, tzinfo=UTC))
+
+try:
+    import sincpro_framework.events.faststream
+except ImportError as error:
+    assert "sincpro-framework[faststream]" in str(error), error
+else:
+    raise AssertionError("the FastStream adapter imported without FastStream")
 
 loaded = sorted(name for name in BLOCKED if sys.modules.get(name) is not None)
 assert loaded == [], loaded

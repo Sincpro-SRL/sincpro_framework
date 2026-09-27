@@ -28,6 +28,7 @@ from sincpro_framework.cron.domain import (
     Tick,
 )
 from sincpro_framework.cron.registry import Crons
+from sincpro_framework.sincpro_logger import logger
 
 LATE_AFTER = timedelta(minutes=1)
 """A tick this far behind the clock counts as missed, and its `missed` policy decides."""
@@ -181,11 +182,19 @@ class CronGateway:
 
     def run(self) -> None:
         """Start from where each cron last ran — so ticks missed while nothing was running are
-        seen — or from now for one that never ran; then hand `look` to the clock."""
+        seen — or from now for one that never ran; say what runs and when it ticks next, so a
+        process waiting for its first tick is not mistaken for a stuck one; then hand `look` to
+        the clock."""
         now = self.clock.now()
         for entry in self._entries:
             last = self.runs.last(entry.definition.name)
             self._cursors[entry.definition.name] = last.scheduled_for if last else now
+        next_ticks = ", ".join(
+            f"{entry.definition.name} next "
+            f"{entry.definition.trigger.next_after(now).isoformat()}"
+            for entry in self._entries
+        )
+        logger.info(f"{len(self._entries)} crons: {next_ticks}")
         self.clock.run(self.look)
 
     def wait(self) -> None:

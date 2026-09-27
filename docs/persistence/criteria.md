@@ -112,5 +112,7 @@ A criteria lives in URLs and saved readings, and those outlive the schema they w
 
 From JSON: `Criteria.model_validate(payload)`. In Python: the nodes directly, `Criteria(where=
 All(all=[Condition(field=…, operator=Operator.GT, value=…)]), order=parse_order("-pages"))`.
+The nodes carry the names the JSON uses — `All`, `Any`, `Not` and `Condition`, from
+`sincpro_framework.ddd` — so `{"any": [...]}` is `Any(any=[...])`.
 `Query` is the command base that carries one, `ResponsePaginatedQuery` the answer base that
 returns the page with its definition cut by the same specification.

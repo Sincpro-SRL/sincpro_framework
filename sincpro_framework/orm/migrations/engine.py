@@ -8,17 +8,30 @@ corrupt the version table. The step id is the Alembic revision id, the body is a
 from the context's own `MetaData`, and the environment is the framework's: there is no
 `alembic.ini` to keep in step with the code. On a database whose DDL is not transactional —
 SQLite, MySQL — a step that fails part-way is recorded dirty in `<version table>_dirty`.
+
+A step body imports only `sqlalchemy` and `alembic`: a column type the project declares — a
+`TypeDecorator` such as `JsonText` — is written as the type it stores, its `impl`, so a body
+never imports project code and never calls a constructor whose arguments `repr()` does not
+show. `render_types` writes a type some other way.
 """
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from typing import Any, Literal, cast
 
 from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.autogenerate.api import AutogenContext
+from alembic.autogenerate.render import _repr_type
 from alembic.config import Config
 from alembic.ddl.impl import DefaultImpl
-from alembic.runtime.environment import IncludeNameFn, NameFilterParentNames, NameFilterType
+from alembic.runtime.environment import (
+    IncludeNameFn,
+    NameFilterParentNames,
+    NameFilterType,
+    RenderItemFn,
+)
 from alembic.runtime.migration import MigrationContext
 from alembic.script import Script
 from alembic.util import CommandError
@@ -28,11 +41,13 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    TypeDecorator,
     delete,
     insert,
     inspect,
     select,
 )
+from sqlalchemy.types import TypeEngine
 
 from sincpro_framework.migrations.domain import (
     Chain,
@@ -42,6 +57,9 @@ from sincpro_framework.migrations.domain import (
     Step,
 )
 from sincpro_framework.orm.sqlalchemy.database import Database
+
+RenderTypes = Mapping[type[TypeEngine[Any]], TypeEngine[Any]]
+"""A column type class — or a base of it — and the SQLAlchemy type a step writes for it."""
 
 ENVIRONMENT = Path(__file__).parent / "environment"
 LONGEST_NAME = 63
@@ -75,6 +93,36 @@ def only_tables_of(metadata: MetaData) -> IncludeNameFn:
     return include_name
 
 
+def _written_as(type_: TypeEngine[Any], render_types: RenderTypes) -> TypeEngine[Any] | None:
+    """The type a step writes in place of `type_`; `None` for Alembic's own rendering.
+
+    Context: a type SQLAlchemy ships stays itself — `Interval` is a `TypeDecorator` too, and a
+    native one on Postgres."""
+    for cls in type(type_).__mro__:
+        if cls in render_types:
+            return render_types[cls]
+    shipped = type(type_).__module__.startswith("sqlalchemy.")
+    if isinstance(type_, TypeDecorator) and not shipped:
+        return type_.impl_instance
+    return None
+
+
+def rendering_types(render_types: RenderTypes) -> RenderItemFn:
+    """How autogenerate writes a column type in a step body.
+
+    Context: the chosen type goes back through Alembic's own `_repr_type`, so its `sa.` prefix,
+    its dialect imports and a decorator nested in another are written as Alembic writes any
+    type."""
+
+    def render_item(
+        type_: str, obj: Any, autogen_context: AutogenContext
+    ) -> str | Literal[False]:
+        written = _written_as(obj, render_types) if type_ == "type" else None
+        return False if written is None else _repr_type(written, autogen_context)
+
+    return render_item
+
+
 def _describe(difference: tuple) -> str:
     """One Alembic difference as a sentence."""
     kind = difference[0]
@@ -97,11 +145,28 @@ def _dirty_table(chain: Chain) -> Table:
 
 
 class AlembicEngine(MigrationEngine):
+    """The chain of one context's `MetaData` on one `Database`.
+
+    `render_types` maps a column type class — or a base of it — to the SQLAlchemy type a step
+    writes for it: for a type with no `impl` (a `UserDefinedType`), or a `TypeDecorator` whose
+    database type is not its `impl` (one that overrides `load_dialect_impl`).
+
+        AlembicEngine(tables.metadata, database, render_types={Vector: sa.Text()})
+
+    Context: a mapping of types, not a hook over Alembic's rendering — a type is the one thing
+    a project declares that the framework cannot write for it, and a SQLAlchemy type instance
+    is written by Alembic itself, imports included. What it maps to must be what the column is
+    in the database, or `check` reports the difference.
+    """
+
     name = "alembic"
 
-    def __init__(self, metadata: MetaData, database: Database) -> None:
+    def __init__(
+        self, metadata: MetaData, database: Database, render_types: RenderTypes | None = None
+    ) -> None:
         self.metadata = metadata
         self.database = database
+        self.render_types: RenderTypes = dict(render_types or {})
         dialect = database.engine.dialect
         self.transactional = DefaultImpl.get_by_dialect(dialect).transactional_ddl
 
@@ -113,6 +178,7 @@ class AlembicEngine(MigrationEngine):
         config.attributes["connection"] = connection
         config.attributes["metadata"] = self.metadata
         config.attributes["version_table"] = version_table(chain)
+        config.attributes["render_item"] = rendering_types(self.render_types)
         return config
 
     def position(self, chain: Chain) -> Position:

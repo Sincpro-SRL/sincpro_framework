@@ -18,11 +18,29 @@ once may both read it.
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
+from decimal import Decimal
+from typing import Any
 
 from sincpro_framework.data_analysis.frame import DataFrame
 from sincpro_framework.ddd.criteria import CountMode, Criteria
-from sincpro_framework.ddd.entity.entity_collection import model_and_collection
+from sincpro_framework.ddd.entity.entity_collection import identity_name, model_and_collection
+from sincpro_framework.ddd.entity.model_meta import (
+    FieldType,
+    annotations_of,
+    describe_class,
+    logical_type,
+    without_optional,
+)
 from sincpro_framework.ddd.repositories import Repository
+
+FRAME_TYPES = {
+    FieldType.TEXT: "string",
+    FieldType.INTEGER: "integer",
+    FieldType.NUMBER: "number",
+    FieldType.BOOLEAN: "boolean",
+    FieldType.DATE: "date",
+    FieldType.DATETIME: "datetime",
+}
 
 
 @dataclass
@@ -30,6 +48,31 @@ class _Held:
     model: type
     frame: DataFrame
     pages: int
+
+
+def _column_type(annotation: Any) -> str:
+    """Context: the model says `number` for a decimal too; a frame keeps a decimal exact."""
+    if without_optional(annotation) is Decimal:
+        return "decimal"
+    return FRAME_TYPES.get(logical_type(annotation), "string")
+
+
+def _no_rows(model: type, criteria: Criteria, where: dict | None) -> DataFrame:
+    """A read before its first row, with the columns a row of it has — the identity and what the
+    specification keeps, or every field the model describes — typed by the model, so a read that
+    answers nothing still joins, and goes to Arrow and Parquet, with its columns."""
+    described = describe_class(model).fields
+    annotations = annotations_of(model)
+    specification = criteria.specification
+    columns = (
+        tuple(described)
+        if specification is None
+        else tuple(dict.fromkeys([identity_name(model), *specification.named]))
+    )
+    types = tuple(
+        _column_type(annotations[name]) if name in described else "string" for name in columns
+    )
+    return DataFrame(columns, types, ((),) * len(columns), where=where, complete=False)
 
 
 def _page(
@@ -85,7 +128,7 @@ class QueryCache:
         """Up to `pages` pages of this read held — every page when `None` — only the ones not
         held read.
 
-        1. What is held for this read, or an empty frame that has not started.
+        1. What is held for this read, or one with its columns and no row yet.
         2. Each missing page, from where the held ones stopped — outside the lock, so a read
            never waits on another one.
         3. The pages read merged into what is held, once.
@@ -97,7 +140,7 @@ class QueryCache:
         with self._lock:
             held = self._held.get(key)
         if held is None:
-            held = _Held(model, DataFrame.from_rows([], where=where, complete=False), 0)
+            held = _Held(model, _no_rows(model, criteria, where), 0)
         read: list[DataFrame] = []
         cursor, complete, count = held.frame.cursor, held.frame.complete, held.pages
         while not complete and (pages is None or count < pages):

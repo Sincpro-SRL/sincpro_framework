@@ -83,6 +83,10 @@ assert quoted.total == Decimal("113.00")
 assert registry.current(CommandComputeTax(amount=Decimal("100")), ResponseComputeTax).tax == Decimal("13.00")
 ```
 
+A registry reads its store and builds its first generation on first use — `current`, `execute`,
+`reload` or `put` — not when it is made, so one made at import never reads a table the migrations
+have not created yet. After that, `current` is read with no lock.
+
 What decides a new generation is the content: a changed source, `active` or `replaces`. `version`
 names the source in refusals and tracebacks, so a line points at the text that holds it.
 The names a generation routes are its `current.dto_registry` keys; a stored Command goes by its
@@ -126,6 +130,30 @@ refused version is the one under its name: save a fixed version, or the last goo
 and the next `reload` swaps it in. A traceback from a stored use case shows the line that failed, from
 `<runtime billing.quote v2 #…>`. Poll `reload` from a cron, or call it after a save; with several
 replicas, each one reloads its own.
+
+`put` is the three steps as one — check, save, swap in — under the registry's lock, so nothing
+interleaves with them: a version that does not load raises `UseCaseRefused` and is never saved,
+and every later `reload` keeps working:
+
+```python
+registry.put(RuntimeUseCase("quote", QUOTE.replace("1.13", "1.15"), version=4))
+assert registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100}).total == Decimal("115.00")
+
+try:
+    registry.put(RuntimeUseCase("quote", "class Quote(Feature)\n", version=5))
+except UseCaseRefused:
+    pass
+assert store.active()[0].version == 4 and not registry.reload()
+```
+
+A stored source imports the code, so a refactor of the code can break a stored use case that
+nothing reloads until the next deploy. `check_all()` loads every active one against the code as it
+is now and answers the ones that do not load — run it in CI, as `migrations check` guards the
+schema:
+
+```python
+assert registry.check_all() == []
+```
 
 ## Calling the code, replacing the code
 
@@ -245,10 +273,12 @@ what should not run.
 | | |
 |---|---|
 | `RuntimeUseCase(name, source, version=1, active=True, replaces=None)` | a use case as data; `checksum` of its source |
-| `BusRegistry(bus, store)` | the first generation, `bus.fresh()` plus the store, built now |
+| `BusRegistry(bus, store)` | the context's registry; its first generation, `bus.fresh()` plus the store, built on first use |
 | `registry.current` / `registry.generation` | the bus answering / how many were swapped in |
 | `registry.reload()` | a new generation from the store; `False` when nothing changed |
 | `registry.check(use_case)` | the generation it would join, built and let go |
+| `registry.put(use_case)` | check, save and swap in, atomically; `UseCaseRefused` saves nothing |
+| `registry.check_all()` | every active stored use case loaded against the code now; the refusals, `[]` when none |
 | `registry.execute(dto_name, payload)` | a Command built and executed on one generation |
 | `UseCaseStore` / `InMemoryUseCases` | where use cases are kept / in memory |
 | `SqlUseCases(database, table)` / `use_case_table(metadata, name)` | in a table of the context's database (`[sqlalchemy]`) |

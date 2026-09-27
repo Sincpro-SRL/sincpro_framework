@@ -12,6 +12,8 @@ from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
+    from .bus import FeatureBus
+
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject | DataclassInstance")
 TypeDTOResponse = TypeVar(
     "TypeDTOResponse", bound="DataTransferObject | DataclassInstance | list | dict"
@@ -193,9 +195,9 @@ class ApplicationService(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse,
                 return MyResponseDTO(result="example")
     """
 
-    feature_bus: Bus
+    feature_bus: "FeatureBus"
 
-    def __init__(self, feature_bus: Bus, *args, **kwargs):
+    def __init__(self, feature_bus: "FeatureBus", *args, **kwargs):
         """
         Initialize the ApplicationService with feature_bus for orchestration.
         Additional dependencies are injected automatically by the framework.

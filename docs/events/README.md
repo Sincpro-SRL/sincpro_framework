@@ -106,5 +106,6 @@ listener whether or not they share a class.
 Sharing one class across the buses is simpler and cannot drift, and is what most projects
 should do. The rebuild is there for when they genuinely cannot.
 
-Kafka, RabbitMQ and Redis are each one more `Queue`: `put`, `aput`, and whatever `start` / `stop`
-the transport needs.
+Kafka, RabbitMQ, Redis and NATS are one more `Queue` through FastStream, behind the
+`[faststream]` extra — the same
+`publish(event)` and the same buses: [brokers.md](brokers.md).

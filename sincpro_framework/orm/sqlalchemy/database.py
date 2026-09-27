@@ -22,18 +22,21 @@ from sqlalchemy.orm import Session, sessionmaker
 from sincpro_framework.ddd.entity import utc_now
 from sincpro_framework.orm.sqlalchemy.change_tracking import _tracking
 from sincpro_framework.orm.sqlalchemy.observability import observe
+from sincpro_framework.orm.sqlalchemy.read_tracking import note_statement_reads
 
 
 def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], None]:
     """The `before_flush` hook that writes when, and who, without a use case remembering to.
 
         an updated record  →  updated_at, and updated_by when an actor is configured
-        a new record       →  created_by, when an actor is configured
+        a new record       →  updated_at = created_at, and created_by when an actor is configured
 
-    `is_modified` and not membership in `dirty` alone: an attribute set to the value it already
-    held marks the object dirty without changing a column, and stamping that would record a
-    write that never happened. The actor is read per flush and never raises: a request with no
-    user behind it writes `None` rather than failing the transaction.
+    An insert is the first write, so `updated_at` is when it was last written from the start and
+    "untouched since" is one column. `is_modified` and not membership in `dirty` alone: an
+    attribute set to the value it already held marks the object dirty without changing a column,
+    and stamping that would record a write that never happened. The actor is read per flush and
+    never raises: a request with no user behind it writes `None` rather than failing the
+    transaction.
     """
 
     def who() -> str | None:
@@ -52,10 +55,14 @@ def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], Non
                 record.updated_at = now
                 if acting is not None and hasattr(record, "updated_by"):
                     record.updated_by = acting
-        if acting is None:
-            return
         for record in session.new:
-            if hasattr(record, "created_by") and record.created_by is None:
+            if hasattr(record, "updated_at") and record.updated_at is None:
+                record.updated_at = getattr(record, "created_at", now)
+            if (
+                acting is not None
+                and hasattr(record, "created_by")
+                and record.created_by is None
+            ):
                 record.created_by = acting
 
     return stamp
@@ -103,6 +110,7 @@ class Database:
         # a use case holding a plain session must not be able to step around them.
         self.before_flush(_stamping(actor))
         self.before_flush(_tracking)
+        event.listen(self.open_session, "do_orm_execute", note_statement_reads)
 
     def before_flush(self, run: "Callable[[Session], None]") -> "Database":
         """Runs before this database writes anything, for every session it ever opens.
@@ -139,6 +147,28 @@ class Database:
         either; a rollback after this leaves nothing behind.
         """
         event.listen(self.open_session, "after_flush", lambda session, _context: run(session))
+        return self
+
+    def after_commit(self, run: "Callable[[Session], None]") -> "Database":
+        """Runs once the transaction committed: what was written is final.
+
+            database.after_commit(lambda session: ...)
+
+        The moment to let go of what a write made stale — a held read, a cached answer. At
+        `after_flush` it is a race: a read between the flush and the commit holds the rows the
+        commit is about to change. The session can no longer write here.
+        """
+        event.listen(self.open_session, "after_commit", run)
+        return self
+
+    def after_rollback(self, run: "Callable[[Session], None]") -> "Database":
+        """Runs once the transaction was undone: nothing it flushed was written.
+
+            database.after_rollback(lambda session: ...)
+
+        What was noted at a flush to act on at the commit is forgotten here.
+        """
+        event.listen(self.open_session, "after_rollback", run)
         return self
 
     @contextmanager

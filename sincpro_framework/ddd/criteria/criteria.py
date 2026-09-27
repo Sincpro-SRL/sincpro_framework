@@ -533,7 +533,7 @@ class Specification(RootModel[dict[str, "Criteria"]]):
 
 class Criteria(DataTransferObject):
     where: Expression | None = None
-    """The filter: a `Condition`, or an `All`/`Any_`/`Not` grouping more of them.
+    """The filter: a `Condition`, or an `All`/`Any`/`Not` grouping more of them.
 
     **The declared type is exactly what is accepted.** No abbreviated spelling and no
     conversion, so pydantic and the type checker see the same thing and `criteria.where` reads

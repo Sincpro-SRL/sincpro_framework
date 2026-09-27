@@ -11,60 +11,19 @@ RabbitMQ or Redis are one more queue each, with this same surface.
 
 import dataclasses
 import multiprocessing
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.events.subscriber import Subscriber
+from sincpro_framework.events.trace import trace_carrier, within_trace
 from sincpro_framework.observability.api import process
 from sincpro_framework.sincpro_logger import logger
 
 STOP = ("__stop__", {}, {})
 """What `stop()` puts in so the worker returns. The same three-part envelope every event
 travels in, so the consumer unpacks one shape and nothing else."""
-
-
-def _carrier() -> dict[str, str]:
-    """The trace that is running right now, as W3C headers — `{'traceparent': '00-…'}`, and
-    empty when nothing is tracing or OpenTelemetry is not installed.
-
-    The event itself is left alone: a trace is about the call that produced the fact, not part
-    of the fact, so it rides beside the payload rather than inside `DomainEvent`.
-    """
-    try:
-        from opentelemetry.propagate import inject
-    except ImportError:
-        return {}
-    carrier: dict[str, str] = {}
-    inject(carrier)
-    return carrier
-
-
-@contextmanager
-def _adopted(carrier: dict[str, str]) -> Generator[None]:
-    """Runs the block inside the trace the carrier names, so what the consumer does lands
-    under the span that published — one trace across the process boundary instead of two
-    unrelated ones. Without a carrier, or without OpenTelemetry, it is a plain block.
-
-    The same adoption `entrypoints/rpc/entrypoint.py` does for an incoming `traceparent`
-    header; this is that boundary, asynchronous.
-    """
-    if not carrier:
-        yield
-        return
-    try:
-        from opentelemetry import context as otel_context
-        from opentelemetry.propagate import extract
-    except ImportError:
-        yield
-        return
-    token = otel_context.attach(extract(carrier))
-    try:
-        yield
-    finally:
-        otel_context.detach(token)
 
 
 @runtime_checkable
@@ -129,7 +88,7 @@ def _consume(inbox: Any, build_subscriber: Callable[[], Subscriber]) -> None:
         if event_type is None:
             continue
         try:
-            with _adopted(carrier):
+            with within_trace(carrier):
                 subscriber.handle(event_type(**payload))
         except Exception as error:  # noqa: BLE001 - one event failing must not end the worker
             if not process.was_reported(error):
@@ -199,7 +158,7 @@ class BackgroundQueue:
                 "call start() where the process begins and stop() where it ends, or use a "
                 "SyncQueue where the work is in-process"
             )
-        self.inbox.put((event.name, dataclasses.asdict(event), _carrier()))
+        self.inbox.put((event.name, dataclasses.asdict(event), trace_carrier()))
 
     async def aput(self, event: DomainEvent) -> None:
         self.put(event)

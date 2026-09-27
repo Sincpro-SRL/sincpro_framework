@@ -10,11 +10,14 @@ an optional extra; carrying events is `sincpro_framework.events`.
 """
 
 from sincpro_framework.ddd.criteria import (
+    All,
+    Any,
     Bucket,
     Condition,
     CountMode,
     Criteria,
     Cursor,
+    Not,
     Offset,
     Operator,
     Pagination,
@@ -62,6 +65,8 @@ from sincpro_framework.ddd.repositories.hooks import Hook, Hooks, Rule
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
+    "All",
+    "Any",
     "ArchivableMixin",
     "AuditedMixin",
     "Bucket",
@@ -88,6 +93,7 @@ __all__ = [
     "InvalidCriteria",
     "MemoryRepository",
     "Meta",
+    "Not",
     "Offset",
     "Operator",
     "DomainError",

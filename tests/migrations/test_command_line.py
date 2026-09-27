@@ -91,3 +91,11 @@ def test_every_command_a_makefile_calls(tmp_path, capsys):
         command_line(migrations, ["resolve", "common", "main", "--at", partner.id[:20]]) == 0
     )
     assert migrations.status().chains["common/main"].position.head == partner.id
+
+
+def test_adopt_exits_with_one_and_says_why_when_it_refuses(tmp_path, capsys):
+    migrations = _migrations(tmp_path)
+    migrations.revision("common", "main", "baseline")
+
+    assert command_line(migrations, ["adopt", "common", "main"]) == 1
+    assert "resolve common main" in capsys.readouterr().err

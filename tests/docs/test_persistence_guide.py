@@ -22,6 +22,8 @@ MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
 WORKFLOWS = ROOT / "docs" / "workflows" / "README.md"
 DATA_ANALYSIS = ROOT / "docs" / "data_analysis" / "README.md"
 RUNTIME_USE_CASES = ROOT / "docs" / "runtime_use_cases" / "README.md"
+BROKERS = ROOT / "docs" / "events" / "brokers.md"
+CACHING = ROOT / "docs" / "caching" / "README.md"
 README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -46,7 +48,17 @@ def _failing_line(error: Exception, path: Path) -> int:
 
 @pytest.mark.parametrize(
     "page",
-    [GUIDE, INTERCEPTORS, CRON, MIGRATIONS, WORKFLOWS, DATA_ANALYSIS, RUNTIME_USE_CASES],
+    [
+        GUIDE,
+        INTERCEPTORS,
+        CRON,
+        MIGRATIONS,
+        WORKFLOWS,
+        DATA_ANALYSIS,
+        RUNTIME_USE_CASES,
+        BROKERS,
+        CACHING,
+    ],
     ids=lambda page: page.parent.name + "/" + page.name,
 )
 def test_every_block_of_a_runnable_page_runs(page, tmp_path, monkeypatch):

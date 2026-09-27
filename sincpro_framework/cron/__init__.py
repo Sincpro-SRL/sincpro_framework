@@ -14,7 +14,7 @@ them, `registry` the `Crons` of a bounded context, `entrypoint/` how they run. T
 what a project uses; `ManualClock`, for tests, is in `sincpro_framework.testing`.
 """
 
-from sincpro_framework.cron.adapters import InMemoryRuns
+from sincpro_framework.cron.adapters import InMemoryRuns, KeyValueRuns
 from sincpro_framework.cron.domain import (
     Cron,
     CronRuns,
@@ -35,6 +35,7 @@ __all__ = [
     "CronStatus",
     "Crons",
     "InMemoryRuns",
+    "KeyValueRuns",
     "Missed",
     "Overlap",
     "Run",

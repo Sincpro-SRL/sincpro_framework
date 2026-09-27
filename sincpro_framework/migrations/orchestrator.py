@@ -31,11 +31,12 @@ from sincpro_framework.migrations.domain import (
     timeline,
 )
 from sincpro_framework.migrations.manifest import (
-    ALGORITHM,
+    DIGESTS,
     MANIFEST,
     Manifest,
     StoreSteps,
     checksum,
+    matches,
     read_manifest,
     sum_of,
     write_manifest,
@@ -170,14 +171,14 @@ class Migrations:
                 problems += _linear_problems(key, entry.steps)
                 for step in entry.steps:
                     body = context.folder / store / step.file
-                    if not step.checksum.startswith(f"{ALGORITHM}:"):
+                    if step.checksum.partition(":")[0] not in DIGESTS:
                         problems.append(
                             f"{key} {step.id}: hashed with an algorithm this framework does not "
                             "know — a newer sincpro-framework wrote it"
                         )
                     elif not body.exists():
                         problems.append(f"{key} {step.id}: {step.file} is missing")
-                    elif checksum(body) != step.checksum:
+                    elif not matches(body, step.checksum):
                         problems.append(
                             f"{key} {step.id}: {step.file} changed since it was hashed — review "
                             "it, then run hash"
@@ -369,27 +370,71 @@ class Migrations:
         registry.engines[store].record(chain, Position(head))
         self.logger.info(f"resolved {chain.key} at {head}")
 
+    def adopt(self, context: str, store: str) -> Step:
+        """Record a store that already holds what the code declares — a database another tool
+        migrated — on its chain's last step, and answer that step.
+
+        Context: the chain's steps were written against an empty store (a baseline per context),
+        so they never ran on this one; its engine's drift is what proves the store already
+        stands where they lead. Refused, recording nothing, when the store already stands on a
+        step, when its engine cannot tell drift — `resolve --at` is the manual form — or when it
+        reports any.
+        """
+        self._refuse_unless_intact()
+        registry = self._context(context)
+        chain = registry.chain(store)
+        engine = registry.engines[store]
+        entry = self._manifest(registry).stores.get(store)
+        if entry is None or not entry.steps:
+            raise MigrationRefused(
+                f"{chain.key} has no step to adopt the store at — write its baseline first, "
+                "with revision against an empty store"
+            )
+        position = engine.position(chain)
+        if position.head is not None or position.dirty:
+            raise MigrationRefused(
+                f"{chain.key} already stands on {position.head or 'the start, dirty'} — adopt "
+                "is for a store no step of this code ran on"
+            )
+        drift = engine.drift(chain)
+        last = entry.steps[-1]
+        if drift is None:
+            raise MigrationRefused(
+                f"the {engine.name} engine of {chain.key} cannot tell whether the store holds "
+                f"what the code declares — look at it, then run `resolve {context} {store} "
+                f"--at {last.id}`"
+            )
+        if drift:
+            raise MigrationRefused(
+                f"{chain.key} does not hold what its steps lead to: {'; '.join(drift)}"
+            )
+        engine.record(chain, Position(last.id))
+        self.logger.info(f"adopted {chain.key} at {last.id} ({last.message})")
+        return last
+
     def hash(self) -> list[str]:
         """Checksum every step body again and rewrite each manifest — after writing the body of a
         new step, or reviewing an edit to one its store has not applied. Answers the steps whose
-        checksum changed. Refused, before anything is written, when one of them is applied: an
-        applied step is never edited — a new step changes what it did."""
+        body changed. Refused, before anything is written, when one of them is applied: an
+        applied step is never edited — a new step changes what it did. A checksum of an older
+        algorithm whose body did not change is rewritten with the current one, applied or not.
+        """
         applied = {step.key for step, is_applied in self.status().timeline if is_applied}
         manifests: list[tuple[ContextMigrations, Manifest]] = []
         changed: list[str] = []
         for context in self.contexts.values():
             manifest = self._manifest(context)
             for store, entry in manifest.stores.items():
-                hashed = [
-                    replace(step, checksum=checksum(context.folder / store / step.file))
-                    for step in entry.steps
-                ]
+                bodies = [context.folder / store / step.file for step in entry.steps]
                 changed += [
-                    new.key
-                    for old, new in zip(entry.steps, hashed)
-                    if old.checksum != new.checksum
+                    step.key
+                    for step, body in zip(entry.steps, bodies)
+                    if not matches(body, step.checksum)
                 ]
-                entry.steps = hashed
+                entry.steps = [
+                    replace(step, checksum=checksum(body))
+                    for step, body in zip(entry.steps, bodies)
+                ]
             manifests.append((context, manifest))
         edited = [key for key in changed if key in applied]
         if edited:

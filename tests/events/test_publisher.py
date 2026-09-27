@@ -6,7 +6,7 @@ import asyncio
 import pytest
 
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.events import AsyncPublisher, Publisher, Subscriber, SyncQueue
 
 from .models import (
     CommandAudit,
@@ -97,3 +97,11 @@ def test_a_command_is_refused_because_a_queue_carries_facts(sync_queue):
     true, and no help at all about why."""
     with pytest.raises(ContractViolation, match="facts rather than orders"):
         Publisher(sync_queue).publish(CommandAudit(text="do this"))  # type: ignore[arg-type]
+
+
+def test_the_async_publisher_refuses_a_command_too(sync_queue):
+    async def publish() -> None:
+        await AsyncPublisher(sync_queue).publish(CommandAudit(text="do this"))  # type: ignore[arg-type]
+
+    with pytest.raises(ContractViolation, match="facts rather than orders"):
+        asyncio.run(publish())

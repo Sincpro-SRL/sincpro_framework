@@ -169,8 +169,8 @@ def test_the_bus_the_code_declares_is_never_built_nor_changed():
 
 
 def test_a_registry_leaves_the_modules_of_another_one_alone():
-    _registry(RuntimeUseCase("quote", QUOTE))
-    _registry(RuntimeUseCase("checkout", CHECKOUT))
+    _registry(RuntimeUseCase("quote", QUOTE)).current
+    _registry(RuntimeUseCase("checkout", CHECKOUT)).current
 
     assert "sincpro_runtime.billing.quote" in sys.modules
     assert "sincpro_runtime.billing.checkout" in sys.modules
@@ -265,3 +265,104 @@ def test_a_feature_cannot_replace_an_application_service():
     registry.store.save(RuntimeUseCase("as_feature", FEATURE_FOR_CHECKOUT, replaces=replaced))
     with pytest.raises(UseCaseRefused, match="Checkout is an ApplicationService"):
         registry.reload()
+
+
+class CountedReads(InMemoryUseCases):
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+
+    def active(self) -> list[RuntimeUseCase]:
+        self.reads += 1
+        return super().active()
+
+
+def test_a_registry_reads_its_store_on_first_use_not_when_it_is_made():
+    """Context: made at import, a registry read a table the migrations had not created yet."""
+    store = CountedReads()
+    store.save(RuntimeUseCase("quote", QUOTE))
+
+    registry = BusRegistry(billing, store)
+    assert store.reads == 0
+
+    answered = registry.execute(QUOTE_COMMAND, {"amount": 100})
+
+    assert answered.total == Decimal("113.00")
+    assert store.reads == 1 and registry.generation == 1
+
+
+def test_callers_arriving_together_build_one_first_generation():
+    store = CountedReads()
+    store.save(RuntimeUseCase("quote", QUOTE))
+    registry = BusRegistry(billing, store)
+    start = threading.Barrier(6)
+    seen: list[Any] = []
+
+    def first_use() -> None:
+        start.wait()
+        seen.append(registry.current)
+
+    callers = [threading.Thread(target=first_use) for _ in range(6)]
+    for caller in callers:
+        caller.start()
+    for caller in callers:
+        caller.join()
+
+    assert store.reads == 1 and registry.generation == 1
+    assert all(bus is seen[0] for bus in seen)
+
+
+def test_put_saves_a_use_case_and_swaps_in_the_generation_it_joins():
+    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    before = registry.current
+
+    registry.put(RuntimeUseCase("quote", QUOTE.replace("1.13", "1.16"), version=2))
+
+    assert registry.store.active()[0].version == 2
+    assert registry.current is not before and registry.generation == 2
+    assert registry.execute(QUOTE_COMMAND, {"amount": 100}).total == Decimal("116.00")
+    assert registry.reload() is False
+
+
+def test_put_of_what_does_not_load_saves_nothing_and_leaves_the_bus():
+    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    bus = registry.current
+
+    with pytest.raises(UseCaseRefused, match="quote v2"):
+        registry.put(RuntimeUseCase("quote", "class Quote(Feature)\n", version=2))
+
+    assert registry.store.active() == [RuntimeUseCase("quote", QUOTE)]
+    assert registry.current is bus
+    assert registry.reload() is False
+
+
+def test_put_retires_a_use_case_saved_inactive():
+    registry = _registry(RuntimeUseCase("quote", QUOTE))
+
+    registry.put(RuntimeUseCase("quote", QUOTE, version=2, active=False))
+
+    assert QUOTE_COMMAND not in registry.current.dto_registry
+
+
+def test_check_all_names_every_stored_use_case_the_code_no_longer_loads():
+    """Context: a stored source imports the code; a refactor of the code breaks it silently until
+    the next reload — this is the CI check, as `migrations check` is for the schema."""
+    store = InMemoryUseCases()
+    store.save(RuntimeUseCase("quote", QUOTE))
+    store.save(RuntimeUseCase("broken", "class Broken(Feature)\n"))
+    store.save(RuntimeUseCase("tax", TAX_WITH_EXEMPTION))
+    registry = BusRegistry(billing, store)
+
+    refusals = registry.check_all()
+
+    assert [str(refusal).split(":")[0] for refusal in refusals] == ["broken v1", "tax v1"]
+    assert registry.generation == 0
+
+
+def test_check_all_answers_nothing_when_every_stored_use_case_loads():
+    registry = _registry(
+        RuntimeUseCase("quote", QUOTE), RuntimeUseCase("double", DOUBLE_QUOTE)
+    )
+
+    assert registry.check_all() == []
+    assert registry.execute(QUOTE_COMMAND, {"amount": 100}).total == Decimal("113.00")

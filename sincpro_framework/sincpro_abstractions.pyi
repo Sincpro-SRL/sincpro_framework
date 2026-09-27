@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing_extensions import TypeVar
 
 from .aio import AsyncBus as AsyncBus
+from .bus import FeatureBus
 from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
 
 class DataTransferObject(BaseModel): ...
@@ -108,8 +109,8 @@ class ApplicationService(
     """
 
     context: ContextT
-    feature_bus: Bus
-    def __init__(self, feature_bus: Bus, *args, **kwargs) -> None: ...
+    feature_bus: FeatureBus
+    def __init__(self, feature_bus: FeatureBus, *args, **kwargs) -> None: ...
     def bind_to_framework(self, binder: Any) -> None: ...
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None: ...

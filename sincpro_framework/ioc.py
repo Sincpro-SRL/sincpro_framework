@@ -1,5 +1,6 @@
 """Inversion of Control (IoC) container for the SincPro Framework"""
 
+import inspect
 import sys
 from enum import Enum
 from functools import wraps
@@ -293,6 +294,17 @@ def names_of(dto: DTORegistration) -> str:
     return ", ".join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))
 
 
+def _refuse_an_async_execute(decorated_class: type) -> None:
+    """Context: the bus calls `execute` and does not await it, so an `async def execute` would
+    answer an unawaited coroutine — its work never run, its errors never seen by a handler."""
+    if inspect.iscoroutinefunction(decorated_class.execute):
+        raise TypeError(
+            f"{decorated_class.__name__} declares async def execute, and the bus is synchronous: "
+            "declare it def execute — an async caller reaches it with bus.get_async_bus(), "
+            "which runs it off the event loop"
+        )
+
+
 def inject_feature_to_bus(
     framework_container: FrameworkContainer,
     dto: DTORegistration,
@@ -311,6 +323,7 @@ def inject_feature_to_bus(
 
     @wraps(inject_feature_to_bus)
     def decorator(decorated_class: T) -> T:
+        _refuse_an_async_execute(decorated_class)
         if replaces is None:
             _register_service(framework_container, ServiceType.FEATURE, dto, decorated_class)
         else:
@@ -341,6 +354,7 @@ def inject_app_service_to_bus(
 
     @wraps(inject_app_service_to_bus)
     def decorator(decorated_class: T) -> T:
+        _refuse_an_async_execute(decorated_class)
         if replaces is None:
             _register_service(
                 framework_container, ServiceType.APP_SERVICE, dto, decorated_class

@@ -21,7 +21,9 @@ def test_a_fold_only_takes_a_known_aggregate():
         Measure(function="pg_sleep", field="row_count")
 
 
+from sincpro_framework import ddd
 from sincpro_framework.ddd import Criteria, Cursor, Pagination
+from sincpro_framework.ddd import criteria as criteria_package
 from sincpro_framework.ddd.criteria import (
     All,
     Any_,
@@ -260,3 +262,34 @@ def test_a_condition_built_from_python_takes_dates_and_decimals():
     )
     assert Condition(field="n", value=5).value == 5
     assert type(Condition(field="n", value=5).value) is int
+
+
+def test_the_filter_nodes_are_written_in_code_by_the_names_json_uses():
+    written = ddd.All(
+        all=[ddd.Any(any=[OVER_A_THOUSAND, NAMED_LABS]), ddd.Not(negate=OVER_A_THOUSAND)]
+    )
+
+    assert (
+        written
+        == Criteria.model_validate(
+            {
+                "where": {
+                    "all": [
+                        {"any": [OVER_A_THOUSAND, NAMED_LABS]},
+                        {"negate": OVER_A_THOUSAND},
+                    ]
+                }
+            }
+        ).expression
+    )
+    assert (
+        criteria_package.All,
+        criteria_package.Any,
+        criteria_package.Not,
+        criteria_package.Condition,
+    ) == (
+        ddd.All,
+        ddd.Any,
+        ddd.Not,
+        ddd.Condition,
+    )

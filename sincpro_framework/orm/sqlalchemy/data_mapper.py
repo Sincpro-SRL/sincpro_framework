@@ -446,6 +446,14 @@ def _refuse_a_table_that_does_not_extend(
         )
 
 
+_aggregates_by_table: dict[Table, list[type]] = {}
+
+
+def aggregates_of(table: Table) -> list[type]:
+    """The aggregates mapped onto `table` — what a statement over it reads."""
+    return _aggregates_by_table.get(table, [])
+
+
 def map_aggregates(
     mapper_registry: registry,
     tables: dict[type, Table],
@@ -488,6 +496,7 @@ def map_aggregates(
             options["version_id_col"] = table.c.version
 
         mapper = mapper_registry.map_imperatively(entity, table, **options)
+        _aggregates_by_table.setdefault(table, []).append(entity)
         event.listen(
             mapper, "load", _with_transient_defaults(entity, set(mapper.columns.keys()))
         )

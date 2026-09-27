@@ -63,6 +63,7 @@ class AsyncPublisher:
     async def publish(self, event: DomainEvent, return_type: type[Response]) -> Response: ...
 
     async def publish(self, event: DomainEvent, return_type: Any = None) -> Any:
+        refuse_orders(event)
         answers = await self.queue.aput(event)
         return None if return_type is None else _one_answer(self.queue, event, answers)
 

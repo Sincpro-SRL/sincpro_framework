@@ -78,7 +78,7 @@ page: seven rows over pages of three is `[3, 3, 1]`, and `after_read` seven time
 There are no `before_read` or `before_search` — a read has no aggregate to hand one yet, and
 restricting what somebody may see is `narrowed()`, which the store cannot be talked out of.
 There is no `after_commit` or `after_rollback` here either; a transaction is the store's, and
-`Database.after_flush` is where the engine exposes its own.
+`Database.after_flush`, `after_commit` and `after_rollback` are where the engine exposes its own.
 
 **Both stores fire all of this identically**, which `tests/orm/test_lifecycle_parity.py` proves
 by running one script against each and comparing the answers.

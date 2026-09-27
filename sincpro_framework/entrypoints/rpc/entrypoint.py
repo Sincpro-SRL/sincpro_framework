@@ -9,6 +9,7 @@ FastAPI, an ASGI framework, or a specific auth library on its own — that compo
 host process's call, not this module's.
 """
 
+import asyncio
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -199,7 +200,7 @@ class RpcGateway:
                     jsonrpc_error(PARSE_ERROR, "Parse error"), status_code=200
                 )
             header_context = merge_http_context(request.headers)
-            reply = gateway.handle(payload, context=header_context or None)
+            reply = await asyncio.to_thread(gateway.handle, payload, header_context or None)
             if reply is None:
                 return Response(status_code=204)
             return JSONResponse(reply)

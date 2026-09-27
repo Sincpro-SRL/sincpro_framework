@@ -46,6 +46,16 @@ class FeatureBus(Bus):
         """Execute a feature without specifying return type."""
         ...
 
+    @overload
+    def __call__(self, dto: TypeDTO, return_type: Type[TypeDTOResponse]) -> TypeDTOResponse:
+        """Execute a feature, as the root bus is called: `self.feature_bus(dto, Response)`."""
+        ...
+
+    @overload
+    def __call__(self, dto: TypeDTO) -> TypeDTOResponse | None:
+        """Execute a feature without specifying return type."""
+        ...
+
 class ApplicationServiceBus(Bus):
     """
     Second layer of the framework, orchestration of features.
