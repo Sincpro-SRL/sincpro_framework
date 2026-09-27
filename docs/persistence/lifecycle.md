@@ -5,7 +5,7 @@ preference — it is **reach**: how much of the system each one can see.
 
 | | Registered on | Reaches |
 |---|---|---|
-| the session | `Database.before_flush` / `after_flush` | **everyone** who writes through this database |
+| the session | `Database.before_flush` / `after_flush` / `after_commit` / `after_rollback` | **everyone** who writes through this database |
 | the repository | `Hooks`, `Rule` | whoever goes through that repository |
 | the aggregate | `pull_events()` | whoever holds the aggregate |
 
@@ -35,7 +35,7 @@ repository.save(invoice)
     ├─ before_save(invoice)            the project's rules: validate, compute, refuse
     ├─ before_create / before_update   …the same write, told apart
     │
-    ├─ session flush ──┬─ stamping     created_by / updated_by / updated_at
+    ├─ session flush ──┬─ stamping     created_by / updated_by / updated_at (created_at on insert)
     │                  └─ tracking     one consolidated Updated event, recorded on the aggregate
     │                  └─ …and whatever else was given to before_flush
     │
@@ -52,9 +52,11 @@ batch refused halfway writes nothing and no after-moment ran. Both stores do thi
 `after_save` is not. Inside `context()` a save flushes and the block commits later, so a fact
 announced from `after_save` is one a rollback can still take back.
 
-There is no `after_commit` hook. What tells the world something happened lives **outside** the
-write: the aggregate records events, the Feature pulls them once the unit of work has closed,
-and publishes there.
+`Database.after_commit` runs once the write is final, and is where a held read is let go of —
+`invalidate_on_commit(database, cache, Invoice)` does it for a `QueryCache`. It is not where
+events are published: what tells the world something happened lives **outside** the write, the
+aggregate records events, the Feature pulls them once the unit of work has closed, and
+publishes there.
 
 ```python
 with self.repository.context() as ledger:
@@ -89,10 +91,15 @@ Everything else about the two stores is proved identical in
 ```python
 database.before_flush(lambda session: ...)   # still changeable, sees session.new / .dirty
 database.after_flush(lambda session: ...)    # the statements have gone out, not committed
+database.after_commit(lambda session: ...)   # the write is final
+database.after_rollback(lambda session: ...) # the write is gone
 ```
 
-The same door the framework's own two use. Neither is where the world gets told: the
-transaction has not committed and can still be undone.
+The same door the framework's own two use; each answers the database, so several read as one
+wiring. The flush moments are not where the world gets told: the transaction has not committed
+and can still be undone. A cache invalidated at the flush loses a race — a read between the flush
+and the commit holds the rows the commit is about to change — so it is let go at `after_commit`,
+and what a flush noted is forgotten at `after_rollback`.
 
 ## Where to put a thing
 

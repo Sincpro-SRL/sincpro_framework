@@ -38,6 +38,7 @@ from sincpro_framework.orm.sqlalchemy import (
     entity_columns,
     entity_table,
     event_columns,
+    invalidate_on_commit,
     map_aggregates,
     register_grain_translator,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "entity_columns",
     "event_columns",
     "entity_table",
+    "invalidate_on_commit",
     "map_aggregates",
     "register_grain_translator",
 ]

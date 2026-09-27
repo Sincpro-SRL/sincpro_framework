@@ -189,6 +189,17 @@ class DataFrame:
         values = tuple(_widened(column, kind) for column, kind in zip(raw, types))
         return cls(names, types, values, key, where, complete, cursor)
 
+    @classmethod
+    def from_arrow(cls, table: Any, key: str = "id") -> "DataFrame":
+        """A `pyarrow.Table` — what DuckDB or polars answer — as a frame, its types taken from the
+        schema, so one with no rows keeps its columns.
+
+        Context: pyarrow is imported here, as in `to_arrow`."""
+        from sincpro_framework.data_analysis.arrow import frame_columns
+
+        columns, types, values = frame_columns(table)
+        return cls(columns, types, values, key)
+
     def __len__(self) -> int:
         return len(self.values[0]) if self.values else 0
 

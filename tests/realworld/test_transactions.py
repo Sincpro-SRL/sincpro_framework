@@ -113,13 +113,13 @@ def test_the_second_of_two_writers_in_two_processes_is_stale(
     assert results == {"first": "saved", "second": "StaleAggregate"}
 
 
-def test_updated_at_is_stamped_on_the_update_and_not_on_the_insert(
+def test_updated_at_is_the_creation_on_the_insert_and_stamped_on_the_update(
     ledger: Repository, new_draft
 ):
     entry = new_draft()
     fresh = ledger.get(Entry, entry.id)
     assert fresh is not None
-    assert fresh.updated_at is None and fresh.version == 1
+    assert fresh.updated_at == fresh.created_at and fresh.version == 1
 
     with ledger.context() as unit:
         post_in_place(unit, entry.id)

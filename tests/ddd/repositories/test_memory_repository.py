@@ -212,6 +212,15 @@ def test_saving_raises_the_version_and_refuses_a_stale_write(ledger):
         ledger.save(theirs)
 
 
+def test_a_first_save_is_the_last_write_until_the_next_one(ledger):
+    """Context: "untouched since T" is one column — `updated_at` — when an insert writes it too."""
+    fresh = Account(code="9001")
+
+    ledger.save(fresh)
+
+    assert fresh.updated_at == fresh.created_at
+
+
 def test_archiving_puts_it_away_and_a_reading_leaves_it_out(ledger, accounts):
     gone = accounts[0]
 

@@ -287,6 +287,24 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.
 - Parameterize the bus as `UseFramework[DependencyContextType]`. Features get `self.token_adapter`; callers outside a Feature get the same instance as `framework.deps.token_adapter`.
 
+### Events over brokers
+
+See [docs/events/brokers.md](docs/events/brokers.md).
+
+- The domain keeps `publish(event)` and registering an event on a bus; Kafka, RabbitMQ, Redis
+  or NATS carry it through FastStream, behind the `[faststream]` extra.
+- `FastStreamQueue(broker).start()` for synchronous code, `aput` for async; `subscribe(broker,
+  Subscriber(...))` subscribes every event the buses registered.
+
+### Caching
+
+See [docs/caching/](docs/caching/README.md).
+
+- Infrastructure the use case never sees: the composition says which Queries keep their answers —
+  `QueryCaching(store).on(bus, Query, CachePolicy(ttl=…, vary_by=("tenant_id",)))`.
+- An answer is tagged by what the repository noted it read and let go of when a commit writes it;
+  `KeyValueStore` is the provider contract — memory in the core, Redis/Valkey and Memcached as extras.
+
 ### Crons
 
 See [Crons](#crons-1) for the full section.

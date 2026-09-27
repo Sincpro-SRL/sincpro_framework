@@ -120,6 +120,19 @@ def test_each_bus_is_handed_the_class_it_declared_for_that_wire_name():
     assert len(answers) == 2
 
 
+def test_the_async_subscriber_hands_each_bus_its_own_class_too():
+    """The same two identities through the async facade — the path a broker consumer takes."""
+    wire = "execution.v1.run_advanced"
+    seen: list[str] = []
+    first = _listening("catalog", _declaring(wire, "catalog"), seen)
+    second = _listening("project", _declaring(wire, "project"), seen)
+
+    published = _declaring(wire, "execution")(reason="fitted")
+    asyncio.run(Subscriber(first, second).get_async_subscriber().handle(published))
+
+    assert seen == ["catalog:Restated_catalog", "project:Restated_project"]
+
+
 def test_a_class_the_bus_itself_declared_is_passed_through_untouched():
     """Every event that never left its own context, and every project that shares one class
     across buses — nothing is rebuilt and the instance is the one published."""

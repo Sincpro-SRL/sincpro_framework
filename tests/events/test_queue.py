@@ -90,7 +90,7 @@ def test_the_trace_rides_beside_the_event_across_the_process_boundary():
     from opentelemetry import trace
     from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
-    from sincpro_framework.events.queue import _adopted, _carrier
+    from sincpro_framework.events.trace import trace_carrier, within_trace
 
     published_under = 0x4BF92F3577B34DA6A3CE929D0E0E4736
     token = otel_context.attach(
@@ -106,7 +106,7 @@ def test_the_trace_rides_beside_the_event_across_the_process_boundary():
         )
     )
     try:
-        carrier = _carrier()  # what `put` sends beside the payload
+        carrier = trace_carrier()  # what `put` sends beside the payload
     finally:
         otel_context.detach(token)
 
@@ -114,17 +114,17 @@ def test_the_trace_rides_beside_the_event_across_the_process_boundary():
 
     # The worker: nothing is current until the carrier is adopted, and then the same trace is.
     assert trace.get_current_span().get_span_context().trace_id != published_under
-    with _adopted(carrier):
+    with within_trace(carrier):
         assert trace.get_current_span().get_span_context().trace_id == published_under
     assert trace.get_current_span().get_span_context().trace_id != published_under
 
 
 def test_without_a_trace_or_a_carrier_nothing_breaks():
-    from sincpro_framework.events.queue import _adopted, _carrier
+    from sincpro_framework.events.trace import trace_carrier, within_trace
 
-    with _adopted(_carrier()):  # no span running: an empty carrier, a plain block
+    with within_trace(trace_carrier()):  # no span running: an empty carrier, a plain block
         pass
-    with _adopted({}):
+    with within_trace({}):
         pass
 
 

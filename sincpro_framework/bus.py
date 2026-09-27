@@ -78,6 +78,13 @@ class FeatureBus(Bus):
                 )
             return response
 
+    def __call__(
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+    ) -> TypeDTOResponse | None:
+        """Context: inside an ApplicationService, `self.feature_bus(dto, Response)` reads as the
+        root bus does, `bus(dto, Response)`."""
+        return self.execute(dto, return_type)
+
 
 class ApplicationServiceBus(Bus):
     """Second layer of the framework, orchestration of features

@@ -57,7 +57,7 @@ against the census with `POPULATION` and are never disturbed.
   counted; a `NULL` partner is a bucket of its own.
 - **Transactions.** A batch with a savepoint per group keeps what posted and undoes only the
   group that did not; a unit of work that raises leaves nothing; the second of two writers is
-  `StaleAggregate` in one process and across two; `updated_at` is stamped on update only;
+  `StaleAggregate` in one process and across two; `updated_at` is `created_at` on insert and stamped on update;
   a lock outside a unit of work is refused; row locks hold on Postgres.
 - **The event chain.** One command posts, reporting moves the accounts, notifications hears
   each `BalanceUpdated` with the command's `correlation_id` and the `EntryPosted` as its

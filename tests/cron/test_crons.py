@@ -145,6 +145,28 @@ def test_several_registries_run_in_one_gateway():
     assert sorted(ran) == ["a", "b"]
 
 
+def test_a_gateway_says_when_it_starts_how_many_crons_it_runs_and_when_each_ticks_next():
+    """Context: until the first tick, a cron process that says nothing is indistinguishable from
+    a stuck one."""
+    reports = Crons("cron-reports")
+
+    @reports.cron("30 3 * * *", timezone="UTC")
+    class Daily(Cron):
+        def run(self, tick: Tick) -> None:
+            return None
+
+    gateway = CronGateway([_crons([]), reports], clock=ManualClock(START))
+    with capture_logs() as logs:
+        gateway.run()
+
+    [started] = [line for line in logs if "crons" in line["event"]]
+    assert started["log_level"] == "info"
+    assert started["event"] == (
+        "2 crons: cron-billing.NightlyIssue next 2026-09-26T02:00:00+00:00, "
+        "cron-reports.Daily next 2026-09-26T03:30:00+00:00"
+    )
+
+
 def test_every_cron_has_a_thread_of_its_own_so_none_waits_for_another():
     together = Barrier(6, timeout=5)
     crons = Crons("cron-parallel")

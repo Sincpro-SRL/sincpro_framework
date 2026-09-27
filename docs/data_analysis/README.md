@@ -148,6 +148,43 @@ assert cache.get(repository, InvoiceLine, posted) is None
 sales = cache.fetch_all(repository, InvoiceLine, posted)
 ```
 
+On a `Database`, `invalidate_on_commit` does it: what a flush writes is noted, and the reads of
+each aggregate given are let go when that write commits — not at the flush, where a read in
+between would hold the rows the commit is about to change, and not on a rollback, which changed
+nothing. A cache is per process: an aggregate another process writes is not one to hold here.
+
+```python
+from sqlalchemy import Column, Integer
+from sqlalchemy.orm import registry
+
+from sincpro_framework.orm import Database, Repository, entity_table, invalidate_on_commit, map_aggregates
+
+
+@dataclass
+class Payment(Entity):
+    cents: int = 0
+
+
+mapping = registry()
+map_aggregates(mapping, {Payment: entity_table("payment", mapping.metadata, Column("cents", Integer))})
+database = Database("sqlite:///payments.sqlite3")
+mapping.metadata.create_all(database.engine)
+payments = Repository(database)
+every_payment = Criteria.model_validate({"order": [{"field": "id"}]})
+
+frames = invalidate_on_commit(database, QueryCache(), Payment)
+none_yet = frames.fetch_all(payments, Payment, every_payment)
+assert len(none_yet) == 0 and "cents" in none_yet.columns     # no rows, still its columns
+
+payments.save(Payment(cents=1_000))
+assert frames.get(payments, Payment, every_payment) is None
+assert len(frames.fetch_all(payments, Payment, every_payment)) == 1
+```
+
+A read that answers no row still has its columns — the identity and what the specification keeps,
+or every field the model describes — typed by the model, so it joins, and goes to Arrow and
+Parquet, as one with rows would.
+
 ## Handed on
 
 A frame sorts and selects; everything else is for a dataframe library. It speaks the Arrow
@@ -168,6 +205,19 @@ assert sum(total for _, total in totals) == sum(sales.column("amount"))
 
 in_pandas = sales.to_arrow().to_pandas()
 assert len(in_pandas) == len(sales)
+```
+
+What DuckDB or polars answer as Arrow comes back as a frame with `DataFrame.from_arrow`, its types
+read from the schema — so an answer with no rows keeps its columns:
+
+```python
+from sincpro_framework.data_analysis import DataFrame
+
+journals = DataFrame.from_arrow(
+    duckdb.from_arrow(sales.to_arrow()).aggregate("journal, sum(amount) AS total").arrow().read_all()
+)
+assert set(journals.column("journal")) == {"SAL", "PUR", "BNK"}
+assert dict(zip(journals.columns, journals.types))["total"] == "decimal"
 ```
 
 To a client, a frame travels as Parquet — to download or keep — or as an Arrow IPC stream,
@@ -206,4 +256,6 @@ assert sales.version == cache.fetch_all(repository, InvoiceLine, posted).version
 | `frame.append(page)` | the next page merged by `key`; `SchemaMismatch` for other columns |
 | `frame.sort(keys)` / `frame.select(columns)` | ordered, `null` last / some columns |
 | `frame.to_arrow()` / `to_parquet()` / `to_ipc()` / `to_json()` | handed on |
+| `DataFrame.from_arrow(table, key="id")` | a `pyarrow.Table` as a frame, typed by its schema |
+| `invalidate_on_commit(database, cache, *aggregates)` | `sincpro_framework.orm`: the reads of an aggregate let go when a write of it commits |
 | `repository.fingerprint(target, criteria)` | the key of a read — pagination left out, scope put in |

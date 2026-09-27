@@ -116,7 +116,10 @@ and the service's requests and its crons share no thread, pool or crash. The sam
 `BackgroundQueue`.
 
 **As a deployment of its own**: `CronGateway([cron_payments, cron_billing], runs=…).run()` blocks
-the process on the clock; `stop()` ends it and waits for the runs in progress.
+the process on the clock; `stop()` ends it and waits for the runs in progress. When it starts, `run()` logs
+one line — how many crons and when each one ticks next, `2 crons: cron-payments.Reconcile next
+2026-09-26T06:00:00+00:00, …` — so a process waiting for its first tick is not mistaken for a stuck
+one.
 
 Inside, the gateway is an in-memory orchestrator for every cron of every registry it is given:
 

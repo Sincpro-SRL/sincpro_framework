@@ -20,3 +20,7 @@ Two facts about the bus that the persistence and events layers rely on:
   class is a subscriber with nothing else to declare: `@bus.feature([SomeCommand, SomeEvent])`.
 - **A bus builds itself once, under a lock, the first time it is called.** Two threads that
   reach it together, as an async fan-out or an event fan-out does, see one fully wired bus.
+- **Inside an ApplicationService the feature bus is called like the root bus.**
+  `self.feature_bus(CommandIssue(...), ResponseIssue)` is `self.feature_bus.execute(...)`, both
+  forms typed, so moving a call between a Feature's caller and an ApplicationService changes
+  nothing but the receiver.

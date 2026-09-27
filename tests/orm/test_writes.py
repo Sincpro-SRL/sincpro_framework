@@ -34,7 +34,7 @@ def test_a_new_entity_is_inserted_with_its_first_version(store):
     stored = store.get(Note, note.id)
     assert stored is not None and stored.title == "first"
     assert stored.version == 1 and not stored.is_new
-    assert stored.created_at is not None and stored.updated_at is None
+    assert stored.created_at is not None and stored.updated_at == stored.created_at
 
 
 def test_a_loaded_entity_is_updated_and_stamped(store):
@@ -59,7 +59,8 @@ def test_a_save_that_changed_nothing_is_not_stamped(store):
     loaded.title = "same"
     store.save(loaded)
 
-    assert store.get(Note, note.id).updated_at is None
+    stored = store.get(Note, note.id)
+    assert stored.updated_at == stored.created_at
 
 
 def test_the_second_writer_of_the_same_version_is_refused(store):

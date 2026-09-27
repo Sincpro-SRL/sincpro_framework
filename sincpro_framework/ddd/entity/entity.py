@@ -133,8 +133,9 @@ class Entity:
     id: str = field(default_factory=new_entity_id)
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime | None = None
-    """When it was last written. `None` until the first update; the adapter stamps it on
-    every flush that changed something, so nobody remembers to."""
+    """When it was last written. `None` until it is first stored, when it is `created_at`; the
+    adapter stamps it on every flush that changed something, so nobody remembers to — and
+    "untouched since" is this one column."""
     version: int = 0
     """How many times it has been written. Zero means never — the adapter raises it, and a
     save carrying a number older than the row's is refused as `StaleAggregate`."""

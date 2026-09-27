@@ -65,6 +65,7 @@ from sincpro_framework.ddd.exceptions import (
 )
 from sincpro_framework.ddd.repositories.change_tracking import ChangeTrackingRepositoryMixin
 from sincpro_framework.ddd.repositories.hooks import Rule
+from sincpro_framework.ddd.repositories.reads import note_read
 from sincpro_framework.ddd.repositories.repository import (
     Repository,
     records_of,
@@ -292,6 +293,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         return describe_class(aggregate, identity_name(aggregate))
 
     def _rows(self, aggregate: type) -> list[Any]:
+        note_read(aggregate)
         return list(self._stored.setdefault(aggregate, {}).values())
 
     def _live(self, aggregate: type, criteria: Criteria) -> bool:
@@ -344,6 +346,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         """One record by its identity, or `None`; an archived one answers `None` too."""
         refuse_locking(for_update)
         aggregate, _holder = model_and_collection(target)
+        note_read(aggregate)
         found = self._stored.setdefault(aggregate, {}).get(identity)
         if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
             return None
@@ -357,6 +360,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
 
     def browse(self, target: type, ids: Sequence[Any]) -> Any:
         aggregate, holder = model_and_collection(target)
+        note_read(aggregate)
         stored = self._stored.setdefault(aggregate, {})
         found = [self._read(stored[key]) for key in ids if key in stored]
         return self._searched(
@@ -637,6 +641,8 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
                 )
             if held is not None:
                 record.updated_at = utc_now()
+            elif record.updated_at is None:
+                record.updated_at = record.created_at
             self._stamp(record, held is None)
             record.version += 1
         stored[identity] = record

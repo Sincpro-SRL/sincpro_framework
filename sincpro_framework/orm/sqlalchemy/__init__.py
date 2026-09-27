@@ -1,6 +1,7 @@
 """The SQLAlchemy backend. One module per responsibility, named after what it does:
 
     database.py             `Database`: one engine, one session factory, observed from birth
+    cache_invalidation.py   `invalidate_on_commit`: a `QueryCache` let go of on the commit
     repository.py           `Repository`: runs a `Criteria`, keeps what a use case built
     sql_translator.py       `Criteria` → `Select`; the grain registry per dialect
     data_mapper.py          the Data Mapper: tables, the mapping call, `Entity` columns, `Relation`
@@ -13,6 +14,7 @@ Everything here knows SQLAlchemy; nothing in `sincpro_framework.ddd` does. Rewri
 package is what a different backend would cost.
 """
 
+from sincpro_framework.orm.sqlalchemy.cache_invalidation import invalidate_on_commit
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText, TranslatedText
 from sincpro_framework.orm.sqlalchemy.data_mapper import (
     Relation,
@@ -43,6 +45,7 @@ __all__ = [
     "entity_columns",
     "event_columns",
     "entity_table",
+    "invalidate_on_commit",
     "map_aggregates",
     "register_grain_translator",
 ]

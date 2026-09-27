@@ -76,6 +76,38 @@ def arrow_table(frame: "DataFrame") -> Any:
     return pyarrow.table(columns, schema=pyarrow.schema(fields))
 
 
+def _frame_type(arrow_type: Any) -> str:
+    """Context: what Arrow holds beyond the frame's types — a list, a struct, a map — is text
+    to a frame, as it is when it comes from rows."""
+    types = pyarrow.types
+    if types.is_boolean(arrow_type):
+        return "boolean"
+    if types.is_integer(arrow_type):
+        return "integer"
+    if types.is_floating(arrow_type):
+        return "number"
+    if types.is_decimal(arrow_type):
+        return "decimal"
+    if types.is_timestamp(arrow_type):
+        return "datetime"
+    if types.is_date(arrow_type):
+        return "date"
+    if types.is_null(arrow_type):
+        return "null"
+    return "string"
+
+
+def frame_columns(
+    table: Any,
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[tuple[Any, ...], ...]]:
+    """A `pyarrow.Table` as a frame's columns, types and values — the schema says the types, so
+    a table with no rows keeps them."""
+    columns = tuple(table.column_names)
+    kinds = tuple(_frame_type(one.type) for one in table.schema)
+    values = tuple(tuple(table.column(name).to_pylist()) for name in columns)
+    return columns, kinds, values
+
+
 def parquet_bytes(frame: "DataFrame") -> bytes:
     buffer = io.BytesIO()
     pyarrow.parquet.write_table(arrow_table(frame), buffer)

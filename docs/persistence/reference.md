@@ -35,7 +35,7 @@ Three rules, each preventing a failure that was observed in real code:
 
 `Entity` is a convention, not a requirement: the engine works for any mapped class, and identity is
 read from the primary key. What the convention adds is the version check and the stamped
-`updated_at`, done by the adapter, `translations()` for a screen, and `record()` for events.
+`updated_at` — `created_at` on the insert, the moment of each later write — done by the adapter, `translations()` for a screen, and `record()` for events.
 
 ### The class says the words; `Meta` carries them
 
@@ -223,6 +223,14 @@ client_table = entity_table(
   SQLAlchemy's own portability. The suite runs against SQLite, which needs nothing installed;
   compile-level tests cover the Postgres date grains. Run the suite against your engine before
   relying on it in production.
+
+### The moments of a write
+
+`database.before_flush(run)`, `after_flush(run)`, `after_commit(run)` and `after_rollback(run)` each
+take a `run(session)` and answer the database. They reach every write through that database, a
+repository or not; `docs/persistence/lifecycle.md` says which moment is for what.
+`invalidate_on_commit(database, cache, *aggregates)` wires a `QueryCache` to them: it lets go of
+an aggregate's reads when a write of it commits, and keeps them on a rollback.
 
 ### Observability
 

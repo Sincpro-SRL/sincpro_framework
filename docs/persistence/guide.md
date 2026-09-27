@@ -33,7 +33,8 @@ adapter.
 
 An aggregate is a plain `@dataclass` that inherits `Entity`. `Entity` gives it `id` (a UUID v7,
 so ordering by id is ordering by time), `created_at`, `updated_at` and `version`. It imports
-nothing from the database.
+nothing from the database. `updated_at` is when it was last written — `created_at` on the insert —
+so "untouched since" is one column.
 
 ```python
 from dataclasses import dataclass, field

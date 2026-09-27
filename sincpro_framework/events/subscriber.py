@@ -74,5 +74,6 @@ class AsyncSubscriber:
         """The event to every bus that answers it, each through its async facade."""
         answers = []
         for bus in self._subscriber.listeners(event.name):
-            answers.append(await bus.get_async_bus()(event))
+            known = self._subscriber.as_known_by(bus, event)
+            answers.append(await bus.get_async_bus()(known))
         return answers

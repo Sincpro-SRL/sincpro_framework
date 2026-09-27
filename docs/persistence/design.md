@@ -15,7 +15,7 @@ sincpro_framework/
 │   │       ├── archivable.py     ArchivableMixin: archived_at, archive(), restore()
 │   │       └── tracking.py       ChangeTrackingMixin, EntityUpdated: what counts as a change
 │   ├── criteria/
-│   │   ├── criteria.py           Criteria, Condition/All/Any_/Not, Sort, Grouping, Level, Bucket, Specification
+│   │   ├── criteria.py           Criteria, Condition/All/Any/Not, Sort, Grouping, Level, Bucket, Specification
 │   │   ├── pagination.py         Pagination, Cursor (keyset), Offset, CursorKeys
 │   │   └── evaluate.py           matches(): the in-memory evaluator, the specification of the translator
 │   ├── repositories/

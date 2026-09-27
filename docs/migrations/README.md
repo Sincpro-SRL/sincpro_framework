@@ -88,6 +88,8 @@ db-resolve:   ## make db-resolve ctx=chat store=messages [at=<step id>]
 	$(MIGRATIONS) resolve $(ctx) $(store) $(if $(at),--at $(at))
 db-check:     ## CI, after migrating a fresh store
 	$(MIGRATIONS) check
+db-adopt:     ## make db-adopt ctx=catalog store=main — a database that already has its tables
+	$(MIGRATIONS) adopt $(ctx) $(store)
 ```
 
 The system is down while it migrates: `make migrate`, then `make run`.
@@ -115,6 +117,47 @@ steps it approved — then `upgrade`. `upgrade` and `downgrade` refuse a body th
 it was hashed, and `hash` refuses a step its store already applied: an applied step is never
 edited, a new step changes what it did. Autogenerate needs the store on the chain's last step;
 a table removed from the `MetaData` is not dropped for you — write the drop in a step.
+
+The checksum is of what a Python body does, not of how it is laid out: `make format` (black,
+isort, autoflake) may rewrite a body at any time and it still verifies — comments, quotes,
+line wrapping, trailing commas, import order, unused imports and docstring indentation do not
+count; a column name, an operation, an argument, a docstring's words do. A manifest hashed by
+an older release (`v1:` checksums, of the bytes) keeps verifying; `hash` rewrites it as `v2:`,
+even for applied steps whose body did not change.
+
+## Column types a project declares
+
+A step body imports only `sqlalchemy` and `alembic` — never the project's models or types,
+which change while the step must run as it was written. So a `TypeDecorator` — the framework's
+`JsonText`, or a project's own — is written as the type it stores, its `impl`: `JsonText()` in
+the table, `sa.Text()` in the step, and `check` compares it the same way. Types SQLAlchemy
+ships (`sa.Interval()`, `sa.Enum(...)`) stay themselves.
+
+A type with no `impl` (a `UserDefinedType`), or a decorator whose database type is not its
+`impl` (it overrides `load_dialect_impl`), is mapped by hand: `render_types` names the
+SQLAlchemy type a step writes for it, and for its subclasses.
+
+```python
+from typing import Any
+
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.types import UserDefinedType
+
+
+class SearchVector(UserDefinedType):
+    cache_ok = True
+
+    def get_col_spec(self, **kw: Any) -> str:
+        return "TSVECTOR"
+
+
+search_engine = AlembicEngine(
+    MetaData(), database, render_types={SearchVector: postgresql.TSVECTOR()}
+)
+```
+
+What it maps to must be what the column is in the database, or `check` reports the
+difference.
 
 ## The timeline
 
@@ -239,6 +282,73 @@ assert [step.message for step in migrations.upgrade()] == ["create inbox"]
 
 `step.file` is relative to the chain's folder — `chain.folder / step.file` is the body `scaffold`
 wrote. `drift` is optional: an engine that cannot compare the store with the code leaves it out.
+
+## A database that already has its tables
+
+A service that migrated with its own Alembic chain — hex revision ids, one `alembic_version` —
+adopts the orchestrator without touching its data: each context gets one baseline step that
+creates what its tables declare, and every existing database is recorded on it. The old
+chain's revisions are not imported; their history stays in git.
+
+```python
+from sincpro_framework.orm import JsonText
+
+catalog_tables = MetaData()
+Table(
+    "dataset",
+    catalog_tables,
+    Column("id", Integer, primary_key=True),
+    Column("columns", JsonText()),
+)
+
+existing = Database("sqlite:///existing.sqlite3")    # as the old chain left it
+catalog_tables.create_all(existing.engine)
+with existing.engine.begin() as connection:
+    connection.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+    connection.exec_driver_sql("INSERT INTO alembic_version VALUES ('3f2a9c1d7b4e')")
+```
+
+1. Write the baseline against an **empty** store — a scratch database the context points at
+   for one `make db-revision`. Autogenerate compares with the store as it stands, so against
+   the existing one it would write an empty step.
+
+```python
+catalog_folder = Path("domains/catalog/entrypoints/migrations")
+
+scratch = ContextMigrations("catalog", catalog_folder)
+scratch.store("main", AlembicEngine(catalog_tables, Database("sqlite:///empty.sqlite3")))
+baseline = Migrations([scratch]).revision("catalog", "main", "catalog baseline")
+```
+
+2. Register the context on its real database: it is *behind*, its baseline pending. `adopt`
+   records it on the chain's last step once the engine reports no drift — `resolve catalog
+   main --at <baseline>` is the same record without that proof. Then `check`.
+
+```python
+catalog_migrations = ContextMigrations("catalog", catalog_folder)
+catalog_migrations.store("main", AlembicEngine(catalog_tables, existing))
+migrations = Migrations(
+    [common_migrations, billing_migrations, chat_migrations, catalog_migrations]
+)
+assert migrations.status().chains["catalog/main"].state == ChainState.BEHIND
+
+adopted = migrations.adopt("catalog", "main")
+
+assert adopted.id == baseline.id
+assert migrations.check() == []
+```
+
+`adopt` refuses, recording nothing, a store that differs from the code — naming each
+difference —, one that already stands on a step, and one whose engine cannot tell drift.
+
+3. Drop the old tool's version table, once every database is adopted:
+
+```python
+with existing.engine.begin() as connection:
+    connection.exec_driver_sql("DROP TABLE alembic_version")
+```
+
+A fresh database — CI, a new developer — runs the baseline with `upgrade` like any step.
 
 ## Guidelines
 

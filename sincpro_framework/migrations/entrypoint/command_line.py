@@ -9,6 +9,7 @@
     db-revision:  python -m myapp.entrypoints.migrations revision $(ctx) $(store) -m "$(m)"
     db-down:      python -m myapp.entrypoints.migrations downgrade --to $(to)
     db-check:     python -m myapp.entrypoints.migrations check
+    db-adopt:     python -m myapp.entrypoints.migrations adopt $(ctx) $(store)
 
 Context: exit code 0 when it did what was asked, 1 when it refused, a step failed or `check`
 found a problem — so `make` stops there. What it did goes to stdout; why it stopped, to stderr.
@@ -46,6 +47,11 @@ def _parser() -> argparse.ArgumentParser:
     resolve.add_argument("context")
     resolve.add_argument("store")
     resolve.add_argument("--at", help="the step it stands on; left out for none")
+    adopt = commands.add_parser(
+        "adopt", help="record a store that already has its tables on its last step"
+    )
+    adopt.add_argument("context")
+    adopt.add_argument("store")
     return parser
 
 
@@ -89,12 +95,16 @@ def _dispatch(migrations: Migrations, arguments: argparse.Namespace) -> int:
             print("every checksum already matched")
     elif arguments.command == "resolve":
         migrations.resolve(arguments.context, arguments.store, arguments.at)
+    elif arguments.command == "adopt":
+        step = migrations.adopt(arguments.context, arguments.store)
+        print(f"adopted {step.key} ({step.message})")
     return 0
 
 
 def command_line(migrations: Migrations, argv: Sequence[str] | None = None) -> int:
     """Run one command — `status`, `upgrade`, `downgrade`, `revision`, `check`, `hash`,
-    `resolve` — and answer the exit code. `argv` defaults to the process's arguments."""
+    `resolve`, `adopt` — and answer the exit code. `argv` defaults to the process's arguments.
+    """
     arguments = _parser().parse_args(argv)
     try:
         return _dispatch(migrations, arguments)
