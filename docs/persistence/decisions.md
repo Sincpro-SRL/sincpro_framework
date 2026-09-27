@@ -403,3 +403,18 @@ named after the pattern it implements and against the one it avoids, Active Reco
   worse than a slow job. A separate door that says plainly it gives up `StaleAggregate` would
   serve an import that owns its table, and it is a new capability rather than a fix, so it waits
   for a real case that needs it.
+
+## 19. Migrations: the project writes the steps, the framework orchestrates them
+
+A bounded context may own several stores, and contexts share databases, so there are many
+chains of migrations and nothing in any one tool orders them. `sincpro_framework.migrations`
+merges every chain into one timeline — each chain in its own order, `requires` first, the oldest
+UUIDv7 among the rest — reads where each store stands from the store itself, and moves the whole
+system forward or back as one. Each (context × store) is one linear chain with its own version
+table, never Alembic branches, whose downgrades across bases corrupt the version table.
+
+The core is engine-agnostic and needs no database: `MigrationEngine` is one abstract class, and
+Alembic — `sincpro_framework.orm.migrations`, behind the `[migrations]` extra — is the engine
+shipped for SQL stores. Migrations run with the system down, so there are no locks, and a failed
+step stops the run where it is: nothing reverts on its own, and a store without transactions is
+recorded dirty until a human resolves it. The design and its evidence: PRD_05.

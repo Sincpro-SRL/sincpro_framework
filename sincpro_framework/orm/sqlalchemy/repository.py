@@ -58,6 +58,7 @@ from sincpro_framework.ddd.exceptions import (
     InvalidCriteria,
     StaleAggregate,
 )
+from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
 from sincpro_framework.ddd.repositories.hooks import Rule
 from sincpro_framework.ddd.repositories.repository import Repository as BaseRepository
 from sincpro_framework.ddd.repositories.repository import records_of, refuse_unarchivable
@@ -801,6 +802,12 @@ class Repository(BaseRepository):
         prepared = self.prepare(model, criteria)
         with self._session() as session:
             return self._page(session, model, holder, statement, criteria, prepared)
+
+    def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
+        """Context: the scope this repository was narrowed by is part of the key, so two tenants
+        never share one."""
+        model, _ = model_and_collection(target)
+        return fingerprint_of(model, criteria or Criteria(), self._scope)
 
     @overload
     def search[C: EntityCollection](

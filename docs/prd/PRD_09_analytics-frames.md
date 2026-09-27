@@ -1,6 +1,12 @@
 # PRD_09: Analytics — declared frames, snapshots, one answer per view
 
-- **Status**: proposal
+- **Status**: replaced by a utility, `sincpro_framework.data_analysis` — see
+  `docs/data_analysis/`. Not an engine: a `QueryCache` holds what a `Criteria` answered as a
+  `DataFrame` under the repository's fingerprint of the read (filter, order, mask, scope — never
+  the page), continues it page by page through the keyset cursor, narrows a complete frame with
+  no read, and hands it on as Parquet, Arrow IPC, columnar JSON or through `__arrow_c_stream__`
+  to pandas, polars and DuckDB (pyarrow behind `[data-analysis]`). The declared pipelines, pivots
+  and snapshots this PRD proposed are not built; the computing belongs to those libraries.
 - **Depends on**: nothing (PRD_08 schedules refreshes)
 - **Research**: scratchpad `12_analytics_datasets.md` (probes: `probe_analytics.py`,
   `probe_attach.py`)

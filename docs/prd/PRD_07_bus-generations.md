@@ -1,6 +1,12 @@
 # PRD_07: Bus generations — reload without stopping
 
-- **Status**: proposal
+- **Status**: implemented for runtime use cases as `BusRegistry` in
+  `sincpro_framework.runtime_use_cases`: a generation is `bus.fresh()` — every registration of the
+  declared bus, replayed — plus the stored use cases,
+  built beside the one answering, checked by building it, swapped with one assignment; a request
+  reads `current` once; a refused generation leaves the bus and its modules as they were;
+  observability is shared through the per-bus-name registry. Not built: entrypoints (MCP, RPC)
+  that resolve `registry.current` per request — they freeze the bus they start with.
 - **Depends on**: nothing; PRD_06 is its main consumer
 - **Research**: scratchpad `11_runtime_loading_reload.md` (probes: `probe_bus_reload.py`,
   `probe_sqlalchemy_remap.py`)

@@ -57,6 +57,17 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             hide_in_logs: Context keys kept out of every log line and GlitchTip event
                 (e.g. ``["TOKEN"]``). Everything else set with ``context()`` is logged.
         """
+        self._settings = (
+            bundled_context_name,
+            log_after_execution,
+            log_app_services,
+            log_features,
+            package,
+            tuple(hide_in_logs),
+        )
+        self._registrations: list[Callable[[UseFramework], Any]] = []
+        """Every registration, in order, as a call that repeats it on another bus — `fresh`."""
+
         # Logger
         self._is_logger_configured: bool = False
         self._logger_name: str = bundled_context_name
@@ -112,7 +123,14 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         and the build log and introspection say who replaced it.
         """
         self._refuse_when_built(f"Feature for {ioc.names_of(dto)}")
-        return ioc.inject_feature_to_bus(self._sp_container, dto, replaces)
+        register = ioc.inject_feature_to_bus(self._sp_container, dto, replaces)
+
+        def registered(handler: ioc.T) -> ioc.T:
+            answer = register(handler)
+            self._registrations.append(lambda bus: bus.feature(dto, replaces)(handler))
+            return answer
+
+        return registered
 
     def app_service(
         self, dto: ioc.DTORegistration, replaces: type | None = None
@@ -120,7 +138,51 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """Register the decorated class as the ApplicationService that answers `dto`; with
         `replaces`, instead of the one registered now."""
         self._refuse_when_built(f"ApplicationService for {ioc.names_of(dto)}")
-        return ioc.inject_app_service_to_bus(self._sp_container, dto, replaces)
+        register = ioc.inject_app_service_to_bus(self._sp_container, dto, replaces)
+
+        def registered(handler: ioc.T) -> ioc.T:
+            answer = register(handler)
+            self._registrations.append(lambda bus: bus.app_service(dto, replaces)(handler))
+            return answer
+
+        return registered
+
+    def handler_of(self, dto: type) -> type | None:
+        """The Feature or ApplicationService registered now for `dto` — what a `replaces=` names."""
+        for registry in (
+            self._sp_container.feature_registry.kwargs,
+            self._sp_container.app_service_registry.kwargs,
+        ):
+            if dto in registry:
+                return registry[dto].provides
+        return None
+
+    @property
+    def name(self) -> str:
+        """The bounded context's name — its logger, its GlitchTip app, its OTel service."""
+        return self._logger_name
+
+    def fresh(self) -> "UseFramework[TDeps]":
+        """A new bus of this context, not built: the same settings and observability, and every
+        Feature, ApplicationService, dependency, interceptor and error handler registered on this
+        one, again, in the order they were — what a new generation of the bus starts from.
+
+            generation = billing.fresh()
+            generation.feature(CommandQuote)(Quote)      # this one only
+            generation.build_root_bus()
+
+        Context: dependencies are the same objects, not copies — a connection is not opened
+        twice. Observability is shared, so every generation reports as this bus does.
+        """
+        fresh: UseFramework[TDeps] = UseFramework(*self._settings)
+        fresh._share_observability(self.observability)
+        for registration in self._registrations:
+            registration(fresh)
+        return fresh
+
+    def _share_observability(self, observability: Observability) -> None:
+        self.observability = observability
+        self._sp_container.observability.override(observability)
 
     def _context_for_logs(self) -> Dict[str, Any]:
         """The execution's context, as fields on every log line this bus writes."""
@@ -251,6 +313,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             self.observability.record_error(error, "", "framework", kind="framework")
             raise error
         self.dynamic_dep_registry[name] = dep
+        self._registrations.append(lambda bus: bus.add_dependency(name, dep))
 
     @property
     def deps(self) -> TDeps:
@@ -305,6 +368,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         def register(interceptor: T) -> T:
             self._refuse_when_built(f"interceptor {interceptor.__qualname__}")
             self._interceptors.append(InterceptorRegistration(interceptor, commands))
+            self._registrations.append(lambda bus: bus.interceptor(*commands)(interceptor))
             return interceptor
 
         return register
@@ -346,6 +410,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         if not callable(handler):
             raise TypeError("The handler must be a callable")
         self._global_error_handlers.append(handler)
+        self._registrations.append(lambda bus: bus.add_global_error_handler(handler))
         self.global_error_handler = build_error_handler_chain(self._global_error_handlers)
         if self.was_initialized and self.bus is not None:
             self.bus.handle_error = self.global_error_handler
@@ -360,6 +425,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         if not callable(handler):
             raise TypeError("The handler must be a callable")
         self._feature_error_handlers.append(handler)
+        self._registrations.append(lambda bus: bus.add_feature_error_handler(handler))
         self.feature_error_handler = build_error_handler_chain(self._feature_error_handlers)
         if self.was_initialized and self.bus is not None:
             self.bus.feature_bus.handle_error = self.feature_error_handler
@@ -374,6 +440,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         if not callable(handler):
             raise TypeError("The handler must be a callable")
         self._app_service_error_handlers.append(handler)
+        self._registrations.append(lambda bus: bus.add_app_service_error_handler(handler))
         self.app_service_error_handler = build_error_handler_chain(
             self._app_service_error_handlers
         )

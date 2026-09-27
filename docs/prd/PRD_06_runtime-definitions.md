@@ -1,6 +1,16 @@
 # PRD_06: Runtime definitions — change behaviour without a deploy
 
-- **Status**: proposal
+- **Status**: split in two. Use cases stored as data — the Commands, Responses and the Feature
+  or ApplicationService that answers them, as Python source — are `sincpro_framework.runtime_use_cases`
+  (see `docs/runtime_use_cases/`): `RuntimeUseCase`, a `UseCaseStore` port with
+  `InMemoryUseCases`, and `BusRegistry`, which loads them onto a new generation of the bus
+  (PRD_07). Composing Commands as JSON is `sincpro_framework.workflows` (see `docs/workflows/`),
+  experimental, for a node editor's preview: `execute`, `code`, `for_each`, `fail`, `when`,
+  whole-value references, validation against the live bus, a trace per run, `dry_run`,
+  `schema()` / `catalog()` / `draw()`, `PythonSnippets` behind a `SnippetEngine` port,
+  `FileWorkflows` / `InMemoryWorkflows` behind `WorkflowSource`, `CommandRunWorkflow` on the bus.
+  `SqlUseCases` in `sincpro_framework.orm.runtime_use_cases` keeps them in a table the replicas
+  share. Not built: extra fields, rules and interceptors as data.
 - **Depends on**: PRD_04 (extension points), PRD_07 (bus generations)
 - **Research**: scratchpad `11_runtime_loading_reload.md`
 

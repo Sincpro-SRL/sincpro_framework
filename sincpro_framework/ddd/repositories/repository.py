@@ -46,6 +46,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
 from sincpro_framework.ddd.repositories.hooks import (
     MOMENTS,
     Hook,
@@ -437,6 +438,13 @@ class Repository(ABC):
         for_update: bool = False,
         skip_locked: bool = False,
     ) -> EntityCollection: ...
+
+    def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
+        """One key for every read of `target` that answers the same rows, whatever page it asks
+        for — what `QueryCache` keeps a read under. A repository that reads under a scope makes
+        the scope part of it."""
+        model, _ = model_and_collection(target)
+        return fingerprint_of(model, criteria or Criteria())
 
     @abstractmethod
     def count(self, target: type, criteria: Criteria | None = None) -> Count: ...

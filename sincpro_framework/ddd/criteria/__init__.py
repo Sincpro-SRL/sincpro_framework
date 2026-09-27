@@ -30,7 +30,7 @@ from sincpro_framework.ddd.criteria.criteria import (
     expression_from,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.evaluate import matches
+from sincpro_framework.ddd.criteria.evaluate import holds, matches
 from sincpro_framework.ddd.criteria.pagination import Cursor, CursorKeys, Offset, Pagination
 
 __all__ = [
@@ -58,6 +58,7 @@ __all__ = [
     "combined",
     "conditions_of",
     "expression_from",
+    "holds",
     "matches",
     "parse_order",
 ]
