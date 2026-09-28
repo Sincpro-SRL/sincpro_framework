@@ -284,9 +284,28 @@ def test_switching_off_a_hook_that_is_not_there_does_nothing_with_a_warning():
     assert "not registered" in _warnings(logs)[0]
 
 
-def test_a_hook_registered_after_a_repository_read_the_collection_is_refused():
+def test_a_hook_registered_after_the_repository_is_built_but_before_it_is_used_runs():
+    """Lazy, the way the bus is: the collection is read at the first moment that fires, not
+    when the repository is built — so the order modules are imported in does not matter."""
     hooks, _checks, _audits = _collection()
-    MemoryRepository(hooks=hooks)
+    ran: list[str] = []
+    bus = UseFramework("hook-extension-lazy", log_after_execution=False)
+    bus.add_dependency("ran", ran)
+    repository = MemoryRepository(hooks=hooks.inject(bus))
+
+    @hooks.on(Invoice)
+    class RegisteredAfterTheRepository(_Recording):
+        def before_save(self, invoice: Invoice) -> None:
+            self.ran.append("registered after the repository")
+
+    repository.save(Invoice(id="i1"))
+
+    assert ran == ["checks totals", "registered after the repository", "audits"]
+
+
+def test_a_hook_registered_after_a_repository_used_the_collection_is_refused():
+    hooks, _checks, _audits = _collection()
+    _ran(hooks, Invoice(id="i1"))
 
     with pytest.raises(ExtensionRefused, match="registered late"):
 
@@ -335,6 +354,7 @@ def test_hooks_that_must_run_before_one_another_are_refused_naming_them():
         def before_save(self, invoice: Invoice) -> None: ...
 
     hooks.on(Invoice, before=(Second,))(First)
+    repository = MemoryRepository(hooks=hooks)
 
     with pytest.raises(ExtensionRefused, match="circle"):
-        MemoryRepository(hooks=hooks)
+        repository.save(Invoice(id="i1"))

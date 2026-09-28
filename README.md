@@ -584,22 +584,17 @@ def config_framework(name: str) -> UseFramework[DependencyContextType]:
     return instance
 ```
 
-**A repository with hooks is built inside `register_dependencies()`, never at the top of
-`dependencies.py`.** Reading the collection imports the hook modules, and they import `Hook` from
-`framework.py` — which, at import time, is still importing `dependencies.py`:
+**Hooks are lazy, like the bus.** A repository reads its hooks the first time it saves or reads,
+not when it is built — so it is registered in `dependencies.py` like any other dependency, and a
+hook imports its base from the context, as a Feature does:
 
 ```text
-services/hooks/__init__.py     billing_hooks = Hooks()                   nothing else
-services/hooks/invoices.py     from ...infrastructure.framework import Hook
-                               @billing_hooks.on(Invoice) class NumbersInvoices(Hook): ...
-infrastructure/dependencies.py from ..services.hooks import billing_hooks
-                               def register_dependencies(framework):
-                                   billing_hooks.inject(framework)
-                                   framework.add_dependency("repository", Repository(database, billing_hooks))
+services/hooks/__init__.py      billing_hooks = Hooks()
+services/hooks/invoices.py      from my_domain import Hook
+                                @billing_hooks.on(Invoice) class NumbersInvoices(Hook): ...
+infrastructure/dependencies.py  billing_hooks.inject(framework)
+                                framework.add_dependency("repository", Repository(database, billing_hooks))
 ```
-
-Built at the top of `dependencies.py` instead, Python answers `ImportError: cannot import name
-'Hook' from partially initialized module ... framework`.
 
 The same names Features receive as `self.token_adapter` are available on the root as
 `my_framework.deps.token_adapter`. Use `self.<name>` inside a Feature / ApplicationService;

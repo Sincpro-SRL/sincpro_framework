@@ -65,17 +65,19 @@ the wiring in the composition root:
 
 ```text
 services/hooks/__init__.py     billing_hooks = Hooks()          walks this package on first read
-services/hooks/invoices.py     @billing_hooks.on(Invoice) class InvoiceMustBalance(BillingHook)
-framework.py                   class BillingHook(Hook[BillingContext], DependencyContextType)
-composition root               billing_hooks.inject(billing)
+services/hooks/invoices.py     from my_context import Hook       as a Feature imports Feature
+                               @billing_hooks.on(Invoice) class InvoiceMustBalance(Hook)
+framework.py                   class Hook(_Hook[BillingContext], DependencyContextType)
+dependencies.py                billing_hooks.inject(billing)
                                repository = Repository(database, billing_hooks)
 ```
 
-Built inside `register_dependencies()` — called by `config_framework()`, once `framework.py` has
-defined the base `Hook` — the repository reads the collection, and the hook modules import
-cleanly. Built at the top of `dependencies.py`, they would import `framework.py` while it is
-still importing `dependencies.py`, and Python answers `ImportError: ... partially initialized
-module`. The README's `dependencies.py` section shows the whole layout.
+**Lazy, the way the bus is.** Building the repository reads nothing: the collection is read,
+and its package walked, the first time a moment fires — when every module of the bounded context
+has loaded. So the repository may be built wherever the project builds its dependencies, and a
+hook imports its base from the context's package; the order modules are imported in does not
+matter. `tests/ddd/repositories/test_hooks_in_a_bounded_context.py` writes such a context to disk
+and imports it three ways.
 
 ## Why this exists
 
@@ -371,7 +373,8 @@ assert saved_with(core_hooks, Invoice(total=5)) == ["numbers", "announces", "aud
 ## Where the modules get imported
 
 A decorator only runs if its module was imported, and a hook in a file nobody imported never
-registers. So a collection walks its own package, once, the first time a repository reads it:
+registers. So a collection walks its own package, once, the first time a moment fires on a
+repository that has it — or `list(hooks)` is asked:
 
 ```text
 Hooks()                          walks the module that built it — a package's __init__ is the package
@@ -381,13 +384,16 @@ Hooks(None)                      walks nothing; filled by hand
 
 Written in an ordinary module, `Hooks()` walks that module, not the package around it. After the
 walk the collection is closed: a hook registered later would never run, so it is refused.
-`repr()` never walks, so printing one while debugging imports nothing.
+`repr()` never walks, so printing one while debugging imports nothing. Being lazy, a mistake in
+the collection — a circle — surfaces at the first save; `assert list(billing_hooks)` in a test
+reads it at once, for a suite that wants it at startup.
 
 ## How it runs: the chain
 
-Each repository compiles its collection into a `HookChain` when it is built:
+Each repository runs its collection through a `HookChain`, compiled the first time a moment
+fires — never while the repository is built:
 
-1. The collection's hooks, in the order above.
+1. The collection's hooks, in the order above (its package walked, if not yet).
 2. For each moment, the hooks that implement it and the aggregates they are for.
 3. At each moment of a read or a write, every hook whose aggregate the record is runs, in that
    order, on its one instance — built the first time it fires.
@@ -403,10 +409,10 @@ declared; a hook's own refusal of a record is the domain's `ContractViolation`:
 
 | Cannot work | Refused |
 |---|---|
-| hooks that must run before one another in a circle — no order exists | `ExtensionRefused`, when the repository is built |
+| hooks that must run before one another in a circle — no order exists | `ExtensionRefused`, at the first read or write |
 | `extends=X` on a class that is not a subclass of `X` — `super()` would fail | `ExtensionRefused`, at `on(...)` |
 | a hook that implements none of the moments — it would never run | `ExtensionRefused`, at `on(...)` |
-| a hook registered after a repository read the collection — it would never run | `ExtensionRefused`, at `on(...)` |
+| a hook registered after a repository used the collection — it would never run | `ExtensionRefused`, at `on(...)` |
 | a collection or a hook passed where the memory store's records go — nothing would run | `ContractViolation`, when the repository is built |
 | `self.<name>` or `self.bus` with no bus given | `DependencyNotRegistered`, when the hook reads it |
 | a write back through the repository that fired the hook, even via `context()`, `narrowed()` or a Command | `ContractViolation`, when it fires |
@@ -471,5 +477,6 @@ MemoryRepository(hooks=billing_hooks)        memory: keyword — its positional 
   never changes it, and one class can serve two collections.
 - **The bus is the one door** (`inject(bus)`): dependencies and context from the same place a
   Feature reads them, read when used, so the wiring order never matters.
-- **One instance per repository, built late**: the Feature lifetime, plus a store that never
-  fails to build because of a hook.
+- **Lazy, like the bus**: nothing is read while a repository is built — the collection at the
+  first moment, each instance at its first fire — so the order of imports never matters, and a
+  store never fails to build because of a hook.

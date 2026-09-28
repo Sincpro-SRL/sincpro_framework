@@ -1,9 +1,11 @@
-"""Hooks wired the way a bounded context is: `dependencies.py`, `framework.py`, `services/hooks/`.
+"""Hooks wired the way a bounded context is: `dependencies.py`, `framework.py`, `services/hooks/`,
+and a package that re-exports its bases — so a hook imports `Hook` from the context, as a Feature
+imports `Feature`.
 
-The layout is written to disk and imported, as a project imports it — the walk of the hooks
-package, the base `Hook` of `framework.py`, and the repository registered in
-`register_dependencies()` all meet only here. What the README and `docs/persistence/hooks.md`
-say about the layout is pinned by these two tests.
+The layout is written to disk and imported, as a project imports it. The collection is read the
+first time a moment fires, never while the repository is built, so every wiring below works: the
+repository inside `register_dependencies()`, at the top of `dependencies.py`, and a package that
+re-exports `Hook` only after it built its bus.
 """
 
 import importlib
@@ -31,7 +33,7 @@ from typing import TypedDict
 from sincpro_framework import UseFramework
 from sincpro_framework.ddd import MemoryRepository
 
-from ..services.hooks import billing_hooks
+from {name}.services.hooks import billing_hooks
 
 
 class Numbering:
@@ -40,7 +42,7 @@ class Numbering:
 
     def next(self) -> str:
         self.last += 1
-        return f"F-{self.last}"
+        return f"F-{{self.last}}"
 
 
 class DependencyContextType:
@@ -51,11 +53,11 @@ class DependencyContextType:
 class BillingContext(TypedDict, total=False):
     user_id: str
 
-{AT_IMPORT}
+{repository_at_the_top}
 def register_dependencies(framework: UseFramework[DependencyContextType]) -> None:
     framework.add_dependency("numbering", Numbering())
     billing_hooks.inject(framework)
-    framework.add_dependency("repository", MemoryRepository(hooks=billing_hooks))
+    framework.add_dependency("repository", {repository})
 """
 
 FRAMEWORK = """
@@ -87,23 +89,22 @@ billing_hooks = Hooks()
 """
 
 A_HOOK = """
-from ...domain import Invoice
-from ...infrastructure.framework import Hook
-from . import billing_hooks
+from {name} import Hook
+from {name}.domain import Invoice
+from {name}.services.hooks import billing_hooks
 
 
 @billing_hooks.on(Invoice)
 class NumbersInvoices(Hook):
     def before_create(self, invoice: Invoice) -> None:
-        invoice.number = f"{self.numbering.next()} by {self.context.get('user_id')}"
+        invoice.number = f"{{self.numbering.next()}} by {{self.context.get('user_id')}}"
 """
 
 A_FEATURE = """
 from sincpro_framework import DataTransferObject
 
-from .. import billing
-from ..domain import Invoice
-from ..infrastructure.framework import Feature
+from {name} import Feature, billing
+from {name}.domain import Invoice
 
 
 class CommandIssueInvoice(DataTransferObject):
@@ -122,30 +123,62 @@ class IssueInvoice(Feature):
         return ResponseIssueInvoice(number=invoice.number)
 """
 
-BOOTSTRAP = """
-from .infrastructure.framework import config_framework
+BASES_FIRST = """
+from {name}.infrastructure.framework import Feature, Hook, config_framework
 
 billing = config_framework("billing")
 
-from .services import issue_invoice  # noqa: E402, F401
+from {name}.services import issue_invoice  # noqa: E402, F401
 """
 
+BUS_FIRST = """
+from {name}.infrastructure.framework import config_framework
 
-def _write_context(root: Path, name: str, at_import: str) -> None:
+billing = config_framework("billing")
+
+from {name}.infrastructure.framework import Feature, Hook  # noqa: E402
+from {name}.services import issue_invoice  # noqa: E402, F401
+"""
+
+WIRINGS = {
+    "repository inside register_dependencies": (
+        "",
+        "MemoryRepository(hooks=billing_hooks)",
+        BASES_FIRST,
+    ),
+    "repository at the top of dependencies.py": (
+        "\nREPOSITORY = MemoryRepository(hooks=billing_hooks)\n\n",
+        "REPOSITORY",
+        BASES_FIRST,
+    ),
+    "the package re-exports Hook after building its bus": (
+        "",
+        "MemoryRepository(hooks=billing_hooks)",
+        BUS_FIRST,
+    ),
+}
+
+
+def _write_context(root: Path, name: str, wiring: str) -> None:
+    repository_at_the_top, repository, bootstrap = WIRINGS[wiring]
     package = root / name
     for folder in ("infrastructure", "services/hooks", "domain"):
         (package / folder).mkdir(parents=True)
-    (package / "infrastructure" / "__init__.py").write_text("")
-    (package / "services" / "__init__.py").write_text("")
-    (package / "domain" / "__init__.py").write_text(DOMAIN)
-    (package / "infrastructure" / "dependencies.py").write_text(
-        DEPENDENCIES.replace("{AT_IMPORT}", at_import)
-    )
-    (package / "infrastructure" / "framework.py").write_text(FRAMEWORK)
-    (package / "services" / "hooks" / "__init__.py").write_text(HOOKS_PACKAGE)
-    (package / "services" / "hooks" / "invoices.py").write_text(A_HOOK)
-    (package / "services" / "issue_invoice.py").write_text(A_FEATURE)
-    (package / "__init__.py").write_text(BOOTSTRAP)
+    files = {
+        "infrastructure/__init__.py": "",
+        "services/__init__.py": "",
+        "domain/__init__.py": DOMAIN,
+        "infrastructure/dependencies.py": DEPENDENCIES.format(
+            name=name, repository_at_the_top=repository_at_the_top, repository=repository
+        ),
+        "infrastructure/framework.py": FRAMEWORK,
+        "services/hooks/__init__.py": HOOKS_PACKAGE,
+        "services/hooks/invoices.py": A_HOOK.format(name=name),
+        "services/issue_invoice.py": A_FEATURE.format(name=name),
+        "__init__.py": bootstrap.format(name=name),
+    }
+    for path, source in files.items():
+        (package / path).write_text(source)
 
 
 @pytest.fixture
@@ -156,13 +189,17 @@ def context_on_disk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
         del sys.modules[name]
 
 
-def test_the_layout_of_a_bounded_context_wires_its_hooks(context_on_disk: Path):
-    """The repository registered in `register_dependencies()`: the walk finds the hook, the
-    Feature's save fires it, and it reads its dependency and the request's context."""
-    _write_context(context_on_disk, "billing_context_ok", at_import="")
+@pytest.mark.parametrize("wiring", list(WIRINGS))
+def test_a_bounded_context_wires_its_hooks_however_its_modules_are_ordered(
+    context_on_disk: Path, wiring: str
+):
+    """The walk finds the hook the first time a Feature saves, when every module has loaded:
+    the hook reads its dependency and the request's context, whatever the wiring."""
+    name = f"billing_context_{list(WIRINGS).index(wiring)}"
+    _write_context(context_on_disk, name, wiring)
 
-    context = importlib.import_module("billing_context_ok")
-    feature = importlib.import_module("billing_context_ok.services.issue_invoice")
+    context = importlib.import_module(name)
+    feature = importlib.import_module(f"{name}.services.issue_invoice")
 
     with context.billing.context({"user_id": "ana"}):
         answer = context.billing(
@@ -170,19 +207,3 @@ def test_the_layout_of_a_bounded_context_wires_its_hooks(context_on_disk: Path):
         )
 
     assert answer.number == "F-101 by ana"
-
-
-def test_a_repository_built_at_the_top_of_dependencies_is_the_circular_import_the_docs_warn_of(
-    context_on_disk: Path,
-):
-    """Built at import, reading the collection imports the hook modules while `framework.py`
-    is still importing `dependencies.py` — the one wiring the docs tell a project not to use.
-    """
-    _write_context(
-        context_on_disk,
-        "billing_context_at_import",
-        at_import="\nREPOSITORY = MemoryRepository(hooks=billing_hooks)\n\n",
-    )
-
-    with pytest.raises(ImportError, match="partially initialized module"):
-        importlib.import_module("billing_context_at_import")
