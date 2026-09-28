@@ -69,7 +69,7 @@ def test_a_hook_decorated_after_a_repository_read_the_collection_is_refused():
         pass
 
     hooks = Hooks(None)
-    MemoryRepository(hooks=hooks)  # reads the collection
+    MemoryRepository(hooks=hooks).save(Note())  # its first use reads the collection
 
     with pytest.raises(ExtensionRefused, match="LateAudit.*already read"):
 

@@ -156,7 +156,7 @@ class Hooks:
 
     Context: an object somebody made and passed, never a registry the framework keeps — two
     contexts have two collections. A hook in a module nobody imports never registers, which is
-    why the collection walks its own package the first time a repository reads it.
+    why the collection walks its own package the first time a repository uses it.
     """
 
     __slots__ = (
@@ -187,8 +187,8 @@ class Hooks:
         if self._read:
             raise ExtensionRefused(
                 f"{hook.__name__} registered late: this collection was already read by a "
-                "repository, so it would never run — import its module before building the "
-                "repository"
+                "repository, so it would never run — import its module before the repository "
+                "first saves or reads"
             )
 
     def _checked(
@@ -396,13 +396,17 @@ class _Link:
 class HookChain:
     """The hooks one repository runs at each moment, in order, with one instance of each.
 
-        chain = HookChain(billing_hooks)
+        chain = HookChain(billing_hooks)                nothing read yet
         chain.fire("before_save", invoice)              every hook for Invoice, in order
         chain.read(invoice)            →  invoice        or the record an after_read answered
         chain.searched(Invoice, page)  →  page           or the page an after_search answered
 
-    Context: compiled once, when the repository is built — the collection refuses a hook
-    registered after that. An instance is built the first time one of its moments fires, so a
+    Context: lazy, the way the bus is — nothing is read while the repository is built. The
+    collection is read, and its package walked, the first time a moment fires, when every module
+    of the bounded context has loaded; so a repository may be built anywhere — inside
+    `register_dependencies()` or at the top of `dependencies.py` — and a hook module may import
+    its base from wherever the project re-exports it. From that first read the collection refuses
+    a hook registered late. An instance is built the first time one of its moments fires, so a
     hook that cannot be built does not take the repository down, and `self` is the same object
     in `before_save` and `after_save`. A unit of work and a narrowing are the same store seen
     differently, so they run the chain of the repository they came from. The repository closes
@@ -410,17 +414,34 @@ class HookChain:
     """
 
     def __init__(self, hooks: Hooks | None) -> None:
-        """1. The collection's hooks in the order they run.
-        2. Final: for each moment, the hooks that implement it and the aggregates they are for.
-        """
         self._hooks = hooks
-        links = [_Link(hook, hooks.entities_of(hook)) for hook in hooks] if hooks else []
-        self._by_moment: dict[str, tuple[_Link, ...]] = {
-            moment: tuple(one for one in links if getattr(one.hook, moment, None) is not None)
-            for moment in MOMENTS
-        }
+        self._by_moment: dict[str, tuple[_Link, ...]] | None = None
+        self._compiling = Lock()
         self._instances: dict[type[Hook], Hook] = {}
         self._building = Lock()
+
+    def _compiled(self) -> dict[str, tuple[_Link, ...]]:
+        """For each moment, the hooks that implement it and the aggregates they are for — read
+        from the collection on first use, once.
+
+        1. The collection's hooks in the order they run (its package walked, if not yet).
+        2. Final: grouped by moment. Checked again inside the lock: threads reaching the first
+           fire together would otherwise each read the collection.
+        """
+        compiled = self._by_moment
+        if compiled is not None:
+            return compiled
+        with self._compiling:
+            if self._by_moment is None:
+                hooks = self._hooks
+                links = [_Link(one, hooks.entities_of(one)) for one in hooks] if hooks else []
+                self._by_moment = {
+                    moment: tuple(
+                        one for one in links if getattr(one.hook, moment, None) is not None
+                    )
+                    for moment in MOMENTS
+                }
+            return self._by_moment
 
     def _instance(self, hook: type[Hook]) -> Hook:
         """The one instance of `hook`, built on first use. Context: checked again inside the
@@ -441,7 +462,7 @@ class HookChain:
 
         fire("before_save", Invoice(total=-1))   →   ContractViolation from InvoiceMustBalance
         """
-        for link in self._by_moment[moment]:
+        for link in self._compiled()[moment]:
             if isinstance(record, link.entities):
                 getattr(self._instance(link.hook), moment)(record)
 
@@ -451,7 +472,7 @@ class HookChain:
 
             read(Invoice(approved=False))   →   Invoice(approved=True)    when a hook approves it
         """
-        for link in self._by_moment["after_read"]:
+        for link in self._compiled()["after_read"]:
             if isinstance(record, link.entities):
                 answered = getattr(self._instance(link.hook), "after_read")(record)
                 record = record if answered is None else answered
@@ -460,7 +481,7 @@ class HookChain:
     def searched(self, model: type, page: Any) -> Any:
         """`after_search`, once for the page, for the hooks whose aggregate `model` is; a hook
         that answers a page puts it in place."""
-        for link in self._by_moment["after_search"]:
+        for link in self._compiled()["after_search"]:
             if issubclass(model, link.entities):
                 answered = getattr(self._instance(link.hook), "after_search")(page)
                 page = page if answered is None else answered
