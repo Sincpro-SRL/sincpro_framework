@@ -61,7 +61,7 @@ from sincpro_framework.ddd.repositories import (
     MemoryRepository,
     Repository,
 )
-from sincpro_framework.ddd.repositories.hooks import Hook, Hooks, Rule
+from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
@@ -104,7 +104,6 @@ __all__ = [
     "Query",
     "Relation",
     "Repository",
-    "Rule",
     "Resolver",
     "ResponsePaginatedQuery",
     "Sort",

@@ -1,331 +1,36 @@
-"""How a repository is extended: a hook, a collection of them, and the rule they compile to.
+"""Hooks: what a project hangs around the reads and writes of its own aggregates.
 
-    billing_hooks = Hooks()                     # in services/hooks/__init__.py
+    billing_hooks = Hooks()                                      # services/hooks/__init__.py
 
-    @billing_hooks                              # in services/hooks/invoices.py
-    class ChecksWithBilling(Hook, DependencyContextType):
-        entity = Invoice
-        def before_save(self, invoice): ...
+    @billing_hooks.on(Invoice)                                   # services/hooks/invoices.py
+    class InvoiceMustBalance(BillingHook):
+        def before_save(self, invoice: Invoice) -> None: ...
 
-    repository = Repository(database, billing_hooks, deps=bus.deps)
+    billing_hooks.inject(billing)                                # the composition root
+    repository = Repository(database, billing_hooks)
 
-Nothing here knows what a repository *is* — only what can be hung around one. `repository.py`
-depends on this module; this module depends on nothing of it.
+Context: three pieces, one form. A `Hook` is a class — its moments are the methods it
+implements, `self.<name>` a dependency of the bus, `self.context` the request in play. `Hooks`
+is the collection a bounded context fills with `on(...)`, and where each hook is placed among
+the rest. `HookChain` is what one repository runs: the collection compiled once, in order, with
+one instance of each hook. The why, the guarantees and the research: `docs/persistence/hooks.md`.
 """
 
+import importlib
 import inspect
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from typing import Any, ClassVar, cast
+import pkgutil
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
+from threading import Lock
+from typing import TYPE_CHECKING, Any, Generic, cast
 
-from sincpro_framework.ddd.events import DomainEvent  # noqa: F401  (documented in Rule)
-from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.exceptions import DependencyNotRegistered
-from sincpro_framework.sincpro_abstractions import DataTransferObject
+from sincpro_framework.exceptions import DependencyNotRegistered, ExtensionRefused
+from sincpro_framework.ordering import DEFAULT_SEQUENCE, Ordered, Placement, name_of, ordered
+from sincpro_framework.sincpro_abstractions import ContextT
+from sincpro_framework.sincpro_logger import logger
 
-
-def callbacks_of(given: Any) -> list[Callable[[Any], Any]]:
-    """What one moment of a rule was handed, always as a list: nothing, one function, or
-    several. The same «one or many» `records_of` answers for aggregates — a caller never picks
-    a shape by how many it has."""
-    if given is None:
-        return []
-    if isinstance(given, Iterable):
-        return list(given)
-    return [given]
-
-
-class Hook:
-    """A rule written as a class, with the framework's registered dependencies as attributes.
-
-        class ChecksWithBilling(Hook):
-            billing: BillingClient          # declared for the IDE, resolved at call time
-
-            def __call__(self, invoice: Invoice) -> None:
-                if not self.billing.allows(invoice.total):
-                    raise ContractViolation("billing refused it")
-
-        repository = Repository(database, deps=bus.deps, rules=[
-            Rule(entity=Invoice, before_save=[ChecksWithBilling()]),
-        ])
-
-    The same ergonomics a `Feature` has — `self.billing` rather than a locator handed around —
-    and for the same reason: an annotation gives the IDE the type, and the name resolves
-    against what `add_dependency` registered.
-
-    **Resolved when the hook runs, not when it is built**, which is what makes the wiring order
-    stop mattering: a repository is usually built before the bus that will hold the
-    dependencies, and a hook that resolved eagerly could not be written at all.
-    """
-
-    @property
-    def context(self) -> "Mapping[str, Any]":
-        """What the request in play says, read-only — empty outside one, and empty when this
-        collection was injected with dependencies rather than with a bus.
-
-        The same thing a `Feature` reads as `self.context`, and for the same reason: a rule that
-        refuses a write usually has to say on whose behalf. **`context` is therefore a name a
-        hook cannot use for a dependency** — this answers first.
-        """
-        reading = object.__getattribute__(self, "_context")
-        return reading() if reading is not None else {}
-
-    entity: ClassVar[type] = object
-    """The aggregate this hook is for. A hook that declares it needs no `Rule` around it: the
-    repository reads it, and the moments are whichever methods the class implements.
-
-    **Left alone it is `object`, which every record is**, so a hook that does not name an
-    aggregate runs for all of them — what an audit or a log wants. There is no special case
-    behind this: `isinstance(record, object)` is simply always true.
-    """
-
-    _deps: Any = None
-    _context: "Callable[[], Mapping[str, Any]] | None" = None
-
-    def bind(self, deps: Any) -> "Hook":
-        """Hands this hook what it will resolve names against. Called by the repository it was
-        given to; a hook bound twice keeps the last one.
-
-        A bus was handed in rather than its dependencies, both come from it: the names, and the
-        context behind whatever request is running.
-        """
-        reading = getattr(deps, "current_context", None)
-        self._context = (
-            cast("Callable[[], Mapping[str, Any]] | None", reading)
-            if callable(reading)
-            else None
-        )
-        self._deps = getattr(deps, "deps", deps) if reading is not None else deps
-        return self
-
-    def __getattr__(self, name: str) -> Any:
-        # Only reached for a name the instance and its class do not already have, so an
-        # attribute a subclass sets itself always wins over a registered dependency.
-        #
-        # …except that a property which raises `AttributeError` of its own also lands here,
-        # and answering it with a dependency would replace a real bug's message with a wrong
-        # one. When the class does declare the name, it is asked again so its own error is
-        # what comes out.
-        declared = inspect.getattr_static(type(self), name, None)
-        if declared is not None and hasattr(type(declared), "__get__"):
-            return declared.__get__(self, type(self))
-        deps = object.__getattribute__(self, "_deps")
-        if deps is None:
-            raise DependencyNotRegistered(
-                f"{type(self).__name__}.{name}: this hook was never bound to any "
-                "dependencies — build the repository with `deps=bus.deps`"
-            )
-        return getattr(deps, name)
-
-
-Callback = Callable[[Any], Any] | type[Hook] | Hook
-"""What one moment of a rule may be handed: a plain function over the aggregate, a `Hook`
-already built, or a `Hook` class for the repository to build.
-
-A built `Hook` is listed on its own rather than left to `Callable`, because a hook that
-implements `before_save` and nothing else is not callable and would be refused before the
-repository ever saw it — for declaring exactly what it was built for.
-"""
-
-OneOrMany = Callback | Sequence[Callback] | None
-"""…and any moment takes one of those or several, the way `save` takes one aggregate or
-several."""
-
-
-INFER: Any = object()
-"""The default for `Hooks(package=…)`, so that an explicit `None` can mean something different
-from saying nothing at all: `Hooks()` walks the caller's package, `Hooks(None)` walks nothing.
-"""
-
-
-def _calling_package() -> str | None:
-    """The package the caller is in, for a collection that was not told one. `None` when there
-    is nothing to walk — a script, a REPL, a module that is not part of a package."""
-    frame = inspect.currentframe()
-    caller = frame.f_back.f_back if frame is not None and frame.f_back is not None else None
-    if caller is None:
-        return None
-    name = caller.f_globals.get("__name__")
-    if not name or name == "__main__":
-        return None
-    # A package's own `__init__` is the package, and walking it is the point. Anything else is
-    # one module, and that module is what gets walked — **not the package around it**. Reaching
-    # for `__package__` there meant a collection written in `myapp/wiring.py` imported every
-    # module of `myapp` the first time a repository read it, which is both far more than anyone
-    # asked for and a circular import waiting for the first module that says
-    # `from myapp.wiring import repository`.
-    return name
-
-
-class Hooks:
-    """A collection of hooks, filled by decorating them and handed to a repository whole.
-
-        # services/hooks/__init__.py — one per module, or per bounded context
-        billing_hooks = Hooks()
-
-        # services/hooks/invoices.py
-        @billing_hooks
-        class ChecksWithBilling(Hook, DependencyContextType):
-            entity = Invoice
-            def before_save(self, invoice): ...
-
-        # the wiring names the collection, not every hook in it
-        repository = Repository(database, hooks=billing_hooks, deps=bus.deps)
-
-    **It is an object somebody made and passed**, not a registry the framework keeps: two
-    contexts have two collections and cannot reach into each other's, and what a repository
-    runs is whatever collection it was given — printable, countable, and right there in the
-    wiring.
-
-    The one thing to know: a hook in a module nobody imports never decorates itself, so it
-    never runs. That is true of any decorator that registers, and it is why the collection is
-    named at the wiring rather than discovered.
-    """
-
-    __slots__ = ("_hooks", "_package", "_loaded", "_read", "_deps")
-
-    def __init__(self, package: "str | None" = INFER) -> None:
-        """Remembers the package it was built in, and walks it the first time somebody reads
-        the collection — never here.
-
-        Walking at construction cannot work for the layout this is written for: a collection
-        lives in a package's `__init__`, and the modules it would import do `from . import
-        the_collection`, which is not bound yet while `__init__` is still running. By the
-        first read it is.
-
-        `package` names another one explicitly. Left out, it is whatever module called this;
-        **`None` means walk nothing**, for a collection filled by hand and for a test that is
-        about the mechanism rather than about discovery.
-        """
-        self._hooks: list[type[Hook]] = []
-        self._loaded = False
-        self._read = False
-        self._deps: Any = None
-        self._package = _calling_package() if package is INFER else package
-
-    def __call__(self, hook: "type[Hook]") -> "type[Hook]":
-        """Registers the class and answers it unchanged, so the decorator is invisible to
-        everything else that uses it.
-
-        Context: a repository reads the collection once, when it is built; a hook decorated
-        after that would never run, so it is refused.
-        """
-        if self._read:
-            raise ContractViolation(
-                f"{hook.__name__} decorated late: this collection was already read by a "
-                "repository, so it would never run — import its module before building the "
-                "repository"
-            )
-        self._hooks.append(hook)
-        return hook
-
-    def __iter__(self) -> "Iterator[type[Hook]]":
-        self._load_once()
-        return iter(self._hooks)
-
-    def __len__(self) -> int:
-        self._load_once()
-        return len(self._hooks)
-
-    def _load_once(self) -> None:
-        """The walk, at most once, and never from `__repr__` — printing a collection while
-        debugging must not import half a package as a side effect.
-
-        **Marked done only once it is done.** Marked first, a module that failed to import left
-        the collection holding whatever had registered before it, with `_loaded` already true —
-        so the second read answered a half-filled collection, quietly, and every hook after the
-        broken module was simply gone. Now the failure comes back every time it is asked.
-        """
-        self._read = True
-        if self._loaded:
-            return
-        if self._package is not None:
-            self.load(self._package)
-        self._loaded = True
-
-    def inject(self, deps: Any) -> "Hooks":
-        """What the hooks in this collection will resolve their attributes against — normally
-        `bus.deps`, or the bus itself when the hooks also want `self.context`.
-
-            billing_hooks.inject(bus.deps)     names only
-            billing_hooks.inject(bus)          names, and the request context behind them
-            repository = Repository(database, billing_hooks)
-
-        Held as a reference and handed over when a hook is actually built, so this can be
-        called before the dependencies it names exist, and a collection given to two
-        repositories is configured once rather than at each of them.
-
-        The dependencies belong to the hooks, not to the store: a repository that took them
-        would only be passing them through.
-        """
-        self._deps = deps
-        return self
-
-    @property
-    def deps(self) -> Any:
-        """What was injected, or `None`. Read by a repository, which falls back to its own."""
-        return self._deps
-
-    def load(self, package: str) -> "Hooks":
-        """Imports every module under `package`, so the hooks in them decorate themselves.
-
-            billing_hooks = Hooks().load("myapp.services.hooks")
-
-        **A decorator only runs if its module was imported**, and a hook in a file nobody
-        imported never registers — no error, nothing happens. The usual answer is an import at
-        the bottom of an `__init__` with a `noqa` on it, which works and says nothing about
-        why it is there. This says it, takes the package by name, and stays scoped to that
-        package: nothing else is walked, nothing is discovered behind anybody's back.
-
-        Called where the collection is built, and answers the collection so the two read as
-        one line.
-        """
-        import importlib
-        import pkgutil
-
-        found = importlib.import_module(package)
-        if hasattr(found, "__path__"):  # a module, not a package: importing it was the job
-            for module in pkgutil.walk_packages(found.__path__, f"{found.__name__}."):
-                importlib.import_module(module.name)
-        self._loaded = True
-        return self
-
-    def __repr__(self) -> str:
-        names = ", ".join(one.__name__ for one in self._hooks) or "empty"
-        return f"Hooks({names})"
-
-
-class _MomentOfHook:
-    """One moment of a hook, callable, that asks the store for the hook the first time it
-    actually fires.
-
-    **Nothing is constructed while a repository is being built.** A hook whose `__init__` is
-    expensive, or fails, must not take the repository down with it — and a repository half
-    built because of a hook is the kind of failure that looks like anything except its cause.
-
-    **The instance is the store's, not this object's.** A hook that implements `before_save`
-    and `after_save` is two of these, and each holding its own instance would make `self` mean
-    something different in each moment — so the obvious "decide it in `before_save`, act on it
-    in `after_save`" silently loses what it decided. The store keeps one per hook and hands the
-    same one to every moment.
-    """
-
-    __slots__ = ("hook", "moment", "_store")
-
-    def __init__(self, hook: "Hook | type[Hook]", moment: str) -> None:
-        self.hook = hook
-        self.moment = moment
-        self._store: Any = None
-
-    def bind(self, store: Any) -> "_MomentOfHook":
-        """The repository that owns the instance and knows the dependencies. Asked at every
-        fire rather than read once, so a collection injected after the repository was built is
-        still seen — wiring order is not something a store should silently depend on."""
-        self._store = store
-        return self
-
-    def __call__(self, record: Any) -> Any:
-        return getattr(self._store._hook_instance(self), self.moment)(record)
-
+if TYPE_CHECKING:
+    from sincpro_framework.use_bus import UseFramework
 
 MOMENTS = (
     "after_read",
@@ -339,57 +44,424 @@ MOMENTS = (
     "after_remove",
     "before_archive",
     "after_archive",
+    "after_search",
 )
-"""Every moment a rule can be written for, over one aggregate.
+"""Every method a hook may implement. Symmetric: whatever a store does, a before and an after;
+each is handed one aggregate, but `after_search`, handed the page once."""
 
-Symmetric on purpose: whatever a store is about to do, there is a before and an after. `save` is
-the pair that always fires; `create` and `update` are the same write told apart, so a rule that
-only cares about one of them does not have to ask. `archive` wraps the save it is, so a rule
-written for `before_save` still sees an archive and one written for `before_archive` sees only
-those.
-
-A reading has its own pair, `before_search` / `after_search`, and is not here: it is about a
-criteria and a page, not about one aggregate.
-"""
-"""Every moment a rule can name, in the order they appear on it."""
+type Entities = type | Sequence[type]
+"""The aggregate a hook is for, or several — `Invoice` or `[Invoice, CreditNote]`."""
 
 
-class Rule(DataTransferObject):
-    """What to do around one aggregate's reads and writes, handed to a repository when it is
-    built.
+class Hook(Generic[ContextT]):
+    """One concern around an aggregate: its moments are the methods it implements.
 
-        Rule(entity=Invoice, before_save=check_totals)
-        Rule(Order, before_save=reserve_stock, after_read=compute_available)
+        class BillingHook(Hook[BillingContext], DependencyContextType):   # framework.py, once
+            ...
 
-    `entity` selects by `isinstance`, so a subclass of it is covered too. Every callback is
-    optional; a rule that sets none is inert.
+        @billing_hooks.on(Invoice)
+        class InvoiceMustBalance(BillingHook):
+            def before_save(self, invoice: Invoice) -> None:
+                if not self.billing.allows(invoice.total):          # a dependency of the bus
+                    raise ContractViolation(f"refused for {self.context['user_id']}")
 
-    Several rules may name the same aggregate: they run in the order the list was written, in
-    the composition root, where somebody can read it — not in a registry another module filled
-    in from somewhere else.
+    Typed the way a Feature is: the dependencies by inheriting the context's
+    `DependencyContextType`, the request's context by `Hook[ContextT]`.
 
-    **Every moment takes one function or several**, the way `save` takes one aggregate or
-    several — `before_save=check_totals` and `before_save=[check_totals, check_dates]` are both
-    written the same way, and several run in the order they are listed.
-
-    `after_read` may answer a record to put in place of the one read; anything else it answers,
-    including `None`, leaves the record as it was. The rest answer nothing: they validate,
-    compute or refuse, and a refusal is an exception that stops the write.
+    Context: everything a Feature of that bus has — `self.<name>` is any dependency the bus
+    registered (another repository, a client), `self.context` the request in play, `self.bus`
+    the bus itself — resolved against the bus the collection was given, when it is read, so the
+    wiring order does not matter. One instance serves every moment and every request of its
+    repository, like a Feature: state lives in locals, never in `self`.
     """
 
-    entity: type
-    after_read: OneOrMany = None
-    before_save: OneOrMany = None
-    after_save: OneOrMany = None
-    before_create: OneOrMany = None
-    after_create: OneOrMany = None
-    before_update: OneOrMany = None
-    after_update: OneOrMany = None
-    before_remove: OneOrMany = None
-    after_remove: OneOrMany = None
-    before_archive: OneOrMany = None
-    after_archive: OneOrMany = None
-    after_search: OneOrMany = None
-    """Each page a reading answered, **once — not once per row**, and handed the collection
-    rather than an aggregate. Answer a collection to put in its place, or nothing to leave it
-    alone. `after_read` still fires for each aggregate in it."""
+    _hooks: "Hooks | None" = None
+
+    def _given_bus(self) -> "UseFramework | None":
+        hooks = object.__getattribute__(self, "_hooks")
+        return hooks.bus if hooks is not None else None
+
+    def _refuse_no_bus(self, name: str) -> DependencyNotRegistered:
+        return DependencyNotRegistered(
+            f"{type(self).__name__}.{name}: its collection was never given a bus — "
+            "`hooks.inject(bus)` in the composition root"
+        )
+
+    @property
+    def context(self) -> ContextT:
+        """The request in play, read-only — `{}` outside one — typed as `Hook[ContextT]` says."""
+        bus = self._given_bus()
+        return cast(ContextT, bus.current_context() if bus is not None else {})
+
+    @property
+    def bus(self) -> "UseFramework":
+        """The bus the collection was given, to execute a Command or a Query from a hook as an
+        ApplicationService does.
+
+            answer = self.bus(QueryCreditOf(customer_id=invoice.customer_id), ResponseCredit)
+
+        Context: it runs inside the write, in its transaction. A write back through the
+        repository that fired this hook is refused, as any write from a hook through it is — it
+        would fire the hook again, forever.
+        """
+        bus = self._given_bus()
+        if bus is None:
+            raise self._refuse_no_bus("bus")
+        return bus
+
+    def __getattr__(self, name: str) -> Any:
+        """A name the instance does not have: a dependency of the bus.
+
+        1. A descriptor the class declares (a property whose getter raised `AttributeError`)
+           is asked again, so its own error comes out — not a wrong dependency lookup.
+        2. No bus given to the collection: refused, saying where to give it.
+        3. Final: the dependency registered under `name`.
+        """
+        declared = inspect.getattr_static(type(self), name, None)
+        if declared is not None and hasattr(type(declared), "__get__"):
+            return declared.__get__(self, type(self))
+        bus = self._given_bus()
+        if bus is None:
+            raise self._refuse_no_bus(name)
+        return getattr(bus.deps, name)
+
+
+def _implemented(hook: type[Hook]) -> tuple[str, ...]:
+    return tuple(moment for moment in MOMENTS if getattr(hook, moment, None) is not None)
+
+
+INFER: Any = object()
+"""The default for `Hooks(package=…)`: `Hooks()` walks the caller's module, `Hooks(None)`
+walks nothing."""
+
+
+def _calling_package() -> str | None:
+    """The module that built the collection — a package's `__init__` is the package — or
+    `None` for a script or a REPL. Context: the module, never the package around it; walking
+    `myapp` from `myapp/wiring.py` imports far more than asked, and is a circular import."""
+    frame = inspect.currentframe()
+    caller = frame.f_back.f_back if frame is not None and frame.f_back is not None else None
+    if caller is None:
+        return None
+    name = caller.f_globals.get("__name__")
+    return None if not name or name == "__main__" else name
+
+
+class Hooks:
+    """The hooks of a bounded context: registered with `on`, ordered, and handed to a
+    repository whole.
+
+        billing_hooks = Hooks()                          # walks this package on first read
+        repository = Repository(database, billing_hooks)
+
+    Context: an object somebody made and passed, never a registry the framework keeps — two
+    contexts have two collections. A hook in a module nobody imports never registers, which is
+    why the collection walks its own package the first time a repository reads it.
+    """
+
+    __slots__ = (
+        "_placements",
+        "_entities",
+        "_off",
+        "_package",
+        "_loaded",
+        "_read",
+        "_bus",
+        "_result",
+    )
+
+    def __init__(self, package: "str | None" = INFER) -> None:
+        """`package` is walked on first read — never here, where the modules it holds cannot
+        import the collection yet. Left out, it is the calling module; `None` walks nothing.
+        """
+        self._placements: list[Placement] = []
+        self._entities: dict[type[Hook], tuple[type, ...]] = {}
+        self._off: tuple[type[Hook], ...] = ()
+        self._loaded = False
+        self._read = False
+        self._bus: "UseFramework | None" = None
+        self._result: Ordered | None = None
+        self._package = _calling_package() if package is INFER else package
+
+    def _refuse_late(self, hook: type[Hook]) -> None:
+        if self._read:
+            raise ExtensionRefused(
+                f"{hook.__name__} registered late: this collection was already read by a "
+                "repository, so it would never run — import its module before building the "
+                "repository"
+            )
+
+    def _checked(
+        self, hook: type[Hook], replaces: type[Hook] | None, extends: type[Hook] | None
+    ) -> type[Hook] | None:
+        """What the hook takes the place of, once what it declares is checked.
+
+        1. Refused what cannot work: `extends` on a class that is not a subclass — `super()`
+           would fail at the first save — and a class that implements no moment.
+        2. A warning for what works, only not as said: `replaces` and `extends` together (it
+           extends), and `replaces` on a subclass, whose `super()` still runs the original.
+        3. Final: the hook it takes the place of, or `None`.
+        """
+        if extends is not None and not issubclass(hook, extends):
+            raise ExtensionRefused(
+                f"{hook.__name__} extends {extends.__name__}, so it has to be a subclass of it "
+                f"— super() is how it runs {extends.__name__}; to run beside it, "
+                f"register it with after=({extends.__name__},)"
+            )
+        if not _implemented(hook):
+            raise ExtensionRefused(
+                f"{hook.__name__} implements none of {', '.join(MOMENTS)}, so it would never "
+                "run"
+            )
+        if replaces is not None and extends is not None:
+            logger.warning(
+                f"{hook.__name__} both replaces and extends {replaces.__name__}: it extends it"
+            )
+            return extends
+        if replaces is not None and issubclass(hook, replaces):
+            logger.warning(
+                f"{hook.__name__} replaces {replaces.__name__} and is a subclass of it, so "
+                f"super() still runs it — that is extends={replaces.__name__}"
+            )
+        return replaces or extends
+
+    def on[H: type[Hook]](
+        self,
+        entity: Entities,
+        replaces: type[Hook] | None = None,
+        extends: type[Hook] | None = None,
+        before: Sequence[type[Hook]] = (),
+        after: Sequence[type[Hook]] = (),
+        sequence: int = DEFAULT_SEQUENCE,
+    ) -> Callable[[H], H]:
+        """Register the decorated class for `entity`, placed among the rest.
+
+            @hooks.on(Invoice)                                  for invoices
+            @hooks.on([Invoice, CreditNote])                    for each one listed
+            @hooks.on(object)                                   for every record
+            @hooks.on(Invoice, replaces=Checks)                 instead of Checks, in its place
+            @hooks.on(Invoice, extends=Checks)                  a subclass: super() runs Checks
+            @hooks.on(Invoice, after=(Checks,), sequence=5)     ordered among the rest
+
+        1. Refused when it is late, or when what it declares cannot work (see `_checked`).
+        2. The aggregates it is for kept by the collection, never written onto the class.
+        3. Final: placed — `replaces` and `extends` take the position of the one they name.
+        """
+        entities = tuple(entity) if isinstance(entity, Sequence) else (entity,)
+
+        def register(hook: H) -> H:
+            self._refuse_late(hook)
+            takes_the_place_of = self._checked(hook, replaces, extends)
+            self._entities[hook] = entities
+            self._placements.append(
+                Placement(hook, sequence, tuple(before), tuple(after), takes_the_place_of)
+            )
+            return hook
+
+        return register
+
+    def inject(self, bus: "UseFramework") -> "Hooks":
+        """The bus the hooks read their dependencies and context from — asked when a hook
+        reads a name, so it may be given before or after the repository is built."""
+        self._bus = bus
+        return self
+
+    @property
+    def bus(self) -> "UseFramework | None":
+        return self._bus
+
+    def entities_of(self, hook: type[Hook]) -> tuple[type, ...]:
+        return self._entities[hook]
+
+    def load(self, package: str) -> "Hooks":
+        """Import every module under `package`, so the hooks in them register.
+
+        billing_hooks = Hooks(None).load("myapp.services.hooks")
+        """
+        found = importlib.import_module(package)
+        if hasattr(found, "__path__"):
+            for module in pkgutil.walk_packages(found.__path__, f"{found.__name__}."):
+                importlib.import_module(module.name)
+        self._loaded = True
+        return self
+
+    def _load_once(self) -> None:
+        """The walk, at most once, then the collection closed to late registrations.
+
+        1. Not walked yet: import every module of its package — the hooks in them register.
+        2. Final: marked walked and read; from here a new registration is refused as late.
+
+        Context: both marks come after the walk. Marked before it, the hooks the walk imports
+        were refused as late — the very ones it walks for — and a module that fails to import
+        left a half-filled collection marked done; now that failure comes back on every read.
+        """
+        if not self._loaded and self._package is not None:
+            self.load(self._package)
+        self._loaded = True
+        self._read = True
+
+    def _ordered(self) -> Ordered:
+        """The order the hooks run in (see `sincpro_framework.ordering`), worked out once — the
+        collection is closed by then — with what was asked and could not be done as said
+        logged once, not refused.
+
+            on(A) · on(B, sequence=5) · on(C, replaces=A)      →   [B, C]
+        """
+        self._load_once()
+        if self._result is not None:
+            return self._result
+        result = ordered(self._placements, self._off)
+        notes = list(result.notes)
+        for replacement, chain in result.replaced.items():
+            covered, replaced = set(self._entities[replacement]), set(
+                self._entities[chain[-1]]
+            )
+            if covered != replaced:
+                notes.append(
+                    f"{name_of(replacement)} replaces {name_of(chain[-1])}, but it covers "
+                    f"{', '.join(sorted(one.__name__ for one in covered))} and what it replaces "
+                    f"covers {', '.join(sorted(one.__name__ for one in replaced))}"
+                )
+        for note in notes:
+            logger.warning(note)
+        self._result = result
+        return result
+
+    def __iter__(self) -> Iterator[type[Hook]]:
+        yield from self._ordered().items
+
+    def __len__(self) -> int:
+        return len(self._ordered().items)
+
+    @property
+    def replacements(self) -> dict[str, tuple[str, ...]]:
+        """Each replacement or extension in force → what it took the place of, oldest first.
+
+        {"billing.ChecksStrictly": ("billing.Checks",)}
+        """
+        return {
+            name_of(item): tuple(name_of(one) for one in chain)
+            for item, chain in self._ordered().replaced.items()
+        }
+
+    @property
+    def switched_off(self) -> tuple[str, ...]:
+        return tuple(name_of(item) for item in self._off)
+
+    def _copy(self) -> "Hooks":
+        copied = Hooks(None)
+        copied._placements = list(self._placements)
+        copied._entities = dict(self._entities)
+        copied._off = self._off
+        copied._bus = self._bus
+        return copied
+
+    def without(self, *hooks: type[Hook]) -> "Hooks":
+        """A collection with everything this one has but `hooks`; this one stays whole.
+
+        billing_hooks.without(Audits)       →   Hooks(Checks)      billing_hooks unchanged
+        """
+        self._load_once()
+        copied = self._copy()
+        copied._off = (*self._off, *hooks)
+        return copied
+
+    def combined_with(self, *others: "Hooks") -> "Hooks":
+        """This collection with `others` after it: a project's hooks on a core's, which may
+        replace, extend or run beside the core's without touching them.
+
+            core_hooks.combined_with(client_hooks)    →   the core, with the client's changes
+        """
+        self._load_once()
+        combined = self._copy()
+        for other in others:
+            other._load_once()
+            combined._placements.extend(other._placements)
+            combined._entities.update(other._entities)
+            combined._off = (*combined._off, *other._off)
+            combined._bus = combined._bus if combined._bus is not None else other._bus
+        return combined
+
+    def __repr__(self) -> str:
+        names = ", ".join(one.item.__name__ for one in self._placements) or "empty"
+        return f"Hooks({names})"
+
+
+@dataclass(frozen=True)
+class _Link:
+    hook: type[Hook]
+    entities: tuple[type, ...]
+
+
+class HookChain:
+    """The hooks one repository runs at each moment, in order, with one instance of each.
+
+        chain = HookChain(billing_hooks)
+        chain.fire("before_save", invoice)              every hook for Invoice, in order
+        chain.read(invoice)            →  invoice        or the record an after_read answered
+        chain.searched(Invoice, page)  →  page           or the page an after_search answered
+
+    Context: compiled once, when the repository is built — the collection refuses a hook
+    registered after that. An instance is built the first time one of its moments fires, so a
+    hook that cannot be built does not take the repository down, and `self` is the same object
+    in `before_save` and `after_save`. A unit of work and a narrowing are the same store seen
+    differently, so they run the chain of the repository they came from. The repository closes
+    each moment with its own hook, after the chain.
+    """
+
+    def __init__(self, hooks: Hooks | None) -> None:
+        """1. The collection's hooks in the order they run.
+        2. Final: for each moment, the hooks that implement it and the aggregates they are for.
+        """
+        self._hooks = hooks
+        links = [_Link(hook, hooks.entities_of(hook)) for hook in hooks] if hooks else []
+        self._by_moment: dict[str, tuple[_Link, ...]] = {
+            moment: tuple(one for one in links if getattr(one.hook, moment, None) is not None)
+            for moment in MOMENTS
+        }
+        self._instances: dict[type[Hook], Hook] = {}
+        self._building = Lock()
+
+    def _instance(self, hook: type[Hook]) -> Hook:
+        """The one instance of `hook`, built on first use. Context: checked again inside the
+        lock — threads reaching a first fire together would otherwise each build one."""
+        built = self._instances.get(hook)
+        if built is not None:
+            return built
+        with self._building:
+            built = self._instances.get(hook)
+            if built is None:
+                built = hook()
+                built._hooks = self._hooks
+                self._instances[hook] = built
+            return built
+
+    def fire(self, moment: str, record: Any) -> None:
+        """Every hook implementing `moment` whose aggregate `record` is, in order.
+
+        fire("before_save", Invoice(total=-1))   →   ContractViolation from InvoiceMustBalance
+        """
+        for link in self._by_moment[moment]:
+            if isinstance(record, link.entities):
+                getattr(self._instance(link.hook), moment)(record)
+
+    def read(self, record: Any) -> Any:
+        """`after_read`, in order; a hook that answers a record puts it in place, `None` keeps
+        the one it was handed.
+
+            read(Invoice(approved=False))   →   Invoice(approved=True)    when a hook approves it
+        """
+        for link in self._by_moment["after_read"]:
+            if isinstance(record, link.entities):
+                answered = getattr(self._instance(link.hook), "after_read")(record)
+                record = record if answered is None else answered
+        return record
+
+    def searched(self, model: type, page: Any) -> Any:
+        """`after_search`, once for the page, for the hooks whose aggregate `model` is; a hook
+        that answers a page puts it in place."""
+        for link in self._by_moment["after_search"]:
+            if issubclass(model, link.entities):
+                answered = getattr(self._instance(link.hook), "after_search")(page)
+                page = page if answered is None else answered
+        return page

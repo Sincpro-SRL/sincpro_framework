@@ -366,3 +366,21 @@ def test_check_all_answers_nothing_when_every_stored_use_case_loads():
 
     assert registry.check_all() == []
     assert registry.execute(QUOTE_COMMAND, {"amount": 100}).total == Decimal("113.00")
+
+
+def test_the_registry_says_which_versions_answer_even_when_the_store_moved_on():
+    quote_v1 = RuntimeUseCase("quote", QUOTE)
+    registry = _registry(quote_v1, RuntimeUseCase("checkout", CHECKOUT))
+    assert registry.in_force == ()
+
+    registry.current
+    assert [(one.name, one.version) for one in registry.in_force] == [
+        ("quote", 1),
+        ("checkout", 1),
+    ]
+
+    registry.store.save(RuntimeUseCase("quote", "raise RuntimeError('boom')\n", version=2))
+    with pytest.raises(UseCaseRefused):
+        registry.reload()
+
+    assert registry.in_force[0] == quote_v1

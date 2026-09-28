@@ -130,7 +130,28 @@ themselves if it does not come. `QueryCaching(store, near=timedelta(seconds=5))`
 the process as well, and still checks their tag versions in the store, so an invalidation from
 another replica is seen at once.
 
+## Several contexts, one store — and turning it off
+
+```python
+shared = InMemoryKeyValue()
+billing_cache = QueryCaching(shared, namespace="billing")
+catalog_cache = QueryCaching(shared, namespace="catalog")
+billing_cache.invalidate()  # billing's answers only; catalog's stay
+billing_cache.enabled = False  # every billing query runs its use case, nothing kept
+
+assert [name.rsplit(".", 1)[-1] for name in caching.policies()] == ["QueryBalance"]
+```
+
+A namespace is a cache of its own: its answers and its tags carry it, so letting go of one
+context's answers never touches another's. Contexts that read the same aggregates and must see
+each other's writes share a namespace. `enabled = False` rules the cache out — chasing a wrong
+answer, or in an incident — without recomposing anything; `policies()` says what is cached and how.
+
 ## Providers
+
+`QueryCaching` keeps a Query's answer for its bus, in a store replicas share; the rows of a read
+held for analysis in one process are `QueryCache`, in [data analysis](../data_analysis/README.md).
+
 
 ```python
 from sincpro_framework.testing import KeyValueStoreContract
@@ -173,7 +194,7 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 |---|---|
 | `KeyValueStore` | `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `get` |
 | `InMemoryKeyValue(now=)` / `RedisKeyValue(client, prefix=)` / `MemcachedKeyValue(client, prefix=)` | the providers |
-| `QueryCaching(store, near=, sensitive=)` | `.on(bus, Query, CachePolicy(...))`, `.invalidate(Aggregate)`, `.invalidated_by({Event: [Aggregate]})`, `.depends_on(query)` |
+| `QueryCaching(store, near=, sensitive=, namespace=, enabled=)` | `.on(bus, Query, CachePolicy(...))`, `.invalidate(Aggregate)`, `.invalidated_by({Event: [Aggregate]})`, `.depends_on(query)`, `.policies()` |
 | `invalidate_on_commit(database, caching)` | every aggregate a commit wrote |
 | `KeyValueRuns(store)` | crons on several replicas |
 | `KeyValueStoreContract` | the tests a store of yours inherits |

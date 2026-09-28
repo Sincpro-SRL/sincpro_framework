@@ -339,6 +339,49 @@ assert tax(CommandComputeTax(amount=100), ResponseComputeTax).tax == 16
   ComputeTax)`, the span carries `sincpro.replaces`, and introspection says it (below).
 - The same parameter on `@bus.app_service(...)`.
 
+## Order, replacing, switching off
+
+Several interceptors on one Command run outermost first, in the order every extension point of
+the framework uses (`sincpro_framework.ordering`): `before=` / `after=` by reference, then
+`sequence=` (lower first, 10 when not said), then the order they were registered. A
+replacement runs in the place of the one it names and wraps the same Commands; one switched off
+wraps nothing. Error handlers take the same `replaces=`, `before=`, `after=` and `sequence=`.
+
+```python
+order: list[str] = []
+
+
+def audit(dto: Any, call_next: CallNext[Any]) -> Any:
+    order.append("audit")
+    return call_next(dto)
+
+
+def limits(dto: Any, call_next: CallNext[Any]) -> Any:
+    order.append("limits")
+    return call_next(dto)
+
+
+def limits_by_segment(dto: Any, call_next: CallNext[Any]) -> Any:
+    order.append("limits by segment")
+    return call_next(dto)
+
+
+def trace(dto: Any, call_next: CallNext[Any]) -> Any:
+    order.append("trace")
+    return call_next(dto)
+
+
+extended = new_billing()
+extended.interceptor(CommandCreateInvoice, sequence=50)(audit)
+extended.interceptor(CommandCreateInvoice)(limits)
+extended.interceptor(CommandCreateInvoice, replaces=limits)(limits_by_segment)
+extended.interceptor(CommandCreateInvoice, before=[limits_by_segment])(trace)
+extended.without_interceptor(audit)
+
+assert extended(CommandCreateInvoice(customer_id="acme", total=5), ResponseCreateInvoice)
+assert order == ["trace", "limits by segment"]
+```
+
 ## What runs, answered
 
 ```python

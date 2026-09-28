@@ -117,6 +117,27 @@ asyncio.run(one_topic())
 assert booked == [120, 80, 5]
 ```
 
+## What is guaranteed, and what is not
+
+Read this before relying on an event to keep two contexts in step.
+
+- **Sending.** `put` returns once the broker took the message, so a broker that is down fails
+  the `publish` where it was called. What the broker then promises — kept on disk, replicated —
+  is its configuration (a Kafka topic's replication, a durable RabbitMQ queue).
+- **Between the commit and the publish.** A Feature that saves and then publishes can crash in
+  between: the state is committed and the event is lost. Nothing here closes that window yet —
+  that is an outbox (the event written in the same transaction, sent by a relay).
+- **Receiving.** A handler that raises leaves the message to the broker, which redelivers it as
+  it is configured to: **at least once**, so a handler must be idempotent — the same event twice
+  leaves the same state. A message that can never be handled (a payload of another shape) is
+  redelivered until the broker moves it aside: configure a dead-letter queue on the broker.
+- **Order.** Kafka keeps one key's messages in order — `keyed_by_entity` makes that key the
+  entity; across keys, and on brokers without partitions, there is no order to rely on.
+- **Unknown events.** On a channel several events share, one no bus here registered is skipped:
+  it is another consumer's.
+- `BackgroundQueue`, the in-process default, holds events in memory: they are lost when the
+  process stops before its worker handled them — at most once.
+
 | | |
 |---|---|
 | `FastStreamQueue(broker, channel_of=by_event_name, options_of=no_options)` | a `Queue`; `start()` / `stop()` for synchronous code |

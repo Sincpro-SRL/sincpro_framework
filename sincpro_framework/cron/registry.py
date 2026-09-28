@@ -40,6 +40,7 @@ from sincpro_framework.exceptions import (
     DependencyNotRegistered,
 )
 from sincpro_framework.observability import Observability
+from sincpro_framework.ordering import name_of
 
 
 def _declared_dependencies(cron_class: type[Cron]) -> set[str]:
@@ -72,6 +73,7 @@ class Crons[TDeps]:
         self._deps_locator = DependencyLocator(self._dependencies)
         self._definitions: dict[str, CronDefinition] = {}
         self._instances: dict[str, Cron] = {}
+        self._replaced: dict[type[Cron], type[Cron]] = {}
         self._built = False
 
     def _refuse_when_built(self, what: str) -> None:
@@ -80,6 +82,42 @@ class Crons[TDeps]:
                 f"{what} registered late: '{self.name}' is already built, so it would never be "
                 "used — register it before the gateway starts"
             )
+
+    def _latest(self, cron_class: type[Cron]) -> type[Cron]:
+        """The class in force where `cron_class` was registered — itself, or whatever replaced
+        it last."""
+        while cron_class in self._replaced:
+            cron_class = self._replaced[cron_class]
+        return cron_class
+
+    def _registered(self, cron_class: type[Cron]) -> CronDefinition | None:
+        for definition in self._definitions.values():
+            if definition.cron_class is cron_class:
+                return definition
+        return None
+
+    def _replacing(self, cron_class: type[Cron], replaces: type[Cron], own_name: str) -> str:
+        """The name `cron_class` runs under when it replaces `replaces`.
+
+        1. `replaces` already replaced: it replaces the latest, with a warning.
+        2. Nothing registered to replace: it is a cron of its own, with a warning.
+        3. Final: the replaced cron's name, so its record of runs goes on.
+        """
+        latest = self._latest(replaces)
+        if latest is not replaces:
+            self.logger.warning(
+                f"{name_of(cron_class)} replaces {name_of(replaces)}, which {name_of(latest)} "
+                f"already replaced — it replaces {name_of(latest)}"
+            )
+        replaced = self._registered(latest)
+        if replaced is None:
+            self.logger.warning(
+                f"{name_of(cron_class)} replaces {name_of(latest)}, which is not registered on "
+                f"'{self.name}' — it runs as a cron of its own"
+            )
+            return own_name
+        self._replaced[latest] = cron_class
+        return replaced.name
 
     def add_dependency(self, name: str, dependency: Any) -> None:
         self._refuse_when_built(f"dependency {name}")
@@ -99,19 +137,24 @@ class Crons[TDeps]:
         missed: Missed = Missed.RUN_LATEST,
         missed_window: timedelta = timedelta(days=1),
         stale_after: timedelta = timedelta(hours=1),
+        replaces: type[Cron] | None = None,
     ) -> Callable[[C], C]:
         """Register the decorated class to run at every tick of `expression` in `timezone`,
         or `every` interval. Its name — in runs, logs and status — is `<registry>.<Class>`
         unless `name` is given.
 
         Context: with `overlap=SKIP`, a run still unfinished `stale_after` past its tick is
-        presumed dead — its replica crashed — and stops holding the cron."""
+        presumed dead — its replica crashed — and stops holding the cron. `replaces` runs the
+        decorated class instead of a registered one, under that one's name, so its record of
+        runs goes on; the schedule and the policies are the ones given here."""
         trigger = _trigger(expression, timezone, every)
 
         def register(cron_class: C) -> C:
             self._refuse_when_built(f"cron {cron_class.__name__}")
             full_name = name or f"{self.name}.{cron_class.__name__}"
-            if full_name in self._definitions:
+            if replaces is not None:
+                full_name = self._replacing(cron_class, replaces, full_name)
+            elif full_name in self._definitions:
                 raise ValueError(f"cron {full_name} is already registered on '{self.name}'")
             self._definitions[full_name] = CronDefinition(
                 full_name, cron_class, trigger, overlap, missed, missed_window, stale_after
@@ -119,6 +162,19 @@ class Crons[TDeps]:
             return cron_class
 
         return register
+
+    def without(self, cron_class: type[Cron]) -> None:
+        """Switch a registered cron off — the one in force where it was registered: it never
+        runs, and no status shows it. One not registered is a warning."""
+        self._refuse_when_built(f"switching off {cron_class.__name__}")
+        registered = self._registered(self._latest(cron_class))
+        if registered is None:
+            self.logger.warning(
+                f"{name_of(cron_class)} is switched off, but it is not registered on "
+                f"'{self.name}'"
+            )
+            return
+        del self._definitions[registered.name]
 
     @property
     def deps(self) -> TDeps:

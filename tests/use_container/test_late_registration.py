@@ -11,8 +11,8 @@ import importlib
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.ddd import ContractViolation, Entity, Hook, Hooks, MemoryRepository
-from sincpro_framework.exceptions import BusAlreadyBuilt
+from sincpro_framework.ddd import Entity, Hook, Hooks, MemoryRepository
+from sincpro_framework.exceptions import BusAlreadyBuilt, ExtensionRefused
 
 
 class CommandPing(DataTransferObject):
@@ -71,12 +71,10 @@ def test_a_hook_decorated_after_a_repository_read_the_collection_is_refused():
     hooks = Hooks(None)
     MemoryRepository(hooks=hooks)  # reads the collection
 
-    with pytest.raises(ContractViolation, match="LateAudit.*already read"):
+    with pytest.raises(ExtensionRefused, match="LateAudit.*already read"):
 
-        @hooks
+        @hooks.on(Note)
         class LateAudit(Hook):
-            entity = Note
-
             def before_save(self, record: Note) -> None:
                 return None
 
@@ -90,7 +88,7 @@ def test_loading_a_second_package_still_registers_its_hooks(tmp_path, monkeypatc
         "from sincpro_framework.ddd import Entity, Hook\n"
         "from late_hooks_collection import hooks\n"
         "class Note(Entity):\n    pass\n"
-        "@hooks\nclass Audit(Hook):\n    entity = Note\n"
+        "@hooks.on(Note)\nclass Audit(Hook):\n    def before_save(self, note): ...\n"
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     hooks = importlib.import_module("late_hooks_collection").hooks

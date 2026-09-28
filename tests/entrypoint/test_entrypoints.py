@@ -5,7 +5,9 @@ import json
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from pydantic import Field
+from structlog.testing import capture_logs
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject
@@ -315,3 +317,27 @@ def test_non_json_response_is_coerced_and_keeps_the_other_fields():
     assert result["label"] == "monthly"
     assert isinstance(result["raw_response"], str)
     assert json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    "narrowed",
+    [
+        lambda entrypoint: entrypoint.include(ValidateCard, "ValidateCrad"),
+        lambda entrypoint: entrypoint.exclude("OrchestrateCharges"),
+        lambda entrypoint: entrypoint.wrap("ChargePaymnt", lambda run: run),
+    ],
+    ids=["include", "exclude", "wrap"],
+)
+def test_a_name_that_matches_no_use_case_is_warned_about_and_the_catalog_still_serves(
+    narrowed,
+):
+    """A typo in `exclude` would leave exposed what it meant to hide, and one in `wrap` serve
+    the use case without its wrapper — so it is said loudly, never silently ignored."""
+    entrypoint = narrowed(Entrypoint(_build_framework()))
+
+    with capture_logs() as logs:
+        tools = entrypoint.tools()
+
+    assert tools
+    warnings = [line["event"] for line in logs if line["log_level"] == "warning"]
+    assert any("no Feature or ApplicationService" in one for one in warnings)

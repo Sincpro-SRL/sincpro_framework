@@ -94,9 +94,6 @@ Any_.model_rebuild()
 Not.model_rebuild()
 
 
-EXPRESSION_KEYS = frozenset({"field", "all", "any", "negate"})
-
-
 class Sort(DataTransferObject):
     field: str
     descending: bool = False

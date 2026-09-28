@@ -8,7 +8,7 @@
         after_read · before_save · after_save       the hooks, empty, for a subclass
         before_remove · after_remove
 
-    Repository(database, rules=[Rule(entity=Invoice, before_save=check_totals)])
+    Repository(database, billing_hooks)
 
 **An abstract class rather than a protocol.** It was a `Protocol` and nothing was written
 against it structurally: the two implementations inherit it, and the double a test uses is
@@ -19,24 +19,21 @@ checker compares signatures — `isinstance` against a `@runtime_checkable` prot
 
 **Two ways to put something around a read or a write, for two different kinds of thing.**
 
-A *mixin* overrides the hooks when the behaviour belongs to the store itself and ships with it
-— `ChangeTrackingRepositoryMixin` is the framework's own. A *rule* is injected when the
-behaviour belongs to this deployment and to one aggregate: an invariant, a derived field, a
-policy. Rules never travel through a hook override, so a mixin that forgets `super()` cannot
-switch them off.
+A *mixin* overrides the store's own hooks when the behaviour belongs to the store itself and
+ships with it — `ChangeTrackingRepositoryMixin` is the framework's own. A *`Hook`* class, in the
+bounded context's `Hooks`, is given when the behaviour belongs to this deployment and to one
+aggregate: an invariant, a derived field, a policy. The two never travel through each other, so a
+mixin that forgets `super()` cannot switch a project's hooks off.
 
-**A rule is a domain service: a plain function over one aggregate.** It runs inside the write,
-inside the transaction. It does not publish, it does not call a bus, and it does not write —
-writing from inside a hook is refused, because the alternative is a loop nobody sees until
-production. Anything that needs several aggregates, or makes a decision, is a use case: a
-Feature, not a rule.
+**A hook runs inside the write, inside the transaction.** It validates, computes or refuses, and
+it has what a Feature of its bus has — other repositories, the bus, the request. One thing is
+refused: a write back through the repository that fired it, directly or through a Command,
+because the alternative is a loop nobody sees until production.
 """
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Sequence
 from contextvars import ContextVar
-from copy import copy
-from threading import Lock
 from typing import Any, overload
 
 from sincpro_framework.ddd.criteria import Bucket, Criteria
@@ -47,14 +44,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
 )
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
-from sincpro_framework.ddd.repositories.hooks import (
-    MOMENTS,
-    Hook,
-    Hooks,
-    Rule,
-    _MomentOfHook,
-    callbacks_of,
-)
+from sincpro_framework.ddd.repositories.hooks import Hook, HookChain, Hooks
 
 
 def records_of(given: Any) -> list[Any]:
@@ -125,17 +115,6 @@ def _is_hook_class(given: Any) -> bool:
     return isinstance(given, type) and issubclass(given, Hook)
 
 
-def answers(declared: type, name: str) -> bool:
-    """Whether instances of this class really have that method.
-
-    Read off the MRO rather than with `getattr`, which for a dunder on a *class* finds the
-    metaclass's: `getattr(AnyClass, "__call__")` is always something, because every class is
-    callable. Asking that way, a hook that implements nothing looked like it implemented
-    `__call__` and was refused much later, by a message about a missing dependency.
-    """
-    return any(name in base.__dict__ for base in declared.__mro__)
-
-
 def refuse_locking(for_update: bool) -> None:
     """Refuses a row lock in a store that has no unit of work to hold it for.
 
@@ -170,184 +149,53 @@ def refuse_unarchivable(records: list[Any]) -> None:
 class Repository(ABC):
     """What a use case can be written against, whatever is underneath."""
 
-    def __init__(
-        self,
-        rules: Sequence[Rule] | None = None,
-        hooks: Iterable["Hook | type[Hook]"] | None = None,
-        deps: Any = None,
-        guard: "Repository | None" = None,
-    ) -> None:
-        """`deps` is what a `Hook` in these rules resolves its attributes against — normally
-        `bus.deps`, the read-only locator over everything `add_dependency` registered. A rule
-        written as a plain function needs none of it.
-
-        `guard` is the repository this one counts as, for refusing a write from inside a hook.
-        A unit of work and a narrowing are the same store seen differently, so they name the
-        one they came from; left out, a repository is its own.
-        """
-        self._deps = deps
+    def __init__(self, hooks: Hooks | None = None, guard: "Repository | None" = None) -> None:
+        """`hooks` is the bounded context's collection; `guard` is the repository this one is a
+        view of — a unit of work, a narrowing — which runs the chain of the one it came from
+        and counts as it when a hook writes."""
         self._guard: "Repository" = guard if guard is not None else self
-        self._collection = hooks if isinstance(hooks, Hooks) else None
-        self._instances: dict[int, Hook] = {}
-        self._building = Lock()
-        rules = list(rules or ()) + [self._as_rule(one) for one in (hooks or ())]
-        # Prepared once, into new rules rather than over the ones handed in: a caller's list is
-        # theirs, and a `Hook` bound in place would follow it into another repository.
-        self._rules: tuple[Rule, ...] = tuple(
-            rule.model_copy(
-                update={
-                    moment: [
-                        self._prepared(callback, moment)
-                        for callback in callbacks_of(getattr(rule, moment))
-                    ]
-                    for moment in MOMENTS
-                }
-            )
-            for rule in rules
-        )
-
-    def _as_rule(self, hook: "Hook | type[Hook]") -> Rule:
-        """A hook that declares `entity` is a rule already: its moments are the methods it
-        implements. Written this way there is no plumbing to repeat — the class says what it
-        is for and what it does, and nothing else has to say it again.
-        """
-        declared = hook if isinstance(hook, type) else type(hook)
-        entity = getattr(declared, "entity", object)
-        # Read off the class, never the instance: asking an instance would go through
-        # `__getattr__` and look for a dependency by that name. And nothing is built here —
-        # see `_moment_of`.
-        moments = {
-            moment: _MomentOfHook(hook, moment)
-            for moment in MOMENTS
-            if getattr(declared, moment, None) is not None
-        }
-        if not moments:
-            raise ContractViolation(
-                f"{declared.__name__} implements none of {', '.join(MOMENTS)}; "
-                "a hook that does nothing at any moment would never run"
-            )
-        return Rule(entity=entity, **moments)
-
-    def _prepared(self, callback: Any, moment: str) -> Any:
-        """Every hook becomes a moment this repository owns; a plain function is left exactly
-        as it came.
-
-        **The slot it was written in says which method to call.** A hook put in `before_save=`
-        that implements `before_save` is called there; one that implements only `__call__` is
-        called as that, which is how a hook written for a single job reads. Asking for
-        `__call__` regardless made the first kind fail at its first fire, looking for a
-        dependency named `__call__`.
-
-        **A moment handed in is rebuilt rather than reused.** `context()` and `narrowed()` pass
-        the rules they were prepared from, and binding those in place would reach back into the
-        repository they came from — the thing the copy above exists to prevent.
-        """
-        if isinstance(callback, _MomentOfHook):
-            return _MomentOfHook(callback.hook, callback.moment).bind(self)
-        declared = callback if isinstance(callback, type) else type(callback)
-        if isinstance(declared, type) and issubclass(declared, Hook):
-            named = moment if answers(declared, moment) else "__call__"
-            if not answers(declared, named):
-                raise ContractViolation(
-                    f"{declared.__name__} implements neither {moment} nor __call__, so "
-                    "nothing here could call it"
-                )
-            return _MomentOfHook(callback, named).bind(self)
-        return callback
-
-    def _deps_now(self) -> Any:
-        """What a hook resolves names against, read at the moment it fires.
-
-        A collection carries its own; anything handed in loose falls back to this repository's,
-        and the nearer one wins. **Asked now rather than copied at construction**, because
-        `Hooks().inject(bus.deps)` is normally called after the repository exists — the bus
-        holding the dependencies is usually built around the store, not before it.
-        """
-        if self._collection is not None and self._collection.deps is not None:
-            return self._collection.deps
-        return self._deps
-
-    def _hook_instance(self, moment: "_MomentOfHook") -> "Hook":
-        """The one instance of this hook that belongs to this store, built on first fire.
-
-        Kept on the guard, which is the store rather than the object: a unit of work and a
-        narrowing are the same store seen differently, so a hook is not rebuilt for each block.
-        A hook handed in already built is copied, so the caller's object is never bound behind
-        their back and two stores never share one.
-        """
-        owner = self._guard
-        key = id(moment.hook)
-        built = owner._instances.get(key)
-        if built is not None:
-            return built
-        with owner._building:
-            # Asked again inside the lock: two threads reaching a hook's first fire together
-            # would otherwise each build one, and a hook whose `__init__` takes a connection or
-            # a handle would leak the copy that lost.
-            built = owner._instances.get(key)
-            if built is None:
-                built = moment.hook() if isinstance(moment.hook, type) else copy(moment.hook)
-                owner._instances[key] = built.bind(owner._deps_now())
-            return built
+        self._chain: HookChain = guard._chain if guard is not None else HookChain(hooks)
 
     def _read(self, record: Any) -> Any:
-        """The rules that named this aggregate, then the store's own hook — which closes the
-        moment, so what it records is the record as everything else left it."""
+        """The chain's `after_read`, then the store's own hook — which closes the moment, so
+        what it records is the record as everything else left it."""
         if record is None:
             return None
         with self._running_hooks():
-            for rule in self._rules_for(record):
-                for callback in callbacks_of(rule.after_read):
-                    answered = callback(record)
-                    record = record if answered is None else answered
+            record = self._chain.read(record)
             answered = self.after_read(record)
             record = record if answered is None else answered
         return record
 
     def _fire(self, moment: str, record: Any) -> None:
-        """Every rule for this aggregate, and then the store's own hook.
+        """The chain's hooks for this aggregate, and then the store's own hook.
 
         **The store's hook is last on purpose.** It is where the framework's own bookkeeping
         lives — change tracking takes the diff and moves the baseline there — so it has to see
-        the aggregate as the project's rules left it. Run first, a field a rule computes lands
+        the aggregate as the project's hooks left it. Run first, a field a hook computes lands
         on the far side of the baseline: missed this time, and reported next time with a value
         the aggregate no longer holds. An audit that records a fact that never happened is
         worse than one that records nothing.
         """
         with self._running_hooks():
-            for rule in self._rules_for(record):
-                for callback in callbacks_of(getattr(rule, moment)):
-                    callback(record)
+            self._chain.fire(moment, record)
             getattr(self, moment)(record)
 
     def _searched(self, target: type, collection: Any) -> Any:
-        """`after_search`, once for the page — the rules that named this aggregate, then the
+        """`after_search`, once for the page — the chain's hooks for this aggregate, then the
         store's own hook, the same order everything else runs in."""
         if collection is None:
             return None
         model, _holder = model_and_collection(target)
         with self._running_hooks():
-            for rule in self._rules:
-                if not (isinstance(model, type) and issubclass(model, rule.entity)):
-                    continue
-                for callback in callbacks_of(rule.after_search):
-                    answered = callback(collection)
-                    collection = collection if answered is None else answered
+            if isinstance(model, type):
+                collection = self._chain.searched(model, collection)
             answered = self.after_search(collection)
             collection = collection if answered is None else answered
         return collection
 
-    def _rules_for(self, record: Any) -> tuple[Rule, ...]:
-        return tuple(one for one in self._rules if isinstance(record, one.entity))
-
     def _running_hooks(self) -> "_Hooks":
         return _Hooks(self)
-
-    def _before_save(self, record: Any) -> None:
-        self._fire("before_save", record)
-
-    def _after_save(self, record: Any) -> None:
-        self._fire("after_save", record)
 
     def _before_writes(self, records: list[Any]) -> list[bool]:
         """Every before-moment for a batch, and what it worked out about each record.

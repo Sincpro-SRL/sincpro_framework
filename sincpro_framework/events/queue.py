@@ -67,7 +67,8 @@ class SyncQueue:
     def subscriber(self) -> Subscriber:
         """The subscriber, built on first use when a function was handed over."""
         if self._built is None:
-            self._built = self._given()  # type: ignore[operator]
+            given = self._given
+            self._built = given if isinstance(given, Subscriber) else given()
         return self._built
 
     def put(self, event: DomainEvent) -> list[Any]:

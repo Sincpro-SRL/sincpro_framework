@@ -360,34 +360,16 @@ answered by any function are declared once beside the tables with `Relation` —
 
 ## 8. Hooks
 
-A hook runs **inside the write**, on one aggregate: it validates, computes or refuses. It does
-not publish, call a bus or write — a write from inside a hook is refused rather than left to
-recurse.
+A hook runs **inside the write**, on one aggregate: it validates, computes or refuses. It has
+what a Feature of its bus has — other repositories, `self.bus`, `self.context`; only a write
+back through the repository that fired it is refused, rather than left to recurse.
 
-**A plain function** is a `Rule`, for a check that needs nothing:
-
-```python
-from sincpro_framework.ddd import ContractViolation, Rule
-
-
-def total_is_positive(invoice: Invoice) -> None:
-    if invoice.total <= 0:
-        raise ContractViolation(f"invoice {invoice.number} has no total")
-
-
-checked = Repository(database, rules=[Rule(entity=Invoice, before_save=total_is_positive)])
-try:
-    checked.save(Invoice(number="F-006", customer_id=ana.id, total=0))
-    raise AssertionError("the rule should have refused it")
-except ContractViolation:
-    pass
-```
-
-**A `Hook` class**, when the rule has a name worth keeping or needs a dependency. It reads its
-dependencies as attributes, like a Feature, resolved from the bus when it runs:
+A hook is a class, registered for its aggregate with `@hooks.on(...)`, the way a Feature is
+for its Command. Its moments are the methods it implements; it reads the bus's dependencies as
+attributes, like a Feature, and `self.context` is the request in play:
 
 ```python
-from sincpro_framework.ddd import Hook, Hooks
+from sincpro_framework.ddd import ContractViolation, Hook, Hooks
 
 
 class Numbering:
@@ -402,9 +384,15 @@ class Numbering:
 invoicing_hooks = Hooks(None)
 
 
-@invoicing_hooks
+@invoicing_hooks.on(Invoice)
+class TotalIsPositive(Hook):
+    def before_save(self, invoice: Invoice) -> None:
+        if invoice.total <= 0:
+            raise ContractViolation(f"invoice {invoice.number} has no total")
+
+
+@invoicing_hooks.on(Invoice, after=(TotalIsPositive,))
 class NumberNewInvoices(Hook):
-    entity = Invoice
     numbering: Numbering
 
     def before_create(self, invoice: Invoice) -> None:
@@ -414,11 +402,17 @@ class NumberNewInvoices(Hook):
 
 accounting = UseFramework("accounting", log_after_execution=False)
 accounting.add_dependency("numbering", Numbering())
-numbered = Repository(database, invoicing_hooks, deps=accounting.deps)
+invoicing_hooks.inject(accounting)
+numbered = Repository(database, invoicing_hooks)
 
 fresh = Invoice(customer_id=ana.id, total=30)
 numbered.save(fresh)
 assert fresh.number == "F-101"
+try:
+    numbered.save(Invoice(number="F-006", customer_id=ana.id, total=0))
+    raise AssertionError("the hook should have refused it")
+except ContractViolation:
+    pass
 ```
 
 In a project the collection lives in a package — `billing_hooks = Hooks()` in
@@ -438,9 +432,9 @@ The moments, in the order they fire:
 | a record read | — | `after_read` |
 | a page answered | — | `after_search` |
 
-`entity` selects by `isinstance`, so a hook on a base class covers its subclasses, and a hook
-that sets no `entity` runs for every aggregate — an audit, a log. More in
-[hooks.md](hooks.md).
+`on(Invoice)` selects by `isinstance`, so a hook on a base class covers its subclasses, and
+`on(object)` runs for every aggregate — an audit, a log. Replacing, extending, switching off and
+ordering hooks — and why they work the way they do — are in [hooks.md](hooks.md).
 
 ## 9. Domain events
 
@@ -604,15 +598,20 @@ Ordering by `id` is ordering by time: an id is a UUID v7. Rebuilding on every re
 scale, so the answer is usually also kept as a projection — an ordinary aggregate saved beside
 the facts. The costs: a fact is forever, so its shape is versioned in its `name` (`bank.v1.…`)
 and a v2 is a new class; a correction is another fact; and append-only is a discipline — make
-it a rule if it must be enforced:
+it a hook if it must be enforced:
 
 ```python
-def written_once(fact: DomainEvent) -> None:
-    if not fact.is_new:
-        raise ContractViolation(f"{fact.name} is written once and never replaced")
+append_only = Hooks(None)
 
 
-facts_only = Repository(database, rules=[Rule(entity=DomainEvent, before_save=written_once)])
+@append_only.on(DomainEvent)
+class WrittenOnce(Hook):
+    def before_save(self, fact: DomainEvent) -> None:
+        if not fact.is_new:
+            raise ContractViolation(f"{fact.name} is written once and never replaced")
+
+
+facts_only = Repository(database, append_only)
 
 correction = MoneyDeposited(account_id="acc-2", amount=10)
 facts_only.save(correction)

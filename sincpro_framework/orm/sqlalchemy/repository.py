@@ -16,15 +16,18 @@ rules. There is no update or delete by criteria.
 """
 
 import types
-from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from time import sleep
 from typing import Any, cast, overload
 
-from sqlalchemy import Select, distinct, func, literal, or_, select
+from sqlalchemy import Select, Table, distinct, func
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.orm.exc import StaleDataError
+from sqlalchemy.schema import sort_tables
 
 from sincpro_framework.ddd.criteria import (
     Bucket,
@@ -59,7 +62,7 @@ from sincpro_framework.ddd.exceptions import (
     StaleAggregate,
 )
 from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
-from sincpro_framework.ddd.repositories.hooks import Rule
+from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.repository import Repository as BaseRepository
 from sincpro_framework.ddd.repositories.repository import records_of, refuse_unarchivable
 from sincpro_framework.orm.sqlalchemy import sql_translator as sql
@@ -192,6 +195,22 @@ def _named(records: list[Any]) -> str:
     return f"one of {len(records)} records ({', '.join(kinds)})"
 
 
+def _by_dependency(records: list[Any]) -> list[list[Any]]:
+    """The records grouped by table, each table before the ones whose foreign keys point at it.
+
+    Context: SQLAlchemy orders a flush by the relationships a mapping declares, and the
+    framework's relations are its own, so without this one `save` of a zone and an address
+    wrote them in class-name order — the address first, an orphan Postgres refuses. One table
+    is one group: the common save is still one flush.
+    """
+    by_table: dict[Table, list[Any]] = {}
+    for one in records:
+        by_table.setdefault(sa_inspect(one).mapper.local_table, []).append(one)
+    if len(by_table) == 1:
+        return list(by_table.values())
+    return [by_table[table] for table in sort_tables(by_table)]
+
+
 class Repository(BaseRepository):
     """One database, read and written through one object. Implements `ddd.Repository` and
     answers more: a use case takes this instance, the protocol holds it to the minimum.
@@ -204,17 +223,15 @@ class Repository(BaseRepository):
     def __init__(
         self,
         database: Database,
-        hooks: Iterable[Any] | None = None,
-        deps: Any = None,
+        hooks: Hooks | None = None,
         session: Session | None = None,
         scope: Criteria | None = None,
-        rules: Sequence[Rule] | None = None,
         guard: "BaseRepository | None" = None,
     ) -> None:
-        """`hooks` second so a wiring reads as what it is — `Repository(database, billing_hooks)`
-        — and `deps` beside it, since a hook that resolves dependencies needs both. The rest
-        are what a unit of work and a narrowing carry, named when they are passed."""
-        super().__init__(rules, hooks, deps, guard)
+        """`hooks` second, so a wiring reads as what it is — `Repository(database, billing_hooks)`.
+        The rest are what a unit of work and a narrowing carry: its session, its scope, and the
+        repository they are a view of."""
+        super().__init__(hooks, guard)
         self.database = database
         self._bound = session
         self._scope = scope
@@ -270,8 +287,6 @@ class Repository(BaseRepository):
             self.database,
             session=self._bound,
             scope=self._scope.merged_with(scope) if self._scope is not None else scope,
-            rules=self._rules,
-            deps=self._deps,
             guard=self._guard,
         )
 
@@ -491,9 +506,8 @@ class Repository(BaseRepository):
             if where_measures is not None:
                 statement = statement.having(where_measures)
             statement = statement.order_by(*self._group_order(grouping, keys, measures))
-            if how_deep == 1 and grouping.paged:
-                page = grouping.pagination
-                assert page is not None
+            page = grouping.pagination
+            if how_deep == 1 and page is not None:
                 statement = statement.limit(page.limit).offset(page.skipped())
             rows = session.execute(statement).all()
             rows_by_level.append(rows)
@@ -754,8 +768,6 @@ class Repository(BaseRepository):
                 self.database,
                 session=session,
                 scope=self._scope,
-                rules=self._rules,
-                deps=self._deps,
                 guard=self._guard,
             )
             # A relation touched inside the block resolves itself through this repository.
@@ -1516,8 +1528,9 @@ class Repository(BaseRepository):
             self._refuse_outside(one)
         newness = self._before_writes(records)
         with self._session() as session:
-            session.add_all(records)
-            self._written(session, records)
+            for batch in _by_dependency(records):
+                session.add_all(batch)
+                self._written(session, batch)
         self._after_writes(records, newness)
 
     def remove(self, record: Any) -> None:

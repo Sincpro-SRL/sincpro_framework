@@ -19,6 +19,7 @@ from threading import BoundedSemaphore, Lock, Thread, current_thread
 from sincpro_framework.cron.adapters import InMemoryRuns, InProcessClock
 from sincpro_framework.cron.domain import (
     Clock,
+    Cron,
     CronDefinition,
     CronRuns,
     Missed,
@@ -28,6 +29,7 @@ from sincpro_framework.cron.domain import (
     Tick,
 )
 from sincpro_framework.cron.registry import Crons
+from sincpro_framework.ordering import name_of, refused
 from sincpro_framework.sincpro_logger import logger
 
 LATE_AFTER = timedelta(minutes=1)
@@ -106,8 +108,8 @@ class CronGateway:
         self._busy: set[str] = set()
         self._stopping = False
 
-    def _fire(self, entry: _Entry, tick: datetime) -> None:
-        """1. Claim the tick; another replica that claimed it first runs it.
+    def _fire(self, entry: _Entry, tick: datetime) -> RunOutcome:
+        """1. Claim the tick; another replica that claimed it first runs it — skipped here.
         2. A run of an earlier tick still going on another replica and `overlap=SKIP`: record
            the tick as skipped.
         3. Final: run the cron and record the outcome.
@@ -117,12 +119,13 @@ class CronGateway:
             definition.name, since=tick - definition.stale_after
         )
         if not self.runs.claim(definition.name, tick):
-            return
+            return RunOutcome.SKIPPED
         if overlapping:
             self.runs.finish(definition.name, tick, "", RunOutcome.SKIPPED)
-            return
+            return RunOutcome.SKIPPED
         outcome = entry.registry.execute(definition, Tick(definition.name, tick, self.runs))
         self.runs.finish(definition.name, tick, "", outcome)
+        return outcome
 
     def _fire_in_order(self, entry: _Entry, ticks: list[datetime]) -> None:
         """Context: `execute` never raises, so what fails here is recording the run — the
@@ -213,6 +216,22 @@ class CronGateway:
         with self._lock:
             self._stopping = True
         self.wait()
+
+    def _entry_of(self, cron_class: type[Cron]) -> _Entry:
+        for entry in self._entries:
+            if entry.definition.cron_class is cron_class:
+                return entry
+        raise refused(
+            f"{name_of(cron_class)} is not a cron this gateway runs — its registry switched it "
+            "off, replaced it, or is not one of the gateway's"
+        )
+
+    def run_now(self, cron_class: type[Cron]) -> RunOutcome:
+        """Run a cron at once, in this thread, for a tick at the clock's now — Odoo's "Run
+        Manually". Context: it is claimed and recorded like any tick, so it runs once across
+        replicas and counts as the cron's latest run: a scheduled tick missed before it is not
+        run again after a restart, as `RUN_LATEST` would decide."""
+        return self._fire(self._entry_of(cron_class), self.clock.now())
 
     def plan(self, until: datetime) -> list[tuple[str, datetime]]:
         now = self.clock.now()

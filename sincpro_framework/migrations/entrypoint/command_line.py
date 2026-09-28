@@ -5,6 +5,7 @@
         raise SystemExit(command_line(migrations))
 
     migrate:      python -m myapp.entrypoints.migrations upgrade
+    db-plan:      python -m myapp.entrypoints.migrations upgrade --plan
     db-status:    python -m myapp.entrypoints.migrations status
     db-revision:  python -m myapp.entrypoints.migrations revision $(ctx) $(store) -m "$(m)"
     db-down:      python -m myapp.entrypoints.migrations downgrade --to $(to)
@@ -19,7 +20,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from sincpro_framework.migrations.domain import MigrationFailed, MigrationRefused
+from sincpro_framework.migrations.domain import MigrationFailed, MigrationRefused, Step
 from sincpro_framework.migrations.orchestrator import Migrations
 
 
@@ -29,8 +30,14 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("status", help="where every store stands, and the timeline")
     upgrade = commands.add_parser("upgrade", help="apply pending steps, in timeline order")
     upgrade.add_argument("--to", help="stop after this step id")
+    upgrade.add_argument(
+        "--plan", action="store_true", help="say what would run; run nothing"
+    )
     downgrade = commands.add_parser("downgrade", help="put the whole system back to a step")
     downgrade.add_argument("--to", required=True, help="a step id, or 'base' for nothing")
+    downgrade.add_argument(
+        "--plan", action="store_true", help="say what would run; run nothing"
+    )
     revision = commands.add_parser("revision", help="a new step at the end of a chain")
     revision.add_argument("context")
     revision.add_argument("store")
@@ -64,12 +71,22 @@ def _print_status(migrations: Migrations) -> None:
         print(f"  {mark} {step.id}  {step.chain_key:<24} {step.message}")
 
 
+def _print_plan(verb: str, steps: Sequence[Step]) -> None:
+    print(f"would {verb} {len(steps)} step(s)")
+    for step in steps:
+        print(f"  {step.id}  {step.chain_key:<24} {step.message}")
+
+
 def _dispatch(migrations: Migrations, arguments: argparse.Namespace) -> int:
     if arguments.command == "status":
         _print_status(migrations)
+    elif arguments.command == "upgrade" and arguments.plan:
+        _print_plan("apply", migrations.upgrade_plan(to=arguments.to))
     elif arguments.command == "upgrade":
         applied = migrations.upgrade(to=arguments.to)
         print(f"applied {len(applied)} step(s)")
+    elif arguments.command == "downgrade" and arguments.plan:
+        _print_plan("revert", migrations.downgrade_plan(to=arguments.to))
     elif arguments.command == "downgrade":
         reverted = migrations.downgrade(to=arguments.to)
         print(f"reverted {len(reverted)} step(s)")

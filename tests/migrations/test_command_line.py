@@ -99,3 +99,18 @@ def test_adopt_exits_with_one_and_says_why_when_it_refuses(tmp_path, capsys):
 
     assert command_line(migrations, ["adopt", "common", "main"]) == 1
     assert "resolve common main" in capsys.readouterr().err
+
+
+def test_plan_prints_what_would_run_and_runs_nothing(tmp_path, capsys):
+    migrations = _migrations(tmp_path)
+    migrations.revision("common", "main", "create partner")
+
+    assert command_line(migrations, ["upgrade", "--plan"]) == 0
+    out = capsys.readouterr().out
+    assert "would apply 1 step(s)" in out and "create partner" in out
+    assert migrations.upgrade_plan() != []
+
+    migrations.upgrade()
+    assert command_line(migrations, ["downgrade", "--to", "base", "--plan"]) == 0
+    assert "would revert 1 step(s)" in capsys.readouterr().out
+    assert migrations.upgrade_plan() == []

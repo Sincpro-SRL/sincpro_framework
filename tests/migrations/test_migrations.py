@@ -426,3 +426,46 @@ def test_adopt_is_refused_for_a_chain_without_steps(tmp_path):
 
     with pytest.raises(MigrationRefused, match="baseline"):
         migrations.adopt("common", "main")
+
+
+# ---------------------------------------------------------------------------------------------
+# The plan: what a command would run, before it runs
+# ---------------------------------------------------------------------------------------------
+
+
+def test_the_upgrade_plan_is_what_upgrade_would_run_and_nothing_runs(tmp_path):
+    migrations, engine = _project(tmp_path)
+    partner = migrations.revision("common", "main", "create partner")
+    migrations.revision("billing", "main", "create invoice", requires=[partner.key])
+    migrations.revision("common", "main", "add tax id")
+
+    planned = migrations.upgrade_plan(to=partner.id)
+
+    assert _keys(planned) == ["common:create partner"]
+    assert engine.applied == []
+    assert _keys(migrations.upgrade_plan()) == _keys(migrations.upgrade())
+
+
+def test_the_downgrade_plan_is_what_downgrade_would_revert_newest_first(tmp_path):
+    migrations, engine = _project(tmp_path)
+    partner = migrations.revision("common", "main", "create partner")
+    migrations.revision("billing", "main", "create invoice", requires=[partner.key])
+    migrations.revision("common", "main", "add tax id")
+    migrations.upgrade()
+    ran = list(engine.applied)
+
+    planned = migrations.downgrade_plan(to=partner.id)
+
+    assert _keys(planned) == ["common:add tax id", "billing:create invoice"]
+    assert engine.applied == ran
+    assert _keys(planned) == _keys(migrations.downgrade(to=partner.id))
+
+
+def test_the_plan_refuses_what_the_command_would_refuse(tmp_path):
+    migrations, _ = _project(tmp_path)
+    migrations.revision("common", "main", "create partner")
+    migrations.revision("common", "main", "drop legacy", irreversible=True)
+    migrations.upgrade()
+
+    with pytest.raises(MigrationRefused, match="irreversible"):
+        migrations.downgrade_plan(to="base")

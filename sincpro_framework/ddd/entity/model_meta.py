@@ -15,6 +15,7 @@ knows the ORM.
 import dataclasses
 import sys
 import types
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum, StrEnum
@@ -59,6 +60,7 @@ class FieldType(StrEnum):
     MANY2ONE = "many2one"
     ONE2MANY = "one2many"
     MANY2MANY = "many2many"
+    UUID = "uuid"
     UNKNOWN = "unknown"
 
     @property
@@ -103,6 +105,8 @@ class FieldType(StrEnum):
                     return datetime.fromisoformat(raw)
                 case FieldType.DATE:
                     return date.fromisoformat(raw)
+                case FieldType.UUID:
+                    return uuid.UUID(raw)
                 case _:
                     return raw
         except ValueError as error:
@@ -133,6 +137,7 @@ OPERATORS_BY_TYPE: dict[FieldType, tuple[Operator, ...]] = {
         Operator.NE,
     ),
     FieldType.TRANSLATED: (Operator.LIKE,),
+    FieldType.UUID: (Operator.EQ, Operator.NE, Operator.IN, Operator.NOT_IN),
     FieldType.EMBEDDED: (),
     FieldType.MANY2ONE: (),
     FieldType.ONE2MANY: (),
@@ -150,6 +155,7 @@ LOGICAL_TYPES: dict[Any, FieldType] = {
     bool: FieldType.BOOLEAN,
     datetime: FieldType.DATETIME,
     date: FieldType.DATE,
+    uuid.UUID: FieldType.UUID,
 }
 
 
@@ -267,6 +273,10 @@ class FieldMeta(DataTransferObject):
     choices: list[Any] = []
     """The values an enum field may hold — what a select is built from."""
 
+    exact: bool = False
+    """A decimal: a condition's value is read as a `Decimal` and compared exactly, so `"0.1"`
+    finds `Decimal("0.10")` — a float would not."""
+
     label: Translated = {}
     """This field's own name, for a screen — `field(metadata={"label": {"default": "Title"}})`
     on the dataclass. Empty when the field declared none."""
@@ -364,6 +374,7 @@ class FieldMeta(DataTransferObject):
         logical: FieldType,
         nullable: bool,
         members: list[Any] | None = None,
+        exact: bool = False,
     ) -> "FieldMeta":
         """The definition of one column, from what the reader knows about it.
 
@@ -381,6 +392,7 @@ class FieldMeta(DataTransferObject):
             type=logical,
             nullable=nullable,
             choices=list(members or []),
+            exact=exact,
             sortable=not nullable and logical not in unsortable,
             ops=OPERATORS_BY_TYPE[logical] + ((IS_NULL,) if nullable else ()),
         )
@@ -394,6 +406,14 @@ class FieldMeta(DataTransferObject):
         False
         """
         return operator in self.ops
+
+    def _value(self, raw: Any) -> Any:
+        if self.exact and isinstance(raw, (str, int, float)) and not isinstance(raw, bool):
+            try:
+                return Decimal(str(raw))
+            except ArithmeticError as error:
+                raise Unreadable(f"{raw!r} is not a decimal") from error
+        return self.type.read(raw)
 
     def read(self, condition: Condition) -> Condition:
         """Context: the same condition with its value in the type this column compares against.
@@ -417,17 +437,13 @@ class FieldMeta(DataTransferObject):
                 raise Unreadable(
                     f"'between' compares against two bounds; got {condition.value!r}"
                 )
-            return condition.model_copy(
-                update={"value": [self.type.read(one) for one in given]}
-            )
+            return condition.model_copy(update={"value": [self._value(one) for one in given]})
 
         if condition.operator in MULTI_VALUED:
             given = (
                 condition.value if isinstance(condition.value, list) else [condition.value]
             )
-            return condition.model_copy(
-                update={"value": [self.type.read(one) for one in given]}
-            )
+            return condition.model_copy(update={"value": [self._value(one) for one in given]})
 
         if self.type is FieldType.TEXT_LIST:
             # `contains` asks about one member, so its value is a member's type; `eq` and `ne`
@@ -438,7 +454,7 @@ class FieldMeta(DataTransferObject):
                 update={"value": FieldType.TEXT.read(condition.value)}
             )
 
-        return condition.model_copy(update={"value": self.type.read(condition.value)})
+        return condition.model_copy(update={"value": self._value(condition.value)})
 
 
 class Meta(DataTransferObject):
@@ -677,6 +693,7 @@ def describe_class(declared: type, identity: str = "") -> "Meta":
                 logical_type(annotation),
                 annotation != without_optional(annotation),
                 members_of(annotation),
+                without_optional(annotation) is Decimal,
             )
             for field_name, annotation in annotations.items()
             if related_class(annotation)[0] is None

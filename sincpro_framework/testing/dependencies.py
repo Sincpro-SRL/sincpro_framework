@@ -1,4 +1,5 @@
-"""Replace a registered dependency with a double for the length of a test.
+"""Replace a registered dependency with a double for the length of a test — and find the ones a
+handler declares that nobody registered.
 
 Context: a Feature is built once per ``UseFramework`` and reused by every execution, and it
 receives its dependencies when the bus is built. Registering a second value under the same
@@ -6,18 +7,21 @@ name raises, and changing ``dynamic_dep_registry`` after the build reaches nothi
 that wants the production wiring with one adapter swapped had no supported way to ask for it.
 """
 
+import inspect
 from contextlib import contextmanager
 from typing import Any, Generator
 
-from ..exceptions import DependencyNotRegistered
+from ..exceptions import DependencyNotRegistered, SincproFrameworkNotBuilt
 from ..use_bus import UseFramework
 
 
 def _built_handlers(framework: UseFramework) -> list[Any]:
     framework.build_root_bus()
-    assert framework.bus is not None
-    features = framework.bus.feature_bus.feature_registry.values()
-    app_services = framework.bus.app_service_bus.app_service_registry.values()
+    bus = framework.bus
+    if bus is None:
+        raise SincproFrameworkNotBuilt(f"'{framework.name}' was built, but it has no bus")
+    features = bus.feature_bus.feature_registry.values()
+    app_services = bus.app_service_bus.app_service_registry.values()
     return [*features, *app_services]
 
 
@@ -64,3 +68,35 @@ def override_dependencies(
         yield framework
     finally:
         _apply(previous)
+
+
+def _declared(handler: type) -> set[str]:
+    """The names a handler class and the project's classes it inherits annotate — never the
+    framework's own, which the bus gives every handler itself."""
+    names: set[str] = set()
+    for klass in handler.__mro__:
+        if klass is object or klass.__module__.split(".")[0] == "sincpro_framework":
+            continue
+        names.update(inspect.get_annotations(klass))
+    return names
+
+
+def unregistered_dependencies(framework: UseFramework) -> dict[str, tuple[str, ...]]:
+    """Each handler that declares a dependency nobody registered on ``framework`` → those
+    names, sorted — empty when the wiring is whole.
+
+        assert unregistered_dependencies(billing) == {}
+
+    Context: a handler reads its dependencies as attributes, typed on a `DependencyContextType`
+    for the IDE, and one that was declared but never registered fails only when the Feature
+    runs. Spring and NestJS refuse to start instead; here it is one assertion in the project's
+    suite, so a service that registers some dependencies late keeps starting as it does.
+    """
+    registered = set(framework.dynamic_dep_registry)
+    missing: dict[str, tuple[str, ...]] = {}
+    for handler in _built_handlers(framework):
+        declared = type(handler)
+        absent = sorted(_declared(declared) - registered)
+        if absent:
+            missing[f"{declared.__module__}.{declared.__qualname__}"] = tuple(absent)
+    return missing

@@ -266,14 +266,16 @@ repository.get(RowLineage, ("fp1", "a"))
 
 ### A fact that is written once
 
-Append-only is a rule, not a mode the store has:
+Append-only is a hook, not a mode the store has:
 
 ```python
-def written_once(record: Claim) -> None:
-    if not record.is_new:
-        raise ContractViolation(f"{type(record).__name__} is written once and never replaced")
+@claims_hooks.on(Claim)
+class WrittenOnce(Hook):
+    def before_save(self, record: Claim) -> None:
+        if not record.is_new:
+            raise ContractViolation(f"{type(record).__name__} is written once and never replaced")
 
-Repository(database, rules=[Rule(entity=Claim, before_save=written_once)])
+Repository(database, claims_hooks)
 ```
 
 A second recording of the same fact is either identical or a contradiction, and replacing it

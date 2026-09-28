@@ -279,24 +279,27 @@ class Migrations:
             raise MigrationRefused(str(error)) from error
         return MigrationStatus(statuses, [(step, step.key not in pending) for step in order])
 
-    def upgrade(self, to: str | None = None) -> list[Step]:
-        """Apply every pending step in timeline order — up to `to` when given — and answer what
-        ran. Refused, before anything runs, when a body changed since it was hashed, or a store
-        is ahead or dirty."""
+    def upgrade_plan(self, to: str | None = None) -> list[Step]:
+        """What `upgrade(to)` would apply, in order, running nothing — refused as it would be:
+        when a body changed since it was hashed, or a store is ahead or dirty."""
         self._refuse_unless_intact()
         status = self.status()
         self._refuse_unless_startable(status.chains)
         order = [step for step, _ in status.timeline]
         last = self._index_of(order, to) if to is not None else len(order) - 1
-        pending = [step for step, applied in status.timeline[: last + 1] if not applied]
+        return [step for step, applied in status.timeline[: last + 1] if not applied]
+
+    def upgrade(self, to: str | None = None) -> list[Step]:
+        """Apply every pending step in timeline order — up to `to` when given — and answer what
+        ran. Refused, before anything runs, as `upgrade_plan` says."""
+        pending = self.upgrade_plan(to)
         for step in pending:
             self._run(step, forward=True)
         return pending
 
-    def downgrade(self, to: str) -> list[Step]:
-        """Put the whole system back to the step `to` — `"base"` for nothing applied — reverting
-        every later applied step, newest first, across every context and store. Refused, before
-        anything runs, when one of them is irreversible."""
+    def downgrade_plan(self, to: str) -> list[Step]:
+        """What `downgrade(to)` would revert, newest first, running nothing — refused as it
+        would be: when one of them is irreversible, or the system never stood on `to`."""
         self._refuse_unless_intact()
         status = self.status()
         self._refuse_unless_startable(status.chains)
@@ -315,6 +318,13 @@ class Migrations:
                 f"{names} is irreversible — the downgrade would cross it; restore a backup "
                 "taken before it instead"
             )
+        return to_revert
+
+    def downgrade(self, to: str) -> list[Step]:
+        """Put the whole system back to the step `to` — `"base"` for nothing applied — reverting
+        every later applied step, newest first, across every context and store. Refused, before
+        anything runs, as `downgrade_plan` says."""
+        to_revert = self.downgrade_plan(to)
         for step in to_revert:
             self._run(step, forward=False)
         return to_revert

@@ -15,6 +15,7 @@ becomes in a `WHERE` is the adapter's business, and it asks `Pagination.keys_for
 import base64
 import binascii
 import json
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -36,6 +37,7 @@ DEFAULT_LIMIT = 50
 _DATETIME_TAG = "__dt__"
 _DATE_TAG = "__d__"
 _DECIMAL_TAG = "__dec__"
+_UUID_TAG = "__uuid__"
 
 
 def _tagged(value: Any) -> Any:
@@ -53,6 +55,8 @@ def _tagged(value: Any) -> Any:
         return {_DATE_TAG: value.isoformat()}
     if isinstance(value, Decimal):
         return {_DECIMAL_TAG: str(value)}
+    if isinstance(value, uuid.UUID):
+        return {_UUID_TAG: str(value)}
     return value
 
 
@@ -67,6 +71,8 @@ def _untagged(value: Any) -> Any:
         return date.fromisoformat(value[_DATE_TAG])
     if isinstance(value, dict) and _DECIMAL_TAG in value:
         return Decimal(value[_DECIMAL_TAG])
+    if isinstance(value, dict) and _UUID_TAG in value:
+        return uuid.UUID(value[_UUID_TAG])
     return value
 
 

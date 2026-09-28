@@ -68,6 +68,15 @@ def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], Non
     return stamp
 
 
+def _enforcing_foreign_keys(connection: Any, _record: Any) -> None:
+    """SQLite leaves foreign keys unenforced unless each connection asks — so a test on SQLite
+    would write the orphan Postgres refuses in production. Asked on every new connection, as
+    Django and Rails do."""
+    cursor = connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 class Database:
 
     def __init__(
@@ -76,6 +85,7 @@ class Database:
         echo: bool = False,
         logger: LoggerProxy | None = None,
         actor: Callable[[], str | None] | None = None,
+        enforce_foreign_keys: bool = False,
         **engine_options: Any,
     ):
         """One engine, one connection pool, one session factory.
@@ -95,11 +105,17 @@ class Database:
         `actor` answers who is writing, for an `AuditedMixin` aggregate:
         `Database(url, actor=lambda: bus.current_context().get("user.id"))`. It is read on
         every flush, so one database serves every request of a process.
+
+        `enforce_foreign_keys` makes SQLite refuse an orphan, as Postgres does — off by default
+        while one flush can still insert a child before its parent of another aggregate type
+        (see the review log); on, a test on SQLite fails where production would.
         """
         self.url = url
         self.name = make_url(url).database or ""
         self.engine: Engine = create_engine(url, echo=echo, **engine_options)
         observe(self.engine, self.name, logger)
+        if enforce_foreign_keys and self.engine.dialect.name == "sqlite":
+            event.listen(self.engine, "connect", _enforcing_foreign_keys)
 
         self.open_session = sessionmaker(
             bind=self.engine, expire_on_commit=False, autoflush=True

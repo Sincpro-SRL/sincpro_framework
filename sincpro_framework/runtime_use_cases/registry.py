@@ -47,7 +47,7 @@ class BusRegistry:
         self.store = store
         self.generation = 0
         self._lock = threading.Lock()
-        self._loaded: frozenset[RuntimeUseCase] | None = None
+        self._loaded: tuple[RuntimeUseCase, ...] = ()
         self._modules: dict[str, ModuleType] = {}
         self._current: UseFramework | None = None
 
@@ -85,7 +85,7 @@ class BusRegistry:
         retired = self._modules.keys() - modules.keys()
         self._modules = modules
         self._settle_modules(retired)
-        self._loaded = frozenset(use_cases)
+        self._loaded = tuple(use_cases)
         self._current = bus
         self.generation += 1
         return bus
@@ -106,12 +106,19 @@ class BusRegistry:
             return self._first_generation()
         return current
 
+    @property
+    def in_force(self) -> tuple[RuntimeUseCase, ...]:
+        """The stored use cases `current` answers with, in the order they load — empty before the
+        first generation. Context: after a refused `reload` this is the generation still
+        serving, not what the store holds."""
+        return self._loaded
+
     def reload(self) -> bool:
         """Swap in a generation with the store's active use cases — `False`, and no build, when
         they are the ones loaded. Raises `UseCaseRefused`, with `current` as it was."""
         with self._lock:
             use_cases = self.store.active()
-            if frozenset(use_cases) == self._loaded:
+            if self._current is not None and frozenset(use_cases) == frozenset(self._loaded):
                 return False
             self._swapped_in(*self._built(use_cases), use_cases)
             return True

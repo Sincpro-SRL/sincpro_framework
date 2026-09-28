@@ -109,6 +109,19 @@ class Catalog:
             )
         return result
 
+    def _warn_unknown_names(self, known: set[str]) -> None:
+        """A name in include/exclude/wrap that no use case has is most likely a typo — in
+        `exclude` it would leave exposed what it meant to hide, in `wrap` serve a use case
+        without its wrapper — so it is said loudly, and the catalog is served as asked."""
+        named = (self._include or set()) | self._exclude | set(self._wrappers)
+        unknown = sorted(named - known)
+        if unknown:
+            logger.warning(
+                f"{', '.join(unknown)}: no Feature or ApplicationService of "
+                f"'{self.framework_instance.name}' answers it, so include/exclude/wrap does "
+                f"nothing with it — it answers {', '.join(sorted(known))}"
+            )
+
     def include(self, *dtos: type | str) -> Self:
         self._include = self._names(*dtos)
         return self
@@ -134,18 +147,19 @@ class Catalog:
         exposed on a JSON wire.
 
         1. Build the root bus if the instance was never initialized.
-        2. Bind Features then ApplicationServices.
-        3. Final: drop binary-schema entries when filter_binaries_schema is True.
+        2. Warn about a name in include/exclude/wrap that no use case has.
+        3. Bind Features then ApplicationServices.
+        4. Final: drop binary-schema entries when filter_binaries_schema is True.
         """
         if not self.framework_instance.was_initialized:
             self.framework_instance.build_root_bus()
 
-        features = self._convert_to_scalar_use_case(
-            inspector.features(self.framework_instance), Layer.FEATURES
-        )
-
+        described_features = inspector.features(self.framework_instance)
+        described_app_services = inspector.app_services(self.framework_instance)
+        self._warn_unknown_names(set(described_features) | set(described_app_services))
+        features = self._convert_to_scalar_use_case(described_features, Layer.FEATURES)
         app_services = self._convert_to_scalar_use_case(
-            inspector.app_services(self.framework_instance), Layer.APP_SERVICES
+            described_app_services, Layer.APP_SERVICES
         )
 
         entries = [

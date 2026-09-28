@@ -25,6 +25,11 @@ Context — what each answer carries, and why:
   its lock — while the others serve the stale one or wait a moment for the new one.
 - **The near cache** keeps answers in the process for `near`, and still checks their tag
   versions in the store, so an invalidation from another replica is seen at once.
+- **A namespace is a cache of its own** in a store others share: its answers and its tags
+  carry it, so `invalidate()` in one bounded context never lets go of another's. Contexts that
+  read the same aggregates and must see each other's writes share one namespace.
+- **`enabled = False`** runs every query's use case, keeping and serving nothing — to rule the
+  cache out while chasing a wrong answer, or in an incident.
 """
 
 import hashlib
@@ -124,10 +129,6 @@ def _declared_response(handler: type) -> Any:
     return get_type_hints(handler.execute).get("return")
 
 
-def _tag_key(tag: str) -> str:
-    return f"cache:tag:{tag}"
-
-
 def utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -146,16 +147,27 @@ class QueryCaching:
         sensitive: tuple[str, ...] = (),
         now: Callable[[], datetime] = utc_now,
         random: Callable[[], float] = random_module.random,
+        namespace: str = "",
+        enabled: bool = True,
     ) -> None:
         """`near` keeps answers in this process too; `sensitive` names context keys — a user,
-        a session — no answer may be shared across unless its policy varies by them."""
+        a session — no answer may be shared across unless its policy varies by them;
+        `namespace` keeps this cache apart from others in the same store."""
         self.store = store
+        self.namespace = namespace
+        self.enabled = enabled
         self.near = near
         self.sensitive = sensitive
         self.now = now
         self.random = random
         self._cached: dict[type, _Cached] = {}
         self._near = _Near()
+
+    def _prefix(self) -> str:
+        return f"cache:{self.namespace}:" if self.namespace else "cache:"
+
+    def _tag_key(self, tag: str) -> str:
+        return f"{self._prefix()}tag:{tag}"
 
     def _moment(self) -> float:
         return self.now().timestamp()
@@ -189,11 +201,11 @@ class QueryCaching:
             "vary": {name: _canonical(context.get(name)) for name in cached.policy.vary_by},
         }
         digest = hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode())
-        return f"cache:query:{digest.hexdigest()[:32]}"
+        return f"{self._prefix()}query:{digest.hexdigest()[:32]}"
 
     def _versions(self, tags: Iterable[str]) -> dict[str, int]:
         names = sorted(tags)
-        held = self.store.get_many([_tag_key(tag) for tag in names])
+        held = self.store.get_many([self._tag_key(tag) for tag in names])
         return {
             tag: int(value) if value is not None else 0 for tag, value in zip(names, held)
         }
@@ -306,6 +318,8 @@ class QueryCaching:
         3. Final: a missing one is computed by the winner; the others wait for it a moment,
            and compute it themselves if it does not come.
         """
+        if not self.enabled:
+            return call_next(dto)
         key = self._key(cached, dto)
         lock = self.lock_key_of(key)
         entry = self._held(key)
@@ -346,6 +360,13 @@ class QueryCaching:
         cache.__qualname__ = f"cache_{query.__name__}"
         bus.interceptor(query)(cache)
 
+    def policies(self) -> dict[str, CachePolicy]:
+        """Each cached Query, by its full name, with the policy it is kept by."""
+        return {
+            f"{query.__module__}.{query.__qualname__}": cached.policy
+            for query, cached in self._cached.items()
+        }
+
     def lock_key_of(self, key: str) -> str:
         return f"{key}:lock"
 
@@ -359,12 +380,14 @@ class QueryCaching:
         return set() if entry is None else set(entry.tags) - {EVERYTHING}
 
     def invalidate(self, target: type | None = None) -> None:
-        """Let go of every answer that read `target` or a subclass of it — all, when none."""
+        """Let go of every answer that read `target` or one of its bases — all, when none.
+        Context: a read is of one class, never of its subclasses, so the bases are only let go
+        of in case a project reads through them; it costs one `increment` each."""
         if target is None:
-            self.store.increment(_tag_key(EVERYTHING))
+            self.store.increment(self._tag_key(EVERYTHING))
             return
         for model in target.__mro__[:-1]:
-            self.store.increment(_tag_key(aggregate_tag(model)))
+            self.store.increment(self._tag_key(aggregate_tag(model)))
 
     def invalidated_by(
         self, events: Mapping[type[DomainEvent], Iterable[type]], name: str = "query-caching"

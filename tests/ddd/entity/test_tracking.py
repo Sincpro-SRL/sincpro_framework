@@ -410,26 +410,30 @@ def test_the_words_are_frozen_at_the_moment_it_happened():
         }
 
 
-# --- the consolidated event sees what the rules did, not what they were about to do --------
+# --- the consolidated event sees what the hooks did, not what they were about to do --------
 
 
-def test_a_field_a_rule_computes_is_in_the_same_event_with_the_value_it_ended_on():
+def test_a_field_a_hook_computes_is_in_the_same_event_with_the_value_it_ended_on():
     """The store's own bookkeeping closes `before_save`, after every rule. Run first, it took
     the diff and moved the baseline while a rule was still about to write — so the computed
     field missed this event and turned up in the next one carrying a value the aggregate no
     longer held. An audit that states a fact that never happened is worse than a silent one.
     """
-    from sincpro_framework.ddd.repositories.repository import Rule
+    from sincpro_framework.ddd.repositories import Hook, Hooks
 
     @dataclass
     class Article(ChangeTrackingMixin, Entity):
         title: str = ""
         slug: str = ""
 
-    def derive_slug(article: Article) -> None:
-        article.slug = article.title.lower().replace(" ", "-")
+    hooks = Hooks(None)
 
-    repository = MemoryRepository(rules=[Rule(entity=Article, before_save=derive_slug)])
+    @hooks.on(Article)
+    class DerivesTheSlug(Hook):
+        def before_save(self, article: Article) -> None:
+            article.slug = article.title.lower().replace(" ", "-")
+
+    repository = MemoryRepository(hooks=hooks)
     article = Article(title="First")
     repository.save(article)
     article.pull_events()
