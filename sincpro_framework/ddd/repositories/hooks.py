@@ -12,7 +12,7 @@
 Context: three pieces, one form. A `Hook` is a class — its moments are the methods it
 implements, `self.<name>` a dependency of the bus, `self.context` the request in play. `Hooks`
 is the collection a bounded context fills with `on(...)`, and where each hook is placed among
-the rest. `HookChain` is what one repository runs: the collection compiled once, in order, with
+the rest. `HookChain` is what one repository runs: the collection compiled at its first use, in order, with
 one instance of each hook. The why, the guarantees and the research: `docs/persistence/hooks.md`.
 """
 
