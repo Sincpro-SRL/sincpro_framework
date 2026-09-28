@@ -144,7 +144,12 @@ try:
 except UseCaseRefused:
     pass
 assert store.active()[0].version == 4 and not registry.reload()
+assert [(one.name, one.version) for one in registry.in_force] == [("quote", 4)]
 ```
+
+`in_force` is what `current` answers with — the name and version of each stored use case in the
+generation serving. After a refused `reload` it is that generation, not what the store holds:
+compare the two to see which replica is behind, and why.
 
 A stored source imports the code, so a refactor of the code can break a stored use case that
 nothing reloads until the next deploy. `check_all()` loads every active one against the code as it

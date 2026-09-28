@@ -21,7 +21,7 @@ sincpro_framework/
 │   ├── repositories/
 │   │   ├── repository.py         Repository: the abstract store a use case is written against
 │   │   ├── memory_repository.py  the same vocabulary answered over records held in memory
-│   │   ├── hooks.py              Hook, Hooks, Rule: what a project puts around its aggregates
+│   │   ├── hooks.py              Hook, Hooks, HookChain: what a project puts around its aggregates
 │   │   └── change_tracking.py    change tracking for a store with no flush to ask
 │   ├── query.py                  Query, ResponsePaginatedQuery (the answer, masked on the wire)
 │   ├── events.py                 DomainEvent, EventTrackableMixin, EventStatus

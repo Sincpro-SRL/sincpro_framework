@@ -187,7 +187,10 @@ only one step begins that way.
 ## Back to a point
 
 ```python
+planned = migrations.downgrade_plan(to=create_partner.id)  # what it would revert; nothing runs
 reverted = migrations.downgrade(to=create_partner.id)
+
+assert planned == reverted
 
 assert [step.message for step in reverted] == ["create invoice"]
 assert migrations.status().chains["billing/main"].state == ChainState.BEHIND
@@ -198,6 +201,10 @@ migrations.upgrade()
 later applied step, newest first, across every context and store. A step created with `irreversible=True` — its
 revert would lose data — refuses the downgrade before anything runs: restore the backup taken
 before it instead. Revert with the release that has the steps, then deploy the older one.
+
+`upgrade_plan(to=)` and `downgrade_plan(to=)` — `upgrade --plan`, `downgrade --to X --plan` on
+the command line — answer the steps the command would run, in its order, and refuse what it
+would refuse, running nothing: read one before a downgrade in production.
 
 ## When a step fails
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .exceptions import InterceptorContractViolation
+from .ordering import DEFAULT_SEQUENCE, Placement
 
 type CallNext[TResponse] = Callable[[Any], TResponse]
 type Interceptor = Callable[[Any, CallNext[Any]], Any]
@@ -31,6 +32,16 @@ class InterceptorRegistration:
     interceptor: Interceptor
     commands: tuple[type, ...]
     """Empty means every Command of the bus."""
+    sequence: int = DEFAULT_SEQUENCE
+    before: tuple[Interceptor, ...] = ()
+    after: tuple[Interceptor, ...] = ()
+    replaces: Interceptor | None = None
+
+    @property
+    def placement(self) -> Placement:
+        return Placement(
+            self.interceptor, self.sequence, self.before, self.after, self.replaces
+        )
 
     @property
     def name(self) -> str:

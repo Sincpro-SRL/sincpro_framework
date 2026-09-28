@@ -20,10 +20,6 @@ TypeDTOResponse = TypeVar(
 )
 ContextT = TypeVar("ContextT")
 
-# Additional TypeVars for better dependency injection typing
-TFeature = TypeVar("TFeature", bound="Feature")
-TApplicationService = TypeVar("TApplicationService", bound="ApplicationService")
-
 
 class DataTransferObject(BaseModel):
     """

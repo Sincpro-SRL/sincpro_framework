@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pytest
+from pydantic import Field, SecretStr
 from structlog.testing import capture_logs
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
@@ -304,3 +305,30 @@ def test_the_span_of_a_replaced_use_case_names_what_it_replaced(otel_setup):
         span for span in otel_setup.get_finished_spans() if span.name == "CommandRefund"
     ]
     assert span.attributes["sincpro.replaces"].endswith("Refund")
+
+
+class CommandSignIn(DataTransferObject):
+    user: str
+    password: SecretStr
+    otp: str = Field(repr=False)
+
+
+def test_a_secret_field_of_the_dto_never_reaches_the_error_line_nor_the_note():
+    """The failure describes the DTO by its `repr`, so a field is kept out of logs, GlitchTip
+    and the exception's note the way pydantic keeps it out of a repr: `SecretStr`, or
+    `Field(repr=False)`."""
+    signing = UseFramework("sign-in", log_after_execution=False)
+
+    @signing.feature(CommandSignIn)
+    class SignIn(Feature):
+        def execute(self, dto: CommandSignIn) -> None:
+            raise GatewayRejected("locked")
+
+    error, logs = _run(
+        signing, CommandSignIn(user="ana", password=SecretStr("hunter2"), otp="918273")
+    )
+
+    [line] = _errors(logs)
+    everything = f"{line} {error.__notes__}"
+    assert "ana" in line["dto"]
+    assert "hunter2" not in everything and "918273" not in everything

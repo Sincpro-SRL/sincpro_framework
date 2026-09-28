@@ -1,6 +1,17 @@
 import json
 import threading
-from typing import Any, Callable, Dict, Generic, Iterable, Mapping, Optional, Type, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    cast,
+)
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
@@ -19,6 +30,7 @@ from .exceptions import (
 )
 from .interceptors import Interceptor, InterceptorRegistration, chain_for
 from .observability import FrameworkSpanContext, Observability
+from .ordering import DEFAULT_SEQUENCE, Placement, name_of, ordered
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
@@ -92,14 +104,16 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self._deps_locator = DependencyLocator(self.dynamic_dep_registry)
 
         # Error handlers — ordered pipeline (first registered, first executed)
-        self._global_error_handlers: list[ErrorHandler] = []
-        self._feature_error_handlers: list[ErrorHandler] = []
-        self._app_service_error_handlers: list[ErrorHandler] = []
+        self._global_error_handlers: list[Placement] = []
+        self._feature_error_handlers: list[Placement] = []
+        self._app_service_error_handlers: list[Placement] = []
+        self._error_handlers_off: list[ErrorHandler] = []
         self.global_error_handler: Optional[ErrorHandler] = None
         self.feature_error_handler: Optional[ErrorHandler] = None
         self.app_service_error_handler: Optional[ErrorHandler] = None
 
         self._interceptors: list[InterceptorRegistration] = []
+        self._interceptors_off: list[Interceptor] = []
 
         self.was_initialized: bool = False
         self._build_lock = threading.RLock()
@@ -209,10 +223,40 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             for _, app_service in app_service_registry.items():
                 app_service.add_attributes(**self.dynamic_dep_registry)
 
+    def _ordered_interceptors(self) -> list[InterceptorRegistration]:
+        """The interceptors in the order they wrap, outermost first — see
+        `sincpro_framework.ordering`. What was asked and could not be done as said — a
+        replacement that wraps other Commands than the one it replaces, one that replaces or
+        switches off what is not registered — is a warning, never a refusal."""
+        by_interceptor = {one.interceptor: one for one in self._interceptors}
+        result = ordered(
+            [one.placement for one in self._interceptors], self._interceptors_off
+        )
+        for note in result.notes:
+            self.logger.warning(f"interceptor: {note}")
+        for replacement, chain in result.replaced.items():
+            wraps, wrapped = (
+                by_interceptor[replacement].commands,
+                by_interceptor[chain[-1]].commands,
+            )
+            if set(wraps) != set(wrapped):
+                self.logger.warning(
+                    f"interceptor {name_of(replacement)} replaces {name_of(chain[-1])} but wraps "
+                    f"{', '.join(one.__name__ for one in wraps) or 'every Command'}, where that "
+                    f"one wrapped {', '.join(one.__name__ for one in wrapped) or 'every Command'}"
+                )
+            self.logger.info(
+                f"interceptor {name_of(chain[-1])} is replaced by {name_of(replacement)}"
+            )
+        for switched_off in result.off:
+            self.logger.info(f"interceptor {name_of(switched_off)} is switched off")
+        return [by_interceptor[one] for one in result.items]
+
     def _assemble_handlers(self, bus: FrameworkBus) -> None:
         feature_bus, app_service_bus = bus.feature_bus, bus.app_service_bus
         answered = {*feature_bus.feature_registry, *app_service_bus.app_service_registry}
-        for registration in self._interceptors:
+        interceptors = self._ordered_interceptors()
+        for registration in interceptors:
             for command in registration.commands:
                 if command not in answered:
                     raise UnknownDTOToExecute(
@@ -232,11 +276,11 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         feature_bus.replacements = dict(replacements)
         app_service_bus.replacements = dict(replacements)
         feature_bus.interceptors = {
-            command: chain_for(command, self._interceptors)
+            command: chain_for(command, interceptors)
             for command in feature_bus.feature_registry
         }
         app_service_bus.interceptors = {
-            command: chain_for(command, self._interceptors)
+            command: chain_for(command, interceptors)
             for command in app_service_bus.app_service_registry
         }
 
@@ -256,6 +300,28 @@ class UseFramework(ContextMixin, Generic[TDeps]):
                 handle_error=self.app_service_error_handler
             )
 
+    def _error_chain_notes(self) -> list[str]:
+        """What the three chains were asked and could not do as said — told when the bus is
+        built, once, rather than at every handler added."""
+        chains = (
+            self._global_error_handlers,
+            self._feature_error_handlers,
+            self._app_service_error_handlers,
+        )
+        registered = {one.item for chain in chains for one in chain}
+        notes = [
+            note
+            for chain in chains
+            for note in ordered(
+                chain, [one for one in self._error_handlers_off if one in registered]
+            ).notes
+        ]
+        return notes + [
+            f"{name_of(handler)} is switched off, but it is not registered here"
+            for handler in self._error_handlers_off
+            if handler not in registered
+        ]
+
     def build_root_bus(self):
         """Build the root bus with the dependencies provided by the user.
 
@@ -268,9 +334,19 @@ class UseFramework(ContextMixin, Generic[TDeps]):
                 return
             self._build_root_bus()
 
+    def _built_bus(self) -> FrameworkBus:
+        """The bus, built on first use — refused when building left none."""
+        if not self.was_initialized:
+            self.build_root_bus()
+        if self.bus is None:
+            raise SincproFrameworkNotBuilt(f"'{self.name}' was built, but it has no bus")
+        return self.bus
+
     def _build_root_bus(self):
         self._add_dependencies_provided_by_user()
         self._add_error_handlers_provided_by_user()
+        for note in self._error_chain_notes():
+            self.logger.warning(f"error handler: {note}")
         dto_registry = self._sp_container.dto_registry()
 
         self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
@@ -334,10 +410,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         answers what is registered at the moment it's asked, not what was registered when
         this property was first read.
         """
-        if not self.was_initialized:
-            self.build_root_bus()
-        assert self.bus is not None
-        return self.bus.dto_registry
+        return self._built_bus().dto_registry
 
     def map_to_dto_or_event(self, name: str, payload: "str | dict[str, Any]") -> Any:
         """The DTO or event registered under `name`, rebuilt from raw data.
@@ -353,27 +426,103 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         raw = json.loads(payload) if isinstance(payload, str) else payload
         return dto_type.model_validate(raw)
 
-    def interceptor[T: Interceptor](self, *commands: type) -> Callable[[T], T]:
+    def interceptor[T: Interceptor](
+        self,
+        *commands: type,
+        replaces: Interceptor | None = None,
+        before: Sequence[Interceptor] = (),
+        after: Sequence[Interceptor] = (),
+        sequence: int = DEFAULT_SEQUENCE,
+    ) -> Callable[[T], T]:
         """Run the decorated function around every execution of these Commands — all of this
         bus's when none is named — however they are reached.
 
             @billing.interceptor(CommandCreateInvoice)
             def credit_check(dto, call_next): ...
 
-        Context: registered in order, outermost first, and fixed when the bus is built; one
+            @billing.interceptor(CommandCreateInvoice, replaces=credit_check)   in its place
+            @billing.interceptor(CommandCreateInvoice, before=[credit_check])    outside it
+
+        Context: the first to run is the outermost. They run by `before`/`after`, then
+        `sequence` (lower first), then the order they were registered — the order every
+        extension point uses, see `sincpro_framework.ordering`; a replacement takes the place
+        of what it replaces and wraps the same Commands. Fixed when the bus is built; one
         registered later would never run, so it is refused. See `sincpro_framework.interceptors`
         for what an interceptor may and may not do.
         """
 
         def register(interceptor: T) -> T:
             self._refuse_when_built(f"interceptor {interceptor.__qualname__}")
-            self._interceptors.append(InterceptorRegistration(interceptor, commands))
-            self._registrations.append(lambda bus: bus.interceptor(*commands)(interceptor))
+            self._interceptors.append(
+                InterceptorRegistration(
+                    interceptor, commands, sequence, tuple(before), tuple(after), replaces
+                )
+            )
+            self._registrations.append(
+                lambda bus: bus.interceptor(
+                    *commands,
+                    replaces=replaces,
+                    before=before,
+                    after=after,
+                    sequence=sequence,
+                )(interceptor)
+            )
             return interceptor
 
         return register
 
-    def add_global_error_handler(self, handler: ErrorHandler):
+    def without_interceptor(self, interceptor: Interceptor) -> None:
+        """Switch off an interceptor registered on this bus — it wraps nothing from then on.
+        Refused once the bus is built, like registering one."""
+        self._refuse_when_built(f"switching off interceptor {interceptor.__qualname__}")
+        self._interceptors_off.append(interceptor)
+        self._registrations.append(lambda bus: bus.without_interceptor(interceptor))
+
+    def _error_chain(self, placements: list[Placement]) -> Optional[ErrorHandler]:
+        registered = {one.item for one in placements}
+        off = [one for one in self._error_handlers_off if one in registered]
+        return build_error_handler_chain(ordered(placements, off).items)
+
+    def _apply_error_chains(self) -> None:
+        """Each chain in the order every extension point uses — first to run is the first to
+        see the error — and handed to the bus at once when it is already built."""
+        self.global_error_handler = self._error_chain(self._global_error_handlers)
+        self.feature_error_handler = self._error_chain(self._feature_error_handlers)
+        self.app_service_error_handler = self._error_chain(self._app_service_error_handlers)
+        if self.was_initialized and self.bus is not None:
+            self.bus.handle_error = self.global_error_handler
+            self.bus.feature_bus.handle_error = self.feature_error_handler
+            self.bus.app_service_bus.handle_error = self.app_service_error_handler
+
+    def _add_error_handler(
+        self,
+        placements: list[Placement],
+        handler: ErrorHandler,
+        replaces: ErrorHandler | None,
+        before: Sequence[ErrorHandler],
+        after: Sequence[ErrorHandler],
+        sequence: int,
+    ) -> None:
+        if not callable(handler):
+            raise TypeError("The handler must be a callable")
+        placements.append(Placement(handler, sequence, tuple(before), tuple(after), replaces))
+        self._apply_error_chains()
+
+    def without_error_handler(self, handler: ErrorHandler) -> None:
+        """Switch off an error handler of any of the three kinds — one registered later too;
+        one never registered is a warning when the bus is built."""
+        self._error_handlers_off.append(handler)
+        self._registrations.append(lambda bus: bus.without_error_handler(handler))
+        self._apply_error_chains()
+
+    def add_global_error_handler(
+        self,
+        handler: ErrorHandler,
+        replaces: ErrorHandler | None = None,
+        before: Sequence[ErrorHandler] = (),
+        after: Sequence[ErrorHandler] = (),
+        sequence: int = DEFAULT_SEQUENCE,
+    ) -> None:
         """Register a global error handler.
 
         Signature: ``(error) -> Any``. First registered = first to execute.
@@ -407,45 +556,60 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
             app.add_global_error_handler(logger)
         """
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self._global_error_handlers.append(handler)
-        self._registrations.append(lambda bus: bus.add_global_error_handler(handler))
-        self.global_error_handler = build_error_handler_chain(self._global_error_handlers)
-        if self.was_initialized and self.bus is not None:
-            self.bus.handle_error = self.global_error_handler
+        self._add_error_handler(
+            self._global_error_handlers, handler, replaces, before, after, sequence
+        )
+        self._registrations.append(
+            lambda bus: bus.add_global_error_handler(
+                handler, replaces, before, after, sequence
+            )
+        )
 
-    def add_feature_error_handler(self, handler: ErrorHandler):
+    def add_feature_error_handler(
+        self,
+        handler: ErrorHandler,
+        replaces: ErrorHandler | None = None,
+        before: Sequence[ErrorHandler] = (),
+        after: Sequence[ErrorHandler] = (),
+        sequence: int = DEFAULT_SEQUENCE,
+    ) -> None:
         """Register a feature-level error handler, for errors raised inside a `Feature`.
 
         Same semantics as `add_global_error_handler`, including the one that surprises people:
         what the handler returns becomes the bus's answer, and only a re-raise passes the error
         on.
         """
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self._feature_error_handlers.append(handler)
-        self._registrations.append(lambda bus: bus.add_feature_error_handler(handler))
-        self.feature_error_handler = build_error_handler_chain(self._feature_error_handlers)
-        if self.was_initialized and self.bus is not None:
-            self.bus.feature_bus.handle_error = self.feature_error_handler
+        self._add_error_handler(
+            self._feature_error_handlers, handler, replaces, before, after, sequence
+        )
+        self._registrations.append(
+            lambda bus: bus.add_feature_error_handler(
+                handler, replaces, before, after, sequence
+            )
+        )
 
-    def add_app_service_error_handler(self, handler: ErrorHandler):
+    def add_app_service_error_handler(
+        self,
+        handler: ErrorHandler,
+        replaces: ErrorHandler | None = None,
+        before: Sequence[ErrorHandler] = (),
+        after: Sequence[ErrorHandler] = (),
+        sequence: int = DEFAULT_SEQUENCE,
+    ) -> None:
         """Register an error handler for errors raised inside an `ApplicationService`.
 
         Same semantics as `add_global_error_handler`, including the one that surprises people:
         what the handler returns becomes the bus's answer, and only a re-raise passes the error
         on.
         """
-        if not callable(handler):
-            raise TypeError("The handler must be a callable")
-        self._app_service_error_handlers.append(handler)
-        self._registrations.append(lambda bus: bus.add_app_service_error_handler(handler))
-        self.app_service_error_handler = build_error_handler_chain(
-            self._app_service_error_handlers
+        self._add_error_handler(
+            self._app_service_error_handlers, handler, replaces, before, after, sequence
         )
-        if self.was_initialized and self.bus is not None:
-            self.bus.app_service_bus.handle_error = self.app_service_error_handler
+        self._registrations.append(
+            lambda bus: bus.add_app_service_error_handler(
+                handler, replaces, before, after, sequence
+            )
+        )
 
     def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
         """Do not send these exception types to GlitchTip / Sentry.
@@ -575,10 +739,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         without blocking its event loop. See ``Bus.get_async_bus`` /
         ``AsyncBus`` for the propagation and reuse semantics.
         """
-        if not self.was_initialized:
-            self.build_root_bus()
-        assert self.bus is not None
-        return self.bus.get_async_bus()
+        return self._built_bus().get_async_bus()
 
     def __call__(
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None

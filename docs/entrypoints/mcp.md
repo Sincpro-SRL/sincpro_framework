@@ -204,6 +204,11 @@ Default: `build_mcp_server(instance)` — full JSON-safe catalog.
 | `exclude(*dtos)` | Drop from the catalog. |
 | `wrap(dto, wrapper)` | Decorate one `run` (auth, audit, extra logging). |
 
+A name that no Feature or ApplicationService of the bus has is refused with a `ValueError` when the
+catalog is read — the same for the RPC and gRPC gateways' `add(include=, exclude=, wrap=)`. A typo
+in `exclude` would otherwise expose what it meant to hide, and one in `wrap` would serve the use
+case without its guard.
+
 There is **no runtime on/off flag** in this iteration. Shipping MCP is a process decision (`pip install …[mcp]` + `build_mcp_server(…).run()`), not a Feature flag.
 
 ---

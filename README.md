@@ -86,6 +86,7 @@ Now you are ready to explore more complex use cases! 🚀
     - [Testing Dependency Consistency](#testing-dependency-consistency)
     - [Handler Lifetime — one instance serves every execution](#handler-lifetime--one-instance-serves-every-execution)
     - [Swapping a Dependency in a Test](#swapping-a-dependency-in-a-test)
+    - [Asserting What a Use Case Published](#asserting-what-a-use-case-published)
     - [Checking Imports and Layers](#checking-imports-and-layers)
 6. [Creating a Feature](#-creating-a-feature)
 7. [Creating an Application Service](#-creating-an-application-service)
@@ -543,8 +544,9 @@ def register_dependencies(framework: UseFramework[DependencyContextType]) -> Use
 ### `framework.py` — Wiring with DependencyContextType
 
 Combine the framework base classes with `DependencyContextType` using multiple inheritance so that
-every Feature and ApplicationService in this bounded context automatically inherits the typed
-attributes.
+every Feature, ApplicationService and repository hook in this bounded context automatically
+inherits the typed attributes. Each also takes the request's context type as a parameter —
+`Feature[Command, Response, MyContext]`, `Hook[MyContext]` — for a typed `self.context`.
 
 ```python
 # apps/my_domain/infrastructure/framework.py
@@ -552,6 +554,7 @@ from sincpro_framework import ApplicationService as _ApplicationService
 from sincpro_framework import DataTransferObject  # re-exported for convenience
 from sincpro_framework import Feature as _Feature
 from sincpro_framework import UseFramework
+from sincpro_framework.ddd import Hook as _Hook
 
 from .dependencies import DependencyContextType, register_dependencies
 
@@ -568,12 +571,35 @@ class ApplicationService(_ApplicationService, DependencyContextType):
     pass
 
 
+class Hook(_Hook, DependencyContextType):
+    """Base repository hook for this bounded context — typed deps, `self.context`, `self.bus`."""
+
+    pass
+
+
 def config_framework(name: str) -> UseFramework[DependencyContextType]:
     """Create and configure the framework instance."""
     instance = UseFramework[DependencyContextType](name)
     register_dependencies(instance)
     return instance
 ```
+
+**A repository with hooks is built inside `register_dependencies()`, never at the top of
+`dependencies.py`.** Reading the collection imports the hook modules, and they import `Hook` from
+`framework.py` — which, at import time, is still importing `dependencies.py`:
+
+```text
+services/hooks/__init__.py     billing_hooks = Hooks()                   nothing else
+services/hooks/invoices.py     from ...infrastructure.framework import Hook
+                               @billing_hooks.on(Invoice) class NumbersInvoices(Hook): ...
+infrastructure/dependencies.py from ..services.hooks import billing_hooks
+                               def register_dependencies(framework):
+                                   billing_hooks.inject(framework)
+                                   framework.add_dependency("repository", Repository(database, billing_hooks))
+```
+
+Built at the top of `dependencies.py` instead, Python answers `ImportError: cannot import name
+'Hook' from partially initialized module ... framework`.
 
 The same names Features receive as `self.token_adapter` are available on the root as
 `my_framework.deps.token_adapter`. Use `self.<name>` inside a Feature / ApplicationService;
@@ -601,27 +627,23 @@ from .services import feature_a, feature_b  # noqa: E402, F401
 
 ### Testing Dependency Consistency
 
-Assert every name declared on `DependencyContextType` is present on `framework.deps`. If a new
-dependency is added to the typing class but forgotten in `register_dependencies`, this test
-catches it without registering a Feature.
+Every name a Feature or ApplicationService declares — on itself or on the
+`DependencyContextType` it inherits — has to be registered with `add_dependency`, or the handler
+fails the first time it runs. One assertion checks the whole bus, every handler at once:
 
 ```python
 # tests/my_domain/test_framework_setup.py
+from sincpro_framework.testing import unregistered_dependencies
+
 from my_sdk.apps.my_domain import my_framework
-from my_sdk.apps.my_domain.infrastructure.dependencies import DependencyContextType
 
 
-def test_declared_deps_are_registered():
-    for dep_name in DependencyContextType.__annotations__:
-        assert dep_name in my_framework.deps, f"Missing dep: {dep_name}"
+def test_every_declared_dependency_is_registered():
+    assert unregistered_dependencies(my_framework) == {}
 ```
 
-**Why this matters:**
-
-- Iterates `DependencyContextType.__annotations__` automatically — adding a new dependency to
-  the context covers it in the test without any manual edits.
-- Catches mismatches between what is declared in `DependencyContextType` and what is actually
-  registered via `add_dependency`.
+A failure names each handler with the dependencies it declares and nobody registered. The
+framework's own attributes (`feature_bus`, `context`, the logger) are never reported.
 
 ### Handler Lifetime — one instance serves every execution
 
@@ -668,6 +690,26 @@ def test_declined_card_is_not_retried():
 ```
 
 It patches the instances the bus holds, so it is meant for tests, not for live traffic.
+
+### Asserting What a Use Case Published
+
+`RecordingQueue` is a queue like any other: put it behind the `Publisher` the bus already
+takes, and it keeps every event in order — handing each one on to the queue it wraps, when
+given one, so the subscribers still hear it.
+
+```python
+from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.testing import RecordingQueue
+
+
+def test_issuing_publishes_invoice_issued():
+    published = RecordingQueue(SyncQueue(Subscriber(accounting)))
+    billing = build_billing(publisher=Publisher(published))
+
+    billing(CommandIssue(invoice_id="F-1"))
+
+    assert [one.invoice_id for one in published.of(InvoiceIssued)] == ["F-1"]
+```
 
 ### Checking Imports and Layers
 
@@ -1292,6 +1334,9 @@ bus — however many ApplicationServices or other bounded contexts' buses it cro
   `[sincpro] CommandBillOrder → CommandSendInvoice: SendInvoice (siat-soap-sdk) failed at …`.
 - Every key set with `context()` is on every log line. Keep some out:
   `UseFramework("siat", hide_in_logs=["TOKEN"])`.
+- A failure describes the DTO by its `repr` — on the error line, in GlitchTip, in the note.
+  A field that must not leave the process is kept out the way pydantic keeps it out of a
+  repr: `password: SecretStr`, or `otp: str = Field(repr=False)`.
 - An error handler that re-raises changes nothing above. One that answers leaves a
   `warning` — `… (answered by an error handler)` — because the caller never sees the error.
 - An expected error, one passed to `ignore_sentry_exceptions`, is logged at `info` with no

@@ -10,6 +10,7 @@ Cached, because mappings are applied once at boot and a table grows no column at
 """
 
 from dataclasses import is_dataclass
+from decimal import Decimal
 from functools import cache
 from typing import Any, TypeGuard, cast
 
@@ -27,6 +28,7 @@ from sincpro_framework.ddd.entity.model_meta import (
     field_translations,
     logical_type,
     related_class,
+    without_optional,
 )
 from sincpro_framework.ddd.entity.relations import key_pair
 from sincpro_framework.ddd.exceptions import ContractViolation
@@ -129,7 +131,10 @@ def describe(entity: type) -> Meta:
             )
         else:
             fields[column.key] = FieldMeta.for_column(
-                logical_type(annotation), bool(column.nullable), _members_of(annotation)
+                logical_type(annotation),
+                bool(column.nullable),
+                _members_of(annotation),
+                without_optional(annotation) is Decimal,
             )
 
     declared = relations_of(entity)

@@ -6,7 +6,7 @@ preference — it is **reach**: how much of the system each one can see.
 | | Registered on | Reaches |
 |---|---|---|
 | the session | `Database.before_flush` / `after_flush` / `after_commit` / `after_rollback` | **everyone** who writes through this database |
-| the repository | `Hooks`, `Rule` | whoever goes through that repository |
+| the repository | `Hook` classes in its `Hooks` | whoever goes through that repository |
 | the aggregate | `pull_events()` | whoever holds the aggregate |
 
 ## Why reach decides where something goes

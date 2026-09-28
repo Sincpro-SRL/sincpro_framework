@@ -24,3 +24,9 @@ class BusAlreadyBuilt(Exception):
 
 class InterceptorContractViolation(TypeError):
     """An interceptor changed the class of the Command it passed on, or of the response."""
+
+
+class ExtensionRefused(Exception):
+    """A way of extending the framework that cannot work as declared — a circle of `before` and
+    `after`, `extends=` on a class that is not a subclass — refused where it is declared.
+    Anything that works, only not as expected, is a warning instead."""

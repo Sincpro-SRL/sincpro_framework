@@ -1,4 +1,15 @@
-from typing import Any, Callable, Dict, Generic, Iterable, Mapping, Optional, Type, overload
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    overload,
+)
 
 from _typeshed import DataclassInstance, Incomplete
 from sincpro_log.logger import LoggerProxy
@@ -174,13 +185,36 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         in order — the same settings, dependencies and observability."""
         ...
 
-    def interceptor[T: Interceptor](self, *commands: type) -> Callable[[T], T]:
+    def interceptor[T: Interceptor](
+        self,
+        *commands: type,
+        replaces: Interceptor | None = None,
+        before: Sequence[Interceptor] = (),
+        after: Sequence[Interceptor] = (),
+        sequence: int = 10,
+    ) -> Callable[[T], T]:
         """Run the decorated function around every execution of these Commands (all of this
-        bus's when none is named). Registered in order, outermost first; refused after build.
+        bus's when none is named) — outermost first, by before/after, sequence, registration;
+        `replaces` runs it in the place of another. Refused after build.
         """
         ...
 
-    def add_global_error_handler(self, handler: ErrorHandler) -> None:
+    def without_interceptor(self, interceptor: Interceptor) -> None:
+        """Switch off an interceptor registered on this bus; refused after build."""
+        ...
+
+    def without_error_handler(self, handler: ErrorHandler) -> None:
+        """Switch off an error handler of any of the three kinds registered on this bus."""
+        ...
+
+    def add_global_error_handler(
+        self,
+        handler: ErrorHandler,
+        replaces: ErrorHandler | None = None,
+        before: Sequence[ErrorHandler] = (),
+        after: Sequence[ErrorHandler] = (),
+        sequence: int = 10,
+    ) -> None:
         """
         Add a global error handler. First registered = first to execute.
 
@@ -191,7 +225,14 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """
         ...
 
-    def add_feature_error_handler(self, handler: ErrorHandler) -> None:
+    def add_feature_error_handler(
+        self,
+        handler: ErrorHandler,
+        replaces: ErrorHandler | None = None,
+        before: Sequence[ErrorHandler] = (),
+        after: Sequence[ErrorHandler] = (),
+        sequence: int = 10,
+    ) -> None:
         """
         Add an error handler specifically for Feature errors.
 
@@ -202,7 +243,14 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """
         ...
 
-    def add_app_service_error_handler(self, handler: ErrorHandler) -> None:
+    def add_app_service_error_handler(
+        self,
+        handler: ErrorHandler,
+        replaces: ErrorHandler | None = None,
+        before: Sequence[ErrorHandler] = (),
+        after: Sequence[ErrorHandler] = (),
+        sequence: int = 10,
+    ) -> None:
         """
         Add an error handler specifically for ApplicationService errors.
 

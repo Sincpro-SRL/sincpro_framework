@@ -46,9 +46,6 @@ REPOSITORY = "sincpro_repository"
 """The key under which a unit of work leaves its repository on the session, so a relation
 touched inside the block can resolve itself."""
 
-# What an `Entity` column is called on disk, in the order the class declares them.
-ENTITY_COLUMNS: tuple[str, ...] = ("id", "created_at", "updated_at", "version")
-
 
 def entity_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
     """The four columns every `Entity` table starts with.

@@ -196,6 +196,43 @@ assert status.last_success is not None and status.next_tick.day == 27
 
 "No success since X" per cron is the alert that catches a clock that silently stopped.
 
+## Replacing one, switching one off, running one now
+
+```python
+extended = Crons("cron-extended")
+extended.add_dependency("reconciled", [])
+
+
+@extended.cron("0 2 * * *", timezone="UTC")
+class Reconcile(_Cron):
+    reconciled: list
+
+    def run(self, tick: Tick) -> None:
+        self.reconciled.append("ledger")
+
+
+@extended.cron("0 3 * * *", timezone="UTC", replaces=Reconcile)
+class ReconcileWithTheBank(_Cron):
+    reconciled: list
+
+    def run(self, tick: Tick) -> None:
+        self.reconciled.append("bank")
+
+
+manual = CronGateway([extended], clock=ManualClock(datetime(2026, 9, 27, tzinfo=UTC)))
+assert manual.run_now(ReconcileWithTheBank) == RunOutcome.SUCCEEDED
+assert list(manual.status()) == ["cron-extended.Reconcile"]  # the replaced one's name and history
+```
+
+A project on top of a core registry changes a cron by reference, as it does a Feature:
+`replaces=` runs its class instead, under the replaced cron's name — so the record of runs and
+the alerts on it go on — with the schedule it gives; `crons.without(Remind)` switches one off.
+Both are refused once the registry is built, and for a cron it does not have.
+
+`gateway.run_now(Cron)` runs one at once for a tick at the clock's now — Odoo's "Run Manually",
+`kubectl create job --from=cronjob/…`. It is claimed and recorded like any tick: it runs once
+across replicas and becomes the cron's latest run.
+
 ## Not yet
 
 A Temporal runner (a cron as a Workflow, each bus call an Activity) and a Celery runner, windows

@@ -29,7 +29,7 @@ Three things it does not have: relations, units of work and date grains, which i
 a database starts — and `remove` here deletes, the way it does there; `archive` is the other one.
 """
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any, overload
 
 from sincpro_framework.ddd.criteria import (
@@ -64,7 +64,7 @@ from sincpro_framework.ddd.exceptions import (
     StaleAggregate,
 )
 from sincpro_framework.ddd.repositories.change_tracking import ChangeTrackingRepositoryMixin
-from sincpro_framework.ddd.repositories.hooks import Rule
+from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.reads import note_read
 from sincpro_framework.ddd.repositories.repository import (
     Repository,
@@ -268,9 +268,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
     def __init__(
         self,
         *records: Any,
-        rules: Sequence[Rule] | None = None,
-        hooks: Iterable[Any] | None = None,
-        deps: Any = None,
+        hooks: Hooks | None = None,
         actor: "Callable[[], str | None] | None" = None,
     ) -> None:
         """`actor` answers who is writing, for an `AuditedMixin` aggregate — the same argument
@@ -278,7 +276,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         `None`, which is also what the engine does."""
         refuse_wiring_as_a_record(records)
         self._actor = actor
-        super().__init__(rules, hooks, deps)
+        super().__init__(hooks)
         self._stored: dict[type, dict[Any, Any]] = {}
         self.add(*records)
 

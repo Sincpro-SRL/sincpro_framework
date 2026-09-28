@@ -246,6 +246,10 @@ assert sales.version == cache.fetch_all(repository, InvoiceLine, posted).version
 
 ## Reference
 
+`QueryCache` holds the rows of a read in this process, for analysis; the answer of a bus Query is
+kept by `QueryCaching`, in [caching](../caching/README.md).
+
+
 | | |
 |---|---|
 | `QueryCache(max_rows=None)` | reads held by fingerprint; past `max_rows`, the ones used longest ago are let go |

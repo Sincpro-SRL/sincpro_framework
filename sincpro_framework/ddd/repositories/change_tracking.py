@@ -12,7 +12,7 @@ made to an aggregate that is never `save()`d records nothing here. On SQLAlchemy
 because the row changed. The double is honest about the calls it sees; it cannot be honest
 about a flush it does not have.
 
-A mixin and not an injected `Rule`, because this is not a decision of one deployment about one
+A mixin and not a project's `Hook`, because this is not a decision of one deployment about one
 aggregate: it is behaviour the framework ships, opt-in on the *entity* — an aggregate that
 inherits `ChangeTrackingMixin` gets it with no repository configuration at all, and one that
 does not pays nothing.

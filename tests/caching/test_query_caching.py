@@ -312,3 +312,46 @@ def test_the_near_cache_answers_in_process_and_still_sees_an_invalidation():
     billing(QueryBalance(customer_id="c1"), ResponseBalance)
 
     assert executions == ["c1", "c1"]
+
+
+def test_two_contexts_sharing_a_store_invalidate_only_their_own():
+    clock = ManualClock(datetime(2026, 9, 27, tzinfo=UTC))
+    shared = InMemoryKeyValue(now=clock.now)
+    repository, first_runs, second_runs = MemoryRepository(), [], []
+    repository.save(Customer(id="c1", name="Ana"))
+    first, second = _billing(repository, first_runs), _billing(repository, second_runs)
+    one = QueryCaching(shared, now=clock.now, namespace="billing-a")
+    other = QueryCaching(shared, now=clock.now, namespace="billing-b")
+    one.on(first, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
+    other.on(second, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
+    first(QueryBalance(customer_id="c1"), ResponseBalance)
+    second(QueryBalance(customer_id="c1"), ResponseBalance)
+
+    one.invalidate()
+    one.invalidate(Invoice)
+    first(QueryBalance(customer_id="c1"), ResponseBalance)
+    second(QueryBalance(customer_id="c1"), ResponseBalance)
+
+    assert first_runs == ["c1", "c1"] and second_runs == ["c1"]
+
+
+def test_switched_off_every_query_runs_its_use_case_and_nothing_is_kept():
+    world = _world()
+    world.caching.enabled = False
+
+    _balance(world)
+    _balance(world)
+    world.caching.enabled = True
+    _balance(world)
+
+    assert world.executions == ["c1", "c1", "c1"]
+
+
+def test_the_caching_says_which_queries_it_keeps_and_how():
+    world = _world(policy=CachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
+
+    assert world.caching.policies() == {
+        f"{QueryBalance.__module__}.{QueryBalance.__qualname__}": CachePolicy(
+            ttl=timedelta(minutes=5), vary_by=("tenant_id",)
+        )
+    }

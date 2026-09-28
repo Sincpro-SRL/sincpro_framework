@@ -31,7 +31,6 @@ class FrameworkContext:
         self.framework = framework_instance
         self.context: Dict[str, Any] = dict(context)
         self.global_scope: bool = global_scope
-        self.parent_context: Dict[str, Any] = framework_instance._get_context().copy()
 
         self._overlay_token: Optional[Token] = None
         self._overlay: Optional[Dict[str, Any]] = None

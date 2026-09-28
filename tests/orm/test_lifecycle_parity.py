@@ -11,52 +11,79 @@ from typing import Any
 
 import pytest
 
+from sincpro_framework import UseFramework
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.repositories import MemoryRepository
+from sincpro_framework.ddd.repositories import Hook, Hooks, MemoryRepository
 from sincpro_framework.ddd.repositories import Repository as Store
-from sincpro_framework.ddd.repositories import Rule
 from sincpro_framework.orm.sqlalchemy.database import Database
 from sincpro_framework.orm.sqlalchemy.repository import Repository
 
 from .models import Client, Note, Notes, mapper_registry
 
-WRITES = (
-    "before_save",
-    "after_save",
-    "before_create",
-    "after_create",
-    "before_update",
-    "after_update",
-    "before_archive",
-    "after_archive",
-    "before_remove",
-    "after_remove",
-)
-
 
 @pytest.fixture(params=["memory", "sqlalchemy"])
-def stores(request) -> Callable[[list[Rule]], Store]:
+def stores(request) -> Callable[[Hooks], Store]:
     """A store of each kind, built the same way, so one script runs against both."""
     if request.param == "memory":
-        return lambda rules: MemoryRepository(rules=rules)
+        return lambda hooks: MemoryRepository(hooks=hooks)
     database = Database("sqlite://")
     mapper_registry.metadata.create_all(database.engine)
-    return lambda rules: Repository(database, rules=rules)
+    return lambda hooks: Repository(database, hooks)
 
 
-def watching(entity: type, trail: list[str]) -> Rule:
-    """A rule that answers every write moment by naming itself."""
-    return Rule(
-        entity=entity,
-        **{name: (lambda name=name: lambda record: trail.append(name))() for name in WRITES},
-    )
+def given(**dependencies: Any) -> Hooks:
+    bus = UseFramework("lifecycle-parity", log_after_execution=False)
+    for name, value in dependencies.items():
+        bus.add_dependency(name, value)
+    return Hooks(None).inject(bus)
+
+
+def watching(entity: type, trail: list[str]) -> Hooks:
+    """A hook that answers every write moment by naming it."""
+    hooks = given(trail=trail)
+
+    @hooks.on(entity)
+    class Watches(Hook):
+        trail: list[str]
+
+        def before_save(self, record: Any) -> None:
+            self.trail.append("before_save")
+
+        def after_save(self, record: Any) -> None:
+            self.trail.append("after_save")
+
+        def before_create(self, record: Any) -> None:
+            self.trail.append("before_create")
+
+        def after_create(self, record: Any) -> None:
+            self.trail.append("after_create")
+
+        def before_update(self, record: Any) -> None:
+            self.trail.append("before_update")
+
+        def after_update(self, record: Any) -> None:
+            self.trail.append("after_update")
+
+        def before_archive(self, record: Any) -> None:
+            self.trail.append("before_archive")
+
+        def after_archive(self, record: Any) -> None:
+            self.trail.append("after_archive")
+
+        def before_remove(self, record: Any) -> None:
+            self.trail.append("before_remove")
+
+        def after_remove(self, record: Any) -> None:
+            self.trail.append("after_remove")
+
+    return hooks
 
 
 def test_a_first_save_is_a_create_in_both_stores(stores):
     trail: list[str] = []
-    repository = stores([watching(Note, trail)])
+    repository = stores(watching(Note, trail))
 
     repository.save(Note(title="a", body="b"))
 
@@ -68,7 +95,7 @@ def test_saving_one_that_was_stored_is_an_update_in_both_stores(stores):
     by then the aggregate's own version has already been raised, so asking it again would call
     every create an update."""
     trail: list[str] = []
-    repository = stores([watching(Note, trail)])
+    repository = stores(watching(Note, trail))
     note = Note(title="a", body="b")
     repository.save(note)
     trail.clear()
@@ -85,7 +112,7 @@ def test_archiving_is_its_own_pair_around_the_save_it_is(stores):
     """A rule written for `before_save` still sees an archive — it is a write — and one written
     for `before_archive` sees only those."""
     trail: list[str] = []
-    repository = stores([watching(Client, trail)])
+    repository = stores(watching(Client, trail))
     client = Client(name="ACME")
     repository.save(client)
     trail.clear()
@@ -104,7 +131,7 @@ def test_archiving_is_its_own_pair_around_the_save_it_is(stores):
 
 def test_removing_is_its_own_pair(stores):
     trail: list[str] = []
-    repository = stores([watching(Note, trail)])
+    repository = stores(watching(Note, trail))
     note = Note(title="a", body="b")
     repository.save(note)
     trail.clear()
@@ -118,18 +145,21 @@ def test_a_batch_is_refused_whole_in_both_stores(stores):
     """Every before-moment, then the write. Refused halfway, nothing is written and no
     after-moment ran."""
     trail: list[tuple[str, str]] = []
+    hooks = given(trail=trail)
 
-    def refuses_the_second(note: Note) -> None:
-        trail.append(("before", note.title))
-        if note.title == "b":
-            raise ContractViolation("not this one")
+    @hooks.on(Note)
+    class RefusesTheSecond(Hook):
+        trail: list[tuple[str, str]]
 
-    repository = stores(
-        [
-            Rule(entity=Note, before_save=refuses_the_second),
-            Rule(entity=Note, after_save=lambda one: trail.append(("after", one.title))),
-        ]
-    )
+        def before_save(self, note: Note) -> None:
+            self.trail.append(("before", note.title))
+            if note.title == "b":
+                raise ContractViolation("not this one")
+
+        def after_save(self, note: Note) -> None:
+            self.trail.append(("after", note.title))
+
+    repository = stores(hooks)
 
     with pytest.raises(ContractViolation):
         repository.save([Note(title=one, body="x") for one in ("a", "b", "c")])
@@ -138,17 +168,28 @@ def test_a_batch_is_refused_whole_in_both_stores(stores):
     assert repository.count(Notes).value == 0
 
 
-def readings(repository: Store) -> dict[str, Any]:
-    """What each reading answered, counted the same way on both stores."""
+def counting() -> tuple[Hooks, list[int], list[int]]:
+    """A hook that counts the pages a reading answered and the aggregates in them."""
     pages: list[int] = []
     rows: list[int] = []
-    repository._rules = (
-        Rule(
-            entity=Note,
-            after_search=lambda page: pages.append(len(page.items)),
-            after_read=lambda one: rows.append(1),
-        ),
-    )
+    hooks = given(pages=pages, rows=rows)
+
+    @hooks.on(Note)
+    class Counts(Hook):
+        pages: list[int]
+        rows: list[int]
+
+        def after_search(self, page: Any) -> None:
+            self.pages.append(len(page.items))
+
+        def after_read(self, note: Note) -> None:
+            self.rows.append(1)
+
+    return hooks, pages, rows
+
+
+def readings(repository: Store, pages: list[int], rows: list[int]) -> dict[str, Any]:
+    """What each reading answered, counted the same way on both stores."""
     answers: dict[str, Any] = {}
     for name, run in (
         ("search", lambda: repository.search(Notes)),
@@ -177,21 +218,27 @@ def test_every_reading_fires_the_same_moments_in_both_stores():
     """
     database = Database("sqlite://")
     mapper_registry.metadata.create_all(database.engine)
-    engine, double = Repository(database), MemoryRepository()
+    engine_hooks, engine_pages, engine_rows = counting()
+    double_hooks, double_pages, double_rows = counting()
+    engine = Repository(database, engine_hooks)
+    double = MemoryRepository(hooks=double_hooks)
     for index in range(7):
         for repository in (engine, double):
             repository.save(Note(title=f"n{index}", body="x"))
 
-    assert readings(engine) == readings(double)
+    assert readings(engine, engine_pages, engine_rows) == readings(
+        double, double_pages, double_rows
+    )
 
 
 def test_the_readings_answer_what_they_should_beyond_merely_agreeing():
     """Agreeing on nothing would also pass the test above."""
-    repository = MemoryRepository()
+    hooks, pages, rows = counting()
+    repository = MemoryRepository(hooks=hooks)
     for index in range(7):
         repository.save(Note(title=f"n{index}", body="x"))
 
-    answered = readings(repository)
+    answered = readings(repository, pages, rows)
     assert answered["search"] == ([7], 7)
     assert answered["stream"] == ([3, 3, 1], 7)  # one page each, seven rows once
     assert answered["count"] == ([], 0)  # computed, never built

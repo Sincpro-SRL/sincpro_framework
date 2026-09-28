@@ -16,7 +16,7 @@ from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.repositories import Rule
+from sincpro_framework.ddd.repositories import Hook, Hooks
 from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
 from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
 from sincpro_framework.orm.sqlalchemy.database import Database
@@ -121,18 +121,23 @@ def test_one_value_for_a_two_column_key_is_refused_by_the_engine(store):
         store.get(RowLineage, "fp1")
 
 
-def test_written_once_is_a_rule_and_not_a_mode_the_store_has(store):
-    """An append-only aggregate — a ledger, an audit record — is four lines beside the wiring.
+def test_written_once_is_a_hook_and_not_a_mode_the_store_has():
+    """An append-only aggregate — a ledger, an audit record — is one small hook in the wiring.
     A second recording of the same fact is either identical or a contradiction, and replacing it
     would silently accept the second."""
+    hooks = Hooks(None)
 
-    def written_once(record: Claim) -> None:
-        if not record.is_new:
-            raise ContractViolation(
-                f"{type(record).__name__} is written once and never replaced"
-            )
+    @hooks.on(Claim)
+    class WrittenOnce(Hook):
+        def before_save(self, record: Claim) -> None:
+            if not record.is_new:
+                raise ContractViolation(
+                    f"{type(record).__name__} is written once and never replaced"
+                )
 
-    store._rules = (Rule(entity=Claim, before_save=written_once),)
+    database = Database("sqlite://")
+    metadata.create_all(database.engine)
+    store = Repository(database, hooks)
     claim = Claim(fingerprint="fp1", verdict="600")
     store.save(claim)
 

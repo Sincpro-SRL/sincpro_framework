@@ -9,8 +9,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-ROOTS = ("input", "steps", "item")
-
 
 @dataclass(frozen=True)
 class Reference:

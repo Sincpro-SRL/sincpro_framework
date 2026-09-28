@@ -14,7 +14,6 @@ class FrameworkContext:
 
     framework: "UseFramework"
     context: Dict[str, Any]
-    parent_context: Dict[str, Any]
     global_scope: bool
 
     def __init__(
