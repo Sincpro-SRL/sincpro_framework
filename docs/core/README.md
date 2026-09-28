@@ -9,6 +9,7 @@ a context that travels with the call, interceptors around each use case, error h
 | Root README, [Quick Start](../../README.md#-quick-start) and [Key Features](../../README.md#-key-features-of-the-sincpro-framework) | How to declare a bus, a Feature, an ApplicationService; how dependencies and typing work |
 | Root README, [Recommended Infrastructure Structure](../../README.md#-recommended-infrastructure-structure) | How a bounded context is laid out on disk: `dependencies.py`, `framework.py`, `__init__.py` |
 | [Context manager](context-manager.md) | Metadata that propagates through a call with `contextvars`: correlation ids, the user, anything the transport knows |
+| [Settings](settings.md) | One document, any shape: the global object, a context's own section, the cascade, the environment by path, secrets, where each value came from, and the framework's own settings read from the project's |
 | [Interceptors](interceptors.md) | Code around one use case, from outside it: veto, adjust input or response, audit, cache, retry — with runnable recipes |
 | Root README, [Error Handling](../../README.md#-error-handling) | Handlers per layer, scoped handlers, chaining |
 | [PRD 01, typed dependency container](../prd/PRD_01_typed-dependency-container.md) | Why `UseFramework[DependencyContextType]` exists |

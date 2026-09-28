@@ -6,11 +6,14 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Literal,
     Mapping,
     Optional,
     Sequence,
     Type,
     cast,
+    get_type_hints,
+    overload,
 )
 
 from sincpro_log.logger import LoggerProxy, create_logger
@@ -31,7 +34,24 @@ from .exceptions import (
 from .interceptors import Interceptor, InterceptorRegistration, chain_for
 from .observability import FrameworkSpanContext, Observability
 from .ordering import DEFAULT_SEQUENCE, Placement, name_of, ordered
+from .remote_execution.adapters import transport_for
+from .remote_execution.configuration import configured_host
+from .remote_execution.domain.address import HostedAt, parse_address
+from .remote_execution.domain.hosting import hosted_here
+from .remote_execution.entrypoint.hosts import Attach, OpenHost, serve_contexts
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
+
+
+class _Forwarded:
+    """What the async facade of a context hosted by another service runs on its worker thread:
+    the bus's own call, which forwards — or runs here, when this execution is that service's.
+    """
+
+    def __init__(self, framework: "UseFramework") -> None:
+        self._framework = framework
+
+    def execute(self, dto: Any, return_type: Any = None) -> Any:
+        return self._framework(dto, return_type)
 
 
 class UseFramework(ContextMixin, Generic[TDeps]):
@@ -118,6 +138,9 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.was_initialized: bool = False
         self._build_lock = threading.RLock()
         self.bus: FrameworkBus | None = None
+
+        self._hosted_at: HostedAt | None = configured_host(bundled_context_name)
+        """Where another service hosts this bounded context — the context map, or `hosted_by`."""
 
     def _refuse_when_built(self, what: str) -> None:
         if self.was_initialized:
@@ -739,12 +762,83 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         without blocking its event loop. See ``Bus.get_async_bus`` /
         ``AsyncBus`` for the propagation and reuse semantics.
         """
+        if self._hosted_at is not None:
+            return AsyncBus(_Forwarded(self))
         return self._built_bus().get_async_bus()
+
+    def _declared_response(self, dto_type: type) -> Any:
+        handler = self.handler_of(dto_type)
+        return None if handler is None else get_type_hints(handler.execute).get("return")
+
+    def _executed_where_hosted(self, dto: Any, return_type: Any) -> Any:
+        """The DTO executed by the service hosting this context, answered as `return_type` —
+        or the response its handler here declares, when none is given."""
+        hosted_at = self._hosted_at
+        if hosted_at is None:
+            raise SincproFrameworkNotBuilt(f"'{self.name}' is not hosted by another service")
+        response = (
+            return_type if return_type is not None else self._declared_response(type(dto))
+        )
+        return transport_for(hosted_at).execute(
+            self.name, dto, response, self.current_context()
+        )
+
+    @property
+    def hosted_at(self) -> HostedAt | None:
+        """Where another service hosts this bounded context, or `None` when it runs here."""
+        return self._hosted_at
+
+    def hosted_by(self, address: str) -> None:
+        """Execute every DTO of this context on the service at `address` — what the context map
+        says, in code.
+
+            billing.hosted_by("grpc://10.0.0.5:50051?timeout=5")
+            billing.hosted_by("http://billing-service:8000")
+
+        See `docs/entrypoints/bounded-contexts-across-services.md`.
+        """
+        self._hosted_at = parse_address(self.name, address)
+        self._registrations.append(lambda bus: bus.hosted_by(address))
+
+    @overload
+    def serve(self, address: str) -> None: ...
+
+    @overload
+    def serve(self, address: str, attach: Literal[Attach.FOREGROUND]) -> None: ...
+
+    @overload
+    def serve(
+        self,
+        address: str,
+        attach: Literal[Attach.THREAD, Attach.PROCESS],
+    ) -> OpenHost: ...
+
+    def serve(self, address: str, attach: Attach = Attach.FOREGROUND) -> OpenHost | None:
+        """Host this bounded context for other services at `address` — `host:port`, `:0` for a
+        free port — over gRPC.
+
+            billing.serve("0.0.0.0:50051")                           its own deployment: blocks
+            host = billing.serve("0.0.0.0:50051", Attach.THREAD)     beside a REST API
+            host = billing.serve("0.0.0.0:50051", Attach.PROCESS)    a subprocess of its own
+            host.stop()
+
+        Several at once: `serve_contexts([billing, catalog], address, attach)`.
+        """
+        hosted = [cast(Any, self)]
+        if attach == Attach.FOREGROUND:
+            serve_contexts(hosted, address, Attach.FOREGROUND)
+            return None
+        if attach == Attach.THREAD:
+            return serve_contexts(hosted, address, Attach.THREAD)
+        return serve_contexts(hosted, address, Attach.PROCESS)
 
     def __call__(
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
-        """Main function to execute the framework"""
+        """Main function to execute the framework — here, or on the service hosting this context
+        (the context map, `hosted_by`), unless this execution is that service's."""
+        if self._hosted_at is not None and not hosted_here(self.name):
+            return self._executed_where_hosted(dto, return_type)
         if not self.was_initialized:
             self.build_root_bus()
 

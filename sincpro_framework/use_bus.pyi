@@ -4,6 +4,7 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -28,6 +29,8 @@ from .error_handler import ErrorHandler as ErrorHandler
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
 from .interceptors import Interceptor
+from .remote_execution.domain.address import HostedAt
+from .remote_execution.entrypoint.hosts import Attach, OpenHost
 from .sincpro_abstractions import ApplicationService, DataTransferObject, Feature
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
@@ -173,6 +176,31 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     def handler_of(self, dto: type) -> type | None:
         """The Feature or ApplicationService registered now for `dto` — what a `replaces=` names."""
+        ...
+
+    @property
+    def hosted_at(self) -> HostedAt | None:
+        """Where another service hosts this bounded context, or `None` when it runs here."""
+        ...
+
+    def hosted_by(self, address: str) -> None:
+        """Execute every DTO of this context on the service at `address` —
+        `grpc://host:port?timeout=5` or `http://host:port`, what the context map says, in code.
+        """
+        ...
+
+    @overload
+    def serve(self, address: str) -> None: ...
+    @overload
+    def serve(self, address: str, attach: Literal[Attach.FOREGROUND]) -> None: ...
+    @overload
+    def serve(
+        self,
+        address: str,
+        attach: Literal[Attach.THREAD, Attach.PROCESS],
+    ) -> OpenHost:
+        """Host this bounded context for other services at `address`, over gRPC — blocking, on
+        this process's threads, or in a subprocess of its own."""
         ...
 
     @property

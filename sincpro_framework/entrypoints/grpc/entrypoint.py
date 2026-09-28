@@ -97,6 +97,12 @@ class GrpcGateway:
         for dto, wrapper in (wrap or {}).items():
             catalog.wrap(dto, wrapper)
         self._catalogs[proto.validate_package(alias)] = catalog
+        if framework_instance.hosted_at is not None:
+            logger.warning(
+                f"{framework_instance.name} is hosted here and the context map hosts it at "
+                f"{framework_instance.hosted_at.address}: calling services are answered here, "
+                "and this process's own calls go to that address"
+            )
         return self
 
     def methods(self) -> dict[str, GrpcMethodSpec]:
@@ -124,8 +130,8 @@ class GrpcGateway:
 
     def handlers(self, health_check: Any | None = None) -> tuple[Any, ...]:
         """This gateway's `grpc.GenericRpcHandler`s — one per served service, plus
-        `sincpro.Introspection` and, by default, `grpc.health.v1.Health`. No
-        `grpc.Server` around them.
+        `sincpro.Introspection`, `sincpro.Contexts/Execute` for calling services and, by default,
+        `grpc.health.v1.Health`. No `grpc.Server` around them.
 
         `my_server.add_generic_rpc_handlers(gateway.handlers())` mounts this gateway's
         services on a server the caller built and owns — alongside another gateway's
@@ -135,10 +141,23 @@ class GrpcGateway:
         every registered `UseFramework` whether it is still built.
         """
         from sincpro_framework.entrypoints.grpc import wire
+        from sincpro_framework.remote_execution.entrypoint.grpc import open_host_handler
 
         specs = self.methods()
         document = proto.describe_document(self._title, self._version, specs)
-        return tuple(wire.generic_handlers(specs, document, health_check))
+        return (
+            *wire.generic_handlers(specs, document, health_check),
+            open_host_handler(self.contexts()),
+        )
+
+    def contexts(self) -> dict[str, UseFramework]:
+        """Every bounded context this gateway hosts, by its own name — what a calling service's
+        context map names (`/sincpro.Contexts/Execute`, see
+        `docs/entrypoints/bounded-contexts-across-services.md`)."""
+        return {
+            catalog.framework_instance.name: catalog.framework_instance
+            for catalog in self._catalogs.values()
+        }
 
     def server(
         self,
@@ -156,9 +175,10 @@ class GrpcGateway:
         for a deeper probe (a DB ping, a queue connection) than "did the bus build".
         """
         from sincpro_framework.entrypoints.grpc import wire
+        from sincpro_framework.remote_execution.entrypoint.grpc import open_host_handler
 
         specs = self.methods()
-        return wire.build_server(
+        server = wire.build_server(
             specs,
             proto.describe_document(self._title, self._version, specs),
             max_workers=max_workers,
@@ -167,6 +187,8 @@ class GrpcGateway:
             reflection=reflection,
             health_check=health_check,
         )
+        server.add_generic_rpc_handlers((open_host_handler(self.contexts()),))
+        return server
 
     def run(
         self,

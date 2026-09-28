@@ -161,7 +161,8 @@ def test_handlers_returns_generic_rpc_handlers_with_no_server():
     handlers = GrpcGateway({"pay": _bus("pay")}).handlers()
 
     # pay.Features + sincpro.Introspection + grpc.health.v1.Health (on by default)
-    assert len(handlers) == 3
+    # + sincpro.Contexts, the Open Host of calling services (bounded-contexts-across-services.md)
+    assert len(handlers) == 4
     assert all(hasattr(handler, "service_name") for handler in handlers)
 
 

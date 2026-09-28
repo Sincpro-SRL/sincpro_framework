@@ -294,6 +294,7 @@ gateway.methods())` if a hand-built server still wants it.
 | `.run(address=, credentials=, grace=, handle_signals=, ...)` | Bind, serve, drain on SIGTERM/SIGINT. |
 | `build_grpc_server(instances)` | Same as `GrpcGateway(...).server()`. |
 | `GrpcClient(target)` | Python caller with no generated stubs: dict in, dict out. |
+| `.contexts()` / `/sincpro.Contexts/Execute` | Every hosted bounded context by its own name, answering [calling services](bounded-contexts-across-services.md) — streamed chunks of Python values, for a service that runs the same code (`remote_execution.entrypoint.grpc`). |
 
 `credentials` is a `grpc.ServerCredentials`; without it the port is insecure, which is for
 localhost and for a mesh that terminates TLS in front of the process — never for a port exposed

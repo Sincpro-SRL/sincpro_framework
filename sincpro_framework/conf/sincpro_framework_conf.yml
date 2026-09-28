@@ -7,3 +7,4 @@ sentry_dsn: $ENV:SENTRY_PYTHON_DSN
 app_release: $ENV:APP_RELEASE
 otel_service_name: $ENV:OTEL_SERVICE_NAME
 tenant: $ENV:TENANT
+context_map_override: $ENV:SINCPRO_CONTEXT_MAP
