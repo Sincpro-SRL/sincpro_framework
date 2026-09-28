@@ -1,7 +1,8 @@
 """The core needs none of the extras: an SDK that only has buses must never need a database.
 
 A fresh interpreter with every optional dependency blocked imports the core, runs a bus, a cron,
-a migration, a workflow, a frame and a stored use case, all in memory. One `import sqlalchemy`
+a migration, a workflow, a frame, a stored use case and a context hosted over HTTP, all in memory
+or on the standard library. One `import sqlalchemy`
 reached from the core, and every SDK that uses nothing but a bus starts needing a database
 driver — this is the check.
 """
@@ -19,6 +20,7 @@ BLOCKED = (
     "starlette",
     "uvicorn",
     "grpc",
+    "google.protobuf",
     "duckdb",
     "deltalake",
     "pyarrow",
@@ -159,6 +161,42 @@ except ImportError as error:
     assert "sincpro-framework[faststream]" in str(error), error
 else:
     raise AssertionError("the FastStream adapter imported without FastStream")
+
+from sincpro_framework.remote_execution import ContextUnavailable
+
+hosted = UseFramework("core-only-hosted", log_after_execution=False)
+
+
+@hosted.feature(CommandPing)
+class PingHosted(Feature):
+    def execute(self, dto: CommandPing) -> ResponsePing:
+        return ResponsePing(pong=True)
+
+
+hosted.hosted_by("http://127.0.0.1:9?timeout=1")
+try:
+    hosted(CommandPing(), ResponsePing)
+except ContextUnavailable:
+    pass
+else:
+    raise AssertionError("an http address with nobody listening answered")
+
+over_grpc = UseFramework("core-only-grpc", log_after_execution=False)
+
+
+@over_grpc.feature(CommandPing)
+class PingOverGrpc(Feature):
+    def execute(self, dto: CommandPing) -> ResponsePing:
+        return ResponsePing(pong=True)
+
+
+over_grpc.hosted_by("grpc://127.0.0.1:9")
+try:
+    over_grpc(CommandPing(), ResponsePing)
+except ImportError as error:
+    assert "sincpro-framework[grpc]" in str(error), error
+else:
+    raise AssertionError("a grpc address answered without grpc installed")
 
 loaded = sorted(name for name in BLOCKED if sys.modules.get(name) is not None)
 assert loaded == [], loaded

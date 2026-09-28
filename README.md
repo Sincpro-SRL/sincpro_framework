@@ -106,6 +106,7 @@ Now you are ready to explore more complex use cases! 🚀
     - [MCP tools](docs/entrypoints/mcp.md)
     - [JSON-RPC](docs/entrypoints/rpc.md)
     - [gRPC](docs/entrypoints/grpc.md)
+    - [Bounded contexts across services](docs/entrypoints/bounded-contexts-across-services.md) — the context map: a context hosted by another service
 18. [Observability](#observability) — tracing (OTLP) + errors (Sentry/GlitchTip)
 19. [Configuration or settings](#configuration-or-settings)
 20. [Variables](#-variables)
@@ -378,6 +379,22 @@ See [docs/entrypoints/](docs/entrypoints/README.md) for the full section.
 ### `entrypoint_grpc`
 
 See [docs/entrypoints/grpc.md](docs/entrypoints/grpc.md) for the full section.
+
+**A bounded context hosted by another service.** When two services run the same code, the context
+map places a context in the other one, and the caller's code does not change:
+
+```yaml
+context_map:                                   # the conf file; SINCPRO_CONTEXT_MAP wins per context
+  - context: billing
+    at: grpc://billing-service:50051?timeout=5
+```
+
+`billing(CommandIssueInvoice(...), ResponseIssueInvoice)` is then answered by the service at that
+address, which hosts it in one line — `billing.serve(address)`, `billing.serve(address,
+Attach.THREAD)` beside a REST API, `Attach.PROCESS` in a subprocess of its own, or
+`open_host_routes([billing])` on the REST API's own port for `http://` addresses. `bytes`, `Decimal`
+and the request context travel as they are, in chunks, and an exception raised there is raised here
+as itself. The component is `sincpro_framework.remote_execution`. See [docs/entrypoints/bounded-contexts-across-services.md](docs/entrypoints/bounded-contexts-across-services.md).
 
 - Same catalog, gRPC wire: `GrpcGateway({"qr": qr}).run("0.0.0.0:50051")`.
 - Methods are `/qr.Features/CommandCreateQREconomico` — unary, `google.protobuf.Struct` in and out.
@@ -1568,12 +1585,12 @@ export OTEL_TRACES_SAMPLER_ARG=0.1   # record 10% of the traces born in this bus
 
 ## Configuration or settings
 
-The framework comes with a module or component to allow us to create configuratio or settings based on files or
-environment variables.
-You need to inherit from `SincproConfig` from module `sincpro_framework.sincpro_conf`
+A project's configuration is one document — a YAML file plus the environment — and a settings
+class is any `SincproConfig`. `build_config_obj(Shape, file, path)` builds one from the document;
+the full guide is [docs/core/settings.md](docs/core/settings.md).
 
 ```python
-from sincpro_framework.sincpro_conf import SincproConfig
+from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj
 
 
 class PostgresConf(SincproConfig):
@@ -1584,64 +1601,74 @@ class PostgresConf(SincproConfig):
 
 class MyConfig(SincproConfig):
     log_level: str = "DEBUG"
-    token: str = "defult_my_token"
+    token: str = "default_my_token"
     postgresql: PostgresConf = PostgresConf()
 
-```
 
-This class should be mapped based on yaml file like this, we have a feature to use ENV variables in the yaml file
-using the prefix `$ENV:`
+config = build_config_obj(MyConfig, "/path/to/your/config.yml", "my_project")
+```
 
 ```yaml
-log_level: "INFO"
-token: "$ENV:MY_SECRET_TOKEN"
-postgresql:
-  host: localhost
-  port: 12345
-  user: custom_user
+my_project:
+  log_level: "INFO"
+  token: "$ENV:MY_SECRET_TOKEN"
+  postgresql:
+    host: localhost
+    port: 12345
 ```
 
-### Environment Variable Handling
+`path` names the project's section of the file (optional: without it the whole file is the
+section) and may be dotted to reach a section inside it. A nested class is read from the section
+of its name; one with a default keeps it when its section is absent. The object is assignable
+unless its class sets `model_config = ConfigDict(frozen=True)`.
 
-When using `$ENV:` prefix in your configuration files, the framework will:
+### Environment variables
 
-1. Look for the environment variable specified after `$ENV:`
-2. If the environment variable exists, use its value
-3. If the environment variable doesn't exist:
-   - Use the default value defined in your configuration class
-   - Issue a warning indicating that the environment variable is missing
-   - Proceed with execution rather than raising an error
-
-This behavior allows applications to run with partial configurations in development environments or when not all environment variables are available, while still logging the fallback at info level.
-
-Example of fallback to default values:
+`$ENV:NAME` reads the variable. When it is unset, or holds what the field cannot accept, the field
+takes its default and an info line is logged — the settings are built at import time, and a typo
+in one deployment variable never makes the process fail to start:
 
 ```python
-# Configuration class with default
 class ApiConfig(SincproConfig):
-    api_key: str = "dev_default_key"  # Default value as fallback
+    api_key: str = "dev_default_key"
 
-# In config.yml
-api_key: "$ENV:API_KEY"  # References environment variable
-
-# If API_KEY environment variable is not set, the framework will:
-# 1. Log info: "Environment variable [API_KEY] is not set for field [api_key]. Using default value: dev_default_key"
-# 2. Use the default value "dev_default_key"
-# 3. Continue execution without error
+# config.yml:  api_key: "$ENV:API_KEY"
+# API_KEY unset → info: "Environment variable [API_KEY] is not set for field [api_key].
+#                        Using default value: dev_default_key"
 ```
 
-Then you can use the config object in your code where it will be loaded all the settings from the yaml file
-for that you will require use the following funciton `build_config_obj`
+A root class that declares `env_prefix: ClassVar[str] = "PAYMENTS"` also reads variables by path
+(`PAYMENTS__QR__TIMEOUT` sets `qr.timeout`); without it, nothing is read by path.
+
+### A project with bounded contexts
+
+The shared settings, a class per context inheriting them, and the global holding every context:
 
 ```python
-from sincpro_framework.sincpro_conf import build_config_obj
-from .my_config import MyConfig
+class SharedSettings(SincproConfig):
+    environment: Environment = Environment.TEST
 
-config = build_config_obj(MyConfig, '/path/to/your/config.yml')
 
-assert isinstance(config.log_level, str)
-assert isinstance(config.postgresql, PostgresConf)
+class QRSettings(SharedSettings):
+    timeout: float = 10.0
+
+
+class PaymentsSettings(SharedSettings):
+    qr: QRSettings
+
+
+settings = build_config_obj(PaymentsSettings, FILE, "sincpro_payments_sdk")   # the global
+qr_bus.add_dependency("settings", settings.qr)                                  # a context's own
+qr = build_config_obj(QRSettings, FILE, "sincpro_payments_sdk.qr")             # a shape alone
 ```
+
+A section inherits a shared field it does not set (`qr.environment`) from the nearest section
+above, and overrides it by setting it. Everything required and missing is one validation error
+naming each path. `Secret[str]` masks a value everywhere it is printed. `describe_settings(settings)`
+lists each value with where it came from — file, section inherited, variable or default.
+`sincpro_framework.testing.settings_scope_violations` reports a context reading another context's
+section, for a team that wants the rule. A shared class inheriting `FrameworkSettings` hands the
+framework its log, OTLP, Sentry and release settings — no `framework_settings.x = …` lines.
 
 ## 📦 Variables
 
@@ -1651,7 +1678,7 @@ where you can define some behavior currently we support the following settings:
 
 - `sincpro_framework_log_level`: Log level for the framework logger. Default: `DEBUG`.
 - `otlp_endpoint`: OTLP exporter endpoint for distributed tracing. Resolved from `OTEL_EXPORTER_OTLP_ENDPOINT` env var. Default: `null` (tracing disabled). Requires `sincpro-framework[opentelemetry]`.
-- `sincpro_framework_log_level`: `INFO` or `DEBUG`. Resolved from `SINCPRO_FRAMEWORK_LOG_LEVEL`. Default: `DEBUG`. A service sets its own level through the environment — never by assigning into the framework's settings, which also ran too late because the logger is configured at import time.
+- `sincpro_framework_log_level`: `INFO` or `DEBUG`. Resolved from `SINCPRO_FRAMEWORK_LOG_LEVEL`. Default: `DEBUG`. A service sets its own level through the environment, or through its own settings by inheriting `FrameworkSettings` ([docs/core/settings.md](docs/core/settings.md#the-frameworks-own-settings-frameworksettings)), which configures the log again when the level is among what it sets.
 - `otlp_traces_sample_rate`: share of new traces to record, `0.0`-`1.0`. Resolved from `OTEL_TRACES_SAMPLER_ARG`. Default: `1.0`. An upstream sampling decision always wins over this ratio.
 - `app_release`: deployed artifact and version, `artifact:version`. Resolved from `APP_RELEASE` — the standard on every Sincpro service. Feeds both the GlitchTip release and the OTel `service.name`.
 - `otel_service_name`: names the artifact when `APP_RELEASE` carries only a version. Resolved from `OTEL_SERVICE_NAME`.

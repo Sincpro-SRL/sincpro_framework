@@ -17,14 +17,21 @@ that happens to subclass `RuntimeError`.
 """
 
 import asyncio
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Any, Protocol, Type
 
 if TYPE_CHECKING:
     # Kept out of the runtime import graph on purpose, same reason as
     # context/thread_context_bus.py: sincpro_abstractions imports *this*
     # module (via the aio package) for `Bus.get_async_bus()`, so a real
     # import back here would be circular.
-    from ..sincpro_abstractions import Bus, TypeDTO, TypeDTOResponse
+    from ..sincpro_abstractions import TypeDTO, TypeDTOResponse
+
+
+class Executes(Protocol):
+    """What `AsyncBus` runs on a worker thread: a bus — or, for a bus served by another service,
+    its remote execution."""
+
+    def execute(self, dto: Any, return_type: Any = None) -> Any: ...
 
 
 class AsyncBus:
@@ -63,7 +70,7 @@ class AsyncBus:
     # this module.
     """
 
-    def __init__(self, bus: "Bus") -> None:
+    def __init__(self, bus: Executes) -> None:
         self._bus = bus
 
     async def execute(
@@ -76,12 +83,7 @@ class AsyncBus:
         """
 
         def _call() -> "TypeDTOResponse | None":
-            # Same known pyright edge case as ThreadContextBus.execute: `Bus`
-            # is only resolvable here via a TYPE_CHECKING import (to avoid a
-            # circular import with sincpro_abstractions), which pyright can't
-            # fully reconcile with `execute`'s per-call generic signature.
-            # Verified correct at runtime — see tests/test_async_bus.py.
-            return self._bus.execute(dto, return_type)  # pyright: ignore[reportArgumentType]
+            return self._bus.execute(dto, return_type)
 
         return await asyncio.to_thread(_call)
 

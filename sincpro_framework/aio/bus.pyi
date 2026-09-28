@@ -1,7 +1,10 @@
-from typing import TYPE_CHECKING, Type, overload
+from typing import TYPE_CHECKING, Any, Protocol, Type, overload
 
 if TYPE_CHECKING:
     from ..sincpro_abstractions import Bus, TypeDTO, TypeDTOResponse
+
+class Executes(Protocol):
+    def execute(self, dto: Any, return_type: Any = None) -> Any: ...
 
 class AsyncBus:
     """
@@ -14,7 +17,7 @@ class AsyncBus:
     context snapshot from `asyncio.to_thread` itself.
     """
 
-    def __init__(self, bus: "Bus") -> None: ...
+    def __init__(self, bus: Executes) -> None: ...
     @overload
     async def execute(
         self, dto: "TypeDTO", return_type: "Type[TypeDTOResponse]"
