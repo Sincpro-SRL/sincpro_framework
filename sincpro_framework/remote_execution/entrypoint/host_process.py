@@ -22,13 +22,13 @@ def main(argv: Sequence[str]) -> int:
     """
     from sincpro_framework.remote_execution.entrypoint.hosts import (
         _bound,
-        _gateway,
         _imported,
+        _internal_server,
     )
 
     address, paths = argv[0], argv[1:]
     try:
-        server = _gateway([_imported(one) for one in paths]).server()
+        server = _internal_server([_imported(one) for one in paths])
         bound = _bound(address, server.add_insecure_port(address))
         server.start()
     except Exception as error:

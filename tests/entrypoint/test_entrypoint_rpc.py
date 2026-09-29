@@ -1,10 +1,16 @@
-"""entrypoint_rpc: JSON-RPC 2.0 methods instance.layer.Dto, context, OpenRPC discover."""
+"""entrypoint_rpc: JSON-RPC 2.0 methods `{namespace}.{operation}`, context, OpenRPC discover.
+
+These buses publish their whole catalog (`Exposure.CATALOG`, `unguarded=True`): what is
+protected here is the protocol and the naming, the same in either mode; declared exposure has
+its own tests (test_jsonrpc_naming.py)."""
 
 import json
 from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject
+from sincpro_framework.entrypoints import Exposure
+from sincpro_framework.entrypoints.gateway import Buses
 from sincpro_framework.entrypoints.rpc import RpcGateway
 from sincpro_framework.entrypoints.rpc.entrypoint import merge_http_context
 from sincpro_framework.entrypoints.rpc.jrpc import (
@@ -12,6 +18,10 @@ from sincpro_framework.entrypoints.rpc.jrpc import (
     INVALID_PARAMS,
     METHOD_NOT_FOUND,
 )
+
+
+def catalog_gateway(instances: Buses | None = None, **options: Any) -> RpcGateway:
+    return RpcGateway(instances, exposure=Exposure.CATALOG, unguarded=True, **options)
 
 
 def rpc_object(payload: dict[str, Any] | list[Any] | None) -> dict[str, Any]:
@@ -128,23 +138,24 @@ def _instance(name: str, with_app_service: bool = False) -> UseFramework:
     return framework
 
 
-def test_method_names_are_instance_layer_dto():
-    gateway = RpcGateway({"qr": _instance("payment-qr"), "cybersource": _instance("cs")})
+def test_method_names_are_namespace_and_operation_without_the_layer():
+    gateway = catalog_gateway({"qr": _instance("payment-qr"), "cybersource": _instance("cs")})
     names = set(gateway.methods())
 
-    assert "qr.features.ValidateCard" in names
-    assert "cybersource.features.ValidateCard" in names
-    assert "qr.features.ChargePayment" in names
+    assert "qr.validate_card" in names
+    assert "cybersource.validate_card" in names
+    assert "qr.charge_payment" in names
+    assert not any("features" in name for name in names)
 
 
 def test_two_instances_same_dto_do_not_collide():
-    gateway = RpcGateway({"qr": _instance("a"), "bank_account": _instance("b")})
+    gateway = catalog_gateway({"qr": _instance("a"), "bank_account": _instance("b")})
     qr = rpc_object(
         gateway.handle(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "qr.features.ChargePayment",
+                "method": "qr.charge_payment",
                 "params": {"amount": 10},
             }
         )
@@ -154,7 +165,7 @@ def test_two_instances_same_dto_do_not_collide():
             {
                 "jsonrpc": "2.0",
                 "id": 2,
-                "method": "bank_account.features.ChargePayment",
+                "method": "bank_account.charge_payment",
                 "params": {"amount": 99},
             }
         )
@@ -166,19 +177,19 @@ def test_two_instances_same_dto_do_not_collide():
 
 def test_app_service_method_and_layers_filter():
     framework = _instance("pay", with_app_service=True)
-    all_layers = RpcGateway({"pay": framework})
-    apps_only = RpcGateway({"pay": framework}, layers=("app_services",))
+    all_layers = catalog_gateway({"pay": framework})
+    apps_only = catalog_gateway({"pay": framework}, layers=("app_services",))
 
-    assert "pay.app_services.OrchestrateCharge" in all_layers.methods()
-    assert "pay.features.ValidateCard" in all_layers.methods()
-    assert set(apps_only.methods()) == {"pay.app_services.OrchestrateCharge"}
+    assert "pay.orchestrate_charge" in all_layers.methods()
+    assert "pay.validate_card" in all_layers.methods()
+    assert set(apps_only.methods()) == {"pay.orchestrate_charge"}
 
     reply = rpc_object(
         all_layers.handle(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.app_services.OrchestrateCharge",
+                "method": "pay.orchestrate_charge",
                 "params": {"amount": 5},
             }
         )
@@ -187,13 +198,13 @@ def test_app_service_method_and_layers_filter():
 
 
 def test_context_reaches_feature():
-    gateway = RpcGateway({"pay": _instance("ctx")})
+    gateway = catalog_gateway({"pay": _instance("ctx")})
     reply = rpc_object(
         gateway.handle(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.features.EchoContext",
+                "method": "pay.echo_context",
                 "params": {"label": "ok"},
                 "context": {"correlation_id": "req-9"},
             }
@@ -204,13 +215,13 @@ def test_context_reaches_feature():
 
 
 def test_inherited_http_context_is_used_when_body_omits_it():
-    gateway = RpcGateway({"pay": _instance("ctx")})
+    gateway = catalog_gateway({"pay": _instance("ctx")})
     reply = rpc_object(
         gateway.handle(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.features.EchoContext",
+                "method": "pay.echo_context",
                 "params": {"label": "hdr"},
             },
             context={"correlation_id": "from-header"},
@@ -221,13 +232,13 @@ def test_inherited_http_context_is_used_when_body_omits_it():
 
 
 def test_invalid_params_is_32602():
-    gateway = RpcGateway({"pay": _instance("pay")})
+    gateway = catalog_gateway({"pay": _instance("pay")})
     reply = rpc_object(
         gateway.handle(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.features.ValidateCard",
+                "method": "pay.validate_card",
                 "params": {"card_number": "4111"},
             }
         )
@@ -241,13 +252,13 @@ def test_value_object_rejection_stays_json_safe():
     ctx.error (pydantic ValidationError.errors()). The -32602 envelope must not
     leak that raw exception, or json.dumps on the reply would crash the host.
     """
-    gateway = RpcGateway({"pay": _instance("pay")})
+    gateway = catalog_gateway({"pay": _instance("pay")})
     reply = rpc_object(
         gateway.handle(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.features.ChargeWithVO",
+                "method": "pay.charge_with_vo",
                 "params": {"amount": -5},
             }
         )
@@ -258,10 +269,10 @@ def test_value_object_rejection_stays_json_safe():
 
 
 def test_unknown_method_is_32601():
-    gateway = RpcGateway({"pay": _instance("pay")})
+    gateway = catalog_gateway({"pay": _instance("pay")})
     reply = rpc_object(
         gateway.handle(
-            {"jsonrpc": "2.0", "id": 1, "method": "pay.features.DoesNotExist", "params": {}}
+            {"jsonrpc": "2.0", "id": 1, "method": "pay.does_not_exist", "params": {}}
         )
     )
 
@@ -269,43 +280,43 @@ def test_unknown_method_is_32601():
 
 
 def test_binary_dto_is_not_published():
-    names = set(RpcGateway({"pay": _instance("pay")}).methods())
-    assert "pay.features.SendBinaryPackage" not in names
+    names = set(catalog_gateway({"pay": _instance("pay")}).methods())
+    assert "pay.send_binary_package" not in names
 
 
 def test_per_instance_exclude_uses_shared_catalog():
     framework = _instance("pay")
-    gateway = RpcGateway().add("pay", framework, exclude=[ChargePayment])
+    gateway = catalog_gateway().add("pay", framework, exclude=[ChargePayment])
     names = set(gateway.methods())
 
-    assert "pay.features.ValidateCard" in names
-    assert "pay.features.ChargePayment" not in names
+    assert "pay.validate_card" in names
+    assert "pay.charge_payment" not in names
 
 
 def test_rpc_discover_lists_catalog_and_openrpc_version():
-    document = RpcGateway({"qr": _instance("qr", with_app_service=True)}).discover()
+    document = catalog_gateway({"qr": _instance("qr", with_app_service=True)}).discover()
     names = {method["name"] for method in document["methods"]}
 
     assert document["openrpc"] == "1.4.0"
     assert DISCOVER_METHOD in names
-    assert "qr.features.ValidateCard" in names
-    assert "qr.app_services.OrchestrateCharge" in names
+    assert "qr.validate_card" in names
+    assert "qr.orchestrate_charge" in names
 
 
 def test_batch_and_notification():
-    gateway = RpcGateway({"pay": _instance("pay")})
+    gateway = catalog_gateway({"pay": _instance("pay")})
     batch = rpc_batch(
         gateway.handle(
             [
                 {
                     "jsonrpc": "2.0",
                     "id": 1,
-                    "method": "pay.features.ChargePayment",
+                    "method": "pay.charge_payment",
                     "params": {"amount": 1},
                 },
                 {
                     "jsonrpc": "2.0",
-                    "method": "pay.features.ChargePayment",
+                    "method": "pay.charge_payment",
                     "params": {"amount": 2},
                 },
             ]
@@ -318,7 +329,7 @@ def test_batch_and_notification():
         gateway.handle(
             {
                 "jsonrpc": "2.0",
-                "method": "pay.features.ChargePayment",
+                "method": "pay.charge_payment",
                 "params": {"amount": 3},
             }
         )
@@ -343,7 +354,7 @@ def test_build_rpc_app_requires_extra_or_returns_asgi():
 
 def test_correlation_id_header_reaches_the_feature():
     """X-Correlation-Id is what ties an RPC call to the caller's request log."""
-    gateway = RpcGateway({"pay": _instance("ctx")})
+    gateway = catalog_gateway({"pay": _instance("ctx")})
     header_context = merge_http_context({"x-correlation-id": "req-from-gateway"})
 
     reply = rpc_object(
@@ -351,7 +362,7 @@ def test_correlation_id_header_reaches_the_feature():
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.features.EchoContext",
+                "method": "pay.echo_context",
                 "params": {"label": "ok"},
             },
             context=header_context,
@@ -372,7 +383,7 @@ def test_traceparent_header_becomes_the_otel_carrier():
 
 def test_body_context_wins_over_the_headers():
     """Headers are a default: an explicit context in the payload overrides them."""
-    gateway = RpcGateway({"pay": _instance("ctx")})
+    gateway = catalog_gateway({"pay": _instance("ctx")})
     header_context = merge_http_context({"x-correlation-id": "from-header"})
 
     reply = rpc_object(
@@ -380,7 +391,7 @@ def test_body_context_wins_over_the_headers():
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.features.EchoContext",
+                "method": "pay.echo_context",
                 "params": {"label": "ok"},
                 "context": {"correlation_id": "from-body"},
             },
@@ -412,11 +423,11 @@ def _blowing_up(error: Exception) -> UseFramework:
 
 
 def _asked(framework: UseFramework) -> Any:
-    return RpcGateway({"pay": framework}).handle(
+    return catalog_gateway({"pay": framework}).handle(
         {
             "jsonrpc": "2.0",
             "id": 1,
-            "method": "pay.features.ChargePayment",
+            "method": "pay.charge_payment",
             "params": {"amount": 10},
         }
     )
@@ -440,7 +451,11 @@ def test_an_internal_failure_tells_the_caller_nothing_about_the_inside():
 
     assert answered["error"]["code"] == -32603
     assert answered["error"]["message"] == "Internal error"
-    assert "data" not in answered["error"]
+    assert answered["error"]["data"] == {
+        "kind": "internal",
+        "reason": "INTERNAL_ERROR",
+        "retryable": True,
+    }
     assert "hunter2" not in str(answered)
     assert "secret-123" not in str(answered)
 
@@ -452,7 +467,7 @@ def test_a_domain_error_still_answers_the_caller():
 
     answered = _asked(_blowing_up(ContractViolation("an invoice has to balance")))
 
-    assert answered["error"]["data"] == "an invoice has to balance"
+    assert answered["error"]["data"]["message"] == "an invoice has to balance"
 
 
 def test_a_failure_the_bus_logged_is_not_logged_again_by_the_transport():

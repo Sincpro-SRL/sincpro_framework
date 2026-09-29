@@ -18,6 +18,7 @@ BLOCKED = (
     "sentry_sdk",
     "fastmcp",
     "starlette",
+    "fastapi",
     "uvicorn",
     "grpc",
     "google.protobuf",
@@ -297,6 +298,111 @@ except ImportError as error:
     assert "sincpro-framework[grpc]" in str(error), error
 else:
     raise AssertionError("a grpc address answered without grpc installed")
+
+# --- PRD_13/14/15: caching, idempotency, declared exposure, the shared failures — all core ---
+
+from sincpro_framework.caching import (
+    IDEMPOTENCY_KEY,
+    Cache,
+    FailSafe,
+    Idempotency,
+    KeepPolicy,
+    Lru,
+    Sliding,
+    declares_once,
+)
+from sincpro_framework.entrypoints import Exposure, Gateway
+from sincpro_framework.entrypoints.exposure import grpc, internal, mcp, queue, rest, rpc
+from sincpro_framework.transport.failures import FailureKind, failure_kind
+
+kept = Cache(eviction=Lru(max_entries=10))
+fresh = KeepPolicy(
+    freshness=Sliding(idle_for=timedelta(minutes=1), at_most=timedelta(minutes=5)),
+    failure=FailSafe(serve_for=timedelta(minutes=5)),
+)
+assert kept.get_or_compute("k", lambda: 1, fresh) == kept.get_or_compute("k", lambda: 2, fresh) == 1
+
+
+class CommandCharge(DataTransferObject):
+    amount: int
+
+
+class ResponseCharge(DataTransferObject):
+    receipt: int
+
+
+class CommandSecret(DataTransferObject):
+    pass
+
+
+charges: list[int] = []
+idempotency = Idempotency(InMemoryKeyValue())
+exposed = UseFramework("core-only-exposed", log_after_execution=False)
+
+
+@exposed.feature(CommandCharge)
+@idempotency.once(expires_after=timedelta(minutes=1))
+@rest.post("/charges", status=201)
+@grpc()
+@rpc()
+@mcp(destructive=True)
+@queue.consumes("core.charges", producers=("urn:svc:core",))
+class Charge(Feature):
+    def execute(self, dto: CommandCharge) -> ResponseCharge:
+        charges.append(dto.amount)
+        return ResponseCharge(receipt=len(charges))
+
+
+@exposed.feature(CommandSecret)
+@internal
+class Secret(Feature):
+    def execute(self, dto: CommandSecret) -> ResponsePing:
+        return ResponsePing(pong=True)
+
+
+for key in ("k-1", "k-1"):
+    with exposed.context({IDEMPOTENCY_KEY: key}):
+        exposed(CommandCharge(amount=5), ResponseCharge)
+assert charges == [5] and declares_once(Charge)
+
+
+class RestSurface(Gateway):
+    wire = "rest"
+
+
+surface = RestSurface([exposed], unguarded=True)
+assert [entry.command.rsplit(".", 1)[-1] for entry in surface.manifest()] == ["CommandCharge"]
+catalog = RestSurface([exposed], exposure=Exposure.CATALOG, unguarded=True)
+assert "CommandSecret" not in str(catalog.manifest())
+assert failure_kind(PermissionDenied("a", "b", "c")) == FailureKind.PERMISSION_DENIED
+
+for module, extra in (
+    ("sincpro_framework.entrypoints.fastapi", "fastapi"),
+    ("sincpro_framework.entrypoints.faststream", "faststream"),
+    ("sincpro_framework.transport.grpc", "grpc"),
+):
+    try:
+        __import__(module)
+    except ImportError as error:
+        assert f"sincpro-framework[{extra}]" in str(error), (module, error)
+    else:
+        raise AssertionError(f"{module} imported without its extra")
+
+from sincpro_framework.entrypoints.grpc import GrpcGateway
+from sincpro_framework.entrypoints.mcp import McpGateway
+from sincpro_framework.entrypoints.rpc import RpcGateway
+
+for gateway, serve, extra in (
+    (GrpcGateway([exposed], unguarded=True), "server", "grpc"),
+    (RpcGateway([exposed], unguarded=True), "app", "rpc"),
+    (McpGateway([exposed], unguarded=True), "server", "mcp"),
+):
+    try:
+        getattr(gateway, serve)()
+    except ImportError as error:
+        assert f"sincpro-framework[{extra}]" in str(error), (type(gateway).__name__, error)
+    else:
+        raise AssertionError(f"{type(gateway).__name__}.{serve}() served without its extra")
 
 loaded = sorted(name for name in BLOCKED if sys.modules.get(name) is not None)
 assert loaded == [], loaded

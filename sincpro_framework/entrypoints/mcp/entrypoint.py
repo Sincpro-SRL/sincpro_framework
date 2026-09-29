@@ -1,21 +1,49 @@
-"""MCP entrypoint: orchestrates the shared catalog and the FastMCP wire (mcp.py)."""
+"""MCP entrypoint: the declared surface (`McpGateway`, PRD_14) and the catalog of one bus
+(`Entrypoint`, PRD_12), both on FastMCP (mcp.py) — the tools' names and hints come from the wire
+(wire.py), every call goes through the bus."""
 
-from collections import Counter
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Self
 
+from sincpro_framework.caching import declares_once
+from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.catalog import Catalog, PackedFeatureOrAppService
+from sincpro_framework.entrypoints.exposure import Exposure, McpBinding, bindings_of
 from sincpro_framework.entrypoints.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.entrypoints.mcp.auth import token_verifier
-from sincpro_framework.entrypoints.mcp.mcp import FASTMCP_MISSING, fastmcp_callable
+from sincpro_framework.entrypoints.mcp.mcp import (
+    FASTMCP_MISSING,
+    fastmcp_callable,
+    tool_function,
+)
+from sincpro_framework.entrypoints.mcp.wire import McpTool, McpWire, hints_of
 from sincpro_framework.use_bus import UseFramework
 
 if TYPE_CHECKING:
     from sincpro_framework.auth.access_control import AccessControl
 
 
+def _catalog_hints(operation: PackedFeatureOrAppService) -> dict[str, Any]:
+    """The hints of a catalog entry: what its facts prove, and — when its handler declares
+    `@mcp` — its declared title, `destructive` and `open_world`; never its name, which stays
+    the DTO's in the catalog."""
+    handler = operation.handler or operation.dto
+    declared = bindings_of(handler).get(McpBinding.wire)
+    is_query = isinstance(operation.dto, type) and issubclass(operation.dto, Query)
+    fields = (
+        {}
+        if declared is None
+        else {name: getattr(declared, name) for name in declared.model_fields_set}
+    )
+    fields.pop("name", None)
+    binding = McpBinding(**{"read_only": is_query, "destructive": not is_query, **fields})
+    return hints_of(binding, declares_once(handler))
+
+
 class Entrypoint:
-    """MCP facade over one UseFramework instance."""
+    """MCP facade over one UseFramework instance — PRD_12's catalog: every JSON-safe use case a
+    tool named by its DTO class, with no declaration needed. The declared surface, over one bus
+    or several, is `McpGateway`."""
 
     def __init__(self, framework_instance: UseFramework):
         self.catalog = Catalog(framework_instance)
@@ -54,8 +82,9 @@ class Entrypoint:
 
         1. Import FastMCP or raise with the extra-install hint.
         2. Register catalog.get_scalar_use_cases(filter_binaries_schema=True)
-           with mcp.tool(fn, name=..., description=..., tags=layer); each call acts as whoever
-           called, when the bus is guarded.
+           with mcp.tool(fn, name=..., description=..., tags=layer, annotations=...) — the
+           hints derived as `McpGateway` derives them, a declared `@mcp` shaping only its hints;
+           each call acts as whoever called, when the bus is guarded.
         3. Final: a FastMCP 3 instance ready to run (stdio by default) — with `auth`, FastMCP
            verifies bearer tokens itself, and with `base_url` publishes the resource metadata.
         """
@@ -73,6 +102,7 @@ class Entrypoint:
                 name=operation.name,
                 description=operation.description,
                 tags={operation.layer},
+                annotations=_catalog_hints(operation),
             )
         return mcp
 
@@ -87,14 +117,20 @@ class Entrypoint:
 
 
 class McpGateway(Gateway):
-    """MCP facade over one or more UseFramework instances — every published use case a tool.
+    """MCP over one or more bounded contexts — the declared surface, each use case a tool.
 
-        McpGateway([billing, sales]).server()             # automatic: every bus, every use case
+        McpGateway([billing, sales]).server()                         # what is bound: @mcp()
+        McpGateway([billing, sales], exposure=Exposure.CATALOG).server()   # every use case
 
-    Context: a tool is named by its DTO; a name two buses answer is qualified by the alias —
-    `billing_CommandIssueInvoice` — so no tool shadows another. Each call acts as whoever called,
-    authenticated by its bus's `AccessControl`; `auth=` adds FastMCP's own bearer check.
+    Context: `Exposure.DECLARED` (the default) publishes only the use cases bound with `@mcp`
+    or `bind(Command, McpBinding(...))`; `Exposure.CATALOG` publishes every one and logs each.
+    A tool is named by its DTO (`issue_invoice`), prefixed by its group only when two contexts
+    answer the same name; its hints are derived (`McpWire`). Each call acts as whoever called,
+    authenticated and authorized by its bus's `AccessControl` — a hint never authorizes.
+    `auth=` adds FastMCP's own bearer check; `port=` a `McpWire` of the project's.
     """
+
+    wire = "mcp"
 
     def __init__(
         self,
@@ -102,27 +138,28 @@ class McpGateway(Gateway):
         layers: Iterable[str] = DEFAULT_LAYERS,
         title: str = "sincpro-mcp",
         version: str = "1.0.0",
+        *,
+        exposure: Exposure = Exposure.DECLARED,
+        unguarded: bool = False,
+        port: McpWire | None = None,
     ):
-        super().__init__(instances, layers, title, version)
+        super().__init__(
+            instances,
+            layers,
+            title,
+            version,
+            exposure=exposure,
+            unguarded=unguarded,
+            port=port or McpWire(),
+        )
 
-    def _named(self) -> list[tuple[str, UseFramework, PackedFeatureOrAppService]]:
-        listed = self.operations()
-        counted = Counter(operation.name for _, _, operation in listed)
-        return [
-            (
-                (
-                    f"{alias}_{operation.name}"
-                    if counted[operation.name] > 1
-                    else operation.name
-                ),
-                bus,
-                operation,
-            )
-            for alias, bus, operation in listed
-        ]
+    def tools(self) -> list[McpTool]:
+        """The validated surface as tools — refused with `ExposureRefused`, every reason at
+        once, when it does not hold."""
+        return self.build()
 
     def tool_names(self) -> list[str]:
-        return [name for name, _, _ in self._named()]
+        return [tool.name for tool in self.tools()]
 
     def server(
         self,
@@ -130,21 +167,31 @@ class McpGateway(Gateway):
         auth: "AccessControl[Any] | None" = None,
         base_url: str | None = None,
     ) -> Any:
-        """A FastMCP 3 server with every published use case as a tool — returned, not run, so
-        the project adds its middleware, prompts or resources to it."""
+        """A FastMCP 3 server with every tool of the surface — returned, not run, so the project
+        adds its middleware, prompts or resources to it."""
         try:
             from fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
         except ImportError as error:
             raise ImportError(FASTMCP_MISSING) from error
 
+        tools = self.tools()
         verifier = token_verifier(auth, base_url) if auth is not None else None
         mcp = FastMCP(name or self._title, auth=verifier)
-        for tool_name, bus, operation in self._named():
+        for tool in tools:
+            operation = tool.operation
             mcp.tool(
-                fastmcp_callable(operation, bus),
-                name=tool_name,
-                description=operation.description,
-                tags={operation.layer},
+                tool_function(
+                    operation.command,
+                    tool.name,
+                    tool.description,
+                    operation.run,
+                    operation.bus,
+                ),
+                name=tool.name,
+                title=tool.title,
+                description=tool.description,
+                tags={str(operation.layer)},
+                annotations=tool.annotations,
             )
         return mcp
 
@@ -158,7 +205,17 @@ def build_mcp_server(
     auth: "AccessControl[Any] | None" = None,
     base_url: str | None = None,
 ) -> Any:
-    """One bus — its tools named by their DTOs, as always — or several, through `McpGateway`."""
+    """The whole catalog as tools, with no declaration — the convenience for an SDK or an MCP
+    server over a whole context (PRD_14 §2, CATALOG).
+
+    1. One bus: `Entrypoint` — PRD_12's catalog, each tool named by its DTO class, as always.
+    2. Several: `McpGateway` in `Exposure.CATALOG`, its buses taken as unguarded on purpose when
+       they have no `AccessControl` — a guarded one still needs every use case to say who may
+       call it.
+    3. Final: a FastMCP server, not run.
+    """
     if isinstance(framework_instance, UseFramework):
         return Entrypoint(framework_instance).server(name=name, auth=auth, base_url=base_url)
-    return McpGateway(framework_instance).server(name=name, auth=auth, base_url=base_url)
+    return McpGateway(framework_instance, exposure=Exposure.CATALOG, unguarded=True).server(
+        name=name, auth=auth, base_url=base_url
+    )

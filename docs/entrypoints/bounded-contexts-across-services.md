@@ -194,7 +194,7 @@ caller already imported. The host still logs and reports its own failure.
 | `bus.serve(address, attach)`, `serve_contexts([...], address, attach)`, `Attach`, `OpenHost` | the Open Host Service over gRPC |
 | `open_host_routes([...])` | `sincpro_framework.remote_execution.entrypoint.http` — the Open Host Service on an ASGI app |
 | `ContextFailed`, `ContextUnavailable`, `ContextTimeout`, `CannotTravel` | `sincpro_framework.remote_execution` |
-| `GrpcGateway(...).contexts()` | every context a gateway hosts — it answers `/sincpro.Contexts/Execute` too |
+| `open_host([...])` → `.server()` / `.mount(server)` | the gRPC open host as a server of its own (what `bus.serve` runs: the door and its health, never the contexts' public catalog), or mounted on a server of the caller's — beside a public `GrpcGateway` on one port, on purpose |
 
 ## Module map
 
@@ -213,7 +213,7 @@ caller already imported. The host still logs and reports its own failure.
 | `configuration.py` | the context map, read from the conf file and `SINCPRO_CONTEXT_MAP` |
 | `entrypoint/hosts.py` | `serve_contexts`, `Attach`, `OpenHost` — what `bus.serve` runs |
 | `entrypoint/http.py` | `open_host_routes`, the HTTP Open Host — `[rpc]` |
-| `entrypoint/grpc.py` | `open_host_handler`, the gRPC Open Host every `GrpcGateway` mounts — `[grpc]` |
+| `entrypoint/grpc.py` | `open_host`, the gRPC Open Host — its own server, or mounted on one — `[grpc]` |
 | `entrypoint/execution.py` | the execution both Open Hosts run |
 | `entrypoint/host_process.py` | the subprocess `Attach.PROCESS` launches |
 

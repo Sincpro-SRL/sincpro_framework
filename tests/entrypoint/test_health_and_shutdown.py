@@ -21,10 +21,11 @@ from grpc_health.v1 import (  # pyright: ignore[reportMissingImports]
 )
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework.entrypoints.exposure import Exposure
 from sincpro_framework.entrypoints.grpc import GrpcGateway
 from sincpro_framework.entrypoints.grpc.client import GrpcClient
-from sincpro_framework.entrypoints.grpc.entrypoint import SHUTDOWN_SIGNALS
 from sincpro_framework.entrypoints.grpc.wire import HEALTH_SERVICE
+from sincpro_framework.transport.grpc import SHUTDOWN_SIGNALS
 
 
 class Ask(DataTransferObject):
@@ -47,9 +48,13 @@ def _bus(name: str) -> UseFramework:
     return framework
 
 
+def _gateway(buses: dict[str, UseFramework]) -> GrpcGateway:
+    return GrpcGateway(buses, exposure=Exposure.CATALOG, unguarded=True)
+
+
 @pytest.fixture
 def served() -> Iterator[tuple[grpc.Channel, Any]]:
-    gateway = GrpcGateway({"payments": _bus("payments")})
+    gateway = _gateway({"payments": _bus("payments")})
     server = gateway.server(reflection=False)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
@@ -65,7 +70,7 @@ def served() -> Iterator[tuple[grpc.Channel, Any]]:
 
 
 def test_health_service_appears_in_handlers_by_default():
-    handlers = GrpcGateway({"payments": _bus("payments")}).handlers()
+    handlers = _gateway({"payments": _bus("payments")}).handlers()
 
     assert HEALTH_SERVICE in {h.service_name() for h in handlers}
 
@@ -74,10 +79,21 @@ def test_check_overall_and_per_service_are_serving(served):
     _channel, stub = served
 
     overall = stub.Check(health_pb2.HealthCheckRequest(service=""))
-    per_service = stub.Check(health_pb2.HealthCheckRequest(service="payments.Features"))
+    per_service = stub.Check(
+        health_pb2.HealthCheckRequest(service="payments.v1.PaymentsService")
+    )
 
     assert overall.status == health_pb2.HealthCheckResponse.SERVING
     assert per_service.status == health_pb2.HealthCheckResponse.SERVING
+
+
+def test_the_layer_named_service_of_before_is_unknown(served):
+    _channel, stub = served
+
+    with pytest.raises(grpc.RpcError) as error:
+        stub.Check(health_pb2.HealthCheckRequest(service="payments.Features"))
+
+    assert error.value.code() is grpc.StatusCode.NOT_FOUND
 
 
 def test_check_unknown_service_is_not_found(served):
@@ -100,7 +116,7 @@ def test_watch_streams_the_current_status(served):
 def test_a_custom_health_check_overrides_the_default():
     """A caller wiring a deeper probe (a DB ping) replaces "is the bus built"."""
     ready = {"value": False}
-    gateway = GrpcGateway({"payments": _bus("payments")})
+    gateway = _gateway({"payments": _bus("payments")})
     server = gateway.server(reflection=False, health_check=lambda: ready["value"])
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
@@ -119,7 +135,7 @@ def test_a_custom_health_check_overrides_the_default():
 
 def test_handlers_accepts_a_custom_health_check_too():
     ready = {"value": False}
-    handlers = GrpcGateway({"payments": _bus("payments")}).handlers(
+    handlers = _gateway({"payments": _bus("payments")}).handlers(
         health_check=lambda: ready["value"]
     )
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
@@ -151,7 +167,7 @@ def test_run_hooks_sigterm_and_sigint_by_default(monkeypatch):
         def wait_for_termination(self):
             return None
 
-    gateway = GrpcGateway({"payments": _bus("payments")})
+    gateway = _gateway({"payments": _bus("payments")})
     fake_server = ImmediateTermination()
     monkeypatch.setattr(gateway, "server", lambda **_kwargs: fake_server)
     monkeypatch.setattr(fake_server, "add_insecure_port", lambda _addr: 0, raising=False)
@@ -176,7 +192,7 @@ def test_handle_signals_false_skips_the_hook(monkeypatch):
         def start(self):
             return None
 
-    gateway = GrpcGateway({"payments": _bus("payments")})
+    gateway = _gateway({"payments": _bus("payments")})
     monkeypatch.setattr(gateway, "server", lambda **_kwargs: ImmediateTermination())
 
     gateway.run("127.0.0.1:0", handle_signals=False)
@@ -201,7 +217,7 @@ def test_sigterm_drains_an_in_flight_call_before_the_server_stops():
     bus.feature(Ask)(SlowFeature)
     bus.build_root_bus()
 
-    gateway = GrpcGateway({"slow": bus})
+    gateway = _gateway({"slow": bus})
     server = gateway.server(reflection=False)
     real_stop = server.stop
     server.stop = lambda grace: (stopped_with.append(grace), real_stop(grace))[1]
@@ -215,20 +231,68 @@ def test_sigterm_drains_an_in_flight_call_before_the_server_stops():
         os.kill(os.getpid(), signal.SIGTERM)
 
     original_handler = signal.getsignal(signal.SIGTERM)
-    from sincpro_framework.entrypoints.grpc.entrypoint import _hook_graceful_shutdown
+    from sincpro_framework.transport.grpc import hook_graceful_shutdown
 
-    _hook_graceful_shutdown(server, "slow", grace=2.0)
+    hook_graceful_shutdown(server, "slow", grace=2.0)
     trigger = futures.ThreadPoolExecutor(max_workers=1)
     trigger.submit(send_sigterm_once_in_flight)
 
     with GrpcClient(f"127.0.0.1:{port}") as client:
-        result = client.call("/slow.Features/Ask", {"n": 7})
+        result = client.call("/slow.v1.SlowService/Ask", {"n": 7})
 
     assert result == {"total": 7.0}
     assert stopped_with == [2.0]
     trigger.shutdown(wait=True)
     signal.signal(signal.SIGTERM, original_handler)
     server.stop(None)
+
+
+def test_sigterm_turns_every_service_not_serving_before_the_server_stops(monkeypatch):
+    """A probe or a load balancer watching health learns the pod is going before the drain
+    starts, instead of sending new calls to a server that refuses them."""
+    gateway = _gateway({"payments": _bus("payments")})
+    server = gateway.server(reflection=False)
+    port = server.add_insecure_port("127.0.0.1:0")
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    stub: Any = health_pb2_grpc.HealthStub(channel)
+    seen_at_stop: dict[str, int] = {}
+    real_stop = server.stop
+
+    def stop(grace: float | None) -> Any:
+        for service in ("", "payments.v1.PaymentsService"):
+            seen_at_stop[service] = stub.Check(
+                health_pb2.HealthCheckRequest(service=service), timeout=5
+            ).status
+        return real_stop(grace)
+
+    server.stop = stop
+    monkeypatch.setattr(gateway, "server", lambda **_kwargs: server)
+    serving: list[int] = []
+
+    def terminate_once_serving() -> None:
+        serving.append(
+            stub.Check(health_pb2.HealthCheckRequest(service=""), wait_for_ready=True).status
+        )
+        import os
+
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    original_handlers = {sig: signal.getsignal(sig) for sig in SHUTDOWN_SIGNALS}
+    trigger = futures.ThreadPoolExecutor(max_workers=1)
+    trigger.submit(terminate_once_serving)
+    try:
+        gateway.run("127.0.0.1:0", grace=1.0)
+    finally:
+        for sig, handler in original_handlers.items():
+            signal.signal(sig, handler)
+        trigger.shutdown(wait=True)
+        channel.close()
+
+    assert serving == [health_pb2.HealthCheckResponse.SERVING]
+    assert seen_at_stop == {
+        "": health_pb2.HealthCheckResponse.NOT_SERVING,
+        "payments.v1.PaymentsService": health_pb2.HealthCheckResponse.NOT_SERVING,
+    }
 
 
 # --- entrypoint_rpc: /healthz served by default ------------------------------

@@ -18,6 +18,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework.entrypoints.exposure import Exposure
 from sincpro_framework.entrypoints.grpc import GrpcGateway
 from sincpro_framework.entrypoints.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.grpc.wire import Struct, scalar_to_struct, struct_to_scalar
@@ -45,6 +46,11 @@ def _bus(name: str) -> UseFramework:
 
 
 # --- entrypoint_rpc: routes() as data, app() as composition -----------------
+
+
+def _rpc_catalog(bus: UseFramework) -> RpcGateway:
+    """Every use case of `bus` published, under `{namespace}.{operation}` (PRD_15 §4)."""
+    return RpcGateway({"pay": bus}, exposure=Exposure.CATALOG, unguarded=True)
 
 
 def test_routes_returns_starlette_route_objects_not_an_app():
@@ -120,7 +126,7 @@ def test_app_accepts_middleware_routes_and_lifespan_without_the_host():
     async def healthz(_request: Request) -> PlainTextResponse:
         return PlainTextResponse("ok")
 
-    gateway = RpcGateway({"pay": _bus("pay")})
+    gateway = _rpc_catalog(_bus("pay"))
     app = gateway.app(
         middleware=[Middleware(CORSMiddleware, allow_origins=["https://app.example.com"])],
         routes=[Route("/healthz-custom", healthz)],
@@ -135,7 +141,7 @@ def test_app_accepts_middleware_routes_and_lifespan_without_the_host():
             json={
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "pay.features.Ask",
+                "method": "pay.ask",
                 "params": {"n": 3},
             },
         )
@@ -144,12 +150,12 @@ def test_app_accepts_middleware_routes_and_lifespan_without_the_host():
 
 
 def test_app_with_no_arguments_still_works_exactly_as_before():
-    gateway = RpcGateway({"pay": _bus("pay")})
+    gateway = _rpc_catalog(_bus("pay"))
     client = TestClient(gateway.app())
 
     reply = client.post(
         "/rpc",
-        json={"jsonrpc": "2.0", "id": 1, "method": "pay.features.Ask", "params": {"n": 1}},
+        json={"jsonrpc": "2.0", "id": 1, "method": "pay.ask", "params": {"n": 1}},
     )
     assert reply.json()["result"] == {"total": 1}
 
@@ -158,11 +164,12 @@ def test_app_with_no_arguments_still_works_exactly_as_before():
 
 
 def test_handlers_returns_generic_rpc_handlers_with_no_server():
-    handlers = GrpcGateway({"pay": _bus("pay")}).handlers()
+    gateway = GrpcGateway({"pay": _bus("pay")}, exposure=Exposure.CATALOG, unguarded=True)
+    handlers = gateway.handlers()
 
-    # pay.Features + sincpro.Introspection + grpc.health.v1.Health (on by default)
-    # + sincpro.Contexts, the Open Host of calling services (bounded-contexts-across-services.md)
-    assert len(handlers) == 4
+    # pay.v1.PayService + sincpro.Introspection + grpc.health.v1.Health (on by default) — and
+    # never remote execution's internal door, which a deployment mounts on purpose (PRD_15 §0)
+    assert len(handlers) == 3
     assert all(hasattr(handler, "service_name") for handler in handlers)
 
 
@@ -187,7 +194,11 @@ class _DenyInternalWithoutToken(grpc.ServerInterceptor):
 
 @pytest.fixture
 def per_bus_policy_client() -> Iterator[GrpcClient]:
-    gateway = GrpcGateway({"public": _bus("public"), "internal": _bus("internal")})
+    gateway = GrpcGateway(
+        {"public": _bus("public"), "internal": _bus("internal")},
+        exposure=Exposure.CATALOG,
+        unguarded=True,
+    )
     server = gateway.server(interceptors=[_DenyInternalWithoutToken()], reflection=False)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
@@ -200,14 +211,15 @@ def per_bus_policy_client() -> Iterator[GrpcClient]:
 
 
 def test_interceptor_applies_a_different_policy_per_alias(per_bus_policy_client: GrpcClient):
-    assert per_bus_policy_client.call("/public.Features/Ask", {"n": 1}) == {"total": 1.0}
+    answered = per_bus_policy_client.call("/public.v1.PublicService/Ask", {"n": 1})
+    assert answered == {"total": 1.0}
 
     with pytest.raises(grpc.RpcError) as denied:
-        per_bus_policy_client.call("/internal.Features/Ask", {"n": 1})
+        per_bus_policy_client.call("/internal.v1.InternalService/Ask", {"n": 1})
     assert denied.value.code() is grpc.StatusCode.PERMISSION_DENIED
 
     allowed = per_bus_policy_client.channel.unary_unary(
-        "/internal.Features/Ask",
+        "/internal.v1.InternalService/Ask",
         request_serializer=Struct.SerializeToString,
         response_deserializer=Struct.FromString,
     )(scalar_to_struct({"n": 1}), metadata=(("x-internal-token", "s3cr3t"),))
@@ -220,12 +232,12 @@ def test_a_caller_builds_its_own_grpc_server_from_handlers():
     """
     from concurrent import futures
 
-    gateway = GrpcGateway({"pay": _bus("pay")})
+    gateway = GrpcGateway({"pay": _bus("pay")}, exposure=Exposure.CATALOG, unguarded=True)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
     server.add_generic_rpc_handlers(gateway.handlers())
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
 
     with GrpcClient(f"127.0.0.1:{port}") as client:
-        assert client.call("/pay.Features/Ask", {"n": 5}) == {"total": 5.0}
+        assert client.call("/pay.v1.PayService/Ask", {"n": 5}) == {"total": 5.0}
     server.stop(None)

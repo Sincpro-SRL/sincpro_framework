@@ -27,6 +27,7 @@ BROKERS = ROOT / "docs" / "events" / "brokers.md"
 CACHING = ROOT / "docs" / "caching" / "README.md"
 AUTH = ROOT / "docs" / "auth" / "README.md"
 REST = ROOT / "docs" / "entrypoints" / "rest.md"
+FASTAPI = ROOT / "docs" / "entrypoints" / "fastapi.md"
 README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -64,6 +65,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         CACHING,
         AUTH,
         REST,
+        FASTAPI,
     ],
     ids=lambda page: page.parent.name + "/" + page.name,
 )
@@ -77,10 +79,11 @@ def test_every_block_of_a_runnable_page_runs(page, tmp_path, monkeypatch):
         starts.append(source.count("\n") + 1)
         source += block + "\n"
 
+    module = f"docs_{page.stem}"  # fastapi.md must not become the module `fastapi`
     try:
-        _import_as_module(page.stem, source, tmp_path)
+        _import_as_module(module, source, tmp_path)
     except Exception as error:
-        line = _failing_line(error, tmp_path / f"{page.stem}.py")
+        line = _failing_line(error, tmp_path / f"{module}.py")
         number = max(i for i, start in enumerate(starts, 1) if start <= max(line, 1))
         pytest.fail(
             f"block {number} of {page.name} failed: {error!r}\n\n{blocks[number - 1]}"

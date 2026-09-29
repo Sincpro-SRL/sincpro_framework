@@ -5,6 +5,10 @@ describes them in an OpenAPI 3.1 document — so any client generator (orval, op
 API gateway or tool reads them. It needs the `[rest]` extra to serve; the route table and the
 document are built without it.
 
+> **Frozen.** This Starlette emitter stays as the minimal REST host and gets no new features.
+> REST's host is FastAPI now — declared resources, problem details, `Idempotency-Key`, one
+> OpenAPI document for generated and hand-written routes: see [`fastapi.md`](fastapi.md).
+
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
 ## The mapping

@@ -38,6 +38,11 @@ class PackedFeatureOrAppService(DataTransferObject):
     json_schema: dict[str, Any]
     response_json_schema: dict[str, Any] | None
     run: RunFn
+    handler: type | None = None
+    """The Feature or ApplicationService answering `dto` — what exposure reads its bindings,
+    its access and its stages from."""
+    response: Any = None
+    """What `execute` declares it answers, as an annotation — `None` for nothing declared."""
 
 
 class Catalog:
@@ -59,6 +64,8 @@ class Catalog:
         self._exclude: set[str] = set()
         self._wrappers: dict[str, Wrapper] = {}
         self._packed: dict[bool, list[PackedFeatureOrAppService]] = {}
+        self.revision = 0
+        """Bumped by every include/exclude/wrap — what a gateway's resolved surface checks."""
         """What `get_scalar_use_cases` answered, by its filter — a built bus's handlers do not
         change, so the schemas are computed once; `include` / `exclude` / `wrap` let it go."""
 
@@ -112,6 +119,8 @@ class Catalog:
                         else None
                     ),
                     run=run,
+                    handler=metadata.type,
+                    response=metadata.response,
                 )
             )
         return result
@@ -132,17 +141,20 @@ class Catalog:
     def include(self, *dtos: type | str) -> Self:
         self._include = self._names(*dtos)
         self._packed.clear()
+        self.revision += 1
         return self
 
     def exclude(self, *dtos: type | str) -> Self:
         self._exclude = self._names(*dtos)
         self._packed.clear()
+        self.revision += 1
         return self
 
     def wrap(self, dto: type | str, wrapper: Wrapper) -> Self:
         key = dto if isinstance(dto, str) else dto.__name__
         self._wrappers[key] = wrapper
         self._packed.clear()
+        self.revision += 1
         return self
 
     def _packed_use_cases(

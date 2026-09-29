@@ -12,7 +12,8 @@ their own CPU, GIL and crash — tied to this one: it stops with `stop()`, and o
 process dies (its stdin closes). It is launched as its own module, never re-importing this
 process's `__main__`, so it imports what it hosts by path; a context object is turned into one by
 finding the module that holds it. The
-transport is gRPC (`GrpcGateway`); HTTP hosting is a route on the service's own app instead —
+transport is gRPC, on a server of its own that serves the open host and its health only — never
+the contexts' public catalog; HTTP hosting is a route on the service's own app instead —
 `sincpro_framework.remote_execution.entrypoint.http`.
 """
 
@@ -20,7 +21,6 @@ import importlib
 import json
 import os
 import queue
-import re
 import subprocess
 import sys
 import threading
@@ -91,21 +91,12 @@ class _ProcessHost(OpenHost):
             self._process.wait()
 
 
-def _alias(name: str, taken: set[str]) -> str:
-    """A gRPC package alias for a context's name — `sincpro-billing` → `sincpro_billing`."""
-    alias = re.sub(r"[^A-Za-z0-9_]", "_", name)
-    alias = alias if alias[:1].isalpha() else f"context_{alias}"
-    while alias in taken:
-        alias = f"{alias}_"
-    taken.add(alias)
-    return alias
+def _internal_server(contexts: Sequence["UseFramework"]) -> Any:
+    """A gRPC server hosting `contexts` for calling services — the open host and its health,
+    and nothing a public client could discover."""
+    from sincpro_framework.remote_execution.entrypoint.grpc import open_host
 
-
-def _gateway(contexts: Sequence["UseFramework"]) -> Any:
-    from sincpro_framework.entrypoints.grpc import GrpcGateway
-
-    taken: set[str] = set()
-    return GrpcGateway({_alias(one.name, taken): one for one in contexts})
+    return open_host(contexts).server()
 
 
 def _bound(address: str, port: int) -> str:
@@ -223,9 +214,13 @@ def serve_contexts(
         )
     served = [_imported(one) if isinstance(one, str) else one for one in contexts]
     if attach == Attach.FOREGROUND:
-        _gateway(served).run(address)
+        from sincpro_framework.transport.grpc import serve_until_terminated
+
+        server = _internal_server(served)
+        server.add_insecure_port(address)
+        serve_until_terminated(server, ", ".join(one.name for one in served))
         return None
-    server = _gateway(served).server()
+    server = _internal_server(served)
     bound = _bound(address, server.add_insecure_port(address))
     server.start()
     return _ServerHost(server, bound)

@@ -1,24 +1,37 @@
 """`subscribe`: every event the buses registered, heard from a FastStream broker.
 
-    subscribe(broker, Subscriber(planning, assurance))      # one subscription per event name
+    subscribe(broker, Subscriber(planning, assurance))      # one subscription per channel
     await FastStream(broker).run()                           # or `faststream run app:app`
 
 Context: nobody writes `@broker.subscriber("execution.v1.run_failed")` — the buses already say
-which events they answer, so each gets its subscription here. A message is rebuilt as the
-class the receiving context declared for that name, handed to the buses through their async
-facade (a thread each, so the loop stays free) inside the trace that published it. A handler
-that raises is the broker's to retry or dead-letter, as its configuration says.
+which events they answer. This is the shortcut of the queue entrypoint for that case, and only
+that case: `QueueGateway` over the subscriber's buses, their events only, all of them in one
+consumer group, so each channel is one subscription that hands the event to every bus that
+registered it — as the class *that* bus declared for the name. Commands are never consumed from
+here, whatever they declare: that is `QueueGateway`'s, where who may send one is checked.
+
+How a message is settled is the queue entrypoint's (PRD_15 §5.2), never FastStream's per-broker
+default — that default commits a Kafka offset before the handler runs and discards a failed
+RabbitMQ message, which is at most once:
+
+| What happened | Settled |
+|---|---|
+| every bus handled the event | ack |
+| a redelivery the inbox saw completed | ack, no bus run again |
+| a bus raised | retried — a nack, or on Kafka a counted copy — then dead-lettered at `max_attempts`; a retry re-runs only the bus that failed |
+| the payload is not the event it claims to be | dead-lettered at once: RabbitMQ's own dead-letter exchange, `{channel}.dlq` elsewhere |
+| no bus here registered that event (a shared channel) | ack — it is another consumer's |
+
+Redis Pub/Sub and core NATS have no acknowledgement at all: on them delivery stays at most once
+whatever is settled here — use Redis Streams or NATS JetStream when a lost event matters.
 """
 
 from collections.abc import Callable
 from typing import Any
 
-from faststream import Context, StreamMessage
-
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.events.faststream.queue import EVENT_HEADER, Broker
+from sincpro_framework.events.faststream.queue import Broker
 from sincpro_framework.events.subscriber import Subscriber
-from sincpro_framework.events.trace import within_trace
 
 type ChannelOfName = Callable[[str], str]
 
@@ -37,28 +50,19 @@ def event_names(subscriber: Subscriber) -> list[str]:
     return list(names)
 
 
-def _handler(subscriber: Subscriber, channel_name: str) -> Callable[..., Any]:
-    async def handle(message: StreamMessage[Any] = Context("message")) -> None:
-        name = message.headers.get(EVENT_HEADER, channel_name)
-        event_type = subscriber.event_type(name)
-        if event_type is None:
-            return
-        event = event_type.from_json(message.body.decode())
-        with within_trace(message.headers):
-            await subscriber.get_async_subscriber().handle(event)
-
-    return handle
-
-
 def subscribe(
-    broker: Broker, subscriber: Subscriber, channel_of_name: ChannelOfName = by_name
+    broker: Broker,
+    subscriber: Subscriber,
+    channel_of_name: ChannelOfName = by_name,
+    options: Any | None = None,
 ) -> list[str]:
     """Subscribe the broker to the channel of every event the buses registered; answer the
-    channels. Several events on one channel are one subscription, routed by the event header.
-    """
-    channels: dict[str, str] = {}
-    for name in event_names(subscriber):
-        channels.setdefault(channel_of_name(name), name)
-    for channel, first_name in channels.items():
-        broker.subscriber(channel)(_handler(subscriber, first_name))
-    return list(channels)
+    channels. Several events on one channel are one subscription, routed by the event's type.
+    `options` is a `QueueOptions` — the inbox, `max_attempts`, the dead-letter suffix.
+
+    Context: imported here, not at the top — the queue entrypoint stands on this package's
+    `Broker` and event header."""
+    from sincpro_framework.entrypoints.faststream.gateway import events_gateway
+
+    subscriptions = events_gateway(broker, subscriber.buses, channel_of_name, options).build()
+    return list(dict.fromkeys(one.channel for one in subscriptions))

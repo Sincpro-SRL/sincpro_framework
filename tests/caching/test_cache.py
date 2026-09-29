@@ -20,7 +20,7 @@ from sincpro_framework.caching import (
     InMemoryKeyValue,
     JsonCodec,
     KeepPolicy,
-    Lifetime,
+    TimeToLive,
 )
 from sincpro_framework.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.ddd.exceptions import ContractViolation
@@ -93,7 +93,7 @@ def test_asking_again_with_the_same_parameters_does_not_compute_again(tier):
 @pytest.mark.parametrize("tier", ["process", "memory"])
 def test_a_value_is_recomputed_once_its_ttl_passes(tier):
     world = _world(tier)
-    policy = KeepPolicy[Tenant](lifetime=Lifetime(ttl=timedelta(minutes=5)))
+    policy = KeepPolicy[Tenant](freshness=TimeToLive(ttl=timedelta(minutes=5)))
 
     _tenant(world, "tok", policy)
     world.clock.advance(minutes=4)
@@ -110,7 +110,7 @@ def test_past_its_ttl_the_stale_value_is_served_while_another_caller_recomputes(
     ago — the leader recomputes, the rest are answered at once."""
     world = _world(tier)
     policy = KeepPolicy[Tenant](
-        lifetime=Lifetime(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=1))
+        freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=1))
     )
     _tenant(world, "tok", policy)
     world.clock.advance(minutes=5, seconds=30)
@@ -217,7 +217,7 @@ def test_a_value_that_no_longer_holds_is_never_served_even_when_another_caller_l
     handed out because someone else happens to be recomputing it."""
     world = _world(tier)
     policy = KeepPolicy[Tenant](
-        lifetime=Lifetime(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5)),
+        freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5)),
         validation=ExternalVersion(
             world.registry.current_version, kept=lambda one: one.version
         ),
@@ -354,7 +354,7 @@ def test_past_its_ttl_inside_the_stale_window_the_leader_recomputes_it(tier):
     the value expiring computes the new one — or the stale value would be served forever."""
     world = _world(tier)
     policy = KeepPolicy[Tenant](
-        lifetime=Lifetime(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5))
+        freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5))
     )
     _tenant(world, "tok", policy)
     world.registry.version = "v2"

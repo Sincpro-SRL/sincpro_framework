@@ -96,6 +96,8 @@ if __name__ == "__main__":
 
 Default `build_mcp_server(siat_soap_sdk).run()` also works. `exclude` is required in production because **revoking certificates is JSON-safe** and would otherwise become a tool.
 
+The safer shape is declared exposure: bind only the tools an agent should have with `@mcp()` and serve `McpGateway([siat_soap_sdk]).server()` — a new use case (a revocation included) is then no tool until someone binds it, and a write nobody declared harmless is advertised `destructiveHint: true` ([mcp.md](mcp.md#declared-exposure--mcpgateway-prd_14)).
+
 ---
 
 ## Catalog policy (what MCP should and must not publish)

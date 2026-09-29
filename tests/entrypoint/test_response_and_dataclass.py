@@ -14,6 +14,7 @@ import pytest
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import Entity
 from sincpro_framework.entrypoints.catalog import Catalog
+from sincpro_framework.entrypoints.exposure import Exposure
 from sincpro_framework.entrypoints.grpc import GrpcGateway
 from sincpro_framework.entrypoints.rpc import RpcGateway
 from sincpro_framework.entrypoints.scalar_executor import dump_scalar_result
@@ -165,16 +166,18 @@ def test_catalog_publishes_the_response_schema_for_every_shape():
 
 
 def test_openrpc_result_carries_the_response_schema():
-    document = RpcGateway({"shapes": _instance()}).discover()
+    document = RpcGateway(
+        {"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True
+    ).discover()
     methods = {method["name"]: method for method in document["methods"]}
 
-    result = methods["shapes.features.AskDataclass"]["result"]["schema"]
+    result = methods["shapes.ask_dataclass"]["result"]["schema"]
     assert set(result["properties"]) == {"identifier", "total"}
-    assert methods["shapes.features.AskUndeclared"]["result"]["schema"] == {"type": "object"}
+    assert methods["shapes.ask_undeclared"]["result"]["schema"] == {"type": "object"}
 
 
 def test_grpc_describe_and_proto_carry_the_response_shape():
-    gateway = GrpcGateway({"shapes": _instance()})
+    gateway = GrpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True)
     document = gateway.describe()
     methods = {
         method["name"]: method
@@ -184,7 +187,8 @@ def test_grpc_describe_and_proto_carry_the_response_shape():
 
     assert set(methods["AskDataclass"]["result"]["properties"]) == {"identifier", "total"}
     assert methods["AskUndeclared"]["result"] == {"type": "object"}
-    assert "// Struct: the fields of MappedContact." in gateway.proto_files()["shapes.proto"]
+    source = gateway.proto_files()["shapes/v1/shapes.proto"]
+    assert "// Struct: the fields of MappedContact." in source
 
 
 # --- what actually comes back over the wire --------------------------------
@@ -253,12 +257,12 @@ def test_dataclass_command_executes_from_a_scalar():
 def test_dataclass_command_rejects_a_bad_payload_as_invalid_params():
     from sincpro_framework.entrypoints.rpc.jrpc import INVALID_PARAMS
 
-    gateway = RpcGateway({"shapes": _instance()})
+    gateway = RpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True)
     reply = gateway.handle(
         {
             "jsonrpc": "2.0",
             "id": 1,
-            "method": "shapes.features.DataclassCommand",
+            "method": "shapes.dataclass_command",
             "params": {"retries": "not-an-int"},
         }
     )
@@ -284,7 +288,7 @@ def test_dataclass_command_becomes_an_mcp_tool_signature():
 def grpc_client():
     from sincpro_framework.entrypoints.grpc.client import GrpcClient
 
-    gateway = GrpcGateway({"shapes": _instance()})
+    gateway = GrpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True)
     server = gateway.server(max_workers=2)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
@@ -298,16 +302,15 @@ def grpc_client():
 
 def test_every_shape_round_trips_over_grpc(grpc_client):
     """A Struct number is a double in both directions: `retries: int` returns 3.0."""
-    assert grpc_client.call("/shapes.Features/AskDataclass", {"identifier": "x"}) == {
+    service = "/shapes.v1.ShapesService"
+    assert grpc_client.call(f"{service}/AskDataclass", {"identifier": "x"}) == {
         "identifier": "x",
         "total": 7,
     }
-    assert grpc_client.call("/shapes.Features/AskList", {"n": 2}) == {
+    assert grpc_client.call(f"{service}/AskList", {"n": 2}) == {
         "result": [{"total": 0}, {"total": 1}]
     }
-    assert grpc_client.call("/shapes.Features/DataclassCommand", {"identifier": "x"}) == {
+    assert grpc_client.call(f"{service}/DataclassCommand", {"identifier": "x"}) == {
         "total": 3.0
     }
-    assert (
-        grpc_client.call("/shapes.Features/AskEntity", {"number": "F-9"})["number"] == "F-9"
-    )
+    assert grpc_client.call(f"{service}/AskEntity", {"number": "F-9"})["number"] == "F-9"

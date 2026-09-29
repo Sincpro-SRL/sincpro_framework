@@ -66,7 +66,10 @@ from sincpro_framework.caching.domain.idempotency_records import (
     IdempotencyRecords,
     RecordState,
 )
-from sincpro_framework.caching.domain.idempotent_command import request_key_of
+from sincpro_framework.caching.domain.idempotent_command import (
+    IDEMPOTENCY_KEY,
+    request_key_of,
+)
 from sincpro_framework.caching.domain.observer import CacheObserver, IdempotencyOutcome
 from sincpro_framework.caching.domain.policies import IdempotencyPolicy
 from sincpro_framework.caching.domain.store import KeyValueStore
@@ -90,6 +93,21 @@ def _running_as(key: str) -> Generator[None, None, None]:
         yield
     finally:
         _running.reset(token)
+
+
+_once_wrappers: WeakKeyDictionary[Callable[..., Any], IdempotencyPolicy] = WeakKeyDictionary()
+"""Every `execute` that `once()` wrote, with its policy — what `declares_once` looks up."""
+
+
+def declares_once(cls: type) -> bool:
+    """Whether `cls` runs once per key: its `execute`, as Python resolves it, is one `once()`
+    wrote. A subclass that keeps `execute` answers `True`; a replacement with an `execute` of its
+    own answers `False` until it declares `once()` itself.
+
+    Context: an entrypoint that exposes use cases (a retry-safe flag, an `Idempotency-Key`
+    header) asks this instead of reading how the method happens to be named."""
+    execute = getattr(cls, "execute", None)
+    return execute is not None and execute in _once_wrappers
 
 
 def _qualified(cls: type) -> str:
@@ -213,8 +231,9 @@ class Idempotency:
         )
 
         def declared[T: type](cls: T) -> T:
-            """1. Refused twice on one class, and on an async `execute` — a claim held across
-               an await is not supported yet.
+            """1. Refused twice on one class, and on an async `execute` — the bus refuses one
+               too: an async caller reaches the use case through `get_async_bus()`, which runs
+               this synchronous `execute`, claim first, on a worker thread.
             2. Final: `execute` replaced by one that runs the original once per key; the
                answer's codec is read from its return type at the first run.
             """
@@ -223,7 +242,9 @@ class Idempotency:
             original = cls.execute  # type: ignore[attr-defined]
             if inspect.iscoroutinefunction(original):
                 raise ContractViolation(
-                    f"{cls.__name__}.execute is async: once() runs synchronous use cases"
+                    f"{cls.__name__}.execute is async: once() runs synchronous use cases — "
+                    "declare it def execute, and reach it from async code with "
+                    "bus.get_async_bus()"
                 )
             codecs: list[Codec[Any]] = []
 
@@ -234,7 +255,12 @@ class Idempotency:
                 context = handler.context or {}
                 vary = {one: context.get(one) for one in policy.vary_by}
                 return self.run(
-                    (_qualified(cls), _qualified(type(dto)), request_key_of(dto), vary),
+                    (
+                        _qualified(cls),
+                        _qualified(type(dto)),
+                        request_key_of(dto, context.get(IDEMPOTENCY_KEY)),
+                        vary,
+                    ),
                     lambda: original(handler, dto),
                     policy,
                     codecs[0],
@@ -243,6 +269,7 @@ class Idempotency:
 
             cls.execute = execute  # type: ignore[attr-defined]
             self._declared[cls] = policy
+            _once_wrappers[execute] = policy
             return cls
 
         return declared

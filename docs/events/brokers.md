@@ -56,8 +56,8 @@ assert channels == ["billing.v1.invoice_paid"]
 
 In a consumer process that is the whole program: `await FastStream(broker).run()`, or
 `faststream run consumer:app`. A message is rebuilt as the class the receiving context declared
-for that name and handed to its buses off the event loop, inside the trace that published it; a
-handler that raises is the broker's to retry or dead-letter.
+for that name and handed to its buses off the event loop, inside the trace that published it.
+How each message is then settled is the framework's, not the broker's default — see below.
 
 ## Sending: synchronous code
 
@@ -127,10 +127,32 @@ Read this before relying on an event to keep two contexts in step.
 - **Between the commit and the publish.** A Feature that saves and then publishes can crash in
   between: the state is committed and the event is lost. Nothing here closes that window yet —
   that is an outbox (the event written in the same transaction, sent by a relay).
-- **Receiving.** A handler that raises leaves the message to the broker, which redelivers it as
-  it is configured to: **at least once**, so a handler must be idempotent — the same event twice
-  leaves the same state. A message that can never be handled (a payload of another shape) is
-  redelivered until the broker moves it aside: configure a dead-letter queue on the broker.
+- **Receiving: at least once.** `subscribe` is the queue entrypoint over the subscriber's buses
+  — [`QueueGateway`](../entrypoints/queue.md), their events only — so every subscription
+  acknowledges manually, never with FastStream's per-broker default (which commits a Kafka offset
+  *before* the handler runs and discards a failed RabbitMQ message: at most once). Each message is
+  settled from what happened:
+
+  | What happened | Settled | So the broker |
+  |---|---|---|
+  | every bus handled the event | ack | forgets it |
+  | a redelivery the inbox saw completed | ack, no bus run again | forgets it |
+  | a bus raised | retried: a nack (RabbitMQ, NATS) or a copy with the attempt counted (Kafka, where a nack blocks the partition) | redelivers it, up to `max_attempts` (5), then dead-letters it with the reason |
+  | the payload is not the event it claims to be | dead-lettered at once, logged | never redelivers it: RabbitMQ's own dead-letter exchange, `{channel}.dlq` elsewhere |
+  | no bus here registered that event (a shared channel) | ack | leaves it to the consumer it belongs to |
+
+  Every bus that registered an event runs it from one subscription; a retry re-runs only the
+  bus that failed — the inbox remembers the others (in this process by default:
+  `options=QueueOptions(inbox=KeyValueRecords(RedisKeyValue(...)))` across replicas). A handler
+  should still be idempotent: the inbox forgets after `keep_for`, and a crash between the effect
+  and the ack runs it again. On RabbitMQ the attempts are counted by a quorum queue's delivery
+  count; a classic queue has none, so give it a delivery limit or retry by copy. Commands consumed
+  from a broker, and who may send them, are `QueueGateway`'s.
+- **RabbitMQ, several services on one event.** Every consumer group subscribes the queue named
+  after the channel, so two services hearing the same event compete for it — see
+  [queue.md](../entrypoints/queue.md) for the exchange-per-group topology until it is the default.
+- **Redis Pub/Sub and core NATS** have no acknowledgement at all: there delivery stays at most
+  once whatever is settled — use Redis Streams or NATS JetStream when a lost event matters.
 - **Order.** Kafka keeps one key's messages in order — `keyed_by_entity` makes that key the
   entity; across keys, and on brokers without partitions, there is no order to rely on.
 - **Unknown events.** On a channel several events share, one no bus here registered is skipped:
@@ -143,5 +165,5 @@ Read this before relying on an event to keep two contexts in step.
 | `FastStreamQueue(broker, channel_of=by_event_name, options_of=no_options)` | a `Queue`; `start()` / `stop()` for synchronous code |
 | `queue.put(event)` / `await queue.aput(event)` | publish and wait until the broker took it |
 | `keyed_by_entity` | Kafka: `entity_id` as the message key |
-| `subscribe(broker, subscriber, channel_of_name=by_name)` | one subscription per channel of the events the buses registered |
+| `subscribe(broker, subscriber, channel_of_name=by_name, options=None)` | one subscription per channel of the events the buses registered — `QueueGateway` for events, `options` a `QueueOptions` |
 | `EVENT_HEADER` | `sincpro-event`: the wire name beside the payload |

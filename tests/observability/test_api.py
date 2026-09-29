@@ -6,6 +6,7 @@ anything, because every bus builds one whether it will trace or not.
 """
 
 import pytest
+from opentelemetry import trace
 
 from sincpro_framework.observability import Observability, registry
 from sincpro_framework.sincpro_conf import settings
@@ -23,6 +24,11 @@ def no_backends_configured(monkeypatch):
     monkeypatch.setattr(settings, "otlp_endpoint", None)
     monkeypatch.setattr(settings, "sentry_dsn", None)
     monkeypatch.setattr(settings, "app_release", "sincpro_mcp_odoo:0.8.0")
+    # The provider is one per process and another package's tests may have set it: "nothing
+    # configured" includes no host provider, whatever ran before.
+    monkeypatch.setattr(
+        "opentelemetry.trace.get_tracer_provider", lambda: trace.ProxyTracerProvider()
+    )
 
 
 def test_creating_one_resolves_no_identity_yet(monkeypatch):
