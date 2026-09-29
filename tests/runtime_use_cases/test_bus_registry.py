@@ -39,7 +39,7 @@ def _registry(*use_cases: RuntimeUseCase) -> BusRegistry:
 
 
 def test_a_stored_feature_answers_beside_the_ones_in_code():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
 
     quoted = registry.execute(QUOTE_COMMAND, {"amount": "100"})
     taxed = registry.current(CommandComputeTax(amount=Decimal("100")), ResponseComputeTax)
@@ -49,7 +49,7 @@ def test_a_stored_feature_answers_beside_the_ones_in_code():
 
 
 def test_a_stored_application_service_calls_the_features_in_code():
-    registry = _registry(RuntimeUseCase("checkout", CHECKOUT))
+    registry = _registry(RuntimeUseCase(name="checkout", source=CHECKOUT))
 
     answer = registry.execute(
         "sincpro_runtime.billing.checkout.CommandCheckout", {"amount": 100}
@@ -59,11 +59,13 @@ def test_a_stored_application_service_calls_the_features_in_code():
 
 
 def test_a_new_version_answers_after_reload_and_the_old_bus_keeps_answering():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     before = registry.current
     old_command = before.dto_registry[QUOTE_COMMAND]
 
-    registry.store.save(RuntimeUseCase("quote", QUOTE.replace("1.13", "1.16"), version=2))
+    registry.store.save(
+        RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.16"), version=2)
+    )
     swapped = registry.reload()
 
     assert swapped
@@ -73,7 +75,7 @@ def test_a_new_version_answers_after_reload_and_the_old_bus_keeps_answering():
 
 
 def test_nothing_changed_is_no_new_generation():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     bus = registry.current
 
     assert not registry.reload()
@@ -81,15 +83,15 @@ def test_nothing_changed_is_no_new_generation():
 
 
 def test_an_inactive_use_case_is_not_loaded():
-    registry = _registry(RuntimeUseCase("quote", QUOTE, active=False))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE, active=False))
 
     assert QUOTE_COMMAND not in registry.current.dto_registry
 
 
 def test_a_retired_use_case_leaves_the_bus_on_reload():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
 
-    registry.store.save(RuntimeUseCase("quote", QUOTE, version=2, active=False))
+    registry.store.save(RuntimeUseCase(name="quote", source=QUOTE, version=2, active=False))
     registry.reload()
 
     assert QUOTE_COMMAND not in registry.current.dto_registry
@@ -113,10 +115,10 @@ def test_a_retired_use_case_leaves_the_bus_on_reload():
     ],
 )
 def test_a_broken_source_is_refused_and_the_bus_stays(source: str, reason: str):
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     bus = registry.current
 
-    registry.store.save(RuntimeUseCase("quote", source, version=2))
+    registry.store.save(RuntimeUseCase(name="quote", source=source, version=2))
     with pytest.raises(UseCaseRefused, match=reason) as refused:
         registry.reload()
 
@@ -128,7 +130,7 @@ def test_a_broken_source_is_refused_and_the_bus_stays(source: str, reason: str):
 def test_answering_a_command_of_the_code_needs_replaces():
     registry = _registry()
 
-    registry.store.save(RuntimeUseCase("tax", TAX_WITH_EXEMPTION))
+    registry.store.save(RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION))
     with pytest.raises(
         UseCaseRefused,
         match=r'ComputeTax answers CommandComputeTax in code — say replaces="tests.runtime_use_cases.billing.ComputeTax"',
@@ -138,7 +140,9 @@ def test_answering_a_command_of_the_code_needs_replaces():
 
 def test_a_stored_feature_replaces_the_one_in_code():
     replaced = "tests.runtime_use_cases.billing.ComputeTax"
-    registry = _registry(RuntimeUseCase("tax", TAX_WITH_EXEMPTION, replaces=replaced))
+    registry = _registry(
+        RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION, replaces=replaced)
+    )
 
     small = registry.current(CommandComputeTax(amount=Decimal("50")), ResponseComputeTax)
     described = features(registry.current)["CommandComputeTax"]
@@ -152,14 +156,16 @@ def test_replacing_what_does_not_answer_the_command_is_refused():
     registry = _registry()
 
     registry.store.save(
-        RuntimeUseCase("tax", TAX_WITH_EXEMPTION, replaces="billing.features.OldTax")
+        RuntimeUseCase(
+            name="tax", source=TAX_WITH_EXEMPTION, replaces="billing.features.OldTax"
+        )
     )
     with pytest.raises(UseCaseRefused, match="ComputeTax answers CommandComputeTax"):
         registry.reload()
 
 
 def test_the_bus_the_code_declares_is_never_built_nor_changed():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
 
     registry.reload()
 
@@ -169,23 +175,27 @@ def test_the_bus_the_code_declares_is_never_built_nor_changed():
 
 
 def test_a_registry_leaves_the_modules_of_another_one_alone():
-    _registry(RuntimeUseCase("quote", QUOTE)).current
-    _registry(RuntimeUseCase("checkout", CHECKOUT)).current
+    _registry(RuntimeUseCase(name="quote", source=QUOTE)).current
+    _registry(RuntimeUseCase(name="checkout", source=CHECKOUT)).current
 
     assert "sincpro_runtime.billing.quote" in sys.modules
     assert "sincpro_runtime.billing.checkout" in sys.modules
 
 
 def test_check_refuses_a_draft_without_saving_it_or_touching_the_bus():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     bus = registry.current
 
     with pytest.raises(UseCaseRefused, match="line 1"):
-        registry.check(RuntimeUseCase("quote", "class Quote(Feature)\n", version=2))
-    registry.check(RuntimeUseCase("quote", QUOTE.replace("1.13", "1.16"), version=2))
+        registry.check(
+            RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=2)
+        )
+    registry.check(
+        RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.16"), version=2)
+    )
 
     assert registry.current is bus
-    assert registry.store.active() == [RuntimeUseCase("quote", QUOTE)]
+    assert registry.store.active() == [RuntimeUseCase(name="quote", source=QUOTE)]
     assert registry.execute(QUOTE_COMMAND, {"amount": 100}).total == Decimal("113.00")
 
 
@@ -194,7 +204,7 @@ def test_a_traceback_shows_the_stored_line_that_failed():
         'return ResponseQuote(total=dto.amount * Decimal("1.13"))',
         'raise ValueError("no price list")',
     )
-    registry = _registry(RuntimeUseCase("quote", failing, version=3))
+    registry = _registry(RuntimeUseCase(name="quote", source=failing, version=3))
 
     with pytest.raises(ValueError) as raised:
         registry.execute(QUOTE_COMMAND, {"amount": 100})
@@ -205,7 +215,7 @@ def test_a_traceback_shows_the_stored_line_that_failed():
 
 
 def test_callers_never_fail_while_generations_are_swapped():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     errors: list[Exception] = []
     stop = threading.Event()
 
@@ -222,7 +232,9 @@ def test_callers_never_fail_while_generations_are_swapped():
         caller.start()
     for version in range(2, 12):
         rate = "1.13" if version % 2 else "1.16"
-        registry.store.save(RuntimeUseCase("quote", QUOTE.replace("1.13", rate), version))
+        registry.store.save(
+            RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", rate), version=version)
+        )
         registry.reload()
     stop.set()
     for caller in callers:
@@ -234,12 +246,13 @@ def test_callers_never_fail_while_generations_are_swapped():
 
 def test_check_loads_a_draft_where_its_version_in_force_stands():
     registry = _registry(
-        RuntimeUseCase("quote", QUOTE), RuntimeUseCase("double", DOUBLE_QUOTE)
+        RuntimeUseCase(name="quote", source=QUOTE),
+        RuntimeUseCase(name="double", source=DOUBLE_QUOTE),
     )
     renamed = QUOTE.replace("CommandQuote", "CommandPrice")
 
     with pytest.raises(UseCaseRefused, match="double v1: cannot import name 'CommandQuote'"):
-        registry.check(RuntimeUseCase("quote", renamed, version=2))
+        registry.check(RuntimeUseCase(name="quote", source=renamed, version=2))
 
 
 def test_a_check_leaves_the_lines_a_traceback_shows_as_they_are():
@@ -247,9 +260,9 @@ def test_a_check_leaves_the_lines_a_traceback_shows_as_they_are():
         'return ResponseQuote(total=dto.amount * Decimal("1.13"))',
         'raise ValueError("no price list")',
     )
-    registry = _registry(RuntimeUseCase("quote", failing))
+    registry = _registry(RuntimeUseCase(name="quote", source=failing))
 
-    registry.check(RuntimeUseCase("quote", QUOTE))
+    registry.check(RuntimeUseCase(name="quote", source=QUOTE))
     with pytest.raises(ValueError) as raised:
         registry.execute(QUOTE_COMMAND, {"amount": 100})
 
@@ -259,10 +272,12 @@ def test_a_check_leaves_the_lines_a_traceback_shows_as_they_are():
 
 
 def test_a_feature_cannot_replace_an_application_service():
-    registry = _registry(RuntimeUseCase("checkout", CHECKOUT))
+    registry = _registry(RuntimeUseCase(name="checkout", source=CHECKOUT))
     replaced = "sincpro_runtime.billing.checkout.Checkout"
 
-    registry.store.save(RuntimeUseCase("as_feature", FEATURE_FOR_CHECKOUT, replaces=replaced))
+    registry.store.save(
+        RuntimeUseCase(name="as_feature", source=FEATURE_FOR_CHECKOUT, replaces=replaced)
+    )
     with pytest.raises(UseCaseRefused, match="Checkout is an ApplicationService"):
         registry.reload()
 
@@ -280,7 +295,7 @@ class CountedReads(InMemoryUseCases):
 def test_a_registry_reads_its_store_on_first_use_not_when_it_is_made():
     """Context: made at import, a registry read a table the migrations had not created yet."""
     store = CountedReads()
-    store.save(RuntimeUseCase("quote", QUOTE))
+    store.save(RuntimeUseCase(name="quote", source=QUOTE))
 
     registry = BusRegistry(billing, store)
     assert store.reads == 0
@@ -293,7 +308,7 @@ def test_a_registry_reads_its_store_on_first_use_not_when_it_is_made():
 
 def test_callers_arriving_together_build_one_first_generation():
     store = CountedReads()
-    store.save(RuntimeUseCase("quote", QUOTE))
+    store.save(RuntimeUseCase(name="quote", source=QUOTE))
     registry = BusRegistry(billing, store)
     start = threading.Barrier(6)
     seen: list[Any] = []
@@ -313,10 +328,12 @@ def test_callers_arriving_together_build_one_first_generation():
 
 
 def test_put_saves_a_use_case_and_swaps_in_the_generation_it_joins():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     before = registry.current
 
-    registry.put(RuntimeUseCase("quote", QUOTE.replace("1.13", "1.16"), version=2))
+    registry.put(
+        RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.16"), version=2)
+    )
 
     assert registry.store.active()[0].version == 2
     assert registry.current is not before and registry.generation == 2
@@ -325,21 +342,21 @@ def test_put_saves_a_use_case_and_swaps_in_the_generation_it_joins():
 
 
 def test_put_of_what_does_not_load_saves_nothing_and_leaves_the_bus():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     bus = registry.current
 
     with pytest.raises(UseCaseRefused, match="quote v2"):
-        registry.put(RuntimeUseCase("quote", "class Quote(Feature)\n", version=2))
+        registry.put(RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=2))
 
-    assert registry.store.active() == [RuntimeUseCase("quote", QUOTE)]
+    assert registry.store.active() == [RuntimeUseCase(name="quote", source=QUOTE)]
     assert registry.current is bus
     assert registry.reload() is False
 
 
 def test_put_retires_a_use_case_saved_inactive():
-    registry = _registry(RuntimeUseCase("quote", QUOTE))
+    registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
 
-    registry.put(RuntimeUseCase("quote", QUOTE, version=2, active=False))
+    registry.put(RuntimeUseCase(name="quote", source=QUOTE, version=2, active=False))
 
     assert QUOTE_COMMAND not in registry.current.dto_registry
 
@@ -348,9 +365,9 @@ def test_check_all_names_every_stored_use_case_the_code_no_longer_loads():
     """Context: a stored source imports the code; a refactor of the code breaks it silently until
     the next reload — this is the CI check, as `migrations check` is for the schema."""
     store = InMemoryUseCases()
-    store.save(RuntimeUseCase("quote", QUOTE))
-    store.save(RuntimeUseCase("broken", "class Broken(Feature)\n"))
-    store.save(RuntimeUseCase("tax", TAX_WITH_EXEMPTION))
+    store.save(RuntimeUseCase(name="quote", source=QUOTE))
+    store.save(RuntimeUseCase(name="broken", source="class Broken(Feature)\n"))
+    store.save(RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION))
     registry = BusRegistry(billing, store)
 
     refusals = registry.check_all()
@@ -361,7 +378,8 @@ def test_check_all_names_every_stored_use_case_the_code_no_longer_loads():
 
 def test_check_all_answers_nothing_when_every_stored_use_case_loads():
     registry = _registry(
-        RuntimeUseCase("quote", QUOTE), RuntimeUseCase("double", DOUBLE_QUOTE)
+        RuntimeUseCase(name="quote", source=QUOTE),
+        RuntimeUseCase(name="double", source=DOUBLE_QUOTE),
     )
 
     assert registry.check_all() == []
@@ -369,8 +387,8 @@ def test_check_all_answers_nothing_when_every_stored_use_case_loads():
 
 
 def test_the_registry_says_which_versions_answer_even_when_the_store_moved_on():
-    quote_v1 = RuntimeUseCase("quote", QUOTE)
-    registry = _registry(quote_v1, RuntimeUseCase("checkout", CHECKOUT))
+    quote_v1 = RuntimeUseCase(name="quote", source=QUOTE)
+    registry = _registry(quote_v1, RuntimeUseCase(name="checkout", source=CHECKOUT))
     assert registry.in_force == ()
 
     registry.current
@@ -379,7 +397,9 @@ def test_the_registry_says_which_versions_answer_even_when_the_store_moved_on():
         ("checkout", 1),
     ]
 
-    registry.store.save(RuntimeUseCase("quote", "raise RuntimeError('boom')\n", version=2))
+    registry.store.save(
+        RuntimeUseCase(name="quote", source="raise RuntimeError('boom')\n", version=2)
+    )
     with pytest.raises(UseCaseRefused):
         registry.reload()
 

@@ -2,7 +2,6 @@
 replica. Crons that run on several replicas need a record those replicas share: the project
 implements `CronRuns` on its own storage."""
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from threading import Lock
 
@@ -19,7 +18,7 @@ class InMemoryRuns(CronRuns):
             if (name, scheduled_for, key) in self._runs:
                 return False
             self._runs[(name, scheduled_for, key)] = Run(
-                name, scheduled_for, key, started_at=datetime.now(UTC)
+                name=name, scheduled_for=scheduled_for, key=key, started_at=datetime.now(UTC)
             )
             return True
 
@@ -28,8 +27,8 @@ class InMemoryRuns(CronRuns):
     ) -> None:
         with self._lock:
             run = self._runs[(name, scheduled_for, key)]
-            self._runs[(name, scheduled_for, key)] = replace(
-                run, finished_at=datetime.now(UTC), outcome=outcome
+            self._runs[(name, scheduled_for, key)] = run.model_copy(
+                update={"finished_at": datetime.now(UTC), "outcome": outcome}
             )
 
     def _own(self, name: str) -> list[Run]:

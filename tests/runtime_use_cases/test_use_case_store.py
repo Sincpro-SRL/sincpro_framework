@@ -41,7 +41,9 @@ def store(request: pytest.FixtureRequest, tmp_path: Path) -> UseCaseStore:
 
 
 def test_a_saved_use_case_comes_back_as_it_was_saved(store: UseCaseStore):
-    quote = RuntimeUseCase("quote", QUOTE, version=3, replaces="billing.features.Quote")
+    quote = RuntimeUseCase(
+        name="quote", source=QUOTE, version=3, replaces="billing.features.Quote"
+    )
 
     store.save(quote)
 
@@ -49,10 +51,10 @@ def test_a_saved_use_case_comes_back_as_it_was_saved(store: UseCaseStore):
 
 
 def test_saving_again_is_the_new_version_in_the_place_of_the_first(store: UseCaseStore):
-    store.save(RuntimeUseCase("quote", QUOTE))
-    store.save(RuntimeUseCase("checkout", CHECKOUT))
+    store.save(RuntimeUseCase(name="quote", source=QUOTE))
+    store.save(RuntimeUseCase(name="checkout", source=CHECKOUT))
 
-    store.save(RuntimeUseCase("quote", QUOTE.replace("1.13", "1.16"), version=2))
+    store.save(RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.16"), version=2))
 
     assert [(one.name, one.version) for one in store.active()] == [
         ("quote", 2),
@@ -61,9 +63,9 @@ def test_saving_again_is_the_new_version_in_the_place_of_the_first(store: UseCas
 
 
 def test_an_inactive_use_case_is_kept_but_not_active(store: UseCaseStore):
-    store.save(RuntimeUseCase("quote", QUOTE))
+    store.save(RuntimeUseCase(name="quote", source=QUOTE))
 
-    store.save(RuntimeUseCase("quote", QUOTE, version=2, active=False))
+    store.save(RuntimeUseCase(name="quote", source=QUOTE, version=2, active=False))
 
     assert store.active() == []
 
@@ -76,7 +78,7 @@ def test_replicas_sharing_a_table_load_what_any_of_them_saved(tmp_path: Path):
     one = BusRegistry(billing, SqlUseCases(database, table))
     other = BusRegistry(billing, SqlUseCases(database, table))
 
-    one.store.save(RuntimeUseCase("quote", QUOTE))
+    one.store.save(RuntimeUseCase(name="quote", source=QUOTE))
     other.reload()
 
     assert other.execute(QUOTE_COMMAND, {"amount": 100}).total == Decimal("113.00")

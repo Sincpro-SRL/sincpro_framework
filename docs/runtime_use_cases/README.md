@@ -75,7 +75,7 @@ class Quote(Feature):
 '''
 
 store = InMemoryUseCases()
-store.save(RuntimeUseCase("quote", QUOTE))
+store.save(RuntimeUseCase(name="quote", source=QUOTE))
 registry = BusRegistry(billing, store)
 
 quoted = registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100})
@@ -105,7 +105,7 @@ nothing changed:
 ```python
 from sincpro_framework.runtime_use_cases import UseCaseRefused
 
-draft = RuntimeUseCase("quote", QUOTE.replace("1.13", "1.16"), version=2)
+draft = RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.16"), version=2)
 registry.check(draft)
 store.save(draft)
 
@@ -117,7 +117,7 @@ assert not registry.reload()
 answering = registry.current
 
 try:
-    registry.check(RuntimeUseCase("quote", "class Quote(Feature)\n", version=3))
+    registry.check(RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=3))
 except UseCaseRefused as refused:
     assert "quote v3" in str(refused) and "line 1" in str(refused)
 assert registry.current is answering and registry.generation == 2
@@ -136,11 +136,11 @@ interleaves with them: a version that does not load raises `UseCaseRefused` and 
 and every later `reload` keeps working:
 
 ```python
-registry.put(RuntimeUseCase("quote", QUOTE.replace("1.13", "1.15"), version=4))
+registry.put(RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.15"), version=4))
 assert registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100}).total == Decimal("115.00")
 
 try:
-    registry.put(RuntimeUseCase("quote", "class Quote(Feature)\n", version=5))
+    registry.put(RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=5))
 except UseCaseRefused:
     pass
 assert store.active()[0].version == 4 and not registry.reload()
@@ -204,8 +204,8 @@ class ComputeTaxWithExemption(Feature):
         return ResponseComputeTax(tax=dto.amount * rate)
 '''
 
-store.save(RuntimeUseCase("checkout", CHECKOUT))
-store.save(RuntimeUseCase("tax", TAX_WITH_EXEMPTION, replaces=f"{__name__}.ComputeTax"))
+store.save(RuntimeUseCase(name="checkout", source=CHECKOUT))
+store.save(RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION, replaces=f"{__name__}.ComputeTax"))
 registry.reload()
 
 small = registry.execute("sincpro_runtime.billing.checkout.CommandCheckout", {"amount": 50})
@@ -215,7 +215,7 @@ assert small.total == Decimal("50")
 Retiring a use case is saving it inactive; the next generation is built without it:
 
 ```python
-store.save(RuntimeUseCase("tax", TAX_WITH_EXEMPTION, version=2, active=False, replaces=f"{__name__}.ComputeTax"))
+store.save(RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION, version=2, active=False, replaces=f"{__name__}.ComputeTax"))
 registry.reload()
 assert registry.execute("sincpro_runtime.billing.checkout.CommandCheckout", {"amount": 50}).total == Decimal("56.50")
 ```
@@ -243,7 +243,7 @@ metadata.create_all(database.engine)                    # a migration, in a serv
 one_replica = BusRegistry(billing, SqlUseCases(database, use_cases))
 other_replica = BusRegistry(billing, SqlUseCases(database, use_cases))
 
-one_replica.store.save(RuntimeUseCase("quote", QUOTE))
+one_replica.store.save(RuntimeUseCase(name="quote", source=QUOTE))
 other_replica.reload()
 assert other_replica.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100}).total == Decimal("113.00")
 ```
@@ -265,7 +265,7 @@ class DictUseCases(UseCaseStore):
         self.kept[use_case.name] = use_case
 
 
-listed = BusRegistry(billing, DictUseCases(RuntimeUseCase("quote", QUOTE)))
+listed = BusRegistry(billing, DictUseCases(RuntimeUseCase(name="quote", source=QUOTE)))
 assert listed.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 10}).total == Decimal("11.30")
 ```
 

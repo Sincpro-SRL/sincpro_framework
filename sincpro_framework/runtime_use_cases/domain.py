@@ -2,15 +2,22 @@
 
 import hashlib
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+
+from pydantic import ConfigDict
+
+from sincpro_framework.deprecations import PositionalFields
+from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class UseCaseRefused(Exception):
     """A stored use case that cannot be loaded — the bus it would have joined is left as it was."""
 
 
-@dataclass(frozen=True)
-class RuntimeUseCase:
+class RuntimeUseCase(PositionalFields, DataTransferObject):
+    """A DTO: it is kept in a store and arrives from outside the process, as an HTTP body."""
+
+    model_config = ConfigDict(frozen=True)
+
     name: str
     """Unique in its bounded context; its module is `sincpro_runtime.<context>.<name>`, so its
     Commands are routed as `sincpro_runtime.<context>.<name>.<Class>`."""

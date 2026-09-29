@@ -178,6 +178,18 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """The Feature or ApplicationService registered now for `dto` — what a `replaces=` names."""
         ...
 
+    def replaced_for(self, dto: type) -> tuple[str, ...]:
+        """`module.Class` of each handler of `dto` that `replaces=` took the place of."""
+        ...
+
+    def handlers(self) -> dict[type, type]:
+        """Every DTO answered now → the class answering it, without building the bus."""
+        ...
+
+    def extend(self, extension: Callable[[UseFramework[TDeps]], None]) -> None:
+        """Wire a component into this bus and into every generation `fresh()` makes of it."""
+        ...
+
     @property
     def hosted_at(self) -> HostedAt | None:
         """Where another service hosts this bounded context, or `None` when it runs here."""

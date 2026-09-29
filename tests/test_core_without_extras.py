@@ -115,7 +115,7 @@ class Echo(Feature):
         return dto
 '''
 store = InMemoryUseCases()
-store.save(RuntimeUseCase("echo", ECHO))
+store.save(RuntimeUseCase(name="echo", source=ECHO))
 registry = BusRegistry(bus, store)
 assert registry.execute("sincpro_runtime.core-only.echo.CommandEcho", {"said": "hi"}).said == "hi"
 

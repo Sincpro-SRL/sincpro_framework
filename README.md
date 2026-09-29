@@ -1200,8 +1200,8 @@ A use case stored as source — its Commands, its Responses and the one handler 
 from sincpro_framework.runtime_use_cases import BusRegistry, RuntimeUseCase
 
 registry = BusRegistry(billing, store)                              # the code's bus + what is stored
-registry.check(RuntimeUseCase("quote", source, version=2))          # refused before it is saved
-store.save(RuntimeUseCase("quote", source, version=2))
+registry.check(RuntimeUseCase(name="quote", source=source, version=2))          # refused before it is saved
+store.save(RuntimeUseCase(name="quote", source=source, version=2))
 registry.reload()                                                   # a new generation, swapped in whole
 registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100})
 ```

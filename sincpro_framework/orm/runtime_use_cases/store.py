@@ -53,7 +53,11 @@ class SqlUseCases(UseCaseStore):
             rows = session.execute(query).mappings().all()
         return [
             RuntimeUseCase(
-                row["name"], row["source"], row["version"], row["active"], row["replaces"]
+                name=row["name"],
+                source=row["source"],
+                version=row["version"],
+                active=row["active"],
+                replaces=row["replaces"],
             )
             for row in rows
         ]

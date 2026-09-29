@@ -10,36 +10,18 @@ latest run: an older one still unfinished under a newer finished one is presumed
 once it is older than `since`. Runs are kept for `retention`, then the store lets them go.
 """
 
-import json
-from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sincpro_framework.caching.store import KeyValueStore
 from sincpro_framework.cron.domain import CronRuns, Run, RunOutcome
 
 
 def _encoded(run: Run) -> bytes:
-    raw: dict[str, Any] = asdict(run)
-    for moment in ("scheduled_for", "started_at", "finished_at"):
-        raw[moment] = raw[moment].isoformat() if raw[moment] else None
-    return json.dumps(raw).encode()
+    return run.model_dump_json().encode()
 
 
 def _decoded(held: bytes | None) -> Run | None:
-    if held is None:
-        return None
-    raw = json.loads(held)
-    return Run(
-        name=raw["name"],
-        scheduled_for=datetime.fromisoformat(raw["scheduled_for"]),
-        key=raw["key"],
-        started_at=datetime.fromisoformat(raw["started_at"]),
-        finished_at=(
-            datetime.fromisoformat(raw["finished_at"]) if raw["finished_at"] else None
-        ),
-        outcome=RunOutcome(raw["outcome"]) if raw["outcome"] else None,
-    )
+    return None if held is None else Run.model_validate_json(held)
 
 
 class KeyValueRuns(CronRuns):
@@ -63,7 +45,9 @@ class KeyValueRuns(CronRuns):
         return f"{self.prefix}:success:{name}"
 
     def claim(self, name: str, scheduled_for: datetime, key: str = "") -> bool:
-        run = Run(name, scheduled_for, key, started_at=datetime.now(UTC))
+        run = Run(
+            name=name, scheduled_for=scheduled_for, key=key, started_at=datetime.now(UTC)
+        )
         if not self.store.add(
             self._run_key(name, scheduled_for, key), _encoded(run), self.retention
         ):
@@ -81,7 +65,9 @@ class KeyValueRuns(CronRuns):
         claimed = _decoded(self.store.get(run_key))
         if claimed is None:
             return
-        finished = replace(claimed, finished_at=datetime.now(UTC), outcome=outcome)
+        finished = claimed.model_copy(
+            update={"finished_at": datetime.now(UTC), "outcome": outcome}
+        )
         self.store.set(run_key, _encoded(finished), self.retention)
         if key != "":
             return
