@@ -14,12 +14,13 @@ may not).
 | `AccessControl` | `auth/access_control.py` | the declarations (`requires`, `authenticated`, `public`) and the checks |
 | the guard | `auth/guard.py` | what runs around a use case and before a hook |
 | `as_identity`, `as_system` | `auth/security_context.py` | who the execution acts as |
-| `StaticProvider`, `RolePermissions` | `auth/adapters/` | what the framework ships; any class honouring the contract stands beside them |
+| `StaticProvider`, `RolePermissions`, `ApiKeyProvider`, `ServiceTokenProvider` | `auth/adapters/` | what the framework ships; any class honouring the contract stands beside them |
+| `IdentityMiddleware` | `auth/asgi.py` | an ASGI app of the project's — FastAPI, Starlette — acting as its requests |
+| the transports | `auth/transports.py` | what every entrypoint hands auth: credentials out of a request, the refusal it answers |
 
 Nothing is forced: a use case or hook that declares nothing is not checked, and a bus with no
-`AccessControl` runs as before. The entrypoints do not authenticate by themselves yet — an
-entrypoint that verified its caller opens `as_identity(auth.authenticate(credentials))`; see
-[PRD_11](../prd/PRD_11_application-auth.md) for what comes next.
+`AccessControl` runs as before. JSON-RPC, gRPC, MCP and a context hosted for another service
+authenticate by themselves when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
@@ -349,6 +350,53 @@ assert described.use_cases[f"{__name__}.CommandIssueInvoice"] == "billing.invoic
 assert described.use_cases[f"{__name__}.CommandPrice"] == "unchecked"
 assert auth.verify() == []
 ```
+
+## Entrypoints authenticate by themselves
+
+A guarded bus needs nothing more on its entrypoints: each builds `Credentials` from what arrived,
+the bus's `AccessControl` authenticates them, and the use case runs as that identity.
+
+```python
+from sincpro_framework.auth import ApiKey, ApiKeyProvider, InMemoryApiKeys, ServiceTokenProvider
+from sincpro_framework.entrypoints.rpc import RpcGateway
+
+api_keys = InMemoryApiKeys()
+bot_key = api_keys.issue(
+    ApiKey(subject="apikey:ops-bot", permissions=frozenset({BillingPermission.ISSUE_INVOICE}))
+)
+
+gated = UseFramework("billing-gated", log_after_execution=False)
+gated_auth = AccessControl[BillingPermission](
+    providers=[ApiKeyProvider(api_keys), ServiceTokenProvider("billing", {"2026-09": "shared"})]
+)
+gated.feature(CommandIssueInvoice)(gated_auth.requires(BillingPermission.ISSUE_INVOICE)(IssueInvoice))
+gated_auth.on(gated)
+
+rpc = RpcGateway({"billing": gated})
+call = {"jsonrpc": "2.0", "id": 1, "method": "billing.features.CommandIssueInvoice", "params": {"total": 1}}
+
+answered = rpc.handle(call, None, Credentials(transport="http", headers={"x-api-key": bot_key}))
+assert answered["result"] == {"by": "apikey:ops-bot", "credit": ""}
+refused = rpc.handle(call, None, Credentials(transport="http"))
+assert refused["error"]["data"]["kind"] == "unauthenticated"
+```
+
+| Entrypoint | Credentials from | A refusal is |
+|---|---|---|
+| JSON-RPC (`RpcGateway`) | headers, cookies, query, method, target | a single call: HTTP 401 with `WWW-Authenticate`; `-32001` / `-32003` with `data.kind`, `data.reason`, `data.requirement` |
+| gRPC (`GrpcGateway`) | metadata, the mTLS client certificate | `UNAUTHENTICATED` / `PERMISSION_DENIED`, with `sp-auth-refusal` and `www-authenticate` in the trailing metadata |
+| MCP (`build_mcp_server`) | the HTTP request of the tool call; with `auth=`, FastMCP's own bearer check first | a tool error; with `auth=`, FastMCP's 401 and — given `base_url` — the resource metadata (RFC 9728) |
+| An ASGI app of the project's | `IdentityMiddleware(app, access=auth)` | 401 with `WWW-Authenticate`, 403 with the reason |
+| A context hosted for another service | the caller's `ServiceTokenProvider` token | the refusal raised on the caller as itself |
+
+- **A call to another service** carries who it acts for: the calling process's provider issues a
+  short JWT (`ServiceTokenProvider.credentials_for`) in its own header, and the host verifies it
+  with the same keys. Only subject, kind, tenant and permissions travel — never the claims — and
+  the request context it sends is never read for identity. The system does not cross services.
+- **A bus nobody guards** is left alone by every entrypoint: nothing is authenticated, the
+  identity is what the host opened.
+- **Nothing here needs an extra**: the transports and the middleware are the standard library;
+  `grpc`, `fastmcp` and `starlette` are read only by the entrypoints that already need them.
 
 ## What no contract here covers
 

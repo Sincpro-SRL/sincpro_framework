@@ -67,6 +67,8 @@ def open_host_routes(contexts: Sequence[UseFramework]) -> list[Route]:
     by_name = {one.name: one for one in contexts}
 
     async def execute(request: Request) -> Response:
+        from sincpro_framework.auth.transports import credentials_from_asgi
+
         name = request.headers.get(CONTEXT_HEADER, "")
         packed = request.headers.get(REQUEST_CONTEXT_HEADER)
         carrier = {
@@ -82,6 +84,7 @@ def open_host_routes(contexts: Sequence[UseFramework]) -> list[Route]:
                 body,
                 base64.b64decode(packed) if packed else None,
                 carrier,
+                credentials_from_asgi(request.scope, "service"),
             )
         except LookupError as error:
             return Response(str(error), status_code=404, media_type="text/plain")

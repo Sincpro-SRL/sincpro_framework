@@ -13,6 +13,9 @@ from sincpro_framework.ddd.exceptions import DomainError
 class AuthError(DomainError):
     """Catch this to catch any auth refusal."""
 
+    reason: str
+    """Why — what the caller is told, on every transport."""
+
 
 class Unauthenticated(AuthError):
     """Who is calling is not known well enough. `step_up` names what the caller has to come back

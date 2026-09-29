@@ -12,6 +12,8 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic_core import to_jsonable_python
 
+from sincpro_framework.auth.domain import Credentials
+from sincpro_framework.auth.transports import authenticated_as
 from sincpro_framework.entrypoints import json_utils
 from sincpro_framework.entrypoints.const import TRACE_KEYS, RunFn, Scalar
 from sincpro_framework.sincpro_logger import logger
@@ -76,19 +78,12 @@ def extract_executor_fn(framework_instance: UseFramework, dto_type: Any) -> RunF
     return run
 
 
-def execute(
+def _within_context(
     framework_instance: UseFramework,
     run: RunFn,
     payload: Scalar,
-    context: Mapping[str, Any] | None = None,
+    context: Mapping[str, Any] | None,
 ) -> Scalar:
-    """Run one bound Scalar execution inside framework.context / with_trace when asked.
-
-    1. Split tracing keys (trace_id, span_id, carrier) from the rest of the context.
-    2. Enter framework.context with the remaining keys when any remain.
-    3. Enter framework.with_trace when tracing keys are present.
-    4. Final: run(payload) sees self.context and the OTel parent when configured.
-    """
     extra = dict(context or {})
     trace_kwargs: dict[str, Any] = {}
     for key in TRACE_KEYS:
@@ -109,3 +104,24 @@ def execute(
         with framework_instance.with_trace(**trace_kwargs):
             return run(payload)
     return run(payload)
+
+
+def execute(
+    framework_instance: UseFramework,
+    run: RunFn,
+    payload: Scalar,
+    context: Mapping[str, Any] | None = None,
+    credentials: Credentials | None = None,
+) -> Scalar:
+    """Run one bound Scalar execution inside framework.context / with_trace when asked, as
+    whoever `credentials` say is calling.
+
+    1. Split tracing keys (trace_id, span_id, carrier) from the rest of the context.
+    2. Enter framework.context with the remaining keys when any remain.
+    3. Enter framework.with_trace when tracing keys are present.
+    4. Final: run(payload) sees self.context, the OTel parent when configured, and the identity
+       the bus's `AccessControl` authenticated — none, and nothing changes, when no credentials
+       were handed or nothing guards the bus.
+    """
+    with authenticated_as(framework_instance, credentials):
+        return _within_context(framework_instance, run, payload, context)

@@ -26,6 +26,7 @@ RUNTIME_USE_CASES = ROOT / "docs" / "runtime_use_cases" / "README.md"
 BROKERS = ROOT / "docs" / "events" / "brokers.md"
 CACHING = ROOT / "docs" / "caching" / "README.md"
 AUTH = ROOT / "docs" / "auth" / "README.md"
+REST = ROOT / "docs" / "entrypoints" / "rest.md"
 README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -62,6 +63,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         BROKERS,
         CACHING,
         AUTH,
+        REST,
     ],
     ids=lambda page: page.parent.name + "/" + page.name,
 )

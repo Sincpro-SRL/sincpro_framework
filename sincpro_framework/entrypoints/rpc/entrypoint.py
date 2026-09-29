@@ -13,12 +13,15 @@ import asyncio
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Self
+from typing import Any
 
+from sincpro_framework.auth.domain import Credentials
+from sincpro_framework.auth.transports import challenges_of, credentials_from_asgi
 from sincpro_framework.entrypoints.catalog import Catalog
-from sincpro_framework.entrypoints.const import Layer, Wrapper
+from sincpro_framework.entrypoints.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.entrypoints.rpc.jrpc import (
     PARSE_ERROR,
+    UNAUTHENTICATED,
     MethodIndex,
     handle_payload,
     jsonrpc_error,
@@ -32,7 +35,6 @@ RPC_MISSING = (
     "Starlette/uvicorn is not installed. Install with: pip install sincpro-framework[rpc]"
 )
 ALIAS_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-DEFAULT_LAYERS = (Layer.APP_SERVICES, Layer.FEATURES)
 
 
 def validate_alias(alias: str) -> str:
@@ -71,40 +73,23 @@ def index_methods(catalogs: Mapping[str, Catalog], layers: Iterable[str]) -> Met
     return methods
 
 
-class RpcGateway:
+class RpcGateway(Gateway):
     """JSON-RPC 2.0 facade over one or more UseFramework instances."""
 
     def __init__(
         self,
-        instances: Mapping[str, UseFramework] | None = None,
+        instances: Buses | None = None,
         layers: Iterable[str] = DEFAULT_LAYERS,
         title: str = "sincpro-rpc",
         version: str = "1.0.0",
     ):
-        self._catalogs: dict[str, Catalog] = {}
-        self._layers = tuple(layers)
-        self._title = title
-        self._version = version
-        for alias, framework_instance in (instances or {}).items():
-            self.add(alias, framework_instance)
+        super().__init__(instances, layers, title, version)
 
-    def add(
-        self,
-        alias: str,
-        framework_instance: UseFramework,
-        include: Iterable[type | str] | None = None,
-        exclude: Iterable[type | str] | None = None,
-        wrap: Mapping[type | str, Wrapper] | None = None,
-    ) -> Self:
-        catalog = Catalog(framework_instance)
-        if include is not None:
-            catalog.include(*include)
-        if exclude is not None:
-            catalog.exclude(*exclude)
-        for dto, wrapper in (wrap or {}).items():
-            catalog.wrap(dto, wrapper)
-        self._catalogs[validate_alias(alias)] = catalog
-        return self
+    def validate_alias(self, alias: str) -> str:
+        return validate_alias(alias)
+
+    def alias_for(self, framework_instance: UseFramework) -> str:
+        return re.sub(r"[^A-Za-z0-9_-]", "-", framework_instance.name)
 
     def methods(self) -> MethodIndex:
         return index_methods(self._catalogs, self._layers)
@@ -118,24 +103,20 @@ class RpcGateway:
         return openrpc_document(self._title, published, version=self._version)
 
     def handle(
-        self, payload: Any, context: Mapping[str, Any] | None = None
+        self,
+        payload: Any,
+        context: Mapping[str, Any] | None = None,
+        credentials: Credentials | None = None,
     ) -> dict[str, Any] | list[Any] | None:
+        """Context: `credentials` are authenticated by the `AccessControl` of each method's bus
+        — none handed, and each runs as whoever the host already opened."""
         indexed = self.methods()
-        return handle_payload(indexed, self.discover, payload, context)
+        return handle_payload(indexed, self.discover, payload, context, credentials)
 
-    def is_healthy(self) -> bool:
-        """Every registered `UseFramework` is still built.
-
-        The same question `entrypoint_grpc`'s default `health_check` asks, so a
-        process running both wires reports the same thing on either one. A gateway
-        that failed to build never reaches `.routes()`/`.handle()` in the first
-        place (`Catalog` already forces `build_root_bus()`), so this is a live
-        re-check rather than a promise made once at construction time.
-        """
-        return all(
-            catalog.framework_instance.was_initialized
-            and catalog.framework_instance.bus is not None
-            for catalog in self._catalogs.values()
+    def challenges(self) -> list[str]:
+        """The `WWW-Authenticate` values a 401 of this gateway answers with."""
+        return challenges_of(
+            catalog.framework_instance for catalog in self._catalogs.values()
         )
 
     def health_route(self, path: str = "/healthz") -> Any:
@@ -200,9 +181,19 @@ class RpcGateway:
                     jsonrpc_error(PARSE_ERROR, "Parse error"), status_code=200
                 )
             header_context = merge_http_context(request.headers)
-            reply = await asyncio.to_thread(gateway.handle, payload, header_context or None)
+            credentials = credentials_from_asgi(request.scope)
+            reply = await asyncio.to_thread(
+                gateway.handle, payload, header_context or None, credentials
+            )
             if reply is None:
                 return Response(status_code=204)
+            if (
+                isinstance(reply, dict)
+                and reply.get("error", {}).get("code") == UNAUTHENTICATED
+            ):
+                challenges = gateway.challenges()
+                headers = {"www-authenticate": ", ".join(challenges)} if challenges else None
+                return JSONResponse(reply, status_code=401, headers=headers)
             return JSONResponse(reply)
 
         async def openrpc_endpoint(_request: Request) -> JSONResponse:

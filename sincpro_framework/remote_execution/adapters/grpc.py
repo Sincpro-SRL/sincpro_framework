@@ -70,16 +70,19 @@ class GrpcTransport:
         self, context: str, dto: Any, response: Any, request: Mapping[str, Any]
     ) -> Any:
         """1. The DTO's values as a stream of chunks; the context, the DTO's name, the request
-           context and the trace as metadata.
+           context, the trace and who the call acts for as metadata.
         2. One streaming call, with the address's deadline.
         3. Final: the answer rebuilt as `response` as its chunks arrive, or the failure raised as
            `_raised` says.
         """
+        from sincpro_framework.auth.transports import identity_headers
+
         metadata = (
             (CONTEXT_HEADER, context),
             (DTO_HEADER, dto_name(type(dto))),
             (REQUEST_CONTEXT_HEADER, pack(dict(request))),
             *trace_carrier().items(),
+            *identity_headers(context).items(),
         )
         try:
             answers = self._call(

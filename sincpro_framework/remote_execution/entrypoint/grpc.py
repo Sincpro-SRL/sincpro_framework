@@ -35,6 +35,8 @@ def open_host_handler(contexts: Mapping[str, UseFramework]) -> Any:
     """`/sincpro.Contexts/Execute` for `contexts`, keyed by their names."""
 
     def execute(requests: Iterator[bytes], call: Any) -> Iterator[bytes]:
+        from sincpro_framework.auth.transports import credentials_from_headers
+
         metadata = call.invocation_metadata()
         name = _header(metadata, CONTEXT_HEADER) or ""
         answer: Iterator[bytes] = iter(())
@@ -46,6 +48,7 @@ def open_host_handler(contexts: Mapping[str, UseFramework]) -> Any:
                 ChunkReader(requests),
                 _header(metadata, REQUEST_CONTEXT_HEADER),
                 {key: value for key, value in metadata if key in TRACE_HEADERS},
+                credentials_from_headers("service", metadata),
             )
         except LookupError as error:
             call.abort(grpc.StatusCode.NOT_FOUND, str(error))

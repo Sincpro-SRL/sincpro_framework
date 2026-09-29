@@ -10,19 +10,19 @@ for auth/logging. Per-bus granularity there is the interceptor's own job: `Handl
 reaches every bus differently without this module knowing what "auth" means.
 """
 
+import re
 import signal
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
-from sincpro_framework.entrypoints.catalog import Catalog
-from sincpro_framework.entrypoints.const import Layer, Scalar, Wrapper
+from sincpro_framework.entrypoints.const import Scalar
+from sincpro_framework.entrypoints.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.entrypoints.grpc import proto
 from sincpro_framework.entrypoints.grpc.proto import GrpcMethodSpec
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
-DEFAULT_LAYERS = (Layer.APP_SERVICES, Layer.FEATURES)
 DEFAULT_ADDRESS = "127.0.0.1:50051"
 SHUTDOWN_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 
@@ -58,7 +58,7 @@ def _hook_graceful_shutdown(server: Any, title: str, grace: float | None) -> Non
         )
 
 
-class GrpcGateway:
+class GrpcGateway(Gateway):
     """gRPC facade over one or more UseFramework instances.
 
     Same catalog as `entrypoint_rpc`, different wire: `qr.features.ChargePayment`
@@ -68,42 +68,26 @@ class GrpcGateway:
 
     def __init__(
         self,
-        instances: Mapping[str, UseFramework] | None = None,
+        instances: Buses | None = None,
         layers: Iterable[str] = DEFAULT_LAYERS,
         title: str = "sincpro-grpc",
         version: str = "1.0.0",
     ):
-        self._catalogs: dict[str, Catalog] = {}
-        self._layers = tuple(layers)
-        self._title = title
-        self._version = version
-        for alias, framework_instance in (instances or {}).items():
-            self.add(alias, framework_instance)
+        super().__init__(instances, layers, title, version)
 
-    def add(
-        self,
-        alias: str,
-        framework_instance: UseFramework,
-        include: Iterable[type | str] | None = None,
-        exclude: Iterable[type | str] | None = None,
-        wrap: Mapping[type | str, Wrapper] | None = None,
-    ) -> Self:
-        """Register one instance under a package alias (`qr` → package `qr`)."""
-        catalog = Catalog(framework_instance)
-        if include is not None:
-            catalog.include(*include)
-        if exclude is not None:
-            catalog.exclude(*exclude)
-        for dto, wrapper in (wrap or {}).items():
-            catalog.wrap(dto, wrapper)
-        self._catalogs[proto.validate_package(alias)] = catalog
+    def validate_alias(self, alias: str) -> str:
+        return proto.validate_package(alias)
+
+    def alias_for(self, framework_instance: UseFramework) -> str:
+        return re.sub(r"[^A-Za-z0-9_]", "_", framework_instance.name)
+
+    def added(self, alias: str, framework_instance: UseFramework) -> None:
         if framework_instance.hosted_at is not None:
             logger.warning(
                 f"{framework_instance.name} is hosted here and the context map hosts it at "
                 f"{framework_instance.hosted_at.address}: calling services are answered here, "
                 "and this process's own calls go to that address"
             )
-        return self
 
     def methods(self) -> dict[str, GrpcMethodSpec]:
         """Every served method keyed by its gRPC path."""

@@ -3,11 +3,14 @@
 import dataclasses
 import inspect
 from collections.abc import Callable, Iterator
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, Field
 
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
+
+if TYPE_CHECKING:
+    from sincpro_framework.use_bus import UseFramework
 
 EMPTY = inspect.Parameter.empty
 
@@ -40,10 +43,11 @@ def _dto_parameters(
         yield field.name, field.type, default, factory
 
 
-def fastmcp_callable(operation: PackedFeatureOrAppService):
+def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | None" = None):
     """Build a typed function FastMCP 3 inspects to generate the MCP schema.
 
-    1. Forward keyword arguments to operation.run (DTO validation inside).
+    1. Forward keyword arguments to operation.run (DTO validation inside), acting as whoever
+       called — authenticated by `bus`'s `AccessControl` when a bus is given.
     2. Stamp a keyword-only signature from the Command's fields so FastMCP sees
        Pydantic types (Value Objects, Field descriptions) instead of a nested
        wrapper object.
@@ -56,7 +60,10 @@ def fastmcp_callable(operation: PackedFeatureOrAppService):
     """
 
     def tool_fn(**kwargs: Any) -> dict[str, Any]:
-        return operation.run(kwargs)
+        from sincpro_framework.entrypoints.mcp.auth import acting_for_tool_call
+
+        with acting_for_tool_call(bus):
+            return operation.run(kwargs)
 
     parameters: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {"return": dict[str, Any]}

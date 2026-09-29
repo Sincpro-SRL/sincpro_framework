@@ -16,12 +16,23 @@ decided by providers, applied by a guard.
 
 `domain/` holds the vocabulary and the `AuthProvider` contract, `adapters/` the providers and
 helpers the framework ships, `security_context` who the execution acts as, `guard` what runs
-around a use case and before a hook, `access_control` the declarations and the checks. See
-`docs/auth/README.md`.
+around a use case and before a hook, `access_control` the declarations and the checks,
+`transports` what every entrypoint hands auth, `asgi` the middleware for an ASGI app of the
+project's. JSON-RPC, gRPC, MCP and `remote_execution` authenticate by themselves when the bus is
+guarded. See `docs/auth/README.md`.
 """
 
 from sincpro_framework.auth.access_control import AccessControl, AccessDescription
-from sincpro_framework.auth.adapters import RolePermissions, StaticProvider
+from sincpro_framework.auth.adapters import (
+    ApiKey,
+    ApiKeyProvider,
+    ApiKeyStore,
+    InMemoryApiKeys,
+    RolePermissions,
+    ServiceTokenProvider,
+    StaticProvider,
+)
+from sincpro_framework.auth.asgi import IdentityMiddleware
 from sincpro_framework.auth.domain import (
     AnyOf,
     AuthError,
@@ -36,10 +47,18 @@ from sincpro_framework.auth.domain import (
 )
 from sincpro_framework.auth.guard import Declaration
 from sincpro_framework.auth.security_context import as_identity, as_system, current_identity
+from sincpro_framework.auth.transports import (
+    authenticated_as,
+    credentials_from_asgi,
+    credentials_from_headers,
+)
 
 __all__ = [
     "AccessControl",
     "AccessDescription",
+    "ApiKey",
+    "ApiKeyProvider",
+    "ApiKeyStore",
     "AnyOf",
     "AuthError",
     "AuthProvider",
@@ -47,13 +66,19 @@ __all__ = [
     "Declaration",
     "Identity",
     "IdentityKind",
+    "IdentityMiddleware",
+    "InMemoryApiKeys",
     "Permission",
     "PermissionDenied",
     "RolePermissions",
+    "ServiceTokenProvider",
     "StaticProvider",
     "Unauthenticated",
     "WhenDenied",
     "as_identity",
+    "authenticated_as",
     "as_system",
+    "credentials_from_asgi",
+    "credentials_from_headers",
     "current_identity",
 ]

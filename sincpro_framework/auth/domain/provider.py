@@ -82,6 +82,11 @@ class AuthProvider(ABC):
         applies — `None` for all of them."""
         return None
 
+    def security_scheme(self) -> dict[str, Any] | None:
+        """How this provider is described in an OpenAPI document — `{"type": "http", "scheme":
+        "bearer"}`, an `apiKey` in a header — or `None` to leave it undescribed."""
+        return None
+
     def challenge(self) -> str | None:
         """The `WWW-Authenticate` value an entrypoint answers a 401 with — where to get a
         credential this provider accepts (RFC 9728 for MCP)."""

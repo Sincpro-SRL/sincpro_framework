@@ -11,6 +11,7 @@ from typing import Any, Self
 
 from sincpro_framework.entrypoints import json_utils, scalar_executor
 from sincpro_framework.entrypoints.const import Layer, RunFn, Wrapper
+from sincpro_framework.entrypoints.exposure import is_internal
 from sincpro_framework.introspection import inspector
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
@@ -57,6 +58,9 @@ class Catalog:
         self._include: set[str] | None = None
         self._exclude: set[str] = set()
         self._wrappers: dict[str, Wrapper] = {}
+        self._packed: dict[bool, list[PackedFeatureOrAppService]] = {}
+        """What `get_scalar_use_cases` answered, by its filter — a built bus's handlers do not
+        change, so the schemas are computed once; `include` / `exclude` / `wrap` let it go."""
 
     @staticmethod
     def _names(*dtos: type | str) -> set[str]:
@@ -70,7 +74,7 @@ class Catalog:
         """Turn one layer's described metadata (introspection.FeatureOrAppServiceMetadata)
         into PackedFeatureOrAppService.
 
-        1. Skip names outside include, or listed in exclude.
+        1. Skip names outside include, listed in exclude, or marked `internal`.
         2. Bind execute to framework(dto).
             2.1 If a wrapper exists for this DTO name, wrap the bound run.
         3. Final: a PackedFeatureOrAppService carrying the metadata's description and
@@ -82,6 +86,9 @@ class Catalog:
                 continue
 
             if name in self._exclude:
+                continue
+
+            if is_internal(metadata.dto, self.framework_instance.handler_of(metadata.dto)):
                 continue
 
             run: RunFn = scalar_executor.extract_executor_fn(
@@ -124,33 +131,23 @@ class Catalog:
 
     def include(self, *dtos: type | str) -> Self:
         self._include = self._names(*dtos)
+        self._packed.clear()
         return self
 
     def exclude(self, *dtos: type | str) -> Self:
         self._exclude = self._names(*dtos)
+        self._packed.clear()
         return self
 
     def wrap(self, dto: type | str, wrapper: Wrapper) -> Self:
         key = dto if isinstance(dto, str) else dto.__name__
         self._wrappers[key] = wrapper
+        self._packed.clear()
         return self
 
-    def get_scalar_use_cases(
-        self, filter_binaries_schema: bool = False
+    def _packed_use_cases(
+        self, filter_binaries_schema: bool
     ) -> list[PackedFeatureOrAppService]:
-        """Every Feature and ApplicationService bound to a Scalar-callable `run`,
-        already filtered by include/exclude.
-
-        filter_binaries_schema=True additionally drops DTOs that cannot travel
-        as JSON (a `bytes` field, `format: binary|byte` in the schema) — skipped
-        with a warning. Still callable in-process via `framework(dto)`; just not
-        exposed on a JSON wire.
-
-        1. Build the root bus if the instance was never initialized.
-        2. Warn about a name in include/exclude/wrap that no use case has.
-        3. Bind Features then ApplicationServices.
-        4. Final: drop binary-schema entries when filter_binaries_schema is True.
-        """
         if not self.framework_instance.was_initialized:
             self.framework_instance.build_root_bus()
 
@@ -177,3 +174,28 @@ class Catalog:
                 continue
             logger.warning("Skipping non-JSON Feature/ApplicationService [%s]", entry.name)
         return result
+
+    def get_scalar_use_cases(
+        self, filter_binaries_schema: bool = False
+    ) -> list[PackedFeatureOrAppService]:
+        """Every Feature and ApplicationService bound to a Scalar-callable `run`,
+        already filtered by include/exclude.
+
+        filter_binaries_schema=True additionally drops DTOs that cannot travel
+        as JSON (a `bytes` field, `format: binary|byte` in the schema) — skipped
+        with a warning. Still callable in-process via `framework(dto)`; just not
+        exposed on a JSON wire.
+
+        1. Build the root bus if the instance was never initialized.
+        2. Warn about a name in include/exclude/wrap that no use case has.
+        3. Bind Features then ApplicationServices.
+        4. Final: drop binary-schema entries when filter_binaries_schema is True — the answer
+           kept, so a wire that asks on every request computes it once.
+        """
+        kept = self._packed.get(filter_binaries_schema)
+        if kept is not None:
+            return list(kept)
+        packed = self._packed[filter_binaries_schema] = self._packed_use_cases(
+            filter_binaries_schema
+        )
+        return list(packed)

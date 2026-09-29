@@ -48,6 +48,7 @@ opentelemetry = [
 sentry = ["sentry-sdk"]
 mcp = ["fastmcp"]
 rpc = ["starlette", "uvicorn"]
+rest = ["starlette", "uvicorn"]
 grpc = ["grpcio", "grpcio-reflection", "grpcio-health-checking", "protobuf"]
 sqlalchemy = ["sqlalchemy"]
 duckdb = ["sqlalchemy", "duckdb-engine"]

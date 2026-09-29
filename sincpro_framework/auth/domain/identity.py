@@ -38,6 +38,9 @@ class Credentials(DataTransferObject):
     """Lower-case names: HTTP headers, gRPC metadata, a message's headers."""
     cookies: Mapping[str, str] = Field(default_factory=dict)
     """A session cookie — Odoo's `session_id`."""
+    query: Mapping[str, str] = Field(default_factory=dict)
+    """The query string, first value per name — a token a legacy client sends as
+    `?access_token=`."""
     method: str | None = None
     uri: str | None = None
     """The HTTP method and target, for a proof bound to the request — DPoP (RFC 9449), HTTP

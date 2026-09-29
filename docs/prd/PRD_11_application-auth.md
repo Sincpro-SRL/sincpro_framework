@@ -1,7 +1,7 @@
 # PRD_11: Authentication and authorization, from the application's point of view
 
-- **Status**: phase 1 built — `sincpro_framework.auth`, documented in
-  [docs/auth](../auth/README.md). Phases 2–5 proposed, to iterate.
+- **Status**: phases 1 and 2 built — `sincpro_framework.auth`, documented in
+  [docs/auth](../auth/README.md). Phases 3–5 proposed, to iterate.
 - **Depends on**: interceptors (`bus.interceptor`, ordered), dependencies (`add_dependency`,
   `DependencyContextType`), repository hooks (`Hooks.gate`), `Criteria`, `KeyValueStore`, domain
   events, settings (`SincproConfig`, `Secret`), the entrypoints (RPC, MCP, gRPC, HTTP Open Host),
@@ -347,11 +347,35 @@ stays out of the `Identity`, resolved from the tenant by the adapter that alread
 | API keys / session | a provider reading `headers` / `cookies` |
 | `auth_oauth` | `JwtProvider` against the same IdP |
 
+## Decisions taken in phase 2
+
+- **The service-to-service credential** is a JWT (RFC 7519, HS256 over the standard library) in
+  its own header `x-sp-service-token`, a minute long: `sub` the identity, `act` the calling
+  service, `aud` who may accept it, keys by `kid` so they rotate. Only subject, kind, tenant and
+  permissions travel — never the claims, which may hold a tenant's own credential
+  (`sincpro_mcp_odoo` keeps its Odoo token there). The system does not cross services. mTLS stays
+  the deployment's, and arrives as `peer_certificate`.
+- **An entrypoint finds the `AccessControl` of the bus it dispatches to** — `auth.on(bus)` records
+  it for the bus and every generation — so `RpcGateway({"billing": billing})` authenticates with
+  no argument. A bus nobody guards is left alone.
+- **JSON-RPC answers a lone `Unauthenticated` with HTTP 401** and `WWW-Authenticate` — what OAuth
+  clients and a browser's or React Native's `fetch` react to — and every refusal as a JSON-RPC error
+  (`-32001`, `-32003`) carrying `data.kind` / `reason` / `requirement`; a batch answers item by item.
+- **gRPC maps the refusals to `UNAUTHENTICATED` / `PERMISSION_DENIED`** — they used to fall into
+  `FAILED_PRECONDITION` with every `DomainError`.
+- **MCP authenticates each tool call from its HTTP request by default**; `build_mcp_server(...,
+  auth=)` adds FastMCP's own bearer check, which refuses at the HTTP level and — given `base_url` —
+  publishes the resource metadata MCP clients discover the authorization server by. Issuing tokens
+  stays the project's (`sincpro_mcp_odoo`'s authorization server) or the IdP's.
+- **Nothing needs an extra**: the transports, the providers and the ASGI middleware are the
+  standard library; `grpc`, `fastmcp` and `starlette` are read only where they already were, and the
+  core imports auth only when a context hosted elsewhere is called.
+
 ## Decisions to iterate
 
-1. **The service-to-service credential** — proposed a signed short-lived token first
-   (`credentials_for` on a `ServiceTokenProvider`); mTLS is the deployment's and arrives as
-   `peer_certificate`.
+1. **Queue consumers** — a use case run by a subscriber acts, for now, as whoever the process
+   opened. Proposed: `as_system(reason=<event name>)` by default, and later the publisher's identity
+   carried signed in the event's metadata.
 2. **Odoo as the identity provider** — should the Odoo SDKs issue OIDC tokens for Odoo users?
 3. **The JWT library of the `[jwt]` extra** — joserfc or PyJWT (Authlib's stack is joserfc).
 4. **Reads filtered by default** — should a repository apply `scope_of` by itself while an identity
@@ -372,9 +396,15 @@ stays out of the `Identity`, resolved from the tenant by the adapter that alread
    replacements in combined hooks, copies made before the gate, stored use cases declaring anew,
    reads that failed open, batches, checks that built the bus, strict answering nobody with 403,
    a gate run twice — each with its test.
-2. The entrypoints authenticate: RPC, gRPC, MCP and the Open Host build `Credentials`, call
-   `auth.authenticate`, open `as_identity`, and map the errors; `ApiKeyProvider`; a
-   `ServiceTokenProvider` in `remote_execution` and the Open Host, closing its missing guard.
+2. **Built.** `auth/transports.py` — credentials out of an ASGI scope or a transport's headers,
+   `authenticated_as(bus, credentials)`, the refusal each protocol answers, `identity_headers`;
+   `Credentials.query`; `access_control_of(bus)`; the shared executor authenticating every wire;
+   JSON-RPC (401, `-32001` / `-32003`), gRPC (`UNAUTHENTICATED` / `PERMISSION_DENIED`, trailing
+   metadata), MCP (per tool call, and `token_verifier` for FastMCP's `auth=`), `IdentityMiddleware`
+   for an ASGI app of the project's, and `remote_execution` carrying the identity as a
+   `ServiceTokenProvider` token and authenticating it on the host — closing the Open Host's missing
+   guard; `ApiKeyProvider` with `ApiKeyStore` and `InMemoryApiKeys`; each proven with a blocked-
+   extras run.
 3. `JwtProvider` behind `[jwt]` — JWKS cached, refetched on an unknown `kid`; revocation by a deny
    list in `KeyValueStore` or introspection, cached; MCP's OAuth metadata.
 4. Reads filtered by `scope_of` where the project asks for it, per decision 4.
