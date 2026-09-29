@@ -48,9 +48,10 @@ billing = UseFramework("billing", log_after_execution=False)
 ## Measured by itself: every use case
 
 Nothing to declare. Each run lands on one histogram, `sincpro.use_case.duration` (seconds),
-labelled with its bounded context, its use case, its layer and its outcome — `ok`, or the
-failure's kind (`domain`, `invalid`, `not_found`, `internal`, … the classification every wire
-already shares) and its class in `error.type`. From that one metric a dashboard has the rate
+labelled with its bounded context, its use case, its layer and its outcome — `ok`, `expected`,
+or the failure's kind (`domain`, `invalid`, `not_found`, `unavailable`, `internal`, … the
+classification every wire already shares, including what an error's class declares with
+`failure_kind = ...`) — and its class in `error.type`. From that one metric a dashboard has the rate
 (its count), the errors (its outcome) and the latency (its buckets) of every use case.
 
 ```python
@@ -83,6 +84,10 @@ assert labels == {
 
 A failure answered by an error handler is still recorded as its kind: the caller got an answer,
 the use case did not succeed.
+
+An error the bus was told to expect (`bus.ignore_sentry_exceptions(...)`: a preview that asks
+for confirmation, a refused argument) is `expected`, not a failure kind: it is traffic, so an
+error-rate alert reads `sincpro_outcome!~"ok|expected"`, while the class stays in `error_type`.
 
 The framework's own pieces count what they do, declaring nothing either:
 
@@ -246,7 +251,7 @@ known only midway — a stream, several calls — record it by hand with a class
 
 | Level | Where | Value |
 |---|---|---|
-| the service | the resource — `job` on Prometheus via OTLP | `service.name`: the artifact, **without** its version (stable across releases); `service.version` and `deployment.environment.name` (the tenant) beside it |
+| the service | the resource — `job` on Prometheus via OTLP | `service.name`: the artifact, **without** its version or registry (stable across releases: `sincpro_odoo_mcp` out of an image reference `registry.example.com/sincpro/sincpro_odoo_mcp:0.8.0`); `service.version` and `tenant` (`resource.tenant`, the key every Sincpro signal and the Alloy pipeline read) beside it |
 | the bounded context | every series | `sincpro.context` |
 | what runs each context | one info series per context | `sincpro.context.info{sincpro_context, sincpro_artifact, sincpro_version, sincpro_tenant} 1` |
 
@@ -265,8 +270,13 @@ sum by (sincpro_context, sincpro_version) (
 ... * on (job, instance, sincpro_context) group_left () sincpro_context_info{sincpro_tenant="acme"}
 ```
 
-Through Alloy, the resource's `service.version` and tenant can also be promoted to labels on
-every series (`resource_to_telemetry_conversion`) when one version per series is wanted.
+On Sincpro's cluster the metrics travel over OTLP to Alloy, the same endpoint as the traces, and
+Alloy writes them to Prometheus (`otelcol.exporter.prometheus` → `prometheus.remote_write`). There
+`service.name` becomes `job`, `service.instance.id` (one per process) becomes `instance`, the rest
+of the resource lands on `target_info`, and Alloy copies `resource.tenant` to a `tenant` label on
+every series — a constant per deployment, so it adds no series. The resource's `service.version`
+can also be promoted to every series (`resource_to_telemetry_conversion`) when one version per
+series is wanted; Sincpro's pipeline leaves it off.
 
 ## Where it goes: the backend
 

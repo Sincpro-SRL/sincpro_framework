@@ -46,9 +46,11 @@ from sincpro_framework.observability.metrics.infrastructure.active import active
 from sincpro_framework.observability.metrics.infrastructure.execution import (
     ERROR_TYPE,
     OUTCOME,
+    expects,
     outcome_of,
     read_labels,
 )
+from sincpro_framework.observability.metrics.infrastructure.identity import BusObservability
 from sincpro_framework.observability.metrics.infrastructure.registry import (
     declarations_of,
     declare,
@@ -114,10 +116,17 @@ def declares_metrics(cls: type) -> bool:
 class BoundInstrument:
     """An instrument of one use case on one bounded context — what `self.<attribute>` is."""
 
-    def __init__(self, instrument: Instrument, labels: tuple[FieldPath, ...], owner: type):
+    def __init__(
+        self,
+        instrument: Instrument,
+        labels: tuple[FieldPath, ...],
+        owner: type,
+        expects: BusObservability | None = None,
+    ):
         self.instrument = instrument
         self._labels = labels
         self._owner = owner
+        self._expects = expects
 
     def _read(self, sources: tuple[Any, ...]) -> dict[str, str]:
         return read_labels(self._labels, sources, self._owner)
@@ -141,7 +150,10 @@ class BoundInstrument:
             error = raised
             raise
         finally:
-            labels = {**self._read(sources), **outcome_of(error)}
+            labels = {
+                **self._read(sources),
+                **outcome_of(error, expects(self._expects, error)),
+            }
             active.emit(self.instrument, time.perf_counter() - started, labels)
 
 
@@ -170,7 +182,7 @@ class DeclaredInstrument:
     def __set_name__(self, owner: type, name: str) -> None:
         self.owner, self.attribute = owner, name
 
-    def bound_to(self, context: str) -> BoundInstrument:
+    def bound_to(self, context: str, who: BusObservability | None = None) -> BoundInstrument:
         known = self._bound.get(context)
         if known is not None:
             return known
@@ -184,7 +196,7 @@ class DeclaredInstrument:
             label_keys=(*keys, OUTCOME, ERROR_TYPE) if self.timed else keys,
             buckets=self.buckets,
         )
-        bound = BoundInstrument(instrument, self.labels, owner)
+        bound = BoundInstrument(instrument, self.labels, owner, who)
         self._bound[context] = bound
         return bound
 
@@ -192,7 +204,9 @@ class DeclaredInstrument:
         if instance is None:
             return self
         binder = getattr(instance, "_context_binder", None)
-        return self.bound_to(getattr(binder, "name", "") or "")
+        return self.bound_to(
+            getattr(binder, "name", "") or "", getattr(binder, "observability", None)
+        )
 
 
 class Metrics:

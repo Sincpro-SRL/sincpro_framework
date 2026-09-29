@@ -63,10 +63,11 @@ class ObservabilityIdentity(BaseModel):
 
     @property
     def service(self) -> str:
-        """The artifact without its version — stable across releases, what a metric's service
-        is. `APP_RELEASE` arrives whole (`sincpro-odoo:18.5.0-rc2`, kept verbatim for traces and
-        GlitchTip); a library comes as name and version apart."""
-        return self._split()[0]
+        """The artifact without its version or its registry — stable across releases, what a
+        metric's service is. `APP_RELEASE` arrives whole, often as an image reference
+        (`registry.example.com/team/sincpro-odoo:18.5.0-rc2`, kept verbatim for traces and
+        GlitchTip): the name is `sincpro-odoo`. A library comes as name and version apart."""
+        return self._split()[0].rsplit("/", 1)[-1]
 
     @property
     def service_version(self) -> str:
@@ -81,7 +82,7 @@ class ObservabilityIdentity(BaseModel):
 
 def tenant() -> str:
     """Which tenant this deployment serves — `TENANT`; empty when unset. The GlitchTip
-    environment and tag, and the metrics' `deployment.environment.name` and `sincpro.tenant`.
+    environment and tag, and the metrics' `resource.tenant` and `sincpro.tenant`.
     """
     return (settings.tenant or "").strip()
 

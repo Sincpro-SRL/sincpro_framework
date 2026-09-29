@@ -50,7 +50,8 @@ version**:
 
 | Derived | Value | Example |
 |---|---|---|
-| `service_name` (Tempo, metrics resource) | `artifact:version:bus`, empty parts omitted, verbatim | `sincpro-odoo:18.5.0-rc2:common-mcp` |
+| `service_name` (Tempo) | `artifact:version:bus`, empty parts omitted, verbatim | `sincpro-odoo:18.5.0-rc2:common-mcp` |
+| `service` (metrics resource, `job` on Prometheus) | the artifact without registry, version or bus | `sincpro-odoo` |
 | `release` (GlitchTip) | `APP_RELEASE` verbatim, else `artifact:version` — never the bus | `sincpro-siat-soap:8.0.3` |
 
 `framework.observability.status` probes each backend as `ComponentStatus(state, reason)` —
@@ -109,10 +110,17 @@ inside Odoo reported Odoo's name against its own version); values used to be rew
 | `sincpro.queue.deliveries` | counter, `{delivery}` | `messaging.system`, `messaging.destination.name`, `sincpro.settlement`, `sincpro.failure_kind` |
 | `sincpro.context.info` | up-down, 1 per context | `sincpro.context`, `sincpro.artifact`, `sincpro.version`, `sincpro.tenant` (§4.9) |
 
-- `sincpro.outcome` is `ok`, or the failure's kind from `transport.failures` (`domain`,
-  `invalid`, `not_found`, `unauthenticated`, `permission_denied`, `conflict`, `internal`, …) —
-  the classification every wire already encodes. A failure an error handler answered is still
-  its kind. `error.type` is the exception's class, empty on success.
+- `sincpro.outcome` is `ok`, `expected`, or the failure's kind — the refined classification
+  every wire already encodes (`transport.failures.refined_failure_kind`): what the error's class
+  declares (`failure_kind = NOT_FOUND`, `EXHAUSTED`, `UNAVAILABLE`), the idempotency refusals
+  (`in_progress`, `key_reused`), then `domain`, `invalid`, `unauthenticated`,
+  `permission_denied`, `conflict`, `internal`. A failure an error handler answered is still its
+  kind. `error.type` is the exception's class, empty on success.
+- **`expected` is an error the bus was told is traffic, not a bug** (`ignore_sentry_exceptions`):
+  a preview that asks for confirmation, a refused argument, a rejected credential. Counted as
+  `internal` it makes every error-rate alert fire on normal use, so it is kept apart — its class
+  still in `error.type` — and the alert reads `outcome!~"ok|expected"`. Which errors are
+  expected is one declaration per bounded context, the same that keeps them out of GlitchTip.
 - One histogram gives the three signals a use case is watched by: its rate (the count), its
   errors (the outcome) and its latency (the buckets) — for every use case of every bounded
   context, every wire included, because every wire ends in the bus.
@@ -217,7 +225,7 @@ time it sees its name.
 
 | Level | Where | Value |
 |---|---|---|
-| the service | the meter provider's resource (`job` on Prometheus) | `service.name` = the artifact **without** its version; `service.version`; `deployment.environment.name` = `TENANT` — only what is set |
+| the service | the meter provider's resource (`job` on Prometheus) | `service.name` = the artifact **without** its version or registry (`sincpro_odoo_mcp` out of `registry.example.com/sincpro/sincpro_odoo_mcp:0.8.0`); `service.version`; `tenant` = `TENANT` (`resource.tenant`, the canonical key Grafana and the Alloy pipeline read) — only what is set |
 | the bounded context | every series | `sincpro.context` |
 | what runs each context | `sincpro.context.info` = 1 | `sincpro.context`, `sincpro.artifact`, `sincpro.version`, `sincpro.tenant` |
 
@@ -292,8 +300,12 @@ spans through `Observability.span(...)`.
 | `metrics_backend` | `SINCPRO_METRICS_BACKEND` | `auto` | metrics |
 | — | `PROMETHEUS_MULTIPROC_DIR` | none | metrics, several worker processes |
 
-Sincpro's reference deployment: `SINCPRO_METRICS_BACKEND=prometheus`, `/metrics` scraped by
-Prometheus; traces to Tempo over OTLP; errors to GlitchTip.
+Sincpro's reference deployment: `SINCPRO_METRICS_BACKEND=auto` and `OTEL_EXPORTER_OTLP_ENDPOINT`
+at the cluster's Alloy — traces and metrics over the same OTLP. Alloy sends traces to Tempo and
+metrics to Prometheus (`otelcol.exporter.prometheus` → `prometheus.remote_write`), so a service
+needs no scrape target, no ServiceMonitor and no `PROMETHEUS_MULTIPROC_DIR`: each worker process
+is its own `instance`. Errors to GlitchTip. `SINCPRO_METRICS_BACKEND=prometheus` with `/metrics`
+scraped stays the choice for a host with no collector.
 
 ## 8. Decisions
 
@@ -307,7 +319,7 @@ Prometheus; traces to Tempo over OTLP; errors to GlitchTip.
 | Bounded labels enforced, not advised | the one mistake that takes the backend down is refused where it is written |
 | `counts` named `…runs` | a summed field named `total` collides with a bare counter on Prometheus |
 | Only successes on declared metrics | a failure is already measured by kind; counting it again double-books it |
-| Prometheus adapter as the reference, OTel as the portable one | Sincpro scrapes Prometheus; everything else speaks OTel — and both pass one contract |
+| OTLP push through Alloy as the reference, the Prometheus adapter for hosts without a collector | every service already exports traces to Alloy: one endpoint, no scrape target per service, prefork workers need no shared directory — and both adapters pass one contract |
 | The version off the metrics' service name, onto one info series | a version in the job restarts every series at each deploy; the info series is joined only when a query asks |
 | Durations carry seconds buckets (OTel's HTTP ones) | OTel's default buckets are sized for milliseconds and would put every run in the first |
 
@@ -316,7 +328,7 @@ Prometheus; traces to Tempo over OTLP; errors to GlitchTip.
 | Area | Tests |
 |---|---|
 | traces | `tests/observability/`: spans per DTO and their parentage, adoption of an outer span, W3C carriers, a failure recorded once, the host's provider respected |
-| automatic metrics | every run timed with its context and outcome; a failure as its kind; an answered failure still a failure (global and Feature handlers); an ApplicationService and its Features apart; cache, idempotency and queue outcomes counted |
+| automatic metrics | every run timed with its context and outcome; a failure as its kind, the declared kind (`not_found`) and the idempotency refusals included; what the bus expects as `expected`, in a use case and in a timed block; an answered failure still a failure (global and Feature handlers); an ApplicationService and its Features apart; cache, idempotency and queue outcomes counted |
 | declared metrics | counts/sums/measures per label; only successes; the refusals (unknown field, unbounded label, non-number, foreign DTO, value for a reference); a counter never goes down |
 | by hand | named by attribute; a timed block's outcome; labels read off the right source |
 | safety | a raising recorder never fails a use case (automatic and by hand); no recorder, no cost; the core and the classic path import no backend |
