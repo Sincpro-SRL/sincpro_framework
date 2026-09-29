@@ -6,5 +6,6 @@ otlp_traces_sample_rate: $ENV:OTEL_TRACES_SAMPLER_ARG
 sentry_dsn: $ENV:SENTRY_PYTHON_DSN
 app_release: $ENV:APP_RELEASE
 otel_service_name: $ENV:OTEL_SERVICE_NAME
+metrics_backend: $ENV:SINCPRO_METRICS_BACKEND
 tenant: $ENV:TENANT
 context_map_override: $ENV:SINCPRO_CONTEXT_MAP

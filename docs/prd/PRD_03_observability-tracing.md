@@ -1,341 +1,336 @@
-# PRD_03: Observability & Tracing — Sincpro Framework
+# PRD_03: Observability — traces, errors, logs and metrics
 
-## Overview
+- **Status**: built. Traces, errors and logs since the observability refactor; metrics (§4) built
+  with this revision — automatic, declared and by hand, on Prometheus (the reference stack) or
+  OpenTelemetry. What is left is §10.
+- **Extras**: none for the core. `[opentelemetry]` (traces, OTLP metrics), `[sentry]` (errors to
+  GlitchTip/Sentry), `[prometheus]` (metrics scraped at `/metrics`).
+- **Code**: `sincpro_framework.observability` (the two doors: `Observability` per bus,
+  `process` for the transport) and `sincpro_framework.observability.metrics`.
+- **Guides**: [observability](../observability/README.md), [metrics](../observability/metrics.md).
 
-- **Priority**: High
-- **Extra**: `sincpro-framework[opentelemetry]` (OTel is fully optional)
-- **Scope**: Log correlation (always) · OTel spans (optional) · OTLP export (optional)
-
----
-
-## Problem
-
-The framework executes Features and ApplicationServices with no visibility into
-the execution chain. In production it is impossible to:
-
-- Correlate log lines to a specific execution or distributed request.
-- See the parent → child span hierarchy when an ApplicationService calls Features.
-- Connect to an existing trace started by an outer layer (FastAPI, Celery, etc.).
+This document is the current design and why it is so. It is rewritten when the design changes;
+it keeps no history.
 
 ---
 
-## Design principles
+## 1. Principles
 
-1. **Zero-dependency opt-out** — `opentelemetry-api` is NOT a base dependency.
-   Everything in the framework works identically whether OTel is installed or not.
-   All OTel imports are lazy (`try/except ImportError`).
+1. **The bus always instruments itself; configuration only decides where the data goes.** No
+   flag turns a signal on: an extra plus an endpoint, a DSN or a backend name sends it
+   somewhere; without them every signal is a no-op and the bus runs exactly as it would without
+   observability.
+2. **Nothing observability does can fail a use case.** Every span, event, measurement and log
+   call is shielded; a failing exporter is logged, never raised. The use case's own exception
+   always propagates — an exporter never swallows it.
+3. **The host comes first.** A tracer provider, meter provider or Sentry client the host
+   application registered (Odoo, FastAPI instrumentation, an operator's auto-instrumentation) is
+   used or left alone, never replaced.
+4. **One identity, resolved once.** The Tempo `service.name`, the GlitchTip release and the
+   metrics resource are read from the same `ObservabilityIdentity`, so they never disagree.
+5. **The bounded context is the unit.** Every signal says which bus it came from:
+   `service.name` ends in the bus, errors carry `sincpro.instance`, metrics `sincpro.context`
+   and a context prefix on every declared name.
+6. **Nothing is named by a string the code can drift from.** Spans are the DTO's name; declared
+   metrics are the context, the use case and a field or attribute; labels are field references.
+7. **The core imports no backend.** `opentelemetry`, `sentry_sdk` and `prometheus_client` are
+   imported only inside their adapters; `tests/test_core_without_extras.py` blocks every one of
+   them and runs the whole core.
 
-2. **Log correlation is always available** — `with_trace()` works without OTel.
-   When OTel is absent it binds `trace_id`/`span_id` using `sincpro_log`'s existing
-   `logger.tracing()` API. No structlog reconfiguration, no global side effects.
+## 2. Identity and status
 
-3. **OTel spans are additive** — when `opentelemetry-sdk` is installed and a
-   provider is configured, spans are created automatically on top of log
-   correlation. Nothing breaks if the SDK is removed.
+`ObservabilityIdentity(artifact, version, bus)` is who is emitting, resolved on first use — the
+first source that names an artifact wins, and a source contributes its artifact **and its own
+version**:
 
-4. **Zero flag to toggle OTel** — no `enabled`/`disabled` setting. If a real
-   `TracerProvider` is configured, spans are exported. If not, they are no-op.
+1. what the caller declared (`UseFramework(name, package=...)`), an escape hatch;
+2. the installed library that built the bus (module → distribution by the `_` → `-` convention);
+3. the deployment: `APP_RELEASE`, else `OTEL_SERVICE_NAME`;
+4. a distribution whose import name differs from its package name (a ~200 ms scan, last).
 
-5. **Same context manager pattern** — `with_trace()` follows the same idiom as
-   `with framework.context({...})`. Both are context managers on `UseFramework`,
-   both are composable.
+| Derived | Value | Example |
+|---|---|---|
+| `service_name` (Tempo, metrics resource) | `artifact:version:bus`, empty parts omitted, verbatim | `sincpro-odoo:18.5.0-rc2:common-mcp` |
+| `release` (GlitchTip) | `APP_RELEASE` verbatim, else `artifact:version` — never the bus | `sincpro-siat-soap:8.0.3` |
 
-6. **Auto-config at `build_root_bus()`**, not at `__init__`** — OTLP provider
-   setup runs when the bus is built (explicit), not when `UseFramework` is
-   instantiated (implicit).
+`framework.observability.status` probes each backend as `ComponentStatus(state, reason)` —
+`on:init`, `on:host`, `off:sdk_missing`, `off:no_endpoint`, `off:dsn_missing`, `failed:<why>` —
+logged once when the bus is built. Errors of the framework itself report under the framework's
+own artifact and version, keeping the bus.
 
----
+**Why**: the release and the service name used to be resolved separately and drifted (a library
+inside Odoo reported Odoo's name against its own version); values used to be rewritten (`-` →
+`_`), mangling both the name to search for and the version.
 
-## Key insight: shared logger instance
+## 3. Traces
 
-All buses share **the same `LoggerProxy` instance** created in `UseFramework`:
+- **A tracer provider per bus**, so each bus's spans carry its own `service.name` even inside a
+  host that registered a global provider. Built when the bus is built, only with
+  `OTEL_EXPORTER_OTLP_ENDPOINT` set; otherwise a real host provider is ridden (`on:host`).
+- **A process provider for the transport.** ASGI, httpx and uvicorn instrumentation ask for the
+  global tracer; the framework installs one under the **process** identity (no bus segment) only
+  when nobody owns the global — so an HTTP request is never exported as if it belonged to one
+  bounded context. `sincpro_framework.observability.process` is that door: `tracer(...)`,
+  `bind_logger(...)`, `record_error(...)`, `was_reported(error)`.
+- **A span per DTO execution**, named after the DTO class, with `sincpro.layer` (`feature` /
+  `application_service`), `sincpro.instance` (the bus) and `sincpro.replaces` when a handler
+  replaced another. An ApplicationService's Features are its children; an active outer span
+  (FastAPI, Celery, Odoo) is adopted as parent through OTel's context.
+- **A failure is recorded once**, on the span of the handler that raised it, with where it
+  failed; every outer span it crosses only takes the error status.
+- **Sampling**: `ParentBased(TraceIdRatioBased(OTEL_TRACES_SAMPLER_ARG))` — a decision taken
+  upstream always wins, so a sampled request is never cut halfway.
+- **Blocks**: `with bus.with_trace(trace_id=, span_id=, carrier=)` starts (or continues, from a
+  W3C `traceparent` carrier) a trace for a block; `with bus.with_parent_trace()` adopts the
+  active host span without creating one. Both bind the ids to the logger and put `trace_id` /
+  `span_id` in `self.context`. Without OTel installed they generate UUIDs, so logs still
+  correlate.
+
+## 4. Metrics
+
+### 4.1 What was studied, and what was taken
+
+| Reference | What it does | Taken |
+|---|---|---|
+| **Micrometer** (Spring): `@Timed`, `@Counted`, `@MeterTag`, the Observation API | annotations on a method; tags from its arguments; one instrumentation yields spans and metrics | decorators on the use case; labels read off its arguments; the bus already has both the span and the measurement of each run |
+| **OpenTelemetry** metrics API and semantic conventions | counters, up-down counters, histograms; dotted lowercase names; units as metadata; durations in seconds; `error.type` on failures | the instrument model, the naming, `s` for durations, `error.type` |
+| **Prometheus** (`prometheus_client`) | pull; `_total`, `_seconds`; labels fixed at creation; cardinality is the one way to take it down; multiprocess mode for forked workers | the reference adapter; strict bounded labels; label keys fixed per instrument; `PROMETHEUS_MULTIPROC_DIR` |
+| **.NET `System.Diagnostics.Metrics`** (`IMeterFactory`) | meters per component, created through the container | instruments bound to the bus that runs the use case |
+| **prometheus-fastapi-instrumentator**, django-prometheus | RED metrics of every request with no code | RED of every use case, of every wire, with no code — one level deeper than the request |
+| **OTel Collector `spanmetrics`** | metrics derived from spans | kept as an option for the infrastructure; the framework records its own so a service without a collector has them |
+
+### 4.2 Recorded by itself — declaring nothing
+
+| Metric | Kind | Labels |
+|---|---|---|
+| `sincpro.use_case.duration` | histogram, `s` | `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`, `error.type` |
+| `sincpro.cache.outcomes` | counter | `sincpro.namespace`, `sincpro.outcome` |
+| `sincpro.idempotency.outcomes` | counter | `sincpro.namespace`, `sincpro.outcome` |
+| `sincpro.queue.deliveries` | counter, `{delivery}` | `messaging.system`, `messaging.destination.name`, `sincpro.settlement`, `sincpro.failure_kind` |
+| `sincpro.context.info` | up-down, 1 per context | `sincpro.context`, `sincpro.artifact`, `sincpro.version`, `sincpro.tenant` (§4.9) |
+
+- `sincpro.outcome` is `ok`, or the failure's kind from `transport.failures` (`domain`,
+  `invalid`, `not_found`, `unauthenticated`, `permission_denied`, `conflict`, `internal`, …) —
+  the classification every wire already encodes. A failure an error handler answered is still
+  its kind. `error.type` is the exception's class, empty on success.
+- One histogram gives the three signals a use case is watched by: its rate (the count), its
+  errors (the outcome) and its latency (the buckets) — for every use case of every bounded
+  context, every wire included, because every wire ends in the bus.
+- Cache and idempotency outcomes reach the metrics through their observer: the default is both
+  the span event and `MetricsObserver`. Queue deliveries are counted where the gateway settles
+  them — dead letters rising is the alert, retries rising the warning before it.
+
+### 4.3 Declared — decorate, and it measures
 
 ```python
-# use_bus.py
-self._sp_container = ioc.FrameworkContainer(logger_bus=self.logger)
-# FeatureBus, ApplicationServiceBus, FrameworkBus all receive self.logger
+@billing.feature(CommandIssueInvoice)
+@metrics.counts(by=of(CommandIssueInvoice).currency)
+@metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency, unit="BOB")
+@metrics.measures(of(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
+class IssueInvoice(Feature): ...
 ```
 
-This means binding `trace_id`/`span_id` on `self.logger` via `logger.tracing()`
-propagates to all internal framework logs automatically — no structlog
-reconfiguration needed.
+| Decorator | Records on each **successful** run | Name |
+|---|---|---|
+| `counts(by=)` | one more | `{context}.{use_case}.runs` |
+| `sums(value, by=, unit=)` | the field's value, added up (monotonic: a negative value is dropped) | `{context}.{use_case}.{field}` |
+| `measures(value, by=, unit=, buckets=)` | the field's value, as a distribution | `{context}.{use_case}.{field}` |
 
----
+- **Names are derived**: the context from the bus that runs it, the use case from its class
+  (`IssueInvoice` → `issue_invoice`), the field from the reference. `counts` ends in `runs`, never
+  the bare use case — a field summed under the same use case (`total`) would collide with it on
+  Prometheus, where a counter gains `_total`.
+- **`of(Dto).field`** is a field reference: `of()` returns a stand-in typed as an instance of the
+  DTO, so the type checker and the editor see an ordinary attribute and a rename follows it; at
+  run time the stand-in records the path and checks each step against the declared fields. The
+  DTO is never modified — no metaclass, no descriptor. Nested paths (`of(R).customer.segment`)
+  work.
+- **Refused at import**: a field the DTO lacks; a path into a DTO that is neither the use case's
+  Command nor its Response (read off `execute`'s annotations); a value that is not a number; a
+  label that is not bounded (§4.4); a value handed where a reference is expected.
+- **Only successes**: a failed run is already measured, by kind, in §4.2. `declares_metrics(cls)`
+  answers whether a use case declared any.
 
-## Naming
+### 4.4 Labels are bounded — normative
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| `service.name`     | `bundled_context_name` — `UseFramework("cybersource")` → `"cybersource"` |
-| span name          | DTO class name — `TokenizationParams`, `PaymentServiceParams`          |
-| `sincpro.layer`    | `"feature"` or `"application_service"`                                 |
-| `trace_id` in logs | OTel hex string when OTel active; UUID when OTel absent                |
-| `span_id` in logs  | OTel hex string when OTel active; UUID when OTel absent                |
+A label **MUST** be an `Enum`, a `Literal` or a `bool` (optionally `| None`); anything else is
+refused where it is declared. Every distinct value of a label is one more series in the backend
+for as long as it lives — a customer id, an amount or free text as a label is how a metrics
+backend is taken down. What varies without bound belongs on the trace (a span attribute) or in the
+logs. Values travel as the Enum's value, `true`/`false`, or `none`.
 
----
-
-## Span hierarchy (when OTel is installed)
-
-OTel uses `contextvars` internally. `start_as_current_span()` detects any active
-span automatically:
-
-```
-[outer span — FastAPI, Celery, gRPC interceptor …]   ← adopted if present
-  └── PaymentServiceParams                           ← ApplicationServiceBus span
-        └── TokenizationParams                      ← FeatureBus span (auto child)
-        └── ChargeCardParams                        ← FeatureBus span (auto child)
-```
-
-If there is no outer span, `PaymentServiceParams` becomes the root trace.
-
-When OTel is **not** installed, the hierarchy is reflected only in log correlation:
-each execution block has the same `trace_id`; each bus level gets a `span_id`.
-
----
-
-## Public API
-
-### Without OTel installed — log correlation only
+### 4.5 By hand, inside `execute`
 
 ```python
-cybersource = UseFramework("cybersource")
+class PriceOrder(Feature):
+    lookups = metrics.counter(by=of(CommandPriceOrder).channel)
+    pricing = metrics.timer()
 
-with cybersource.with_trace() as traced:
-    result = traced(TokenizationParams(...))
-# → all logs in that block contain trace_id and span_id (auto-generated UUIDs)
-# → no OTel spans, no export — framework still works identically
+    def execute(self, dto):
+        with self.pricing.time():
+            self.lookups.add(1, dto)
 ```
 
-### With OTel installed + OTLP endpoint set — full tracing
+`counter()`, `up_down()`, `histogram()` and `timer()` are declared as class attributes and named
+by the attribute (`{context}.{use_case}.{attribute}`); `self.<attribute>` is the instrument bound
+to the bus running the use case. Labels are read off the `sources` handed to `add` / `record` /
+`time` — each reference from the source it starts at. A `timer` records seconds with the block's
+`sincpro.outcome` and `error.type`, a failure as its kind.
 
-```python
-# pip install sincpro-framework[opentelemetry]
-# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+### 4.6 Backends — one port, chosen by configuration
 
-cybersource = UseFramework("cybersource")
+`Recorder` is the port: `add(instrument, value, labels)` for counters and up-down counters,
+`record(...)` for histograms. The recorder creates its own object for an instrument the first
+time it sees its name.
 
-with cybersource.with_trace() as traced:
-    result = traced(TokenizationParams(...))
-# → span "TokenizationParams", service.name="cybersource", exported via OTLP
-# → all logs contain OTel trace_id and span_id
-```
+| `SINCPRO_METRICS_BACKEND` | Recorder |
+|---|---|
+| `auto` (default) | `OtelRecorder` when a real meter provider or an OTLP endpoint is there; otherwise none |
+| `prometheus` | `PrometheusRecorder` on the default registry — `[prometheus]` |
+| `otel` | `OtelRecorder` — the host's meter provider, or one installed for OTLP under the process identity (60 s export) |
+| `off` | none |
 
-### Explicit propagation from outer layer
+- **Metrics belong to the process**, as a Prometheus registry and an OTel meter provider do: one
+  recorder per process, every bus recording into it. `metrics.use(recorder)` replaces it;
+  `metrics.using(recorder)` for a block (tests).
+- **Prometheus is the reference stack.** Names are translated (dots to `_`, `_total` on a counter,
+  `_seconds` on a duration, label keys without dots). `FastApiGateway.app()` serves the scrape at
+  `/metrics` when the process records to Prometheus; `asgi_app()` mounts it elsewhere and
+  `serve(port)` gives a worker its own. `PROMETHEUS_MULTIPROC_DIR` makes forked workers write to
+  one directory the scrape sums (an up-down counter as `livesum`). An instrument redeclared
+  under one name with other labels or kind is logged and dropped — Prometheus would raise.
+- **`auto` never picks Prometheus by guessing**: a registry nobody scrapes is memory nobody reads.
+- **A backend of the project's** implements `Recorder` and passes `RecorderContract`
+  (`sincpro_framework.observability.metrics.testing`), the contract every recorder of the framework passes:
+  counters add up per label set, up-down counters go both ways, histograms count observations,
+  concurrent adds are all kept.
 
-```python
-# Propagate from raw trace_id / span_id (e.g. read from internal headers)
-with cybersource.with_trace(trace_id="4bf92f3577b3...", span_id="00f067aa0ba9...") as traced:
-    result = traced(TokenizationParams(...))
+### 4.7 Guarantees
 
-# Extract from W3C traceparent header (requires OTel installed)
-with cybersource.with_trace(carrier=request.headers) as traced:
-    result = traced(TokenizationParams(...))
-```
+- A recorder that raises is logged once per instrument and skipped; the use case never sees it —
+  on the automatic path and inside `execute` alike.
+- A counter never goes down.
+- With no recorder, a run pays one check: nothing is timed, nothing is read.
+- The classic path (a service that only runs buses) imports no DDD layer and no backend for it.
 
-### Composition with `context()`
+### 4.9 Who a metric comes from
 
-`with_trace()` is orthogonal to `context()` — both can be composed freely:
+| Level | Where | Value |
+|---|---|---|
+| the service | the meter provider's resource (`job` on Prometheus) | `service.name` = the artifact **without** its version; `service.version`; `deployment.environment.name` = `TENANT` — only what is set |
+| the bounded context | every series | `sincpro.context` |
+| what runs each context | `sincpro.context.info` = 1 | `sincpro.context`, `sincpro.artifact`, `sincpro.version`, `sincpro.tenant` |
 
-```python
-with cybersource.with_trace(carrier=headers) as traced:
-    with traced.context({"user.id": "u-123"}) as app:
-        result = app(TokenizationParams(...))
-```
+- **Traces and metrics split the release differently, on purpose.** A trace is looked up by
+  release, so its `service.name` is `artifact:version:bus`. A metric is read across releases: a
+  version in its job starts every series again at each deploy, breaking `rate()` across it. So
+  the metrics resource carries the artifact alone and the version beside it
+  (`ObservabilityIdentity.service` / `.service_version`, which split an `APP_RELEASE` that
+  arrives whole).
+- **Version and tenant travel once**, on the info series — Prometheus' `*_build_info` pattern —
+  announced to each recorder the first time a context records into it (so a recorder chosen
+  after the bus was built still learns it), and joined in a query with
+  `* on (job, instance, sincpro_context) group_left (sincpro_version)`. One series per context:
+  never a label that multiplies every series.
+- **One source**: the identity and the tenant are the ones traces and errors already use
+  (`observability.domain`: `ObservabilityIdentity`, `tenant()`); nothing is resolved twice.
 
-### Access trace context from Feature / ApplicationService
-
-Because `with_trace()` also writes `trace_id` and `span_id` into the framework
-context, user code can read them without importing anything from `tracing/`:
-
-```python
-@cybersource.feature(TokenizationParams)
-class TokenizeFeature(Feature):
-    def execute(self, dto: TokenizationParams):
-        trace_id = self.context.get("trace_id")   # available automatically
-        span_id = self.context.get("span_id")
-        ...
-```
-
----
-
-## Log correlation detail
-
-`sincpro_log`'s `LoggerProxy` already has `logger.tracing(trace_id, request_id)`
-which stores fields in `_temporal_fields` and merges them into every structlog
-call within the block.
-
-`with_trace()` implementation:
-
-```python
-with self.logger.tracing(trace_id=trace_id, request_id=span_id):
-    # all bus logs (FeatureBus, ApplicationServiceBus, FrameworkBus)
-    # automatically include trace_id + span_id because they share self.logger
-    yield self
-```
-
-No changes to `sincpro_log` are required for the initial version.
-
-> **Note (future)**: `LoggerProxy._temporal_fields` is instance-level state, not
-> `contextvars`. Under concurrent async workloads this can cause field bleed
-> between coroutines. A future `sincpro_log` improvement should migrate
-> `_temporal_fields` to `contextvars.ContextVar` (backwards-compatible API).
-
----
-
-## Auto-configuration logic (OTel path)
+### 4.8 Layers
 
 ```
-build_root_bus() called
-  └── opentelemetry-sdk installed?
-        NO  → skip, no-op
-        YES → check OTEL_EXPORTER_OTLP_ENDPOINT
-                not set → skip (outer app may configure its own provider)
-                set     → check trace.get_tracer_provider()
-                            ProxyTracerProvider or NoOpTracerProvider?
-                              YES → configure TracerProvider + BatchSpanProcessor
-                                    + OTLPSpanExporter for this service_name
-                              NO  → respect existing provider, do nothing
+sincpro_framework/observability/metrics/
+  domain/          Instrument, InstrumentKind, Declaration, of() / FieldPath and the label and
+                   value rules, the naming, the Recorder port — no I/O, no backend
+  adapters/        in_memory.py · prometheus.py [prometheus] · otel.py [opentelemetry]
+  infrastructure/  the process's recorder (settings), the shield, the per-run measurement,
+                   the declarations registry (by class, never on the class)
+  entrypoint/      metrics: counts / sums / measures, counter / up_down / histogram / timer
+  testing.py       RecorderContract
 ```
 
----
+The bus reaches metrics only through `Observability.measure(dto, handler, layer)`, as it reaches
+spans through `Observability.span(...)`.
 
-## Module structure
+## 5. Errors
 
-```
-sincpro_framework/
-  tracing/
-    __init__.py          # public: setup_otlp_provider
-    span_context.py      # FrameworkSpanContext — with_trace() context manager
-```
+- **GlitchTip / Sentry on the framework's own client**, never `sentry_sdk.init()` — calling it
+  would replace the host's client and the host's errors would start reporting under sincpro's
+  release. Built with `SENTRY_PYTHON_DSN`; one client per release.
+- **Each unexpected failure is sent once**, by the handler that raised it, tagged
+  `sincpro.kind`, `sincpro.layer`, `sincpro.instance`, the handler and the tenant, with its
+  details (DTO chain, where it failed, the execution's context) as the event's `sincpro`
+  context.
+- **Expected errors are traffic, not bugs**: `bus.ignore_sentry_exceptions(...)` keeps them out
+  of GlitchTip and logs them at info. The host may still capture the same exception under its
+  own release — intended.
 
-`log_correlation.py` from the original PRD is dropped — log correlation is
-handled directly by `sincpro_log`'s `logger.tracing()` within `FrameworkSpanContext`.
+## 6. Logs
 
----
+- `sincpro_log`, one `LoggerProxy` per bus shared by its inner buses, so ids bound once reach
+  every internal line.
+- Every line inside an execution carries the active span's `trace_id` / `span_id` (OTel ids when
+  a provider is active; UUIDs otherwise).
+- **A failure is logged once**, by the outermost bus, however many ApplicationServices or other
+  contexts' buses it crossed: `failed_in` (the bus whose handler raised), `handler`, `layer`,
+  `chain`, `error_type`, `error_at` (the last line of the handler's own package), `raised_at`,
+  the execution's context. An expected error is logged at info without a traceback; one an
+  error handler answered, at warning.
+- The transport's own loggers (uvicorn, access logs) learn the request's ids through
+  `process.bind_logger(logger)`, and `process.was_reported(error)` keeps a transport from logging
+  twice what a bus already logged.
 
-## Implementation plan
+## 7. Configuration
 
-### Phase 1 — `pyproject.toml`
+| Setting | Env | Default | Signal |
+|---|---|---|---|
+| `otlp_endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | none | traces; metrics under `auto`/`otel` |
+| `otlp_traces_sample_rate` | `OTEL_TRACES_SAMPLER_ARG` | `1.0` | traces |
+| `sentry_dsn` | `SENTRY_PYTHON_DSN` | none | errors |
+| `app_release` | `APP_RELEASE` | none | identity |
+| `otel_service_name` | `OTEL_SERVICE_NAME` | none | identity, when `APP_RELEASE` is absent |
+| `tenant` | `TENANT` | none | errors (tag) |
+| `metrics_backend` | `SINCPRO_METRICS_BACKEND` | `auto` | metrics |
+| — | `PROMETHEUS_MULTIPROC_DIR` | none | metrics, several worker processes |
 
-`opentelemetry-api` is **not** added to base dependencies.
+Sincpro's reference deployment: `SINCPRO_METRICS_BACKEND=prometheus`, `/metrics` scraped by
+Prometheus; traces to Tempo over OTLP; errors to GlitchTip.
 
-```toml
-[tool.poetry.extras]
-opentelemetry = [
-    "opentelemetry-api",
-    "opentelemetry-sdk",
-    "opentelemetry-exporter-otlp-proto-grpc",
-    "opentelemetry-exporter-otlp-proto-http",
-]
-```
+## 8. Decisions
 
-All OTel imports in the framework use lazy guard:
+| Decision | Why |
+|---|---|
+| No enable/disable flags | an extra plus a destination is the switch; a flag is one more thing out of step with the destination |
+| A provider per bus, a separate one for the process | a span exported under another context's name is worse than none; transport spans belong to the process |
+| Metrics recorded by the bus, not derived from spans | a service without a collector still has them; histograms are exact, not sampled |
+| One process recorder, not one per bus | a registry and a meter provider are process-wide in every backend; the context is a label and a name prefix |
+| Field references (`of()`), not strings or `Annotated` on the DTO | a rename follows them, a typo fails at import, and the DTO stays untouched |
+| Bounded labels enforced, not advised | the one mistake that takes the backend down is refused where it is written |
+| `counts` named `…runs` | a summed field named `total` collides with a bare counter on Prometheus |
+| Only successes on declared metrics | a failure is already measured by kind; counting it again double-books it |
+| Prometheus adapter as the reference, OTel as the portable one | Sincpro scrapes Prometheus; everything else speaks OTel — and both pass one contract |
+| The version off the metrics' service name, onto one info series | a version in the job restarts every series at each deploy; the info series is joined only when a query asks |
+| Durations carry seconds buckets (OTel's HTTP ones) | OTel's default buckets are sized for milliseconds and would put every run in the first |
 
-```python
-try:
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-    _OTEL_AVAILABLE = True
-except ImportError:
-    _OTEL_AVAILABLE = False
-```
+## 9. Conformance — what the tests prove
 
-### Phase 2 — `tracing/span_context.py`
+| Area | Tests |
+|---|---|
+| traces | `tests/observability/`: spans per DTO and their parentage, adoption of an outer span, W3C carriers, a failure recorded once, the host's provider respected |
+| automatic metrics | every run timed with its context and outcome; a failure as its kind; an answered failure still a failure (global and Feature handlers); an ApplicationService and its Features apart; cache, idempotency and queue outcomes counted |
+| declared metrics | counts/sums/measures per label; only successes; the refusals (unknown field, unbounded label, non-number, foreign DTO, value for a reference); a counter never goes down |
+| by hand | named by attribute; a timed block's outcome; labels read off the right source |
+| safety | a raising recorder never fails a use case (automatic and by hand); no recorder, no cost; the core and the classic path import no backend |
+| identity | the info series once per context and recorder, with library, version and tenant; the release split into a stable name and a version; nothing invented without a tenant |
+| backends | `RecorderContract` over in-memory, Prometheus and OTel; durations in seconds buckets on OTel; Prometheus names in a real scrape; `/metrics` served by `FastApiGateway`; OTel data points; the configuration's choice, `auto` never guessing Prometheus |
 
-`FrameworkSpanContext` — context manager returned by `with_trace()`.
+Every rule above has a mutation the tests catch (17 in the metrics pass).
 
-**`__enter__`**:
-1. Resolve `trace_id` / `span_id`:
-   - If `carrier` provided and OTel available → extract via W3C propagator
-   - If `trace_id`/`span_id` provided explicitly → use them (construct `NonRecordingSpan` if OTel available)
-   - Otherwise → auto-generate (OTel root span if available, UUID fallback)
-2. If OTel available → attach span to OTel contextvars token
-3. Call `self.logger.tracing(trace_id=trace_id, request_id=span_id)` → all bus logs get fields
-4. Inject `trace_id`/`span_id` into framework context via `_set_context()` → Features read from `self.context`
-5. Return `UseFramework` instance (same as `FrameworkContext.__enter__`)
+## 10. Not built
 
-**`__exit__`**:
-1. If OTel → detach contextvars token
-2. `logger.tracing()` context manager exit restores previous `_temporal_fields`
-3. Restore previous framework context
-
-### Phase 3 — `tracing/__init__.py`
-
-`setup_otlp_provider(service_name: str)`:
-- Runs only if OTel SDK available and `OTEL_EXPORTER_OTLP_ENDPOINT` is set
-- Checks `trace.get_tracer_provider()` before registering to avoid double-config
-- Creates `TracerProvider` with `Resource({"service.name": service_name})`
-- Adds `BatchSpanProcessor(OTLPSpanExporter())`
-
-### Phase 4 — Instrument `bus.py`
-
-Applied to `FeatureBus.execute` and `ApplicationServiceBus.execute`:
-
-```python
-# Lazy at module level
-try:
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.trace import StatusCode
-    _OTEL_AVAILABLE = True
-except ImportError:
-    _OTEL_AVAILABLE = False
-
-# Inside execute():
-if _OTEL_AVAILABLE:
-    tracer = otel_trace.get_tracer("sincpro_framework")
-    with tracer.start_as_current_span(
-        dto_name,
-        attributes={
-            "sincpro.layer": "feature",   # or "application_service"
-        },
-    ) as span:
-        try:
-            return registry[dto_name].execute(dto)
-        except Exception as error:
-            span.record_exception(error)
-            span.set_status(StatusCode.ERROR, str(error))
-            raise
-else:
-    return registry[dto_name].execute(dto)
-```
-
-`start_as_current_span` detects and inherits any active parent span automatically.
-
-### Phase 5 — `use_bus.py` additions
-
-- `build_root_bus()`: call `setup_otlp_provider(self._logger_name)` after bus build
-- `with_trace(trace_id=None, span_id=None, carrier=None) → FrameworkSpanContext`
-
-### Phase 6 — Tests
-
-`tests/tracing/test_tracing.py`:
-
-| Test | What it validates |
-|------|-------------------|
-| `test_no_otel_no_error` | Framework runs normally without `[opentelemetry]` |
-| `test_with_trace_generates_ids` | `with_trace()` with no args auto-generates `trace_id`/`span_id` |
-| `test_with_trace_explicit_ids` | `with_trace(trace_id, span_id)` uses provided values |
-| `test_trace_ids_in_framework_context` | `trace_id`/`span_id` available in Feature via `self.context` |
-| `test_logs_have_trace_id` | Logger contains `trace_id` and `span_id` inside `with_trace` block |
-| `test_log_fields_cleared_after_exit` | No trace fields leak outside `with_trace` block |
-| `test_context_api_composable` | `with_trace()` + `context()` compose without conflict |
-| `test_span_name_equals_dto_name` | (OTel) Span name matches `dto.__class__.__name__` |
-| `test_span_attributes` | (OTel) `sincpro.layer` present on span |
-| `test_app_service_child_spans` | (OTel) Feature spans are children of AppService span |
-| `test_adopts_outer_active_span` | (OTel) Active span in contextvars becomes parent |
-| `test_with_trace_carrier` | (OTel) W3C `traceparent` in carrier used as parent |
-| `test_error_recorded_in_span` | (OTel) Exception sets span status `ERROR` |
-
-Tests marked `(OTel)` use `opentelemetry-sdk` in-memory exporter and are
-skipped automatically if the extra is not installed.
-
----
-
-## Out of scope
-
-- Metrics (Prometheus, StatsD, histograms)
-- Baggage propagation
-- Jaeger-native protocol (OTLP covers Jaeger, Tempo, and any OTLP backend)
-- Changing `Feature.execute` or `ApplicationService.execute` signatures
-- Multi-provider or custom exporter factory beyond OTLP
-- `sincpro_log` async safety (`ContextVar` migration) — tracked separately
+- Exemplars (a histogram bucket linking to a trace) — both OpenMetrics and OTel support them; the
+  recorder port would carry the span context.
+- Asynchronous gauges (a callback read at scrape time) — for values that are read, not measured
+  (a pool's size).
+- Per-wire request metrics (`http.server.request.duration`, `rpc.server.duration`) — the use case
+  metric covers every wire already; the host's OTel instrumentation adds these when installed.
+- Baggage propagation; a sampling strategy other than parent-based ratio.

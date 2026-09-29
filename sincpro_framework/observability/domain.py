@@ -61,6 +61,30 @@ class ObservabilityIdentity(BaseModel):
         artifact = self.artifact if self.artifact != UNKNOWN else self.bus
         return ":".join(part for part in (artifact, self.version) if part)
 
+    @property
+    def service(self) -> str:
+        """The artifact without its version — stable across releases, what a metric's service
+        is. `APP_RELEASE` arrives whole (`sincpro-odoo:18.5.0-rc2`, kept verbatim for traces and
+        GlitchTip); a library comes as name and version apart."""
+        return self._split()[0]
+
+    @property
+    def service_version(self) -> str:
+        return self._split()[1]
+
+    def _split(self) -> tuple[str, str]:
+        artifact, version = self.artifact, self.version
+        if not version and ":" in artifact:
+            artifact, version = artifact.rsplit(":", 1)
+        return artifact, version
+
+
+def tenant() -> str:
+    """Which tenant this deployment serves — `TENANT`; empty when unset. The GlitchTip
+    environment and tag, and the metrics' `deployment.environment.name` and `sincpro.tenant`.
+    """
+    return (settings.tenant or "").strip()
+
 
 class ComponentStatus(BaseModel):
     """Whether one backend came up, and why not when it didn't."""

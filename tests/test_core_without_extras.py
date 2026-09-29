@@ -28,6 +28,7 @@ BLOCKED = (
     "faststream",
     "redis",
     "pymemcache",
+    "prometheus_client",
 )
 
 PROGRAM = r"""
@@ -403,6 +404,53 @@ for gateway, serve, extra in (
         assert f"sincpro-framework[{extra}]" in str(error), (type(gateway).__name__, error)
     else:
         raise AssertionError(f"{type(gateway).__name__}.{serve}() served without its extra")
+
+# --- metrics: declared and recorded with no backend installed ---------------------------------
+
+from enum import StrEnum as _StrEnum
+
+from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
+
+
+class Channel(_StrEnum):
+    WEB = "web"
+
+
+class CommandVisit(DataTransferObject):
+    channel: Channel
+
+
+visits = UseFramework("core-only-metrics", log_after_execution=False)
+
+
+@visits.feature(CommandVisit)
+@metrics.counts(by=of(CommandVisit).channel)
+class Visit(Feature):
+    def execute(self, dto: CommandVisit) -> None:
+        return None
+
+
+visits(CommandVisit(channel=Channel.WEB))  # the default: no recorder, nothing recorded
+recorded = InMemoryRecorder()
+with metrics.using(recorded):
+    visits(CommandVisit(channel=Channel.WEB))
+assert recorded.totals("core_only_metrics.visit.runs") == {(("channel", "web"),): 1}
+
+try:
+    import sincpro_framework.observability.metrics.adapters.prometheus
+except ImportError as error:
+    assert "sincpro-framework[prometheus]" in str(error), error
+else:
+    raise AssertionError("the Prometheus recorder imported without prometheus_client")
+
+from sincpro_framework.observability.metrics.adapters.otel import OtelRecorder
+
+try:
+    OtelRecorder()
+except ImportError as error:
+    assert "sincpro-framework[opentelemetry]" in str(error), error
+else:
+    raise AssertionError("the OTel recorder was built without OpenTelemetry")
 
 loaded = sorted(name for name in BLOCKED if sys.modules.get(name) is not None)
 assert loaded == [], loaded

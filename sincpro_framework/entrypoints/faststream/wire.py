@@ -59,6 +59,11 @@ from sincpro_framework.entrypoints.faststream.verdicts import (
 )
 from sincpro_framework.events.faststream.queue import Broker
 from sincpro_framework.events.trace import within_trace
+from sincpro_framework.observability.metrics.domain.instruments import (
+    Instrument,
+    InstrumentKind,
+)
+from sincpro_framework.observability.metrics.infrastructure.active import active
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.transport.failures import (
@@ -68,6 +73,19 @@ from sincpro_framework.transport.failures import (
 )
 
 UNGUARDED = "unguarded"
+QUEUE_DELIVERIES = Instrument(
+    name="sincpro.queue.deliveries",
+    kind=InstrumentKind.COUNTER,
+    unit="{delivery}",
+    description="Every delivery and how it was settled — ack, replay, skip, retry, dead letter",
+    label_keys=(
+        "messaging.system",
+        "messaging.destination.name",
+        "sincpro.settlement",
+        "sincpro.failure_kind",
+    ),
+)
+"""Dead letters rising is the alert; retries rising the warning before it."""
 DEAD_LETTER_REASON = "sincpro-dead-letter-reason"
 DEAD_LETTER_KIND = "sincpro-dead-letter-kind"
 DEAD_LETTER_FROM = "sincpro-dead-letter-from"
@@ -571,6 +589,16 @@ class QueueWire(Wire[QueueBinding]):
            `{channel}{suffix}` then ack — nack when the copy fails, so nothing is lost.
         """
         settlement = verdict.settlement
+        active.emit(
+            QUEUE_DELIVERIES,
+            1,
+            {
+                "messaging.system": self.broker_name,
+                "messaging.destination.name": channel,
+                "sincpro.settlement": str(settlement),
+                "sincpro.failure_kind": str(verdict.kind or ""),
+            },
+        )
         if settlement in (Settlement.ACK, Settlement.REPLAY, Settlement.SKIP):
             await message.ack()
             return

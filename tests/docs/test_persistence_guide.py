@@ -28,6 +28,7 @@ CACHING = ROOT / "docs" / "caching" / "README.md"
 AUTH = ROOT / "docs" / "auth" / "README.md"
 REST = ROOT / "docs" / "entrypoints" / "rest.md"
 FASTAPI = ROOT / "docs" / "entrypoints" / "fastapi.md"
+METRICS = ROOT / "docs" / "observability" / "metrics.md"
 README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -66,6 +67,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         AUTH,
         REST,
         FASTAPI,
+        METRICS,
     ],
     ids=lambda page: page.parent.name + "/" + page.name,
 )

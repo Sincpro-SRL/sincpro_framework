@@ -58,7 +58,10 @@ from weakref import WeakKeyDictionary
 from sincpro_framework.caching.adapters.json_codec import JsonCodec
 from sincpro_framework.caching.adapters.key_value_records import KeyValueRecords
 from sincpro_framework.caching.adapters.keys import key_of
-from sincpro_framework.caching.adapters.observers import SpanObserver
+from sincpro_framework.caching.adapters.observers import (
+    IDEMPOTENCY_OUTCOMES,
+    traced_and_measured,
+)
 from sincpro_framework.caching.domain.codec import Codec
 from sincpro_framework.caching.domain.exceptions import AlreadyInProgress, KeyReused
 from sincpro_framework.caching.domain.idempotency_records import (
@@ -138,7 +141,7 @@ class Idempotency:
             store if isinstance(store, IdempotencyRecords) else KeyValueRecords(store)
         )
         self.namespace = namespace
-        self.observer: CacheObserver = observer or SpanObserver()
+        self.observer: CacheObserver = observer or traced_and_measured(IDEMPOTENCY_OUTCOMES)
         self._declared: WeakKeyDictionary[type, IdempotencyPolicy] = WeakKeyDictionary()
         """Every class that declared `once()`, with its policy — what `policies()` describes."""
 

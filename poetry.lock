@@ -4082,7 +4082,7 @@ version = "0.26.0"
 description = "Python client for the Prometheus monitoring system."
 optional = false
 python-versions = ">=3.9"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "prometheus_client-0.26.0-py3-none-any.whl", hash = "sha256:fa93d06737aa02bacd05794768508bb97d2fbee28cb3bca04eaae92f0ca953d6"},
     {file = "prometheus_client-0.26.0.tar.gz", hash = "sha256:04a91bcf94e2cf74a44a1a874d651a2e853ed354b6e822f3b7487751465d5c2b"},
@@ -6461,6 +6461,7 @@ mcp = ["fastmcp"]
 memcached = ["pymemcache"]
 migrations = ["alembic", "sqlalchemy"]
 opentelemetry = ["opentelemetry-api", "opentelemetry-exporter-otlp-proto-grpc", "opentelemetry-exporter-otlp-proto-http", "opentelemetry-sdk"]
+prometheus = ["prometheus-client"]
 redis = ["redis"]
 rest = ["starlette", "uvicorn"]
 rpc = ["starlette", "uvicorn"]
@@ -6470,4 +6471,4 @@ sqlalchemy = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "a4e3d2d1b10ff2ad295b02a636bcdc32089d0a929bd60c4ecd9daa63cd0cba51"
+content-hash = "e301012cac41bf65d817c049e859b146182ebf443b599308f3ca2759abf95ee1"

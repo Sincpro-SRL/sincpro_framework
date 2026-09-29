@@ -136,6 +136,8 @@ class DefaultFrameworkConfig(SincproConfig):
     sentry_dsn: str | None = None
     app_release: str | None = None
     otel_service_name: str | None = None
+    metrics_backend: Literal["auto", "prometheus", "otel", "off"] = "auto"
+    """`$ENV:SINCPRO_METRICS_BACKEND` — where the metrics go (`docs/observability/metrics.md`)."""
     tenant: str | None = None
     context_map: list[dict[str, str]] = []
     """Where bounded contexts are hosted by another service — `[{context: billing, at: grpc://…}]`."""

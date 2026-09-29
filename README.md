@@ -404,6 +404,7 @@ as itself. The component is `sincpro_framework.remote_execution`. See [docs/entr
 
 - **Tracing** (optional): OpenTelemetry spans on every DTO, export via OTLP (`sincpro-framework[opentelemetry]` + `OTEL_EXPORTER_OTLP_ENDPOINT`).
 - **Errors** (optional): Sentry/GlitchTip capture on bus exceptions (`sincpro-framework[sentry]` + `SENTRY_PYTHON_DSN` in conf). Isolated client — does not call `sentry_sdk.init()`, does not reuse Odoo's client.
+- **Metrics** (optional): every use case timed by bounded context and outcome, with nothing to declare; `@metrics.counts` / `sums` / `measures` on a use case by field reference (`of(Command).field`); Prometheus `/metrics` (`sincpro-framework[prometheus]`) or OTLP (`[opentelemetry]`), picked by `SINCPRO_METRICS_BACKEND` — [guide](docs/observability/metrics.md).
 - Independent: you can enable traces, errors, both, or neither.
 
 ## ⚙️ Features vs. Application Service
@@ -1286,6 +1287,7 @@ The bus always instruments. Extras and env vars only decide **where** data goes.
 | Logs (`trace_id` / `span_id`) | none | — | stdout / your logger |
 | Tracing (spans) | `[opentelemetry]` | `OTEL_EXPORTER_OTLP_ENDPOINT` | Tempo / Jaeger |
 | Errors (exceptions) | `[sentry]` | `SENTRY_PYTHON_DSN` (framework conf) | GlitchTip / Sentry |
+| Metrics (every use case, plus what it declares) | `[prometheus]` / `[opentelemetry]` | `SINCPRO_METRICS_BACKEND` | Prometheus `/metrics` / OTLP — [metrics guide](docs/observability/metrics.md) |
 
 Missing extra or missing DSN in conf → no-op, the bus still raises. Framework events are independent from the host: Odoo may also capture the same exception with its own release. That is intended.
 
@@ -1683,6 +1685,7 @@ where you can define some behavior currently we support the following settings:
 - `app_release`: deployed artifact and version, `artifact:version`. Resolved from `APP_RELEASE` — the standard on every Sincpro service. Feeds both the GlitchTip release and the OTel `service.name`.
 - `otel_service_name`: names the artifact when `APP_RELEASE` carries only a version. Resolved from `OTEL_SERVICE_NAME`.
 - `tenant`: GlitchTip `environment` and the `tenant` tag. Resolved from `TENANT`.
+- `metrics_backend`: `auto`, `prometheus`, `otel` or `off`. Resolved from `SINCPRO_METRICS_BACKEND`. Default: `auto` — OpenTelemetry when a meter provider or an OTLP endpoint is configured, otherwise nothing. `prometheus` requires `sincpro-framework[prometheus]` and serves `/metrics` ([docs/observability/metrics.md](docs/observability/metrics.md)).
 - `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release=APP_RELEASE` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. Use `UseFramework.ignore_sentry_exceptions(...)` for expected errors.
 
 Override the config file using another

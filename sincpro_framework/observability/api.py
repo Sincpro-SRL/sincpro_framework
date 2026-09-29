@@ -101,6 +101,13 @@ class Observability:
         """Span for one DTO execution, with its ids bound to the logger."""
         return span_execution(dto_name, layer, self.identity.bus, self.logger)
 
+    def measure(self, dto: object, handler: object, layer: str) -> ContextManager[Any]:
+        """The metrics of one DTO execution: its duration by outcome, and what its use case
+        declares — `answered(response)` and `failed(error)` on what it yields."""
+        from sincpro_framework.observability.metrics.infrastructure.execution import measured
+
+        return measured(self._bus, dto, handler, layer, who=self)
+
     def record_error(
         self,
         error: Exception,
