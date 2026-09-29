@@ -1,7 +1,7 @@
 """Who a metric comes from — three levels, each where it belongs (PRD_03 §4.9).
 
     the service      the resource: service.name = the artifact, stable across releases;
-                     service.version, deployment.environment.name (the tenant) beside it
+                     service.version and tenant (`resource.tenant`, Sincpro's canonical key) beside it
     the context      sincpro.context on every series
     what runs it     sincpro.context.info{sincpro.context, sincpro.artifact, sincpro.version,
                      sincpro.tenant} = 1 — one series per bounded context, joined when asked
@@ -14,7 +14,7 @@ Prometheus `*_build_info` does: `* on (sincpro_context) group_left (sincpro_vers
 """
 
 import threading
-from typing import Any
+from typing import Protocol
 from weakref import WeakKeyDictionary
 
 from sincpro_framework.observability.domain import ObservabilityIdentity, tenant
@@ -23,6 +23,18 @@ from sincpro_framework.observability.metrics.domain.instruments import (
     InstrumentKind,
 )
 from sincpro_framework.observability.metrics.domain.recorder import Recorder
+
+
+class BusObservability(Protocol):
+    """What the metrics ask of the bus that runs a use case — its `Observability`: who it is,
+    and whether an error is traffic it was told to expect. Read only when something records,
+    and every read is shielded: a bus that answers neither is measured all the same."""
+
+    @property
+    def identity(self) -> ObservabilityIdentity: ...
+
+    def expects(self, error: BaseException) -> bool: ...
+
 
 CONTEXT_INFO = Instrument(
     name="sincpro.context.info",
@@ -39,7 +51,7 @@ def metrics_resource(identity: ObservabilityIdentity) -> dict[str, str]:
     if identity.service_version:
         attributes["service.version"] = identity.service_version
     if tenant():
-        attributes["deployment.environment.name"] = tenant()
+        attributes["tenant"] = tenant()
     return attributes
 
 
@@ -66,5 +78,5 @@ def announce(recorder: Recorder, identity: ObservabilityIdentity, context: str) 
     return True
 
 
-def identity_of(who: Any) -> ObservabilityIdentity | None:
+def identity_of(who: BusObservability | None) -> ObservabilityIdentity | None:
     return getattr(who, "identity", None) if who is not None else None

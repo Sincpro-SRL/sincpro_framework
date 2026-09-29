@@ -96,11 +96,29 @@ def test_a_recorder_set_later_still_learns_who_the_context_is():
             ("sincpro-siat-soap", "8.0.3"),
         ),
         (ObservabilityIdentity(artifact="odoo-bo", version=""), ("odoo-bo", "")),
+        (
+            # what `APP_RELEASE` is on a service: the image reference
+            ObservabilityIdentity(
+                artifact="registry.digitalocean.com/sincpro/sincpro_odoo_mcp:0.8.0"
+            ),
+            ("sincpro_odoo_mcp", "0.8.0"),
+        ),
     ],
 )
 def test_the_release_is_split_into_a_stable_name_and_its_version(identity, expected):
     """`APP_RELEASE` travels verbatim to traces; a metric's service is its name alone."""
     assert (identity.service, identity.service_version) == expected
+
+
+def test_the_metrics_resource_says_the_tenant_as_resource_tenant(monkeypatch):
+    """`resource.tenant` is the canonical tenant of every Sincpro signal — Grafana and the
+    Alloy pipeline read that key, and `deployment.environment.name` is an environment."""
+    monkeypatch.setattr(settings, "tenant", "acme")
+
+    attributes = metrics_resource(ObservabilityIdentity(artifact="sincpro-odoo", version="1"))
+
+    assert attributes["tenant"] == "acme"
+    assert "deployment.environment.name" not in attributes
 
 
 def test_the_metrics_resource_keeps_the_version_out_of_the_service_name(monkeypatch):
@@ -111,7 +129,7 @@ def test_the_metrics_resource_keeps_the_version_out_of_the_service_name(monkeypa
     assert attributes == {
         "service.name": "sincpro-odoo",
         "service.version": "18.5.0-rc2",
-        "deployment.environment.name": "acme",
+        "tenant": "acme",
     }
 
 
@@ -122,4 +140,4 @@ def test_without_a_tenant_nothing_is_invented(monkeypatch):
         ObservabilityIdentity(artifact="sincpro-odoo", version="1.0")
     )
 
-    assert "deployment.environment.name" not in attributes
+    assert "tenant" not in attributes

@@ -134,6 +134,11 @@ class Observability:
     def _is_expected(self, error: BaseException) -> bool:
         return isinstance(error, self.ignored_errors)
 
+    def expects(self, error: BaseException) -> bool:
+        """Whether this bus was told (`ignore`) that `error` is traffic, not a bug — kept out of
+        GlitchTip, logged at info, and an `expected` outcome in the metrics."""
+        return self._is_expected(error)
+
     def _describe(self, error: BaseException, dto: object) -> tuple[str, dict[str, Any]]:
         recorded = failure.failure_of(error)
         if recorded is None:

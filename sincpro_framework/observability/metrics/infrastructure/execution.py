@@ -26,6 +26,7 @@ from sincpro_framework.observability.metrics.domain.naming import metric_name
 from sincpro_framework.observability.metrics.domain.paths import FieldPath, label_value
 from sincpro_framework.observability.metrics.infrastructure.active import active
 from sincpro_framework.observability.metrics.infrastructure.identity import (
+    BusObservability,
     announce,
     identity_of,
 )
@@ -35,6 +36,7 @@ from sincpro_framework.sincpro_logger import logger
 OUTCOME = "sincpro.outcome"
 ERROR_TYPE = "error.type"
 OK = "ok"
+EXPECTED = "expected"
 RUNS = "runs"
 """What `counts` is named after: `billing.issue_invoice.runs`, never the bare use case — a field
 summed under the same use case (`total`) would collide with it on Prometheus."""
@@ -49,15 +51,26 @@ USE_CASE_DURATION = Instrument(
 )
 
 
-def outcome_of(error: BaseException | None) -> dict[str, str]:
-    """`ok`, or the failure's kind and class — both bounded: kinds are an enum, classes are
-    the code's."""
+def outcome_of(error: BaseException | None, expected: bool = False) -> dict[str, str]:
+    """`ok`, `expected`, or the failure's kind — and the error's class, always. All bounded:
+    kinds are an enum, classes are the code's.
+
+    Context: the kind is the refined one every wire encodes — what the error's class declares
+    (`failure_kind = NOT_FOUND`), the idempotency refusals, then the shared classification.
+    `expected` is an error the bus was told is traffic and not a bug (`ignore_sentry_exceptions`):
+    a preview that asks for confirmation, a refused argument. Counted as `internal` it makes
+    every error-rate alert fire on normal use; here it stays apart, its class in `error.type`.
+    """
     if error is None:
         return {OUTCOME: OK, ERROR_TYPE: ""}
-    from sincpro_framework.transport.failures import failure_kind
+    if expected:
+        return {OUTCOME: EXPECTED, ERROR_TYPE: type(error).__name__}
+    from sincpro_framework.transport.failures import refined_failure_kind
 
     try:
-        kind = str(failure_kind(error)) if isinstance(error, Exception) else "internal"
+        kind = (
+            str(refined_failure_kind(error)) if isinstance(error, Exception) else "internal"
+        )
     except Exception:
         kind = "internal"
     return {OUTCOME: kind, ERROR_TYPE: type(error).__name__}
@@ -143,7 +156,18 @@ class Execution:
         self.response = response
 
 
-def _announce(context: str, who: Any) -> None:
+def expects(who: BusObservability | None, error: BaseException | None) -> bool:
+    """Whether the bus (`who`, its `Observability`) was told `error` is expected traffic."""
+    check = getattr(who, "expects", None)
+    if error is None or check is None:
+        return False
+    try:
+        return bool(check(error))
+    except Exception:
+        return False
+
+
+def _announce(context: str, who: BusObservability | None) -> None:
     """Who runs this context, once per recorder — see `identity`."""
     identity = identity_of(who)
     recorder = active.get()
@@ -156,14 +180,19 @@ def _announce(context: str, who: Any) -> None:
 
 
 def _finish(
-    execution: Execution, context: str, dto: Any, handler: Any, layer: str, who: Any
+    execution: Execution,
+    context: str,
+    dto: Any,
+    handler: Any,
+    layer: str,
+    who: BusObservability | None,
 ) -> None:
     _announce(context, who)
     labels: Mapping[str, str] = {
         "sincpro.context": context,
         "sincpro.use_case": type(dto).__name__,
         "sincpro.layer": layer,
-        **outcome_of(execution.error),
+        **outcome_of(execution.error, expects(who, execution.error)),
     }
     active.emit(USE_CASE_DURATION, time.perf_counter() - execution.started, labels)
     if execution.error is None:
@@ -172,7 +201,11 @@ def _finish(
 
 @contextmanager
 def measured(
-    context: str, dto: Any, handler: Any, layer: str, who: Any = None
+    context: str,
+    dto: Any,
+    handler: Any,
+    layer: str,
+    who: BusObservability | None = None,
 ) -> Iterator[Execution]:
     """`who` answers `.identity` — the bus's `Observability`, read only when something records.
 

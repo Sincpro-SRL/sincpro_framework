@@ -365,3 +365,85 @@ def test_a_counter_never_goes_down(recorder):
     refunds(CommandRefund(amount=Decimal(-3)), ResponseRefund)
 
     assert recorder.totals("billing.refund.amount") == {(): 5.0}
+
+
+# --- what a failure is called: what it declares, and whether the bus expected it --------------
+
+
+def _failing(error: Exception) -> UseFramework:
+    bus = UseFramework("billing", log_after_execution=False)
+
+    @bus.feature(CommandIssueInvoice)
+    class Failing(Feature):
+        def execute(self, dto: CommandIssueInvoice) -> None:
+            raise error
+
+    return bus
+
+
+def _outcome_of_a_run(bus: UseFramework, recorder: InMemoryRecorder) -> dict[str, str]:
+    with pytest.raises(Exception):
+        bus(CommandIssueInvoice(customer_id="c", currency=Currency.BOB, total=Decimal(1)))
+    ((labels, _),) = recorder.observations(USE_CASE_DURATION)
+    return {key: labels[key] for key in ("sincpro.outcome", "error.type")}
+
+
+def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
+    """`failure_kind = NOT_FOUND` on an error is what its callers already read on every wire:
+    a dashboard that says `domain` for it hides the one kind it is looking for."""
+    from sincpro_framework.transport.failures import FailureKind
+
+    class InvoiceNotFound(DomainError):
+        failure_kind = FailureKind.NOT_FOUND
+
+    outcome = _outcome_of_a_run(_failing(InvoiceNotFound("F-9")), recorder)
+
+    assert outcome == {"sincpro.outcome": "not_found", "error.type": "InvoiceNotFound"}
+
+
+def test_a_duplicate_that_did_not_wait_is_in_progress_not_internal(recorder):
+    from sincpro_framework.caching import AlreadyInProgress
+
+    outcome = _outcome_of_a_run(_failing(AlreadyInProgress("still running")), recorder)
+
+    assert outcome["sincpro.outcome"] == "in_progress"
+
+
+def test_an_error_the_bus_was_told_to_expect_is_expected_not_a_failure_kind(recorder):
+    """`ignore_sentry_exceptions` already says these are traffic, not bugs — a preview that
+    asks for confirmation, a refused argument. Counted as `internal` they make every
+    error-rate alert fire on normal use. The class stays in `error.type`."""
+    bus = _failing(InvoiceRefused("an invoice cannot be negative"))
+    bus.ignore_sentry_exceptions(InvoiceRefused)
+
+    outcome = _outcome_of_a_run(bus, recorder)
+
+    assert outcome == {"sincpro.outcome": "expected", "error.type": "InvoiceRefused"}
+
+
+def test_what_the_bus_did_not_expect_keeps_its_kind(recorder):
+    bus = _failing(RuntimeError("the database went away"))
+    bus.ignore_sentry_exceptions(InvoiceRefused)
+
+    outcome = _outcome_of_a_run(bus, recorder)
+
+    assert outcome == {"sincpro.outcome": "internal", "error.type": "RuntimeError"}
+
+
+def test_a_timed_block_that_raises_an_expected_error_is_expected_too(recorder):
+    bus = UseFramework("billing", log_after_execution=False)
+    bus.ignore_sentry_exceptions(InvoiceRefused)
+
+    @bus.feature(CommandIssueInvoice)
+    class IssueInvoice(Feature):
+        pricing = metrics.timer()
+
+        def execute(self, dto: CommandIssueInvoice) -> None:
+            with self.pricing.time():
+                raise InvoiceRefused("no price list")
+
+    with pytest.raises(InvoiceRefused):
+        bus(CommandIssueInvoice(customer_id="c", currency=Currency.BOB, total=Decimal(1)))
+
+    ((labels, _),) = recorder.observations("billing.issue_invoice.pricing")
+    assert labels["sincpro.outcome"] == "expected"
