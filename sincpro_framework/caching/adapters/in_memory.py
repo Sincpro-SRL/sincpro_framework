@@ -4,7 +4,7 @@ import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.caching.store import KeyValueStore
+from sincpro_framework.caching.domain.store import KeyValueStore
 
 
 def utc_now() -> datetime:
@@ -56,3 +56,9 @@ class InMemoryKeyValue(KeyValueStore):
     def delete(self, key: str) -> None:
         with self._lock:
             self._values.pop(key, None)
+
+    def take(self, key: str) -> bytes | None:
+        with self._lock:
+            value = self._live(key)
+            self._values.pop(key, None)
+            return value

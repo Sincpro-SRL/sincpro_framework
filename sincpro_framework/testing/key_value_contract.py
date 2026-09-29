@@ -12,7 +12,7 @@ port (query caching, crons across replicas) works on it. Nothing here imports py
 import threading
 from datetime import timedelta
 
-from sincpro_framework.caching.store import KeyValueStore
+from sincpro_framework.caching.domain.store import KeyValueStore
 
 
 class KeyValueStoreContract:
@@ -92,6 +92,33 @@ class KeyValueStoreContract:
         store.delete("never-there")
         if store.get("a") is not None:
             raise AssertionError("a deleted key answered a value")
+
+    def test_take_answers_the_value_once_and_leaves_nothing(self) -> None:
+        store = self.make_store()
+        store.set("code", b"1")
+        if store.take("code") != b"1" or store.take("code") is not None:
+            raise AssertionError("take did not answer the value once")
+        if store.get("code") is not None or store.take("never-there") is not None:
+            raise AssertionError("take left the value behind, or answered a missing key")
+
+    def test_only_one_of_many_racing_takes_gets_the_value(self) -> None:
+        store = self.make_store()
+        store.set("ticket", b"x")
+        taken: list[bytes | None] = []
+        lock = threading.Lock()
+
+        def race() -> None:
+            value = store.take("ticket")
+            with lock:
+                taken.append(value)
+
+        threads = [threading.Thread(target=race) for _ in range(self.racers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        if [one for one in taken if one is not None] != [b"x"]:
+            raise AssertionError(f"{len([one for one in taken if one])} racing takes got it")
 
     def test_a_value_with_a_ttl_is_gone_after_it(self) -> None:
         store = self.make_store()

@@ -2,16 +2,17 @@
 
     MemcachedKeyValue(pymemcache.Client("cache:11211"), prefix="billing:")
 
-Context: Memcached expires in whole seconds, so a ttl under one second is one second; and its
+Context: Memcached expires in whole seconds, so a ttl under one second is one second; its
 `incr` does not create a missing counter, so `increment` creates it with `add` and, when another
-client created it first, increments that one.
+client created it first, increments that one; and it has no read-and-delete, so `take` reads with
+`gets` and spends the value with `cas` — the one caller whose `cas` wins took it.
 """
 
 import math
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.caching.store import KeyValueStore
+from sincpro_framework.caching.domain.store import KeyValueStore
 
 
 def _seconds(ttl: timedelta | None) -> int:
@@ -20,7 +21,8 @@ def _seconds(ttl: timedelta | None) -> int:
 
 class MemcachedKeyValue(KeyValueStore):
     def __init__(self, client: Any, prefix: str = "") -> None:
-        """`client` is a `pymemcache.Client` — or anything with its `get_many/set/add/incr/delete`."""
+        """`client` is a `pymemcache.Client` — or anything with its
+        `get_many/set/add/incr/delete/gets/cas`."""
         self.client = client
         self.prefix = prefix
 
@@ -46,3 +48,12 @@ class MemcachedKeyValue(KeyValueStore):
 
     def delete(self, key: str) -> None:
         self.client.delete(self.prefix + key, noreply=False)
+
+    def take(self, key: str) -> bytes | None:
+        value, token = self.client.gets(self.prefix + key)
+        if value is None:
+            return None
+        if not self.client.cas(self.prefix + key, b"", token, expire=1, noreply=False):
+            return None
+        self.client.delete(self.prefix + key, noreply=False)
+        return value

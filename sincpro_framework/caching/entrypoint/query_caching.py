@@ -35,20 +35,20 @@ Context — what each answer carries, and why:
 import hashlib
 import json
 import logging
-import math
 import random as random_module
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
-from enum import Enum
+from datetime import UTC, datetime, timedelta
 from typing import Any, get_type_hints
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
-from sincpro_framework.caching.store import KeyValueStore
+from sincpro_framework.caching.adapters.keys import canonical
+from sincpro_framework.caching.domain.policies import CachePolicy
+from sincpro_framework.caching.domain.store import KeyValueStore
+from sincpro_framework.caching.infrastructure.flight import StoreFlight, awaited
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories.reads import aggregate_tag, noting_reads
@@ -59,25 +59,6 @@ logger = logging.getLogger("sincpro_framework.caching")
 
 EVERYTHING = "*"
 """The tag every answer carries — `invalidate()` with no aggregate lets go of all of them."""
-
-
-@dataclass(frozen=True)
-class CachePolicy:
-    ttl: timedelta
-    vary_by: tuple[str, ...] = ()
-    """Context keys each answer is kept per — a tenant, a locale."""
-    stale_for: timedelta = timedelta(0)
-    """How long past its ttl an answer is still served while one caller recomputes it."""
-    jitter: float = 0.1
-    """The ttl is spread by up to this fraction, up or down."""
-    early_expiry: float = 1.0
-    """XFetch's β: how eagerly an answer about to expire is recomputed; 0 never early."""
-    depends_on: tuple[type, ...] = ()
-    """Aggregates the answer depends on beyond what the repository noted."""
-    max_bytes: int = 1_048_576
-    """An answer larger than this is answered and not kept."""
-    wait_for_others: timedelta = timedelta(seconds=2)
-    """How long a caller that did not win the lock waits for the answer the winner computes."""
 
 
 @dataclass(frozen=True)
@@ -103,26 +84,6 @@ class _Entry:
 
 def _entry(held: bytes | None) -> _Entry | None:
     return None if held is None else _Entry(**json.loads(held))
-
-
-def _canonical(value: Any) -> Any:
-    """A value written the one way two equal values are always written."""
-    match value:
-        case BaseModel():
-            return _canonical(value.model_dump())
-        case Decimal():
-            return str(value.normalize())
-        case datetime() | date():
-            return value.isoformat()
-        case Enum():
-            return _canonical(value.value)
-        case Mapping():
-            return {str(key): _canonical(item) for key, item in sorted(value.items())}
-        case set() | frozenset():
-            return sorted((_canonical(item) for item in value), key=json.dumps)
-        case list() | tuple():
-            return [_canonical(item) for item in value]
-    return value
 
 
 def _declared_response(handler: type) -> Any:
@@ -162,6 +123,7 @@ class QueryCaching:
         self.random = random
         self._cached: dict[type, _Cached] = {}
         self._near = _Near()
+        self._flight = StoreFlight(store)
 
     def _prefix(self) -> str:
         return f"cache:{self.namespace}:" if self.namespace else "cache:"
@@ -197,8 +159,8 @@ class QueryCaching:
             "bus": cached.bus.name,
             "query": f"{cached.query.__module__}.{cached.query.__qualname__}",
             "schema": cached.schema,
-            "values": _canonical(dto),
-            "vary": {name: _canonical(context.get(name)) for name in cached.policy.vary_by},
+            "values": canonical(dto),
+            "vary": {name: canonical(context.get(name)) for name in cached.policy.vary_by},
         }
         digest = hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode())
         return f"{self._prefix()}query:{digest.hexdigest()[:32]}"
@@ -239,17 +201,9 @@ class QueryCaching:
 
     def _recompute_early(self, cached: _Cached, entry: _Entry, now: float) -> bool:
         """XFetch: true with a probability that grows as `fresh_until` nears."""
-        if cached.policy.early_expiry <= 0:
-            return False
-        roll = max(self.random(), 1e-300)
-        return (
-            now - entry.took * cached.policy.early_expiry * math.log(roll)
-            >= entry.fresh_until
+        return cached.policy.lifetime.recompute_early(
+            entry.fresh_until, entry.took, now, self.random()
         )
-
-    def _lifetime(self, policy: CachePolicy) -> float:
-        spread = 1 + policy.jitter * (2 * self.random() - 1)
-        return policy.ttl.total_seconds() * spread
 
     def _computed(
         self, cached: _Cached, key: str, dto: Any, call_next: Callable[[Any], Any]
@@ -281,14 +235,9 @@ class QueryCaching:
         if len(value) > cached.policy.max_bytes:
             return answer
         now = self._moment()
-        fresh_until = now + self._lifetime(cached.policy)
-        entry = _Entry(
-            value,
-            versions,
-            fresh_until,
-            fresh_until + cached.policy.stale_for.total_seconds(),
-            took,
-        )
+        lifetime = cached.policy.lifetime
+        fresh_until = lifetime.fresh_until(now, self.random())
+        entry = _Entry(value, versions, fresh_until, lifetime.stale_until(fresh_until), took)
         kept_for = timedelta(seconds=max(1.0, entry.stale_until - now))
         self.store.set(key, entry.encoded(), kept_for)
         self._keep_near(key, entry)
@@ -300,16 +249,10 @@ class QueryCaching:
         try:
             return self._computed(cached, key, dto, call_next)
         finally:
-            self.store.delete(self.lock_key_of(key))
+            self._flight.release(key)
 
     def _awaited(self, key: str, policy: CachePolicy) -> _Entry | None:
-        deadline = time.monotonic() + policy.wait_for_others.total_seconds()
-        while time.monotonic() < deadline:
-            entry = self._held(key)
-            if entry is not None:
-                return entry
-            time.sleep(0.005)
-        return None
+        return awaited(lambda: self._held(key), policy.wait_for_others)
 
     def _answer(self, cached: _Cached, dto: Any, call_next: Callable[[Any], Any]) -> Any:
         """1. A held answer still fresh, and not picked for early recomputation, is served.
@@ -321,19 +264,19 @@ class QueryCaching:
         if not self.enabled:
             return call_next(dto)
         key = self._key(cached, dto)
-        lock = self.lock_key_of(key)
+        hold = cached.policy.wait_for_others * 5
         entry = self._held(key)
         now = self._moment()
         if entry is not None and now < entry.stale_until:
             expiring = now >= entry.fresh_until or self._recompute_early(cached, entry, now)
-            if expiring and self.store.add(lock, b"1", cached.policy.wait_for_others * 5):
+            if expiring and self._flight.lead(key, hold):
                 return self._refreshed(cached, key, dto, call_next)
             return cached.response.validate_json(entry.value)
-        if self.store.add(lock, b"1", cached.policy.wait_for_others * 5):
+        if self._flight.lead(key, hold):
             return self._refreshed(cached, key, dto, call_next)
-        awaited = self._awaited(key, cached.policy)
-        if awaited is not None:
-            return cached.response.validate_json(awaited.value)
+        arrived = self._awaited(key, cached.policy)
+        if arrived is not None:
+            return cached.response.validate_json(arrived.value)
         return call_next(dto)
 
     def on(self, bus: UseFramework, query: type, policy: CachePolicy) -> None:
@@ -368,7 +311,7 @@ class QueryCaching:
         }
 
     def lock_key_of(self, key: str) -> str:
-        return f"{key}:lock"
+        return self._flight.lock_key(key)
 
     def lock_key(self, dto: Any) -> str:
         """The lock the caller recomputing this answer holds."""

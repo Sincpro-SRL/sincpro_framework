@@ -9,7 +9,7 @@ nothing else. `prefix` lets several services share one server without sharing ke
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.caching.store import KeyValueStore
+from sincpro_framework.caching.domain.store import KeyValueStore
 
 
 def _milliseconds(ttl: timedelta | None) -> int | None:
@@ -18,7 +18,7 @@ def _milliseconds(ttl: timedelta | None) -> int | None:
 
 class RedisKeyValue(KeyValueStore):
     def __init__(self, client: Any, prefix: str = "") -> None:
-        """`client` is a `redis.Redis` — or anything with its `mget/set/incr/delete`."""
+        """`client` is a `redis.Redis` — or anything with its `mget/set/incr/delete/getdel`."""
         self.client = client
         self.prefix = prefix
 
@@ -38,3 +38,7 @@ class RedisKeyValue(KeyValueStore):
 
     def delete(self, key: str) -> None:
         self.client.delete(self.prefix + key)
+
+    def take(self, key: str) -> bytes | None:
+        """`GETDEL` — Redis 6.2 and every Valkey."""
+        return self.client.getdel(self.prefix + key)
