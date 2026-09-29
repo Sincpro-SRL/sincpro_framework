@@ -6408,6 +6408,7 @@ memcached = ["pymemcache"]
 migrations = ["alembic", "sqlalchemy"]
 opentelemetry = ["opentelemetry-api", "opentelemetry-exporter-otlp-proto-grpc", "opentelemetry-exporter-otlp-proto-http", "opentelemetry-sdk"]
 redis = ["redis"]
+rest = ["starlette", "uvicorn"]
 rpc = ["starlette", "uvicorn"]
 sentry = ["sentry-sdk"]
 sqlalchemy = ["sqlalchemy"]
@@ -6415,4 +6416,4 @@ sqlalchemy = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "2b34eb7ef5c2b6ee85aa0cfd2b155d45e93efc6cb83540ea719c4b47a9da2a32"
+content-hash = "693f259417505532e721e452af5f0df25ff97290456c295b319f0cde3ae9849f"
