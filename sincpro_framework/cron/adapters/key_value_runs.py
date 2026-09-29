@@ -12,7 +12,7 @@ once it is older than `since`. Runs are kept for `retention`, then the store let
 
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.caching.store import KeyValueStore
+from sincpro_framework.caching.domain.store import KeyValueStore
 from sincpro_framework.cron.domain import CronRuns, Run, RunOutcome
 
 

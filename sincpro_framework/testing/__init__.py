@@ -9,11 +9,13 @@ from .architecture import ImportCycle, LayerViolation, import_cycles, layer_viol
 from .auth import AuthProviderContract, RecordingProvider, granting
 from .dependencies import override_dependencies, unregistered_dependencies
 from .events import RecordingQueue
+from .idempotency_records_contract import IdempotencyRecordsContract
 from .key_value_contract import KeyValueStoreContract
 from .settings_scope import SettingsScopeViolation, settings_scope_violations
 
 __all__ = [
     "AuthProviderContract",
+    "IdempotencyRecordsContract",
     "ImportCycle",
     "KeyValueStoreContract",
     "LayerViolation",
