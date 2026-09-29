@@ -251,7 +251,9 @@ def test_the_exception_is_recorded_on_one_span_and_every_span_it_crosses_is_an_e
 
     _run(_payments(), CommandCheckout(order_id=7))
 
-    spans = {span.name: span for span in otel_setup.get_finished_spans()}
+    spans = {
+        span.attributes["sincpro.use_case"]: span for span in otel_setup.get_finished_spans()
+    }
     exception_events = [
         event for span in spans.values() for event in span.events if event.name == "exception"
     ]
@@ -263,6 +265,9 @@ def test_the_exception_is_recorded_on_one_span_and_every_span_it_crosses_is_an_e
     )
     assert spans["CommandCharge"].status.status_code == StatusCode.ERROR
     assert spans["CommandCheckout"].status.status_code == StatusCode.ERROR
+    # Every span the error crosses takes its outcome, as every run's metric does.
+    outcomes = {span.attributes["sincpro.outcome"] for span in spans.values()}
+    assert len(outcomes) == 1 and outcomes != {"ok"}
 
 
 def test_an_application_service_executing_an_unregistered_dto_is_told_so():
@@ -302,7 +307,9 @@ def test_the_span_of_a_replaced_use_case_names_what_it_replaced(otel_setup):
     billing(CommandRefund())
 
     [span] = [
-        span for span in otel_setup.get_finished_spans() if span.name == "CommandRefund"
+        span
+        for span in otel_setup.get_finished_spans()
+        if span.attributes["sincpro.use_case"] == "CommandRefund"
     ]
     assert span.attributes["sincpro.replaces"].endswith("Refund")
 

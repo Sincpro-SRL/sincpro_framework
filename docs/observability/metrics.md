@@ -8,7 +8,8 @@ context, the use case and the field or attribute, and labels are field reference
 they are written.
 
 The core records nothing and needs no extra. `[prometheus]` (Sincpro's reference stack) or
-`[opentelemetry]` bring a backend; `SINCPRO_METRICS_BACKEND` picks it. The design and the why are
+`[opentelemetry]` bring a backend; OpenTelemetry's own `OTEL_METRICS_EXPORTER` picks it, as it does
+for the traces (`SINCPRO_METRICS_BACKEND` is kept as an alias). The design and the why are
 [PRD 03 §4](../prd/PRD_03_observability-tracing.md#4-metrics).
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
@@ -48,7 +49,9 @@ billing = UseFramework("billing", log_after_execution=False)
 ## Measured by itself: every use case
 
 Nothing to declare. Each run lands on one histogram, `sincpro.use_case.duration` (seconds),
-labelled with its bounded context, its use case, its layer and its outcome — `ok`, `expected`,
+labelled with the service behind it (`service.name`: the library or service, as on its spans —
+inside Odoo the job is the host, this label is the SDK), its bounded context, its use case, its
+layer and its outcome — `ok`, `expected`,
 or the failure's kind (`domain`, `invalid`, `not_found`, `unavailable`, `internal`, … the
 classification every wire already shares, including what an error's class declares with
 `failure_kind = ...`) — and its class in `error.type`. From that one metric a dashboard has the rate
@@ -74,6 +77,7 @@ with metrics.using(recorder):
 
 ((labels, durations),) = recorder.observations("sincpro.use_case.duration")
 assert labels == {
+    "service.name": "shop",  # the library or service; the bus stands in when none resolves
     "sincpro.context": "shop",
     "sincpro.use_case": "CommandPing",
     "sincpro.layer": "feature",
@@ -93,7 +97,7 @@ The framework's own pieces count what they do, declaring nothing either:
 
 | Metric | Labels | What it answers |
 |---|---|---|
-| `sincpro.use_case.duration` (s) | `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`, `error.type` | rate, errors and latency of every use case |
+| `sincpro.use_case.duration` (s) | `service.name`, `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`, `error.type` | rate, errors and latency of every use case |
 | `sincpro.cache.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`hit`, `stale`, `computed`, `coalesced`, `invalidated`, `fallback`, `bypassed`) | a fail-safe serving through an outage, a store bypassed |
 | `sincpro.idempotency.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`claimed`, `replayed`, `in_progress`, `key_reused`) | the rate of duplicates |
 | `sincpro.queue.deliveries` | `messaging.system`, `messaging.destination.name`, `sincpro.settlement`, `sincpro.failure_kind` | acks, retries and dead letters per channel — the queue alert |
@@ -283,12 +287,16 @@ series is wanted; Sincpro's pipeline leaves it off.
 The process has one recorder; every bus records into it, told apart by `sincpro.context` and by
 the context in each declared name.
 
-| `SINCPRO_METRICS_BACKEND` | Recorder | Needs |
-|---|---|---|
-| `auto` (default) | OpenTelemetry when a meter provider or `OTEL_EXPORTER_OTLP_ENDPOINT` is there; otherwise nothing | — |
-| `prometheus` | `PrometheusRecorder`, scraped at `/metrics` | `[prometheus]` |
-| `otel` | `OtelRecorder`: the host's meter provider, or one exporting to the OTLP endpoint | `[opentelemetry]` |
-| `off` | nothing | — |
+| `OTEL_METRICS_EXPORTER` | `SINCPRO_METRICS_BACKEND` (alias) | Recorder | Needs |
+|---|---|---|---|
+| not set (default) | `auto` | OpenTelemetry when a meter provider or `OTEL_EXPORTER_OTLP_ENDPOINT` is there; otherwise nothing | — |
+| `otlp` | `otel` | `OtelRecorder`: the host's meter provider, or one exporting to the OTLP endpoint | `[opentelemetry]` |
+| `prometheus` | `prometheus` | `PrometheusRecorder`, scraped at `/metrics` | `[prometheus]` |
+| `none` (or `OTEL_SDK_DISABLED=true`) | `off` | nothing | — |
+
+`SINCPRO_METRICS_BACKEND` set to anything but `auto` wins. An exporter the framework does not build
+(`console`) records nothing. With a collector that does not take metrics, `none` also silences the
+exporter's warning every 60 s.
 
 `metrics.use(recorder)` sets it in code; `metrics.using(recorder)` for a block, as the tests do.
 
@@ -365,4 +373,4 @@ once per instrument and skipped — measuring never fails the use case it measur
 | `InMemoryRecorder`, `PrometheusRecorder`, `OtelRecorder`, `Recorder` | the recorders; `Recorder` is the port |
 | `RecorderContract` (`sincpro_framework.observability.metrics.testing`) | the contract a recorder passes |
 | `sincpro.context.info` | which library, version and tenant run each bounded context |
-| `SINCPRO_METRICS_BACKEND` | `auto` · `prometheus` · `otel` · `off` |
+| `OTEL_METRICS_EXPORTER`, `OTEL_SDK_DISABLED` | `otlp` · `prometheus` · `none`; `true` — alias `SINCPRO_METRICS_BACKEND`: `auto` · `otel` · `prometheus` · `off` |

@@ -6,18 +6,22 @@
     what runs it     sincpro.context.info{sincpro.context, sincpro.artifact, sincpro.version,
                      sincpro.tenant} = 1 — one series per bounded context, joined when asked
 
-Context: traces keep the release in `service.name` (`sincpro-odoo:18.5.0-rc2`) because a trace is
-looked up by release; a metric is read across releases, and a version in its job would start
-every series again at each deploy — `rate()` breaks across it, dashboards need a regex. The
-version, the tenant and the library behind each context travel once, on the info series, as a
-Prometheus `*_build_info` does: `* on (sincpro_context) group_left (sincpro_version)`.
+Context: a metric is read across releases, and a version in its job would start every series
+again at each deploy — `rate()` breaks across it, dashboards need a regex. The version, the
+tenant and the library behind each context travel once, on the info series, as a Prometheus
+`*_build_info` does: `* on (sincpro_context) group_left (sincpro_version)`. Traces name their
+service the same way (`ObservabilityIdentity.service_name`).
 """
 
 import threading
 from typing import Protocol
 from weakref import WeakKeyDictionary
 
-from sincpro_framework.observability.domain import ObservabilityIdentity, tenant
+from sincpro_framework.observability.domain import (
+    ObservabilityIdentity,
+    describing_attributes,
+    tenant,
+)
 from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,
@@ -46,13 +50,9 @@ CONTEXT_INFO = Instrument(
 
 def metrics_resource(identity: ObservabilityIdentity) -> dict[str, str]:
     """The resource of the process's meter provider: a stable service name, its version and
-    tenant as attributes of their own — only what is set."""
-    attributes = {"service.name": identity.service}
-    if identity.service_version:
-        attributes["service.version"] = identity.service_version
-    if tenant():
-        attributes["tenant"] = tenant()
-    return attributes
+    tenant as attributes of their own — only what is set, and never over what the deployment
+    declared in `OTEL_RESOURCE_ATTRIBUTES`."""
+    return {"service.name": identity.service, **describing_attributes(identity)}
 
 
 _announced: "WeakKeyDictionary[Recorder, set[tuple[str, ...]]]" = WeakKeyDictionary()

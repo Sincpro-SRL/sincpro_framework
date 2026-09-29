@@ -12,10 +12,14 @@ from sincpro_log.logger import LoggerProxy
 from sincpro_framework.observability.domain import (
     ComponentStatus,
     ObservabilityIdentity,
+    declared_exporters,
+    describing_attributes,
     failed,
     failure_of,
+    framework_version,
     off,
     on,
+    otel_sdk_disabled,
 )
 from sincpro_framework.observability.registry import PROCESS, registry
 from sincpro_framework.sincpro_conf import settings
@@ -80,16 +84,18 @@ def tracer_for(bus: str, instrumentation_name: str = "sincpro_framework") -> Any
     exported under another service's name is worse than no span at all.
     """
     try:
+        # The scope's version says which framework release instrumented the span.
+        version = framework_version()
         provider = registry.tracer_provider(bus)
         if provider is not None:
-            return provider.get_tracer(instrumentation_name)
+            return provider.get_tracer(instrumentation_name, version)
 
         from opentelemetry import trace
 
         host = trace.get_tracer_provider()
         if registry.owns_tracer_provider(host):
             return None
-        return host.get_tracer(instrumentation_name)
+        return host.get_tracer(instrumentation_name, version)
     except Exception:
         return None
 
@@ -108,7 +114,9 @@ def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
     provider = TracerProvider(
         # ``create`` merges OTEL_RESOURCE_ATTRIBUTES and the SDK defaults; the bare
         # constructor would drop tenant/env and telemetry.sdk.* from every span.
-        resource=Resource.create({SERVICE_NAME: identity.service_name}),
+        resource=Resource.create(
+            {SERVICE_NAME: identity.service_name, **describing_attributes(identity)}
+        ),
         sampler=ParentBased(root=_root_sampler(settings.otlp_traces_sample_rate)),
     )
     # The endpoint must be passed explicitly: without it the SDK ignores our conf and
@@ -150,6 +158,17 @@ def install_process_provider(identity: ObservabilityIdentity, endpoint: str) -> 
     return provider
 
 
+def _turned_off() -> str:
+    """Why OpenTelemetry's own variables forbid a provider of the framework's — `""` when they
+    don't. `OTEL_SDK_DISABLED=true`, or `OTEL_TRACES_EXPORTER` naming no `otlp` (`none`)."""
+    if otel_sdk_disabled():
+        return "sdk_disabled"
+    exporters = declared_exporters(getattr(settings, "otel_traces_exporter", None))
+    if exporters and "otlp" not in exporters:
+        return "exporter_none"
+    return ""
+
+
 def setup(
     identity: ObservabilityIdentity, logger: LoggerProxy | None = None
 ) -> ComponentStatus:
@@ -162,13 +181,14 @@ def setup(
         return failure_of(exc)
 
     endpoint: str | None = settings.otlp_endpoint
-    if not endpoint:
+    turned_off = _turned_off()
+    if not endpoint or turned_off:
         if host_provider_is_real():
             # Riding the host's provider still produces spans, so the logger must
-            # still learn where to read their ids from.
+            # still learn where to read their ids from. The host's own switches are its.
             _bind_log_ids(logger)
             return on("host")
-        return off("no_endpoint")
+        return off(turned_off or "no_endpoint")
 
     try:
         provider = registry.tracer_provider(identity.bus)

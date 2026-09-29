@@ -167,7 +167,7 @@ def test_the_helper_runs_under_the_same_feature_span(
         return [
             (span.name, dict(span.attributes or {}))
             for span in exporter.get_finished_spans()
-            if span.name == "CommandIssueInvoice"
+            if (span.attributes or {}).get("sincpro.use_case") == "CommandIssueInvoice"
         ]
 
     generated = spans_of(GENERATED)

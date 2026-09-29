@@ -1,9 +1,12 @@
 """The process's recorder: chosen once from the configuration, replaceable by code (PRD_03 §4.5).
 
-    SINCPRO_METRICS_BACKEND=prometheus   # the reference stack: prometheus_client, /metrics
-    SINCPRO_METRICS_BACKEND=otel         # the OTel meter: the host's provider, or OTLP
-    SINCPRO_METRICS_BACKEND=off
-    SINCPRO_METRICS_BACKEND=auto         # the default: OTel when it is configured, else off
+    OTEL_METRICS_EXPORTER=otlp           # the OTel meter: the host's provider, or OTLP
+    OTEL_METRICS_EXPORTER=prometheus     # prometheus_client, /metrics
+    OTEL_METRICS_EXPORTER=none           # nothing — as does OTEL_SDK_DISABLED=true
+    (not set)                            # the default: OTel when it is configured, else off
+
+    SINCPRO_METRICS_BACKEND=otel|prometheus|off — the framework's own name for the same switch,
+    kept: set to anything but `auto`, it wins.
 
 Context: metrics belong to the process, as the Prometheus registry and the OTel meter provider
 do — every bus of it records into one recorder, told apart by the `sincpro.context` label and
@@ -15,6 +18,7 @@ import threading
 from collections.abc import Mapping
 from importlib.util import find_spec
 
+from sincpro_framework.observability.domain import declared_exporters, otel_sdk_disabled
 from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,
@@ -45,13 +49,36 @@ def _otel_is_configured() -> bool:
     return host_meter_provider_is_real()
 
 
+def _standard_backend() -> str:
+    """What OpenTelemetry's own variables ask for, when `SINCPRO_METRICS_BACKEND` asks nothing.
+
+    Context: an operator who knows OpenTelemetry turns metrics off with `OTEL_METRICS_EXPORTER=
+    none` or `OTEL_SDK_DISABLED=true`, as the traces already are. An exporter the framework does
+    not build (`console`) is off too — nothing would be sent.
+    """
+    if otel_sdk_disabled():
+        return "off"
+    exporters = declared_exporters(getattr(settings, "otel_metrics_exporter", None))
+    if not exporters:
+        return "auto"
+    if "otlp" in exporters:
+        return "otel"
+    if "prometheus" in exporters:
+        return "prometheus"
+    return "off"
+
+
 def from_settings() -> Recorder | None:
     """1. `off`: none.
     2. `prometheus`: `PrometheusRecorder` on the default registry — `[prometheus]`.
     3. `otel`: `OtelRecorder` on the host's meter provider, or one this installs for OTLP.
     Final: `auto` is `otel` when a meter provider or an OTLP endpoint is there, else none —
-    Prometheus is never chosen by guessing, because it needs its `/metrics` served."""
+    Prometheus is never chosen by guessing, because it needs its `/metrics` served.
+    `SINCPRO_METRICS_BACKEND` decides when set; else `OTEL_METRICS_EXPORTER` and
+    `OTEL_SDK_DISABLED` (`_standard_backend`)."""
     backend = (getattr(settings, "metrics_backend", None) or "auto").lower()
+    if backend == "auto":
+        backend = _standard_backend()
     if backend == "off":
         return None
     if backend == "prometheus":

@@ -111,6 +111,9 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
         self._init_context_storage()
         self._hidden_in_logs: frozenset[str] = frozenset(hide_in_logs)
+        # Who the lines come from first, the execution's context after: a key the application
+        # sets itself (its own `tenant`) wins over the deployment's.
+        self.logger.add_context_source(self.observability.log_identity)
         self.logger.add_context_source(self._context_for_logs)
 
         # Container

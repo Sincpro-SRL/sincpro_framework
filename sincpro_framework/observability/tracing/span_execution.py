@@ -1,5 +1,7 @@
-"""Open a DTO span and bind its ids to the logger. Never raises. Not GlitchTip's job."""
+"""Open a DTO span and bind its ids and coordinates to the logger. Never raises. Not
+GlitchTip's job."""
 
+from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from typing import Any, Generator
 
@@ -37,44 +39,57 @@ def _shielded(cm: Any) -> Generator[Any, None, None]:
             pass
 
 
-def _span_for(dto_name: str, layer: str, bus: str) -> Any:
+def _span_for(dto_name: str, layer: str, bus: str, attributes: Mapping[str, str]) -> Any:
+    """Context: named ``context/DTO`` — the service is the artifact, so the bounded context
+    shows in the name as an RPC span shows ``service/method``; ``sincpro.context`` and
+    ``sincpro.use_case`` carry the two halves for filtering."""
     if not OTEL_AVAILABLE:
         return nullcontext()
     try:
         tracer = tracer_for(bus)
         if tracer is None:
             return nullcontext()
-        attributes = {"sincpro.layer": layer}
+        on_span = {"sincpro.layer": layer, "sincpro.use_case": dto_name, **attributes}
         if bus:
-            attributes["sincpro.instance"] = bus
+            on_span["sincpro.instance"] = bus
+            on_span["sincpro.context"] = bus
         # The exception is recorded once, by span_error, on the handler that raised it; the
         # span only takes the error status as the exception crosses it.
         return tracer.start_as_current_span(
-            dto_name, attributes=attributes, record_exception=False
+            f"{bus}/{dto_name}" if bus else dto_name,
+            attributes=on_span,
+            record_exception=False,
         )
     except Exception:
         return nullcontext()
 
 
-def _log_ids_of(span: Any, logger: Any) -> Any:
-    if not OTEL_AVAILABLE or span is None:
-        return nullcontext()
+def _log_fields_of(span: Any, logger: Any, coordinates: Mapping[str, str]) -> Any:
+    """The execution's coordinates on every line inside it, with or without a tracer; the
+    span's ids beside them when there is one."""
     try:
-        span_ctx = span.get_span_context()
-        if not span_ctx.is_valid:
-            return nullcontext()
-        return logger.context(
-            trace_id=format(span_ctx.trace_id, "032x"),
-            span_id=format(span_ctx.span_id, "016x"),
-        )
+        fields = dict(coordinates)
+        if OTEL_AVAILABLE and span is not None:
+            span_ctx = span.get_span_context()
+            if span_ctx.is_valid:
+                fields["trace_id"] = format(span_ctx.trace_id, "032x")
+                fields["span_id"] = format(span_ctx.span_id, "016x")
+        return logger.context(**fields)
     except Exception:
         return nullcontext()
 
 
 @contextmanager
 def span_execution(
-    dto_name: str, layer: str, bus: str, logger: Any
+    dto_name: str,
+    layer: str,
+    bus: str,
+    logger: Any,
+    attributes: Mapping[str, str] | None = None,
 ) -> Generator[Any, None, None]:
-    with _shielded(_span_for(dto_name, layer, bus)) as span:
-        with _shielded(_log_ids_of(span, logger)):
+    coordinates = {"sincpro_use_case": dto_name, "sincpro_layer": layer}
+    if bus:
+        coordinates["sincpro_context"] = bus
+    with _shielded(_span_for(dto_name, layer, bus, attributes or {})) as span:
+        with _shielded(_log_fields_of(span, logger, coordinates)):
             yield span

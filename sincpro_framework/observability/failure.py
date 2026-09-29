@@ -9,7 +9,7 @@ concurrent executions never see each other's failures.
 import traceback
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Generator, Iterator
 
 FRAMEWORK_PACKAGE = "sincpro_framework"
@@ -37,6 +37,10 @@ class Failure:
     chain: tuple[str, ...]
     error_at: CodeLocation | None
     raised_at: CodeLocation | None
+    trace_ids: dict[str, str] = field(default_factory=dict)
+    """`trace_id`/`span_id` of the span it failed in. The outermost bus logs the failure after
+    that span has ended — without them the error line of a run with no parent span (a cron, a
+    direct call) would carry no trace at all."""
 
     @property
     def summary(self) -> str:
@@ -57,11 +61,16 @@ class Failure:
             "layer": self.layer,
             "error_type": type(self.error).__name__,
             "chain": " → ".join(self.chain),
+            # Where it failed, under the keys every signal shares (the metric labels' names).
+            "sincpro_context": self.bus,
+            "sincpro_use_case": type(self.dto).__name__,
+            "sincpro_layer": self.layer,
         }
         if self.error_at:
             fields["error_at"] = str(self.error_at)
         if self.raised_at:
             fields["raised_at"] = str(self.raised_at)
+        fields.update(self.trace_ids)
         return fields
 
 
@@ -153,7 +162,12 @@ def failure_of(error: BaseException) -> Failure | None:
 
 
 def remember(
-    error: BaseException, dto: object, bus: str, handler: object, layer: str
+    error: BaseException,
+    dto: object,
+    bus: str,
+    handler: object,
+    layer: str,
+    trace_ids: dict[str, str] | None = None,
 ) -> Failure | None:
     """Context: ``None`` when an inner handler already recorded it — the innermost knows.
     ``bus`` is where the handler is registered: the outermost bus logs the failure, and
@@ -162,7 +176,15 @@ def remember(
         return None
     error_at, raised_at = locate(error, type(handler).__module__.partition(".")[0])
     failure = Failure(
-        error, dto, bus, type(handler).__name__, layer, _chain.get(), error_at, raised_at
+        error,
+        dto,
+        bus,
+        type(handler).__name__,
+        layer,
+        _chain.get(),
+        error_at,
+        raised_at,
+        dict(trace_ids or {}),
     )
     failures = _failures.get()
     if failures is not None:

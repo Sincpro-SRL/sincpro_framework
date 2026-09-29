@@ -50,9 +50,14 @@ version**:
 
 | Derived | Value | Example |
 |---|---|---|
-| `service_name` (Tempo) | `artifact:version:bus`, empty parts omitted, verbatim | `sincpro-odoo:18.5.0-rc2:common-mcp` |
-| `service` (metrics resource, `job` on Prometheus) | the artifact without registry, version or bus | `sincpro-odoo` |
-| `release` (GlitchTip) | `APP_RELEASE` verbatim, else `artifact:version` — never the bus | `sincpro-siat-soap:8.0.3` |
+| `service_name` — the service on every signal (span resource, metric `service.name`, log `service_name`, GlitchTip tag) | the artifact without registry, version or bus; the bus when no artifact resolves | `sincpro-siat-soap`, `sincpro_odoo_mcp` |
+| `service_version` — `service.version`, log `service_version`, tag `sincpro.version` | the library's installed version, else the tag of `APP_RELEASE` | `8.0.4`, `0.8.0` |
+| `bus` — the bounded context: `sincpro.context` everywhere | the `UseFramework` name | `siat-soap-sdk`, `sincpro-sales-mcp` |
+| `release` (GlitchTip) | `APP_RELEASE` verbatim, else `artifact:version` — never the bus | `registry.digitalocean.com/sincpro/sincpro_odoo_mcp:0.8.0`, `sincpro-siat-soap:8.0.3` |
+
+`APP_RELEASE` is read as an image reference: the tag after the last `/` is the version (a
+registry's `:5000` is a port), a digest (`@sha256:…`) is dropped, `name@version` is accepted. The
+release keeps it whole — the registry and the tag, as deployed.
 
 `framework.observability.status` probes each backend as `ComponentStatus(state, reason)` —
 `on:init`, `on:host`, `off:sdk_missing`, `off:no_endpoint`, `off:dsn_missing`, `failed:<why>` —
@@ -61,24 +66,35 @@ own artifact and version, keeping the bus.
 
 **Why**: the release and the service name used to be resolved separately and drifted (a library
 inside Odoo reported Odoo's name against its own version); values used to be rewritten (`-` →
-`_`), mangling both the name to search for and the version.
+`_`), mangling both the name to search for and the version. The service name used to carry the
+version and the bus (`sincpro-siat-soap:8.0.4:siat-soap-sdk`): one library appeared under three
+names in Tempo and every release added one; the version and the context are keys of their own now
+([correlation](../observability/correlation.md)).
 
 ## 3. Traces
 
-- **A tracer provider per bus**, so each bus's spans carry its own `service.name` even inside a
-  host that registered a global provider. Built when the bus is built, only with
-  `OTEL_EXPORTER_OTLP_ENDPOINT` set; otherwise a real host provider is ridden (`on:host`).
+- **A tracer provider per bus**, so each bus's spans carry its library's `service.name` even
+  inside a host that registered a global provider — an SDK in Odoo is found as the SDK. Its
+  resource: `service.name`, `service.version`, `tenant`; what the deployment declared in
+  `OTEL_RESOURCE_ATTRIBUTES` wins over what the framework derives. Built when the bus is built,
+  only with `OTEL_EXPORTER_OTLP_ENDPOINT` set; otherwise a real host provider is ridden
+  (`on:host`). The scope is `sincpro_framework` with the framework's version.
 - **A process provider for the transport.** ASGI, httpx and uvicorn instrumentation ask for the
   global tracer; the framework installs one under the **process** identity (no bus segment) only
   when nobody owns the global — so an HTTP request is never exported as if it belonged to one
   bounded context. `sincpro_framework.observability.process` is that door: `tracer(...)`,
   `bind_logger(...)`, `record_error(...)`, `was_reported(error)`.
-- **A span per DTO execution**, named after the DTO class, with `sincpro.layer` (`feature` /
-  `application_service`), `sincpro.instance` (the bus) and `sincpro.replaces` when a handler
-  replaced another. An ApplicationService's Features are its children; an active outer span
-  (FastAPI, Celery, Odoo) is adopted as parent through OTel's context.
+- **A span per DTO execution**, named `context/DTO` (`sincpro-chatter-mcp/CommandListMessages`),
+  as an RPC span is named `service/method`, with `sincpro.context`, `sincpro.use_case`,
+  `sincpro.layer` (`feature` / `application_service`), `sincpro.outcome`, `sincpro.instance`
+  (the bus, kept) and `sincpro.replaces` when a handler replaced another. An ApplicationService's
+  Features are its children; an active outer span (FastAPI, Celery, Odoo) is adopted as parent
+  through OTel's context.
+- **The outcome is the metrics'**: a span starts `ok`; every span a failure crosses takes the
+  failure's outcome (`expected` or its kind), as every run's metric does.
 - **A failure is recorded once**, on the span of the handler that raised it, with where it
-  failed; every outer span it crosses only takes the error status.
+  failed and `error.type` (the class's `__name__`, as every signal spells it); every outer span
+  it crosses only takes the error status.
 - **Sampling**: `ParentBased(TraceIdRatioBased(OTEL_TRACES_SAMPLER_ARG))` — a decision taken
   upstream always wins, so a sampled request is never cut halfway.
 - **Blocks**: `with bus.with_trace(trace_id=, span_id=, carrier=)` starts (or continues, from a
@@ -191,12 +207,12 @@ to the bus running the use case. Labels are read off the `sources` handed to `ad
 `record(...)` for histograms. The recorder creates its own object for an instrument the first
 time it sees its name.
 
-| `SINCPRO_METRICS_BACKEND` | Recorder |
+| `OTEL_METRICS_EXPORTER` (alias `SINCPRO_METRICS_BACKEND`, which wins when set) | Recorder |
 |---|---|
-| `auto` (default) | `OtelRecorder` when a real meter provider or an OTLP endpoint is there; otherwise none |
+| not set / `auto` (default) | `OtelRecorder` when a real meter provider or an OTLP endpoint is there; otherwise none |
 | `prometheus` | `PrometheusRecorder` on the default registry — `[prometheus]` |
-| `otel` | `OtelRecorder` — the host's meter provider, or one installed for OTLP under the process identity (60 s export) |
-| `off` | none |
+| `otlp` / `otel` | `OtelRecorder` — the host's meter provider, or one installed for OTLP under the process identity (60 s export) |
+| `none` / `off`, or `OTEL_SDK_DISABLED=true` | none |
 
 - **Metrics belong to the process**, as a Prometheus registry and an OTel meter provider do: one
   recorder per process, every bus recording into it. `metrics.use(recorder)` replaces it;
@@ -265,9 +281,13 @@ spans through `Observability.span(...)`.
   would replace the host's client and the host's errors would start reporting under sincpro's
   release. Built with `SENTRY_PYTHON_DSN`; one client per release.
 - **Each unexpected failure is sent once**, by the handler that raised it, tagged
-  `sincpro.kind`, `sincpro.layer`, `sincpro.instance`, the handler and the tenant, with its
-  details (DTO chain, where it failed, the execution's context) as the event's `sincpro`
-  context.
+  `sincpro.kind`, `sincpro.layer`, `sincpro.instance`, `sincpro.dto`, `sincpro.package`, the
+  handler and the tenant — and with the keys every signal shares: `service_name`,
+  `sincpro.version`, `sincpro.context`, `sincpro.use_case`, `sincpro.outcome`, `error.type` and
+  the active span's `trace_id` (also the event's trace context, so the issue opens its trace).
+  Its details (DTO chain, where it failed, the execution's context) are the event's `sincpro`
+  context. `release` and `environment` are unchanged: the release as deployed, the tenant as
+  environment.
 - **Expected errors are traffic, not bugs**: `bus.ignore_sentry_exceptions(...)` keeps them out
   of GlitchTip and logs them at info. The host may still capture the same exception under its
   own release — intended.
@@ -276,8 +296,17 @@ spans through `Observability.span(...)`.
 
 - `sincpro_log`, one `LoggerProxy` per bus shared by its inner buses, so ids bound once reach
   every internal line.
-- Every line inside an execution carries the active span's `trace_id` / `span_id` (OTel ids when
-  a provider is active; UUIDs otherwise).
+- Every line of a bus carries who it comes from — `service_name`, `service_version`, `tenant` —
+  beside `app_name` (kept), once the bus is built; a key the application puts in the execution's
+  context wins over them. Every line inside an execution carries its coordinates —
+  `sincpro_context`, `sincpro_use_case`, `sincpro_layer` — with or without a tracer, and the
+  active span's `trace_id` / `span_id` when a provider is active. The keys are the metric labels'
+  names: one filter reads the same on Loki and Prometheus.
+- The failure line adds `sincpro_outcome` and the ids of the span it failed in — logged after
+  that span ended, it still points at it. Without a provider, only a `with_trace()` block has
+  ids (UUIDs).
+- How these ids join the other signals — exemplars, trace ↔ logs, GlitchTip, many releases — is
+  [correlation](../observability/correlation.md).
 - **A failure is logged once**, by the outermost bus, however many ApplicationServices or other
   contexts' buses it crossed: `failed_in` (the bus whose handler raised), `handler`, `layer`,
   `chain`, `error_type`, `error_at` (the last line of the handler's own package), `raised_at`,
@@ -296,8 +325,11 @@ spans through `Observability.span(...)`.
 | `sentry_dsn` | `SENTRY_PYTHON_DSN` | none | errors |
 | `app_release` | `APP_RELEASE` | none | identity |
 | `otel_service_name` | `OTEL_SERVICE_NAME` | none | identity, when `APP_RELEASE` is absent |
-| `tenant` | `TENANT` | none | errors (tag) |
-| `metrics_backend` | `SINCPRO_METRICS_BACKEND` | `auto` | metrics |
+| `tenant` | `TENANT` | none | every signal: resource `tenant` (traces, metrics), log field, GlitchTip tag and environment |
+| `otel_metrics_exporter` | `OTEL_METRICS_EXPORTER` | none | metrics: `otlp`, `prometheus`, `none` |
+| `otel_traces_exporter` | `OTEL_TRACES_EXPORTER` | none | traces: `none` builds no provider of the framework's (a host's is still ridden) |
+| `otel_sdk_disabled` | `OTEL_SDK_DISABLED` | `false` | traces and metrics off |
+| `metrics_backend` | `SINCPRO_METRICS_BACKEND` | `auto` | metrics — alias, wins when set |
 | — | `PROMETHEUS_MULTIPROC_DIR` | none | metrics, several worker processes |
 
 Sincpro's reference deployment: `SINCPRO_METRICS_BACKEND=auto` and `OTEL_EXPORTER_OTLP_ENDPOINT`
@@ -339,8 +371,15 @@ Every rule above has a mutation the tests catch (17 in the metrics pass).
 
 ## 10. Not built
 
-- Exemplars (a histogram bucket linking to a trace) — both OpenMetrics and OTel support them; the
-  recorder port would carry the span context.
+- Exemplars on the Prometheus recorder. On OTel they exist without framework code: the SDK's
+  `trace_based` filter attaches the DTO span's ids to each point, because the run is measured
+  while its span is active; Alloy forwards them (see [correlation](../observability/correlation.md)).
+- `service.name` on declared metrics (`counts`, `sums`, `measures`, the instruments by hand):
+  their name already carries the context, and `sincpro_context_info` joins the library; only
+  `sincpro.use_case.duration` carries the label.
+- An expected error's span without the ERROR status — its `sincpro.outcome` already says
+  `expected`.
+- A log format chosen apart from the level (JSON at `DEBUG`).
 - Asynchronous gauges (a callback read at scrape time) — for values that are read, not measured
   (a pool's size).
 - Per-wire request metrics (`http.server.request.duration`, `rpc.server.duration`) — the use case

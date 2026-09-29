@@ -96,6 +96,7 @@ def test_every_use_case_is_timed_with_its_context_and_outcome(recorder):
     (series,) = recorder.observations(USE_CASE_DURATION)
     labels, values = series
     assert labels == {
+        "service.name": "crm",
         "sincpro.context": "crm",
         "sincpro.use_case": "CommandIssueInvoice",
         "sincpro.layer": "feature",

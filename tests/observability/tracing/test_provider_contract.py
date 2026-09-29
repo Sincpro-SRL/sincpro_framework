@@ -172,8 +172,9 @@ def test_http_exporter_covers_for_a_missing_grpc_exporter(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_resource_service_name_keeps_the_bus_as_last_segment(monkeypatch):
-    """Every span this bus exports is labelled artifact:version:bus."""
+def test_resource_names_the_artifact_and_carries_its_version_apart(monkeypatch):
+    """Every span this bus exports is labelled with the artifact, stable across releases; the
+    version is `service.version`, the bus is the span's context."""
     monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
     fake_export_pipeline(monkeypatch)
     stub_host_provider(monkeypatch, real_provider())
@@ -181,7 +182,74 @@ def test_resource_service_name_keeps_the_bus_as_last_segment(monkeypatch):
     setup_for("common_mcp", artifact="sincpro-odoo-mcp", version="0.8.0")
 
     resource = provider_of("common_mcp").resource
-    assert resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0:common_mcp"
+    assert resource.attributes["service.name"] == "sincpro-odoo-mcp"
+    assert resource.attributes["service.version"] == "0.8.0"
+
+
+def test_the_tenant_travels_on_the_resource_of_every_span(monkeypatch):
+    """A standalone service is found by tenant in Tempo without its deployment repeating
+    `TENANT` in `OTEL_RESOURCE_ATTRIBUTES`."""
+    monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
+    monkeypatch.setattr(settings, "tenant", "acme")
+    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
+    fake_export_pipeline(monkeypatch)
+    stub_host_provider(monkeypatch, real_provider())
+
+    setup_for("common_mcp", artifact="sincpro-odoo-mcp", version="0.8.0")
+
+    assert provider_of("common_mcp").resource.attributes["tenant"] == "acme"
+
+
+def test_what_the_deployment_declares_wins_over_what_the_framework_derives(monkeypatch):
+    """Odoo declares `tenant` (and may declare a version) in `OTEL_RESOURCE_ATTRIBUTES`; an SDK
+    inside it must not replace them with its own `TENANT` or package version."""
+    monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
+    monkeypatch.setattr(settings, "tenant", "from-conf")
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "tenant=dispel,service.version=host-1")
+    fake_export_pipeline(monkeypatch)
+    stub_host_provider(monkeypatch, real_provider())
+
+    setup_for("siat-soap-sdk", artifact="sincpro-siat-soap", version="8.0.4")
+
+    attributes = provider_of("siat-soap-sdk").resource.attributes
+    assert attributes["tenant"] == "dispel"
+    assert attributes["service.version"] == "host-1"
+    assert attributes["service.name"] == "sincpro-siat-soap"
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "reason"),
+    [
+        ("otel_traces_exporter", "none", "exporter_none"),
+        ("otel_sdk_disabled", True, "sdk_disabled"),
+    ],
+)
+def test_opentelemetrys_own_switch_builds_no_provider(monkeypatch, variable, value, reason):
+    """`OTEL_TRACES_EXPORTER=none` / `OTEL_SDK_DISABLED=true` with an endpoint set: nothing of
+    the framework's is built, and the status says why."""
+    monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
+    monkeypatch.setattr(settings, variable, value, raising=False)
+    fake_export_pipeline(monkeypatch)
+    stub_host_provider(monkeypatch, proxy_provider())
+
+    status = setup_for("common_mcp")
+
+    assert status["state"] == "off" and status["reason"] == reason
+    assert registry.tracer_provider("common_mcp") is None
+
+
+def test_with_its_exporter_off_a_bus_still_rides_the_hosts_tracer(monkeypatch):
+    """Inside Odoo the host exports its own spans; the framework's switch only concerns what
+    the framework would build."""
+    monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
+    monkeypatch.setattr(settings, "otel_traces_exporter", "none", raising=False)
+    fake_export_pipeline(monkeypatch)
+    stub_host_provider(monkeypatch, real_provider())
+
+    status = setup_for("siat-soap-sdk")
+
+    assert status["state"] == "on" and status["reason"] == "host"
+    assert registry.tracer_provider("siat-soap-sdk") is None
 
 
 def test_a_real_host_provider_is_never_replaced(monkeypatch):
@@ -215,7 +283,7 @@ def test_the_process_takes_the_global_provider_never_a_bus(monkeypatch):
     assert registry.tracer_provider(PROCESS) is not registry.tracer_provider("payment")
 
 
-def test_the_process_provider_drops_the_bus_from_its_service_name(monkeypatch):
+def test_the_process_provider_is_the_same_service_as_its_buses(monkeypatch):
     """A request belongs to the deployment, not to one of its buses."""
     from sincpro_framework.observability.registry import PROCESS
 
@@ -226,7 +294,8 @@ def test_the_process_provider_drops_the_bus_from_its_service_name(monkeypatch):
     setup_for("common_mcp", artifact="sincpro-odoo-mcp", version="0.8.0")
 
     resource = provider_of(PROCESS).resource
-    assert resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0"
+    assert resource.attributes["service.name"] == "sincpro-odoo-mcp"
+    assert resource.attributes["service.version"] == "0.8.0"
 
 
 def test_every_bus_shares_one_process_provider(monkeypatch):
@@ -258,8 +327,9 @@ def test_the_process_provider_is_not_installed_when_the_host_owns_otel(monkeypat
     assert registry.tracer_provider(PROCESS) is None
 
 
-def test_each_bus_keeps_its_own_provider_and_service_name(monkeypatch):
-    """Two buses of one deployment must not collapse into one service in Tempo."""
+def test_each_bus_keeps_its_own_provider_under_the_one_service(monkeypatch):
+    """Two buses of one deployment are one service in Tempo; each keeps its own provider, and
+    its spans say which context they belong to."""
     monkeypatch.setattr(settings, "otlp_endpoint", ENDPOINT)
     fake_export_pipeline(monkeypatch)
     stub_host_provider(monkeypatch, proxy_provider())
@@ -270,8 +340,8 @@ def test_each_bus_keeps_its_own_provider_and_service_name(monkeypatch):
     common = provider_of("common_mcp")
     sales = provider_of("sales_mcp")
     assert common is not sales
-    assert common.resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0:common_mcp"
-    assert sales.resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0:sales_mcp"
+    assert common.resource.attributes["service.name"] == "sincpro-odoo-mcp"
+    assert sales.resource.attributes["service.name"] == "sincpro-odoo-mcp"
 
 
 def test_setting_up_the_same_bus_twice_reuses_its_provider(monkeypatch):
@@ -390,11 +460,12 @@ def test_root_span_and_dto_spans_report_the_same_service(monkeypatch):
         traced(Ping(value="x"))
 
     spans = {span.name: span for span in exporter.get_finished_spans()}
-    assert set(spans) == {"common_mcp", "Ping"}
+    assert set(spans) == {"common_mcp", "common_mcp/Ping"}
     for span in spans.values():
-        assert span.resource.attributes["service.name"] == "sincpro_mcp_odoo:0.8.0:common_mcp"
+        assert span.resource.attributes["service.name"] == "sincpro_mcp_odoo"
+        assert span.resource.attributes["service.version"] == "0.8.0"
     assert spans["common_mcp"].parent is None
-    assert spans["Ping"].parent is not None
+    assert spans["common_mcp/Ping"].parent is not None
 
 
 # ---------------------------------------------------------------------------
