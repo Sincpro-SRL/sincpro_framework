@@ -16,6 +16,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from sincpro_framework.auth.domain import AuthError, Credentials, Unauthenticated
+from sincpro_framework.auth.transports import (
+    challenges_of,
+    credentials_from_headers,
+    refusal_body,
+)
 from sincpro_framework.entrypoints.const import Scalar
 from sincpro_framework.entrypoints.errors import (
     json_safe_validation_errors,
@@ -115,17 +121,43 @@ def metadata_from_context(
     return tuple(metadata)
 
 
+def credentials_of(context: Any) -> Credentials:
+    """The caller's credentials: its metadata as headers, and the client certificate of an
+    mTLS channel — the first of the chain the server verified."""
+    chain = context.auth_context().get("x509_pem_cert") or ()
+    return credentials_from_headers(
+        "grpc", context.invocation_metadata(), chain[0] if chain else None
+    )
+
+
 def status_for(error: Exception) -> tuple[Any, str]:
     """Map a failure the bus raised to a gRPC status.
 
-    A `DomainError` is the answer to the request — FAILED_PRECONDITION with its
-    own message. Anything else is the inside of the process: INTERNAL, and the
-    message stays in the log (see `entrypoints.errors.said_to_the_caller`).
+    An auth refusal is UNAUTHENTICATED or PERMISSION_DENIED — the codes a gRPC client already
+    branches on. Any other `DomainError` is the answer to the request — FAILED_PRECONDITION with
+    its own message. Anything else is the inside of the process: INTERNAL, and the message stays
+    in the log (see `entrypoints.errors.said_to_the_caller`).
     """
+    if isinstance(error, AuthError):
+        refused = (
+            grpc.StatusCode.UNAUTHENTICATED
+            if isinstance(error, Unauthenticated)
+            else grpc.StatusCode.PERMISSION_DENIED
+        )
+        return refused, str(error)
     disclosed = said_to_the_caller(error)
     if disclosed is not None:
         return grpc.StatusCode.FAILED_PRECONDITION, disclosed
     return grpc.StatusCode.INTERNAL, "Internal error"
+
+
+def refusal_metadata(error: AuthError, spec: GrpcMethodSpec) -> tuple[tuple[str, str], ...]:
+    """What a refused caller reads besides the code: why, and — for nobody known — where to get
+    a credential, as `www-authenticate`."""
+    metadata = [("sp-auth-refusal", json.dumps(refusal_body(error)))]
+    if isinstance(error, Unauthenticated):
+        metadata += [("www-authenticate", one) for one in challenges_of([spec.framework])]
+    return tuple(metadata)
 
 
 def method_handler(spec: GrpcMethodSpec) -> Any:
@@ -143,7 +175,11 @@ def method_handler(spec: GrpcMethodSpec) -> Any:
         call_context = context_from_metadata(context.invocation_metadata())
         try:
             result = execute(
-                spec.framework, spec.operation.run, payload, call_context or None
+                spec.framework,
+                spec.operation.run,
+                payload,
+                call_context or None,
+                credentials_of(context),
             )
         except ValidationError as error:
             context.abort(
@@ -154,6 +190,8 @@ def method_handler(spec: GrpcMethodSpec) -> Any:
             if not process.was_reported(error):
                 logger.exception("gRPC method [%s] failed", spec.path)
             code, details = status_for(error)
+            if isinstance(error, AuthError):
+                context.set_trailing_metadata(refusal_metadata(error, spec))
             context.abort(code, details)
         return scalar_to_struct(result)
 

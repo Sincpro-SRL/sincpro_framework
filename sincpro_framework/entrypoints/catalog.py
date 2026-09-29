@@ -11,6 +11,7 @@ from typing import Any, Self
 
 from sincpro_framework.entrypoints import json_utils, scalar_executor
 from sincpro_framework.entrypoints.const import Layer, RunFn, Wrapper
+from sincpro_framework.entrypoints.exposure import is_internal
 from sincpro_framework.introspection import inspector
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
@@ -70,7 +71,7 @@ class Catalog:
         """Turn one layer's described metadata (introspection.FeatureOrAppServiceMetadata)
         into PackedFeatureOrAppService.
 
-        1. Skip names outside include, or listed in exclude.
+        1. Skip names outside include, listed in exclude, or marked `internal`.
         2. Bind execute to framework(dto).
             2.1 If a wrapper exists for this DTO name, wrap the bound run.
         3. Final: a PackedFeatureOrAppService carrying the metadata's description and
@@ -82,6 +83,9 @@ class Catalog:
                 continue
 
             if name in self._exclude:
+                continue
+
+            if is_internal(metadata.dto, self.framework_instance.handler_of(metadata.dto)):
                 continue
 
             run: RunFn = scalar_executor.extract_executor_fn(

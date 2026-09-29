@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from sincpro_framework.auth.domain import AuthError, Credentials, Unauthenticated
+from sincpro_framework.auth.transports import refusal_body
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.const import Scalar
 from sincpro_framework.entrypoints.errors import (
@@ -21,6 +23,9 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+UNAUTHENTICATED = -32001
+"""Who is calling is not known well enough — the HTTP host answers a lone one with 401."""
+PERMISSION_DENIED = -32003
 DISCOVER_METHOD = "rpc.discover"
 OPENRPC_VERSION = "1.4.0"
 
@@ -62,6 +67,7 @@ def dispatch_method(
     method: str,
     params: Any,
     context: Mapping[str, Any] | None,
+    credentials: Credentials | None = None,
 ) -> dict[str, Any]:
     """Execute one JSON-RPC method against the catalog.
 
@@ -84,7 +90,7 @@ def dispatch_method(
         raise InvalidParams("params must be a JSON object (by-name)")
     _alias, framework, operation = bound
     try:
-        return execute(framework, operation.run, payload, context)
+        return execute(framework, operation.run, payload, context, credentials)
     except ValidationError as error:
         raise InvalidParams(json_safe_validation_errors(error)) from error
 
@@ -94,6 +100,7 @@ def handle_single(
     discover: Callable[[], dict[str, Any]],
     request: Any,
     inherited_context: Mapping[str, Any] | None = None,
+    credentials: Credentials | None = None,
 ) -> dict[str, Any] | None:
     """Handle one JSON-RPC request object. Notifications (no id) return None."""
     if not isinstance(request, dict):
@@ -114,13 +121,21 @@ def handle_single(
         merged.update(extra_context)
     try:
         result = dispatch_method(
-            methods, discover, method, request.get("params"), merged or None
+            methods, discover, method, request.get("params"), merged or None, credentials
         )
     except MethodNotFound:
         response = jsonrpc_error(METHOD_NOT_FOUND, "Method not found", request_id, method)
         return None if is_notification else response
     except InvalidParams as error:
         response = jsonrpc_error(INVALID_PARAMS, "Invalid params", request_id, error.data)
+        return None if is_notification else response
+    except AuthError as error:
+        code, message = (
+            (UNAUTHENTICATED, "Unauthenticated")
+            if isinstance(error, Unauthenticated)
+            else (PERMISSION_DENIED, "Permission denied")
+        )
+        response = jsonrpc_error(code, message, request_id, refusal_body(error))
         return None if is_notification else response
     except Exception as error:
         if not process.was_reported(error):
@@ -139,6 +154,7 @@ def handle_payload(
     discover: Callable[[], dict[str, Any]],
     payload: Any,
     inherited_context: Mapping[str, Any] | None = None,
+    credentials: Credentials | None = None,
 ) -> dict[str, Any] | list[Any] | None:
     """JSON-RPC 2.0 entry: one request, a batch, or a parse-level invalid payload.
 
@@ -151,11 +167,12 @@ def handle_payload(
         if not payload:
             return jsonrpc_error(INVALID_REQUEST, "Batch must not be empty")
         replies = [
-            handle_single(methods, discover, item, inherited_context) for item in payload
+            handle_single(methods, discover, item, inherited_context, credentials)
+            for item in payload
         ]
         visible = [item for item in replies if item is not None]
         return visible or None
-    return handle_single(methods, discover, payload, inherited_context)
+    return handle_single(methods, discover, payload, inherited_context, credentials)
 
 
 def content_descriptors(schema: dict[str, Any]) -> list[dict[str, Any]]:

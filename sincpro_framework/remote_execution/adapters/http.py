@@ -76,10 +76,11 @@ class HttpTransport:
         self, context: str, dto: Any, response: Any, request: Mapping[str, Any]
     ) -> Any:
         """1. The DTO's values as a chunked body; the context, the DTO's name, the request
-           context and the trace as headers.
+           context, the trace and who the call acts for as headers.
         2. One POST, each read and write within the address's deadline.
         3. Final: the answer rebuilt as `response` as it is read, or the failure raised as itself.
         """
+        from sincpro_framework.auth.transports import identity_headers
         from sincpro_framework.events.trace import trace_carrier
 
         headers = {
@@ -88,6 +89,7 @@ class HttpTransport:
             DTO_HEADER: dto_name(type(dto)),
             REQUEST_CONTEXT_HEADER: base64.b64encode(pack(dict(request))).decode(),
             **trace_carrier(),
+            **identity_headers(context),
         }
         where = f"{context} at {self.hosted_at.address}"
         try:

@@ -1,8 +1,8 @@
 """The core needs none of the extras: an SDK that only has buses must never need a database.
 
 A fresh interpreter with every optional dependency blocked imports the core, runs a bus, a cron,
-a migration, a workflow, a frame, a stored use case and a context hosted over HTTP, all in memory
-or on the standard library. One `import sqlalchemy`
+a migration, a workflow, a frame, a stored use case, auth — its providers, its guard, its ASGI
+middleware — and a context hosted over HTTP, all in memory or on the standard library. One `import sqlalchemy`
 reached from the core, and every SDK that uses nothing but a bus starts needing a database
 driver — this is the check.
 """
@@ -161,6 +161,106 @@ except ImportError as error:
     assert "sincpro-framework[faststream]" in str(error), error
 else:
     raise AssertionError("the FastStream adapter imported without FastStream")
+
+import asyncio
+
+from sincpro_framework.auth import (
+    AccessControl,
+    ApiKey,
+    ApiKeyProvider,
+    Credentials,
+    IdentityMiddleware,
+    InMemoryApiKeys,
+    Permission,
+    PermissionDenied,
+    ServiceTokenProvider,
+    as_identity,
+)
+from sincpro_framework.testing import AuthProviderContract, granting
+
+
+class Perm(Permission):
+    PING = "core.ping"
+
+
+keys = InMemoryApiKeys()
+secret = keys.issue(ApiKey(subject="apikey:bot", permissions={Perm.PING}))
+tokens = ServiceTokenProvider("core", {"k": "shared"})
+auth = AccessControl[Perm](providers=[ApiKeyProvider(keys), tokens])
+guarded = UseFramework("core-only-auth", log_after_execution=False)
+
+
+@guarded.feature(CommandPing)
+@auth.requires(Perm.PING)
+class GuardedPing(Feature):
+    def execute(self, dto: CommandPing) -> ResponsePing:
+        return ResponsePing(pong=True)
+
+
+auth.on(guarded)
+bot = auth.authenticate(Credentials(transport="http", headers={"x-api-key": secret}))
+with as_identity(bot):
+    assert guarded(CommandPing(), ResponsePing).pong
+    assert auth.authenticate(Credentials(**auth.credentials_for(bot).model_dump())).subject == "apikey:bot"
+with granting():
+    try:
+        guarded(CommandPing(), ResponsePing)
+    except PermissionDenied:
+        pass
+    else:
+        raise AssertionError("a guarded use case ran for an identity that lacks its permission")
+
+sent: list[dict] = []
+
+
+async def asgi_app(scope, receive, send):
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": b"ok"})
+
+
+async def collect(message):
+    sent.append(message)
+
+
+scope = {"type": "http", "method": "GET", "path": "/", "query_string": b"", "headers": [(b"x-api-key", b"forged")]}
+asyncio.run(IdentityMiddleware(asgi_app, access=auth)(scope, None, collect))
+assert sent[0]["status"] == 401, sent
+
+from sincpro_framework.entrypoints.mcp.auth import token_verifier
+
+try:
+    token_verifier(auth)
+except ImportError as error:
+    assert "sincpro-framework[mcp]" in str(error), error
+else:
+    raise AssertionError("the FastMCP verifier was built without FastMCP")
+
+from sincpro_framework.ddd.query import Query
+from sincpro_framework.entrypoints.rest import RestGateway
+
+
+class QueryPings(Query):
+    pass
+
+
+published = UseFramework("core-only-rest", log_after_execution=False)
+
+
+@published.feature(QueryPings)
+class ListPings(Feature):
+    def execute(self, dto: QueryPings) -> ResponsePing:
+        return ResponsePing(pong=True)
+
+
+rest = RestGateway([published], prefix="/api/v1")
+assert [route.methods for route in rest.rest_routes()] == [("GET", "POST")]
+assert "/api/v1/core-only-rest/query-pings" in rest.openapi()["paths"]
+try:
+    rest.app()
+except ImportError as error:
+    assert "sincpro-framework[rest]" in str(error), error
+else:
+    raise AssertionError("a REST app was served without Starlette")
 
 from sincpro_framework.remote_execution import ContextUnavailable
 

@@ -23,7 +23,7 @@ identity opened by hand — a test, in-process code — answers with its `permis
 
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
-from weakref import WeakSet
+from weakref import WeakKeyDictionary, WeakSet
 
 from sincpro_framework.auth.domain import (
     AnyOf,
@@ -56,6 +56,27 @@ from sincpro_framework.sincpro_logger import logger
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria
     from sincpro_framework.use_bus import UseFramework
+
+
+_guarding: "WeakKeyDictionary[UseFramework, AccessControl[Any]]" = WeakKeyDictionary()
+"""Which `AccessControl` guards each bus — and each generation made of it — so an entrypoint
+finds the one of the bus it dispatches to, with no argument to pass."""
+
+
+def access_control_of(bus: "UseFramework") -> "AccessControl[Any] | None":
+    """The `AccessControl` guarding `bus`, or `None` when nothing does — an entrypoint then
+    leaves the identity as it found it."""
+    return _guarding.get(bus)
+
+
+def access_controls_for(context: str) -> "list[AccessControl[Any]]":
+    """Every `AccessControl` of this process, those guarding a bus of `context` first — what a
+    call to the service hosting `context` asks for the credentials it sends."""
+    found: list[AccessControl[Any]] = []
+    for bus, access in sorted(_guarding.items(), key=lambda item: item[0].name != context):
+        if access not in found:
+            found.append(access)
+    return found
 
 
 class AccessDescription(DataTransferObject):
@@ -284,6 +305,7 @@ class AccessControl[P: Permission]:
         bus.interceptor(sequence=GUARD_SEQUENCE)(BusGuard(self, bus))
         bus.add_dependency("auth", self)
         self._buses.add(bus)
+        _guarding[bus] = self
 
     def on(self, target: "UseFramework | Hooks") -> None:
         """Guard every use case of a bus — the bus not built yet — and inject this object in its
