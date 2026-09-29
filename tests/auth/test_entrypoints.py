@@ -44,6 +44,7 @@ from sincpro_framework.auth import (
 )
 from sincpro_framework.auth.adapters.service_token_provider import HEADER
 from sincpro_framework.auth.transports import identity_headers
+from sincpro_framework.entrypoints.exposure import Exposure, GrpcBinding, RpcBinding
 from sincpro_framework.entrypoints.grpc import GrpcGateway
 from sincpro_framework.entrypoints.grpc.wire import scalar_to_struct, struct_to_scalar
 from sincpro_framework.entrypoints.mcp import auth as mcp_auth
@@ -94,6 +95,7 @@ def _guarded(name: str = "wired-billing") -> tuple[UseFramework, AccessControl[P
             return Issued(by=current_identity().subject)
 
     @billing.feature(CommandHealth)
+    @auth.public
     class Health(Feature):
         def execute(self, dto: CommandHealth) -> Issued:
             return Issued(by=current_identity().subject)
@@ -112,15 +114,17 @@ def _bearer(token: str) -> dict[str, str]:
 @pytest.fixture
 def rpc() -> TestClient:
     billing, _ = _guarded()
-    return TestClient(RpcGateway({"billing": billing}).app())
+    gateway = RpcGateway({"billing": billing})
+    gateway.bind(CommandIssue, RpcBinding()).bind(CommandHealth, RpcBinding())
+    return TestClient(gateway.app())
 
 
 def _call(method: str, request_id: int = 1) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}}
 
 
-ISSUE_METHOD = "billing.features.CommandIssue"
-HEALTH_METHOD = "billing.features.CommandHealth"
+ISSUE_METHOD = "billing.issue"
+HEALTH_METHOD = "billing.health"
 
 
 def test_rpc_asks_nobody_to_authenticate_with_401_and_where(rpc: TestClient) -> None:
@@ -164,7 +168,8 @@ def test_a_bus_nobody_guards_answers_as_before() -> None:
         def execute(self, dto: CommandIssue) -> Issued:
             return Issued(by=current_identity().subject)
 
-    client = TestClient(RpcGateway({"billing": plain}).app())
+    gateway = RpcGateway({"billing": plain}, exposure=Exposure.CATALOG, unguarded=True)
+    client = TestClient(gateway.app())
     assert client.post("/rpc", json=_call(ISSUE_METHOD)).json()["result"] == {
         "by": "anonymous"
     }
@@ -176,7 +181,8 @@ def test_a_bus_nobody_guards_answers_as_before() -> None:
 @pytest.fixture
 def grpc_channel() -> Iterator[grpc.Channel]:
     billing, _ = _guarded("grpc-billing")
-    server = GrpcGateway({"billing": billing}).server(max_workers=2)
+    gateway = GrpcGateway({"billing": billing}).bind(CommandIssue, GrpcBinding())
+    server = gateway.server(max_workers=2)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
     channel = grpc.insecure_channel(f"127.0.0.1:{port}")
@@ -187,7 +193,7 @@ def grpc_channel() -> Iterator[grpc.Channel]:
 
 def _grpc_call(channel: grpc.Channel, token: str | None) -> dict[str, Any]:
     call = channel.unary_unary(
-        "/billing.Features/CommandIssue",
+        "/billing.v1.BillingService/Issue",
         request_serializer=Struct.SerializeToString,
         response_deserializer=Struct.FromString,
     )

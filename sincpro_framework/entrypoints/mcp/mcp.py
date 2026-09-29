@@ -1,4 +1,4 @@
-"""FastMCP wire: PackedFeatureOrAppService → typed function FastMCP 3 can register as a tool."""
+"""FastMCP binding: a use case → typed function FastMCP 3 can register as a tool."""
 
 import dataclasses
 import inspect
@@ -44,10 +44,24 @@ def _dto_parameters(
 
 
 def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | None" = None):
+    """A catalog entry as a function FastMCP registers — `tool_function` over its DTO, name,
+    description and bound run."""
+    return tool_function(
+        operation.dto, operation.name, operation.description, operation.run, bus
+    )
+
+
+def tool_function(
+    dto: Any,
+    name: str,
+    description: str,
+    run: Callable[[dict[str, Any]], Any],
+    bus: "UseFramework | None" = None,
+) -> Callable[..., Any]:
     """Build a typed function FastMCP 3 inspects to generate the MCP schema.
 
-    1. Forward keyword arguments to operation.run (DTO validation inside), acting as whoever
-       called — authenticated by `bus`'s `AccessControl` when a bus is given.
+    1. Forward keyword arguments to `run` — the bus, DTO validation inside — acting as whoever
+       called, authenticated by `bus`'s `AccessControl` when a bus is given.
     2. Stamp a keyword-only signature from the Command's fields so FastMCP sees
        Pydantic types (Value Objects, Field descriptions) instead of a nested
        wrapper object.
@@ -55,7 +69,7 @@ def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | 
         2.2 A default_factory travels as Annotated metadata, never as a value: a
             concrete default would freeze uuid4/datetime.now at import time.
         2.3 Any other optional field keeps its declared default.
-    3. Stamp name and docstring from the PackedFeatureOrAppService (FastMCP infers tool name / description).
+    3. Stamp name and docstring (FastMCP infers tool name / description).
     4. Final: a function for mcp.tool(fn, name=..., description=...).
     """
 
@@ -63,25 +77,25 @@ def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | 
         from sincpro_framework.entrypoints.mcp.auth import acting_for_tool_call
 
         with acting_for_tool_call(bus):
-            return operation.run(kwargs)
+            return run(kwargs)
 
     parameters: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {"return": dict[str, Any]}
-    for name, annotation, default, default_factory in _dto_parameters(operation.dto):
+    for field_name, annotation, default, default_factory in _dto_parameters(dto):
         if default_factory is not None:
             annotation = Annotated[annotation, Field(default_factory=default_factory)]
             default = EMPTY
-        annotations[name] = annotation
+        annotations[field_name] = annotation
         parameters.append(
             inspect.Parameter(
-                name,
+                field_name,
                 inspect.Parameter.KEYWORD_ONLY,
                 default=default,
                 annotation=annotation,
             )
         )
-    tool_fn.__name__ = operation.name
-    tool_fn.__doc__ = operation.description
+    tool_fn.__name__ = name
+    tool_fn.__doc__ = description
     tool_fn.__annotations__ = annotations
     setattr(tool_fn, "__signature__", inspect.Signature(parameters))
     return tool_fn

@@ -14,6 +14,7 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.caching import (
+    IDEMPOTENCY_KEY,
     AlreadyInProgress,
     Idempotency,
     IdempotencyPolicy,
@@ -301,6 +302,42 @@ def test_the_command_says_its_key_and_the_rest_of_it_is_still_checked():
     assert issued == [10, 99]
 
 
+def test_a_request_key_from_the_transport_keys_a_command_that_names_none():
+    """An `Idempotency-Key` header reaches the bus context as `idempotency_key`: for a Command
+    without its own key it is the key — two keys are two writes even with the same arguments, one
+    key reused with other arguments is refused."""
+    issued: list[str] = []
+    billing = _billing(issued, Idempotency(InMemoryKeyValue()))
+    invoice = CommandIssueInvoice(customer="ana", total=10)
+
+    for key in ("k-1", "k-1", "k-2"):
+        with billing.context({IDEMPOTENCY_KEY: key}):
+            billing(invoice, ResponseIssueInvoice)
+    with billing.context({IDEMPOTENCY_KEY: "k-1"}), pytest.raises(KeyReused):
+        billing(CommandIssueInvoice(customer="luis", total=10), ResponseIssueInvoice)
+
+    assert issued == ["ana", "ana"]
+
+
+def test_the_commands_own_key_outranks_the_transports():
+    issued: list[int] = []
+    idempotency = Idempotency(InMemoryKeyValue())
+    billing = UseFramework("billing-own-key", log_after_execution=False)
+
+    @billing.feature(CommandIssueByRequest)
+    @idempotency.once(expires_after=timedelta(minutes=2))
+    class IssueByRequest(Feature):
+        def execute(self, dto: CommandIssueByRequest) -> ResponseIssueInvoice:
+            issued.append(dto.total)
+            return ResponseIssueInvoice(number=len(issued))
+
+    for key in ("k-1", "k-2"):
+        with billing.context({IDEMPOTENCY_KEY: key}):
+            billing(CommandIssueByRequest(request_id="r-1", total=10), ResponseIssueInvoice)
+
+    assert issued == [10]
+
+
 def test_a_subclass_that_keeps_execute_keeps_once():
     issued: list[str] = []
     idempotency = Idempotency(InMemoryKeyValue())
@@ -322,6 +359,35 @@ def test_a_subclass_that_keeps_execute_keeps_once():
     assert issued == ["ana"]
 
 
+def test_whether_a_class_runs_once_is_asked_by_its_resolved_execute():
+    """An entrypoint marks a use case retry-safe by asking, not by reading a method's name: a
+    subclass that keeps `execute` is still once, a replacement with its own is not."""
+    from sincpro_framework.caching import declares_once
+
+    idempotency = Idempotency(InMemoryKeyValue())
+
+    @idempotency.once(expires_after=timedelta(minutes=2))
+    class IssueInvoice(Feature):
+        def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
+            return ResponseIssueInvoice(number=1)
+
+    class KeepsExecute(IssueInvoice):
+        pass
+
+    class OwnExecute(IssueInvoice):
+        def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
+            return ResponseIssueInvoice(number=2)
+
+    class Plain(Feature):
+        def execute(self, dto: CommandPing) -> ResponsePing:
+            return ResponsePing(pong=1)
+
+    assert declares_once(IssueInvoice) and declares_once(KeepsExecute)
+    assert not declares_once(OwnExecute)
+    assert not declares_once(Plain)
+    assert not declares_once(int)
+
+
 def test_once_twice_on_one_class_and_on_an_async_use_case_are_refused():
     idempotency = Idempotency(InMemoryKeyValue())
 
@@ -339,6 +405,39 @@ def test_once_twice_on_one_class_and_on_an_async_use_case_are_refused():
         class Asynchronous(Feature):
             async def execute(self, dto: CommandPing) -> ResponsePing:  # type: ignore[override]
                 return ResponsePing(pong=1)
+
+
+def test_an_async_caller_racing_duplicates_through_the_async_bus_writes_once():
+    """What async callers have: the bus is synchronous and refuses an `async def execute`, so an
+    async entrypoint reaches a use case through `get_async_bus()`, on a worker thread — and a
+    burst of retries fanned out with `asyncio.gather` must still write once."""
+    import asyncio
+
+    issued: list[str] = []
+    idempotency = Idempotency(InMemoryKeyValue())
+    billing = UseFramework("billing-async-callers", log_after_execution=False)
+
+    @billing.feature(CommandIssueInvoice)
+    @idempotency.once(
+        expires_after=timedelta(minutes=2), wait_for_completion=timedelta(seconds=2)
+    )
+    class IssueInvoice(Feature):
+        def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
+            time.sleep(0.05)
+            issued.append(dto.customer)
+            return ResponseIssueInvoice(number=len(issued))
+
+    async def burst() -> list[ResponseIssueInvoice | None]:
+        bus = billing.get_async_bus()
+        command = CommandIssueInvoice(customer="ana", total=10)
+        return list(
+            await asyncio.gather(*(bus(command, ResponseIssueInvoice) for _ in range(6)))
+        )
+
+    answers = asyncio.run(burst())
+
+    assert issued == ["ana"]
+    assert answers == [ResponseIssueInvoice(number=1)] * 6
 
 
 def test_a_replayed_answer_is_still_authorized():

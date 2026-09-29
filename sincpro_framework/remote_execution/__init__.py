@@ -41,9 +41,15 @@ from sincpro_framework.remote_execution.domain import (
     unpack,
     unpacked,
 )
-from sincpro_framework.remote_execution.entrypoint import Attach, OpenHost, serve_contexts
+from sincpro_framework.remote_execution.entrypoint import (
+    Attach,
+    OpenHost,
+    open_host,
+    serve_contexts,
+)
 
 __all__ = [
+    "open_host",
     "Attach",
     "CHUNK_SIZE",
     "CannotTravel",

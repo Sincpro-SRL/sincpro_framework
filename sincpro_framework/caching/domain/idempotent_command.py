@@ -23,6 +23,19 @@ class IdempotentCommand(Protocol):
         ...
 
 
-def request_key_of(command: Any) -> Any:
-    """What identifies `command`: its own `idempotency_key()`, or the whole Command."""
-    return command.idempotency_key() if isinstance(command, IdempotentCommand) else command
+IDEMPOTENCY_KEY = "idempotency_key"
+"""The bus context's key for a request key a transport received (REST's `Idempotency-Key`)."""
+
+
+def request_key_of(command: Any, transport_key: Any = None) -> Any:
+    """What identifies `command`: its own `idempotency_key()`; else the key its transport
+    received; else the whole Command.
+
+    Context: the Command stays authoritative — a header can never split what the Command says is
+    one request. The payload is still compared whichever key wins, so a header reused for other
+    arguments is `KeyReused`."""
+    if isinstance(command, IdempotentCommand):
+        return command.idempotency_key()
+    if transport_key is not None:
+        return (IDEMPOTENCY_KEY, transport_key)
+    return command

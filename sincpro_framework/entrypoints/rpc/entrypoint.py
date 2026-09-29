@@ -1,4 +1,5 @@
-"""JSON-RPC gateway: wrap one or more UseFramework instances as JSON-RPC 2.0 methods.
+"""JSON-RPC gateway: the declared surface of one or more UseFramework instances as JSON-RPC 2.0
+methods named `{namespace}.{operation}` (PRD_15 §4) — the naming and `dispatch` are `rpc.wire`.
 
 `.app()` is the batteries-included path: one process, this gateway's two routes, nothing
 else. `.routes()` is the composable one — a plain list of Starlette `Route` objects with no
@@ -10,80 +11,123 @@ host process's call, not this module's.
 """
 
 import asyncio
-import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from sincpro_framework.auth.domain import Credentials
 from sincpro_framework.auth.transports import challenges_of, credentials_from_asgi
-from sincpro_framework.entrypoints.catalog import Catalog
+from sincpro_framework.entrypoints.exposure import Exposure, Resolved, RpcBinding, Wire
 from sincpro_framework.entrypoints.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.entrypoints.rpc.jrpc import (
-    PARSE_ERROR,
-    UNAUTHENTICATED,
-    MethodIndex,
-    handle_payload,
-    jsonrpc_error,
-    method_name,
-    method_object,
-    openrpc_document,
+    DEFAULT_MAX_BATCH_SIZE,
+    DEFAULT_MAX_BODY_BYTES,
+    RESERVED_PREFIX,
+    body_too_large,
+    merge_http_context,
+    unsupported_media_type,
+)
+from sincpro_framework.entrypoints.rpc.wire import (
+    JsonRpcWire,
+    Reply,
+    RpcSurface,
+    dispatch,
+    http_status,
 )
 from sincpro_framework.use_bus import UseFramework
+
+__all__ = ["RpcGateway", "build_rpc_app", "is_json_media_type", "merge_http_context"]
 
 RPC_MISSING = (
     "Starlette/uvicorn is not installed. Install with: pip install sincpro-framework[rpc]"
 )
 ALIAS_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+JSON_MEDIA_TYPES = frozenset({"application/json", "application/json-rpc"})
+"""What a request body may be sent as — `application/json-rpc` is what some JSON-RPC clients
+send; a parameter such as `charset=utf-8` is allowed."""
 
 
 def validate_alias(alias: str) -> str:
+    """Context: an alias is the namespace of its methods by default, so `rpc` would publish
+    `rpc.issue_invoice` under the prefix JSON-RPC 2.0 reserves for the protocol itself."""
     if not ALIAS_PATTERN.match(alias):
         raise ValueError(f"RPC instance alias [{alias}] must match {ALIAS_PATTERN.pattern}")
+    if f"{alias}.".lower() == RESERVED_PREFIX:
+        raise ValueError(
+            f"RPC instance alias [{alias}] is reserved: JSON-RPC 2.0 keeps method names "
+            f"beginning [{RESERVED_PREFIX}] for the protocol (only rpc.discover here)"
+        )
     return alias
 
 
-def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
-    """Fold transport headers into the framework context without touching DTO params.
-
-    1. correlation_id from X-Correlation-Id (body context, merged later, still wins).
-    2. carrier.traceparent from the W3C header, for OTel parent adoption.
-    3. Final: a context dict handle_payload treats as inherited; empty becomes {}.
-    """
-    merged: dict[str, Any] = {}
-    correlation = headers.get("x-correlation-id")
-    if correlation:
-        merged["correlation_id"] = correlation
-    traceparent = headers.get("traceparent")
-    if traceparent:
-        merged["carrier"] = {"traceparent": traceparent}
-    return merged
-
-
-def index_methods(catalogs: Mapping[str, Catalog], layers: Iterable[str]) -> MethodIndex:
-    """Index JSON-safe Features/ApplicationServices as instance.layer.DtoName."""
-    allowed = set(layers)
-    methods: MethodIndex = {}
-    for alias, catalog in catalogs.items():
-        for operation in catalog.get_scalar_use_cases(filter_binaries_schema=True):
-            if operation.layer not in allowed:
-                continue
-            name = method_name(alias, operation.layer, operation.name)
-            methods[name] = (alias, catalog.framework_instance, operation)
-    return methods
+def is_json_media_type(content_type: str | None) -> bool:
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    return media_type in JSON_MEDIA_TYPES
 
 
 class RpcGateway(Gateway):
-    """JSON-RPC 2.0 facade over one or more UseFramework instances."""
+    """JSON-RPC 2.0 over the declared surface of one or more buses (PRD_14, PRD_15 §4).
+
+    Context: in `Exposure.DECLARED` (the default) a method is a use case bound with `@rpc()`
+    or `bind`; `Exposure.CATALOG` publishes every one under the same names. The wire (`port`,
+    a `JsonRpcWire`) names each `{namespace}.{operation}` and carries the document's title and
+    version and the limits: `max_batch_size` bounds how many calls one batch runs (a longer one
+    is answered a single Invalid Request, and nothing runs); `max_body_bytes` how much of a body
+    is read before answering 413. Given a `port`, those are the port's to say.
+    """
+
+    wire = "rpc"
 
     def __init__(
         self,
         instances: Buses | None = None,
         layers: Iterable[str] = DEFAULT_LAYERS,
-        title: str = "sincpro-rpc",
-        version: str = "1.0.0",
+        title: str | None = None,
+        version: str | None = None,
+        max_batch_size: int | None = None,
+        max_body_bytes: int | None = None,
+        *,
+        exposure: Exposure = Exposure.DECLARED,
+        unguarded: bool = False,
+        port: Wire[Any] | None = None,
     ):
-        super().__init__(instances, layers, title, version)
+        settings = (title, version, max_batch_size, max_body_bytes)
+        if port is None:
+            port = JsonRpcWire(
+                title or "sincpro-rpc",
+                version or "1.0.0",
+                DEFAULT_MAX_BATCH_SIZE if max_batch_size is None else max_batch_size,
+                DEFAULT_MAX_BODY_BYTES if max_body_bytes is None else max_body_bytes,
+            )
+        elif not isinstance(port, JsonRpcWire):
+            raise TypeError(
+                f"RpcGateway(port={type(port).__name__}): the port of a JSON-RPC gateway is a "
+                "JsonRpcWire — subclass it to change how it derives"
+            )
+        elif any(one is not None for one in settings):
+            raise ValueError(
+                "RpcGateway(port=...): title, version and the limits are the port's — give "
+                "them to JsonRpcWire(...)"
+            )
+        self._wire: JsonRpcWire = port
+        self._built: tuple[object, RpcSurface] | None = None
+        super().__init__(
+            instances,
+            layers,
+            port.title,
+            port.version,
+            exposure=exposure,
+            unguarded=unguarded,
+            port=port,
+        )
+
+    @property
+    def max_batch_size(self) -> int:
+        return self._wire.max_batch_size
+
+    @property
+    def max_body_bytes(self) -> int:
+        return self._wire.max_body_bytes
 
     def validate_alias(self, alias: str) -> str:
         return validate_alias(alias)
@@ -91,27 +135,33 @@ class RpcGateway(Gateway):
     def alias_for(self, framework_instance: UseFramework) -> str:
         return re.sub(r"[^A-Za-z0-9_-]", "-", framework_instance.name)
 
-    def methods(self) -> MethodIndex:
-        return index_methods(self._catalogs, self._layers)
+    def build(self) -> RpcSurface:
+        """The validated surface as the wire serves it — built once per resolution, refused
+        with `ExposureRefused` (every reason listed) when it does not hold."""
+        surface: Sequence[Resolved[RpcBinding]] = self.surface()
+        resolved = self._resolved
+        if self._built is None or self._built[0] is not resolved:
+            self._built = (resolved, self._wire.build(surface))
+        return self._built[1]
+
+    def methods(self) -> Mapping[str, Resolved[RpcBinding]]:
+        """Each published method by its name."""
+        return self.build().methods
 
     def discover(self) -> dict[str, Any]:
-        indexed = self.methods()
-        published = [
-            method_object(name, operation, alias)
-            for name, (alias, _framework, operation) in indexed.items()
-        ]
-        return openrpc_document(self._title, published, version=self._version)
+        return self.build().document
 
     def handle(
         self,
         payload: Any,
         context: Mapping[str, Any] | None = None,
         credentials: Credentials | None = None,
-    ) -> dict[str, Any] | list[Any] | None:
-        """Context: `credentials` are authenticated by the `AccessControl` of each method's bus
+    ) -> Reply:
+        """In process, no HTTP — `dispatch` over this gateway's surface.
+
+        Context: `credentials` are authenticated by the `AccessControl` of each method's bus
         — none handed, and each runs as whoever the host already opened."""
-        indexed = self.methods()
-        return handle_payload(indexed, self.discover, payload, context, credentials)
+        return dispatch(self.build(), payload, credentials=credentials, context=context)
 
     def challenges(self) -> list[str]:
         """The `WWW-Authenticate` values a 401 of this gateway answers with."""
@@ -170,34 +220,41 @@ class RpcGateway(Gateway):
         except ImportError as error:
             raise ImportError(RPC_MISSING) from error
 
-        gateway = self
+        surface = self.build()
+
+        async def bounded_body(request: Request) -> bytes | None:
+            """The body, or None past `max_body_bytes` — refused by its `Content-Length`
+            before a byte is read, and counted as it streams when it has none."""
+            declared = request.headers.get("content-length", "")
+            if declared.isdigit() and int(declared) > surface.max_body_bytes:
+                return None
+            received = bytearray()
+            async for chunk in request.stream():
+                received.extend(chunk)
+                if len(received) > surface.max_body_bytes:
+                    return None
+            return bytes(received)
+
+        def answered(reply: Reply) -> Response:
+            status, headers = http_status(surface, reply)
+            if reply is None:
+                return Response(status_code=status, headers=headers)
+            return JSONResponse(reply, status_code=status, headers=headers or None)
 
         async def rpc_endpoint(request: Request) -> Response:
-            raw = await request.body()
-            try:
-                payload = json.loads(raw.decode("utf-8") or "null")
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                return JSONResponse(
-                    jsonrpc_error(PARSE_ERROR, "Parse error"), status_code=200
-                )
-            header_context = merge_http_context(request.headers)
+            if not is_json_media_type(request.headers.get("content-type")):
+                return answered(unsupported_media_type(sorted(JSON_MEDIA_TYPES)))
+            raw = await bounded_body(request)
+            if raw is None:
+                return answered(body_too_large(surface.max_body_bytes))
             credentials = credentials_from_asgi(request.scope)
             reply = await asyncio.to_thread(
-                gateway.handle, payload, header_context or None, credentials
+                dispatch, surface, raw, credentials=credentials, headers=request.headers
             )
-            if reply is None:
-                return Response(status_code=204)
-            if (
-                isinstance(reply, dict)
-                and reply.get("error", {}).get("code") == UNAUTHENTICATED
-            ):
-                challenges = gateway.challenges()
-                headers = {"www-authenticate": ", ".join(challenges)} if challenges else None
-                return JSONResponse(reply, status_code=401, headers=headers)
-            return JSONResponse(reply)
+            return answered(reply)
 
         async def openrpc_endpoint(_request: Request) -> JSONResponse:
-            return JSONResponse(gateway.discover())
+            return JSONResponse(surface.document)
 
         routes = [
             Route(rpc_path, rpc_endpoint, methods=["POST"]),
@@ -262,7 +319,21 @@ class RpcGateway(Gateway):
 def build_rpc_app(
     instances: Mapping[str, UseFramework],
     layers: Iterable[str] = DEFAULT_LAYERS,
-    title: str = "sincpro-rpc",
-    version: str = "1.0.0",
+    title: str | None = None,
+    version: str | None = None,
+    max_batch_size: int | None = None,
+    max_body_bytes: int | None = None,
+    *,
+    exposure: Exposure = Exposure.DECLARED,
+    unguarded: bool = False,
 ) -> Any:
-    return RpcGateway(instances, layers=layers, title=title, version=version).app()
+    return RpcGateway(
+        instances,
+        layers=layers,
+        title=title,
+        version=version,
+        max_batch_size=max_batch_size,
+        max_body_bytes=max_body_bytes,
+        exposure=exposure,
+        unguarded=unguarded,
+    ).app()

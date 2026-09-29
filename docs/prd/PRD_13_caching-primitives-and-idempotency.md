@@ -2,8 +2,11 @@
 
 - **Status**: specification complete. Phase 1 built (`Cache`, `KeepPolicy`, `Lifetime`,
   `Unconditional`/`ExternalVersion`, `Idempotency` with `once()`, `IdempotencyRecords`,
-  `KeyValueStore.take`, observers), documented in [docs/caching](../caching/README.md). Phases 2
-  and 3 specified here, to build before and after the release. Every section says what is built.
+  `KeyValueStore.take`, observers), documented in [docs/caching](../caching/README.md). Phase 2
+  built except `@caching.keeps(...)`: `Freshness` (`TimeToLive`, `Sliding`), `FailurePolicy`
+  (`Raise`, `FailSafe`), `Eviction` (`Lru`, `Unbounded`), the store breaker, `Cache` outcomes, the
+  three contract suites; `once()` for async callers resolved without an async port (§10). Phase 3
+  specified here, to build after the release. Every section says what is built.
 - **Depends on**: `KeyValueStore` and its providers, interceptors (`bus.interceptor`, for
   `QueryCaching`), the request context (`Feature.context`), `DomainError`.
 - **Shapes**: policies are frozen DTOs; strategies and ports are abstract classes or `Protocol`s;
@@ -98,7 +101,10 @@ The words **MUST**, **MUST NOT**, **SHOULD** and **MAY** are used as in RFC 2119
   (`last_resort_until`, or `stale_until` without a `FailurePolicy`), so a value is never gone
   while it may still be served.
 
-*Built: both tiers, the shared tier's TTL and `max_bytes`. Phase 2: `Eviction`, the bypass.*
+*Built: both tiers, the shared tier's TTL (to `last_resort_until`) and `max_bytes`, `Eviction`
+(`Lru(10_000)` by default), the bypass. One deliberate difference: `forget(key)` during a bypass
+still asks the store, and raises if it fails — an invalidation that reached no replica must be
+known to whoever asked for it, not silently kept in this process only.*
 
 ### 4. The timeline of a kept value
 
@@ -113,7 +119,7 @@ born ──── fresh ────► fresh_until ──── stale ───
   validation's `trusted_for`.
 - `stale_until` **MUST** be ≥ `fresh_until`, and `last_resort_until` ≥ `stale_until`.
 
-*Built: fresh and stale, `checked_until`. Phase 2: `born`, `last_resort_until`.*
+*Built: every moment of the timeline — `born`, fresh, stale, `last_resort_until`, `checked_until`.*
 
 ### 5. Coalescing
 
@@ -152,7 +158,10 @@ The order is normative. Each row names the outcome it reports (§9).
   breaker is tripped (§8).
 - An exception **MUST NOT** be kept.
 
-*Built: rows 0, 2–6a, 7a. Phase 2: rows 1, 7, the write rule; `CachePredicate` phase 3.*
+*Built: every row and the write rule. A call whose kept value was rejected (3b) reports
+`INVALIDATED` as its final outcome whether it then computed or was served the leader's value; a
+fallback re-kept for `throttle_for` is trusted for that window too, so a validation that cannot
+tell is not asked on every call either. `CachePredicate` phase 3.*
 
 ### 7. Strategies — the contract each one owes
 
@@ -174,8 +183,8 @@ class Freshness(ABC):
 
 | Built-in | Behaviour | Status |
 |---|---|---|
-| `TimeToLive(ttl, jitter, stale_for, early_expiry)` | `ttl` ± `jitter`; `stale_for` of stale-while-revalidate; XFetch with β = `early_expiry` (Vattani et al., VLDB 2015); `ttl=None` never expires | built as `Lifetime` |
-| `Sliding(idle_for, at_most)` | fresh for `idle_for` after the last hit, never past `born + at_most` | phase 2 |
+| `TimeToLive(ttl, jitter, stale_for, early_expiry)` | `ttl` ± `jitter`; `stale_for` of stale-while-revalidate; XFetch with β = `early_expiry` (Vattani et al., VLDB 2015); `ttl=None` never expires | built (`Lifetime` kept as an alias; `KeepPolicy(lifetime=)` still accepted) |
+| `Sliding(idle_for, at_most)` | fresh for `idle_for` after the last hit, never past `born + at_most` | built |
 
 #### 7.2 `Validation` — whether a kept value is still right
 
@@ -209,8 +218,8 @@ class FailurePolicy(ABC):
 
 | Built-in | Behaviour | Status |
 |---|---|---|
-| `Raise()` | the default: nothing is served past `stale_until` | phase 2 (today's behaviour) |
-| `FailSafe(serve_for, throttle_for=30s, errors=(Exception,))` | row 7 of §6 | phase 2 |
+| `Raise()` | the default: nothing is served past `stale_until` | built |
+| `FailSafe(serve_for, throttle_for=30s, errors=(Exception,))` | row 7 of §6 | built |
 
 A fallback **MUST NOT** serve a value its validation rejected (3b): fail-safe covers a source that
 cannot answer, not one that answered no — serving it would hand out what the source revoked.
@@ -228,8 +237,8 @@ It **MUST** be thread-safe, and after `admitted` the tier **MUST** hold no more 
 
 | Built-in | Behaviour | Status |
 |---|---|---|
-| `Lru(max_entries=10_000)` | the default; least recently touched first | phase 2 |
-| `Unbounded()` | today's behaviour; for a tier whose keys are known and few | phase 2 |
+| `Lru(max_entries=10_000)` | the default; least recently touched first | built |
+| `Unbounded()` | today's behaviour; for a tier whose keys are known and few | built |
 
 A project needing admission (W-TinyLFU) wraps `cachetools` or its own behind this port.
 
@@ -248,7 +257,7 @@ Built-ins `CacheAll()` (default), `SkipNone()`, `Negative(freshness)`. *Phase 3.
 | Port | Operations | It **MUST** | Proven by | Status |
 |---|---|---|---|---|
 | `KeyValueStore` | `get_many` · `set(ttl)` · `add(ttl)` · `increment` · `delete` · `take` · `get` | make `add`, `increment` and `take` atomic across every caller of the store; honour a ttl at its precision (Memcached: whole seconds) | `KeyValueStoreContract` | built |
-| `Codec` | `encode` · `decode` · `schema` | round-trip what it encodes; raise on bytes of another shape; change `schema` when the shape changes | `CodecContract` | built; the contract phase 2 |
+| `Codec` | `encode` · `decode` · `schema` | round-trip what it encodes; raise on bytes of another shape; change `schema` when the shape changes | `CodecContract` | built |
 | `CacheObserver` | `observed(outcome, namespace)` | never block the call; the cache guards it — an observer that raises is ignored | — | built |
 | `IdempotencyRecords` | `claim(hold)` · `read` · `complete(keep_for)` · `release(owner)` | make `claim` atomic; release only the owner's claim | `IdempotencyRecordsContract` | built |
 | `Backplane` | `publish(notice)` · `subscribe(on_notice)` | carry notices (`key` or `tag`, `action`, `at`) and never values; tolerate lost notices — the L1 ttl is the safety net | `BackplaneContract` | phase 3 |
@@ -256,7 +265,8 @@ Built-ins `CacheAll()` (default), `SkipNone()`, `Negative(freshness)`. *Phase 3.
 **The store breaker** (the shared tier's resilience, not a port): any exception from a store
 operation opens it for `bypass_for` (default 30 s); while open the tier is bypassed (§6 row 1);
 the first call after it tries the store again. Operation timeouts are the client's — an adapter
-**SHOULD** document the socket timeout it expects its client to have. *Phase 2.*
+**SHOULD** document the socket timeout it expects its client to have. *Built: `Cache(bypass_for=)`;
+a failed read or lock bypasses the call, a failed write or lock release only trips the breaker.*
 
 ### 9. Observability
 
@@ -268,7 +278,7 @@ cache's namespace:
 
 The default observer adds each one as an event on the active span; `CountingObserver` counts them
 for a metrics exporter. Without `FALLBACK` and `BYPASSED` counted, fail-safe hides an outage.
-*Built for idempotency; for `Cache` phase 2.*
+*Built for idempotency and for `Cache` (`Cache(observer=)`, `SpanObserver` by default).*
 
 ### 10. Idempotency
 
@@ -297,8 +307,15 @@ for a metrics exporter. Without `FALLBACK` and `BYPASSED` counted, fail-safe hid
    and `KeyReused` in its `ignore_sentry_exceptions(...)`; give a replacement handler with its own
    `execute` its own `once()`.
 
-*Built. Async use cases phase 2; replaying declared domain errors, a reconciler for expired
-claims and an `Idempotency-Key` header in REST/gRPC phase 3.*
+*Built. Async callers built: the bus refuses an `async def execute` at registration
+(`ioc._refuse_an_async_execute`), so an async use case does not exist to wrap — an async caller
+reaches the use case through `bus.get_async_bus()`, which runs the synchronous `execute`, claim
+first, on a worker thread; duplicates fanned out with `asyncio.gather` write once (tested).
+`once()` keeps refusing an `async def execute`, pointing at `get_async_bus()`. `declares_once(cls)`
+(built) answers whether a class's resolved `execute` is one `once()` wrote — what an entrypoint
+asks to mark a use case retry-safe. Replaying declared
+domain errors, a reconciler for expired claims and an `Idempotency-Key` header in REST/gRPC
+phase 3.*
 
 ### 11. Defaults
 
@@ -318,8 +335,9 @@ claims and an `Idempotency-Key` header in REST/gRPC phase 3.*
 
 A store, records, a codec or a strategy of a project's conforms when it passes its contract suite
 from `sincpro_framework.testing`: `KeyValueStoreContract` and `IdempotencyRecordsContract`
-(built); `CodecContract`, `FreshnessContract`, `EvictionContract` (phase 2); `BackplaneContract`
-(phase 3). Every built-in passes the same suite a project's does.
+(built); `CodecContract`, `FreshnessContract`, `EvictionContract` (built, in
+`sincpro_framework.caching.testing` — not yet re-exported from `sincpro_framework.testing`);
+`BackplaneContract` (phase 3). Every built-in passes the same suite a project's does.
 
 ### 13. Maturity — capability by capability
 
@@ -331,11 +349,11 @@ from `sincpro_framework.testing`: `KeyValueStoreContract` and `IdempotencyRecord
 | Validation against a version the source publishes | HTTP `ETag`; FusionCache conditional refresh | built |
 | Hashed keys, schema in the key, decode error as a miss | HybridCache key guidance; Rails recyclable keys; dogpile | built |
 | Tag invalidation by generation counters | Django `VERSION`, HybridCache logical tags | built for ORM reads; general phase 3 |
-| Fail-safe, throttled | FusionCache; cashews `failover`; RFC 5861 `stale-if-error` | phase 2 |
-| A failing shared store bypassed, not waited on | FusionCache circuit breaker; Laravel `failover` | phase 2 |
-| A bounded process tier | Caffeine; MemoryCache `SizeLimit` | phase 2 |
-| Sliding expiration | JCache `AccessedExpiryPolicy`; Caffeine `expireAfterAccess` | phase 2 |
-| Every outcome observed | JCache statistics; Caffeine `recordStats` | idempotency built; `Cache` phase 2 |
+| Fail-safe, throttled | FusionCache; cashews `failover`; RFC 5861 `stale-if-error` | built |
+| A failing shared store bypassed, not waited on | FusionCache circuit breaker; Laravel `failover` | built |
+| A bounded process tier | Caffeine; MemoryCache `SizeLimit` | built |
+| Sliding expiration | JCache `AccessedExpiryPolicy`; Caffeine `expireAfterAccess` | built |
+| Every outcome observed | JCache statistics; Caffeine `recordStats` | built |
 | L1 over a shared L2, invalidated across replicas | FusionCache backplane (HybridCache lacks it) | phase 3 |
 | Soft/hard factory timeouts, eager background refresh | FusionCache; Caffeine `refreshAfterWrite` | phase 3 |
 | Negative caching, cache-if | dogpile `should_cache_fn`; Spring `unless`; Rails `skip_nil` | phase 3 |
@@ -428,10 +446,11 @@ breaks, and a constant gives the same reuse with a reference the type checker fo
 ## Phases
 
 1. **Built** — everything marked built above.
-2. **Before the release** — `Freshness` as a port (`TimeToLive`, `Sliding`); `FailurePolicy`
-   (`Raise`, `FailSafe`); `Eviction` (`Lru` default, `Unbounded`); the store breaker and the bypass;
-   `Cache` reporting every outcome; `@caching.keeps(...)`; `once()` on async use cases;
-   `CodecContract`, `FreshnessContract`, `EvictionContract`.
+2. **Before the release** — built: `Freshness` as a port (`TimeToLive`, `Sliding`);
+   `FailurePolicy` (`Raise`, `FailSafe`); `Eviction` (`Lru` default, `Unbounded`); the store
+   breaker and the bypass; `Cache` reporting every outcome; `once()` for async callers (through
+   `get_async_bus()`); `CodecContract`, `FreshnessContract`, `EvictionContract`. **Pending:**
+   `@caching.keeps(...)`.
 3. **After** — `Backplane` and L1 over L2; soft/hard factory timeouts and eager refresh;
    `CachePredicate`; `TagVersions` for `Cache`; codec wrappers; the idempotency extras.
 
@@ -442,7 +461,13 @@ breaks, and a constant gives the same reuse with a reference the type checker fo
    answering 401?
 2. **`Sliding` on the shared tier.** Renewing `fresh_until` on every hit is a write per read;
    should it be allowed only on the process tier, or renew at most once per `idle_for / 4`?
+   *Built as the second, without the tier knowing `idle_for`: the shared tier renews only when
+   the gain is at least a quarter of the renewed window; the process tier renews on every hit.*
 3. **Replaying domain errors.** Stripe replays a failure once execution began; Powertools releases
    the key. Should `once()` replay the `DomainError`s a policy lists, and release on the rest?
 4. **Async.** `once()` and `get_or_compute` on the async bus need async store operations — a
-   second port (`AsyncKeyValueStore`) or async methods on the same one?
+   second port (`AsyncKeyValueStore`) or async methods on the same one? *Neither, for now: the bus
+   has no async use cases (it refuses `async def execute`), and `get_async_bus()` runs a use case
+   — `once()` and any `Cache` inside it — on a worker thread. An async port is needed only if the
+   bus ever gains async use cases; running the sync store port through `asyncio.to_thread` would
+   work then, and was not built for a use case that cannot be registered.*

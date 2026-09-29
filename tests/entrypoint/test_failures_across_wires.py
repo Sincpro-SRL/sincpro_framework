@@ -16,14 +16,20 @@ from google.protobuf.struct_pb2 import Struct
 from starlette.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework.caching import AlreadyInProgress, KeyReused
 from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
 from sincpro_framework.entrypoints import json_utils
-from sincpro_framework.entrypoints.errors import FailureKind, failure_kind
+from sincpro_framework.entrypoints.exposure import Exposure
 from sincpro_framework.entrypoints.grpc import GrpcGateway
 from sincpro_framework.entrypoints.grpc.wire import scalar_to_struct
 from sincpro_framework.entrypoints.rest import RestGateway
 from sincpro_framework.entrypoints.rpc import RpcGateway
 from sincpro_framework.entrypoints.rpc.jrpc import CONFLICT, DOMAIN_ERROR, INTERNAL_ERROR
+from sincpro_framework.transport.failures import (
+    FailureKind,
+    failure_kind,
+    refined_failure_kind,
+)
 
 RAISED = {
     "domain": DomainError("an invoice has to balance"),
@@ -57,6 +63,31 @@ def test_each_failure_is_one_kind() -> None:
     ]
 
 
+class InvoiceNotFound(DomainError):
+    failure_kind = FailureKind.NOT_FOUND
+
+
+def test_the_refined_kinds_name_what_the_shared_ones_cannot() -> None:
+    """The idempotency refusals and a kind an error declares are told apart where a wire
+    encodes them (gRPC) — and `failure_kind`, which every wire's table is keyed by, keeps
+    answering one of the kinds those tables already have a row for."""
+    refined = [AlreadyInProgress("k"), KeyReused("k"), InvoiceNotFound("F-9")]
+
+    assert [refined_failure_kind(one) for one in refined] == [
+        FailureKind.IN_PROGRESS,
+        FailureKind.KEY_REUSED,
+        FailureKind.NOT_FOUND,
+    ]
+    assert {failure_kind(one) for one in refined} == {FailureKind.DOMAIN}
+    assert [refined_failure_kind(one) for one in RAISED.values()] == [
+        failure_kind(one) for one in RAISED.values()
+    ]
+
+
+def _rpc_catalog() -> RpcGateway:
+    return RpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+
+
 @pytest.mark.parametrize(
     ("how", "code", "disclosed"),
     [
@@ -69,28 +100,34 @@ def test_each_failure_is_one_kind() -> None:
 def test_json_rpc_answers_each_kind_with_its_code(
     how: str, code: int, disclosed: Any
 ) -> None:
-    rpc = RpcGateway({"billing": _billing()})
+    rpc = _rpc_catalog()
     answered = rpc.handle(
         {
             "jsonrpc": "2.0",
             "id": 1,
-            "method": "billing.features.CommandFail",
+            "method": "billing.fail",
             "params": {"how": how},
         }
     )
     assert isinstance(answered, dict)
     assert answered["error"]["code"] == code
-    assert answered["error"].get("data") == disclosed
+    data = answered["error"]["data"]
+    # `data` is an object on every error (PRD_15 §4): the kind a client switches on, and the
+    # message only when the caller may read it — an internal error discloses nothing.
+    assert data.get("message") == disclosed
+    assert data["kind"] == ("internal" if disclosed is None else data["kind"])
+    assert "hunter2" not in str(answered)
 
 
 @pytest.fixture
 def grpc_call() -> Iterator[Any]:
-    server = GrpcGateway({"billing": _billing()}).server(max_workers=2)
+    gateway = GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+    server = gateway.server(max_workers=2)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
     channel = grpc.insecure_channel(f"127.0.0.1:{port}")
     call = channel.unary_unary(
-        "/billing.Features/CommandFail",
+        "/billing.v1.BillingService/Fail",
         request_serializer=Struct.SerializeToString,
         response_deserializer=Struct.FromString,
     )
@@ -142,11 +179,11 @@ def test_the_catalog_is_computed_once_not_on_every_request(
         return schema_of(dto_type)
 
     monkeypatch.setattr(json_utils, "dto_json_schema", counting)
-    rpc = RpcGateway({"billing": _billing()})
+    rpc = _rpc_catalog()
     call = {
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "billing.features.CommandFail",
+        "method": "billing.fail",
         "params": {"how": "domain"},
     }
     for _ in range(5):
@@ -155,7 +192,12 @@ def test_the_catalog_is_computed_once_not_on_every_request(
 
 
 def test_narrowing_a_catalog_lets_what_it_kept_go() -> None:
-    rpc = RpcGateway({"billing": _billing()})
-    assert "billing.features.CommandFail" in rpc.methods()
-    rpc.catalogs["billing"].exclude(CommandFail)
-    assert "billing.features.CommandFail" not in rpc.methods()
+    """The catalog lets a narrowed use case go; a gateway resolves its surface from it."""
+    rpc = _rpc_catalog()
+    catalog = rpc.catalogs["billing"]
+    assert [one.dto for one in catalog.get_scalar_use_cases()] == [CommandFail]
+    catalog.exclude(CommandFail)
+    assert catalog.get_scalar_use_cases() == []
+    narrowed = RpcGateway(exposure=Exposure.CATALOG, unguarded=True)
+    narrowed.add("billing", _billing(), exclude=[CommandFail])
+    assert "billing.fail" not in narrowed.methods()

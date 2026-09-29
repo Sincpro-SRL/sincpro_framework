@@ -11,8 +11,9 @@ says which Queries keep their answers, for how long, per what, and on which stor
 - **`QueryCaching`** keeps a Query's answer and lets go of it when an aggregate it read is
   written — the repository notes the reads, nobody declares them.
 - **`Cache`** keeps any value by its parameters — what another system answered, a computation —
-  judged by the strategies of each call: a `Lifetime`, and a `Validation` such as the version the
-  source publishes. No ORM, no Query.
+  judged by the strategies of each call: a `Freshness` (how long), a `Validation` (whether it is
+  still right, such as the version the source publishes) and a `FailurePolicy` (what a failing
+  source answers). No ORM, no Query.
 - **`Idempotency`** runs a write once per key across replicas, and replays its answer to a retry.
 - **`KeyValueRuns`** is the record several cron replicas share: one of them runs each tick.
 
@@ -155,12 +156,13 @@ answer, or in an incident — without recomposing anything; `policies()` says wh
 
 `QueryCaching` knows when to let go because the repository saw what an answer read. What another
 system answers — a tenant a token resolves to, a catalog a service publishes — gives no such
-signal; what it gives is a version. `Cache` keeps a value by its parameters and judges it by two
-strategies each call chooses: a **lifetime** (how long it is served as is) and a **validation**
-(whether it is still right).
+signal; what it gives is a version. `Cache` keeps a value by its parameters and judges it by the
+strategies each call chooses in its `KeepPolicy`: a **freshness** (how long it is served as is),
+a **validation** (whether it is still right) and a **failure policy** (what is answered when the
+source fails).
 
 ```python
-from sincpro_framework.caching import Cache, ExternalVersion, JsonCodec, KeepPolicy, Lifetime
+from sincpro_framework.caching import Cache, ExternalVersion, JsonCodec, KeepPolicy
 
 
 class Tenant(DataTransferObject):
@@ -208,15 +210,17 @@ assert registry.resolved == ["tok"]
 readable in the store's key names. **`ExternalVersion`** is an ETag: the value keeps the version
 it was computed at (`kept` reads it off the value, or it is asked before computing), a check that
 held is trusted for `trusted_for`, and a version that moved means the value is recomputed — never
-served, stale window or not. `Unconditional()`, the default, leaves the lifetime as the whole
+served, stale window or not. `Unconditional()`, the default, leaves the freshness as the whole
 answer.
 
 On a store replicas share, values are bytes, so the call names its `Codec`:
 
 ```python
+from sincpro_framework.caching import TimeToLive
+
 catalogs = Cache(InMemoryKeyValue(), namespace="catalog")   # RedisKeyValue(...) on replicas
 five_minutes = KeepPolicy[Tenant](
-    lifetime=Lifetime(ttl=timedelta(minutes=5), jitter=0.1, stale_for=timedelta(minutes=1))
+    freshness=TimeToLive(ttl=timedelta(minutes=5), jitter=0.1, stale_for=timedelta(minutes=1))
 )
 shared = catalogs.get_or_compute(
     ("catalog", "acme"), lambda: registry.resolve("acme"), five_minutes, JsonCodec(Tenant)
@@ -227,6 +231,110 @@ catalogs.forget(("catalog", "acme"), JsonCodec(Tenant))      # here and on every
 One caller computes a missing or expiring value — the winner of the store's `add`, or of a lock
 in the process — while the others serve the stale value or wait `wait_for_others` for the new one.
 An exception is never kept, and a value larger than `max_bytes` is answered and not kept.
+
+### How long: `TimeToLive` or `Sliding`
+
+`TimeToLive(ttl=, jitter=, stale_for=, early_expiry=)` is the time-to-live every value had so far
+(`Lifetime` is the same class under its phase-1 name): the ttl spread by `jitter`, served stale
+for `stale_for` while one caller recomputes, recomputed early by XFetch's `early_expiry`.
+`Sliding(idle_for=, at_most=)` keeps a value served for as long as somebody asks for it — fresh for
+`idle_for` after the last hit, never past `at_most` after it was computed, so a hot value is still
+recomputed. On a shared store a hit renews it at most once per quarter of its window: a sliding
+value is not a write per read.
+
+```python
+from datetime import UTC, datetime
+
+from sincpro_framework.caching import CacheOutcome, CountingObserver, FailSafe, Sliding
+from sincpro_framework.testing import ManualClock
+
+clock = ManualClock(datetime(2026, 9, 29, 12, 0, tzinfo=UTC))
+observed = CountingObserver()
+sessions = Cache(now=clock.now, namespace="sessions", observer=observed)
+while_active = KeepPolicy[Tenant](
+    freshness=Sliding(idle_for=timedelta(minutes=10), at_most=timedelta(hours=1))
+)
+
+opened: list[str] = []
+
+
+def session_of(token: str) -> Tenant:
+    opened.append(token)
+    return Tenant(name=f"session-of-{token}", version="v1")
+
+
+for _ in range(6):                    # a hit every 5 minutes: never sent to the source again
+    sessions.get_or_compute(("session", "tok"), lambda: session_of("tok"), while_active)
+    clock.advance(minutes=5)
+
+assert opened == ["tok"]
+```
+
+### When the source fails: `FailSafe`
+
+A source that goes down turns every call into an error the moment its value lapses — although the
+value was right a minute ago. `FailSafe(serve_for=, throttle_for=30s, errors=(Exception,))` is
+RFC 5861's `stale-if-error`: when computing raises one of `errors`, the last good value is served
+for up to `serve_for` past its servable life, and re-kept fresh for `throttle_for`, so the source
+is asked once per window, not once per call. It never serves a value its validation *rejected* —
+fail-safe covers a source that cannot answer, not one that answered no — and a validation that
+raises means "cannot tell", which the policy handles. `Raise()`, the default, serves nothing past
+the value's servable life: stale data is a choice, never a surprise.
+
+```python
+class DownRegistry(Registry):
+    def resolve(self, token: str) -> Tenant:
+        if self.version == "down":
+            raise ConnectionError("the registry is not answering")
+        return super().resolve(token)
+
+
+flaky = DownRegistry()
+fail_safe = KeepPolicy[Tenant](
+    freshness=TimeToLive(ttl=timedelta(minutes=5)),
+    failure=FailSafe(serve_for=timedelta(hours=1), errors=(ConnectionError, TimeoutError)),
+)
+guarded = Cache(now=clock.now, namespace="tenants", observer=observed)
+before = guarded.get_or_compute("acme", lambda: flaky.resolve("acme"), fail_safe)
+
+flaky.version = "down"
+clock.advance(minutes=6)
+during = guarded.get_or_compute("acme", lambda: flaky.resolve("acme"), fail_safe)
+
+assert during == before
+assert observed.of(CacheOutcome.FALLBACK, "tenants") == 1
+```
+
+### Every call says what it did
+
+Each call reports one outcome to the cache's `observer` — `HIT`, `STALE`, `COMPUTED`, `COALESCED`,
+`INVALIDATED` (a kept value its validation rejected) or `FALLBACK` — plus `BYPASSED` when the
+shared store was left out. `SpanObserver`, the default, adds each as an event on the active span;
+`CountingObserver` counts them for a metrics exporter. Without `FALLBACK` and `BYPASSED` counted,
+fail-safe and a failing store hide an outage. An observer that raises never breaks the call.
+
+### When the shared store fails, and how big the process tier gets
+
+Any exception from the shared store opens its breaker for `bypass_for` (30 s by default): the call
+is answered on the process tier — still one caller per key — and reports `BYPASSED`; the first
+call after the window tries the store again. A failure to *write* never fails the call: the value
+is answered and the breaker trips. How long one operation may take is the client's socket timeout
+— configure it on the Redis client you hand `RedisKeyValue`. `forget` is the exception: an
+invalidation that reached no replica raises, so whoever asked for it knows.
+
+The process tier keeps objects in memory, bounded by an `Eviction`: `Lru(max_entries=10_000)` by
+default, `Unbounded()` for a tier whose keys are known and few, or yours behind the `Eviction`
+port.
+
+```python
+from sincpro_framework.caching import Lru
+
+bounded = Cache(eviction=Lru(max_entries=2))
+for customer in ("c1", "c2", "c3"):
+    bounded.get_or_compute(("balance", customer), lambda: 0)
+
+assert len(bounded._process._kept) == 2           # c1, the least recently used, went
+```
 
 ## A write that runs once: `Idempotency`
 
@@ -307,7 +415,10 @@ transaction as the write, and prove it with `IdempotencyRecordsContract`. Inside
 `once(...)` wraps the use case's own `execute`: nothing is wired on the bus, and the use case
 still runs inside it — Sentry, its span and the access guard, so a replayed answer is still
 authorized. A subclass that keeps `execute` keeps `once()`; a `replaces=` handler with an
-`execute` of its own declares its own.
+`execute` of its own declares its own. An async caller reaches it with `bus.get_async_bus()`,
+which runs the synchronous `execute` — claim first — on a worker thread, so duplicates fanned out
+with `asyncio.gather` still write once; an `async def execute` is refused, by `once()` and by the
+bus alike.
 
 ## Providers
 
@@ -334,6 +445,34 @@ class TestDictStore(KeyValueStoreContract):
         time.sleep(seconds)
 ```
 
+A codec, a freshness or an eviction of yours proves itself the same way, with the suites the
+built-ins pass:
+
+```python
+from sincpro_framework.caching import Eviction, Freshness, Unbounded
+from sincpro_framework.caching.testing import CodecContract, EvictionContract, FreshnessContract
+
+
+class TestTenantCodec(CodecContract):
+    def make_codec(self) -> JsonCodec[Tenant]:
+        return JsonCodec(Tenant)
+
+    def samples(self) -> list[Tenant]:
+        return [Tenant(name="acme", version="v1")]
+
+
+class TestSessions(FreshnessContract):
+    def make_freshness(self) -> Freshness:
+        return Sliding(idle_for=timedelta(minutes=10), at_most=timedelta(hours=1))
+
+
+class TestFewKeys(EvictionContract):
+    bound = None                      # unbounded: the bound test holds trivially
+
+    def make_eviction(self) -> Eviction:
+        return Unbounded()
+```
+
 ```bash
 pip install sincpro-framework[redis]        # RedisKeyValue(redis.Redis.from_url(url)) — Valkey too
 pip install sincpro-framework[memcached]    # MemcachedKeyValue(pymemcache.Client(address))
@@ -357,10 +496,12 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 | `KeyValueStore` | `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic), `get` |
 | `InMemoryKeyValue(now=)` / `RedisKeyValue(client, prefix=)` / `MemcachedKeyValue(client, prefix=)` | the providers |
 | `QueryCaching(store, near=, sensitive=, namespace=, enabled=)` | `.on(bus, Query, CachePolicy(...))`, `.invalidate(Aggregate)`, `.invalidated_by({Event: [Aggregate]})`, `.depends_on(query)`, `.policies()` |
-| `Cache(store=None, namespace=, enabled=)` | `.get_or_compute(key, compute, KeepPolicy(lifetime=, validation=, wait_for_others=, max_bytes=), codec)`, `.forget(key)` |
-| `Lifetime(ttl=, jitter=, stale_for=, early_expiry=)` | how long a value is served as is |
+| `Cache(store=None, namespace=, enabled=, observer=, eviction=, bypass_for=)` | `.get_or_compute(key, compute, KeepPolicy(freshness=, validation=, failure=, wait_for_others=, max_bytes=), codec)`, `.forget(key)` |
+| `TimeToLive(ttl=, jitter=, stale_for=, early_expiry=)` (alias `Lifetime`) / `Sliding(idle_for=, at_most=)` / `Freshness` | how long a value is served as is — yours inherits `Freshness` |
 | `Unconditional()` / `ExternalVersion(current, kept=, trusted_for=)` / `Validation` | whether it is still right — yours inherits `Validation` |
-| `Idempotency(store \| records, namespace=, observer=)` | `@.once(expires_after=, in_progress_for=, wait_for_completion=, vary_by=)`, `.run(key, write, IdempotencyPolicy(...), codec, payload=)`, `.policies()`; `AlreadyInProgress`, `KeyReused`; `current_idempotency_key()` |
+| `Raise()` (default) / `FailSafe(serve_for, throttle_for=, errors=)` / `FailurePolicy` | what a failing source answers |
+| `Lru(max_entries=10_000)` (default) / `Unbounded()` / `Eviction` | how the process tier stays bounded |
+| `Idempotency(store \| records, namespace=, observer=)` | `@.once(expires_after=, in_progress_for=, wait_for_completion=, vary_by=)`, `.run(key, write, IdempotencyPolicy(...), codec, payload=)`, `.policies()`; `AlreadyInProgress`, `KeyReused`; `current_idempotency_key()`; `declares_once(cls)` — whether a class runs once |
 | `IdempotentCommand` | a Command with `idempotency_key()` — what identifies one request |
 | `IdempotencyRecords` / `KeyValueRecords(store)` | where records live — yours transactional, or on a key-value store |
 | `CacheObserver` / `SpanObserver` (default) / `CountingObserver` / `NoObserver` | what each call did: `CacheOutcome`, `IdempotencyOutcome` |
@@ -368,3 +509,4 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 | `invalidate_on_commit(database, caching)` | every aggregate a commit wrote |
 | `KeyValueRuns(store)` | crons on several replicas |
 | `KeyValueStoreContract` | the tests a store of yours inherits |
+| `CodecContract` / `FreshnessContract` / `EvictionContract` (`sincpro_framework.caching.testing`) | the tests a codec, a freshness or an eviction of yours inherits |

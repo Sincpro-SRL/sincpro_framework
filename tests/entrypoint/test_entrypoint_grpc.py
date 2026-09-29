@@ -1,4 +1,6 @@
-"""entrypoint_grpc: bus catalog as gRPC services over google.protobuf.Struct."""
+"""entrypoint_grpc: the buses as AIP-named gRPC services over google.protobuf.Struct — in
+catalog mode here, every use case published, so the wire's behaviour is tested apart from what
+a use case declares (`test_grpc_naming_and_exposure.py`)."""
 
 import json
 from collections.abc import Iterator
@@ -10,6 +12,7 @@ import pytest
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject
 from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.entrypoints.exposure import Exposure
 from sincpro_framework.entrypoints.grpc import GrpcGateway
 from sincpro_framework.entrypoints.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.grpc.proto import DESCRIBE_PATH
@@ -148,10 +151,14 @@ def _instance(name: str, with_app_service: bool = False) -> UseFramework:
     return framework
 
 
+def _gateway(buses: dict[str, UseFramework] | None = None, **kwargs: Any) -> GrpcGateway:
+    return GrpcGateway(buses, exposure=Exposure.CATALOG, unguarded=True, **kwargs)
+
+
 @pytest.fixture
 def served() -> Iterator[GrpcClient]:
     """One gateway on an ephemeral port, with a client dialing it."""
-    gateway = GrpcGateway({"qr": _instance("payment-qr", with_app_service=True)})
+    gateway = _gateway({"qr": _instance("payment-qr", with_app_service=True)})
     server = gateway.server(max_workers=2)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
@@ -163,37 +170,37 @@ def served() -> Iterator[GrpcClient]:
         server.stop(None)
 
 
-def test_method_paths_are_package_service_dto():
-    gateway = GrpcGateway(
+def test_method_paths_are_package_service_and_the_dto_without_its_layer():
+    gateway = _gateway(
         {"qr": _instance("a", with_app_service=True), "cybersource": _instance("b")}
     )
     paths = set(gateway.methods())
 
-    assert "/qr.Features/ValidateCard" in paths
-    assert "/qr.AppServices/OrchestrateCharge" in paths
-    assert "/cybersource.Features/ValidateCard" in paths
+    assert "/qr.v1.QrService/ValidateCard" in paths
+    assert "/qr.v1.QrService/OrchestrateCharge" in paths
+    assert "/cybersource.v1.CybersourceService/ValidateCard" in paths
 
 
 def test_alias_with_hyphen_is_refused():
     """JSON-RPC accepts `bank-account`; a proto package does not."""
     with pytest.raises(ValueError):
-        GrpcGateway({"bank-account": _instance("b")})
+        _gateway({"bank-account": _instance("b")})
 
 
 def test_layers_filter_and_exclude():
     framework = _instance("pay", with_app_service=True)
-    apps_only = GrpcGateway({"pay": framework}, layers=("app_services",))
-    excluded = GrpcGateway().add("pay", framework, exclude=[ChargePayment])
+    apps_only = _gateway({"pay": framework}, layers=("app_services",))
+    excluded = _gateway().add("pay", framework, exclude=[ChargePayment])
 
-    assert set(apps_only.methods()) == {"/pay.AppServices/OrchestrateCharge"}
-    assert "/pay.Features/ChargePayment" not in excluded.methods()
-    assert "/pay.Features/ValidateCard" in excluded.methods()
+    assert set(apps_only.methods()) == {"/pay.v1.PayService/OrchestrateCharge"}
+    assert "/pay.v1.PayService/ChargePayment" not in excluded.methods()
+    assert "/pay.v1.PayService/ValidateCard" in excluded.methods()
 
 
 def test_binary_dto_is_not_published():
     assert (
-        "/pay.Features/SendBinaryPackage"
-        not in GrpcGateway({"pay": _instance("p")}).methods()
+        "/pay.v1.PayService/SendBinaryPackage"
+        not in _gateway({"pay": _instance("p")}).methods()
     )
 
 
@@ -201,13 +208,15 @@ def test_unary_call_round_trip(served: GrpcClient):
     """Struct keys are data, not proto fields: `card_number` stays `card_number`,
     with none of the camelCase a generated message would impose on the DTO.
     """
-    result = served.call("/qr.Features/ValidateCard", {"card_number": "4111", "cvv": "123"})
+    result = served.call(
+        "/qr.v1.QrService/ValidateCard", {"card_number": "4111", "cvv": "123"}
+    )
 
     assert result == {"valid": True, "card_number": "4111"}
 
 
 def test_app_service_is_callable(served: GrpcClient):
-    result = served.call("/qr.AppServices/OrchestrateCharge", {"amount": 5})
+    result = served.call("/qr.v1.QrService/OrchestrateCharge", {"amount": 5})
 
     assert result["charged"] is True
     assert result["amount"] == 5
@@ -215,7 +224,7 @@ def test_app_service_is_callable(served: GrpcClient):
 
 def test_metadata_reaches_the_framework_context(served: GrpcClient):
     result = served.call(
-        "/qr.Features/EchoContext",
+        "/qr.v1.QrService/EchoContext",
         {"label": "ok"},
         context={"correlation_id": "req-9", "tenant": "acme"},
     )
@@ -245,7 +254,7 @@ def test_context_from_metadata_reads_trace_and_prefixed_keys():
 
 def test_missing_field_is_invalid_argument(served: GrpcClient):
     with pytest.raises(grpc.RpcError) as error:
-        served.call("/qr.Features/ValidateCard", {"card_number": "4111"})
+        served.call("/qr.v1.QrService/ValidateCard", {"card_number": "4111"})
 
     assert error.value.code() is grpc.StatusCode.INVALID_ARGUMENT
     assert json.loads(rpc_details(error.value))[0]["loc"] == ["cvv"]
@@ -256,7 +265,7 @@ def test_value_object_rejection_stays_serialisable(served: GrpcClient):
     ctx.error; the status details must survive json.dumps, not crash the handler.
     """
     with pytest.raises(grpc.RpcError) as error:
-        served.call("/qr.Features/ChargeWithVO", {"amount": -5})
+        served.call("/qr.v1.QrService/ChargeWithVO", {"amount": -5})
 
     assert error.value.code() is grpc.StatusCode.INVALID_ARGUMENT
     assert json.loads(rpc_details(error.value))
@@ -264,7 +273,7 @@ def test_value_object_rejection_stays_serialisable(served: GrpcClient):
 
 def test_domain_error_is_failed_precondition_with_its_message(served: GrpcClient):
     with pytest.raises(grpc.RpcError) as error:
-        served.call("/qr.Features/RefuseCharge", {"reason": "line 3"})
+        served.call("/qr.v1.QrService/RefuseCharge", {"reason": "line 3"})
 
     assert error.value.code() is grpc.StatusCode.FAILED_PRECONDITION
     assert "an invoice has to balance" in rpc_details(error.value)
@@ -272,7 +281,7 @@ def test_domain_error_is_failed_precondition_with_its_message(served: GrpcClient
 
 def test_unexpected_error_never_reaches_the_caller(served: GrpcClient):
     with pytest.raises(grpc.RpcError) as error:
-        served.call("/qr.Features/LeakSecret", {"label": "x"})
+        served.call("/qr.v1.QrService/LeakSecret", {"label": "x"})
 
     assert error.value.code() is grpc.StatusCode.INTERNAL
     assert rpc_details(error.value) == "Internal error"
@@ -280,7 +289,7 @@ def test_unexpected_error_never_reaches_the_caller(served: GrpcClient):
 
 def test_unknown_method_is_unimplemented(served: GrpcClient):
     with pytest.raises(grpc.RpcError) as error:
-        served.call("/qr.Features/DoesNotExist", {})
+        served.call("/qr.v1.QrService/DoesNotExist", {})
 
     assert error.value.code() is grpc.StatusCode.UNIMPLEMENTED
 
@@ -290,27 +299,27 @@ def test_describe_publishes_the_catalog_with_json_schema(served: GrpcClient):
     services = {service["name"]: service for service in document["services"]}
     validate = next(
         method
-        for method in services["qr.Features"]["methods"]
+        for method in services["qr.v1.QrService"]["methods"]
         if method["name"] == "ValidateCard"
     )
 
-    assert set(services) == {"qr.Features", "qr.AppServices"}
-    assert validate["path"] == "/qr.Features/ValidateCard"
+    assert set(services) == {"qr.v1.QrService"}
+    assert validate["path"] == "/qr.v1.QrService/ValidateCard"
     assert validate["description"] == "Validate a payment card."
     assert set(validate["params"]["properties"]) == {"card_number", "cvv"}
     assert DESCRIBE_PATH == "/sincpro.Introspection/Describe"
 
 
 def test_proto_export_matches_what_is_served():
-    gateway = GrpcGateway({"qr": _instance("payment-qr", with_app_service=True)})
+    gateway = _gateway({"qr": _instance("payment-qr", with_app_service=True)})
     files = gateway.proto_files()
-    source = files["qr.proto"]
+    source = files["qr/v1/qr.proto"]
 
-    assert set(files) == {"qr.proto", "sincpro.proto"}
-    assert "package qr;" in source
+    assert set(files) == {"qr/v1/qr.proto", "sincpro.proto"}
+    assert "package qr.v1;" in source
     assert 'import "google/protobuf/struct.proto";' in source
-    assert "service Features {" in source
-    assert "service AppServices {" in source
+    assert "service QrService {" in source
+    assert "  rpc OrchestrateCharge(google.protobuf.Struct)" in source
     assert (
         "  rpc ValidateCard(google.protobuf.Struct) returns (google.protobuf.Struct);"
         in source
@@ -319,17 +328,21 @@ def test_proto_export_matches_what_is_served():
 
 
 def test_write_proto_files(tmp_path):
-    gateway = GrpcGateway({"qr": _instance("qr")})
+    gateway = _gateway({"qr": _instance("qr")})
     written = gateway.write_proto_files(tmp_path / "proto")
 
     assert {path.name for path in written} == {"qr.proto", "sincpro.proto"}
-    assert (tmp_path / "proto" / "qr.proto").read_text().startswith("// Generated by")
+    assert (
+        (tmp_path / "proto" / "qr" / "v1" / "qr.proto")
+        .read_text()
+        .startswith("// Generated by")
+    )
 
 
 def test_two_gateways_in_one_process_do_not_collide():
     """Descriptors go to a private pool; a shared one would refuse the second add."""
-    first = GrpcGateway({"qr": _instance("a")}).server(reflection=True)
-    second = GrpcGateway({"qr": _instance("b")}).server(reflection=True)
+    first = _gateway({"qr": _instance("a")}).server(reflection=True)
+    second = _gateway({"qr": _instance("b")}).server(reflection=True)
 
     assert first is not second
 
@@ -346,7 +359,7 @@ def test_server_reflection_lists_and_describes_the_services(served: GrpcClient):
 
     listed = ask(list_services="")
     names = {service.name for service in listed.list_services_response.service}
-    described = ask(file_containing_symbol="qr.Features")
+    described = ask(file_containing_symbol="qr.v1.QrService")
 
-    assert {"qr.Features", "qr.AppServices", "sincpro.Introspection"} <= names
+    assert {"qr.v1.QrService", "sincpro.Introspection"} <= names
     assert described.file_descriptor_response.file_descriptor_proto

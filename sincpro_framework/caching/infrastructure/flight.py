@@ -63,3 +63,14 @@ class LocalFlight:
         lock = self._lock(key)
         if lock.acquire(timeout=within.total_seconds()):
             lock.release()
+
+    def forget(self, key: str) -> None:
+        """Let go of the lock of a key the tier evicted, unless somebody leads it right now.
+
+        Context: one lock per key ever asked would outgrow the bound the tier keeps its values
+        in. A lock dropped while a caller is about to take it costs one duplicate computation,
+        never a wrong value."""
+        with self._guard:
+            lock = self._locks.get(key)
+            if lock is not None and not lock.locked():
+                del self._locks[key]

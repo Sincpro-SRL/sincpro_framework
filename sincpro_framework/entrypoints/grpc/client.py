@@ -19,7 +19,7 @@ from sincpro_framework.entrypoints.grpc.wire import Struct, grpc
 class GrpcClient:
     """One channel to a sincpro gRPC gateway.
 
-    `call("/qr.Features/ChargePayment", {"amount": 10})` — the path is what
+    `call("/qr.v1.QrService/ChargePayment", {"amount": 10})` — the path is what
     `GrpcGateway.methods()` and `Describe` publish. Context travels as metadata,
     never inside the payload.
     """

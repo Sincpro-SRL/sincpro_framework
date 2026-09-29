@@ -358,6 +358,7 @@ the bus's `AccessControl` authenticates them, and the use case runs as that iden
 
 ```python
 from sincpro_framework.auth import ApiKey, ApiKeyProvider, InMemoryApiKeys, ServiceTokenProvider
+from sincpro_framework.entrypoints.exposure import Exposure
 from sincpro_framework.entrypoints.rpc import RpcGateway
 
 api_keys = InMemoryApiKeys()
@@ -372,8 +373,8 @@ gated_auth = AccessControl[BillingPermission](
 gated.feature(CommandIssueInvoice)(gated_auth.requires(BillingPermission.ISSUE_INVOICE)(IssueInvoice))
 gated_auth.on(gated)
 
-rpc = RpcGateway({"billing": gated})
-call = {"jsonrpc": "2.0", "id": 1, "method": "billing.features.CommandIssueInvoice", "params": {"total": 1}}
+rpc = RpcGateway({"billing": gated}, exposure=Exposure.CATALOG)
+call = {"jsonrpc": "2.0", "id": 1, "method": "billing.issue_invoice", "params": {"total": 1}}
 
 answered = rpc.handle(call, None, Credentials(transport="http", headers={"x-api-key": bot_key}))
 assert answered["result"] == {"by": "apikey:ops-bot", "credit": ""}

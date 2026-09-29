@@ -25,7 +25,7 @@ from sincpro_framework.auth.transports import refusal_body
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.const import Scalar
-from sincpro_framework.entrypoints.errors import (
+from sincpro_framework.transport.failures import (
     FailureKind,
     failure_kind,
     json_safe_validation_errors,
@@ -167,7 +167,7 @@ STATUS_OF = {
 
 
 def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
-    """The status and body a failure is answered with — its kind (`entrypoints.errors`, the same
+    """The status and body a failure is answered with — its kind (`transport.failures`, the same
     on every wire), and the reason for what the caller may read, never the inside of the
     process. A request that could not be read at all is a 400."""
     if isinstance(error, InvalidRequest):

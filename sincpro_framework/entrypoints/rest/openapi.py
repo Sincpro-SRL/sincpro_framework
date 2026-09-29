@@ -82,12 +82,13 @@ class _Components:
         self.schemas[name] = schema
 
 
-def _security(route: RestRoute) -> dict[str, Any]:
-    """`security` and `x-sincpro-requires` of one operation, when its bus is guarded."""
-    access = access_control_of(route.bus)
+def operation_security(bus: Any, dto: type) -> dict[str, Any]:
+    """`security` and `x-sincpro-requires` of the operation answering `dto` on `bus`, when the
+    bus is guarded — the fragment every OpenAPI host of the REST wire shares."""
+    access = access_control_of(bus)
     if access is None:
         return {}
-    declaration = access.requirements_of(route.operation.dto)
+    declaration = access.requirements_of(dto)
     if declaration is None or declaration.kind == "public":
         return {"security": []} if declaration is not None else {}
     schemes = [one.name for one in access.providers if one.security_scheme() is not None]
@@ -96,6 +97,22 @@ def _security(route: RestRoute) -> dict[str, Any]:
         described["x-sincpro-requires"] = [str(one) for one in declaration.requirements]
         described["x-sincpro-when-denied"] = declaration.when_denied.value
     return described
+
+
+def security_schemes(buses: Iterable[Any]) -> dict[str, Any]:
+    """Every provider of the guarded `buses` as an OpenAPI security scheme, once each."""
+    schemes: dict[str, Any] = {}
+    for bus in buses:
+        access = access_control_of(bus)
+        for provider in access.providers if access else ():
+            scheme = provider.security_scheme()
+            if scheme is not None:
+                schemes.setdefault(provider.name, scheme)
+    return schemes
+
+
+def _security(route: RestRoute) -> dict[str, Any]:
+    return operation_security(route.bus, route.operation.dto)
 
 
 def _query_parameters(

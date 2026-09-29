@@ -1,9 +1,8 @@
-"""The bus catalog as gRPC service names, method paths and `.proto` source.
+"""The served methods as a `Describe` document and `.proto` source — `naming.py` decides the
+names.
 
-Naming and rendering only — no `grpc` or `protobuf` import, so a build step can
-export the `.proto` for the Go/TypeScript/Java clients without installing the
-`[grpc]` extra, and `rpc/`'s method names and this module's paths stay two
-renderings of the same catalog.
+Rendering only — no `grpc` or `protobuf` import, so a build step can export the `.proto` for the
+Go/TypeScript/Java clients without installing the `[grpc]` extra.
 
 Payloads are `google.protobuf.Struct` on every method, not a generated message
 per DTO. A typed message would need **stable field numbers**, and a Pydantic DTO
@@ -14,15 +13,15 @@ The field-level types still travel — as the JSON Schema in `Describe`.
 """
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.entrypoints.catalog import Catalog, PackedFeatureOrAppService
-from sincpro_framework.entrypoints.const import Layer, Scalar
+from sincpro_framework.entrypoints.const import Scalar
+from sincpro_framework.entrypoints.exposure import Operation
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.use_bus import UseFramework
 
-PACKAGE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+PACKAGE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 STRUCT_TYPE = "google.protobuf.Struct"
 STRUCT_IMPORT = "google/protobuf/struct.proto"
 INTROSPECTION_PACKAGE = "sincpro"
@@ -30,71 +29,77 @@ INTROSPECTION_SERVICE = "Introspection"
 DESCRIBE_METHOD = "Describe"
 DESCRIBE_SERVICE = f"{INTROSPECTION_PACKAGE}.{INTROSPECTION_SERVICE}"
 DESCRIBE_PATH = f"/{DESCRIBE_SERVICE}/{DESCRIBE_METHOD}"
+MAX_MESSAGE_BYTES = 4 * 1024 * 1024
+"""grpcio's own receive limit, made explicit and applied both ways — `max_message_bytes=`."""
+MAX_CONNECTION_AGE = 300.0
+"""Seconds a connection lives before the server asks the client to reconnect — so a rolling
+deploy or a new replica is rebalanced onto, instead of every client pinned to the old pods."""
+RESERVED_SERVICES = frozenset(
+    {
+        DESCRIBE_SERVICE,
+        "sincpro.Contexts",
+        "grpc.health.v1.Health",
+        "grpc.reflection.v1.ServerReflection",
+        "grpc.reflection.v1alpha.ServerReflection",
+    }
+)
+"""What every server of the framework answers by itself — no published method may take it."""
 
 
 class GrpcMethodSpec(DataTransferObject):
-    """One Feature or ApplicationService as one unary gRPC method.
+    """One published use case as one unary gRPC method.
 
-    `path` is what a client dials (`/{alias}.{Layer}/{DtoName}`); `operation`
-    carries the bound `run` and the DTO's JSON Schema from the shared catalog.
+    `path` is what a client dials (`/billing.v1.BillingService/IssueInvoice`); `service` the
+    fully qualified service, inside `package`; `operation` the resolved facts, with the bound
+    `run` every call goes through.
     """
 
     alias: str
-    layer: Layer
+    package: str
     service: str
     method: str
     path: str
     framework: UseFramework
-    operation: PackedFeatureOrAppService
+    operation: Operation
+    deprecated: bool = False
 
 
-def validate_package(alias: str) -> str:
-    """A gRPC package is a proto identifier: no hyphen, unlike a JSON-RPC alias."""
-    if not PACKAGE_PATTERN.match(alias):
+def validate_package(package: str) -> str:
+    """A gRPC package is dotted proto identifiers: no hyphen, unlike a JSON-RPC alias."""
+    if not PACKAGE_PATTERN.match(package):
         raise ValueError(
-            f"gRPC instance alias [{alias}] must match {PACKAGE_PATTERN.pattern} "
+            f"gRPC package [{package}] must match {PACKAGE_PATTERN.pattern} "
             "— a proto package allows no hyphen"
         )
-    return alias
-
-
-def service_name(layer: Layer | str) -> str:
-    """`features` → `Features`, `app_services` → `AppServices`."""
-    return "".join(part.capitalize() for part in str(layer).split("_"))
-
-
-def index_specs(
-    catalogs: Mapping[str, Catalog], layers: Iterable[str]
-) -> dict[str, GrpcMethodSpec]:
-    """Every JSON-safe Feature/ApplicationService of every instance, keyed by path."""
-    allowed = set(layers)
-    specs: dict[str, GrpcMethodSpec] = {}
-    for alias, catalog in catalogs.items():
-        for operation in catalog.get_scalar_use_cases(filter_binaries_schema=True):
-            if operation.layer not in allowed:
-                continue
-            service = f"{alias}.{service_name(operation.layer)}"
-            path = f"/{service}/{operation.name}"
-            specs[path] = GrpcMethodSpec(
-                alias=alias,
-                layer=operation.layer,
-                service=service,
-                method=operation.name,
-                path=path,
-                framework=catalog.framework_instance,
-                operation=operation,
-            )
-    return specs
+    return package
 
 
 def group_by_service(
     specs: Mapping[str, GrpcMethodSpec],
 ) -> dict[str, list[GrpcMethodSpec]]:
-    """Specs grouped by full service name, insertion order preserved."""
+    """Specs grouped by fully qualified service name, insertion order preserved."""
     grouped: dict[str, list[GrpcMethodSpec]] = {}
     for spec in specs.values():
         grouped.setdefault(spec.service, []).append(spec)
     return grouped
+
+
+def group_by_package(
+    specs: Mapping[str, GrpcMethodSpec],
+) -> dict[str, dict[str, list[GrpcMethodSpec]]]:
+    """`{package: {service short name: specs}}` — one `.proto` file, one descriptor per package."""
+    grouped: dict[str, dict[str, list[GrpcMethodSpec]]] = {}
+    for service, entries in group_by_service(specs).items():
+        package = entries[0].package
+        grouped.setdefault(package, {})[service[len(package) + 1 :]] = entries
+    return grouped
+
+
+def file_name(package: str) -> str:
+    """Buf's layout: `billing.v1` → `billing/v1/billing.proto`."""
+    parts = package.split(".")
+    named = [one for one in parts if not re.fullmatch(r"v\d+", one)] or parts
+    return f"{'/'.join(parts)}/{named[-1]}.proto"
 
 
 def describe_document(
@@ -112,12 +117,15 @@ def describe_document(
         services.append(
             {
                 "name": service,
+                "package": entries[0].package,
                 "alias": entries[0].alias,
-                "layer": str(entries[0].layer),
                 "methods": [
                     {
                         "name": spec.method,
                         "path": spec.path,
+                        "command": spec.operation.command.__name__,
+                        "kind": str(spec.operation.layer),
+                        "deprecated": spec.deprecated,
                         "description": spec.operation.description,
                         "params": spec.operation.json_schema,
                         "result": spec.operation.response_json_schema or {"type": "object"},
@@ -148,20 +156,16 @@ def _result_hint(spec: GrpcMethodSpec) -> str:
     return f"Struct: {schema.get('type', 'object')}. Full schema in Describe."
 
 
-def _service_block(service: str, entries: list[GrpcMethodSpec]) -> list[str]:
-    lines = [
-        *_comment(
-            f"{entries[0].layer} registered on UseFramework instance "
-            f"[{entries[0].framework._logger_name}].",
-            "",
-        ),
-        f"service {service.split('.', 1)[1]} {{",
-    ]
+def _service_block(name: str, entries: list[GrpcMethodSpec]) -> list[str]:
+    lines = [f"service {name} {{"]
     for spec in entries:
         lines.extend(_comment(spec.operation.description, "  "))
         lines.extend(_comment(_result_hint(spec), "  "))
+        signature = f"  rpc {spec.method}({STRUCT_TYPE}) returns ({STRUCT_TYPE})"
         lines.append(
-            f"  rpc {spec.method}({STRUCT_TYPE}) returns ({STRUCT_TYPE});",
+            f"{signature} {{ option deprecated = true; }}"
+            if spec.deprecated
+            else f"{signature};"
         )
         lines.append("")
     if lines[-1] == "":
@@ -203,17 +207,17 @@ def introspection_proto() -> str:
 
 
 def proto_files(specs: Mapping[str, GrpcMethodSpec]) -> dict[str, str]:
-    """`{filename: source}` — one file per instance alias, plus `sincpro.proto`.
+    """`{path: source}` — one file per package (`billing/v1/billing.proto`), plus
+    `sincpro.proto`.
 
-    One package per file, because proto allows exactly one. The client team
-    generates stubs from these; the server serves precisely what they describe.
+    One package per file, because proto allows exactly one. The client team generates stubs
+    from these; the server serves precisely what they describe.
     """
-    per_package: dict[str, list[list[str]]] = {}
-    for service, entries in group_by_service(specs).items():
-        package = service.split(".", 1)[0]
-        per_package.setdefault(package, []).append(_service_block(service, entries))
     files = {
-        f"{package}.proto": _file(package, blocks) for package, blocks in per_package.items()
+        file_name(package): _file(
+            package, [_service_block(name, entries) for name, entries in services.items()]
+        )
+        for package, services in group_by_package(specs).items()
     }
     files[f"{INTROSPECTION_PACKAGE}.proto"] = introspection_proto()
     return files

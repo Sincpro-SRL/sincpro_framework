@@ -13,7 +13,6 @@ gRPC — it is imported only when an address names `grpc://`.
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.entrypoints.grpc.wire import grpc
 from sincpro_framework.events.trace import trace_carrier
 from sincpro_framework.remote_execution.domain.address import HostedAt
 from sincpro_framework.remote_execution.domain.errors import (
@@ -28,6 +27,7 @@ from sincpro_framework.remote_execution.domain.payload import (
     packed,
     unpacked,
 )
+from sincpro_framework.transport.grpc import grpc
 
 SERVICE = "sincpro.Contexts"
 METHOD = "Execute"

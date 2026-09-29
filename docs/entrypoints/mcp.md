@@ -65,6 +65,60 @@ pip install sincpro-framework[mcp]
 
 ---
 
+## Declared exposure — `McpGateway` (PRD_14)
+
+`McpGateway` publishes a **declared surface**: in `Exposure.DECLARED` (the default) only the use
+cases bound with `@mcp(...)` — or `bind(Command, McpBinding(...))` at the composition — become
+tools; `Exposure.CATALOG` publishes every JSON-safe use case of every bus and logs each one.
+`@internal` is on neither.
+
+```python
+from sincpro_framework.entrypoints.exposure import Exposure, mcp
+from sincpro_framework.entrypoints.mcp import McpGateway
+
+@billing.feature(CommandIssueInvoice)
+@auth.requires(BillingPermission.ISSUE)
+@idempotency.once(expires_after=timedelta(hours=24))
+@mcp(title="Emitir factura", destructive=False)
+class IssueInvoice(Feature): ...
+
+@billing.feature(QueryInvoice)
+@auth.public
+@mcp()
+class GetInvoice(Feature): ...
+
+server = McpGateway([billing, sales]).server()                      # declared
+admin = McpGateway([billing], exposure=Exposure.CATALOG).server()   # every use case
+```
+
+| What | Rule |
+|---|---|
+| tool name | the DTO's name without a leading `Command` / `Query`, snake_case: `issue_invoice`, `invoice` — the same rule as JSON-RPC operations. `@mcp("name")` or `override(Command, name=...)` wins |
+| clash | a **derived** name answered by two operations is prefixed by its group — `group(bus, prefix=...)`, else the alias: `ventas_issue_invoice`; the others keep theirs. A **declared** name is never renamed: a clash on it fails the build |
+| name rule | 1 to 64 characters of `A-Z a-z 0-9 _ -`; the MCP spec allows more, the model APIs behind the clients do not |
+| `readOnlyHint` | derived: a `Query`. `@mcp(read_only=True)` on a Command, or `read_only=False` on a Query, fails the build |
+| `destructiveHint` | false on a read; on a write what `@mcp(destructive=...)` says, else **true** — the MCP default, since a write cannot be proven harmless. `destructive=True` on a Query fails the build |
+| `idempotentHint` | derived: `@idempotency.once` on the handler |
+| `openWorldHint` | `@mcp(open_world=True)`; false by default |
+| `title` | `@mcp(title=...)`, on the tool and its annotations |
+| deprecation | MCP has no field: the description starts `DEPRECATED since …, removed on …; use … instead.` |
+| access | every exposed use case says who may call it (`@auth.requires` / `@auth.public`); a bus with no `AccessControl` needs `McpGateway(..., unguarded=True)` |
+
+**Hints are never authorization.** Each tool call goes through the bus as whoever called; a tool
+declared `destructive=False` is refused exactly as its `@auth.requires` says.
+
+`gateway.tools()` answers the built tools (`McpTool`: name, title, description, annotations,
+operation) without FastMCP; `gateway.manifest()` the surface as data for a CI snapshot;
+`gateway.verify()` every reason the build would be refused. A project changes the naming by
+subclassing `McpWire` and passing `McpGateway(..., port=MyWire())`.
+
+`build_mcp_server(bus)` and `Entrypoint(bus)` stay the catalog of one bus — every JSON-safe use
+case, named by its DTO class (`CommandIssueInvoice`) as before, now with the derived hints.
+`build_mcp_server([billing, sales])` is `McpGateway` in `Exposure.CATALOG`, its unguarded buses
+accepted on purpose.
+
+---
+
 ## Composability: `.server()` is a real FastMCP, not a black box
 
 `Entrypoint.server()` returns the FastMCP instance itself, not a wrapper — the same
@@ -224,7 +278,8 @@ sincpro_framework/
     ├── catalog.py                    # shared: FeatureOrAppServiceMetadata → PackedFeatureOrAppService
     └── mcp/                          # entrypoint_mcp
         ├── __init__.py               # re-exports Entrypoint, build_mcp_server
-        ├── mcp.py                    # FastMCP-specific wire: fastmcp_callable
+        ├── mcp.py                    # FastMCP binding: tool_function, fastmcp_callable
+        ├── wire.py                   # McpWire: names, hints, validation — no FastMCP import
         └── entrypoint.py             # orchestrates catalog.py + mcp.py — the FastMCP facade
 ```
 
@@ -296,7 +351,8 @@ SSE (`transport="sse"`) exists for old clients. Do not use it for new work.
 
 ## Verification
 
-- Unit: `tests/test_entrypoints.py` — catalog (Feature + ApplicationService), own docstring (not base class), VO roundtrip + `validate_fn`, `Field` / attribute descriptions in schema, include/exclude/wrap, binary skip, extra import contract.
+- Declared surface: `tests/entrypoint/test_entrypoint_mcp.py` — DECLARED vs CATALOG, names and clashes, hints on `tools/list`, parity with the bus, hints never authorize.
+- Unit: `tests/entrypoint/test_entrypoints.py` — catalog (Feature + ApplicationService), own docstring (not base class), VO roundtrip + `validate_fn`, `Field` / attribute descriptions in schema, include/exclude/wrap, binary skip, extra import contract.
 - Manual: `pip install sincpro-framework[mcp]`, `build_mcp_server(your_sdk).run()`, point Cursor / Claude Desktop at stdio, call one Feature and one ApplicationService.
 - Failure mode: a new DTO with `bytes` silently missing from MCP is expected (warning log). A Feature whose docstring is only inherited from `Feature` will publish a useless description — add a class or `execute` docstring.
 

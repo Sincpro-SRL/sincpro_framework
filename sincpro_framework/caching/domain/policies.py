@@ -1,15 +1,18 @@
 """What governs a kept value and a run-once write — the policies each call is judged by.
 
 Context: frozen DTOs a composition builds once and hands every call. `KeepPolicy` is what `Cache`
-answers by, `CachePolicy` what `QueryCaching` does (a Query's ttl, what it varies by, what it
-depends on), `IdempotencyPolicy` what `Idempotency` does.
+answers by — one strategy per question (`Freshness`, `Validation`, `FailurePolicy`) — `CachePolicy`
+what `QueryCaching` does (a Query's ttl, what it varies by, what it depends on),
+`IdempotencyPolicy` what `Idempotency` does.
 """
 
 from datetime import timedelta
+from typing import Any
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
-from sincpro_framework.caching.domain.lifetime import Lifetime
+from sincpro_framework.caching.domain.failure import FailurePolicy, Raise
+from sincpro_framework.caching.domain.freshness import Freshness, TimeToLive
 from sincpro_framework.caching.domain.validation import Unconditional, Validation
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -17,14 +20,29 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 class KeepPolicy[T](DataTransferObject):
     model_config = ConfigDict(frozen=True)
 
-    lifetime: Lifetime = Field(default_factory=Lifetime)
-    """How long a kept value is served as is."""
+    freshness: Freshness = Field(default_factory=TimeToLive)
+    """How long a kept value is served as is — `TimeToLive`, `Sliding`, or yours."""
     validation: Validation[T] = Field(default_factory=Unconditional)
-    """Whether a kept value is still right, checked beside its lifetime."""
+    """Whether a kept value is still right, checked beside its freshness."""
+    failure: FailurePolicy = Field(default_factory=Raise)
+    """What a call answers when computing or validating fails — `Raise`, or `FailSafe`."""
     wait_for_others: timedelta = timedelta(seconds=2)
     """How long a caller that does not lead waits for the value the leader computes."""
     max_bytes: int = 1_048_576
     """A value larger than this, encoded, is answered and not kept in a shared store."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lifetime_is_freshness(cls, data: Any) -> Any:
+        """Context: phase 1 named the field `lifetime`; `KeepPolicy(lifetime=...)` still works."""
+        if isinstance(data, dict) and "lifetime" in data and "freshness" not in data:
+            data = {**data, "freshness": data["lifetime"]}
+            del data["lifetime"]
+        return data
+
+    @property
+    def lifetime(self) -> Freshness:
+        return self.freshness
 
 
 class CachePolicy(DataTransferObject):
@@ -47,8 +65,8 @@ class CachePolicy(DataTransferObject):
     """How long a caller that did not win the lock waits for the answer the winner computes."""
 
     @property
-    def lifetime(self) -> Lifetime:
-        return Lifetime(
+    def lifetime(self) -> TimeToLive:
+        return TimeToLive(
             ttl=self.ttl,
             jitter=self.jitter,
             stale_for=self.stale_for,
