@@ -14,6 +14,7 @@ from sincpro_framework.observability.domain import (
     failure_of,
     off,
     on,
+    tenant,
 )
 from sincpro_framework.observability.registry import registry
 from sincpro_framework.sincpro_conf import settings
@@ -24,10 +25,6 @@ try:
     SDK_AVAILABLE = True
 except ImportError:
     SDK_AVAILABLE = False
-
-
-def tenant() -> str:
-    return (settings.tenant or "").strip()
 
 
 def dsn() -> str:

@@ -6,6 +6,7 @@ from sincpro_framework.observability.domain import (
     UNKNOWN,
     ObservabilityIdentity,
     framework_identity,
+    tenant,
 )
 from sincpro_framework.observability.errors import setup as errors_setup
 
@@ -64,7 +65,7 @@ def record_error(
                 scope.set_context("sincpro", dict(details))
                 if details.get("handler"):
                     scope.set_tag("sincpro.handler", details["handler"])
-            environment = errors_setup.tenant()
+            environment = tenant()
             if environment:
                 scope.set_tag("tenant", environment)
             sentry_sdk.capture_exception(error)

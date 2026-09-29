@@ -24,7 +24,9 @@ from sincpro_framework.caching.adapters.key_value_records import KeyValueRecords
 from sincpro_framework.caching.adapters.keys import key_of
 from sincpro_framework.caching.adapters.observers import (
     CountingObserver,
+    MetricsObserver,
     NoObserver,
+    Observers,
     SpanObserver,
 )
 from sincpro_framework.caching.domain.codec import Codec
@@ -103,6 +105,8 @@ __all__ = [
     "Raise",
     "RecordState",
     "Sliding",
+    "MetricsObserver",
+    "Observers",
     "SpanObserver",
     "TimeToLive",
     "Unbounded",

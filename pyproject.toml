@@ -30,6 +30,7 @@ grpcio = {version = ">=1.60", optional = true}
 grpcio-reflection = {version = ">=1.60", optional = true}
 grpcio-health-checking = {version = ">=1.60", optional = true}
 grpcio-status = {version = ">=1.60", optional = true}
+prometheus-client = {version = ">=0.20", optional = true}
 protobuf = {version = ">=4.25", optional = true}
 uvicorn = {version = ">=0.35", optional = true}
 sqlalchemy = {version = ">=2.0", optional = true}
@@ -58,6 +59,7 @@ duckdb = ["sqlalchemy", "duckdb-engine"]
 migrations = ["sqlalchemy", "alembic"]
 data-analysis = ["pyarrow"]
 faststream = ["faststream"]
+prometheus = ["prometheus-client"]
 redis = ["redis"]
 memcached = ["pymemcache"]
 
@@ -95,6 +97,7 @@ grpcio = ">=1.60"
 grpcio-reflection = ">=1.60"
 grpcio-health-checking = ">=1.60"
 grpcio-status = ">=1.60"
+prometheus-client = ">=0.20"
 hypothesis = ">=6.100"
 psycopg = {version = ">=3.2", extras = ["binary"]}
 

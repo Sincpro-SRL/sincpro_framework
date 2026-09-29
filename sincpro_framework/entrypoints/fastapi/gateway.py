@@ -511,6 +511,15 @@ def _served(app: FastAPI) -> Iterable[tuple[str, APIRoute]]:
             yield context.path or original.path, original
 
 
+def _scrape_app() -> Any | None:
+    """The ASGI app answering a Prometheus scrape — when the process records to one."""
+    from sincpro_framework.observability.metrics import metrics
+
+    recorder = metrics.recorder
+    asgi_app = getattr(recorder, "asgi_app", None)
+    return asgi_app() if callable(asgi_app) else None
+
+
 class FastApiGateway(Gateway):
     wire = "rest"
 
@@ -609,9 +618,15 @@ class FastApiGateway(Gateway):
     ) -> dict[int | str, dict[str, Any]]:
         return problem_responses(bus, command)
 
-    def app(self, health_path: str | None = "/healthz", **fastapi_kwargs: Any) -> FastAPI:
-        """Every context's router in one FastAPI app, its problem handlers installed and a
-        health check — `fastapi_kwargs` go to `FastAPI(...)`."""
+    def app(
+        self,
+        health_path: str | None = "/healthz",
+        metrics_path: str | None = "/metrics",
+        **fastapi_kwargs: Any,
+    ) -> FastAPI:
+        """Every context's router in one FastAPI app, its problem handlers installed, a health
+        check, and — when the process's metrics are scraped (`PrometheusRecorder`) — the scrape
+        at `metrics_path`. `fastapi_kwargs` go to `FastAPI(...)`."""
         fastapi_kwargs.setdefault("separate_input_output_schemas", False)
         app = FastAPI(title=self._title, version=self._version, **fastapi_kwargs)
         install_problem_handlers(app)
@@ -628,6 +643,9 @@ class FastApiGateway(Gateway):
                     media_type="application/json",
                 )
 
+        scrape = _scrape_app()
+        if metrics_path is not None and scrape is not None:
+            app.mount(metrics_path, scrape)
         return app
 
     def verify(self, app: FastAPI | None = None) -> list[str]:

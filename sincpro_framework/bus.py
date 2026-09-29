@@ -51,7 +51,10 @@ class FeatureBus(Bus):
         feature = self.feature_registry.get(dto_type)
         if feature is None:
             raise UnknownDTOToExecute(f"{dto_name} is not registered as a feature")
-        with self.observability.span(dto_name, "feature") as span:
+        with (
+            self.observability.span(dto_name, "feature") as span,
+            self.observability.measure(dto, feature, "feature") as measured,
+        ):
             if dto_type in self.replacements:
                 self.observability.annotate(
                     span, {"sincpro.replaces": ", ".join(self.replacements[dto_type])}
@@ -65,6 +68,7 @@ class FeatureBus(Bus):
                     chain = self.interceptors.get(dto_type, ())
                     response = run_through(chain, feature.execute, dto)
                 except Exception as error:
+                    measured.failed(error)
                     self.observability.failed(error, dto, feature, "feature", span)
                     if not self.handle_error:
                         raise
@@ -72,6 +76,7 @@ class FeatureBus(Bus):
                     self.observability.handled(error, dto)
                     return answer
 
+            measured.answered(response)
             if response:
                 self.logger.debug(
                     f"Feature response {response.__class__.__name__}({response})",
@@ -130,7 +135,10 @@ class ApplicationServiceBus(Bus):
             raise UnknownDTOToExecute(
                 f"{dto_name} is not registered as an application service"
             )
-        with self.observability.span(dto_name, "application_service") as span:
+        with (
+            self.observability.span(dto_name, "application_service") as span,
+            self.observability.measure(dto, app_service, "application_service") as measured,
+        ):
             if dto_type in self.replacements:
                 self.observability.annotate(
                     span, {"sincpro.replaces": ", ".join(self.replacements[dto_type])}
@@ -144,6 +152,7 @@ class ApplicationServiceBus(Bus):
                     chain = self.interceptors.get(dto_type, ())
                     response = run_through(chain, app_service.execute, dto)
                 except Exception as error:
+                    measured.failed(error)
                     self.observability.failed(
                         error, dto, app_service, "application_service", span
                     )
@@ -153,6 +162,7 @@ class ApplicationServiceBus(Bus):
                     self.observability.handled(error, dto)
                     return answer
 
+            measured.answered(response)
             if response:
                 self.logger.debug(
                     f"Application service response {response.__class__.__name__}({response})"

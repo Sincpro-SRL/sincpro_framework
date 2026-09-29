@@ -309,7 +309,8 @@ assert observed.of(CacheOutcome.FALLBACK, "tenants") == 1
 
 Each call reports one outcome to the cache's `observer` — `HIT`, `STALE`, `COMPUTED`, `COALESCED`,
 `INVALIDATED` (a kept value its validation rejected) or `FALLBACK` — plus `BYPASSED` when the
-shared store was left out. `SpanObserver`, the default, adds each as an event on the active span;
+shared store was left out. By default each is an event on the active span (`SpanObserver`) and one more on the
+`sincpro.cache.outcomes` metric (`MetricsObserver`, see `docs/observability/metrics.md`);
 `CountingObserver` counts them for a metrics exporter. Without `FALLBACK` and `BYPASSED` counted,
 fail-safe and a failing store hide an outage. An observer that raises never breaks the call.
 
@@ -504,7 +505,7 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 | `Idempotency(store \| records, namespace=, observer=)` | `@.once(expires_after=, in_progress_for=, wait_for_completion=, vary_by=)`, `.run(key, write, IdempotencyPolicy(...), codec, payload=)`, `.policies()`; `AlreadyInProgress`, `KeyReused`; `current_idempotency_key()`; `declares_once(cls)` — whether a class runs once |
 | `IdempotentCommand` | a Command with `idempotency_key()` — what identifies one request |
 | `IdempotencyRecords` / `KeyValueRecords(store)` | where records live — yours transactional, or on a key-value store |
-| `CacheObserver` / `SpanObserver` (default) / `CountingObserver` / `NoObserver` | what each call did: `CacheOutcome`, `IdempotencyOutcome` |
+| `CacheObserver` / `SpanObserver` + `MetricsObserver` (default, via `Observers`) / `CountingObserver` / `NoObserver` | what each call did: `CacheOutcome`, `IdempotencyOutcome` |
 | `JsonCodec(shape)` / `Codec` | a value as the bytes a shared store keeps |
 | `invalidate_on_commit(database, caching)` | every aggregate a commit wrote |
 | `KeyValueRuns(store)` | crons on several replicas |

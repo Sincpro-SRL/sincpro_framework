@@ -56,7 +56,7 @@ from typing import Any
 
 from sincpro_framework.caching.adapters.eviction import Lru
 from sincpro_framework.caching.adapters.keys import key_of
-from sincpro_framework.caching.adapters.observers import SpanObserver
+from sincpro_framework.caching.adapters.observers import CACHE_OUTCOMES, traced_and_measured
 from sincpro_framework.caching.domain.codec import Codec
 from sincpro_framework.caching.domain.eviction import Eviction
 from sincpro_framework.caching.domain.freshness import NEVER
@@ -266,15 +266,15 @@ class Cache:
         """`store` shares values across replicas — `None` keeps them as objects in this process;
         `namespace` keeps this cache's keys apart from others in the same store; `now` and
         `random` are the clock and the dice freshness is judged by — a `ManualClock.now` and a
-        fixed roll in tests. `observer` is told the outcome of every call (`SpanObserver` by
-        default); `eviction` bounds the process tier (`Lru(10_000)` by default); `bypass_for` is
+        fixed roll in tests. `observer` is told the outcome of every call (by default on the
+        active span and on `sincpro.cache.outcomes`); `eviction` bounds the process tier (`Lru(10_000)` by default); `bypass_for` is
         how long a shared store that failed is left alone before it is tried again."""
         self.store = store
         self.namespace = namespace
         self.now = now
         self.random = random
         self.enabled = enabled
-        self.observer: CacheObserver = observer or SpanObserver()
+        self.observer: CacheObserver = observer or traced_and_measured(CACHE_OUTCOMES)
         self._process = _ProcessTier(eviction or Lru())
         self._breaker = StoreBreaker(bypass_for, self._clock)
 
