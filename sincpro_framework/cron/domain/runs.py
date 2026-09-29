@@ -5,9 +5,13 @@ and runs; every other caller, on this replica or another, gets `False` and does 
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+
+from pydantic import ConfigDict
+
+from sincpro_framework.deprecations import PositionalFields
+from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class RunOutcome(StrEnum):
@@ -16,8 +20,11 @@ class RunOutcome(StrEnum):
     SKIPPED = "skipped"
 
 
-@dataclass(frozen=True)
-class Run:
+class Run(PositionalFields, DataTransferObject):
+    """One claimed tick — a DTO because the shared record keeps it as JSON."""
+
+    model_config = ConfigDict(frozen=True)
+
     name: str
     scheduled_for: datetime
     key: str

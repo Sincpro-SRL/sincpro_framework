@@ -49,6 +49,31 @@ MOMENTS = (
 """Every method a hook may implement. Symmetric: whatever a store does, a before and an after;
 each is handed one aggregate, but `after_search`, handed the page once."""
 
+type HookGate = Callable[["Hooks", type["Hook"], str, Any], bool]
+"""Asked before a hook's moment runs, with the collection running it, the hook, the moment and
+the record (the page, for `after_search`): `False` skips the moment, raising refuses it — what
+`AccessControl.on(hooks)` registers."""
+
+
+class _Gates:
+    """The gates of a collection, and of those it was copied or combined from — read live, so a
+    gate given to the original after a copy was made holds on the copy too; one gate reached
+    along two paths runs once."""
+
+    __slots__ = ("own", "inherited")
+
+    def __init__(self, inherited: "Sequence[_Gates]" = ()) -> None:
+        self.own: list[HookGate] = []
+        self.inherited = tuple(inherited)
+
+    def all(self) -> tuple[HookGate, ...]:
+        found: list[HookGate] = []
+        for gate in (*self.own, *(one for source in self.inherited for one in source.all())):
+            if gate not in found:
+                found.append(gate)
+        return tuple(found)
+
+
 type Entities = type | Sequence[type]
 """The aggregate a hook is for, or several — `Invoice` or `[Invoice, CreditNote]`."""
 
@@ -168,6 +193,7 @@ class Hooks:
         "_read",
         "_bus",
         "_result",
+        "_gates",
     )
 
     def __init__(self, package: "str | None" = INFER) -> None:
@@ -181,6 +207,7 @@ class Hooks:
         self._read = False
         self._bus: "UseFramework | None" = None
         self._result: Ordered | None = None
+        self._gates = _Gates()
         self._package = _calling_package() if package is INFER else package
 
     def _refuse_late(self, hook: type[Hook]) -> None:
@@ -270,6 +297,23 @@ class Hooks:
     def bus(self) -> "UseFramework | None":
         return self._bus
 
+    def gate(self, gate: HookGate) -> "Hooks":
+        """Ask `gate` before every moment of every hook of this collection runs — and of every
+        copy or combination made of it, before or after — the way a component outside the
+        persistence layer decides whether a hook runs, never the hook."""
+        if gate not in self._gates.own:
+            self._gates.own.append(gate)
+        return self
+
+    @property
+    def gates(self) -> tuple[HookGate, ...]:
+        return self._gates.all()
+
+    def registered(self) -> tuple[type[Hook], ...]:
+        """The hooks registered so far, in the order they were — read without walking the
+        package nor closing the collection, for a check that must change nothing."""
+        return tuple(one.item for one in self._placements)
+
     def entities_of(self, hook: type[Hook]) -> tuple[type, ...]:
         return self._entities[hook]
 
@@ -354,6 +398,7 @@ class Hooks:
         copied._entities = dict(self._entities)
         copied._off = self._off
         copied._bus = self._bus
+        copied._gates = _Gates((self._gates,))
         return copied
 
     def without(self, *hooks: type[Hook]) -> "Hooks":
@@ -379,6 +424,7 @@ class Hooks:
             combined._placements.extend(other._placements)
             combined._entities.update(other._entities)
             combined._off = (*combined._off, *other._off)
+            combined._gates = _Gates((*combined._gates.inherited, other._gates))
             combined._bus = combined._bus if combined._bus is not None else other._bus
         return combined
 
@@ -457,13 +503,19 @@ class HookChain:
                 self._instances[hook] = built
             return built
 
+    def _admits(self, hook: type[Hook], moment: str, subject: Any) -> bool:
+        hooks = self._hooks
+        return hooks is None or all(
+            gate(hooks, hook, moment, subject) for gate in hooks.gates
+        )
+
     def fire(self, moment: str, record: Any) -> None:
         """Every hook implementing `moment` whose aggregate `record` is, in order.
 
         fire("before_save", Invoice(total=-1))   →   ContractViolation from InvoiceMustBalance
         """
         for link in self._compiled()[moment]:
-            if isinstance(record, link.entities):
+            if isinstance(record, link.entities) and self._admits(link.hook, moment, record):
                 getattr(self._instance(link.hook), moment)(record)
 
     def read(self, record: Any) -> Any:
@@ -473,7 +525,9 @@ class HookChain:
             read(Invoice(approved=False))   →   Invoice(approved=True)    when a hook approves it
         """
         for link in self._compiled()["after_read"]:
-            if isinstance(record, link.entities):
+            if isinstance(record, link.entities) and self._admits(
+                link.hook, "after_read", record
+            ):
                 answered = getattr(self._instance(link.hook), "after_read")(record)
                 record = record if answered is None else answered
         return record
@@ -482,7 +536,9 @@ class HookChain:
         """`after_search`, once for the page, for the hooks whose aggregate `model` is; a hook
         that answers a page puts it in place."""
         for link in self._compiled()["after_search"]:
-            if issubclass(model, link.entities):
+            if issubclass(model, link.entities) and self._admits(
+                link.hook, "after_search", page
+            ):
                 answered = getattr(self._instance(link.hook), "after_search")(page)
                 page = page if answered is None else answered
         return page

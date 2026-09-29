@@ -194,6 +194,40 @@ class UseFramework(ContextMixin, Generic[TDeps]):
                 return registry[dto].provides
         return None
 
+    def replaced_for(self, dto: type) -> tuple[str, ...]:
+        """`module.Class` of each handler of `dto` that `replaces=` took the place of, oldest
+        first — empty when the one answering is the first registered."""
+        return tuple(self._sp_container.replacements.kwargs.get(dto, ()))
+
+    def handlers(self) -> dict[type, type]:
+        """Every DTO a Feature or ApplicationService answers now → the class answering it —
+        read without building the bus, so a check made at startup changes nothing."""
+        return {
+            dto: registered.provides
+            for registry in (
+                self._sp_container.feature_registry.kwargs,
+                self._sp_container.app_service_registry.kwargs,
+            )
+            for dto, registered in registry.items()
+        }
+
+    def extend(self, extension: Callable[["UseFramework[TDeps]"], None]) -> None:
+        """Wire a component into this bus and into every generation `fresh()` makes of it —
+        `extension(bus)` registers its interceptors, dependencies or handlers.
+
+            billing.extend(access_control.attach)
+
+        Context: what `extension` registers is not kept one by one; the extension is, so a
+        generation runs it again against itself. A component bound to the bus it was wired into
+        — an interceptor that reads its bus — is then bound to the generation, not to this one.
+        Refused once the bus is built, like what it registers.
+        """
+        self._refuse_when_built(f"extension {getattr(extension, '__qualname__', extension)}")
+        kept = len(self._registrations)
+        extension(self)
+        del self._registrations[kept:]
+        self._registrations.append(lambda bus: bus.extend(extension))
+
     @property
     def name(self) -> str:
         """The bounded context's name — its logger, its GlitchTip app, its OTel service."""

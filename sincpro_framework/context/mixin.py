@@ -13,6 +13,12 @@ _executing: ContextVar[Mapping[str, Any]] = ContextVar(
 )
 
 
+def executing_context() -> Mapping[str, Any]:
+    """The context of the execution in progress, whichever bus runs it — read-only, empty
+    outside one. What a component beside the buses reads, an auth decision among them."""
+    return _executing.get()
+
+
 @contextmanager
 def carrying(context: Mapping[str, Any]) -> Generator[None, None, None]:
     """Every bus executed inside the block starts from `context`.
