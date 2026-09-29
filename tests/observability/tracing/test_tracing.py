@@ -177,8 +177,9 @@ def test_with_trace_different_trace_per_call():
 # ---------------------------------------------------------------------------
 
 
-def test_otel_span_name_equals_dto_name(otel_setup):
-    """(OTel) Span name matches dto.__class__.__name__."""
+def test_otel_span_name_is_the_context_and_the_dto(otel_setup):
+    """(OTel) Span name is ``context/DTO``: the service is the artifact, so the bounded context
+    shows in the name, as an RPC span shows ``service/method``."""
     fw = UseFramework("otel-span-name", log_after_execution=False)
 
     class SpanNameDTO(DataTransferObject):
@@ -196,7 +197,7 @@ def test_otel_span_name_equals_dto_name(otel_setup):
         traced(SpanNameDTO(x=1), SpanNameResponse)
 
     span_names = [s.name for s in otel_setup.get_finished_spans()]
-    assert "SpanNameDTO" in span_names
+    assert "otel-span-name/SpanNameDTO" in span_names
 
 
 def test_otel_span_has_layer_attribute(otel_setup):
@@ -214,7 +215,11 @@ def test_otel_span_has_layer_attribute(otel_setup):
     with fw.with_trace() as traced:
         traced(LayerDTO())
 
-    feature_spans = [s for s in otel_setup.get_finished_spans() if s.name == "LayerDTO"]
+    feature_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "LayerDTO"
+    ]
     assert len(feature_spans) == 1
     assert feature_spans[0].attributes.get("sincpro.layer") == "feature"
 
@@ -246,8 +251,12 @@ def test_otel_app_service_child_spans(otel_setup):
         traced(ParentAppServiceDTO(), ChildFeatureResponse)
 
     spans = otel_setup.get_finished_spans()
-    app_spans = [s for s in spans if s.name == "ParentAppServiceDTO"]
-    feature_spans = [s for s in spans if s.name == "ChildFeatureDTO"]
+    app_spans = [
+        s for s in spans if s.attributes.get("sincpro.use_case") == "ParentAppServiceDTO"
+    ]
+    feature_spans = [
+        s for s in spans if s.attributes.get("sincpro.use_case") == "ChildFeatureDTO"
+    ]
 
     assert len(app_spans) == 1
     assert len(feature_spans) == 1
@@ -272,7 +281,7 @@ def test_otel_root_span_is_container(otel_setup):
 
     spans = otel_setup.get_finished_spans()
     root_spans = [s for s in spans if s.name == "my-bounded-context"]
-    feature_spans = [s for s in spans if s.name == "RootDTO"]
+    feature_spans = [s for s in spans if s.attributes.get("sincpro.use_case") == "RootDTO"]
 
     assert len(root_spans) == 1
     assert len(feature_spans) == 1
@@ -303,7 +312,11 @@ def test_otel_adopts_outer_active_span(otel_setup):
     with fw.with_trace(carrier=carrier) as traced:
         traced(PropagationDTO())
 
-    feature_spans = [s for s in otel_setup.get_finished_spans() if s.name == "PropagationDTO"]
+    feature_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "PropagationDTO"
+    ]
     assert len(feature_spans) == 1
     assert feature_spans[0].context.trace_id == outer_trace_id
     # The feature span is a child of the outer span, not just the same trace
@@ -329,7 +342,11 @@ def test_otel_error_recorded_in_span(otel_setup):
         with fw.with_trace() as traced:
             traced(OtelErrorDTO())
 
-    error_spans = [s for s in otel_setup.get_finished_spans() if s.name == "OtelErrorDTO"]
+    error_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "OtelErrorDTO"
+    ]
     assert len(error_spans) == 1
     assert error_spans[0].status.status_code == StatusCode.ERROR
 
@@ -394,7 +411,11 @@ def test_direct_call_inherits_outer_otel_span(otel_setup):
     assert captured_log_fields["trace_id"] == outer_trace_id
 
     # The feature span is on the same trace as the outer http-request span
-    feature_spans = [s for s in otel_setup.get_finished_spans() if s.name == "DirectDTO"]
+    feature_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "DirectDTO"
+    ]
     assert len(feature_spans) == 1
     assert format(feature_spans[0].context.trace_id, "032x") == outer_trace_id
 
@@ -419,7 +440,11 @@ def test_direct_call_creates_own_span_when_no_outer_trace(otel_setup):
 
     assert "trace_id" in captured
 
-    feature_spans = [s for s in otel_setup.get_finished_spans() if s.name == "NoOuterDTO"]
+    feature_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "NoOuterDTO"
+    ]
     assert len(feature_spans) == 1
     assert format(feature_spans[0].context.trace_id, "032x") == captured["trace_id"]
 
@@ -463,7 +488,11 @@ def test_otel_span_has_instance_attribute(otel_setup):
     with fw.with_trace() as traced:
         traced(BillingDTO())
 
-    feature_spans = [s for s in otel_setup.get_finished_spans() if s.name == "BillingDTO"]
+    feature_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "BillingDTO"
+    ]
     assert len(feature_spans) == 1
     assert feature_spans[0].attributes.get("sincpro.instance") == "my-billing-context"
 
@@ -494,8 +523,16 @@ def test_otel_instance_attribute_differs_per_framework(otel_setup):
     with fw_b.with_trace() as traced:
         traced(BetaDTO())
 
-    alpha_spans = [s for s in otel_setup.get_finished_spans() if s.name == "AlphaDTO"]
-    beta_spans = [s for s in otel_setup.get_finished_spans() if s.name == "BetaDTO"]
+    alpha_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "AlphaDTO"
+    ]
+    beta_spans = [
+        s
+        for s in otel_setup.get_finished_spans()
+        if s.attributes.get("sincpro.use_case") == "BetaDTO"
+    ]
     assert alpha_spans[0].attributes.get("sincpro.instance") == "context-alpha"
     assert beta_spans[0].attributes.get("sincpro.instance") == "context-beta"
 
@@ -564,7 +601,7 @@ def test_with_parent_trace_dto_is_direct_child_no_root_span(otel_setup):
             traced(DirectChildDTO())
 
     spans = otel_setup.get_finished_spans()
-    dto_spans = [s for s in spans if s.name == "DirectChildDTO"]
+    dto_spans = [s for s in spans if s.attributes.get("sincpro.use_case") == "DirectChildDTO"]
     root_spans = [s for s in spans if s.name == "parent-trace-direct-child"]
 
     assert len(dto_spans) == 1

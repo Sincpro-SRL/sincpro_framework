@@ -20,10 +20,13 @@ from sincpro_log.logger import LoggerProxy, create_logger
 
 from sincpro_framework.observability import failure
 from sincpro_framework.observability.domain import (
+    OK,
+    OUTCOME,
     ComponentStatus,
     ObservabilityIdentity,
     ObservabilityStatus,
     caller_module,
+    log_fields,
     off,
     on,
     resolve_identity,
@@ -89,6 +92,20 @@ class Observability:
             pass
         return self.status
 
+    def log_identity(self) -> dict[str, str]:
+        """A log context source: the service, version and tenant on every line of this bus.
+
+        Context: it never resolves the identity itself — a first line logged at import would
+        resolve it before a project hands its `APP_RELEASE` over, and cache the wrong name. It
+        reads the identity once `start` (or a span) has resolved it; the tenant is read on each
+        line. Never raises."""
+        try:
+            if self._identity is None:
+                return {}
+            return log_fields(self._identity)
+        except Exception:
+            return {}
+
     def ignore(self, *error_types: Type[Exception]) -> None:
         """Keep these exception types out of GlitchTip. They are expected, not bugs."""
         known = list(self.ignored_errors)
@@ -98,8 +115,9 @@ class Observability:
         self.ignored_errors = tuple(known)
 
     def span(self, dto_name: str, layer: str) -> ContextManager[Any]:
-        """Span for one DTO execution, with its ids bound to the logger."""
-        return span_execution(dto_name, layer, self.identity.bus, self.logger)
+        """Span for one DTO execution, with its ids and coordinates bound to the logger. It
+        starts `ok`; `failed` replaces the outcome with the failure's, as the metrics do."""
+        return span_execution(dto_name, layer, self.identity.bus, self.logger, {OUTCOME: OK})
 
     def measure(self, dto: object, handler: object, layer: str) -> ContextManager[Any]:
         """The metrics of one DTO execution: its duration by outcome, and what its use case
@@ -117,6 +135,8 @@ class Observability:
         kind: ErrorKind = "instance",
     ) -> None:
         """Report a failure everywhere it belongs: on the span and in GlitchTip."""
+        outcome = self._outcome(error)
+        span_attributes(span, {OUTCOME: outcome})
         span_error(span, error, None)
         record_error(
             error,
@@ -125,6 +145,7 @@ class Observability:
             self.identity,
             kind=kind,
             ignored_exceptions=self.ignored_errors,
+            outcome=outcome,
         )
 
     # -----------------------------------------------------------------------------------------
@@ -139,12 +160,30 @@ class Observability:
         GlitchTip, logged at info, and an `expected` outcome in the metrics."""
         return self._is_expected(error)
 
+    def _outcome(self, error: BaseException) -> str:
+        """`expected` or the failure's kind — the value `sincpro.outcome` takes on the metrics,
+        so the span, the log line and GlitchTip say the same."""
+        try:
+            from sincpro_framework.observability.metrics.infrastructure.execution import (
+                outcome_of,
+            )
+
+            return outcome_of(error, self.expects(error))[OUTCOME]
+        except Exception:
+            return "internal"
+
     def _describe(self, error: BaseException, dto: object) -> tuple[str, dict[str, Any]]:
         recorded = failure.failure_of(error)
         if recorded is None:
-            fields = {"dto": repr(dto), "error_type": type(error).__name__}
+            fields = {
+                "dto": repr(dto),
+                "error_type": type(error).__name__,
+                "sincpro_use_case": type(dto).__name__,
+                "sincpro_outcome": self._outcome(error),
+            }
             return f"{type(dto).__name__} failed: {type(error).__name__}: {error}", fields
         fields = recorded.fields()
+        fields["sincpro_outcome"] = self._outcome(error)
         if error is not recorded.error:
             fields["raised_as"] = type(error).__name__
         return recorded.summary, fields
@@ -163,8 +202,13 @@ class Observability:
         self, error: Exception, dto: object, handler: object, layer: str, span: Any
     ) -> None:
         """Context: the handler that raised describes the failure, puts it on its span and
-        sends it to GlitchTip. An outer handler the same error crosses adds nothing."""
-        recorded = failure.remember(error, dto, self._bus, handler, layer)
+        sends it to GlitchTip. An outer handler the same error crosses adds nothing but its
+        span's outcome — every span it crosses takes one, as every run's metric does."""
+        outcome = self._outcome(error)
+        span_attributes(span, {OUTCOME: outcome})
+        recorded = failure.remember(
+            error, dto, self._bus, handler, layer, trace_ids=current_otel_context()
+        )
         if recorded is None:
             return
         span_error(span, error, recorded.error_at)
@@ -175,6 +219,7 @@ class Observability:
             self.identity,
             ignored_exceptions=self.ignored_errors,
             details={**self.logger.logger_fields, **recorded.fields()},
+            outcome=outcome,
         )
 
     def escaped(self, error: BaseException, dto: object) -> None:

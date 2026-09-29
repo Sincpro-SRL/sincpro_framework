@@ -202,6 +202,7 @@ def test_what_the_bus_measured_reaches_the_otel_meter(otel_reader):
         reader,
         "sincpro.use_case.duration",
         {
+            "service.name": "billing",
             "sincpro.context": "billing",
             "sincpro.use_case": "CommandIssueInvoice",
             "sincpro.layer": "feature",
@@ -248,6 +249,55 @@ def test_auto_records_to_otel_when_an_endpoint_is_configured(monkeypatch):
     )
 
     assert isinstance(active_module.from_settings(), OtelRecorder)
+
+
+@pytest.mark.parametrize(
+    ("exporter", "chosen"),
+    [
+        ("none", None),
+        ("otlp", OtelRecorder),
+        ("prometheus", PrometheusRecorder),
+        ("console", None),
+        ("otlp,console", OtelRecorder),
+    ],
+)
+def test_opentelemetrys_own_switch_picks_the_backend(monkeypatch, exporter, chosen):
+    """`OTEL_METRICS_EXPORTER`, as OpenTelemetry defines it — the switch an operator already
+    knows, the same the traces obey. An exporter the framework does not build sends nothing.
+    """
+    monkeypatch.setattr(active_module.settings, "metrics_backend", "auto", raising=False)
+    monkeypatch.setattr(
+        active_module.settings, "otel_metrics_exporter", exporter, raising=False
+    )
+    monkeypatch.setattr(active_module.settings, "otlp_endpoint", "http://collector:4317")
+    monkeypatch.setattr(
+        "sincpro_framework.observability.metrics.adapters.otel.install_otlp_meter_provider",
+        lambda endpoint, service: None,
+    )
+
+    recorder = active_module.from_settings()
+
+    assert recorder is None if chosen is None else isinstance(recorder, chosen)
+
+
+def test_the_sdk_disabled_records_nothing_even_with_an_endpoint(monkeypatch):
+    monkeypatch.setattr(active_module.settings, "metrics_backend", "auto", raising=False)
+    monkeypatch.setattr(active_module.settings, "otel_sdk_disabled", True, raising=False)
+    monkeypatch.setattr(active_module.settings, "otlp_endpoint", "http://collector:4317")
+
+    assert active_module.from_settings() is None
+
+
+def test_sincpro_metrics_backend_when_set_wins_over_the_standard_switch(monkeypatch):
+    """The framework's own name for the switch is kept: set, it decides."""
+    monkeypatch.setattr(
+        active_module.settings, "metrics_backend", "prometheus", raising=False
+    )
+    monkeypatch.setattr(
+        active_module.settings, "otel_metrics_exporter", "none", raising=False
+    )
+
+    assert isinstance(active_module.from_settings(), PrometheusRecorder)
 
 
 def test_labels_read_by_field_reference_travel_to_every_backend(prometheus):

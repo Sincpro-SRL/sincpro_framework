@@ -63,7 +63,8 @@ def test_app_release_answers_without_the_slow_distribution_lookup(monkeypatch):
     observability = Observability("common_mcp")
     observability._module_name = "not_a_distribution"
 
-    assert observability.identity.service_name == "sincpro_mcp_odoo:0.8.0:common_mcp"
+    assert observability.identity.service_name == "sincpro_mcp_odoo"
+    assert observability.identity.service_version == "0.8.0"
     assert observability.identity.release == "sincpro_mcp_odoo:0.8.0"
 
 

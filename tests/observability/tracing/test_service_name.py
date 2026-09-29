@@ -1,4 +1,5 @@
-"""One identity feeds both backends: Tempo's service.name and GlitchTip's release.
+"""One identity feeds every backend: the service and version of spans, metrics and logs,
+and GlitchTip's release.
 
 There are exactly two cases. A **library** — an installed distribution that builds a
 bus inside somebody else's process — is identified by its own name and version, and
@@ -46,6 +47,8 @@ def test_a_library_reports_its_own_version_not_the_deployments(monkeypatch):
     assert identity.artifact == "sincpro-log"
     assert identity.version == installed_version("sincpro-log")
     assert identity.release == f"sincpro-log:{installed_version('sincpro-log')}"
+    assert identity.service_name == "sincpro-log"
+    assert identity.service_version == installed_version("sincpro-log")
 
 
 def test_a_service_entrypoint_falls_back_to_app_release(monkeypatch):
@@ -54,7 +57,8 @@ def test_a_service_entrypoint_falls_back_to_app_release(monkeypatch):
 
     identity = resolve_identity("common-mcp", module_name=NOT_A_LIBRARY)
 
-    assert identity.service_name == "sincpro-odoo-mcp:0.8.0:common-mcp"
+    assert identity.service_name == "sincpro-odoo-mcp"
+    assert identity.service_version == "0.8.0"
 
 
 def test_an_artifact_is_never_paired_with_another_sources_version(monkeypatch):
@@ -87,7 +91,8 @@ def test_nothing_is_normalized(monkeypatch):
 
     identity = resolve_identity("siat-soap-sdk", module_name=NOT_A_LIBRARY)
 
-    assert identity.service_name == "sincpro-odoo:18.5.0-rc2:siat-soap-sdk"
+    assert identity.service_name == "sincpro-odoo"
+    assert identity.service_version == "18.5.0-rc2"
     assert identity.release == "sincpro-odoo:18.5.0-rc2"
 
 
@@ -104,22 +109,56 @@ def test_explicit_package_wins_over_everything(monkeypatch):
         "common-mcp", package="sincpro-odoo-mcp", version="0.8.0", module_name=A_LIBRARY
     )
 
-    assert identity.service_name == "sincpro-odoo-mcp:0.8.0:common-mcp"
+    assert identity.service_name == "sincpro-odoo-mcp"
+    assert identity.service_version == "0.8.0"
 
 
-def test_app_release_is_taken_verbatim_and_never_parsed(monkeypatch):
-    """It always ships with its version, so there is nothing to split.
-
-    Parsing it would also mangle a release that is not shaped `name:version` — a
-    registry path, a bare build number.
-    """
+def test_app_release_is_kept_whole_for_the_release_and_read_as_an_image_reference(
+    monkeypatch,
+):
+    """GlitchTip keeps the release exactly as deployed — registry and tag included, the
+    alerts read it. The service is the image's name, stable across releases; the tag is its
+    version."""
     monkeypatch.setattr(settings, "app_release", "registry.digitalocean.com/odoo:18.5.0-rc2")
 
     identity = resolve_identity("common-mcp", module_name=NOT_A_LIBRARY)
 
     assert identity.artifact == "registry.digitalocean.com/odoo:18.5.0-rc2"
-    assert identity.version == ""
-    assert identity.service_name == "registry.digitalocean.com/odoo:18.5.0-rc2:common-mcp"
+    assert identity.release == "registry.digitalocean.com/odoo:18.5.0-rc2"
+    assert identity.service_name == "odoo"
+    assert identity.service_version == "18.5.0-rc2"
+
+
+@pytest.mark.parametrize(
+    ("app_release", "service", "version"),
+    [
+        (
+            "registry.digitalocean.com/sincpro/sincpro_odoo_mcp:0.8.0",
+            "sincpro_odoo_mcp",
+            "0.8.0",
+        ),
+        ("registry.digitalocean.com/sincpro/odoo:18.5.0-rc1", "odoo", "18.5.0-rc1"),
+        ("sincpro-siat-soap:8.0.1", "sincpro-siat-soap", "8.0.1"),
+        ("registry.local:5000/team/app:1.2.3", "app", "1.2.3"),
+        ("registry.local:5000/team/app", "app", ""),
+        ("registry.io/team/app@sha256:abc123", "app", ""),
+        ("registry.io/team/app:1.2@sha256:abc123", "app", "1.2"),
+        ("app@1.2.3", "app", "1.2.3"),
+        ("registry.io/team/app", "app", ""),
+    ],
+)
+def test_every_shape_of_a_release_yields_its_service_and_version(
+    monkeypatch, app_release, service, version
+):
+    """Sincpro's own shape (`registry/…/name:tag`, `name:version`) and the ones a customer may
+    deploy with: a registry with a port, a digest, `name@version`. A port is not a tag, a
+    digest is not a version."""
+    monkeypatch.setattr(settings, "app_release", app_release)
+
+    identity = resolve_identity("ctx", module_name=NOT_A_LIBRARY)
+
+    assert (identity.service_name, identity.service_version) == (service, version)
+    assert identity.release == app_release
 
 
 def test_env_service_name_names_the_deployment_when_app_release_is_absent(monkeypatch):
@@ -128,34 +167,41 @@ def test_env_service_name_names_the_deployment_when_app_release_is_absent(monkey
 
     identity = resolve_identity("helpdesk-mcp", module_name=NOT_A_LIBRARY)
 
-    assert identity.service_name == "sincpro-odoo-mcp:helpdesk-mcp"
+    assert identity.service_name == "sincpro-odoo-mcp"
+    assert identity.service_version == ""
 
 
 def test_the_bus_survives_even_when_nothing_resolves():
     """Unknown artifact is acceptable; an unattributable trace is not."""
     identity = resolve_identity("payment-cybersource", module_name=NOT_A_LIBRARY)
 
-    assert identity.service_name == "unknown:payment-cybersource"
+    assert identity.service_name == "payment-cybersource"
 
 
-def test_two_buses_of_one_artifact_stay_distinguishable(monkeypatch):
-    """Same deployment, two buses: only the last segment separates their traces."""
+def test_two_buses_of_one_artifact_share_the_service_and_keep_their_context(monkeypatch):
+    """Same deployment, two buses: one service; the bus is the context (`sincpro.context`,
+    the span's `context/DTO` name) that separates their traces."""
     monkeypatch.setattr(settings, "app_release", "sincpro-odoo-mcp:0.8.0")
 
-    for bus in ("common-mcp", "sales-mcp"):
-        assert resolve_identity(bus, module_name=NOT_A_LIBRARY).service_name == (
-            f"sincpro-odoo-mcp:0.8.0:{bus}"
-        )
+    identities = [
+        resolve_identity(bus, module_name=NOT_A_LIBRARY)
+        for bus in ("common-mcp", "sales-mcp")
+    ]
+
+    assert {identity.service_name for identity in identities} == {"sincpro-odoo-mcp"}
+    assert [identity.bus for identity in identities] == ["common-mcp", "sales-mcp"]
 
 
-def test_the_release_drops_the_bus_and_the_service_name_keeps_it(monkeypatch):
-    """Two buses of one deployment ship one release; their traces stay separate."""
+def test_neither_the_release_nor_the_service_name_carries_the_bus(monkeypatch):
+    """Two buses of one deployment ship one release and are one service; the bus travels
+    apart, as the context."""
     monkeypatch.setattr(settings, "app_release", "sincpro-odoo-mcp:0.8.0")
 
     identity = resolve_identity("sales-mcp", module_name=NOT_A_LIBRARY)
 
     assert identity.release == "sincpro-odoo-mcp:0.8.0"
-    assert identity.service_name == "sincpro-odoo-mcp:0.8.0:sales-mcp"
+    assert identity.service_name == "sincpro-odoo-mcp"
+    assert identity.bus == "sales-mcp"
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +270,7 @@ def test_a_release_without_a_name_still_identifies_the_deployment(monkeypatch):
 
     identity = resolve_identity("payments", module_name=NOT_A_LIBRARY)
 
-    assert identity.service_name == "2026.08.21:payments"
+    assert identity.service_name == "2026.08.21"
     assert identity.release == "2026.08.21"
 
 

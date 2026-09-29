@@ -8,10 +8,11 @@ data goes: nowhere, an OpenTelemetry collector, a Sentry or GlitchTip DSN, Prome
 | Logs with `trace_id` / `span_id` | always | none | stdout / your logger |
 | Traces — a span per DTO | always | `[opentelemetry]` | `OTEL_EXPORTER_OTLP_ENDPOINT` (Tempo, Jaeger) |
 | Errors — each failure once | always | `[sentry]` | `SENTRY_PYTHON_DSN` (GlitchTip, Sentry) |
-| Metrics — every use case, plus what it declares | always | `[prometheus]` or `[opentelemetry]` | `SINCPRO_METRICS_BACKEND` (`/metrics`, OTLP) |
+| Metrics — every use case, plus what it declares | always | `[prometheus]` or `[opentelemetry]` | `OTEL_METRICS_EXPORTER` (OTLP, `/metrics`) |
 
 | Page | What it answers |
 |---|---|
+| [Correlation](correlation.md) | how one failure is followed across metrics, traces, logs and GlitchTip; what the framework emits for it, what the stack must be told, many customers and releases, on-premise |
 | [Metrics](metrics.md) | what every use case records by itself, decorating a use case to count, sum or measure a field, instruments inside `execute`, Prometheus and OpenTelemetry |
 | Root README, [Observability](../../README.md#observability) | what works with no extra, what `[opentelemetry]` and `[sentry]` add, `with_trace()`, span attributes, embedding inside an already instrumented host such as Odoo |
 | [PRD 03, observability](../prd/PRD_03_observability-tracing.md) | the design and why — every signal |

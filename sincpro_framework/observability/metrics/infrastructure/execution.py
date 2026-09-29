@@ -15,6 +15,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
+from sincpro_framework.observability.domain import EXPECTED, OK, OUTCOME
 from sincpro_framework.observability.metrics.domain.declarations import Declaration, Measure
 from sincpro_framework.observability.metrics.domain.instruments import (
     DURATION_BUCKETS,
@@ -33,10 +34,8 @@ from sincpro_framework.observability.metrics.infrastructure.identity import (
 from sincpro_framework.observability.metrics.infrastructure.registry import declarations_of
 from sincpro_framework.sincpro_logger import logger
 
-OUTCOME = "sincpro.outcome"
 ERROR_TYPE = "error.type"
-OK = "ok"
-EXPECTED = "expected"
+SERVICE_NAME = "service.name"
 RUNS = "runs"
 """What `counts` is named after: `billing.issue_invoice.runs`, never the bare use case — a field
 summed under the same use case (`total`) would collide with it on Prometheus."""
@@ -46,9 +45,19 @@ USE_CASE_DURATION = Instrument(
     kind=InstrumentKind.HISTOGRAM,
     unit=SECONDS,
     description="How long each use case ran, by bounded context and outcome",
-    label_keys=("sincpro.context", "sincpro.use_case", "sincpro.layer", OUTCOME, ERROR_TYPE),
+    label_keys=(
+        SERVICE_NAME,
+        "sincpro.context",
+        "sincpro.use_case",
+        "sincpro.layer",
+        OUTCOME,
+        ERROR_TYPE,
+    ),
     buckets=DURATION_BUCKETS,
 )
+"""`service.name` is the library or service behind the context — one value per context, so it
+adds no series. It is there because the job is the process's: inside Odoo the job is the host,
+and this label is what finds the SDK, as `resource.service.name` does on its spans."""
 
 
 def outcome_of(error: BaseException | None, expected: bool = False) -> dict[str, str]:
@@ -188,7 +197,9 @@ def _finish(
     who: BusObservability | None,
 ) -> None:
     _announce(context, who)
+    identity = identity_of(who)
     labels: Mapping[str, str] = {
+        SERVICE_NAME: identity.service_name if identity is not None else "",
         "sincpro.context": context,
         "sincpro.use_case": type(dto).__name__,
         "sincpro.layer": layer,

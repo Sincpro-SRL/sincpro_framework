@@ -227,7 +227,8 @@ def test_release_is_the_sdk_distribution_and_its_version(monkeypatch):
 
 
 def test_record_error_sends_every_metadata_field(monkeypatch):
-    """GlitchTip event carries release, environment, bus, package, layer and DTO."""
+    """GlitchTip event carries release, environment, bus, package, layer and DTO — and the
+    service, version, context, use case, outcome and error class the other signals carry."""
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
 
@@ -241,18 +242,27 @@ def test_record_error_sends_every_metadata_field(monkeypatch):
             artifact="sincpro-payments-sdk", version="5.1.0", bus="payment-qr"
         ),
         kind="instance",
+        outcome="internal",
     )
 
     assert state.errors
     assert state.release == "sincpro-payments-sdk:5.1.0"
     assert state.clients[0]["environment"] == "acme"
     assert state.tags == {
+        # What the alerts already read — unchanged.
         "sincpro.kind": "instance",
         "sincpro.layer": "feature",
         "sincpro.dto": "CommandPayQR",
         "sincpro.instance": "payment-qr",
         "sincpro.package": "sincpro-payments-sdk",
         "tenant": "acme",
+        # The keys every signal shares.
+        "service_name": "sincpro-payments-sdk",
+        "sincpro.version": "5.1.0",
+        "sincpro.context": "payment-qr",
+        "sincpro.use_case": "CommandPayQR",
+        "sincpro.outcome": "internal",
+        "error.type": "RuntimeError",
     }
 
 

@@ -14,7 +14,8 @@ def span_error(span: Any, error: BaseException, where: CodeLocation | None) -> N
         if not (OTEL_AVAILABLE and span is not None):
             return
         span.record_exception(error)
-        span.set_attribute("error.type", type(error).__qualname__)
+        # `__name__`, as the metrics, the logs and GlitchTip spell it — one filter for all four.
+        span.set_attribute("error.type", type(error).__name__)
         if where is not None:
             span.set_attribute("code.function.name", f"{where.module}.{where.function}")
             span.set_attribute("code.file.path", where.file)

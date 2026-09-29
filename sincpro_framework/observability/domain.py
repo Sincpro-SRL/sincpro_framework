@@ -7,6 +7,8 @@ release and the Tempo ``service.name`` from drifting apart.
 """
 
 import inspect
+import os
+from functools import cache
 from importlib.metadata import distribution, packages_distributions
 from importlib.metadata import version as distribution_version
 from importlib.util import find_spec
@@ -20,6 +22,11 @@ from sincpro_framework.sincpro_conf import settings
 UNKNOWN = "unknown"
 FRAMEWORK_ARTIFACT = "sincpro-framework"
 DEFAULT_BUS = "sincpro_framework"
+
+OUTCOME = "sincpro.outcome"
+"""How a run ended — the same key on the metrics, the span, the log line and GlitchTip."""
+OK = "ok"
+EXPECTED = "expected"
 
 State = Literal["off", "on", "failed"]
 
@@ -37,18 +44,18 @@ class ObservabilityIdentity(BaseModel):
 
     @property
     def service_name(self) -> str:
-        """Tempo ``service.name``: ``artifact:version:bus``, empty segments omitted.
+        """Tempo ``service.name`` and the logs' ``service_name``: the artifact, stable across
+        releases — ``sincpro-siat-soap``, ``sincpro_odoo_mcp`` out of
+        ``registry.digitalocean.com/sincpro/sincpro_odoo_mcp:0.8.0``.
 
-        A service is identified by ``APP_RELEASE``, which already carries its
-        version, so it has no separate version segment:
-        ``sincpro-odoo:18.5.0-rc2:common-mcp``. A library contributes name and
-        version apart: ``sincpro-siat-soap:8.0.3:siat-soap-sdk``.
-
-        Values travel verbatim. Rewriting ``-`` to ``_`` used to mangle both the
-        distribution name you would search for and the version itself
-        (``18.5.0-rc2`` became ``18.5.0_rc2``).
+        Context: the version and the bus used to be part of it
+        (``sincpro-siat-soap:8.0.4:siat-soap-sdk``), so every release and every bounded
+        context was a service of its own. The version is ``service.version`` now and the
+        bus is ``sincpro.context`` and the span's ``context/DTO`` name. Only when no
+        artifact resolves does the bus stand in, so buses stay separable. Values are never
+        normalized: ``-`` stays ``-``.
         """
-        return ":".join(part for part in (self.artifact, self.version, self.bus) if part)
+        return self.service if self.artifact != UNKNOWN else self.bus
 
     @property
     def release(self) -> str:
@@ -63,10 +70,10 @@ class ObservabilityIdentity(BaseModel):
 
     @property
     def service(self) -> str:
-        """The artifact without its version or its registry — stable across releases, what a
-        metric's service is. `APP_RELEASE` arrives whole, often as an image reference
-        (`registry.example.com/team/sincpro-odoo:18.5.0-rc2`, kept verbatim for traces and
-        GlitchTip): the name is `sincpro-odoo`. A library comes as name and version apart."""
+        """The artifact without its version or its registry — stable across releases.
+        `APP_RELEASE` arrives whole, often as an image reference
+        (`registry.example.com/team/sincpro-odoo:18.5.0-rc2`, kept verbatim for the GlitchTip
+        release): the name is `sincpro-odoo`. A library comes as name and version apart."""
         return self._split()[0].rsplit("/", 1)[-1]
 
     @property
@@ -74,17 +81,74 @@ class ObservabilityIdentity(BaseModel):
         return self._split()[1]
 
     def _split(self) -> tuple[str, str]:
+        """Name and version out of a release, read as an image reference or ``name@version``.
+
+        1. A version given apart (a library's) is kept as it is.
+        2. ``@``: a digest (``@sha256:…``) is dropped; anything else is the version.
+        3. ``:`` after the last ``/`` is the tag; one before it is a registry's port.
+        """
         artifact, version = self.artifact, self.version
-        if not version and ":" in artifact:
-            artifact, version = artifact.rsplit(":", 1)
-        return artifact, version
+        if version:
+            return artifact, version
+        if "@" in artifact:
+            artifact, after = artifact.rsplit("@", 1)
+            if ":" not in after:
+                return artifact, after
+        colon = artifact.rfind(":")
+        if colon > artifact.rfind("/"):
+            return artifact[:colon], artifact[colon + 1 :]
+        return artifact, ""
 
 
 def tenant() -> str:
     """Which tenant this deployment serves — `TENANT`; empty when unset. The GlitchTip
-    environment and tag, and the metrics' `resource.tenant` and `sincpro.tenant`.
+    environment and tag, the `tenant` of traces, metrics and logs, and `sincpro.tenant`.
     """
     return (settings.tenant or "").strip()
+
+
+def declared_exporters(value: str | None) -> set[str]:
+    """`OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` as OpenTelemetry defines them: a comma
+    list (`otlp`, `prometheus`, `none`, `console`); empty when not set."""
+    return {part.strip().lower() for part in (value or "").split(",") if part.strip()}
+
+
+def otel_sdk_disabled() -> bool:
+    """`OTEL_SDK_DISABLED=true`: no OpenTelemetry signal of the framework's own."""
+    return bool(getattr(settings, "otel_sdk_disabled", False))
+
+
+def declared_resource_keys() -> set[str]:
+    """The keys the deployment itself put in `OTEL_RESOURCE_ATTRIBUTES` — what it declares wins
+    over what the framework derives (a host such as Odoo sets `tenant` there)."""
+    declared = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
+    return {pair.split("=", 1)[0].strip() for pair in declared.split(",") if "=" in pair}
+
+
+def describing_attributes(identity: ObservabilityIdentity) -> dict[str, str]:
+    """`service.version` and `tenant` for a resource, leaving out what the deployment declared.
+
+    Context: `Resource.create` puts explicit attributes over `OTEL_RESOURCE_ATTRIBUTES`; left
+    in, a derived value would silently replace the one the operator chose.
+    """
+    declared = declared_resource_keys()
+    attributes: dict[str, str] = {}
+    if identity.service_version and "service.version" not in declared:
+        attributes["service.version"] = identity.service_version
+    if tenant() and "tenant" not in declared:
+        attributes["tenant"] = tenant()
+    return attributes
+
+
+def log_fields(identity: ObservabilityIdentity) -> dict[str, str]:
+    """Who a log line comes from, on the line itself: the same service, version and tenant the
+    spans, the metrics and GlitchTip carry — readable without the collector's labels."""
+    fields = {"service_name": identity.service_name}
+    if identity.service_version:
+        fields["service_version"] = identity.service_version
+    if tenant():
+        fields["tenant"] = tenant()
+    return fields
 
 
 class ComponentStatus(BaseModel):
@@ -129,7 +193,9 @@ def installed_version(distribution: str) -> str:
         return ""
 
 
+@cache
 def framework_version() -> str:
+    """Read once: it is asked on every span, and the metadata lookup behind it is not free."""
     return installed_version(FRAMEWORK_ARTIFACT) or UNKNOWN
 
 

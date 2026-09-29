@@ -63,7 +63,9 @@ def test_the_process_identity_has_no_bus_segment(monkeypatch):
     monkeypatch.setattr(settings, "app_release", "sincpro-odoo-mcp:0.8.0")
     monkeypatch.setattr(settings, "otel_service_name", None)
 
-    assert process.identity.service_name == "sincpro-odoo-mcp:0.8.0"
+    assert process.identity.bus == ""
+    assert process.identity.service_name == "sincpro-odoo-mcp"
+    assert process.identity.service_version == "0.8.0"
 
 
 def test_the_process_reuses_the_identity_a_bus_announced(monkeypatch):
@@ -145,12 +147,11 @@ def test_recording_a_transport_error_never_raises():
 # ---------------------------------------------------------------------------
 
 
-def test_a_request_and_its_dto_report_different_services_in_one_trace(monkeypatch):
-    """The separation this exists for.
-
-    The request is the deployment's; the DTO is the bounded context's. Same
-    trace_id, because OTel propagates through contextvars — not because they share
-    a Resource.
+def test_a_request_and_its_dto_are_one_service_and_the_dto_names_its_context(monkeypatch):
+    """The request is the deployment's; the DTO is one of its bounded contexts. Both are the
+    same service — the context is the DTO span's `sincpro.context` and `context/DTO` name —
+    and each keeps its own provider. Same trace_id, because OTel propagates through
+    contextvars.
     """
     from sincpro_framework import DataTransferObject, Feature, UseFramework
 
@@ -179,12 +180,12 @@ def test_a_request_and_its_dto_report_different_services_in_one_trace(monkeypatc
             bus(Quote(amount=1))
 
     spans = {span.name: span for span in exporter.get_finished_spans()}
-    assert set(spans) == {"POST /mcp", "Quote"}
-    assert spans["POST /mcp"].resource.attributes["service.name"] == "sincpro-odoo-mcp:0.8.0"
-    assert spans["Quote"].resource.attributes["service.name"] == (
-        "sincpro-odoo-mcp:0.8.0:sales_mcp"
-    )
-    quote_context = spans["Quote"].get_span_context()
+    assert set(spans) == {"POST /mcp", "sales_mcp/Quote"}
+    assert spans["POST /mcp"].resource.attributes["service.name"] == "sincpro-odoo-mcp"
+    assert spans["sales_mcp/Quote"].resource.attributes["service.name"] == "sincpro-odoo-mcp"
+    assert (spans["sales_mcp/Quote"].attributes or {})["sincpro.context"] == "sales_mcp"
+    assert "sincpro.context" not in (spans["POST /mcp"].attributes or {})
+    quote_context = spans["sales_mcp/Quote"].get_span_context()
     request_context = spans["POST /mcp"].get_span_context()
     assert quote_context is not None and request_context is not None
     assert quote_context.trace_id == request_context.trace_id
@@ -347,12 +348,12 @@ def test_the_whole_service_boot(monkeypatch, capsys):
         name: span.resource.attributes["service.name"] for name, span in spans.items()
     }
     assert services == {
-        "POST /mcp": "sincpro-odoo-mcp:0.8.0",
-        "ListTools": "sincpro-odoo-mcp:0.8.0:sales_mcp",
+        "POST /mcp": "sincpro-odoo-mcp",
+        "sales_mcp/ListTools": "sincpro-odoo-mcp",
     }
 
     request_context = spans["POST /mcp"].get_span_context()
-    dto_context = spans["ListTools"].get_span_context()
+    dto_context = spans["sales_mcp/ListTools"].get_span_context()
     assert request_context is not None and dto_context is not None
     assert dto_context.trace_id == request_context.trace_id
     assert access_log_fields["trace_id"] == format(request_context.trace_id, "032x")

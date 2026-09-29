@@ -128,17 +128,36 @@ TypeSincproConfigModel = TypeVar("TypeSincproConfigModel", bound=SincproConfig)
 class DefaultFrameworkConfig(SincproConfig):
     """Default configuration for the framework"""
 
-    sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "DEBUG"
-    sincpro_framework_log_backend: Literal["print", "stdlib", "file"] = "print"
-    sincpro_framework_log_file_path: str | None = None
-    otlp_endpoint: str | None = None
-    otlp_traces_sample_rate: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
-    sentry_dsn: str | None = None
     app_release: str | None = None
-    otel_service_name: str | None = None
-    metrics_backend: Literal["auto", "prometheus", "otel", "off"] = "auto"
-    """`$ENV:SINCPRO_METRICS_BACKEND` — where the metrics go (`docs/observability/metrics.md`)."""
+    """`$ENV:APP_RELEASE` — The release version of the application."""
     tenant: str | None = None
+    """`$ENV:TENANT` — The tenant identifier for the application."""
+    sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "DEBUG"
+    """`$ENV:SINCPRO_FRAMEWORK_LOG_LEVEL` — The log level for the framework."""
+
+    sincpro_framework_log_backend: Literal["print", "stdlib", "file"] = "print"
+    """`$ENV:SINCPRO_FRAMEWORK_LOG_BACKEND` — The log backend for the framework."""
+    sincpro_framework_log_file_path: str | None = None
+    """`$ENV:SINCPRO_FRAMEWORK_LOG_FILE_PATH` — The file path for the framework's log file."""
+
+    metrics_backend: Literal["auto", "prometheus", "otel", "off"] = "auto"
+    """`$ENV:SINCPRO_METRICS_BACKEND` — where the metrics go (`docs/observability/metrics.md`).
+    Kept as an alias: set to anything but `auto`, it wins over `OTEL_METRICS_EXPORTER`."""
+    sentry_dsn: str | None = None
+    """`$ENV:SENTRY_PYTHON_DSN` — Sentry DSN for error tracking."""
+    otlp_endpoint: str | None = None
+    """`$ENV:OTEL_EXPORTER_OTLP_ENDPOINT` — OpenTelemetry OTLP endpoint for the framework."""
+    otlp_traces_sample_rate: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
+    """`$ENV:OTEL_TRACES_SAMPLER_ARG` — OpenTelemetry traces sample rate for the framework."""
+    otel_service_name: str | None = None
+    """`$ENV:OTEL_SERVICE_NAME` — OpenTelemetry service name for the framework."""
+    otel_metrics_exporter: str | None = None
+    """`$ENV:OTEL_METRICS_EXPORTER` — OpenTelemetry's own switch: `otlp`, `prometheus`, `none`."""
+    otel_traces_exporter: str | None = None
+    """`$ENV:OTEL_TRACES_EXPORTER` — `otlp` or `none`; `none` builds no provider of the framework's."""
+    otel_sdk_disabled: bool = False
+    """`$ENV:OTEL_SDK_DISABLED` — `true` turns every OpenTelemetry signal of the framework off."""
+
     context_map: list[dict[str, str]] = []
     """Where bounded contexts are hosted by another service — `[{context: billing, at: grpc://…}]`."""
     context_map_override: str | None = None
