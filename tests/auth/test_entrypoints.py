@@ -212,7 +212,7 @@ def test_grpc_answers_the_codes_its_clients_branch_on(grpc_channel: grpc.Channel
     assert json.loads(trailing["sp-auth-refusal"])["kind"] == "unauthenticated"
 
 
-# MCP
+# MCP — FastMCP is an optional extra the CI does not install: these skip without it
 
 
 class _Request:
@@ -227,7 +227,7 @@ class _Request:
 
 
 def _as_mcp_http_call(monkeypatch: pytest.MonkeyPatch, headers: Mapping[str, str]) -> None:
-    from fastmcp.server import dependencies
+    from fastmcp.server import dependencies  # pyright: ignore[reportMissingImports]
 
     monkeypatch.setattr(dependencies, "get_access_token", lambda: None)
     monkeypatch.setattr(dependencies, "get_http_request", lambda: _Request(headers))
@@ -245,6 +245,7 @@ def _mcp_issue(billing: UseFramework) -> Any:
 def test_an_mcp_tool_call_acts_as_whoever_the_request_says(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.importorskip("fastmcp")
     billing, _ = _guarded("mcp-billing")
     issue = _mcp_issue(billing)
     _as_mcp_http_call(monkeypatch, _bearer("t-issuer"))
@@ -255,6 +256,7 @@ def test_an_mcp_tool_call_acts_as_whoever_the_request_says(
 
 
 def test_fastmcp_verifies_bearers_with_the_buses_providers() -> None:
+    pytest.importorskip("fastmcp")
     _, auth = _guarded("verified-billing")
     verifier = mcp_auth.token_verifier(auth)
     verified = asyncio.run(verifier.verify_token("t-issuer"))
@@ -266,7 +268,8 @@ def test_fastmcp_verifies_bearers_with_the_buses_providers() -> None:
 def test_an_mcp_tool_call_reads_the_identity_the_verifier_put_in_the_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from fastmcp.server import dependencies
+    pytest.importorskip("fastmcp")
+    from fastmcp.server import dependencies  # pyright: ignore[reportMissingImports]
 
     billing, auth = _guarded("token-billing")
     verified = asyncio.run(mcp_auth.token_verifier(auth).verify_token("t-issuer"))

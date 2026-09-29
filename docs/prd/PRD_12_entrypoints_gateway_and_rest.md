@@ -39,6 +39,20 @@ generators, API gateways and third parties read.
 | **OpenAPI 3.1** | generated from the catalog like OpenRPC and the `.proto` files; `$defs` lifted to `components/schemas`; `securitySchemes` from the providers' new optional `security_scheme()`; `x-sincpro-requires` / `x-sincpro-when-denied` from the declarations; `/openapi.json` and a Swagger UI `/docs` |
 | **Web library** | Starlette, like JSON-RPC, behind the `[rest]` extra — not FastAPI, which would validate each DTO a second time and answer 422 in another shape; FastAPI apps mount the routes all the same |
 
+### One classification of failures
+
+`entrypoints.errors.failure_kind` — invalid, unauthenticated, permission denied, conflict,
+domain, internal — is shared by every wire, each answering with its own code. A domain refusal is
+no longer `-32603 "Internal error"` on JSON-RPC (`-32010 "Domain error"`, `data` still its
+message, as clients read it), and a stale or duplicate write is `-32009` / `ABORTED` /
+`ALREADY_EXISTS` / 409, so a client knows to read again and retry.
+
+### The catalog is computed once
+
+`Catalog.get_scalar_use_cases` keeps its answer: a built bus's handlers do not change, and every
+JSON-RPC request used to recompute every use case's schema. `include`, `exclude` and `wrap` let
+it go.
+
 ### MCP: `McpGateway`
 
 N buses as one server; a tool is named by its DTO, qualified by the alias when two buses answer
@@ -57,6 +71,15 @@ the same name.
   - routes mounted into an app with its middleware.
 - `docs/entrypoints/rest.md` runs as written.
 - `test_core_without_extras`: the route table and the document build without Starlette, and serving asks for `[rest]`.
+
+## Kept open, on purpose
+
+- **JSON-RPC's body `context`** is the client's to write — documented, never read for identity.
+- **Aliases from the bus's name** in the automatic mode — a public wire names them explicitly.
+- **Adding a bus to a gateway builds it** — gateways are made last in the composition; done the
+  other way, `BusAlreadyBuilt` says so.
+- **MCP tool annotations** (`readOnlyHint` for a `Query`, `destructiveHint`) — hints for an agent,
+  proposed, not built.
 
 ## Next
 

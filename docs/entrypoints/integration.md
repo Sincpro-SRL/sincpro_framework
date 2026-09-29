@@ -46,6 +46,32 @@ middleware, interceptors and plugins:
 
 `.run(...)` on each is the one-liner for a service that serves only that wire.
 
+## Practices
+
+- **A public wire gets explicit aliases.** The automatic mode publishes each bus under its own
+  name — the name its logs and error tracker use too. For a wire third parties or agents build
+  on, name the alias yourself (`add("billing", bus)`): renaming the bus then never moves a URL, a
+  gRPC package or a tool.
+- **Gateways are made last.** Adding a bus to a gateway builds it, and a built bus takes nothing
+  more — so `auth.on(bus)`, the interceptors and the handlers are registered first, the gateways
+  at the end of the composition. Done the other way, `BusAlreadyBuilt` says what came too late.
+- **What the client sends is the client's.** JSON-RPC opens the `context` a request carries, and
+  every wire opens the DTO's fields as they came; the framework validates the DTO and never takes
+  identity from either. A use case that decides on a context value validates it.
+
+## Failures — one kind, each wire's code
+
+| Kind | Raised | REST | JSON-RPC | gRPC | Told to the caller |
+|---|---|---|---|---|---|
+| `invalid` | the DTO did not validate | 422 (400 if unreadable) | `-32602` | `INVALID_ARGUMENT` | the validation errors |
+| `unauthenticated` | `Unauthenticated` | 401 + `WWW-Authenticate` | `-32001` (a lone call: HTTP 401) | `UNAUTHENTICATED` | the reason, `step_up` |
+| `permission_denied` | `PermissionDenied` | 403 | `-32003` | `PERMISSION_DENIED` | the reason, the requirement |
+| `conflict` | `StaleAggregate`, `DuplicateAggregate` | 409 | `-32009` | `ABORTED` / `ALREADY_EXISTS` | the message — read again and retry |
+| `domain` | any other `DomainError` | 422 | `-32010` | `FAILED_PRECONDITION` | the message |
+| `internal` | anything else | 500 | `-32603` | `INTERNAL` | nothing — it stays in the log |
+
+`entrypoints.errors.failure_kind(error)` is the one classification; a wire only chooses its code.
+
 ## What every wire does the same
 
 - **Auth**: a bus guarded by an `AccessControl` is authenticated on every wire, and refused the

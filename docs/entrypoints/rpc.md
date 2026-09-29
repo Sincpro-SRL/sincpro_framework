@@ -110,6 +110,11 @@ JSON-RPC 2.0 allows extra members on the request. **`context`** is a sibling of 
 
 Body `context` wins over headers. Interceptors, error handlers, and bus tracing are unchanged.
 
+**The client writes it.** The framework opens every key it sends — a freedom the client
+programs with, not a check the framework makes. Who is calling is never read from it (see
+[auth](../auth/README.md)); anything else a use case takes from `self.context` to decide
+something, the use case validates, as it would any input.
+
 ---
 
 ## Errors

@@ -21,12 +21,15 @@ from typing import Any
 from pydantic import ValidationError
 
 from sincpro_framework.auth.domain import AuthError
-from sincpro_framework.auth.transports import http_status_of, refusal_body
-from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
+from sincpro_framework.auth.transports import refusal_body
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.const import Scalar
-from sincpro_framework.entrypoints.errors import json_safe_validation_errors
+from sincpro_framework.entrypoints.errors import (
+    FailureKind,
+    failure_kind,
+    json_safe_validation_errors,
+)
 from sincpro_framework.use_bus import UseFramework
 
 PATH_PARAMETER = re.compile(r"{([A-Za-z_][A-Za-z0-9_]*)}")
@@ -153,23 +156,30 @@ class InvalidRequest(Exception):
     """A request the wire cannot read into a payload — answered 400."""
 
 
-def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
-    """The status and body a failure is answered with — the reason for what the caller may
-    read, never the inside of the process.
+STATUS_OF = {
+    FailureKind.INVALID: 422,
+    FailureKind.UNAUTHENTICATED: 401,
+    FailureKind.PERMISSION_DENIED: 403,
+    FailureKind.CONFLICT: 409,
+    FailureKind.DOMAIN: 422,
+    FailureKind.INTERNAL: 500,
+}
 
-    1. A request that could not be read: 400. One that validation refused: 422 with the errors.
-    2. An auth refusal: 401 or 403 with what was missing.
-    3. A write that collided — a stale version, a duplicate: 409.
-    4. Final: another `DomainError` — the answer to the request — 422; anything else, 500.
-    """
+
+def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
+    """The status and body a failure is answered with — its kind (`entrypoints.errors`, the same
+    on every wire), and the reason for what the caller may read, never the inside of the
+    process. A request that could not be read at all is a 400."""
     if isinstance(error, InvalidRequest):
-        return 400, {"kind": "invalid", "message": str(error)}
+        return 400, {"kind": FailureKind.INVALID.value, "message": str(error)}
+    kind = failure_kind(error)
     if isinstance(error, ValidationError):
-        return 422, {"kind": "invalid", "detail": json_safe_validation_errors(error)}
+        return STATUS_OF[kind], {
+            "kind": kind.value,
+            "detail": json_safe_validation_errors(error),
+        }
     if isinstance(error, AuthError):
-        return http_status_of(error), refusal_body(error)
-    if isinstance(error, (StaleAggregate, DuplicateAggregate)):
-        return 409, {"kind": "conflict", "message": str(error)}
-    if isinstance(error, DomainError):
-        return 422, {"kind": "domain", "message": str(error)}
-    return 500, {"kind": "internal", "message": "Internal error"}
+        return STATUS_OF[kind], refusal_body(error)
+    if kind == FailureKind.INTERNAL:
+        return STATUS_OF[kind], {"kind": kind.value, "message": "Internal error"}
+    return STATUS_OF[kind], {"kind": kind.value, "message": str(error)}

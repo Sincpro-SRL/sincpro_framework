@@ -10,6 +10,8 @@ from sincpro_framework.auth.transports import refusal_body
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.const import Scalar
 from sincpro_framework.entrypoints.errors import (
+    FailureKind,
+    failure_kind,
     json_safe_validation_errors,
     said_to_the_caller,
 )
@@ -26,8 +28,18 @@ INTERNAL_ERROR = -32603
 UNAUTHENTICATED = -32001
 """Who is calling is not known well enough — the HTTP host answers a lone one with 401."""
 PERMISSION_DENIED = -32003
+CONFLICT = -32009
+"""A write collided — a newer version of the aggregate, or a duplicate."""
+DOMAIN_ERROR = -32010
+"""The domain refused the request; `data` is its message, as it always was."""
 DISCOVER_METHOD = "rpc.discover"
 OPENRPC_VERSION = "1.4.0"
+
+ANSWERED_AS = {
+    FailureKind.CONFLICT: (CONFLICT, "Conflict"),
+    FailureKind.DOMAIN: (DOMAIN_ERROR, "Domain error"),
+}
+"""The code and message of a failure the domain raised; anything else is `-32603`."""
 
 MethodIndex = dict[str, tuple[str, UseFramework, PackedFeatureOrAppService]]
 
@@ -140,9 +152,10 @@ def handle_single(
     except Exception as error:
         if not process.was_reported(error):
             logger.exception("JSON-RPC method [%s] failed", method)
-        response = jsonrpc_error(
-            INTERNAL_ERROR, "Internal error", request_id, said_to_the_caller(error)
+        code, message = ANSWERED_AS.get(
+            failure_kind(error), (INTERNAL_ERROR, "Internal error")
         )
+        response = jsonrpc_error(code, message, request_id, said_to_the_caller(error))
         return None if is_notification else response
     if is_notification:
         return None

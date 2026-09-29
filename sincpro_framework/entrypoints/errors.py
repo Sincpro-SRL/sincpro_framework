@@ -5,11 +5,44 @@ per protocol, the disclosure policy does not.
 """
 
 import json
+from enum import StrEnum
 from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.ddd.exceptions import DomainError
+from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
+
+
+class FailureKind(StrEnum):
+    """What a failure is, whatever the wire — each wire answers it with its own code, so a
+    client of any of them tells the same things apart."""
+
+    INVALID = "invalid"
+    """The request did not validate as the DTO."""
+    UNAUTHENTICATED = "unauthenticated"
+    PERMISSION_DENIED = "permission_denied"
+    CONFLICT = "conflict"
+    """A write collided: a newer version of the aggregate, or a duplicate of a unique value."""
+    DOMAIN = "domain"
+    """The domain refused the request — the answer to it, told to the caller."""
+    INTERNAL = "internal"
+    """The inside of the process failed — nothing of it is told."""
+
+
+def failure_kind(error: Exception) -> FailureKind:
+    from sincpro_framework.auth.domain import PermissionDenied, Unauthenticated
+
+    if isinstance(error, ValidationError):
+        return FailureKind.INVALID
+    if isinstance(error, Unauthenticated):
+        return FailureKind.UNAUTHENTICATED
+    if isinstance(error, PermissionDenied):
+        return FailureKind.PERMISSION_DENIED
+    if isinstance(error, (StaleAggregate, DuplicateAggregate)):
+        return FailureKind.CONFLICT
+    if isinstance(error, DomainError):
+        return FailureKind.DOMAIN
+    return FailureKind.INTERNAL
 
 
 def json_safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:

@@ -22,8 +22,11 @@ from sincpro_framework.auth.transports import (
     credentials_from_headers,
     refusal_body,
 )
+from sincpro_framework.ddd.exceptions import DuplicateAggregate
 from sincpro_framework.entrypoints.const import Scalar
 from sincpro_framework.entrypoints.errors import (
+    FailureKind,
+    failure_kind,
     json_safe_validation_errors,
     said_to_the_caller,
 )
@@ -136,7 +139,8 @@ def status_for(error: Exception) -> tuple[Any, str]:
     An auth refusal is UNAUTHENTICATED or PERMISSION_DENIED — the codes a gRPC client already
     branches on. Any other `DomainError` is the answer to the request — FAILED_PRECONDITION with
     its own message. Anything else is the inside of the process: INTERNAL, and the message stays
-    in the log (see `entrypoints.errors.said_to_the_caller`).
+    in the log (see `entrypoints.errors.said_to_the_caller`). A write that collided is ABORTED — a
+    newer version, retry after reading again — or ALREADY_EXISTS for a duplicate.
     """
     if isinstance(error, AuthError):
         refused = (
@@ -147,6 +151,13 @@ def status_for(error: Exception) -> tuple[Any, str]:
         return refused, str(error)
     disclosed = said_to_the_caller(error)
     if disclosed is not None:
+        if failure_kind(error) == FailureKind.CONFLICT:
+            conflict = (
+                grpc.StatusCode.ALREADY_EXISTS
+                if isinstance(error, DuplicateAggregate)
+                else grpc.StatusCode.ABORTED
+            )
+            return conflict, disclosed
         return grpc.StatusCode.FAILED_PRECONDITION, disclosed
     return grpc.StatusCode.INTERNAL, "Internal error"
 

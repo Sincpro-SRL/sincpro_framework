@@ -58,6 +58,9 @@ class Catalog:
         self._include: set[str] | None = None
         self._exclude: set[str] = set()
         self._wrappers: dict[str, Wrapper] = {}
+        self._packed: dict[bool, list[PackedFeatureOrAppService]] = {}
+        """What `get_scalar_use_cases` answered, by its filter — a built bus's handlers do not
+        change, so the schemas are computed once; `include` / `exclude` / `wrap` let it go."""
 
     @staticmethod
     def _names(*dtos: type | str) -> set[str]:
@@ -128,33 +131,23 @@ class Catalog:
 
     def include(self, *dtos: type | str) -> Self:
         self._include = self._names(*dtos)
+        self._packed.clear()
         return self
 
     def exclude(self, *dtos: type | str) -> Self:
         self._exclude = self._names(*dtos)
+        self._packed.clear()
         return self
 
     def wrap(self, dto: type | str, wrapper: Wrapper) -> Self:
         key = dto if isinstance(dto, str) else dto.__name__
         self._wrappers[key] = wrapper
+        self._packed.clear()
         return self
 
-    def get_scalar_use_cases(
-        self, filter_binaries_schema: bool = False
+    def _packed_use_cases(
+        self, filter_binaries_schema: bool
     ) -> list[PackedFeatureOrAppService]:
-        """Every Feature and ApplicationService bound to a Scalar-callable `run`,
-        already filtered by include/exclude.
-
-        filter_binaries_schema=True additionally drops DTOs that cannot travel
-        as JSON (a `bytes` field, `format: binary|byte` in the schema) — skipped
-        with a warning. Still callable in-process via `framework(dto)`; just not
-        exposed on a JSON wire.
-
-        1. Build the root bus if the instance was never initialized.
-        2. Warn about a name in include/exclude/wrap that no use case has.
-        3. Bind Features then ApplicationServices.
-        4. Final: drop binary-schema entries when filter_binaries_schema is True.
-        """
         if not self.framework_instance.was_initialized:
             self.framework_instance.build_root_bus()
 
@@ -181,3 +174,28 @@ class Catalog:
                 continue
             logger.warning("Skipping non-JSON Feature/ApplicationService [%s]", entry.name)
         return result
+
+    def get_scalar_use_cases(
+        self, filter_binaries_schema: bool = False
+    ) -> list[PackedFeatureOrAppService]:
+        """Every Feature and ApplicationService bound to a Scalar-callable `run`,
+        already filtered by include/exclude.
+
+        filter_binaries_schema=True additionally drops DTOs that cannot travel
+        as JSON (a `bytes` field, `format: binary|byte` in the schema) — skipped
+        with a warning. Still callable in-process via `framework(dto)`; just not
+        exposed on a JSON wire.
+
+        1. Build the root bus if the instance was never initialized.
+        2. Warn about a name in include/exclude/wrap that no use case has.
+        3. Bind Features then ApplicationServices.
+        4. Final: drop binary-schema entries when filter_binaries_schema is True — the answer
+           kept, so a wire that asks on every request computes it once.
+        """
+        kept = self._packed.get(filter_binaries_schema)
+        if kept is not None:
+            return list(kept)
+        packed = self._packed[filter_binaries_schema] = self._packed_use_cases(
+            filter_binaries_schema
+        )
+        return list(packed)
