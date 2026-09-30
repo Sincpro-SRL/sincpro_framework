@@ -3,6 +3,8 @@
     of(CommandIssueInvoice).currency        # type-checks as the field's type; renaming the field
                                             # renames this; a field it lacks raises right here
     of(ResponseIssueInvoice).customer.segment   # nested DTOs too
+    of(BillingContext)["company"]           # a key of the execution context, typed as a TypedDict:
+                                            # read as the context is, and checked as its keys are
 
 Context: a metric labelled `"currency"` drifts from the DTO the first time somebody renames the
 field — the dashboard goes silently empty. `of()` hands back a stand-in typed as an instance of
@@ -13,9 +15,19 @@ never touched: no metaclass, no descriptor, nothing on the class.
 
 import dataclasses
 import types
+from collections.abc import Mapping
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Literal,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+    is_typeddict,
+    overload,
+)
 
 from pydantic import BaseModel
 
@@ -28,9 +40,23 @@ def refused(message: str) -> Exception:
     return ContractViolation(message)
 
 
+def is_context_type(cls: Any) -> bool:
+    """Whether `cls` types an execution context — a `TypedDict`, as `Feature[..., ContextT]`
+    and `Hook[ContextT]` take it. A path from one reads the context, not a DTO."""
+    try:
+        return is_typeddict(cls)
+    except Exception:
+        return False
+
+
 def _declared_fields(cls: type) -> dict[str, Any] | None:
-    """A class's fields and their annotations — a pydantic model or a dataclass; `None` for a
-    class that declares none, which a path cannot step into."""
+    """A class's fields and their annotations — a pydantic model, a dataclass or a TypedDict;
+    `None` for a class that declares none, which a path cannot step into."""
+    if is_context_type(cls):
+        try:
+            return dict(get_type_hints(cls))
+        except Exception:
+            return dict(getattr(cls, "__annotations__", {}))
     if isinstance(cls, type) and issubclass(cls, BaseModel):
         return {name: info.annotation for name, info in cls.model_fields.items()}
     if dataclasses.is_dataclass(cls):
@@ -92,31 +118,67 @@ class FieldPath:
             )
         return FieldPath(self._root, (*self._names, name), fields[name])
 
+    def __getitem__(self, name: str) -> "FieldPath":
+        """`of(BillingContext)["company"]` — a context type is a TypedDict, read by key; the type
+        checker knows its keys, so a key it lacks is flagged where it is written."""
+        if not isinstance(name, str):
+            raise refused(f"{self!r}[{name!r}]: a key of the context is some text")
+        return self.__getattr__(name)
+
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError("a field reference is read-only")
 
     def __repr__(self) -> str:
+        if is_context_type(self._root):
+            return f"of({self._root.__name__})" + "".join(f"[{one!r}]" for one in self._names)
         return f"of({self._root.__name__}).{'.'.join(self._names)}"
 
+    @property
+    def reads_context(self) -> bool:
+        """Whether this path starts at a context type, and so reads the execution context."""
+        return is_context_type(self._root)
+
     def read(self, source: Any) -> Any:
-        """The value on `source`, walking the path — `None` where a step is `None`."""
+        """The value on `source`, walking the path — `None` where a step is `None`. A mapping
+        (the execution context) is read by key."""
         value = source
         for name in self._names:
             if value is None:
                 return None
-            value = getattr(value, name)
+            value = value.get(name) if isinstance(value, Mapping) else getattr(value, name)
         return value
 
+    def read_context(self) -> Any:
+        """The value in the execution in progress's context, as it is now."""
+        from sincpro_framework.observability.correlation import execution_context
 
-def of[T](cls: type[T]) -> T:
+        return self.read(execution_context())
+
+
+type ContextKeys = Mapping[str, Any]
+"""What `of(ContextType)` is typed as: a mapping read by key. A context type is a `TypedDict`,
+usually `total=False`, whose keys a type checker would call possibly absent; the key is checked
+where it is written, at import, instead."""
+
+
+@overload
+def of(cls: type[Mapping[str, Any]]) -> ContextKeys: ...
+
+
+@overload
+def of[T](cls: type[T]) -> T: ...
+
+
+def of(cls: Any) -> Any:
     """A reference to `cls`'s fields — see the module. Typed as `T` on purpose: that is what
-    lets the type checker and a rename follow `of(Command).field`."""
+    lets the type checker and a rename follow `of(Command).field`. A context type is read by
+    key, `of(BillingContext)["company"]`, as the context itself is."""
     if _declared_fields(cls) is None:
         raise refused(
             f"of({getattr(cls, '__name__', cls)!r}): a field reference starts at a "
-            "DataTransferObject or a dataclass"
+            "DataTransferObject, a dataclass or a context TypedDict"
         )
-    return cast(T, FieldPath(cls, (), cls))
+    return FieldPath(cls, (), cls)
 
 
 def field_path(reference: Any, role: str) -> FieldPath:
@@ -129,22 +191,35 @@ def field_path(reference: Any, role: str) -> FieldPath:
     return reference
 
 
-def bounded_label(path: FieldPath) -> FieldPath:
-    """A label must take few values: an `Enum`, a `Literal` or a `bool`.
+_unbounded_warned: set[str] = set()
 
-    Context: every distinct value is one more series in the backend, forever. A customer id, an
-    amount or free text as a label is the one mistake that takes Prometheus down — refused where
-    it is declared, not discovered in production."""
+
+def bounded_label(path: FieldPath) -> FieldPath:
+    """A label is anything the project chooses; one that is not an `Enum`, a `Literal` or a
+    `bool` is accepted with one warning.
+
+    Context: every distinct value is one more series in the backend for as long as it lives —
+    worth saying where the label is declared. What a service measures by is its decision
+    (PRD_03 §4.10), so it is never refused."""
     annotation = without_none(path.annotation)
     if annotation is bool or get_origin(annotation) is Literal:
         return path
     if isinstance(annotation, type) and issubclass(annotation, Enum):
         return path
-    name = getattr(annotation, "__name__", repr(annotation))
-    raise refused(
-        f"label {path!r}: {path.key} is {name} — a label is an Enum, a Literal or a bool, so it "
-        "takes a bounded set of values; one series per distinct value takes the backend down"
-    )
+    where = repr(path)
+    if where not in _unbounded_warned:
+        _unbounded_warned.add(where)
+        name = getattr(annotation, "__name__", repr(annotation))
+        try:
+            from sincpro_framework.sincpro_logger import logger
+
+            logger.warning(
+                f"metrics: label {where} is {name}, not an Enum, a Literal or a bool — each "
+                "distinct value is one more series in the backend"
+            )
+        except Exception:
+            pass
+    return path
 
 
 def _members(annotation: Any) -> tuple[type, ...]:
@@ -153,10 +228,41 @@ def _members(annotation: Any) -> tuple[type, ...]:
     return (annotation,) if isinstance(annotation, type) else ()
 
 
+def context_types_of(cls: type) -> tuple[type, ...]:
+    """The context types a handler declares — the `ContextT` of `Feature[C, R, ContextT]`,
+    `ApplicationService[C, R, ContextT]` or `Hook[ContextT]`, anywhere in what it inherits."""
+    found: list[type] = []
+    for one in getattr(cls, "__mro__", ()):
+        for base in getattr(one, "__orig_bases__", ()):
+            for argument in get_args(base):
+                if is_context_type(argument) and argument not in found:
+                    found.append(argument)
+    return tuple(found)
+
+
+def _refuse_foreign_context(cls: type, paths: tuple[FieldPath, ...]) -> None:
+    """A context path starts at the context type the handler declares; unchecked when it
+    declares none."""
+    declared = context_types_of(cls)
+    if not declared:
+        return
+    for path in paths:
+        if path.reads_context and path.root not in declared:
+            raise refused(
+                f"{cls.__name__}: {path!r} — {path.root.__name__} is not the context "
+                f"{cls.__name__} declares ({', '.join(one.__name__ for one in declared)})"
+            )
+
+
 def refuse_foreign_paths(cls: type, paths: tuple[FieldPath, ...]) -> None:
-    """A path starts at the use case's Command or its Response — read off `execute`'s
-    annotations; unchecked when it has none. Shared by everything that reads a run's DTOs off a
-    declaration: the metrics and the span attributes."""
+    """A path starts at the use case's Command, its Response, or the context type it declares —
+    read off `execute`'s annotations and its generic parameters; unchecked when it has none.
+    Shared by everything that reads a run off a declaration: the metrics and the span
+    attributes."""
+    _refuse_foreign_context(cls, paths)
+    paths = tuple(one for one in paths if not one.reads_context)
+    if not paths:
+        return
     try:
         hints = get_type_hints(cls.execute)  # type: ignore[attr-defined]
     except Exception:
@@ -206,6 +312,8 @@ def label_value(value: Any) -> str:
 __all__ = [
     "FieldPath",
     "bounded_label",
+    "context_types_of",
+    "is_context_type",
     "field_path",
     "label_value",
     "numeric_value",

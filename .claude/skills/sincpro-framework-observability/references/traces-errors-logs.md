@@ -39,8 +39,10 @@ class IssueInvoice(Feature):
         ...
 ```
 
-Bounded keys: put a NIT, a provider's code, a merchant on the span; never a value with unbounded
-cardinality on a metric. Tempo filters and groups by span attributes.
+Any key goes on the span — nothing is refused for its name; a key the framework also writes takes
+the project's value. The execution context is on the span by itself (every key, plus `tenant` and
+`user_id`), so a value every signal should carry goes in `self.context[...]`, not in `annotate`.
+Tempo filters and groups by span attributes.
 
 ## Error handling by layer
 

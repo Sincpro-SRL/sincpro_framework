@@ -2,11 +2,11 @@
 
 from typing import Any, Literal, Mapping, Optional, Tuple, Type
 
+from sincpro_framework.observability import correlation
 from sincpro_framework.observability.domain import (
     UNKNOWN,
     ObservabilityIdentity,
     framework_identity,
-    tenant,
 )
 from sincpro_framework.observability.errors import setup as errors_setup
 from sincpro_framework.observability.tracing.setup import current_otel_context
@@ -73,10 +73,8 @@ def record_error(
                 scope.set_context("sincpro", dict(details))
                 if details.get("handler"):
                     scope.set_tag("sincpro.handler", details["handler"])
-            environment = tenant()
-            if environment:
-                scope.set_tag("tenant", environment)
             _tag_correlation(scope, error, dto_name, identity, outcome)
+            _tag_execution(scope)
             sentry_sdk.capture_exception(error)
     except Exception:
         return
@@ -87,6 +85,8 @@ def _tag_correlation(
 ) -> None:
     tags = {
         "service_name": identity.service_name,
+        "service_version": identity.service_version,
+        "release": identity.release if identity.artifact != UNKNOWN else "",
         "sincpro.version": identity.service_version,
         "sincpro.context": identity.bus,
         "sincpro.use_case": dto_name,
@@ -101,3 +101,25 @@ def _tag_correlation(
     for key, value in tags.items():
         if value:
             scope.set_tag(key, value)
+
+
+TAG_LENGTH = 200
+"""What a Sentry tag holds; a longer value is cut there, never dropped."""
+
+
+def _tag_execution(scope: Any) -> None:
+    """The execution's context on the event (PRD_03 §4.10): its tenant, and every key it carries
+    as a tag; `user_id` also as the event's user, so an issue says how many users it hit."""
+    keys = correlation.execution_keys()
+    for key, value in keys.items():
+        try:
+            text = str(getattr(value, "value", value))
+            if text:
+                scope.set_tag(key, text[:TAG_LENGTH])
+        except Exception:
+            continue
+    user = keys.get(correlation.USER_ID)
+    if user:
+        set_user = getattr(scope, "set_user", None)
+        if set_user is not None:
+            set_user({"id": str(user)})

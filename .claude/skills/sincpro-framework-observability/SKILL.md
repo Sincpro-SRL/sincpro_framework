@@ -39,9 +39,12 @@ class IssueInvoice(Feature): ...
 ```
 
 `of(Command).field` is a reference: the editor completes it, a rename renames it, a missing field
-raises where written. Labels must be bounded (`Enum`, `Literal`, `bool`) — a customer or an invoice
-number belongs on a span or in a log, never on a metric. For what a decorator cannot say, declare
-an instrument on the class (`lookups = metrics.counter(by=...)`) and record inside `execute`.
+raises where written; `of(BillingContext)["channel"]` reads the typed execution context the same
+way. A label that is not an `Enum`, `Literal` or `bool` is accepted with a warning (each value is
+one more series). Every series also carries release, service, version and the execution's tenant;
+a context key goes on every series when named before the build (`metric_labels=`). For what a
+decorator cannot say, declare an instrument on the class (`lookups = metrics.counter(by=...)`) and
+record inside `execute`.
 
 ## Errors
 
@@ -57,11 +60,17 @@ to watch returns `None` and silently swallows the failure — re-raise to delega
 
 - `with bus.with_trace(...)` to adopt an incoming `traceparent`; a span per DTO otherwise.
 - `from sincpro_framework.observability import traces` then `@traces.attributes(...)` /
-  `traces.annotate({...})` to put business fields on the span (a NIT, a merchant) — bounded keys, so
-  Tempo filters without a series per value.
-- **The same keys on all four signals** (service, version, tenant, context, use case, layer, outcome,
-  error, trace_id), derived from configuration — no new wiring. `trace_id` is the jump between the
-  metric exemplar, the log line, the GlitchTip tag and the span.
+  `traces.annotate({...})` to put business fields on the span (a NIT, a merchant) — any key; Tempo
+  filters without a series per value.
+- **The execution context is on every signal.** Every key of `bus.context({...})` — or of what an
+  interceptor, a hook or `self.context` wrote — goes on the log line, the span and the GlitchTip
+  event, with nothing to declare; `hide_in_logs` keeps one off all four. The tenant is the
+  execution's (context → authenticated identity → `TENANT` → `OTEL_RESOURCE_ATTRIBUTES`), so one
+  instance serving many tenants reports each call under its own. `user_id` (context → identity) is
+  also GlitchTip's user.
+- **The same keys on all four signals** (release, service, version, tenant, context, use case,
+  layer, outcome, error, trace_id), from configuration and the context — never from the collector.
+  `trace_id` is the jump between the metric exemplar, the log line, the GlitchTip tag and the span.
 
 ## References
 

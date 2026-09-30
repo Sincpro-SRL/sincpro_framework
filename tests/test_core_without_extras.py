@@ -451,7 +451,9 @@ visits(CommandVisit(channel=Channel.WEB))  # the default: no recorder, nothing r
 recorded = InMemoryRecorder()
 with metrics.using(recorded):
     visits(CommandVisit(channel=Channel.WEB))
-assert recorded.totals("core_only_metrics.visit.runs") == {(("channel", "web"),): 1}
+assert recorded.totals("core_only_metrics.visit.runs") == {
+    (("channel", "web"), ("service.name", "core-only-metrics")): 1
+}
 
 try:
     import sincpro_framework.observability.metrics.adapters.prometheus

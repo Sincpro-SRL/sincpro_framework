@@ -34,12 +34,16 @@ class IssueInvoice(Feature): ...
 | `@metrics.sums(of(X).field, by=, unit=)` | the field's value, added (a counter; a negative is dropped) | `{context}.{use_case}.{field}` |
 | `@metrics.measures(of(X).field, by=, unit=, buckets=)` | the field's value, as a distribution | `{context}.{use_case}.{field}` |
 
-`X` is the use case's Command or its Response — a path into any other DTO is refused at import. A
+`X` is the use case's Command, its Response, or its context type (`of(BillingContext)["channel"]`,
+read off the execution context) — a path into any other DTO or context is refused at import. A
 failed run is not counted here (it is in `sincpro.use_case.duration`, by kind).
 
-**Labels are bounded, or refused.** A label is an `Enum`, a `Literal` or a `bool`; anything else is
-refused where declared (`customer_id is str`). What varies without bound belongs on the trace or in
-the logs.
+**Labels are the project's choice.** One that is not an `Enum`, a `Literal` or a `bool` is accepted
+with one warning where declared (`customer_id is str`): each distinct value is one more series.
+
+**Every series also carries** `release`, `service.name`, `service.version` and the execution's
+`tenant`, plus the context keys the bus names before the build
+(`UseFramework(..., metric_labels=["company"])` or `metric_labels:` in the settings).
 
 ## By hand, inside `execute`
 

@@ -157,6 +157,9 @@ class DefaultFrameworkConfig(SincproConfig):
     """`$ENV:OTEL_TRACES_EXPORTER` — `otlp` or `none`; `none` builds no provider of the framework's."""
     otel_sdk_disabled: bool = False
     """`$ENV:OTEL_SDK_DISABLED` — `true` turns every OpenTelemetry signal of the framework off."""
+    metric_labels: list[str] = []
+    """Context keys on every metric series of the process, beside release, service, version and
+    tenant — `[company, channel]` (PRD_03 §4.10)."""
 
     context_map: list[dict[str, str]] = []
     """Where bounded contexts are hosted by another service — `[{context: billing, at: grpc://…}]`."""

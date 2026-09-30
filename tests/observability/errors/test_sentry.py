@@ -34,6 +34,7 @@ class CaptureState:
         self.clients: List[Dict[str, Any]] = []
         self.layers: List[str] = []
         self.contexts: Dict[str, Dict[str, Any]] = {}
+        self.user: Dict[str, Any] = {}
 
 
 def _install_fake_sentry(monkeypatch, state: CaptureState) -> None:
@@ -57,6 +58,9 @@ def _install_fake_sentry(monkeypatch, state: CaptureState) -> None:
 
         def set_context(self, key: str, value: Dict[str, Any]) -> None:
             state.contexts[key] = value
+
+        def set_user(self, value: Dict[str, Any]) -> None:
+            state.user = value
 
     class FakeClient:
         def __init__(self, **kwargs: Any) -> None:
@@ -258,6 +262,8 @@ def test_record_error_sends_every_metadata_field(monkeypatch):
         "tenant": "acme",
         # The keys every signal shares.
         "service_name": "sincpro-payments-sdk",
+        "service_version": "5.1.0",
+        "release": "sincpro-payments-sdk:5.1.0",
         "sincpro.version": "5.1.0",
         "sincpro.context": "payment-qr",
         "sincpro.use_case": "CommandPayQR",

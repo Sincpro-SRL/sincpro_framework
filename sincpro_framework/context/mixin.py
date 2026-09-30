@@ -13,6 +13,27 @@ _executing: ContextVar[Mapping[str, Any]] = ContextVar(
 )
 
 
+_live: ContextVar["ContextMixin | None"] = ContextVar("sincpro_live_context", default=None)
+"""The bus running the execution in progress — read when a signal is recorded, so what a
+handler, a hook or an interceptor wrote to its context midway counts, a `bus.context(...)` opened
+inside the execution included (PRD_03 §4.10)."""
+
+
+def live_context() -> Mapping[str, Any]:
+    """The context of the execution in progress as it is now — read-only; outside a bus, what a
+    caller handed the next one (`carrying`)."""
+    bus = _live.get()
+    if bus is None:
+        return _executing.get()
+    return MappingProxyType(bus._get_context())
+
+
+def hidden_keys() -> frozenset[str]:
+    """What the bus running the execution keeps off every signal (`hide_in_logs`)."""
+    bus = _live.get()
+    return frozenset(getattr(bus, "_hidden_in_logs", ())) if bus is not None else frozenset()
+
+
 def executing_context() -> Mapping[str, Any]:
     """The context of the execution in progress, whichever bus runs it — read-only, empty
     outside one. What a component beside the buses reads, an auth decision among them."""
@@ -87,9 +108,11 @@ class ContextMixin:
     @contextmanager
     def _executing_with_context(self) -> Generator[None, None, None]:
         token = _executing.set(MappingProxyType(dict(self._get_context())))
+        live = _live.set(self)
         try:
             yield
         finally:
+            _live.reset(live)
             _executing.reset(token)
 
     def _get_context(self) -> Dict[str, Any]:

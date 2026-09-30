@@ -121,6 +121,9 @@ def read_labels(
     """Each label read off the source its path starts at — `none` when no source is one."""
     labels: dict[str, str] = {}
     for path in paths:
+        if path.reads_context:
+            labels[path.key] = label_value(path.read_context())
+            continue
         source = next((one for one in sources if isinstance(one, path.root)), None)
         if source is None:
             if (owner, path.key) not in _warned:
@@ -142,10 +145,13 @@ def _record_declared(context: str, use_case: type, dto: Any, response: Any) -> N
         if declaration.value is None:
             active.emit(instrument, 1, labels)
             continue
-        source = dto if isinstance(dto, declaration.value.root) else response
-        if not isinstance(source, declaration.value.root):
-            continue
-        value = declaration.value.read(source)
+        if declaration.value.reads_context:
+            value = declaration.value.read_context()
+        else:
+            source = dto if isinstance(dto, declaration.value.root) else response
+            if not isinstance(source, declaration.value.root):
+                continue
+            value = declaration.value.read(source)
         if value is not None:
             active.emit(instrument, float(value), labels)
 

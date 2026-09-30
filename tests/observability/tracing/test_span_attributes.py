@@ -160,9 +160,11 @@ def test_each_attribute_stays_on_the_span_of_the_use_case_that_said_it(otel_setu
     assert "payment.bank_reference" not in adapter
 
 
-def test_an_attribute_that_breaks_the_rules_by_hand_is_dropped_and_the_use_case_runs(
+def test_any_key_goes_on_the_span_by_hand_and_a_value_it_cannot_hold_is_dropped(
     otel_setup,
 ):
+    """What a service shows is its decision (PRD_03 §4.10): no key is refused for its name.
+    Only a value a span cannot hold is dropped, and the use case runs."""
     shop = UseFramework("shop-attrs", log_after_execution=False)
 
     class CommandBuy(DataTransferObject):
@@ -174,9 +176,8 @@ def test_an_attribute_that_breaks_the_rules_by_hand_is_dropped_and_the_use_case_
             traces.annotate(
                 {
                     "shop.order_id": "O-1",
-                    "shop.access_token": "eyJ...",  # a secret
-                    "sincpro.outcome": "ok",  # the framework's
-                    "nit": "1",  # not namespaced
+                    "shop.access_token": "eyJ...",
+                    "nit": "1",
                     "shop.payload": {
                         "a": 1
                     },  # pyright: ignore[reportArgumentType] — not a value a span holds
@@ -187,7 +188,8 @@ def test_an_attribute_that_breaks_the_rules_by_hand_is_dropped_and_the_use_case_
 
     attributes = _span(otel_setup, "shop-attrs/CommandBuy").attributes
     assert attributes["shop.order_id"] == "O-1"
-    assert not {"shop.access_token", "nit", "shop.payload"} & set(attributes)
+    assert (attributes["shop.access_token"], attributes["nit"]) == ("eyJ...", "1")
+    assert "shop.payload" not in attributes
 
 
 def test_annotate_outside_a_use_case_does_nothing(otel_setup):
@@ -207,15 +209,27 @@ class CommandLogin(DataTransferObject):
 @pytest.mark.parametrize(
     ("declare", "refusal"),
     [
-        (lambda: traces.attributes(of(CommandLogin).user_email, namespace="auth"), "email"),
-        (lambda: traces.attributes(of(CommandLogin).api_key, namespace="auth"), "api_key"),
-        (lambda: traces.attributes(namespace="auth", secret=of(CommandLogin).code), "secret"),
-        (lambda: traces.attributes(of(CommandLogin).code, namespace="sincpro"), "framework"),
-        (lambda: traces.attributes(of(CommandLogin).code, namespace="http"), "OpenTelemetry"),
-        (lambda: traces.attributes(of(CommandLogin).code, namespace="Auth"), "namespace"),
         (lambda: traces.attributes(of(CommandLogin).payload, namespace="auth"), "is dict"),
         (lambda: traces.attributes(of(CommandLogin).document, namespace="auth"), "is bytes"),
         (lambda: traces.attributes(namespace="auth"), "nothing declared"),
+        (lambda: traces.attributes(of(CommandLogin).code, namespace=""), "namespace"),
+    ],
+    ids=["a mapping", "bytes", "empty", "no namespace"],
+)
+def test_a_declaration_that_could_never_work_is_refused_at_import(declare, refusal):
+    with pytest.raises(ContractViolation, match=refusal):
+        declare()
+
+
+@pytest.mark.parametrize(
+    "declare",
+    [
+        lambda: traces.attributes(of(CommandLogin).user_email, namespace="auth"),
+        lambda: traces.attributes(of(CommandLogin).api_key, namespace="auth"),
+        lambda: traces.attributes(namespace="auth", secret=of(CommandLogin).code),
+        lambda: traces.attributes(of(CommandLogin).code, namespace="sincpro"),
+        lambda: traces.attributes(of(CommandLogin).code, namespace="http"),
+        lambda: traces.attributes(of(CommandLogin).code, namespace="Auth"),
     ],
     ids=[
         "personal data",
@@ -224,14 +238,11 @@ class CommandLogin(DataTransferObject):
         "the framework's namespace",
         "an OTel convention",
         "not lowercase",
-        "a mapping",
-        "bytes",
-        "empty",
     ],
 )
-def test_a_declaration_that_breaks_the_rules_is_refused_at_import(declare, refusal):
-    with pytest.raises(ContractViolation, match=refusal):
-        declare()
+def test_no_key_is_refused_for_its_name(declare):
+    """Nothing is refused for its content (PRD_03 §4.10): the declaration stands."""
+    assert callable(declare())
 
 
 def test_a_path_into_another_dto_or_a_key_declared_twice_is_refused_at_import():

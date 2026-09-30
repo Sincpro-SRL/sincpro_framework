@@ -45,6 +45,7 @@ CONTEXT_INFO = Instrument(
     kind=InstrumentKind.UP_DOWN,
     description="1 for each bounded context of the process: the library and version that run it",
     label_keys=("sincpro.context", "sincpro.artifact", "sincpro.version", "sincpro.tenant"),
+    correlated=False,
 )
 
 

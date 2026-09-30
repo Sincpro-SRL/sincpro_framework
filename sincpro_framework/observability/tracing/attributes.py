@@ -12,21 +12,20 @@
             cuf = ...
             traces.annotate({"siat.cuf": cuf})        # known only midway: by hand
 
-Context: a NIT, a merchant, a bank's transaction id vary without bound — a metric refuses them as
-labels (§4.4), yet they are exactly what a trace is filtered and grouped by ("the rejected
-invoices of NIT X", TraceQL `count_over_time() by (span.siat.nit)`). Both doors write on the span
-the bus opened for the use case (`context/Command`), never on a child an adapter opened: the
-declared one reads the Command before `execute` runs, so a failed run carries it too, and the
-Response after a successful one.
+Context: a NIT, a merchant, a bank's transaction id are exactly what a trace is filtered and
+grouped by ("the rejected invoices of NIT X", TraceQL `count_over_time() by (span.siat.nit)`).
+Both doors write on the span the bus opened for the use case (`context/Command`), never on a
+child an adapter opened: the declared one reads the Command before `execute` runs, so a failed run
+carries it too, and the Response after a successful one. A reference into the context type
+(`of(BillingContext).channel`) reads the execution context, at the start and again at the end.
 
-Nothing here can fail a use case. A declaration is checked where it is written — a field that
-does not exist, a value a span cannot hold, a key that is not namespaced, one that would overwrite
-`sincpro.*` or an OpenTelemetry convention, one whose name says secret — and refused at import. At
-run time an attribute that breaks those rules is dropped and logged once; without OpenTelemetry,
-or outside a use case, both doors do nothing.
+Nothing here can fail a use case, and nothing is refused for its name or its content (PRD_03
+§4.10): what a service shows is its decision. A declaration is checked where it is written for
+what could never work — a field that does not exist, a value a span cannot hold, a key declared
+twice. By hand, a value a span cannot hold is dropped and logged once; without OpenTelemetry, or
+outside a use case, both doors do nothing.
 """
 
-import re
 import types
 from collections.abc import Mapping, Sequence
 from datetime import date
@@ -65,123 +64,15 @@ type AttributeValue = (
     | tuple[float, ...]
 )
 
-# --- the rules a key follows --------------------------------------------------------------------
-
-KEY = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
-NAMESPACE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
-
-RESERVED_NAMESPACES = frozenset(
-    {
-        "sincpro",
-        # OpenTelemetry semantic conventions: a key under one of these means what the
-        # convention says, to every backend that reads it.
-        "aws",
-        "azure",
-        "browser",
-        "client",
-        "cloud",
-        "code",
-        "container",
-        "db",
-        "deployment",
-        "destination",
-        "device",
-        "dns",
-        "enduser",
-        "error",
-        "exception",
-        "faas",
-        "gcp",
-        "gen_ai",
-        "host",
-        "http",
-        "k8s",
-        "messaging",
-        "net",
-        "network",
-        "os",
-        "otel",
-        "peer",
-        "process",
-        "rpc",
-        "server",
-        "service",
-        "session",
-        "source",
-        "telemetry",
-        "thread",
-        "tls",
-        "url",
-        "user",
-        "user_agent",
-    }
-)
-"""`sincpro.*` is the framework's: `sincpro.outcome` overwritten by a use case would lie on every
-span it crosses. The rest belong to OpenTelemetry's conventions."""
-
-SENSITIVE_WORDS = frozenset(
-    {
-        "authorization",
-        "clave",
-        "contrasena",
-        "cookie",
-        "correo",
-        "credential",
-        "credentials",
-        "cvc",
-        "cvv",
-        "email",
-        "otp",
-        "passwd",
-        "password",
-        "phone",
-        "pin",
-        "pwd",
-        "secret",
-        "tarjeta",
-        "telefono",
-        "token",
-    }
-)
-SENSITIVE_PAIRS = frozenset(
-    {
-        ("access", "key"),
-        ("api", "key"),
-        ("apikey",),
-        ("card", "number"),
-        ("private", "key"),
-        ("secret", "key"),
-    }
-)
-"""Words that, in a key, name a secret, a credential, a card or a way to reach a person. A trace
-is read by anyone with access to Grafana and kept for weeks: what opens a door or identifies a
-person never goes there. The list catches the obvious name; it is not a guarantee — a personal
-document number called `numero` passes, and keeping it out is the author's job."""
+# --- the rule a key follows ---------------------------------------------------------------------
 
 
 def key_problem(key: str) -> str | None:
-    """Why `key` cannot be a span attribute of a use case, or `None` when it can."""
-    if not isinstance(key, str) or not KEY.match(key):
-        return (
-            f"'{key}' is not a namespaced key — lowercase words joined by dots, the domain "
-            "first: 'siat.nit', 'payment.merchant_id'"
-        )
-    words = tuple(one for part in key.split(".") for one in part.split("_"))
-    namespace = key.split(".")[0]
-    if namespace in RESERVED_NAMESPACES:
-        owner = "the framework's" if namespace == "sincpro" else "an OpenTelemetry convention"
-        return f"'{key}': '{namespace}.*' is {owner}; namespace it under the domain"
-    sensitive = [one for one in words if one in SENSITIVE_WORDS]
-    sensitive += [
-        "_".join(pair)
-        for pair in SENSITIVE_PAIRS
-        if any(words[i : i + len(pair)] == pair for i in range(len(words)))
-    ]
-    if sensitive:
-        return (
-            f"'{key}' names {', '.join(sorted(sensitive))} — a secret, a credential or personal "
-            "data never goes on a trace"
-        )
+    """Why `key` cannot be a span attribute, or `None` when it can: any text that is not empty.
+    What a service puts on its spans is its decision (PRD_03 §4.10); a key the framework also
+    writes takes the project's value."""
+    if not isinstance(key, str) or not key.strip():
+        return f"{key!r} is not a key — a span attribute is named by some text"
     return None
 
 
@@ -349,7 +240,9 @@ def describe(span: Any, use_case: type, source: Any) -> None:
         return
     try:
         for one in declared_attributes(use_case):
-            if isinstance(source, one.path.root):
+            if one.path.reads_context:
+                _set(span, one.key, one.path.read_context())
+            elif source is not None and isinstance(source, one.path.root):
                 _set(span, one.key, one.path.read(source))
     except Exception as error:
         _warn_once(f"{use_case.__name__}:describe", f"{use_case.__name__}: {error}")
@@ -367,10 +260,10 @@ class Traces:
         """Attributes of the use case's span, read off its Command (before `execute`, so a
         failed run has them) and its Response (after a success). A reference `of(X).a.b` is
         `{namespace}.a.b`; a named one, `{namespace}.{name}`."""
-        if not isinstance(namespace, str) or not NAMESPACE.match(namespace):
+        if not isinstance(namespace, str) or not namespace.strip():
             raise refused(
-                f"span attributes: namespace '{namespace}' — lowercase words joined by dots, "
-                "the domain: 'siat', 'payment'"
+                f"span attributes: namespace {namespace!r} — the prefix every key takes: "
+                "'siat', 'payment'"
             )
         declared = [
             _declared(
@@ -411,8 +304,6 @@ traces = Traces()
 
 
 __all__ = [
-    "RESERVED_NAMESPACES",
-    "SENSITIVE_WORDS",
     "SpanAttribute",
     "SpanValue",
     "Traces",

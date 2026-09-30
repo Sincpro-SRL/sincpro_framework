@@ -9,6 +9,8 @@ executions of that same instance can see them.
 from contextvars import Token
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple
 
+from ..observability.correlation import remember
+
 if TYPE_CHECKING:
     from ..use_bus import UseFramework
 
@@ -80,6 +82,9 @@ class FrameworkContext:
         if self.global_scope:
             self._exit_global()
         elif self._overlay_token is not None and self._overlay is not None:
+            # What the scope said still counts for the execution it was opened in: its span,
+            # its metrics and its error close after the scope does (PRD_03 §4.10).
+            remember(self._overlay)
             self.framework._pop_overlay(self._overlay_token, self._overlay)
         return False
 
