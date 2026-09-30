@@ -2,7 +2,11 @@
 
 - **Status**: built. Traces, errors and logs since the observability refactor; metrics (§4)
   automatic, declared and by hand, on Prometheus (the reference stack) or OpenTelemetry; what a
-  use case says on its own span (§3.1) built with this revision. What is left is §10.
+  use case says on its own span (§3.1) built with this revision. The execution context on
+  every signal (§4.10, a normative rule): `release`, `service_name`, `service_version` and the
+  execution's `tenant` on logs, spans, every metric series and GlitchTip; every context key on the
+  span and in GlitchTip; the metric labels a bus declares; `of(ContextType)["key"]`; no refusal on
+  content. What is left is §10.
 - **Extras**: none for the core. `[opentelemetry]` (traces, OTLP metrics), `[sentry]` (errors to
   GlitchTip/Sentry), `[prometheus]` (metrics scraped at `/metrics`).
 - **Code**: `sincpro_framework.observability` (the two doors: `Observability` per bus,
@@ -166,27 +170,23 @@ class SendDocumentToSiat(ApplicationService):
   it runs keeps its own; after `self.feature_bus.execute(...)` returns, the use case running is the
   ApplicationService again. `thread_context()` and the async bus carry the variable.
 
-**Rules — normative.**
+**Rules — normative.** Nothing is refused for its name or its content (§4.10 rule 8): what a
+service shows is its decision.
 
-1. A key is lowercase words joined by dots, **the domain first**: `siat.nit`,
-   `payment.merchant_id`. It **MUST NOT** be under `sincpro.*` (the framework's: a use case writing
-   `sincpro.outcome` would lie on every span) nor under an OpenTelemetry semantic-convention
-   namespace (`http`, `db`, `rpc`, `messaging`, `server`, `user`, `enduser`, `service`, `error`,
-   `code`, … — `RESERVED_NAMESPACES`), where a key means what the convention says.
+1. A key is any text; `{namespace}.{field}` for a declared one. The domain first reads best
+   (`siat.nit`, `payment.merchant_id`). A key the framework also writes (`sincpro.outcome`) takes
+   the project's value.
 2. A value is a `str`, `bool`, `int`, `float` or a homogeneous sequence of them; an `Enum` travels
    as its value, a `Decimal` as a float, a `UUID` as text, a `date` as ISO 8601, a mixed sequence as
    text; `None` stays off the span. A DTO, a mapping, `bytes` or `Any` do not fit a span.
-3. **What identifies a person or opens a door never goes on a trace** — a trace is read by anyone
-   with access to Grafana and kept for weeks. A key with a word naming a secret, credential, card
-   or contact (`password`, `secret`, `token`, `api_key`, `authorization`, `cookie`, `pin`, `otp`,
-   `cvv`, `card_number`, `tarjeta`, `clave`, `contrasena`, `email`, `correo`, `phone`, `telefono`
-   — `SENSITIVE_WORDS`) is refused. The list catches the obvious name, not every leak: a national
-   id in a field called `numero` passes, and keeping it out is the author's rule to follow.
-4. **Declared: refused at import** (`ContractViolation`) — a field the DTO lacks, a path into a
-   DTO that is neither the use case's Command nor its Response, a value that does not fit, a key
-   that breaks 1 or 3, a key declared twice, a declaration with nothing in it.
-5. **By hand: never raises.** An attribute that breaks a rule is dropped and logged once; the rest
-   are set; the use case runs (principle 2).
+3. The execution context goes on the span by itself (§4.10 rule 2); a reference into the context
+   type reads it (`of(BillingContext)["user_id"]`, §4.10 rule 6).
+4. **Declared: refused at import** (`ContractViolation`) only for what could never work — a field
+   the DTO or the context type lacks, a path into a DTO or a context that is not the use case's, a
+   value that does not fit a span, a key declared twice, a declaration with nothing in it, an
+   empty namespace.
+5. **By hand: never raises.** A value a span cannot hold is dropped and logged once; the rest are
+   set; the use case runs (principle 2).
 6. Without `[opentelemetry]`, with `OTEL_SDK_DISABLED`, or with no endpoint and no host provider,
    both doors do nothing; a declared use case pays one check per run. Outside a use case,
    `annotate` does nothing.
@@ -270,19 +270,20 @@ class IssueInvoice(Feature): ...
   run time the stand-in records the path and checks each step against the declared fields. The
   DTO is never modified — no metaclass, no descriptor. Nested paths (`of(R).customer.segment`)
   work.
-- **Refused at import**: a field the DTO lacks; a path into a DTO that is neither the use case's
-  Command nor its Response (read off `execute`'s annotations); a value that is not a number; a
-  label that is not bounded (§4.4); a value handed where a reference is expected.
+- **Refused at import**: a field the DTO or the context type lacks; a path into a DTO that is
+  neither the use case's Command nor its Response (read off `execute`'s annotations), or into a
+  context type it does not declare; a value that is not a number; a value handed where a reference
+  is expected. A label that is not bounded is warned about, not refused (§4.4).
 - **Only successes**: a failed run is already measured, by kind, in §4.2. `declares_metrics(cls)`
   answers whether a use case declared any.
 
-### 4.4 Labels are bounded — normative
+### 4.4 Labels: the project's choice, warned when unbounded — normative
 
-A label **MUST** be an `Enum`, a `Literal` or a `bool` (optionally `| None`); anything else is
-refused where it is declared. Every distinct value of a label is one more series in the backend
-for as long as it lives — a customer id, an amount or free text as a label is how a metrics
-backend is taken down. What varies without bound belongs on the trace (a span attribute, §3.1) or in the
-logs. Values travel as the Enum's value, `true`/`false`, or `none`.
+A label is what the project chooses. One that is not an `Enum`, a `Literal` or a `bool`
+(optionally `| None`) logs one warning where it is declared, saying that every distinct value is
+one more series in the backend for as long as it lives, and is accepted (§4.10 rule 8). A value
+that varies without bound — a customer id, an amount — usually reads better on the trace (a span
+attribute, §3.1) or in the logs. Values travel as the Enum's value, `true`/`false`, or `none`.
 
 ### 4.5 By hand, inside `execute`
 
@@ -360,6 +361,174 @@ time it sees its name.
 - **One source**: the identity and the tenant are the ones traces and errors already use
   (`observability.domain`: `ObservabilityIdentity`, `tenant()`); nothing is resolved twice.
 
+> Version and tenant are also on every series (§4.10): the info series stays, and is no longer the
+> only place a metric says them.
+
+### 4.10 Correlation: the execution context on every signal — normative
+
+- **Status**: built. A rule of the spec: every signal of every bus obeys it. It replaces §3.1
+  rules 1 and 3 and §4.4 where they refused, and §4.9 where it kept version and tenant off the
+  series.
+- **Code**: `observability/correlation.py` (what every signal reads), `context/mixin.py` (the
+  live context of the execution), `metrics/infrastructure/active.py` (`correlated`, where every
+  measurement passes), `errors/record_error.py`, `api.py` (`Observability.span`).
+
+#### The rule
+
+1. **Four keys, always, on the four signals. The framework puts them there**, never the
+   collector, the orchestrator or the deploy.
+
+   | Key | Value | Logs | Span | Metric series | GlitchTip |
+   |---|---|---|---|---|---|
+   | `release` | `APP_RELEASE` verbatim, else `artifact:version` (`ObservabilityIdentity.release`) | `release` | resource `release` | label `release` | the release, and tag `release` |
+   | `service_name` | the artifact, stable across releases | `service_name` | resource `service.name` | label `service.name` (Prometheus `service_name`) | tag `service_name` |
+   | `service_version` | the version | `service_version` | resource `service.version` | label `service.version` (Prometheus `service_version`) | tags `service_version`, `sincpro.version` |
+   | `tenant` | the execution's (rule 3) | `tenant` | attribute `tenant`; resource `tenant` = the deployment's | label `tenant` | tag `tenant`; `environment` = the deployment's |
+
+   `release` is there so one filter finds a deployed artifact exactly as it was shipped
+   (`registry…/sincpro_odoo_mcp:0.8.0`), on every tool; `service_name` + `service_version` is the
+   same thing split up. An unknown value is left off — on Prometheus, whose series have fixed
+   label keys, it is empty, which Prometheus reads as absent.
+
+2. **The execution context is the source.** It is the framework's language: the entrypoint, the
+   application (`bus.context({...})`), an interceptor or a hook, and the handler
+   (`self.context`) all write to it. **Every key of the context goes on every signal of the
+   execution, with nothing to declare**:
+   - on each log line;
+   - as an attribute of the DTO span;
+   - as a GlitchTip tag (its text, cut at 200 characters);
+   - as a metric label when the bus declares it (rule 5).
+
+   The only filter is the one the project chooses: `hide_in_logs` keeps a key off **every**
+   signal. The trace's own plumbing (`trace_id`, `span_id`, `carrier`) is not copied onto the span
+   or the event, which hold it natively. Nothing else is left out.
+
+3. **The tenant and the user.**
+   - The execution's tenant is the context's `tenant`; else the authenticated identity's
+     (`current_identity().tenant`); else the deployment's: `TENANT`, then the `tenant` key of
+     `OTEL_RESOURCE_ATTRIBUTES` (comma-separated `key=value`, percent-decoded, stripped).
+   - The execution's user is the context's `user_id`; else the authenticated identity's
+     `subject`. It goes to GlitchTip as the event's user too (`scope.set_user({"id": ...})`), so
+     every issue says how many users it hit.
+   - The identity is read by observability itself, so every entrypoint that authenticates — REST,
+     JSON-RPC, gRPC, FastAPI, MCP, a queue, remote execution, `as_identity` by hand — gives it
+     with no code of its own. The context wins over it: the application says for whom it works,
+     and every signal follows. A service that never loads auth pays nothing for it.
+
+4. **A value counts from the moment it is set.** A log line reads the context when it is
+   written. The span, the metric and the GlitchTip event read it when they are recorded — for the
+   span and the metric, at the end of the use case. So a key an interceptor, a hook or `execute`
+   sets counts on all of them (interceptors run inside the span: `bus.py`), and so does one said
+   in a `bus.context(...)` scope that closed before the use case did: the execution remembers
+   what the scopes opened inside it said (`correlation.remember`). A nested bus and
+   `thread_context()` inherit the context. A queue message hands its `correlationid` and a
+   `tenant` header to it (`queue_context`). A cron serving many tenants runs each under
+   `bus.context({"tenant": t})`.
+
+5. **Metric labels from the context are declared before the build, because the backends need
+   it.** Prometheus and OpenTelemetry create each instrument with a fixed set of label keys, and
+   a series cannot gain a label afterwards. So the context keys that go on **every** series are
+   named up front:
+
+   ```python
+   billing = UseFramework("billing", metric_labels=(of(BillingContext)["company"], "channel"))
+   ```
+   ```yaml
+   metric_labels: [company, channel]
+   ```
+
+   They are the process's: every series of every bus carries them. `correlated`
+   (`metrics/infrastructure/active.py`), which every measurement passes, adds the four keys of
+   rule 1 and the declared ones to the instrument's label keys and to the labels — so
+   `sincpro.use_case.duration`, `counts` / `sums` / `measures`, the instruments by hand,
+   `sincpro.cache.outcomes`, `sincpro.idempotency.outcomes` and `sincpro.queue.deliveries` carry
+   them alike, on the in-memory, Prometheus and OTel recorders, with no collector. What the
+   measurement names itself wins. `sincpro.context.info` describes the process and is not
+   correlated (`Instrument.correlated=False`). A Prometheus metric that meets a wider set of
+   labels than it was created with keeps its own, and says so once.
+
+6. **A typed context, referenced like a DTO: `of(ContextType)["key"]`.** A bounded context
+   types its context as a `TypedDict`: `Feature[Command, Response, BillingContext]`,
+   `ApplicationService[..., BillingContext]`, `Hook[BillingContext]`. The same type is a root for
+   every field reference, read by key as the context itself is:
+
+   ```python
+   class BillingContext(TypedDict, total=False):
+       tenant: str
+       company: Company        # Enum
+       channel: Channel        # Enum
+       user_id: str
+
+   @billing.app_service(CommandIssueInvoice)
+   @metrics.counts(by=(of(CommandIssueInvoice).currency, of(BillingContext)["channel"]))
+   @traces.attributes(of(BillingContext)["user_id"], of(CommandIssueInvoice).nit, namespace="billing")
+   class IssueInvoice(BillingService): ...
+   ```
+
+   - `of()` reads a `TypedDict`'s keys: one the context type lacks fails at import, as a field a
+     DTO lacks does. `of(ContextType)` is typed as a mapping, so a `total=False` context raises
+     no complaint from the type checker; the key is checked where it is written.
+   - A path may start at the handler's Command, its Response, or its `ContextT` (read off its
+     generic parameters); one into another context type is refused. In `metric_labels`, any
+     context type.
+   - At run time a context path reads the execution's context when the signal is recorded
+     (rule 4): on the span at the start, at the end and on a failure; on a metric when it is
+     recorded. A missing key gives no value.
+
+7. **What a use case adds, with decorators and by hand.** `@traces.attributes` and
+   `traces.annotate` put fields on the span (§3.1); `@metrics.counts/sums/measures(by=...)` on a
+   metric (§4.3). Both accept context paths (rule 6). A value that should be on every signal of
+   the execution goes in the context: `self.context["siat_cuf"] = cuf`. No other API is needed.
+
+8. **No refusal on content.** The framework gives tools; it restricts nothing:
+   - no key is refused for its name — no list of words that name a secret, no reserved
+     namespace. A key the framework also writes takes the project's value;
+   - a metric label that is not an `Enum`, a `Literal` or a `bool` logs one warning where it is
+     declared, saying that each distinct value is one more series, and is accepted;
+   - what stays is what could never work: a field reference that does not exist, a value a span
+     cannot hold (on the context's own keys it travels as its text instead), a key declared
+     twice, a declaration with nothing in it.
+
+9. **What exists keeps working.** The resource describes the process (`service.name`,
+   `service.version`, `release`, the deployment's `tenant`). `sincpro_context_info` keeps naming
+   the library behind each context. Adding labels keeps every selector written today matching,
+   and the `group_left (sincpro_version)` join keeps working. Alloy's `metrics_tenant` sets the
+   label only when absent, so it is a no-op for framework metrics. On Tempo `span.tenant` is the
+   execution's and `resource.tenant` the deployment's.
+
+**Why the old objections do not hold.** A version on the series "restarts every series at each
+deploy", but each series already carries `instance`, a new UUID on every start. The tenant and
+the user were kept off for safety; what a service shows is the service's decision, and
+`hide_in_logs` is the tool to hide it.
+
+**Not here (§10).** W3C `baggage`, to carry the context to a service that does not use the
+framework. Between Sincpro services the context already crosses (remote execution, gRPC
+`sp-ctx-*`).
+
+#### Conformance
+
+`tests/observability/test_execution_correlation.py`, beside `test_correlation_contract.py`:
+
+- `release`, `service_name`, `service_version` and `tenant` on the log line, **the metric**, the
+  span and the GlitchTip event of one failure.
+- A tenant only in `OTEL_RESOURCE_ATTRIBUTES` on all four and in the GlitchTip environment; no
+  tenant anywhere gives no `tenant` key at all.
+- One process, two executions under `{"tenant": "acme"}` and `{"tenant": "bo"}`: each its own on
+  the four signals; the resource keeps the deployment's.
+- Every context key on the span and as a GlitchTip tag, `user_id` as the event's user; a key in
+  `hide_in_logs` on none of the four.
+- The authenticated identity gives tenant and user when the context has none; the context wins.
+- A tenant an interceptor sets in a `bus.context` scope and a key the handler writes midway, on
+  the span and the metric.
+- A nested bus and a `thread_context()` worker inherit the tenant.
+- A metric label declared on the bus, by a field reference or in the settings, on every series,
+  and on Prometheus.
+- `of(BillingContext)["company"]` in `by=` and `@traces.attributes`; a key the TypedDict lacks and
+  another context type refused at import.
+- A queue message's `correlationid` and `tenant` header in the context.
+- `test_span_attributes.py`: no key refused for its name; `test_use_case_metrics.py`: an
+  unbounded label accepted with one warning.
+
 ### 4.8 Layers
 
 ```
@@ -426,7 +595,8 @@ spans through `Observability.span(...)`.
 | `sentry_dsn` | `SENTRY_PYTHON_DSN` | none | errors |
 | `app_release` | `APP_RELEASE` | none | identity |
 | `otel_service_name` | `OTEL_SERVICE_NAME` | none | identity, when `APP_RELEASE` is absent |
-| `tenant` | `TENANT` | none | every signal: resource `tenant` (traces, metrics), log field, GlitchTip tag and environment |
+| `tenant` | `TENANT`, else `tenant` in `OTEL_RESOURCE_ATTRIBUTES` | none | the deployment's tenant: the resource, the GlitchTip environment, and the default of an execution without one; the execution's tenant comes from its context first (§4.10) |
+| `metric_labels` | — | none | context keys on every metric series, beside the four of §4.10 rule 1 (§4.10 rule 5); also `UseFramework(metric_labels=...)` |
 | `otel_metrics_exporter` | `OTEL_METRICS_EXPORTER` | none | metrics: `otlp`, `prometheus`, `none` |
 | `otel_traces_exporter` | `OTEL_TRACES_EXPORTER` | none | traces: `none` builds no provider of the framework's (a host's is still ridden) |
 | `otel_sdk_disabled` | `OTEL_SDK_DISABLED` | `false` | traces and metrics off |
@@ -456,7 +626,10 @@ scraped stays the choice for a host with no collector.
 | `counts` named `…runs` | a summed field named `total` collides with a bare counter on Prometheus |
 | Only successes on declared metrics | a failure is already measured by kind; counting it again double-books it |
 | OTLP push through Alloy as the reference, the Prometheus adapter for hosts without a collector | every service already exports traces to Alloy: one endpoint, no scrape target per service, prefork workers need no shared directory — and both adapters pass one contract |
-| The version off the metrics' service name, onto one info series | a version in the job restarts every series at each deploy; the info series is joined only when a query asks |
+| The version off the metrics' service name, on a label of its own (§4.10) and on the info series | the service name stays stable across releases; `instance` already opens new series at each deploy, so a version label opens none more |
+| `service_name`, `service_version` and `tenant` on every signal, the tenant resolved per execution from the context (§4.10) | the same keys on every signal is the promise of correlation; the context is the framework's language, so it replaces the deployment's default everywhere at once; `instance` already opens new series on each deploy, so a version label adds none; a collector copying them is a deployment detail the framework must not depend on |
+| Observability reads the authenticated identity's tenant and subject when the context has none; the context always wins | every entrypoint that authenticates gives them with no code of its own; the context is the framework's language, so the application, a hook or the handler may say for whom it works and every signal follows |
+| Every context key on logs, span and GlitchTip without declaring it; metric labels declared on the bus; no refusal on content, `hide_in_logs` the only filter | the backends fix a series' labels when the instrument is created, the other signals do not; what a service shows is the service's decision |
 | Durations carry seconds buckets (OTel's HTTP ones) | OTel's default buckets are sized for milliseconds and would put every run in the first |
 
 ## 9. Conformance — what the tests prove
@@ -464,9 +637,10 @@ scraped stays the choice for a host with no collector.
 | Area | Tests |
 |---|---|
 | traces | `tests/observability/`: spans per DTO and their parentage, adoption of an outer span, W3C carriers, a failure recorded once, the host's provider respected |
-| span attributes | `tests/observability/tracing/test_span_attributes.py`: declared (Command and Response) and by hand on the `context/Command` span; a failed run keeps the Command's; an ApplicationService, its Feature and an adapter's child span each keep their own; a rule broken by hand is dropped and the use case runs; outside a use case nothing; every refusal at import. `tests/test_core_without_extras.py`: both doors with OTel blocked |
+| span attributes | `tests/observability/tracing/test_span_attributes.py`: declared (Command and Response) and by hand on the `context/Command` span; a failed run keeps the Command's; an ApplicationService, its Feature and an adapter's child span each keep their own; a value a span cannot hold is dropped by hand and the use case runs; no key refused for its name; outside a use case nothing; every refusal at import. `tests/test_core_without_extras.py`: both doors with OTel blocked |
 | automatic metrics | every run timed with its context and outcome; a failure as its kind, the declared kind (`not_found`) and the idempotency refusals included; what the bus expects as `expected`, in a use case and in a timed block; an answered failure still a failure (global and Feature handlers); an ApplicationService and its Features apart; cache, idempotency and queue outcomes counted |
-| declared metrics | counts/sums/measures per label; only successes; the refusals (unknown field, unbounded label, non-number, foreign DTO, value for a reference); a counter never goes down |
+| declared metrics | counts/sums/measures per label; only successes; the refusals (unknown field, non-number, foreign DTO, value for a reference); an unbounded label warned and accepted; a counter never goes down |
+| correlation (§4.10) | `tests/observability/test_execution_correlation.py`: the four keys on the four signals; the tenant per execution, from the context, the identity or the deployment; every context key on the span and the event; `hide_in_logs` on all four; a key set midway; declared metric labels; `of(ContextType)["key"]`; the queue's correlation |
 | by hand | named by attribute; a timed block's outcome; labels read off the right source |
 | safety | a raising recorder never fails a use case (automatic and by hand); no recorder, no cost; the core and the classic path import no backend |
 | identity | the info series once per context and recorder, with library, version and tenant; the release split into a stable name and a version; nothing invented without a tenant |
@@ -479,9 +653,7 @@ Every rule above has a mutation the tests catch (17 in the metrics pass).
 - Exemplars on the Prometheus recorder. On OTel they exist without framework code: the SDK's
   `trace_based` filter attaches the DTO span's ids to each point, because the run is measured
   while its span is active; Alloy forwards them (see [correlation](../observability/correlation.md)).
-- `service.name` on declared metrics (`counts`, `sums`, `measures`, the instruments by hand):
-  their name already carries the context, and `sincpro_context_info` joins the library; only
-  `sincpro.use_case.duration` carries the label.
+- W3C `baggage` for the execution context, towards services that do not use the framework.
 - An expected error's span without the ERROR status — its `sincpro.outcome` already says
   `expected`.
 - A log format chosen apart from the level (JSON at `DEBUG`).

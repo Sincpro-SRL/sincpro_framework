@@ -33,6 +33,7 @@ from .exceptions import (
 )
 from .interceptors import Interceptor, InterceptorRegistration, chain_for
 from .observability import FrameworkSpanContext, Observability
+from .observability.correlation import declare_metric_labels
 from .ordering import DEFAULT_SEQUENCE, Placement, name_of, ordered
 from .remote_execution.adapters import transport_for
 from .remote_execution.configuration import configured_host
@@ -75,6 +76,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         log_features: bool = True,
         package: Optional[str] = None,
         hide_in_logs: Iterable[str] = (),
+        metric_labels: Iterable[Any] = (),
     ):
         """Initialize the framework
 
@@ -86,8 +88,13 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             package: Optional Poetry distribution name used for Sentry
                 release and OTel ``service.name``. When omitted, the
                 caller outside ``sincpro_framework`` is detected.
-            hide_in_logs: Context keys kept out of every log line and GlitchTip event
-                (e.g. ``["TOKEN"]``). Everything else set with ``context()`` is logged.
+            hide_in_logs: Context keys kept off every signal — log lines, spans, metrics and
+                GlitchTip events (e.g. ``["TOKEN"]``). Everything else set with ``context()``
+                goes on all of them (PRD_03 §4.10).
+            metric_labels: Context keys on every metric series, beside the release, service,
+                version and tenant every series carries — a key (``"company"``) or a field
+                reference (``of(BillingContext).company``). Declared here, before the bus is
+                built, because a backend fixes a series' labels when it creates it.
         """
         self._settings = (
             bundled_context_name,
@@ -96,6 +103,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             log_features,
             package,
             tuple(hide_in_logs),
+            tuple(metric_labels),
         )
         self._registrations: list[Callable[[UseFramework], Any]] = []
         """Every registration, in order, as a call that repeats it on another bus — `fresh`."""
@@ -111,6 +119,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
         self._init_context_storage()
         self._hidden_in_logs: frozenset[str] = frozenset(hide_in_logs)
+        declare_metric_labels(metric_labels)
         # Who the lines come from first, the execution's context after: a key the application
         # sets itself (its own `tenant`) wins over the deployment's.
         self.logger.add_context_source(self.observability.log_identity)

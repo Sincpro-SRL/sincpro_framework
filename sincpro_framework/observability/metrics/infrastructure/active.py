@@ -18,6 +18,7 @@ import threading
 from collections.abc import Mapping
 from importlib.util import find_spec
 
+from sincpro_framework.observability import correlation
 from sincpro_framework.observability.domain import declared_exporters, otel_sdk_disabled
 from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
@@ -127,11 +128,14 @@ class ActiveRecorder:
 
     def emit(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
         """One measurement, shielded: a counter never goes down, and a recorder that raises is
-        logged once per instrument and never reaches the use case."""
+        logged once per instrument and never reaches the use case. Every measurement carries
+        the execution's correlation labels (`correlated`)."""
         recorder = self.get()
         if recorder is None:
             return
         try:
+            if instrument.correlated:
+                instrument, labels = correlated(instrument, labels)
             if instrument.kind == InstrumentKind.HISTOGRAM:
                 recorder.record(instrument, value, labels)
             elif instrument.kind == InstrumentKind.COUNTER and value < 0:
@@ -145,6 +149,34 @@ class ActiveRecorder:
                     f"metrics: {type(recorder).__name__} failed on {instrument.name} — {error}; "
                     "the use case is unaffected"
                 )
+
+
+_extended: dict[tuple[Instrument, tuple[str, ...]], Instrument] = {}
+
+
+def correlated(
+    instrument: Instrument, labels: Mapping[str, str]
+) -> tuple[Instrument, dict[str, str]]:
+    """`instrument` with the correlation keys among its label keys, and `labels` with their
+    values for the execution in progress — what the measurement names itself wins.
+
+    Context: added here, where every instrument passes, so the use case's duration, the
+    declared metrics, the instruments by hand, the cache, the idempotency and the queue carry
+    them alike, on every backend, with no collector (PRD_03 §4.10)."""
+    extra = tuple(
+        one for one in correlation.metric_label_keys() if one not in instrument.label_keys
+    )
+    if not extra:
+        return instrument, dict(labels)
+    key = (instrument, extra)
+    extended = _extended.get(key)
+    if extended is None:
+        extended = instrument.model_copy(
+            update={"label_keys": (*instrument.label_keys, *extra)}
+        )
+        _extended[key] = extended
+    missing = tuple(one for one in extra if one not in labels)
+    return extended, {**correlation.metric_labels(missing), **labels}
 
 
 active = ActiveRecorder()

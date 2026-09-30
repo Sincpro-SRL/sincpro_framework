@@ -60,3 +60,7 @@ class Instrument(DataTransferObject):
     """Fixed for the life of the instrument — Prometheus refuses a label it was not created with."""
     buckets: tuple[float, ...] | None = None
     """A histogram's bucket boundaries; `None` is the recorder's default."""
+    correlated: bool = True
+    """Whether every measurement also carries the execution's correlation labels — release,
+    service, version, tenant and the declared context keys (PRD_03 §4.10). Off only for a
+    series that describes the process rather than an execution (`sincpro.context.info`)."""

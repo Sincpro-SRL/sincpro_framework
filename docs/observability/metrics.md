@@ -127,8 +127,11 @@ with metrics.using(recorder):
             ResponseIssueInvoice,
         )
 
-assert recorder.totals("billing.issue_invoice.runs") == {(("currency", "BOB"),): 2}
-assert recorder.totals("billing.issue_invoice.total") == {(("currency", "BOB"),): 15.0}
+# Every series also carries who and for whom — release, service, version, tenant — as known
+# (correlation.md); here only the service is, and it is the bus.
+service = ("service.name", "billing")
+assert recorder.totals("billing.issue_invoice.runs") == {(("currency", "BOB"), service): 2}
+assert recorder.totals("billing.issue_invoice.total") == {(("currency", "BOB"), service): 15.0}
 ```
 
 | Decorator | Records, on each **successful** run | Named |
@@ -137,25 +140,40 @@ assert recorder.totals("billing.issue_invoice.total") == {(("currency", "BOB"),)
 | `@metrics.sums(of(X).field, by=, unit=)` | the field's value, added up (a counter: a negative value is dropped) | `{context}.{use_case}.{field}` |
 | `@metrics.measures(of(X).field, by=, unit=, buckets=)` | the field's value, as a distribution | `{context}.{use_case}.{field}` |
 
-`X` is the use case's Command or its Response — a path into any other DTO is refused at import.
+`X` is the use case's Command, its Response, or the context type it declares
+(`Feature[Command, Response, BillingContext]`): `of(BillingContext)["channel"]` reads the
+execution context when the run is recorded. A path into any other DTO or context is refused at
+import.
 A failed run is not counted here: it is already in `sincpro.use_case.duration`, by kind.
 
-### Labels are bounded, or refused
+### Labels: the project's choice, with one warning
 
-Every distinct value of a label is one more series in the backend, for good. A label is an
-`Enum`, a `Literal` or a `bool`; anything else is refused where it is declared:
+Every distinct value of a label is one more series in the backend for as long as it lives. A
+label that is not an `Enum`, a `Literal` or a `bool` is accepted, and said once, where it is
+declared:
 
 ```python
-from sincpro_framework.ddd.exceptions import ContractViolation
+from structlog.testing import capture_logs
 
-try:
+with capture_logs() as said:
     metrics.counts(by=of(CommandIssueInvoice).customer_id)
-except ContractViolation as refused:
-    assert "customer_id is str" in str(refused)
+
+assert any("customer_id is str" in line["event"] for line in said)
 ```
 
-What varies without bound — a customer, an invoice number — belongs on the trace (span
-attributes) or in the logs, never on a metric.
+What a service measures by is its decision. A customer or an invoice number is usually better on
+the trace (span attributes) or in the logs, where it costs nothing per value.
+
+### Every series says who and for whom
+
+Beside its own labels, every series carries `service.name`, `service.version`, `release` and
+the execution's `tenant` (Prometheus: `service_name`, `service_version`, `release`, `tenant`),
+added where every measurement passes, on every backend, with no collector. A context key goes on
+every series when the bus names it, before it is built, because a backend fixes a series' labels
+when it creates it — `UseFramework("billing", metric_labels=["channel"])`, a field reference
+`metric_labels=(of(BillingContext)["channel"],)`, or `metric_labels: [channel]` in the settings.
+The labels are the process's: every series of every bus carries them. See
+[correlation](correlation.md).
 
 ## By hand, inside `execute`: named by its attribute
 
@@ -197,9 +215,11 @@ recorder = InMemoryRecorder()
 with metrics.using(recorder):
     pricing(CommandPriceOrder(channel="pos"), ResponsePriceOrder)
 
-assert recorder.totals("pricing.price_order.lookups") == {(("channel", "pos"),): 2}
+assert recorder.totals("pricing.price_order.lookups") == {
+    (("channel", "pos"), ("service.name", "pricing")): 2
+}
 ((timed, _),) = recorder.observations("pricing.price_order.pricing")
-assert timed == {"sincpro.outcome": "ok", "error.type": ""}
+assert timed == {"sincpro.outcome": "ok", "error.type": "", "service.name": "pricing"}
 ```
 
 | Instrument | Records | Call |
@@ -244,7 +264,9 @@ recorder = InMemoryRecorder()
 with metrics.using(recorder):
     assistant(CommandAsk(model="deepseek-chat", question="¿saldo?"), ResponseAsk)
 
-assert recorder.totals("assistant.ask.output_tokens") == {(("model", "deepseek-chat"),): 40}
+assert recorder.totals("assistant.ask.output_tokens") == {
+    (("model", "deepseek-chat"), ("service.name", "assistant")): 40
+}
 ```
 
 On Prometheus: `assistant_ask_output_tokens_total{model="deepseek-chat"}`. When the usage is
@@ -315,7 +337,10 @@ with metrics.using(scraped):
     )
 
 page = scraped.exposition().decode()
-assert 'billing_issue_invoice_runs_total{currency="USD"} 1.0' in page
+assert (
+    'billing_issue_invoice_runs_total{currency="USD",release="",service_name="billing",'
+    'service_version="",tenant=""} 1.0'
+) in page  # an unknown correlation label is empty: to Prometheus, absent
 assert "sincpro_use_case_duration_seconds_bucket{" in page
 ```
 

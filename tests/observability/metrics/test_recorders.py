@@ -126,8 +126,12 @@ def test_a_scrape_carries_prometheus_names_for_what_the_bus_measured(prometheus)
 
     scrape = prometheus.exposition().decode()
 
-    assert 'billing_issue_invoice_runs_total{currency="BOB"} 2.0' in scrape
-    assert 'billing_issue_invoice_total{currency="BOB"} 5.0' in scrape  # the summed `total`
+    # Every series carries the correlation labels (PRD_03 §4.10); one unknown is empty, which
+    # Prometheus reads as absent.
+    correlated = 'release="",service_name="billing",service_version="",tenant=""'
+    assert f'billing_issue_invoice_runs_total{{currency="BOB",{correlated}}} 2.0' in scrape
+    # the summed `total`
+    assert f'billing_issue_invoice_total{{currency="BOB",{correlated}}} 5.0' in scrape
     assert "sincpro_use_case_duration_seconds_bucket{" in scrape
     assert 'sincpro_context="billing"' in scrape and 'sincpro_outcome="ok"' in scrape
 
@@ -170,7 +174,10 @@ def test_the_fastapi_gateway_serves_the_scrape_when_prometheus_records(prometheu
     scraped = client.get("/metrics")
 
     assert scraped.status_code == 200
-    assert 'billing_issue_invoice_runs_total{currency="USD"} 1.0' in scraped.text
+    assert (
+        'billing_issue_invoice_runs_total{currency="USD",release="",service_name="billing",'
+        'service_version="",tenant=""} 1.0'
+    ) in scraped.text
 
 
 def test_no_scrape_route_when_nothing_is_scraped():
@@ -196,7 +203,9 @@ def test_what_the_bus_measured_reaches_the_otel_meter(otel_reader):
             ResponseIssueInvoice,
         )
 
-    (counted,) = _otel_points(reader, "billing.issue_invoice.runs", {"currency": "USD"})
+    (counted,) = _otel_points(
+        reader, "billing.issue_invoice.runs", {"currency": "USD", "service.name": "billing"}
+    )
     assert counted.value == 1
     durations = _otel_points(
         reader,
@@ -314,7 +323,15 @@ def test_labels_read_by_field_reference_travel_to_every_backend(prometheus):
 
     assert (
         prometheus.registry.get_sample_value(
-            "crm_register_runs_total", {"currency": "BOB", "channel": "web"}
+            "crm_register_runs_total",
+            {
+                "currency": "BOB",
+                "channel": "web",
+                "service_name": "crm",
+                "service_version": "",
+                "release": "",
+                "tenant": "",
+            },
         )
         == 1
     )

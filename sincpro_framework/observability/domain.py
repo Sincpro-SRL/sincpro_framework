@@ -101,10 +101,12 @@ class ObservabilityIdentity(BaseModel):
 
 
 def tenant() -> str:
-    """Which tenant this deployment serves — `TENANT`; empty when unset. The GlitchTip
-    environment and tag, the `tenant` of traces, metrics and logs, and `sincpro.tenant`.
-    """
-    return (settings.tenant or "").strip()
+    """Which tenant the deployment serves — `TENANT`, else `tenant` in `OTEL_RESOURCE_ATTRIBUTES`;
+    empty when neither says one. The resource's `tenant`, the GlitchTip environment and
+    `sincpro.tenant`; an execution's own is `correlation.tenant()` (PRD_03 §4.10)."""
+    from sincpro_framework.observability.correlation import deployment_tenant
+
+    return deployment_tenant()
 
 
 def declared_exporters(value: str | None) -> set[str]:
@@ -126,7 +128,8 @@ def declared_resource_keys() -> set[str]:
 
 
 def describing_attributes(identity: ObservabilityIdentity) -> dict[str, str]:
-    """`service.version` and `tenant` for a resource, leaving out what the deployment declared.
+    """`service.version`, `release` and the deployment's `tenant` for a resource, leaving out
+    what the deployment declared.
 
     Context: `Resource.create` puts explicit attributes over `OTEL_RESOURCE_ATTRIBUTES`; left
     in, a derived value would silently replace the one the operator chose.
@@ -135,19 +138,32 @@ def describing_attributes(identity: ObservabilityIdentity) -> dict[str, str]:
     attributes: dict[str, str] = {}
     if identity.service_version and "service.version" not in declared:
         attributes["service.version"] = identity.service_version
-    if tenant() and "tenant" not in declared:
-        attributes["tenant"] = tenant()
+    if identity.artifact != UNKNOWN and identity.release and "release" not in declared:
+        attributes["release"] = identity.release
+    deployed = tenant()
+    if deployed and "tenant" not in declared:
+        attributes["tenant"] = deployed
     return attributes
 
 
 def log_fields(identity: ObservabilityIdentity) -> dict[str, str]:
-    """Who a log line comes from, on the line itself: the same service, version and tenant the
-    spans, the metrics and GlitchTip carry — readable without the collector's labels."""
+    """Who a log line comes from and for whom, on the line itself: the same release, service,
+    version and tenant the spans, the metrics and GlitchTip carry — readable without the
+    collector's labels. The tenant and the user are the execution's (PRD_03 §4.10)."""
+    from sincpro_framework.observability.correlation import tenant as execution_tenant
+    from sincpro_framework.observability.correlation import user_id
+
     fields = {"service_name": identity.service_name}
     if identity.service_version:
         fields["service_version"] = identity.service_version
-    if tenant():
-        fields["tenant"] = tenant()
+    if identity.artifact != UNKNOWN and identity.release:
+        fields["release"] = identity.release
+    who = execution_tenant()
+    if who:
+        fields["tenant"] = who
+    user = user_id()
+    if user:
+        fields["user_id"] = user
     return fields
 
 

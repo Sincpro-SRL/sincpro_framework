@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import Literal
 
 import pytest
+from structlog.testing import capture_logs
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd.exceptions import ContractViolation, DomainError
@@ -24,6 +25,11 @@ from sincpro_framework.observability.metrics import (
 )
 
 USE_CASE_DURATION = "sincpro.use_case.duration"
+
+
+SERVICE = ("service.name", "billing")
+"""The correlation label every series carries (PRD_03 §4.10): with no artifact resolved, the
+service is the bus; no release, version or tenant is known, so none is labelled."""
 
 
 class Currency(StrEnum):
@@ -176,8 +182,8 @@ def test_counts_each_success_by_the_label_it_names(recorder):
         _issue(bus, total="-1")
 
     assert recorder.totals("billing.issue_invoice.runs") == {
-        (("currency", "BOB"),): 2,
-        (("currency", "USD"),): 1,
+        (("currency", "BOB"), SERVICE): 2,
+        (("currency", "USD"), SERVICE): 1,
     }
 
 
@@ -187,7 +193,9 @@ def test_sums_an_attribute_of_the_answer_and_measures_another(recorder):
     _issue(bus, total="10.5")
     _issue(bus, total="4.5")
 
-    assert recorder.totals("billing.issue_invoice.total") == {(("currency", "BOB"),): 15.0}
+    assert recorder.totals("billing.issue_invoice.total") == {
+        (("currency", "BOB"), SERVICE): 15.0
+    }
     ((_, lines),) = recorder.observations("billing.issue_invoice.lines")
     assert lines == [3.0, 3.0]
     assert recorder.instrument("billing.issue_invoice.lines").buckets == (1, 5, 10)
@@ -211,10 +219,17 @@ def test_an_attribute_the_dto_does_not_have_is_refused_where_it_is_written():
         of(CommandIssueInvoice).curency  # type: ignore[attr-defined]
 
 
-def test_an_unbounded_label_is_refused():
-    """One series per customer id is how a label takes the metrics backend down."""
-    with pytest.raises(ContractViolation, match="customer_id is str"):
-        metrics.counts(by=of(CommandIssueInvoice).customer_id)
+def test_an_unbounded_label_is_accepted_with_a_warning():
+    """What a service measures by is its decision (PRD_03 §4.10); one series per distinct value
+    is worth saying where the label is declared, never refused."""
+
+    class CommandVisit(DataTransferObject):
+        visitor_id: str
+
+    with capture_logs() as logs:
+        metrics.counts(by=of(CommandVisit).visitor_id)
+
+    assert any("visitor_id is str" in entry["event"] for entry in logs)
 
 
 def test_only_a_number_is_summed_or_measured():
@@ -265,13 +280,23 @@ def test_instruments_declared_on_the_use_case_are_named_by_their_attribute(recor
     )
 
     assert recorder.totals("billing.issue_invoice.rejected_lines") == {
-        (("channel", "web"),): 2
+        (("channel", "web"), SERVICE): 2
     }
     ((pricing_labels, pricing),) = recorder.observations("billing.issue_invoice.pricing")
-    assert pricing_labels == {"sincpro.outcome": "ok", "error.type": ""} and len(pricing) == 1
+    assert (
+        pricing_labels
+        == {
+            "sincpro.outcome": "ok",
+            "error.type": "",
+            "service.name": "billing",
+        }
+        and len(pricing) == 1
+    )
     assert recorder.instrument("billing.issue_invoice.pricing").unit == "s"
-    assert recorder.observations("billing.issue_invoice.discount") == [({}, [7.0])]
-    assert recorder.totals("billing.issue_invoice.pending") == {(): 0}
+    assert recorder.observations("billing.issue_invoice.discount") == [
+        ({"service.name": "billing"}, [7.0])
+    ]
+    assert recorder.totals("billing.issue_invoice.pending") == {(SERVICE,): 0}
 
 
 def test_a_timed_block_that_raises_is_timed_as_its_failure(recorder):
@@ -289,7 +314,11 @@ def test_a_timed_block_that_raises_is_timed_as_its_failure(recorder):
         bus(CommandIssueInvoice(customer_id="c", currency=Currency.BOB, total=Decimal(1)))
 
     ((labels, _),) = recorder.observations("billing.issue_invoice.pricing")
-    assert labels == {"sincpro.outcome": "domain", "error.type": "InvoiceRefused"}
+    assert labels == {
+        "sincpro.outcome": "domain",
+        "error.type": "InvoiceRefused",
+        "service.name": "billing",
+    }
 
 
 # --- measuring never breaks what it measures --------------------------------------------------
@@ -365,7 +394,7 @@ def test_a_counter_never_goes_down(recorder):
     refunds(CommandRefund(amount=Decimal(5)), ResponseRefund)
     refunds(CommandRefund(amount=Decimal(-3)), ResponseRefund)
 
-    assert recorder.totals("billing.refund.amount") == {(): 5.0}
+    assert recorder.totals("billing.refund.amount") == {(SERVICE,): 5.0}
 
 
 # --- what a failure is called: what it declares, and whether the bus expected it --------------

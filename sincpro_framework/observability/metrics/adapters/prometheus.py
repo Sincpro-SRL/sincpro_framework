@@ -54,11 +54,14 @@ class PrometheusRecorder(Recorder):
         self.registry = registry if registry is not None else prometheus_client.REGISTRY
         self._lock = threading.Lock()
         self._metrics: dict[str, tuple[Instrument, Any]] = {}
+        self._differing: set[str] = set()
 
-    def _metric(self, instrument: Instrument) -> Any | None:
-        """The `prometheus_client` metric for `instrument`, created once. An instrument declared
-        again under the same name with other labels or kind is refused — Prometheus would
-        raise on it — logged, and its measurements dropped."""
+    def _metric(self, instrument: Instrument) -> tuple[Instrument, Any] | None:
+        """The `prometheus_client` metric for `instrument`, created once, with the instrument it
+        was created for. An instrument declared again under the same name with another kind is
+        refused — Prometheus would raise on it — logged, and its measurements dropped. With
+        other labels it is recorded under the labels the metric was created with: a label it
+        lacks is dropped, one it has and the measurement does not is empty."""
         name = prometheus_name(instrument)
         known = self._metrics.get(name)
         if known is None:
@@ -67,14 +70,20 @@ class PrometheusRecorder(Recorder):
                 if known is None:
                     known = (instrument, self._created(name, instrument))
                     self._metrics[name] = known
-        declared, metric = known
-        if (declared.kind, declared.label_keys) != (instrument.kind, instrument.label_keys):
+        declared, _ = known
+        if declared.kind != instrument.kind:
             logger.warning(
-                f"metrics: {instrument.name} is declared twice with different labels or kind; "
+                f"metrics: {instrument.name} is declared twice with different kinds; "
                 "the second is not recorded"
             )
             return None
-        return metric
+        if declared.label_keys != instrument.label_keys and name not in self._differing:
+            self._differing.add(name)
+            logger.warning(
+                f"metrics: {instrument.name} is recorded with other labels than it was created "
+                f"with ({', '.join(declared.label_keys)}); it keeps those"
+            )
+        return known
 
     def _created(self, name: str, instrument: Instrument) -> Any:
         labels = [prometheus_label(one) for one in instrument.label_keys]
@@ -94,22 +103,25 @@ class PrometheusRecorder(Recorder):
             common["buckets"] = instrument.buckets
         return prometheus_client.Histogram(**common)
 
-    def _series(self, metric: Any, labels: Mapping[str, str]) -> Any:
-        if not labels:
+    def _series(self, known: tuple[Instrument, Any], labels: Mapping[str, str]) -> Any:
+        """Every label the metric was created with, empty when the measurement lacks it — an
+        empty label is, to Prometheus, no label."""
+        declared, metric = known
+        if not declared.label_keys:
             return metric
         return metric.labels(
-            **{prometheus_label(key): value for key, value in labels.items()}
+            **{prometheus_label(key): labels.get(key, "") for key in declared.label_keys}
         )
 
     def add(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
-        metric = self._metric(instrument)
-        if metric is not None:
-            self._series(metric, labels).inc(value)
+        known = self._metric(instrument)
+        if known is not None:
+            self._series(known, labels).inc(value)
 
     def record(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
-        metric = self._metric(instrument)
-        if metric is not None:
-            self._series(metric, labels).observe(value)
+        known = self._metric(instrument)
+        if known is not None:
+            self._series(known, labels).observe(value)
 
     # exposition
 

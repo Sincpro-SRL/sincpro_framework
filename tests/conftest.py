@@ -10,6 +10,16 @@ import pytest
 from .fixtures import *  # noqa
 
 
+@pytest.fixture(autouse=True)
+def _forget_declared_metric_labels():
+    """`UseFramework(metric_labels=...)` declares for the whole process; a test's must not reach
+    the next one."""
+    yield
+    from sincpro_framework.observability.correlation import reset_metric_labels
+
+    reset_metric_labels()
+
+
 @pytest.fixture(scope="session")
 def otel_provider():
     """Configure the OTel TracerProvider once for the whole test session."""

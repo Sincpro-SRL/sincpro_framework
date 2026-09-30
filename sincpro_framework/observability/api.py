@@ -13,12 +13,13 @@ Nothing here raises and nothing here is required: with neither extra installed e
 method is a no-op and the bus runs exactly as it would without observability.
 """
 
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from typing import Any, ContextManager, Optional, Tuple, Type
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
-from sincpro_framework.observability import failure
+from sincpro_framework.observability import correlation, failure
 from sincpro_framework.observability.domain import (
     OK,
     OUTCOME,
@@ -41,7 +42,11 @@ from sincpro_framework.observability.tracing.setup import (
 )
 from sincpro_framework.observability.tracing.setup import setup as setup_tracing
 from sincpro_framework.observability.tracing.span_context import FrameworkSpanContext
-from sincpro_framework.observability.tracing.span_error import span_attributes, span_error
+from sincpro_framework.observability.tracing.span_error import (
+    span_attributes,
+    span_correlation,
+    span_error,
+)
 from sincpro_framework.observability.tracing.span_execution import span_execution
 
 IgnoredExceptions = Tuple[Type[Exception], ...]
@@ -114,10 +119,25 @@ class Observability:
                 known.append(error_type)
         self.ignored_errors = tuple(known)
 
-    def span(self, dto_name: str, layer: str) -> ContextManager[Any]:
+    @contextmanager
+    def span(self, dto_name: str, layer: str) -> Generator[Any, None, None]:
         """Span for one DTO execution, with its ids and coordinates bound to the logger. It
-        starts `ok`; `failed` replaces the outcome with the failure's, as the metrics do."""
-        return span_execution(dto_name, layer, self.identity.bus, self.logger, {OUTCOME: OK})
+        starts `ok`; `failed` replaces the outcome with the failure's, as the metrics do.
+
+        Context: the execution is this bus's for as long as the span is open, so every signal
+        recorded inside reads this bus's context (PRD_03 §4.10). The context goes on the span
+        when it closes — what an interceptor, a hook or `execute` set midway included."""
+        with (
+            correlation.running(self),
+            span_execution(
+                dto_name, layer, self.identity.bus, self.logger, {OUTCOME: OK}
+            ) as span,
+        ):
+            try:
+                yield span
+            finally:
+                if span is not None:
+                    span_correlation(span, correlation.execution_keys())
 
     def measure(self, dto: object, handler: object, layer: str) -> ContextManager[Any]:
         """The metrics of one DTO execution: its duration by outcome, and what its use case
@@ -215,6 +235,7 @@ class Observability:
         span's outcome — every span it crosses takes one, as every run's metric does."""
         outcome = self._outcome(error)
         span_attributes(span, {OUTCOME: outcome})
+        self.describe(span, handler, None)
         recorded = failure.remember(
             error, dto, self._bus, handler, layer, trace_ids=current_otel_context()
         )

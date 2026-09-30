@@ -129,6 +129,7 @@ def test_the_metrics_resource_keeps_the_version_out_of_the_service_name(monkeypa
     assert attributes == {
         "service.name": "sincpro-odoo",
         "service.version": "18.5.0-rc2",
+        "release": "sincpro-odoo:18.5.0-rc2",
         "tenant": "acme",
     }
 

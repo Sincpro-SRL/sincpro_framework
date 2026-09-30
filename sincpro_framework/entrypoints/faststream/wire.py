@@ -13,7 +13,7 @@ authenticated in that same thread (identity is a `ContextVar`).
 
 import asyncio
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -110,6 +110,18 @@ def rabbit_user_id(message: StreamMessage[Any], envelope: Envelope) -> str | Non
 
 def _default_records() -> IdempotencyRecords:
     return KeyValueRecords(InMemoryKeyValue())
+
+
+def queue_context(envelope: Envelope, headers: Mapping[str, str]) -> dict[str, str]:
+    """What a message hands the execution's context: its `correlationid`, and the `tenant` a
+    producer put in its headers — so every signal of the run says them (PRD_03 §4.10)."""
+    carried: dict[str, str] = {}
+    if envelope.correlationid:
+        carried["correlation_id"] = envelope.correlationid
+    tenant = headers.get("tenant") or headers.get("x-tenant")
+    if tenant:
+        carried["tenant"] = tenant
+    return carried
 
 
 class QueueOptions(DataTransferObject):
@@ -410,8 +422,10 @@ class QueueWire(Wire[QueueBinding]):
             headers={name.lower(): value for name, value in headers.items()},
         )
 
+        carried = queue_context(envelope, credentials.headers)
+
         def call() -> Any:
-            with authenticated_as(bus, credentials):
+            with authenticated_as(bus, credentials), bus.context(carried):
                 return bus(dto)
 
         with within_trace(envelope.carrier()):

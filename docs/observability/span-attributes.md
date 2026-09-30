@@ -13,8 +13,8 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 ## Why on the trace, and not on a metric
 
 A NIT, a merchant or a transaction id vary without bound. As a metric label each distinct value is
-one more series in Prometheus, forever — which is why a label is refused unless it is an `Enum`, a
-`Literal` or a `bool` ([metrics](metrics.md#labels-are-bounded-or-refused)). On a span they cost
+one more series in Prometheus for as long as it lives — which is why a label that is not an
+`Enum`, a `Literal` or a `bool` is warned about ([metrics](metrics.md#labels-the-projects-choice-with-one-warning)). On a span they cost
 nothing extra, and they answer what the metrics cannot:
 
 | Question | Where |
@@ -173,38 +173,27 @@ is the ApplicationService again.
 
 ## The rules
 
-**Keys** are lowercase words joined by dots, the domain first: `siat.nit`,
-`payment.merchant_id`, `siat.point_of_sale`. Never:
-
-- **`sincpro.*`** — the framework's. A use case that wrote `sincpro.outcome` would lie on every
-  span it crosses.
-- **An OpenTelemetry convention's namespace** — `http`, `db`, `rpc`, `messaging`, `server`,
-  `user`, `enduser`, `service`, `error`, `exception`, `code`, … (`RESERVED_NAMESPACES`): a key there
-  means what the convention says to every backend that reads it.
-- **A name that says secret, credential, card or contact** — `password`, `secret`, `token`,
-  `api_key`, `access_key`, `private_key`, `authorization`, `cookie`, `credential`, `pin`, `otp`,
-  `cvv`, `card_number`, `tarjeta`, `clave`, `contrasena`, `email`, `correo`, `phone`,
-  `telefono` (`SENSITIVE_WORDS`), refused as a word of any segment.
+**Keys** are any text. `siat.nit`, `payment.merchant_id`, `siat.point_of_sale` — the domain
+first reads best — but nothing is refused for its name: what a service shows is its decision,
+and `hide_in_logs` is the tool to keep a key off every signal. A key the framework also writes
+(`sincpro.outcome`) takes the project's value.
 
 ```python
-from sincpro_framework.ddd.exceptions import ContractViolation
-
-
 class CommandLogin(DataTransferObject):
     access_token: str
 
 
-try:
-    traces.attributes(of(CommandLogin).access_token, namespace="auth")
-except ContractViolation as refused:
-    assert "never goes on a trace" in str(refused)
+assert callable(traces.attributes(of(CommandLogin).access_token, namespace="auth"))
 ```
 
-The list catches the obvious name, not every leak: a personal document number in a field called
-`numero` passes. **What identifies a person or opens a door never goes on a trace** — a trace is
-read by anyone with access to Grafana and kept for weeks. A company's NIT, a merchant code, a
-branch, an id the provider assigned: yes. A customer's email, national id, phone or card, a
-token, a password, a signed payload: no.
+A declaration is refused only for what could never work: a field that does not exist, a value a
+span cannot hold, a key declared twice, nothing declared.
+
+**The execution context goes on the span by itself.** Every key of `bus.context(...)` — and what
+an interceptor, a hook or `execute` wrote to it — is an attribute of the use case's span when it
+closes, with `tenant` and `user_id` (from the authenticated identity when the context has none).
+See [correlation](correlation.md). A reference into the context type reads it too:
+`@traces.attributes(of(BillingContext)["user_id"], namespace="billing")`.
 
 **Values** are what OpenTelemetry holds: `str`, `bool`, `int`, `float`, and homogeneous sequences
 of them. The framework also takes an `Enum` (as its value), a `Decimal` (as a float), a `UUID` (as
@@ -215,14 +204,14 @@ span. Keep values short: `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` truncates what is l
 
 | Situation | What happens |
 |---|---|
-| a declaration that breaks a rule | refused at import (`ContractViolation`) — before any run |
-| `traces.annotate` with a key that breaks a rule, or a value a span cannot hold | that attribute is dropped and logged once; the rest are set; the use case runs |
+| a declaration that could never work (no such field, a value a span cannot hold) | refused at import (`ContractViolation`) — before any run |
+| `traces.annotate` with a value a span cannot hold | that attribute is dropped and logged once; the rest are set; the use case runs |
 | no `[opentelemetry]`, `OTEL_SDK_DISABLED`, no endpoint and no host provider | both doors do nothing; a declared run pays one check |
 | `traces.annotate` outside a use case (a script, the transport before the bus) | nothing |
 | a trace that was sampled out | the span does not record; nothing to see, nothing raised |
 
 ```python
-traces.annotate({"payment.order": "O-1", "payment.password": "never set, never raised"})
+traces.annotate({"payment.order": "O-1", "payment.payload": {"not": "a span value"}})
 ```
 
 ## Reference
@@ -231,6 +220,5 @@ traces.annotate({"payment.order": "O-1", "payment.password": "never set, never r
 |---|---|
 | `@traces.attributes(*of(X).field, namespace=, **name=of(X).field)` | declared on a use case: the Command's before it runs, the Response's after a success |
 | `traces.annotate({key: value})` | by hand, on the span of the use case running now |
-| `of(Dto).field` | the field reference `metrics` uses — also exported by `sincpro_framework.observability` |
+| `of(Dto).field`, `of(ContextType)["key"]` | the field reference `metrics` uses — also exported by `sincpro_framework.observability` |
 | `SpanValue` | what a value may be |
-| `RESERVED_NAMESPACES`, `SENSITIVE_WORDS` | `sincpro_framework.observability.tracing.attributes` |

@@ -72,6 +72,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         log_features: bool = True,
         package: Optional[str] = None,
         hide_in_logs: Iterable[str] = (),
+        metric_labels: Iterable[Any] = (),
     ) -> None:
         """
         Initialize the framework.
@@ -82,6 +83,9 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             log_app_services: Enable/disable application service logging
             log_features: Enable/disable feature logging
             package: Optional Poetry distribution name used in Sentry release and OTel service.name
+            hide_in_logs: Context keys kept off every signal (logs, spans, metrics, GlitchTip)
+            metric_labels: Context keys on every metric series — "company" or
+                of(BillingContext).company — beside release, service, version and tenant
         """
         ...
     # Improved overloads for framework execution

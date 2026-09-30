@@ -29,3 +29,22 @@ def span_attributes(span: Any, attributes: Mapping[str, str]) -> None:
         return
     for key, value in attributes.items():
         span.set_attribute(key, value)
+
+
+def span_correlation(span: Any, keys: Mapping[str, Any]) -> None:
+    """The execution's context on its span (PRD_03 §4.10): each value as OpenTelemetry takes
+    it, and as its text when a span cannot hold it. Never raises."""
+    if not (OTEL_AVAILABLE and span is not None):
+        return
+    from sincpro_framework.observability.tracing.attributes import span_value
+
+    for key, value in keys.items():
+        try:
+            try:
+                converted = span_value(value)
+            except TypeError:
+                converted = str(value)
+            if converted is not None:
+                span.set_attribute(key, converted)
+        except Exception:
+            continue
