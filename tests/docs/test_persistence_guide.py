@@ -29,6 +29,7 @@ AUTH = ROOT / "docs" / "auth" / "README.md"
 REST = ROOT / "docs" / "entrypoints" / "rest.md"
 FASTAPI = ROOT / "docs" / "entrypoints" / "fastapi.md"
 METRICS = ROOT / "docs" / "observability" / "metrics.md"
+SPAN_ATTRIBUTES = ROOT / "docs" / "observability" / "span-attributes.md"
 README = ROOT / "README.md"
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -68,6 +69,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         REST,
         FASTAPI,
         METRICS,
+        SPAN_ATTRIBUTES,
     ],
     ids=lambda page: page.parent.name + "/" + page.name,
 )

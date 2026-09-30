@@ -1473,6 +1473,11 @@ Every span produced by the framework carries:
 | `error.type` | Exception class, on the span of the handler that raised | Filter failed spans by cause |
 | `code.function.name` / `code.file.path` / `code.line.number` | The consumer's line that failed (`error_at`) | Jump from the trace to the code |
 
+What only the use case knows — a NIT, a merchant, the code a provider answered — it puts on its
+own span with `traces`: declared with `@traces.attributes(of(Command).nit, namespace="siat")`, or
+by hand with `traces.annotate({"siat.cuf": cuf})`. High-cardinality values a metric refuses as
+labels belong there; see [span attributes](docs/observability/span-attributes.md).
+
 ### The observability API: automatic first, two doors when you need them
 
 **Nothing has to be called.** Creating a `UseFramework` and building it is the whole

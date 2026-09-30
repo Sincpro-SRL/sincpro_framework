@@ -66,9 +66,26 @@ class Ping(Feature):
         return ResponsePing(pong=True)
 
 
-assert bus(CommandPing(), ResponsePing).pong
+from sincpro_framework.observability import of, traces
 
-crons = Crons("cron-core-only")
+
+class CommandStamp(DataTransferObject):
+    nit: str
+
+
+@bus.feature(CommandStamp)
+@traces.attributes(of(CommandStamp).nit, namespace="core")
+class Stamp(Feature):
+    def execute(self, dto: CommandStamp) -> ResponsePing:
+        traces.annotate({"core.stamped": True, "core.password": "dropped, never raised"})
+        return ResponsePing(pong=True)
+
+
+assert bus(CommandPing(), ResponsePing).pong
+assert bus(CommandStamp(nit="1020304050"), ResponsePing).pong
+traces.annotate({"core.outside": 1})  # outside a use case: nothing, and nothing raised
+
+crons =Crons("cron-core-only")
 crons.add_dependency("bus", bus)
 ran = []
 

@@ -147,6 +147,34 @@ def bounded_label(path: FieldPath) -> FieldPath:
     )
 
 
+def _members(annotation: Any) -> tuple[type, ...]:
+    if get_origin(annotation) in (Union, types.UnionType):
+        return tuple(one for one in get_args(annotation) if isinstance(one, type))
+    return (annotation,) if isinstance(annotation, type) else ()
+
+
+def refuse_foreign_paths(cls: type, paths: tuple[FieldPath, ...]) -> None:
+    """A path starts at the use case's Command or its Response — read off `execute`'s
+    annotations; unchecked when it has none. Shared by everything that reads a run's DTOs off a
+    declaration: the metrics and the span attributes."""
+    try:
+        hints = get_type_hints(cls.execute)  # type: ignore[attr-defined]
+    except Exception:
+        return
+    parameters = [name for name in hints if name != "return"]
+    if not parameters:
+        return
+    known = (*_members(hints[parameters[0]]), *_members(hints.get("return")))
+    if not known:
+        return
+    for path in paths:
+        if not any(issubclass(one, path.root) or one is path.root for one in known):
+            raise refused(
+                f"{cls.__name__}: {path!r} — {path.root.__name__} is neither the Command nor "
+                f"the Response of {cls.__name__} ({', '.join(one.__name__ for one in known)})"
+            )
+
+
 NUMBERS = (int, float, Decimal)
 
 
@@ -182,4 +210,6 @@ __all__ = [
     "label_value",
     "numeric_value",
     "of",
+    "refuse_foreign_paths",
+    "without_none",
 ]

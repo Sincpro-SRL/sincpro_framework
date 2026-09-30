@@ -21,10 +21,9 @@ value that is not a number, a path into another DTO than the use case's, all ref
 """
 
 import time
-import types
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import Any
 
 from sincpro_framework.observability.metrics.domain.declarations import Declaration, Measure
 from sincpro_framework.observability.metrics.domain.instruments import (
@@ -39,7 +38,7 @@ from sincpro_framework.observability.metrics.domain.paths import (
     bounded_label,
     field_path,
     numeric_value,
-    refused,
+    refuse_foreign_paths,
 )
 from sincpro_framework.observability.metrics.domain.recorder import Recorder
 from sincpro_framework.observability.metrics.infrastructure.active import active
@@ -65,35 +64,11 @@ def _labels(by: Labels) -> tuple[FieldPath, ...]:
     return tuple(bounded_label(field_path(one, "a label")) for one in references)
 
 
-def _members(annotation: Any) -> tuple[type, ...]:
-    if get_origin(annotation) in (Union, types.UnionType):
-        return tuple(one for one in get_args(annotation) if isinstance(one, type))
-    return (annotation,) if isinstance(annotation, type) else ()
-
-
 def _refuse_foreign_paths(cls: type, declaration: Declaration) -> None:
-    """A path starts at the use case's Command or its Response — read off `execute`'s
-    annotations; unchecked when it has none."""
-    try:
-        hints = get_type_hints(cls.execute)  # type: ignore[attr-defined]
-    except Exception:
-        return
-    parameters = [name for name in hints if name != "return"]
-    if not parameters:
-        return
-    known = (*_members(hints[parameters[0]]), *_members(hints.get("return")))
-    if not known:
-        return
-    paths = (
-        *declaration.labels,
-        *(() if declaration.value is None else (declaration.value,)),
+    refuse_foreign_paths(
+        cls,
+        (*declaration.labels, *(() if declaration.value is None else (declaration.value,))),
     )
-    for path in paths:
-        if not any(issubclass(one, path.root) or one is path.root for one in known):
-            raise refused(
-                f"{cls.__name__}: {path!r} — {path.root.__name__} is neither the Command nor "
-                f"the Response of {cls.__name__} ({', '.join(one.__name__ for one in known)})"
-            )
 
 
 def _declaring(declaration: Declaration):  # type: ignore[no-untyped-def]

@@ -13,6 +13,7 @@ data goes: nowhere, an OpenTelemetry collector, a Sentry or GlitchTip DSN, Prome
 | Page | What it answers |
 |---|---|
 | [Correlation](correlation.md) | how one failure is followed across metrics, traces, logs and GlitchTip; what the framework emits for it, what the stack must be told, many customers and releases, on-premise |
+| [Span attributes](span-attributes.md) | what a use case puts on its own span — a NIT, a merchant, a provider's code — declared with `of()` or by hand; the rules on keys and values; filtering and grouping by them in Tempo without a series per value |
 | [Metrics](metrics.md) | what every use case records by itself, decorating a use case to count, sum or measure a field, instruments inside `execute`, Prometheus and OpenTelemetry |
 | Root README, [Observability](../../README.md#observability) | what works with no extra, what `[opentelemetry]` and `[sentry]` add, `with_trace()`, span attributes, embedding inside an already instrumented host such as Odoo |
 | [PRD 03, observability](../prd/PRD_03_observability-tracing.md) | the design and why — every signal |
@@ -26,3 +27,5 @@ The doors in code:
   the httpx call, the server's own loggers, without borrowing a bus's identity.
 - `sincpro_framework.observability.metrics`: `metrics` (declare, pick the recorder) and `of` (field
   references).
+- `sincpro_framework.observability.traces`: what a use case says on its own span —
+  `@traces.attributes(...)` with the same `of`, and `traces.annotate({...})` inside `execute`.

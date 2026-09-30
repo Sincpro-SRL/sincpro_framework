@@ -1,13 +1,15 @@
 # PRD_03: Observability — traces, errors, logs and metrics
 
-- **Status**: built. Traces, errors and logs since the observability refactor; metrics (§4) built
-  with this revision — automatic, declared and by hand, on Prometheus (the reference stack) or
-  OpenTelemetry. What is left is §10.
+- **Status**: built. Traces, errors and logs since the observability refactor; metrics (§4)
+  automatic, declared and by hand, on Prometheus (the reference stack) or OpenTelemetry; what a
+  use case says on its own span (§3.1) built with this revision. What is left is §10.
 - **Extras**: none for the core. `[opentelemetry]` (traces, OTLP metrics), `[sentry]` (errors to
   GlitchTip/Sentry), `[prometheus]` (metrics scraped at `/metrics`).
 - **Code**: `sincpro_framework.observability` (the two doors: `Observability` per bus,
-  `process` for the transport) and `sincpro_framework.observability.metrics`.
-- **Guides**: [observability](../observability/README.md), [metrics](../observability/metrics.md).
+  `process` for the transport; and `traces`, a use case's span attributes) and
+  `sincpro_framework.observability.metrics`.
+- **Guides**: [observability](../observability/README.md), [metrics](../observability/metrics.md),
+  [span attributes](../observability/span-attributes.md).
 
 This document is the current design and why it is so. It is rewritten when the design changes;
 it keeps no history.
@@ -103,6 +105,105 @@ names in Tempo and every release added one; the version and the context are keys
   `span_id` in `self.context`. Without OTel installed they generate UUIDs, so logs still
   correlate.
 
+### 3.1 What a use case says about itself
+
+**Why.** The span of a use case said who ran it and how it ended, never *what it was about*. The
+only way to add to it was `Observability.annotate(span, attrs)`, internal and asking for a span
+object no use case holds. So the questions production asks went unanswered, and each consumer
+started patching around it:
+
+- **sincpro-siat-soap** (SIAT invoicing inside Odoo, many companies per database) needs, on each
+  send and each annulment, the issuing NIT, the branch and point of sale, SIAT's reception code
+  and the CUF. They vary without bound, so a metric refuses them as labels (§4.4) — rightly — and
+  they ended up nowhere.
+- **sincpro-payments-sdk** needs the merchant, the QR id and the bank's transaction id.
+- **sincpro_mcp_odoo** wrote its own helper in its transport (`tool_call_span.py`), writing on
+  whatever span happened to be active — the right idea, outside the framework, and on the wrong
+  span as soon as the call reaches a bus.
+
+**What it gives.** Filtering in Tempo by what the use case was about — "the invoices of NIT X
+that failed in the last hour"; grouping by it with TraceQL metrics
+(`{span.sincpro.use_case="CmdSendDocumentToSiat"} | count_over_time() by (span.siat.nit)`), which is
+use per company **without one Prometheus series per company**; the jump from a log line or an
+alert (its `trace_id`, [correlation](../observability/correlation.md)) to the exact run and what it
+carried; the audit of one rejection — who sent it, from where, what SIAT answered.
+
+**What it is not.** Not a metric: nothing is counted or summed, nothing is kept once the trace
+ages out, and a TraceQL metric reads only the sampled traces — for looking, never for billing. It
+does not replace `@metrics.*`: what a dashboard plots for months is a bounded metric; what a person
+has to find is a span attribute.
+
+**How.** `sincpro_framework.observability.traces`, two doors onto one span — the one the bus opened
+for the use case, `context/Command`:
+
+```python
+@siat_soap_sdk.app_service(CmdSendDocumentToSiat)
+@traces.attributes(
+    of(CmdSendDocumentToSiat).nit,                      # siat.nit
+    of(ResSendDocumentToSiat).reception_code,           # siat.reception_code
+    namespace="siat",
+    branch=of(CmdSendDocumentToSiat).branch_office,     # siat.branch
+    point_of_sale=of(CmdSendDocumentToSiat).point_of_sale,
+)
+class SendDocumentToSiat(ApplicationService):
+    def execute(self, dto: CmdSendDocumentToSiat) -> ResSendDocumentToSiat:
+        received = self.feature_bus.execute(..., ResSendDocumentToSiat)   # its own span
+        traces.annotate({"siat.status": received.literal_status})         # back on this one
+        ...
+```
+
+- **Declared** — `@traces.attributes(*of(X).field, namespace=, **name=of(X).field)`, the `of()`
+  of the metrics (§4.3), checked where it is written. A reference is keyed `{namespace}.{path}`, a
+  named one `{namespace}.{name}`. What starts at the **Command** is set before `execute` runs, so a
+  failed run carries it — the failed runs are the ones someone looks for; what starts at the
+  **Response**, after a success.
+- **By hand** — `traces.annotate({key: value})`, for a value known only midway (a code the
+  provider answered, an id computed in `execute`), from a Feature, an ApplicationService or an
+  interceptor.
+- **Which span.** The bus keeps the use case's span in a context variable while it runs;
+  both doors write there, never on OTel's *active* span — an adapter's HTTP or SQL span would
+  otherwise take the attribute. An ApplicationService's attributes stay on its span; each Feature
+  it runs keeps its own; after `self.feature_bus.execute(...)` returns, the use case running is the
+  ApplicationService again. `thread_context()` and the async bus carry the variable.
+
+**Rules — normative.**
+
+1. A key is lowercase words joined by dots, **the domain first**: `siat.nit`,
+   `payment.merchant_id`. It **MUST NOT** be under `sincpro.*` (the framework's: a use case writing
+   `sincpro.outcome` would lie on every span) nor under an OpenTelemetry semantic-convention
+   namespace (`http`, `db`, `rpc`, `messaging`, `server`, `user`, `enduser`, `service`, `error`,
+   `code`, … — `RESERVED_NAMESPACES`), where a key means what the convention says.
+2. A value is a `str`, `bool`, `int`, `float` or a homogeneous sequence of them; an `Enum` travels
+   as its value, a `Decimal` as a float, a `UUID` as text, a `date` as ISO 8601, a mixed sequence as
+   text; `None` stays off the span. A DTO, a mapping, `bytes` or `Any` do not fit a span.
+3. **What identifies a person or opens a door never goes on a trace** — a trace is read by anyone
+   with access to Grafana and kept for weeks. A key with a word naming a secret, credential, card
+   or contact (`password`, `secret`, `token`, `api_key`, `authorization`, `cookie`, `pin`, `otp`,
+   `cvv`, `card_number`, `tarjeta`, `clave`, `contrasena`, `email`, `correo`, `phone`, `telefono`
+   — `SENSITIVE_WORDS`) is refused. The list catches the obvious name, not every leak: a national
+   id in a field called `numero` passes, and keeping it out is the author's rule to follow.
+4. **Declared: refused at import** (`ContractViolation`) — a field the DTO lacks, a path into a
+   DTO that is neither the use case's Command nor its Response, a value that does not fit, a key
+   that breaks 1 or 3, a key declared twice, a declaration with nothing in it.
+5. **By hand: never raises.** An attribute that breaks a rule is dropped and logged once; the rest
+   are set; the use case runs (principle 2).
+6. Without `[opentelemetry]`, with `OTEL_SDK_DISABLED`, or with no endpoint and no host provider,
+   both doors do nothing; a declared use case pays one check per run. Outside a use case,
+   `annotate` does nothing.
+
+**Alternatives considered.**
+
+| Option | For | Against | Taken |
+|---|---|---|---|
+| Declarative only, `@traces.attributes(of(Command).nit)` | the metrics' `of()`: a rename follows it, a typo or an unfit type fails at import; the Command's attributes are on the span even when `execute` raises before any line of it could; no code in `execute` | a value known only midway (a provider's code, a computed CUF) cannot be declared | as the default |
+| Imperative only, `self.trace.annotate({...})` | covers anything | keys are strings nobody checks until run time; the author must remember to write it before whatever may raise; a name on `Feature` shadows a dependency called `trace`, and a Feature instance is shared by concurrent runs, so it cannot hold the span | no |
+| Both | the declaration for what the Command and Response carry, `traces.annotate` for what appears midway | two ways to do one thing | **yes** — the declaration first, by hand only for what it cannot say |
+| OTel's active span (`trace.get_current_span()`), as `tool_call_span.py` does | no framework code | lands on whatever child an adapter opened — the attribute is not where the use case's span is filtered | no |
+
+`traces.annotate` is a module-level door, not `self.trace`: it works the same in a Feature, an
+ApplicationService and an interceptor, needs nothing from the instance, and never collides with a
+dependency's name.
+
 ## 4. Metrics
 
 ### 4.1 What was studied, and what was taken
@@ -180,7 +281,7 @@ class IssueInvoice(Feature): ...
 A label **MUST** be an `Enum`, a `Literal` or a `bool` (optionally `| None`); anything else is
 refused where it is declared. Every distinct value of a label is one more series in the backend
 for as long as it lives — a customer id, an amount or free text as a label is how a metrics
-backend is taken down. What varies without bound belongs on the trace (a span attribute) or in the
+backend is taken down. What varies without bound belongs on the trace (a span attribute, §3.1) or in the
 logs. Values travel as the Enum's value, `true`/`false`, or `none`.
 
 ### 4.5 By hand, inside `execute`
@@ -347,6 +448,9 @@ scraped stays the choice for a host with no collector.
 | A provider per bus, a separate one for the process | a span exported under another context's name is worse than none; transport spans belong to the process |
 | Metrics recorded by the bus, not derived from spans | a service without a collector still has them; histograms are exact, not sampled |
 | One process recorder, not one per bus | a registry and a meter provider are process-wide in every backend; the context is a label and a name prefix |
+| A use case's span attributes declared with the metrics' `of()`, plus `traces.annotate` for what appears midway (§3.1) | one reference vocabulary for metrics and traces, checked at import; the Command's attributes on a failed run too; by hand only for what a declaration cannot say |
+| Span attributes on the use case's span, kept in a context variable, not on OTel's active span | an adapter's child span would take the attribute and the use case's span — the one filtered by `sincpro.use_case` — would lack it |
+| Sensitive key names refused, `sincpro.*` and OTel namespaces reserved | a token on a trace is a leak anyone with Grafana reads; a use case overwriting `sincpro.outcome` lies on every span |
 | Field references (`of()`), not strings or `Annotated` on the DTO | a rename follows them, a typo fails at import, and the DTO stays untouched |
 | Bounded labels enforced, not advised | the one mistake that takes the backend down is refused where it is written |
 | `counts` named `…runs` | a summed field named `total` collides with a bare counter on Prometheus |
@@ -360,6 +464,7 @@ scraped stays the choice for a host with no collector.
 | Area | Tests |
 |---|---|
 | traces | `tests/observability/`: spans per DTO and their parentage, adoption of an outer span, W3C carriers, a failure recorded once, the host's provider respected |
+| span attributes | `tests/observability/tracing/test_span_attributes.py`: declared (Command and Response) and by hand on the `context/Command` span; a failed run keeps the Command's; an ApplicationService, its Feature and an adapter's child span each keep their own; a rule broken by hand is dropped and the use case runs; outside a use case nothing; every refusal at import. `tests/test_core_without_extras.py`: both doors with OTel blocked |
 | automatic metrics | every run timed with its context and outcome; a failure as its kind, the declared kind (`not_found`) and the idempotency refusals included; what the bus expects as `expected`, in a use case and in a timed block; an answered failure still a failure (global and Feature handlers); an ApplicationService and its Features apart; cache, idempotency and queue outcomes counted |
 | declared metrics | counts/sums/measures per label; only successes; the refusals (unknown field, unbounded label, non-number, foreign DTO, value for a reference); a counter never goes down |
 | by hand | named by attribute; a timed block's outcome; labels read off the right source |
