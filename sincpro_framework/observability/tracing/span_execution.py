@@ -3,9 +3,33 @@ GlitchTip's job."""
 
 from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from typing import Any, Generator
 
 from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE, tracer_for
+
+_use_case_span: ContextVar[Any] = ContextVar("sincpro_use_case_span", default=None)
+"""The span of the use case running now — `None` outside one, or with no tracer. Kept apart from
+OTel's active span: an adapter that opens a span of its own (an HTTP client, a SQL statement) must
+not become where the use case's attributes land."""
+
+
+def use_case_span() -> Any:
+    return _use_case_span.get()
+
+
+@contextmanager
+def _running(span: Any) -> Generator[None, None, None]:
+    token = _use_case_span.set(span)
+    try:
+        yield
+    finally:
+        try:
+            _use_case_span.reset(token)
+        except ValueError:
+            # Closed from another context than the one it was opened in: nothing of ours is
+            # set in this one.
+            pass
 
 
 @contextmanager
@@ -90,6 +114,6 @@ def span_execution(
     coordinates = {"sincpro_use_case": dto_name, "sincpro_layer": layer}
     if bus:
         coordinates["sincpro_context"] = bus
-    with _shielded(_span_for(dto_name, layer, bus, attributes or {})) as span:
+    with _shielded(_span_for(dto_name, layer, bus, attributes or {})) as span, _running(span):
         with _shielded(_log_fields_of(span, logger, coordinates)):
             yield span

@@ -55,6 +55,7 @@ class FeatureBus(Bus):
             self.observability.span(dto_name, "feature") as span,
             self.observability.measure(dto, feature, "feature") as measured,
         ):
+            self.observability.describe(span, feature, dto)
             if dto_type in self.replacements:
                 self.observability.annotate(
                     span, {"sincpro.replaces": ", ".join(self.replacements[dto_type])}
@@ -77,6 +78,7 @@ class FeatureBus(Bus):
                     return answer
 
             measured.answered(response)
+            self.observability.describe(span, feature, response)
             if response:
                 self.logger.debug(
                     f"Feature response {response.__class__.__name__}({response})",
@@ -139,6 +141,7 @@ class ApplicationServiceBus(Bus):
             self.observability.span(dto_name, "application_service") as span,
             self.observability.measure(dto, app_service, "application_service") as measured,
         ):
+            self.observability.describe(span, app_service, dto)
             if dto_type in self.replacements:
                 self.observability.annotate(
                     span, {"sincpro.replaces": ", ".join(self.replacements[dto_type])}
@@ -163,6 +166,7 @@ class ApplicationServiceBus(Bus):
                     return answer
 
             measured.answered(response)
+            self.observability.describe(span, app_service, response)
             if response:
                 self.logger.debug(
                     f"Application service response {response.__class__.__name__}({response})"

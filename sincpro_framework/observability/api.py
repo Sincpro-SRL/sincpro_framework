@@ -192,6 +192,15 @@ class Observability:
         """Extra attributes on the span of one execution — who handled it, what it replaced."""
         span_attributes(span, attributes)
 
+    def describe(self, span: Any, handler: object, source: object) -> None:
+        """What the handler's use case declared with `traces.attributes`, read off `source` —
+        its Command before it runs, its Response after a success. Never raises."""
+        if span is None:
+            return
+        from sincpro_framework.observability.tracing.attributes import describe
+
+        describe(span, type(handler), source)
+
     def execution(self) -> ContextManager[bool]:
         return failure.execution()
 
