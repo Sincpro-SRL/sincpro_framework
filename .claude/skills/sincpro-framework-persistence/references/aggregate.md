@@ -43,7 +43,7 @@ types the answer and gives the collection its own methods.
 | Mixin | Adds | Then |
 |---|---|---|
 | `ArchivableMixin` | `archived_at` | `repository.archive(record)` hides it; reads skip it unless asked |
-| `AuditedMixin` | `created_by`, `updated_by` | stamped by the session's `before_flush`, for every write path |
+| `AuditedMixin` | `created_by`, `updated_by` | stamped at every flush from `Database(url, actor=lambda: …)`; without an actor they stay `None` |
 | `ChangeTrackingMixin` | one `EntityUpdated` event per save | see `sincpro-framework-domain-events` |
 
 ```python
@@ -52,14 +52,16 @@ class Customer(ArchivableMixin, Entity):
     name: str = ""
 ```
 
-The table must include the mixin's columns: `archive_columns()`, `audit_columns()`.
+Mixins go before `Entity` in the bases. The table must include the mixin's columns —
+`*archive_columns()`, `*audit_columns()` — or the mixin's fields are never stored and the
+capability silently does nothing.
 
 ## Models are dataclasses; anything that travels is a DTO
 
-- `@dataclass` for aggregates, entities and value objects (mapped imperatively by the ORM, free of
-  framework imports).
-- `DataTransferObject` (pydantic) for anything crossing a boundary: Commands, Responses, `Criteria`,
-  events. Validation and serialization at both ends.
+- `@dataclass` for aggregates, entities and domain events (`DomainEvent` is itself an `Entity`),
+  mapped imperatively by the ORM and free of framework imports beyond `sincpro_framework.ddd`.
+- `DataTransferObject` (pydantic) for anything crossing a boundary: Commands, Responses,
+  `Criteria`. Validation and serialization at both ends.
 
 ## Value object vs entity
 
@@ -70,14 +72,25 @@ object appears when there is a **rule to defend** (`Money` that must not cross c
 ```python
 from sincpro_framework.ddd import ValueObject
 
-Email = ValueObject(str, validate=lambda v: "@" in v)
+
+def must_be_an_email(value: str) -> None:
+    if "@" not in value:
+        raise ValueError(f"{value!r} is not an email")
+
+
+Email = ValueObject(str, must_be_an_email, name="Email")
+Email("ana@acme.bo")          # Email('ana@acme.bo')
 ```
+
+`validate_fn` **raises** to refuse; whatever non-`None` value it returns **replaces** the input.
+A predicate such as `lambda v: "@" in v` returns `True`/`False`, so `Email("ana@acme.bo")` would
+silently become the text `'True'`.
 
 ## Extending an aggregate
 
 A subclass keeps inherited fields in the parent's table and its own in its table, which references
-the parent's key. `map_aggregates` maps the parent first whatever the order and refuses a table that
-does not reference the parent's key.
+the parent's key (joined-table inheritance). `map_aggregates` maps the parent first whatever the
+order and refuses a table that does not reference the parent's key.
 
 ```python
 @dataclass
@@ -99,7 +112,7 @@ map_aggregates(credit, {Note: credit_note_table, CreditNote: credit_reason_table
 
 A `Criteria` filters and orders by inherited and own fields alike.
 
-## Full plan of computing
+## Where a computation goes
 
 - Over the record's own fields → a method on the aggregate (pure, no I/O, testable without a DB).
 - Over a set → a method on the collection.

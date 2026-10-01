@@ -117,6 +117,10 @@ class Wire[B: Binding](ABC):
     binding: ClassVar[type[Binding]]
     """Its binding DTO — its `wire` is the name the registry keeps its bindings under."""
 
+    carries_bytes: ClassVar[bool] = False
+    """Whether its payload holds raw bytes (protobuf `bytes`, a binary body). `False`: a use case
+    whose DTO has a `bytes` field is left off this wire, and a binding naming it is refused."""
+
     @abstractmethod
     def derive(self, operation: Operation, group: Group) -> B:
         """The binding this wire gives an operation by itself — its group's conventions and

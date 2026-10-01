@@ -1,8 +1,10 @@
 # QueryCaching
 
-Depth: `docs/caching/README.md`. Every example runs as a test.
+Deeper, in the framework repo: `docs/caching/README.md`.
 
 ```python
+from datetime import timedelta
+
 from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
@@ -15,8 +17,10 @@ assert first == again
 ```
 
 `on` registers an interceptor around the Query, so it is decided **before the bus is built** and
-reaches the Query however it is executed — HTTP, MCP, another ApplicationService. **Only Queries**
-(a Command decides from the database, never a cache).
+reaches the Query however it is executed — HTTP, MCP, another ApplicationService. It needs the
+handler already registered (`TypeError` otherwise) and its `execute` to declare a return type;
+after the bus is built it is refused (`BusAlreadyBuilt`). **Only Queries** — nothing refuses a
+Command, but a Command decides from the database, never a cache.
 
 ## The key
 
@@ -43,7 +47,17 @@ their domain events: `caching.invalidated_by({InvoiceIssued: [Invoice]})` is a b
 `Subscriber` beside the others.
 
 An answer that read nothing a repository noted, and declares no `depends_on`, is answered and never
-kept — there would be nothing to let it go by.
+kept — there would be nothing to let it go by (one warning on the `sincpro_framework.caching`
+logger). A Query that reads through an HTTP adapter or a raw connection declares what it depends on:
+
+```python
+CachePolicy(ttl=timedelta(minutes=5), depends_on=(Invoice,))   # invalidating Invoice lets it go
+```
+
+A write that does not reach `invalidate`, `invalidate_on_commit` or `invalidated_by` — a
+`MemoryRepository` save, a script on a raw session, another service — leaves answers stale until
+their ttl. `invalidate(Invoice)` also invalidates `Invoice`'s base classes; `invalidate()` with no
+argument lets go of every answer of this namespace.
 
 ## `CachePolicy`
 
@@ -78,6 +92,9 @@ writes share a namespace.
 
 ## Related API
 
-`QueryCaching(store, near=, sensitive=, namespace=, enabled=)`: `.on(bus, Query, CachePolicy)`,
-`.invalidate(Aggregate)`, `.invalidated_by({Event: [Aggregate]})`, `.depends_on(query)`,
-`.policies()`.
+`QueryCaching(store, near=, sensitive=, now=, namespace=, enabled=)`: `.on(bus, Query, CachePolicy)`,
+`.invalidate(Aggregate | None)`, `.invalidated_by({Event: [Aggregate]})`, `.depends_on(query)` (the
+tags the answer held for that query instance depends on), `.policies()`.
+
+`CachePolicy(ttl, vary_by=(), stale_for=0, jitter=0.1, early_expiry=1.0, depends_on=(),
+max_bytes=1 MiB, wait_for_others=2 s)`; `ttl` is required.

@@ -24,6 +24,12 @@ app = api.app()                         # install_problem_handlers for free
 `FastApiGateway` profiles: `resource` (declared `@rest...`) or `profile="rpc"` (catalog, RPC over
 HTTP). It also serves `/metrics` when the process records to Prometheus.
 
+- The `@rest...` decorator goes on the existing handler in `services/`; `entrypoints/http/app.py`
+  only builds the gateway. Never register a Feature or a bus in `entrypoints/` to get a route.
+- A body that is not the Command (a file as base64) → a hand-written route that translates and
+  calls `Depends(bus_call(bus))`, included in `api.app()`, checked with `api.verify(app)`.
+  `docs/entrypoints/fastapi.md` ("Where each piece lives", "A DTO that cannot travel as JSON").
+
 ## JSON-RPC 2.0 — `RpcGateway`
 
 One `POST /rpc`, discovery OpenRPC 1.4 (`GET /openrpc.json`, `rpc.discover`). Method names are
@@ -66,7 +72,22 @@ Tools named by the DTO without `Command`/`Query`, snake_case. Docstrings are the
 - Hints (`read_only`, `destructive`, `idempotent`, `open_world`) are derived from the Command's kind
   and the bindings; **hints are never authorization**.
 - `build_mcp_server(bus)` / `Entrypoint(bus)` stay the catalog of one bus, named by DTO class.
-- Binary DTOs (`bytes`) are skipped at server time with a warning; still callable in-process.
+
+## Binary DTOs: what each wire carries
+
+Whether a `bytes` field can travel is the wire's, declared on its port (`Wire.carries_bytes`).
+The built-in gateways carry JSON today — REST (`FastApiGateway`), JSON-RPC, MCP, the queue body,
+and the gRPC gateway, whose payload is `google.protobuf.Struct` (unary, no protobuf `bytes`).
+That is the gateways' current design, not a limit of HTTP or gRPC. On those wires a DTO with a
+`bytes` field bound with `@rest.post`, `@mcp()`, `bind`… is refused (`verify()` names it, the
+build raises `ExposureRefused`); unbound, it is skipped with one warning, `Skipping non-JSON
+Feature/ApplicationService [Command…]`. It stays callable in-process. To publish it on a JSON
+wire, write the route by hand and call the bus (REST: `bus_call`). A project's own `Wire` with
+`carries_bytes = True` publishes it as it is.
+
+Between Sincpro Python services, `remote_execution` (a context map, `bus.serve(...)`) is the gRPC
+that carries `bytes`, `Decimal`, `datetime`… as they are: one `stream_stream` call, the DTO in
+1 MiB chunks each way. See references/remote-execution.md.
 
 ## Picking one
 

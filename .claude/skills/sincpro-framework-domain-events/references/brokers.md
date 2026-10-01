@@ -8,9 +8,11 @@ to each with one API, and `sincpro_framework.events.faststream` plugs it in on b
 pip install sincpro-framework[faststream] "faststream[kafka]"     # or [rabbit], [redis], [nats]
 ```
 
-Full depth: `docs/events/brokers.md`.
+Deeper, in the framework repo: `docs/events/brokers.md` and `docs/entrypoints/queue.md`.
 
 ```python
+from faststream.kafka import KafkaBroker              # or RabbitBroker, RedisBroker, NatsBroker
+
 from sincpro_framework.events import Publisher, Subscriber
 from sincpro_framework.events.faststream import FastStreamQueue, keyed_by_entity, subscribe
 
@@ -39,6 +41,31 @@ await AsyncPublisher(FastStreamQueue(broker)).publish(InvoicePaid(amount=80))
 | `subscribe(broker, subscriber, channel_of_name=by_name, options=None)` | one subscription per channel of the events the buses registered |
 | `EVENT_HEADER` (`sincpro-event`) | the wire name beside the payload |
 
+## Channels are yours to name — on both sides
+
+By default an event travels on the channel named after it (`by_event_name`). `channel_of` on the
+queue sends it elsewhere (one topic per context, say); the consumer must say the same with
+`channel_of_name`, or it subscribes to channels nobody writes to and hears nothing:
+
+```python
+subscribe(broker, Subscriber(accounting), channel_of_name=lambda _name: "billing")
+FastStreamQueue(broker, channel_of=lambda _event: "billing")
+```
+
+## Across replicas: the inbox
+
+```python
+from sincpro_framework.caching import KeyValueRecords
+from sincpro_framework.caching.adapters.redis import RedisKeyValue          # [redis]
+from sincpro_framework.entrypoints.faststream import QueueOptions
+
+subscribe(broker, Subscriber(accounting),
+          options=QueueOptions(inbox=KeyValueRecords(RedisKeyValue(redis_client)), max_attempts=5))
+```
+
+The default inbox is in memory: it remembers which bus already handled a redelivered message in
+this replica only.
+
 ## What is guaranteed — read before relying on it
 
 - **Sending.** `put` returns once the broker took the message, so a broker that is down fails the
@@ -53,8 +80,15 @@ await AsyncPublisher(FastStreamQueue(broker)).publish(InvoicePaid(amount=80))
 - **Redis Pub/Sub and core NATS have no acknowledgement** — at most once. Use Redis Streams or NATS
   JetStream when a lost event matters.
 - **Order** is per key on Kafka (`keyed_by_entity`); elsewhere there is none to rely on.
-- `BackgroundQueue`, the in-process default, holds events in memory — lost if the process stops
+- **RabbitMQ: two services hearing one event compete for it.** Every consumer group subscribes the
+  queue named after the channel, so each service gets only part of the events. Kafka (`group_id`)
+  and NATS (`queue=`) give each group its own copy; on RabbitMQ declare a queue per group bound to
+  an exchange with `QueueOptions(subscription_of=...)` (`sincpro-framework-entrypoints`).
+- **Failures**: a bus that raises is retried up to `max_attempts` (5), then dead-lettered
+  (RabbitMQ's dead-letter exchange, `{channel}.dlq` elsewhere); a payload that is not the event it
+  claims is dead-lettered at once; an event no bus here registered is acknowledged and skipped.
+- `BackgroundQueue`, the in-process queue, holds events in memory — lost if the process stops
   before its worker handled them.
 
 Consuming **Commands** from a broker, and who may send them, is `QueueGateway`
-(`docs/entrypoints/queue.md`), not this.
+(`sincpro-framework-entrypoints`), not this.

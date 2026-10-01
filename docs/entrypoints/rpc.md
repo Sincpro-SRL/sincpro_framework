@@ -232,7 +232,7 @@ A nested DTO's definitions are published in `components.schemas` and referenced 
 every `$ref` of the document resolves. The document validates against the OpenRPC 1.4
 meta-schema (`tests/entrypoint/test_jsonrpc_errors.py`).
 
-Binary DTOs (`bytes`) are skipped at catalog time, same as MCP.
+JSON-RPC params are JSON (`carries_bytes = False` on its wire): binary DTOs (`bytes`) are skipped, same as MCP. Declaring `@rpc()` on one is refused: `verify()` names it and the build raises `ExposureRefused`.
 
 ---
 

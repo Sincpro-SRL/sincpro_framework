@@ -160,6 +160,8 @@ class Catalog:
     def _packed_use_cases(
         self, filter_binaries_schema: bool
     ) -> list[PackedFeatureOrAppService]:
+        if filter_binaries_schema:
+            return self._json_safe(self.get_scalar_use_cases())
         if not self.framework_instance.was_initialized:
             self.framework_instance.build_root_bus()
 
@@ -171,14 +173,16 @@ class Catalog:
             described_app_services, Layer.APP_SERVICES
         )
 
-        entries = [
+        return [
             *features,
             *app_services,
         ]
 
-        if not filter_binaries_schema:
-            return entries
-
+    def _json_safe(
+        self, entries: list[PackedFeatureOrAppService]
+    ) -> list[PackedFeatureOrAppService]:
+        """Context: derived from the packed entries, so a schema is computed once whichever
+        view a wire asks for first."""
         result: list[PackedFeatureOrAppService] = []
         for entry in entries:
             if json_utils.is_binary_free(entry.json_schema, entry.dto):

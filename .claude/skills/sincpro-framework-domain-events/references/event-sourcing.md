@@ -4,7 +4,8 @@ Use this only when the history **is** the product: a ledger, an audit, a state m
 moves forward and that somebody has actually asked to replay. Event sourcing by default costs
 projections, snapshots, event versioning and a migration story nobody asked for.
 
-Full depth: `docs/shapes.md` §3, `docs/persistence/guide.md` §11, `tests/orm/test_event_store.py`.
+Deeper, in the framework repo: `docs/shapes.md` §3, `docs/persistence/guide.md` §11,
+`tests/orm/test_event_store.py`.
 
 ## Writing is appending
 
@@ -13,8 +14,14 @@ queries it. `event_columns()` is the envelope every event carries.
 
 ```python
 from dataclasses import dataclass
+
+from sqlalchemy import Column, Integer, Text
+from sqlalchemy.orm import registry
+
 from sincpro_framework.ddd import Criteria, Condition, DomainEvent, EntityCollection, Sort
 from sincpro_framework.orm import entity_table, event_columns, map_aggregates
+
+ledger = registry()
 
 
 @dataclass(kw_only=True)
@@ -66,6 +73,9 @@ total=("sum", "amount"))`.
 A four-line hook enforces it (`sincpro-framework-persistence` → hooks):
 
 ```python
+from sincpro_framework.ddd import ContractViolation, Hook, Hooks
+from sincpro_framework.orm import Repository
+
 append_only = Hooks(None)
 
 @append_only.on(DomainEvent)

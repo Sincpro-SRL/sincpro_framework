@@ -100,6 +100,11 @@ One classification, each wire's code: `entrypoints.errors.failure_kind(error)`.
 | domain | any other `DomainError` | 422 | `-32010` | `FAILED_PRECONDITION` |
 | internal | anything else | 500 (nothing told) | `-32603` | `INTERNAL` |
 
+An error declares its own kind with `failure_kind = FailureKind.NOT_FOUND` (or `INVALID`,
+`UNAVAILABLE`, …) on its class, and that wins over the table. Subclass `DomainError`: only its
+message reaches the caller — a plain `Exception` with `failure_kind` gets the code, not the
+message. A project never writes its own exception handlers for these.
+
 ## Practices
 
 - Gateways last (a built bus takes nothing more).

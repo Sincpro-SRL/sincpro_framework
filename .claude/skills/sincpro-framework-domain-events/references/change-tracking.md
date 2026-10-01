@@ -4,7 +4,7 @@
 as `(before, after)`. Opt-in on the aggregate: one that does not inherit it pays nothing.
 
 ```python
-from dataclasses import field
+from dataclasses import dataclass, field
 from sincpro_framework.ddd import ChangeTrackingMixin, Entity, EntityUpdated
 
 
@@ -102,5 +102,10 @@ instance — an aggregate belongs to no bus. Thread the chain where both ends ar
 - Archiving emits nothing (`archived_at` is not tracked). `remove` deletes the row.
 - The event is recorded **before the commit lands**; a rollback leaves the aggregate believing it is
   unchanged — read it again rather than retrying with the object in hand.
+- `EntityUpdated` never says *who*: the actor is `Database(actor=...)`'s callable, stamped as
+  `updated_by` by `AuditedMixin` (`sincpro-framework-persistence`).
+- Every tracked aggregate's default event has the same wire name (`ddd.entity.v1.updated`); a
+  subscriber registered for `EntityUpdated` hears every aggregate. Give each aggregate its own
+  `change_event` when consumers care which one changed.
 
-Full detail: `docs/events/change-tracking.md`.
+Deeper, in the framework repo: `docs/events/change-tracking.md`.

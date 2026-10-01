@@ -1,6 +1,7 @@
 # Events: a publisher, a queue, and a subscriber made of buses
 
 ```python
+@dataclass(kw_only=True)
 class DatasetRegistered(DomainEvent):
     dataset_id: str
 

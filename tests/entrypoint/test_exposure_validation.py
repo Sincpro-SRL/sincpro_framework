@@ -284,3 +284,29 @@ def test_every_reason_is_said_at_once_and_nothing_is_published():
         gateway.operations()
     with pytest.raises(ExposureRefused):
         gateway.manifest()
+
+
+class CommandUploadDocument(DataTransferObject):
+    content: bytes
+
+
+def test_a_binding_on_a_bytes_command_is_refused_not_dropped():
+    """A `bytes` Command never travels as JSON: its route would silently not exist."""
+    gateway = RestSurface(
+        [_bus(rest.post("/documents"), CommandUploadDocument)], unguarded=True
+    )
+
+    assert "CommandUploadDocument (rest): bound, but it has a bytes field" in _refused(
+        gateway
+    )
+
+
+def test_a_bytes_command_bound_on_another_wire_or_left_out_builds():
+    on_rpc = RestSurface([_bus(rpc(), CommandUploadDocument)], unguarded=True)
+    left_out = RestSurface(unguarded=True)
+    left_out.add(
+        _bus(rest.post("/documents"), CommandUploadDocument), exclude=[CommandUploadDocument]
+    )
+
+    assert on_rpc.verify() == []
+    assert left_out.verify() == []

@@ -312,11 +312,19 @@ class Gateway:
     def buses(self) -> list[UseFramework]:
         return [catalog.framework_instance for catalog in self._catalogs.values()]
 
+    @property
+    def carries_bytes(self) -> bool:
+        """Whether this gateway's wire holds raw bytes — its port says; a gateway with no port
+        speaks JSON."""
+        return self._port is not None and self._port.carries_bytes
+
     def _published(self) -> list[Published]:
         return [
             (alias, catalog.framework_instance, operation)
             for alias, catalog in self._catalogs.items()
-            for operation in catalog.get_scalar_use_cases(filter_binaries_schema=True)
+            for operation in catalog.get_scalar_use_cases(
+                filter_binaries_schema=not self.carries_bytes
+            )
             if operation.layer in self._layers
         ]
 
@@ -572,6 +580,45 @@ class Gateway:
                 )
         return problems
 
+    def _binary_problems(self, wire: str) -> list[str]:
+        """Every use case bound for this wire whose Command carries bytes the wire cannot hold.
+
+        Context: what a payload holds is the wire's (`Wire.carries_bytes`). On a wire that does
+        not, a `bytes` DTO is left out, so its binding would build no route, tool or method — a
+        declaration that silently does nothing.
+
+        1. A wire that carries bytes publishes them: nothing to refuse.
+        2. Only what the gateway would publish: `include` / `exclude`, `@internal` and the layers
+           already narrowed the catalog.
+        3. Final: refused when the decorator or a `bind` puts it on this wire.
+        """
+        problems: list[str] = []
+        if self.carries_bytes:
+            return problems
+        for catalog in self._catalogs.values():
+            bus = catalog.framework_instance
+            json_safe = {
+                packed.dto
+                for packed in catalog.get_scalar_use_cases(filter_binaries_schema=True)
+            }
+            for packed in catalog.get_scalar_use_cases():
+                if packed.dto in json_safe or packed.layer not in self._layers:
+                    continue
+                command = packed.dto
+                handler = packed.handler or bus.handler_of(command) or command
+                declared = bindings_of(handler, bus.replaced_for(command)).get(wire)
+                _, bound = self._composed_for(command, handler)
+                if declared is None and not bound:
+                    continue
+                problems.append(
+                    f"{command.__name__} ({wire}): bound, but it has a bytes field and this "
+                    f"{wire} wire carries JSON only — nothing would be built for it. Drop the "
+                    f"{wire} binding and publish it with an endpoint of the project's that decodes "
+                    "the request and calls the bus (REST: `bus_call`), or on a wire that carries "
+                    "bytes"
+                )
+        return problems
+
     def _resolve(self) -> tuple[list[tuple[Resolved[Any], Published]], list[str]]:
         wire = self.wire_name
         if wire is None:
@@ -580,7 +627,7 @@ class Gateway:
                 "and has no declared surface to resolve"
             )
         today = date.today()
-        problems = self._declaration_problems(today)
+        problems = self._declaration_problems(today) + self._binary_problems(wire)
         resolved: list[tuple[Resolved[Any], Published]] = []
         for published in self._published():
             one = self._resolve_one(published, wire, today, problems)

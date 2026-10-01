@@ -93,12 +93,10 @@ try:
     with app.context({"correlation_id": "error-test", "user.id": "admin"}) as app_with_context:
         result = app_with_context(dto_that_causes_error)
 except Exception as e:
-    # Exception is automatically enriched with context
-    if hasattr(e, 'context_info'):
-        correlation_id = e.context_info["context_data"]["correlation_id"]
-        user_id = e.context_info["context_data"]["user.id"]
-        timestamp = e.context_info["timestamp"]
-        print(f"Error {e} occurred at {timestamp} for user {user_id}")
+    # The exception is raised as itself, with nothing attached. The context of the failed call
+    # is on its log line and on its error report (the `sincpro` context of the Sentry event);
+    # read it there, or keep the values you need before the call.
+    print(f"Error {e} for correlation_id error-test")
 ```
 
 ### Accessing Context from Anywhere

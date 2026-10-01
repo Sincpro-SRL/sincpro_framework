@@ -7,6 +7,32 @@ emitter of [`rest.md`](rest.md), which stays as the minimal host and gets no new
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
+## Where each piece lives
+
+The buses, Features and ApplicationServices already exist. Publishing them adds **decorators to
+those classes** and **one file that builds the app**. Nothing else:
+
+```text
+my_service/
+  domains/billing/
+    infrastructure/framework.py      billing = UseFramework("billing")       (already there)
+    services/issue_invoice.py        @billing.feature(CommandIssueInvoice)   (already there)
+                                     @rest.post("/invoices")                 ← add the route here
+                                     class IssueInvoice(Feature): ...
+  entrypoints/http/app.py            api = FastApiGateway({"billing": billing})
+                                     app = api.app()                         ← the only new file
+```
+
+- The `@rest...` decorator goes on the **existing** handler in `services/`. It imports no web
+  library, so the domain still knows nothing of HTTP.
+- `entrypoints/` builds the gateway and, when a route has to be written by hand, holds that
+  route. It never registers a Feature, an ApplicationService or a bus of its own: a use case
+  that exists only to be called over HTTP is a second bus surface that the other wires (MCP,
+  RPC, tests) do not see.
+- When the body the client sends is not the Command (a file as base64, a field renamed), the
+  route is written by hand and calls the bus with `bus_call`.
+  [A DTO that cannot travel as JSON](#a-dto-that-cannot-travel-as-json) shows it.
+
 ## Two profiles
 
 | Profile | What is published | Paths |
@@ -185,6 +211,14 @@ Every problem also carries `kind`, `reason` (UPPER_SNAKE, stable: switch on it) 
 A 422 also carries `errors: [{pointer, detail}]`. In the document, FastAPI's `HTTPValidationError`
 is replaced by `Problem`.
 
+A project's own errors fit in by subclassing `DomainError` and declaring `failure_kind` on the
+class, as `InvoiceNotFound` does above. `failure_kind` picks the status on any exception, but
+only a `DomainError`'s message reaches the caller as `detail`. A plain `Exception` with
+`failure_kind = "invalid"` answers 422 with no `detail`; without it, a 500. So the project
+writes no `@app.exception_handler` of its own. One would answer a shape the OpenAPI
+document does not promise, and the other wires (JSON-RPC, gRPC, MCP) would classify the same
+error differently.
+
 ```python
 missing = client.get("/v1/billing/invoices/F-404")
 assert missing.status_code == 404
@@ -260,6 +294,89 @@ the answer, outside idempotency.
 
 `api.router(bus)` already carries the group's prefix and version. A `prefix=` passed to
 `include_router` is only an extra mount point, and `Location` headers include it.
+
+## A DTO that cannot travel as JSON
+
+A Command with a `bytes` field (a PDF, an image) has no JSON body. What a wire carries is its
+port's (`Wire.carries_bytes`), and this one carries JSON, so it generates no route for it.
+Declaring `@rest.post` on its handler is refused: `verify()` names it and `app()` raises
+`ExposureRefused`. A `bytes` Command with no binding is skipped with one log line, `Skipping
+non-JSON Feature/ApplicationService [Command…]`.
+
+The Command stays as it is, and so does its Feature. The route that accepts the file as base64
+is written by hand in `entrypoints/`. It translates the body into the Command and calls the bus
+through `bus_call`, the same path a generated route runs:
+
+```python
+import base64
+import binascii
+
+
+class CommandMeasureDocument(DataTransferObject):
+    content: bytes
+
+
+class Measured(DataTransferObject):
+    size_bytes: int
+
+
+class DocumentUnreadable(DomainError):
+    failure_kind = FailureKind.INVALID
+
+
+documents = UseFramework("documents", log_after_execution=False)
+
+
+@documents.feature(CommandMeasureDocument)
+class MeasureDocument(Feature):
+    def execute(self, dto: CommandMeasureDocument) -> Measured:
+        return Measured(size_bytes=len(dto.content))
+
+
+class DocumentBody(DataTransferObject):
+    """What the client sends — HTTP's shape, never the Command's."""
+
+    content_base64: str
+
+
+uploads = APIRouter(prefix="/v1/documents", tags=["documents"])
+
+
+@uploads.post(
+    "/measure",
+    operation_id="CommandMeasureDocument",
+    responses=problem_responses(documents, CommandMeasureDocument),
+)
+async def measure(body: DocumentBody, call: BusCall = Depends(bus_call(documents))) -> Measured:
+    try:
+        content = base64.b64decode(body.content_base64, validate=True)
+    except binascii.Error as error:
+        raise DocumentUnreadable("content_base64 is not valid base64") from error
+    return await call(CommandMeasureDocument(content=content))
+
+
+documents_api = FastApiGateway({"documents": documents}, unguarded=True)
+documents_app = documents_api.app()
+documents_app.include_router(uploads)
+assert documents_api.verify(documents_app) == []
+
+uploading = TestClient(documents_app)
+encoded = base64.b64encode(b"%PDF-1.7").decode()
+assert uploading.post("/v1/documents/measure", json={"content_base64": encoded}).json() == {
+    "size_bytes": 8
+}
+unreadable = uploading.post("/v1/documents/measure", json={"content_base64": "@@"})
+assert unreadable.status_code == 422
+assert unreadable.json()["detail"] == "content_base64 is not valid base64"
+```
+
+- The route translates and calls; it decides nothing. Two use cases chained together (resolve
+  the document, then read it) are an ApplicationService in `services/`, and the route calls that
+  one.
+- The bus still runs the Command in-process, from a test, a cron or another context, with the
+  bytes as they are. Only HTTP needed the base64.
+- `documents_api.app()` installed the problem handlers, so the `DomainError` raised in the
+  route answers RFC 9457 like any refusal from the bus.
 
 ## Not yet
 

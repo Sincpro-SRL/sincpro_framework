@@ -1,7 +1,7 @@
 # Workflows (experimental)
 
-Depth: `docs/workflows/README.md`, PRD_07. Every block there runs as a test. **Experimental:** the
-vocabulary may change.
+Deep doc in the framework repo: `docs/workflows/README.md`, PRD_06 (every block there runs as a
+test). This page stands alone. **Experimental:** the vocabulary may change.
 
 A workflow composes the Commands a bus already answers, as JSON: which runs, with what, in which
 order, under which condition. It is validated against the live bus, runs with a trace of every step,
@@ -56,13 +56,21 @@ skipped or failed, and the version it ran on. A run that stops raises `WorkflowF
 in `error.run` — it never answers something that looks like success.
 
 `workflows.expose()` makes it one more Command, so every entrypoint that serves the bus (MCP, RPC,
-gRPC) runs workflows too.
+gRPC) runs workflows too. Call it once, before the bus is built — `catalog()`, `validate()`,
+`current` and the first execution build it; after that it raises `RuntimeError`.
+
+A run is not a transaction: each `execute` is its own call on the bus, and a step that fails
+leaves the earlier ones done — nothing retries, resumes or compensates. A step skipped by its
+`when` has no output: a later reference to it passes `validate()` and fails the run. The
+`execute` name is the DTO class name as the bus registers it (`catalog()` lists them); a
+`Workflows` reads that catalog once, from the bus object it was given.
 
 ## Change them while the process serves
 
 ```python
 issues = workflows.reload()     # checked as a whole; a set with any issue never replaces the one in force
-workflows.refresh()             # reloads only when the source's version changed — cheap for a cron
+workflows.refresh()             # reloads only when the source's version changed — cheap for a cron;
+                                # False both when nothing changed and when the new set has issues
 ```
 
 Sources: `FileWorkflows` (reviewed in a PR), `InMemoryWorkflows`, or one the project writes over its
@@ -86,7 +94,8 @@ item), then store it.
 
 A snippet is Python, run in this process by `PythonSnippets`, checked with `ast` when loaded and
 compiled under `snippet://<workflow>/<step>` so a traceback shows its own lines. What it may do is
-the project's decision — the framework gives the mechanism, not a cage. A project that needs isolation
+the project's decision — the framework gives the mechanism, not a cage. It runs with the service's
+permissions and cannot be stopped once running — a snippet that never returns holds its thread. A project that needs isolation
 implements `SnippetEngine` over a subprocess/CEL/WASM and every workflow keeps working.
 
 A run is bounded: `Workflows(bus, source, Limits(max_steps=1000, max_items=1000, max_depth=5))`. A

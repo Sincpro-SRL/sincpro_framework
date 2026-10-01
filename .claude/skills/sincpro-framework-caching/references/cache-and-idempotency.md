@@ -1,6 +1,6 @@
 # `Cache` and `Idempotency`
 
-Depth: `docs/caching/README.md` §"Any value" and §"A write that runs once".
+Deeper, in the framework repo: `docs/caching/README.md` §"Any value" and §"A write that runs once".
 
 ## `Cache` — any value by its parameters
 
@@ -9,7 +9,11 @@ system answers — a tenant a token resolves to, a catalog a service publishes �
 it gives a **version**. `Cache` keeps a value by its parameters and judges it by strategies.
 
 ```python
-from sincpro_framework.caching import Cache, ExternalVersion, JsonCodec, KeepPolicy, TimeToLive
+from datetime import timedelta
+
+from sincpro_framework.caching import (
+    Cache, ExternalVersion, FailSafe, InMemoryKeyValue, JsonCodec, KeepPolicy, TimeToLive,
+)
 
 tenants = Cache(InMemoryKeyValue(), namespace="catalog")
 policy = KeepPolicy[Tenant](
@@ -21,8 +25,13 @@ value = tenants.get_or_compute(("catalog", "acme"), lambda: registry.resolve("ac
 tenants.forget(("catalog", "acme"), JsonCodec(Tenant))
 ```
 
+- `Cache()` with no store keeps the objects themselves in this process (no codec, nothing leaves
+  the process — right for a value carrying a credential). `Cache(store)` keeps bytes shared by
+  replicas and requires a `Codec` on every call.
 - The key is the parameters, written canonically and hashed — a token used as a key is never readable
-  in the store.
+  in the store. Every parameter the value depends on (the tenant) belongs in the key.
+- `KeepPolicy()` (also what a call with no policy gets) is `TimeToLive(ttl=None)`: kept until
+  forgotten or until a validation rejects it. Give a shared-store value a ttl.
 - **freshness** — `TimeToLive(ttl=, jitter=, stale_for=, early_expiry=)` (alias `Lifetime`) or
   `Sliding(idle_for=, at_most=)`. On a shared store a sliding hit renews at most once per quarter of
   the window.
@@ -31,7 +40,8 @@ tenants.forget(("catalog", "acme"), JsonCodec(Tenant))
   serves stale).
 - **failure** — `Raise()` (default) or `FailSafe(serve_for=, throttle_for=30s, errors=(Exception,))`
   (serves the last good value through an outage, re-keeps it fresh for `throttle_for`; never serves a
-  value validation *rejected*).
+  value validation *rejected*). Name `errors` (`ConnectionError`, `TimeoutError`): the default
+  covers every exception, a 401 included.
 - On a shared store, values are bytes, so the call names its `Codec` (e.g. `JsonCodec(Tenant)`).
 - An exception is never kept; a value larger than `max_bytes` is answered and not kept.
 - The process tier is bounded by an `Eviction` (`Lru(max_entries=10_000)` default, `Unbounded()`).
@@ -50,7 +60,8 @@ call. `forget` is the exception: an invalidation that reached no replica raises.
 ## `Idempotency` — a write that runs once
 
 ```python
-from sincpro_framework.caching import AlreadyInProgress, Idempotency, KeyReused
+from sincpro_framework import DataTransferObject
+from sincpro_framework.caching import AlreadyInProgress, Idempotency, InMemoryKeyValue, KeyReused
 
 class CommandIssueReceipt(DataTransferObject):
     request_id: str
@@ -76,10 +87,19 @@ class IssueReceipt(Feature): ...
 - The fields not in the key are still compared — same key, other payload ⇒ `KeyReused` (the IETF
   `Idempotency-Key` 422); a duplicate still in flight past `wait_for_completion` ⇒
   `AlreadyInProgress` (409). Both are `DomainError`s — expected traffic.
-- A Command with no `idempotency_key()` is keyed by every field.
+- The key: the Command's `idempotency_key()`; else the key a transport put in the context under
+  `IDEMPOTENCY_KEY` (REST's `Idempotency-Key` header); else every field of the Command — so a field
+  generated per call (a `default_factory` id, a timestamp) makes every retry a new request.
+- `vary_by` names the context keys the key is kept per. Without the tenant, two tenants sending
+  the same `request_id` share one answer.
+- `in_progress_for` must outlive the longest run: an expired claim lets a duplicate run.
 - `once(...)` wraps the use case's own `execute`; the use case still runs inside the bus (Sentry,
   span, access guard), so a replayed answer is still authorized. A subclass that keeps `execute`
-  keeps `once()`; a `replaces=` handler declares its own. An `async def execute` is refused.
+  keeps `once()`; a `replaces=` handler declares its own. An `async def execute` is refused; async
+  callers reach it through `bus.get_async_bus()`. `execute` must declare its return type (the
+  replayed answer is decoded as it).
+- By hand, around anything: `idempotency.run(key, write, IdempotencyPolicy(expires_after=...),
+  JsonCodec(Answer), payload=body)`.
 - Underneath it needs a place replicas share to claim a key and keep its answer:
   `KeyValueRecords(store)` (best effort for a replica that dies after the side effect), or your
   `IdempotencyRecords` over a database so the record commits in the write's transaction

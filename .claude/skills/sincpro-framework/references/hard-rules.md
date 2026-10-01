@@ -22,8 +22,8 @@ If you find yourself writing a registry next to `@bus.feature`, stop: the bus al
 
 ## 2. Reuse is a Command on the injected bus
 
-A use case reuses another by importing its **Command and Response** and executing it on the bus it
-already has.
+A use case reuses another by importing its **DTOs** (its Command and Response) and executing the
+Command on the bus it already has.
 
 ```python
 # ✅ same context
@@ -37,15 +37,15 @@ connection = self.common_mcp(CommandResolveTenantConnection(...), TenantConnecti
 |---|---|
 | `def contact_command(...)` in `create_contact.py`, imported elsewhere | Import `CommandCreateContact`; build it at the call site |
 | `def existing_contact(feature_bus, ...)` | Execute the Command; the Feature's raise **is** the answer |
-| Importing the Feature/ApplicationService **class** from another service | Import Command + Response only — the class double-registers and bypasses the bus |
+| Importing the Feature/ApplicationService **class** from another service | Import its DTOs only — calling the class bypasses the bus: no span, no error report, no interceptors, no auth |
 | A `lambda` dependency | A named class (or named factory) in `dependencies.py` |
 | A function in `domain/` whose first argument is an adapter | An adapter on the bus; domain is vocabulary |
 
-Recognise the smell in review: `from ...services.<other> import <not Command/Response>`, a function
+Recognise the smell in review: `from ...services.<other> import <a handler class or a function>`, a function
 whose first argument is `bus`/`feature_bus`/a client, or a comment saying "thin wrapper so other
 services don't repeat this". That comment is the confession.
 
-## 3. Service files export only Commands and Responses
+## 3. Service files export only DTOs
 
 ```python
 # ✅ another service may import these
@@ -55,22 +55,26 @@ from ...services.create_contact import CommandCreateContact, ResponseCreateConta
 from ...services.create_contact import CreateContact, contact_command, existing_contact
 ```
 
-`services/__init__.py` re-exports Commands/Responses; importing the package is what registers the
-Features (a side effect). Never `OldFeature = NewFeature`.
+`services/__init__.py` imports every service module; importing the package is what registers the
+Features (a side effect). It may re-export DTOs, never handler classes. Never `OldFeature =
+NewFeature`. DTO names are free — `Command*`/`Response*` is the Sincpro convention, not a rule the
+framework checks; what it checks is that nobody imports a handler class or a function from a
+service module (`layer_violations`, rule `services-reused-through-bus`).
 
 ## 4. `domain/` is vocabulary, not I/O
 
-`domain/` imports nothing from adapters, infrastructure or another context's internals. A function
-that takes a client/store/gateway is I/O wearing a domain name. The discriminator is in
-`sincpro_architecture_guidelines`: *would replacing this with something equivalent change business
-behaviour?* Yes → adapter; no → infrastructure. DTOs, aggregates, value objects, pure rules and
-policy constants are domain.
+`domain/` imports only `domain/` — its own, or a lower context's — and `sincpro_framework.ddd`. A
+function that takes a client/store/gateway is I/O wearing a domain name. The discriminator: *would
+replacing this with something equivalent change business behaviour?* Yes → adapter; no →
+infrastructure. DTOs, aggregates, value objects, ports (`Protocol`), pure rules and policy constants
+are domain. Detail: [context-boundaries.md](context-boundaries.md).
 
 ## 5. One bus per context, built before services import
 
 `@bus.feature(Command)` runs at import time against the instance. Import `services` **after**
-`config_*_framework(...)`. The bus freezes after the first real execution — register everything
-first; adding a Feature needs a restart.
+`config_*_framework(...)`. The bus is built by its first execution or by the first gateway it is
+added to; after that every registration raises `BusAlreadyBuilt` — register everything first,
+build gateways last. See [bootstrap.md](bootstrap.md).
 
 ## 6. `self` holds dependencies, not request data
 
@@ -97,17 +101,52 @@ framework may not catch. Name by design (`CommandCreateQREconomico`, not `Comman
 
 ## 8. Expected errors are declared, unexpected ones must reach the reporter
 
-One exception type per layer, context in the message. Expected traffic (validation, "already
-exists", auth) goes in `bus.ignore_sentry_exceptions(...)`. Unexpected exceptions must reach
-Sentry — that is why the Feature runs on the bus, not in a helper. Do not swallow a Feature's
-exception in a wrapper outside the bus.
+An expected refusal is a `DomainError` subclass that declares what it is, with context in the
+message. Every wire maps the kind to its own code (REST status, JSON-RPC code, gRPC status), so no
+project writes its own exception handler:
+
+```python
+from sincpro_framework.ddd import DomainError
+from sincpro_framework.transport.failures import FailureKind
+
+
+class InvoiceNotFound(DomainError):
+    failure_kind = FailureKind.NOT_FOUND
+```
+
+Expected traffic (validation, "already exists", auth) also goes in
+`bus.ignore_sentry_exceptions(...)`. Unexpected exceptions must reach Sentry — that is why the
+Feature runs on the bus, not in a helper. Do not swallow a Feature's exception in a wrapper outside
+the bus.
 
 **The error-handler trap:** what a handler returns becomes the bus's answer. A handler written only
 to *watch* (`lambda error: log.error(error)`) returns `None` and silently swallows the failure.
 Re-raise to delegate to the next handler.
 
-## Related knowledge
+## 9. `entrypoints/` exposes; it never registers
 
-- `sincpro_framework_use_cases` — the full reuse contract
-- `framework_gotchas` (`knowledge://framework_gotchas`) — symptom → cause → fix
-- `framework_context_boundaries` — dependency direction, `common/`
+`entrypoints/` builds gateways and, at most, hand-written routes that translate a body into a
+Command and call the bus. It never creates a `UseFramework`, never declares `@bus.feature` /
+`@bus.app_service`, and never writes `@app.exception_handler`. A use case that exists only to get a
+route is a second surface: MCP, RPC and the tests do not see it, and it is registered only if that
+router module happened to be imported. To publish an existing use case, decorate its handler in
+`services/` (`@rest.post(...)`, `@mcp()`, …) and add the bus to a gateway —
+`sincpro-framework-entrypoints`.
+
+## Review checklist
+
+- Every use case is `@bus.feature` / `@bus.app_service`; nothing dispatches by hand.
+- No import of a handler class or a function from another service module.
+- No function in `services/` or `domain/` whose first argument is a bus or a client.
+- `dependencies.py` registers named instances; `DependencyContextType` names match.
+- Nothing request-scoped is written to `self`.
+- Errors are `DomainError` subclasses with `failure_kind`; no exception handler in the project.
+- `entrypoints/` holds gateways only.
+- `layer_violations("<package>") == []` and `import_cycles("<package>") == []` in the suite
+  ([testing.md](testing.md)).
+
+## Related
+
+- [context-boundaries.md](context-boundaries.md) — dependency direction, `common/`
+- [module-structure.md](module-structure.md) — where each file goes
+- `sincpro-framework-core` — error handlers, interceptors, the context manager

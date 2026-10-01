@@ -137,7 +137,8 @@ Before the bus runs, the delivery is claimed as `inbox:{context.Command}:{source
   then waits for the claim to expire.
 
 ```text
-from sincpro_framework.caching import KeyValueRecords, RedisKeyValue
+from sincpro_framework.caching import KeyValueRecords
+from sincpro_framework.caching.adapters.redis import RedisKeyValue
 QueueOptions(inbox=KeyValueRecords(RedisKeyValue(...)))   # shared across replicas
 QueueOptions(inbox=None)                                  # off
 ```

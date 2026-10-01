@@ -2,8 +2,8 @@
 
 The framework puts **the same keys** on logs, traces, metrics and GlitchTip, from its own
 configuration and from the **execution context**, so a dashboard's variables filter every panel
-and a `trace_id` opens the span, its lines and its issue. Depth: `docs/observability/correlation.md`;
-the rule: PRD_03 §4.10.
+and a `trace_id` opens the span, its lines and its issue. The long form, in the framework repo:
+`docs/observability/correlation.md`; the rule: PRD_03 §4.10.
 
 **The context is the source.** Whatever the entrypoint, `bus.context({...})`, an interceptor, a
 hook or `self.context` puts in the execution context goes on the log line, the span and the

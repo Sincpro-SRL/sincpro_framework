@@ -15,13 +15,13 @@
 ```
 
 `infrastructure/` and `services/` are mandatory. Do not create empty `domain/`/`adapters/` for
-symmetry. Three repo variants (`domains/<ctx>/`, `apps/<ctx>/`, one-context at package root) are in
-`framework_module_structure`.
+symmetry. Three repo variants (`domains/<ctx>/`, `apps/<ctx>/`, one context at the package root)
+are in [module-structure.md](module-structure.md).
 
 ## `dependencies.py` — declare the adapters once
 
 ```python
-from soc import UseFramework
+from sincpro_framework import UseFramework
 from my_sdk.adapters import TokenAdapter, PaymentAdapter
 
 
@@ -33,7 +33,9 @@ class DependencyContextType:
     payment_adapter: PaymentAdapter
 
 
-def register_dependencies(framework: UseFramework[DependencyContextType]):
+def register_dependencies(
+    framework: UseFramework[DependencyContextType],
+) -> UseFramework[DependencyContextType]:
     framework.add_dependency("token_adapter", TokenAdapter())      # named class, never a lambda
     framework.add_dependency("payment_adapter", PaymentAdapter())
     return framework
@@ -50,6 +52,7 @@ from sincpro_framework import ApplicationService as _ApplicationService
 from sincpro_framework import DataTransferObject
 from sincpro_framework import Feature as _Feature
 from sincpro_framework import UseFramework
+from sincpro_framework.ddd import Hook as _Hook
 
 from .dependencies import DependencyContextType, register_dependencies
 
@@ -60,6 +63,10 @@ class Feature(_Feature, DependencyContextType):
 
 class ApplicationService(_ApplicationService, DependencyContextType):
     """Base ApplicationService for this bounded context."""
+
+
+class Hook(_Hook, DependencyContextType):
+    """Base repository hook for this bounded context — only when it has hooks."""
 
 
 def config_framework(name: str) -> UseFramework[DependencyContextType]:
@@ -88,11 +95,20 @@ from . import services  # noqa: E402, F401
 `services/__init__.py` re-imports every service module, so `from . import services` registers all of
 them. `isort` is configured not to reorder `__init__.py` for this reason.
 
+After the services, in this order:
+
+1. What needs the handlers or configures the bus: `my_framework.ignore_sentry_exceptions(...)`,
+   interceptors, error handlers, `auth.on(my_framework)` (`sincpro-framework-core`,
+   `sincpro-framework-auth`).
+2. Gateways, in `entrypoints/`, last. Adding a bus to a gateway builds it, and the first execution
+   builds it too. A built bus refuses every later registration — Feature, dependency, interceptor —
+   with `BusAlreadyBuilt`.
+
 ## What the bus offers outside a Feature
 
 - `my_framework.deps.token_adapter` — the same instance a Feature sees as `self.token_adapter`.
 - `my_framework(Command(...), Response)` — execute.
-- `my_framework.context({...})` — the context manager (see `docs/core/context-manager.md`).
+- `my_framework.context({...})` — the context manager (`sincpro-framework-core`).
 
 Inside a Feature/ApplicationService use `self.<name>`; outside, use `.deps`.
 
@@ -103,5 +119,6 @@ thread. `self.context` is per call; everything else on `self` is shared. Keep re
 
 ## Missing dependency
 
-`unregistered_dependencies(my_framework)` returns `{handler: [names]}` for every declared name
-nobody registered. Assert it is `{}` in a setup test.
+`unregistered_dependencies(my_framework)` (from `sincpro_framework.testing`) returns
+`{handler: [names]}` for every declared name nobody registered. Assert it is `{}` in a setup test.
+See [testing.md](testing.md).

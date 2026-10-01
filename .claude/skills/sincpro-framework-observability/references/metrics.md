@@ -1,6 +1,6 @@
 # Metrics
 
-Depth: `docs/observability/metrics.md`. Every block there runs as a test.
+The long form, in the framework repo: `docs/observability/metrics.md`.
 
 ## By itself
 
@@ -55,7 +55,7 @@ class PriceOrder(Feature):
     discount = metrics.histogram(unit="BOB", buckets=(0, 10, 100))
     in_flight = metrics.up_down()
 
-    def execute(self, dto):
+    def execute(self, dto: CommandPriceOrder) -> ResponsePriceOrder:
         self.in_flight.add(1)
         try:
             with self.pricing.time():          # seconds, with the block's outcome
@@ -91,6 +91,8 @@ Prometheus: names become `context_use_case_field`, a counter ends `_total`; `Fas
 serves `/metrics` by itself when the process records to Prometheus. With several worker processes
 set `PROMETHEUS_MULTIPROC_DIR` before start.
 
-A backend of your own implements `Recorder` (`add`, `record`) and proves itself with
-`RecorderContract`. A recorder never has to guard itself: every call is shielded, measuring never
+A backend of your own implements `Recorder` (`add`, `record`) — `from
+sincpro_framework.observability.metrics import Recorder` — and proves itself with `RecorderContract`
+(`sincpro_framework.observability.metrics.testing`). `InMemoryRecorder` answers `names()`,
+`totals(name)` and `observations(name)` for assertions. A recorder never has to guard itself: every call is shielded, measuring never
 fails the use case it measures.
