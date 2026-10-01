@@ -40,10 +40,46 @@ connection = self.common_mcp(CommandResolveTenantConnection(...), TenantConnecti
 | Importing the Feature/ApplicationService **class** from another service | Import its DTOs only — calling the class bypasses the bus: no span, no error report, no interceptors, no auth |
 | A `lambda` dependency | A named class (or named factory) in `dependencies.py` |
 | A function in `domain/` whose first argument is an adapter | An adapter on the bus; domain is vocabulary |
+| Any module-level `def` in `domain/`, even a pure one | A method on the type it constrains (below) |
 
 Recognise the smell in review: `from ...services.<other> import <a handler class or a function>`, a function
 whose first argument is `bus`/`feature_bus`/a client, or a comment saying "thin wrapper so other
 services don't repeat this". That comment is the confession.
+
+### Rules live on the type they constrain
+
+A pure rule about a model is a **method of that model**. The call site then names its owner, and
+there is one place to look for everything a concept enforces.
+
+| The rule | Its form | Example |
+|---|---|---|
+| Validates or normalises a raw value, no instance yet | `@staticmethod` | `Tenant.check_id(tenant_id)`, `User.normalize_email(email)` |
+| Builds the model from another representation | `@classmethod` | `HostAddress.parse("ssh://…")`, `WorkspacePaths.of(root)`, `EventEntry.of(event)` |
+| Reads or changes the record's own fields | instance method / property | `invoice.post()`, `workspace.paths`, `tenant.ensure_active()` |
+| Several fields rendered or computed together | a value object with a method | `Brief(instruction=…, branch=…).render()` instead of a 7-parameter function |
+| A question over many records | a method on the collection | `invoices.outstanding()` |
+
+```python
+# ❌ loose functions: who owns the rule?
+def check_tenant_id(tenant_id: str) -> str: ...
+def parse_host_address(address: str) -> HostAddress: ...
+
+# ✅ the rule on its type
+@dataclass
+class Tenant(Entity):
+    tenant_id: str = ""
+
+    @staticmethod
+    def check_id(tenant_id: str) -> str: ...
+
+
+class HostAddress(DataTransferObject):
+    @classmethod
+    def parse(cls, address: str) -> "HostAddress": ...
+```
+
+One aggregate per file in `domain/`, the file named after it. Odoo models are the exception to the
+`@staticmethod` form — the Odoo conventions forbid it there and win in an Odoo repo.
 
 ## 3. Service files export only DTOs
 

@@ -141,8 +141,10 @@ HTTP / MCP / RPC / cron / test / another context
    homemade registry, a class with `run()`, or a function that takes the bus as an argument.
 2. **Reuse a use case by executing its DTO on the injected bus.** From another service import only
    its DTOs; never a function, a factory or the handler class.
-3. **`domain/` is vocabulary and pure rules.** A function there that takes an adapter is I/O wearing
-   a domain name. Shared I/O is an adapter registered in `dependencies.py`.
+3. **`domain/` is vocabulary and pure rules, and every rule lives on the type it constrains.** A
+   function there that takes an adapter is I/O wearing a domain name; shared I/O is an adapter
+   registered in `dependencies.py`. A pure rule is a method of its model — never a module-level
+   `def` (see [references/hard-rules.md](references/hard-rules.md)).
 4. **Inject named components (classes) in `infrastructure/dependencies.py`.** Never a `lambda`.
 5. **One bus per bounded context**, created *before* `services/` is imported.
 6. **`self` holds only injected dependencies.** One handler instance serves every call on every
@@ -167,14 +169,18 @@ Silent ones first: the top rows work in a demo and fail in production without ra
 | An ApplicationService calling another ApplicationService | `feature_bus` only knows Features: `UnknownDTOToExecute` at runtime | Compose Features; or make the outer use case the only ApplicationService |
 | Swallowing an exception in an error handler that only logs | The handler's return becomes the answer: `None` | Re-raise to delegate (`sincpro-framework-core`) |
 | Reaching into another context's `services/` or adapters instead of its bus | Couples to internals; the context cannot be extracted as a service | `add_dependency("common", common)` and `self.common(Command(...), Response)` |
+| A module-level `def` in `domain/` (`check_tenant_id(...)`, `parse_address(...)`, `entry_of(event)`) | Nobody can tell which model owns the rule; the next service re-implements it with a twist | A method on the model: `Tenant.check_id(...)` (`@staticmethod`), `HostAddress.parse(...)` (`@classmethod`), `invoice.post()` (instance) |
+| Two aggregates in one `domain/` file | Files stop naming concepts; imports and reviews get tangled | One aggregate per file, named after it (`tenant.py`, `user.py`) |
 | Empty `domain/`/`adapters/` folders, `utils/`, `helpers/`, `use_cases/` | Noise the next agent copies | Create a folder only when something goes in it |
 
 ## The one decision: what artifact is this?
 
 Ask in order. Stop at the first yes.
 
-1. **Pure vocabulary / rule, no I/O?** → DTO, value object or function in `domain/` (or
-   `common/domain/` when two contexts need it and neither owns it).
+1. **Pure vocabulary / rule, no I/O?** → in `domain/` (or `common/domain/` when two contexts need
+   it and neither owns it), **on the type it constrains**: a method of the entity, aggregate or
+   value object (`@staticmethod` for a validation, `@classmethod` for a factory), or a new value
+   object when several fields travel together. Never a loose module-level function.
 2. **I/O against an external system, or a replaceable mechanism?** → named adapter in `adapters/`,
    registered in `dependencies.py`; typed against a port when a double is a real consumer.
 3. **One atomic operation?** → `Feature`: one file in `services/` with the Command, the Response,

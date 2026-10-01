@@ -14,9 +14,13 @@ class InvoicePosted(DomainEvent):
     total: int = 0
 
 
-def post(invoice: Invoice) -> None:
-    invoice.state = "posted"
-    invoice.record(InvoicePosted(invoice_id=invoice.id, total=invoice.total))
+@dataclass
+class Invoice(Entity):
+    ...
+
+    def post(self) -> None:                # the rule lives on the aggregate it changes
+        self.state = "posted"
+        self.record(InvoicePosted(invoice_id=self.id, total=self.total))
 ```
 
 - `@dataclass(kw_only=True)` is required on every event class: without it the annotations are not
@@ -29,7 +33,7 @@ def post(invoice: Invoice) -> None:
 
 ```python
 draft = repository.get_by(Invoice, number="F-004")
-post(draft)
+draft.post()
 repository.save(draft)
 for event in draft.pull_events():
     publisher.publish(event)
