@@ -97,7 +97,7 @@ Yes → `adapters/`. No, and it is wiring → `infrastructure/`.
 |---|---|---|
 | DTOs shared by use cases, aggregates, value objects | `domain/` | Vocabulary |
 | Policy constants and thresholds | `domain/` | The business decides these; a mechanism applies them |
-| Pure invariants and rules on a model | `domain/` | Belongs with the thing it constrains |
+| Pure invariants and rules on a model | `domain/`, as a method of that model | Belongs with the thing it constrains — never a loose function |
 | A port (`typing.Protocol`) an adapter implements | `domain/` | The abstraction, not the mechanism |
 | A detector, classifier or heuristic | `adapters/` | Swap it and the results change |
 | An encoder, a serialisation strategy | `adapters/` | Swap it and what downstream learns changes |

@@ -452,9 +452,13 @@ class InvoicePosted(DomainEvent):
     total: int = 0
 
 
-def post(invoice: Invoice) -> None:
-    invoice.state = "posted"
-    invoice.record(InvoicePosted(invoice_id=invoice.id, total=invoice.total))
+@dataclass
+class Invoice(Entity):
+    ...
+
+    def post(self) -> None:                # the rule lives on the aggregate it changes
+        self.state = "posted"
+        self.record(InvoicePosted(invoice_id=self.id, total=self.total))
 ```
 
 A subscriber is an ordinary Feature on another bounded context's bus, registered for the event
@@ -476,7 +480,7 @@ class EmailTheCustomer(Feature):
 publisher = Publisher(SyncQueue(Subscriber(notifications)))
 
 draft = repository.get_by(Invoice, number="F-004")
-post(draft)
+draft.post()
 repository.save(draft)
 for event in draft.pull_events():          # pulling hands them back and forgets them
     publisher.publish(event)
