@@ -13,7 +13,7 @@ empty `OR` matches nothing — opposite answers to the same accident.
 from datetime import datetime
 
 from sincpro_framework.ddd.criteria import All, Any_, Condition, Not, Operator
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 from .models import Thing
 

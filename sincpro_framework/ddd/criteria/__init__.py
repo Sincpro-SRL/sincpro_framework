@@ -36,10 +36,12 @@ from sincpro_framework.ddd.criteria.criteria import (
 )
 from sincpro_framework.ddd.criteria.evaluate import holds, matches
 from sincpro_framework.ddd.criteria.pagination import Cursor, CursorKeys, Offset, Pagination
+from sincpro_framework.ddd.criteria.strict import TOLERANT
 
 Any = Any_
 
 __all__ = [
+    "TOLERANT",
     "MULTI_VALUED",
     "All",
     "Any",

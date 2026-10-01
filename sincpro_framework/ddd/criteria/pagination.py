@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
+from sincpro_framework.ddd.criteria.strict import Strict
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 if TYPE_CHECKING:
@@ -157,7 +158,7 @@ class CursorKeys(DataTransferObject):
         return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
 
-class Offset(DataTransferObject):
+class Offset(Strict):
     """Locating a page by counting rows from the start. **What everybody else does.**
 
         in      Offset(rows=160)                    the third page of eighty
@@ -188,7 +189,7 @@ class Offset(DataTransferObject):
         return None
 
 
-class Cursor(DataTransferObject):
+class Cursor(Strict):
     """Locating a page by where the previous one ended. **The strategy this engine implements.**
 
         in      Cursor()                          the first page; nothing came before it
@@ -225,7 +226,7 @@ class Cursor(DataTransferObject):
         return CursorKeys.of(record, sorts).token()
 
 
-class Pagination(DataTransferObject):
+class Pagination(Strict):
     """How many, and from where.
 
         in      Pagination(limit=80)                              the first eighty

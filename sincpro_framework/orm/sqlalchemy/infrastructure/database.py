@@ -20,9 +20,14 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from sincpro_framework.ddd.entity import utc_now
-from sincpro_framework.orm.sqlalchemy.change_tracking import _tracking
-from sincpro_framework.orm.sqlalchemy.observability import observe
-from sincpro_framework.orm.sqlalchemy.read_tracking import note_statement_reads
+from sincpro_framework.orm.sqlalchemy.infrastructure.change_tracking import _tracking
+from sincpro_framework.orm.sqlalchemy.infrastructure.engine_errors import named
+from sincpro_framework.orm.sqlalchemy.infrastructure.flushing import goes_out
+from sincpro_framework.orm.sqlalchemy.infrastructure.observability import observe
+from sincpro_framework.orm.sqlalchemy.infrastructure.read_tracking import note_statement_reads
+from sincpro_framework.orm.sqlalchemy.infrastructure.transaction_hooks import (
+    install as hooks_per_transaction,
+)
 
 
 def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], None]:
@@ -51,11 +56,15 @@ def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], Non
         now = utc_now()
         acting = who()
         for record in session.dirty:
+            if not goes_out(session, record):
+                continue
             if hasattr(record, "updated_at") and session.is_modified(record):
                 record.updated_at = now
                 if acting is not None and hasattr(record, "updated_by"):
                     record.updated_by = acting
         for record in session.new:
+            if not goes_out(session, record):
+                continue
             if hasattr(record, "updated_at") and record.updated_at is None:
                 record.updated_at = getattr(record, "created_at", now)
             if (
@@ -127,6 +136,7 @@ class Database:
         self.before_flush(_stamping(actor))
         self.before_flush(_tracking)
         event.listen(self.open_session, "do_orm_execute", note_statement_reads)
+        hooks_per_transaction(self.open_session)
 
     def before_flush(self, run: "Callable[[Session], None]") -> "Database":
         """Runs before this database writes anything, for every session it ever opens.
@@ -194,12 +204,15 @@ class Database:
             with database.session() as session:   →  commits when the block ends
             an exception inside                   →  rolls back, then re-raises
 
-        Nothing above this line can write a half-finished change.
+        Nothing above this line can write a half-finished change. What the engine refuses — a
+        lock it would not wait for, a serialization failure at the commit — leaves named by
+        what happened (`engine_errors.py`).
         """
         session = self.open_session()
         try:
-            yield session
-            session.commit()
+            with named("the unit of work"):
+                yield session
+                session.commit()
         except Exception:
             session.rollback()
             raise

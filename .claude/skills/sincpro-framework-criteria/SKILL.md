@@ -57,7 +57,7 @@ Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `wher
 (`criteria.py`, `pagination.py`, `evaluate.py` for in-memory `matches`); `Meta` is
 `ddd/entity/model_meta.py`; `Query`/`ResponsePaginatedQuery` are `ddd/query.py`. Two stores answer
 it: `MemoryRepository` (in memory, no extra) and the SQLAlchemy `Repository`, whose
-`orm/sqlalchemy/sql_translator.py` turns a Criteria into a `Select` (extra `[sqlalchemy]`).
+`orm/sqlalchemy/services/sql_translator.py` turns a Criteria into a `Select` (extra `[sqlalchemy]`).
 DataFrames over a Criteria are `sincpro_framework.data_analysis` (extra `[data-analysis]`).
 
 **(b) Inside a consumer service** — one `UseFramework` bus per bounded context, built in
@@ -91,10 +91,12 @@ client JSON {"criteria": {...}} → CommandListInvoices(criteria=Criteria)
 
 Silent ones first — the runtime gives no error for these.
 
-- **Misspelled keys are ignored, not refused.** `Condition(field="total", op=">", value=5)` is an
-  equality; `{"field": "total", "desc": true}` sorts ascending; `Criteria(limit=80)` and a
-  top-level `"limit"` give 50 rows; `{"grouping": {"by": [...]}}` groups nothing. The names are
-  `operator`, `descending`, `pagination.limit`, `grouping.group_by`.
+- **A key the language does not have is refused.** `{"field": "total", "op": ">", ...}`,
+  `{"field": "total", "desc": true}`, a top-level `"limit"`, `{"all": [...], "any": [...]}` raise
+  instead of being dropped. The names are `operator`, `descending`, `pagination.limit`,
+  `grouping.group_by`. A client of another version reads with
+  `Criteria.model_validate(data, context=TOLERANT)`. A *field* the model does not have is still
+  dropped and reported in `dropped`.
 - **A filter the model cannot answer is dropped and the result widens.** A typo in a field a
   Feature adds on the server side returns *everything*. Check `page.dropped` in tests; put
   tenant/permission scopes in `repository.narrowed(...)`, which refuses instead of dropping.

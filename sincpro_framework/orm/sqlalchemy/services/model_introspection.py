@@ -32,7 +32,7 @@ from sincpro_framework.ddd.entity.model_meta import (
 )
 from sincpro_framework.ddd.entity.relations import key_pair
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
+from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:

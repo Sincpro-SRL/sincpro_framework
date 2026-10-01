@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 
 from sincpro_framework import UseFramework
 from sincpro_framework.events import Publisher, Subscriber, SyncQueue
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 from .shop import billing, inventory, notifications, orders
 

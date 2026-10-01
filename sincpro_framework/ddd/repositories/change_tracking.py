@@ -3,7 +3,7 @@
     class MemoryRepository(ChangeTrackingRepositoryMixin, Repository): ...
 
 **This is the approximation, and the SQLAlchemy store does not use it.** That one asks the
-engine what it is about to write (`orm/sqlalchemy/change_tracking.py`), which is exact and
+engine what it is about to write (`orm/sqlalchemy/infrastructure/change_tracking.py`), which is exact and
 which sees every route to the database. A store with no engine underneath has only the calls it
 was told about, so it takes a baseline when it hands an aggregate out and compares on `save()`.
 

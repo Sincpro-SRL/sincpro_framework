@@ -23,13 +23,20 @@ kind at once) go deeper; this page is enough to use them.
 2. A **declaration wins over inference**.
 3. A **foreign key is inferred when unambiguous**: the annotation points at a mapped class and
    exactly one `ForeignKey` ties the two tables (with several, the column named `<attribute>_id`
-   decides; with none of those, nothing is inferred — declare it).
+   decides; with none of those, nothing is inferred — declare it). The match reads the column
+   the key references: `ForeignKey("ws.code")` to a unique business key matches `code`, not
+   the identity.
 4. A pointer nothing identifies is **published, not expandable** (`identified_by = None`; asking
    drops with `not_expandable`).
 5. Everything else is ignored.
 
 Cardinality comes from the annotation: `list[Run]` is many, `Run | None` is one. Only `many2many`
 is a declared type.
+
+A to-many tied by a foreign key is **written by its root** (`repository-and-writes.md`).
+`remove(root)` takes the children too — they are parts of the aggregate (Evans).
+`Relation.foreign_key(Run, identified_by="dataset_id", owned=False)` declares a reference to
+another aggregate, never written nor removed by the root.
 
 ## Declaring what the tables cannot say
 

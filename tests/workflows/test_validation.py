@@ -205,7 +205,7 @@ def test_a_field_on_a_step_of_another_kind_is_refused():
     assert any(one.startswith("b:returns") and "code" in one for one in issues)
 
 
-def test_references_under_any_are_checked_even_next_to_all():
+def test_a_node_that_mixes_all_and_any_is_refused_not_half_read():
     issues = _issues(
         _with_steps(
             {
@@ -219,7 +219,7 @@ def test_references_under_any_are_checked_even_next_to_all():
         )
     )
 
-    assert any("$steps.ghost" in one for one in issues)
+    assert any("has no 'all'" in one for one in issues)
 
 
 def test_a_snippet_whose_return_is_only_inside_a_nested_function_never_returns():

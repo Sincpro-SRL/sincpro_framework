@@ -47,7 +47,7 @@ a client builds the next criteria from the previous answer without a schema of i
 every project started and how every project ended with sixty methods and no pagination. And a
 full query DSL, which is a second SQL nobody can type-check.
 
-`ddd/criteria/criteria.py`, `orm/sqlalchemy/repository.py`, `orm/sqlalchemy/sql_translator.py`.
+`ddd/criteria/criteria.py`, `orm/sqlalchemy/entrypoint/repository.py`, `orm/sqlalchemy/services/sql_translator.py`.
 
 ---
 
@@ -79,7 +79,7 @@ definition, so the interface cannot offer what it was not given.
 **Rejected.** A separate `describe` endpoint, tried first to save a kilobyte per page. It cost more
 in surprise than it saved in bytes.
 
-`ddd/entity/model_meta.py`, `orm/sqlalchemy/model_introspection.py`.
+`ddd/entity/model_meta.py`, `orm/sqlalchemy/services/model_introspection.py`.
 
 ---
 
@@ -144,7 +144,7 @@ nothing is overwritten by surprise: a column wins over a name, a declaration win
 inference only when it is unambiguous, and an ambiguous or unresolvable pointer is published but
 `not_expandable`.
 
-`orm/sqlalchemy/model_introspection.py`, `orm/sqlalchemy/data_mapper.py`
+`orm/sqlalchemy/services/model_introspection.py`, `orm/sqlalchemy/services/data_mapper.py`
 (`_inferred_foreign_keys`), `tests/orm/test_relation_precedence.py`.
 
 ---
@@ -185,7 +185,7 @@ was asked for.
 order or limit *per parent* from a criteria, and they tie the mechanism to one database.
 `relationship()` remains the right tool for a Feature's own hand-written joins.
 
-`ddd/entity/relations.py`, `orm/sqlalchemy/relation_resolver.py`.
+`ddd/entity/relations.py`, `orm/sqlalchemy/services/relation_resolver.py`.
 
 ---
 
@@ -201,7 +201,7 @@ gives it. A listing on a server needs the opposite: a loop over two hundred rows
 two hundred queries hidden in an attribute access. Raising puts the cost where a reviewer sees it,
 in the specification, and never in a silent N+1.
 
-`orm/sqlalchemy/data_mapper.py` (`RelatedAttribute`), `session.info[REPOSITORY]`.
+`orm/sqlalchemy/services/data_mapper.py` (`RelatedAttribute`), `session.info[REPOSITORY]`.
 
 ---
 
@@ -314,8 +314,9 @@ more, and that is the point of having one. `save` and `remove` take the aggregat
 criteria: a generic write path skips the aggregate's rules. Optimistic concurrency is SQLAlchemy's
 `version_id_col` on `Entity.version`, surfacing as `StaleAggregate`, proven across two processes.
 
-**Rejected.** Update or delete by criteria. Repository names from the ORM world (`SearchEngine`,
-`unit_of_work`): the words in the framework are the domain's.
+**Rejected.** Repository names from the ORM world (`SearchEngine`, `unit_of_work`): the words in
+the framework are the domain's. Update or delete by criteria was rejected here too, for skipping
+the aggregate's rules; §22 builds it anyway, as a door named for what it skips.
 
 ---
 
@@ -360,7 +361,7 @@ reaches a log, a span or a report.
 separate `instrument()` call was one more thing to forget. Values are kept out because a
 repository that refuses to log dataset contents cannot let a trace do it under another name.
 
-`orm/sqlalchemy/observability.py`.
+`orm/sqlalchemy/infrastructure/observability.py`.
 
 ---
 
@@ -396,13 +397,10 @@ named after the pattern it implements and against the one it avoids, Active Reco
 - A page of groups applies to the first level; a deeper level answers for the groups that
   survived it. Ordering groups by an aggregate has no stable keyset, so the page is an offset.
 - A message broker as a third `Queue`; an async engine; a second persistence backend.
-- **A bulk write that trades the version check for a batched `UPDATE`.** Measured today: a
-  thousand new aggregates are one `INSERT`; a thousand loaded ones are a thousand `UPDATE`
-  statements, because the optimistic lock has to read the affected row count back per row and a
-  batched statement does not report it. That is the right default — losing a write silently is
-  worse than a slow job. A separate door that says plainly it gives up `StaleAggregate` would
-  serve an import that owns its table, and it is a new capability rather than a fix, so it waits
-  for a real case that needs it.
+- **`save` of a thousand loaded aggregates is a thousand `UPDATE` statements**, because the
+  optimistic lock reads the affected row count back per row. That stays the default — losing a
+  write silently is worse than a slow job. The separate doors that say plainly they give up
+  `StaleAggregate`, `upsert` and `update_all`, are §22.
 
 ## 19. Migrations: the project writes the steps, the framework orchestrates them
 
@@ -418,3 +416,163 @@ Alembic — `sincpro_framework.orm.migrations`, behind the `[migrations]` extra 
 shipped for SQL stores. Migrations run with the system down, so there are no locks, and a failed
 step stops the run where it is: nothing reverts on its own, and a store without transactions is
 recorded dirty until a human resolves it. The design and its evidence: PRD_05.
+
+---
+
+## 20. An aggregate is saved whole; an orphan is what was read and is no longer held
+
+**Decision.** A to-many tied by a foreign key is written by its root: `save(root)` writes the
+children with it, stamping the root's key on them. An assignment over a whole reading settles
+the children that reading saw and the root no longer holds — inside a unit of work an assignment
+over an unread relation reads it first, as Rails' `collection=` does. What a dropped child
+becomes is declared on the relation — `Orphans.DELETE`, `Orphans.DETACH` — and refused until it is
+(`Orphans.REFUSE`, the default): an assignment that drops a child and a `remove(root)` that would
+leave one are both refused before any statement runs, naming the relation and the declarations.
+`owned=False` makes a reference to another aggregate, never written nor removed by the root.
+
+**Why.** A root that does not save its children is the surprise every project wrote a loop to
+work around, and forgot the delete half of. Every narrowing is a failure that was reproduced:
+
+- *Settle against every stored row* deleted a child another transaction added between the read
+  and the assignment — a reading says what it saw, not what is there now.
+- *Settle on any whole reading* deleted an invoice saved separately, because the customer still
+  held the empty list its constructor gave.
+- *Remove only what is declared owned* was the next step, after `remove(author)` deleted every
+  `Work` of a model that held another aggregate as a collection. It made "part of the parent" mean
+  one thing for `save` and another for `remove`. Measured in the first consumer (`sincpro_forge`):
+  every one2many is a part — repositories, checks, steps, changes, decisions — and every link
+  between aggregates is an id, as Vernon asks. The parts go with their root; the rare reference
+  says `owned=False`.
+- *Read the children of a remove through the relation's scope* left the ones the scope hid, and
+  the foreign key refused the delete.
+
+- *Settle by the key column* — delete under `NOT NULL`, set to NULL under a nullable key, EF
+  Core's rule — still removed or detached what nobody asked for: `remove(customer)` took every
+  invoice, and a nullable key set a whole history to NULL. A silent delete and a silent detach are
+  the same mistake; both are declared now, and refused until they are (Ecto's `on_replace: :raise`,
+  EF Core's `Restrict`). Writing children stays the default — it destroys nothing.
+
+**How.** The relations are the framework's descriptors, not SQLAlchemy relationships, so
+`orm/sqlalchemy/services/cascade.py` plans the writes before the flush and hands them to the same path
+every aggregate takes. Each relation remembers how its value got there (`Held`: assigned,
+blind, read whole, read cut) and the identities its last whole reading or write held (`READ`).
+Orphans are read in one statement per relation for the whole batch — by those identities and the
+root's key, so a child another writer moved is left alone.
+
+**Rejected.** `relationship(cascade="all, delete-orphan")`: SQLAlchemy's lazy loading back and a
+second source of truth for every relation.
+
+## 21. A transaction is configured where it begins, and its failures are named
+
+**Decision.** `context(isolation=, read_only=, timeout=, engine=)`. An isolation level the dialect
+lacks is refused; `read_only` is the framework's refusal of every write plus Postgres' own; a
+timeout it cannot honour is warned about. The driver's errors are translated by SQLSTATE, MySQL
+error number, SQLite error name, then message (`engine_errors.py`) into five facts, three of them
+new: `ConstraintViolation` (a foreign key, an empty value, a check), `TransactionConflict` (a
+serialization failure, a deadlock) and `TimedOut` (a lock it was told not to wait for, a statement
+past its timeout). `retrying` runs a unit of work again for `StaleAggregate` and
+`TransactionConflict` by default — not for `TimedOut`, whose bound was the caller's choice — and is
+refused inside a unit of work, whose transaction is the one that lost. SQLite runs every isolation
+level as serializable, which honours any of them. `nowait` joins `for_update` and
+`skip_locked`, and asking for both of those is refused, because SQLAlchemy renders it and the
+database rejects it.
+
+**Why.** Every `IntegrityError` was a `DuplicateAggregate`, so a missing foreign key read as a
+race and a retry loop retried a write that could never succeed. A serialization failure reached
+the Feature as a driver exception, so `serializable` was unusable without importing psycopg.
+Three exceptions and not one per SQLSTATE: the caller does one of three different things — fix
+the write, run it again, or take the bound it set as the answer.
+
+What the commit writes is §25.
+
+## 22. Writes past the aggregate are doors of their own
+
+**Decision.** `upsert(records, on=, update=)` — answering `Upserted(written, skipped)` through
+`RETURNING`, on Postgres and SQLite — and `update_all(target, criteria, values)` /
+`remove_all(target, criteria)`, on the port and on both stores. They skip hooks (except
+`before_save`/`after_save` on an upsert), the cascade and change tracking, and say so first. They
+keep what later writes depend on: `version` is raised and `updated_at` stamped, the scope and the
+archived apply as in a read.
+
+**Why.** The cases they serve have no aggregate rule to skip — an idempotent import, closing
+expired sessions, re-stamping a column — and without a door they dropped to `unit.session`,
+skipping the rules *and* the scope, the version and the stamp. A write by criteria refuses a page
+and refuses any condition the aggregate cannot answer: in a read a dropped condition widens what
+is shown, in a write it widens what is changed. An upsert deduplicates its batch by key, because
+Postgres refuses a statement that touches a row twice and SQLite hides it. MySQL's `ON DUPLICATE KEY` is left out: it matches
+any unique key rather than the one named, cannot leave a conflicting row as it is, and its
+affected-rows count says neither what was inserted nor what was updated — Rails and Django expose
+neither a portable conflict target nor portable counts for the same reason.
+
+## 23. What waits for the commit waits for this one
+
+**Decision.** `unit.after_commit(fn)` and `unit.after_rollback(fn)`, only inside `context()`. A
+stack of levels on the session: `savepoint()` opens one and closes it — handing what it held to
+the level around it, or running its `after_rollback` and dropping its `after_commit` when it was
+undone. The outermost level answers to SQLAlchemy's `after_commit` and the outermost
+`after_soft_rollback`. A callback that raises is logged and the rest still run.
+
+**Why.** `Database.after_commit` is global, for every session the process opens; a Feature that
+must publish only if *its* write committed had no door, and §14's rule — never publish from
+inside a commit — had no tool to keep it. SQLAlchemy reports a savepoint's rollback as a
+rollback too, and reports the end of a transaction before saying how it ended, which is why the
+levels are opened and closed by `savepoint()` rather than read off the events. Not raising mirrors
+Django's robust mode: the commit is final, and an exception would tell the caller otherwise.
+
+## 24. The adapter is layered, and the layers point one way
+
+**Decision.** `orm/sqlalchemy/` is in the four layers the other components use. `entrypoint/`
+holds `Repository` alone: the unit of work and the typed surface a Feature calls, composed of
+`services/` — `Reading` and `Writing` over a shared `Store`, the data mapper, the translator, the
+resolver, the cascade. `domain/` is the adapter's vocabulary with no I/O; `infrastructure/` is
+`Database` and what every statement goes through. A layer imports only the ones below it, and a
+test holds the rule. Module names stay the ones §16 chose; only their layer is new.
+
+Inside `services/` the same two levels a project has: atomic services, one job each, as Features
+are; and `services/workflows/` — `UnitOfWork`, `Reading`, `Writing` over a shared `Store` — which
+orchestrate them, as an ApplicationService orchestrates Features. An atomic service never imports
+a workflow, and a workflow imports no other workflow but `Store`; the relation resolver takes the
+one function it needs, `prepare`, instead of the repository it used to call back into. The
+entrypoint is a facade: `Repository(UnitOfWork, Reading, Writing)`, nothing of its own today. An
+operation that spans workflows is orchestrated there, because the facade is the one place that
+sees them all — never by one workflow calling another.
+
+**Why.** Seventeen modules side by side, one of them nearly two thousand lines, said nothing about
+which piece is the door and which is the machinery behind it. The direction of the imports was
+already wrong before anyone looked: the services read the relations through the module that was
+meant to be the surface. Laid out by layer, the tree says what each piece is, and the test says
+it when someone forgets.
+
+## 25. What the commit writes is what was saved
+
+**Decision.** `context(writes=Writes.SAVED)`, the default: an aggregate changed inside the block
+and never handed to `save` is put back when the block ends — and at each `commit()` — and named
+in the log; the session does not autoflush, so a read after the change does not write it either.
+`writes=Writes.CHANGED` writes what the block changed on what it loaded, as the session tracks it.
+
+**Why.** Fowler's Unit of Work registers objects one of two ways: the caller registers what it
+wants written, or the object registers itself when it changes. Vernon names the repositories that
+go with each: a collection-oriented one has no `save`, a persistence-oriented one does — and this
+one does. Writing what was never saved mixed the two, and wrote past the aggregate's hooks and
+cascade with nobody told: the silent UPDATE of a "read-only" endpoint is the failure dirty
+checking is known for. Doctrine's `DEFERRED_EXPLICIT`, Django, Rails and Ecto write only what was
+asked. The first consumer always calls `save` and has code that changes loaded objects and saves
+them later; a forgotten `save` is now a line in the log instead of a write that skipped its rules.
+SQLAlchemy has no such mode, so the unit of work puts the unsaved back itself.
+
+## 26. A query is strict about the language, tolerant about the model
+
+**Decision.** `Criteria` and every part of it refuse a key the language does not have —
+`{"limit": 10}` at the top, `{"field", "op", "value"}`, a node mixing `all` and `any`.
+`Criteria.model_validate(data, context=TOLERANT)` reads leaving them out, for a client of another
+version. A *field* the model does not have is still dropped and reported (§3): that is the schema
+moving under a saved reading, not a typo.
+
+**Why.** Read leniently, a typo does not fail, it answers wrong: a misspelt filter key is dropped
+and more rows come back. RFC 9413 calls the cure virtuous intolerance; GraphQL refuses an unknown
+argument by specification, JSON:API answers 400 to an unknown query parameter, Elasticsearch's
+query DSL to an unknown key. Pydantic's default ignores extra keys because it serves payloads that
+evolve, not query languages. Turned on, it found a test ordering by `"direction": "desc"` — a key
+the language never had, silently ignored since it was written — and a workflow condition whose
+`all` beside an `any` had never been read.
+

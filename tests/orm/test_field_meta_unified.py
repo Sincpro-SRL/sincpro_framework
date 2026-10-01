@@ -28,9 +28,9 @@ from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.model_meta import FieldType
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
-from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 from .every_kind_models import Author, Format, Work, Works, declare, open_pair, populate
 from .related_models import reviews_bus

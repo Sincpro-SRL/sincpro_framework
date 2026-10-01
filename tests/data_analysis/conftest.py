@@ -31,9 +31,10 @@ class CountingRepository(MemoryRepository):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> Any:
         self.reads += 1
-        return super().search(target, criteria, for_update, skip_locked)
+        return super().search(target, criteria, for_update, skip_locked, nowait)
 
 
 def lines(count: int) -> list[Line]:

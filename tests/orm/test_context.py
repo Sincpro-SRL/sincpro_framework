@@ -13,8 +13,8 @@ from sqlalchemy import func, select
 from sincpro_framework.ddd.criteria import Condition, Criteria, Level, Operator
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.sql_translator import (
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.orm.sqlalchemy.services.sql_translator import (
     GRAIN_TRANSLATORS,
     grouping_column,
     register_grain_translator,

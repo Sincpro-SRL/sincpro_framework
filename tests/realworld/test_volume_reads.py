@@ -21,8 +21,9 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.criteria.pagination import Pagination
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
-from sincpro_framework.orm.sqlalchemy.repository import DEFAULT_COUNT_CAP, Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.services.workflows.reading import DEFAULT_COUNT_CAP
 
 from .ledger import Account, Entries, Entry, Line, Lines
 from .population import POPULATION, Census

@@ -10,12 +10,14 @@ Read in this order:
 
 | Page | What it answers |
 |---|---|
+| [Manifesto](manifesto.md) | The rules every persistence feature is held to: the port and the type, writing, transactions, money, distributed |
 | [**Guide**](guide.md) | **Start here.** Every use case step by step — aggregate, repository, writes, reads, relations, hooks, events, change tracking, event sourcing, outbox, testing — all runnable and tested |
 | [Introduction](introduction.md) | What problem this solves, the mental model in one page, a first end-to-end example |
 | [Design](design.md) | The two packages, the flow of a read and of a write, the module map, the invariants, where to extend |
 | [Criteria](criteria.md) | The boundary language: its grammar, what *reflexive* means, how two criterias merge, what `dropped` is |
 | [Specification](specification.md) | What to bring back of each record, at any depth: the rules |
 | [Relations](relations.md) | The paper: the model, the precedence, the resolution algorithm per kind, cost, and how to add a new way to resolve |
+| [Transactions](transactions.md) | The unit of work and its options, locks, what the engine refuses and `retrying`, `after_commit`, `upsert` and writes by criteria — runnable |
 | [Lifecycle](lifecycle.md) | What runs when something is written, and who each layer reaches |
 | [Hooks](hooks.md) | What a project puts around its own aggregates: the moments, dependencies, discovery, what is refused |
 | [Events](../events/README.md) | Recorded by the aggregate, published by a Feature, stored by nobody |

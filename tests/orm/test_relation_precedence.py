@@ -11,10 +11,10 @@ from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.model_meta import FieldType
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
-from sincpro_framework.orm.sqlalchemy.data_mapper import relations_of
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 from .precedence_models import (
     Chapter,
@@ -222,7 +222,10 @@ def test_describing_before_mapping_does_not_freeze_a_definition_without_relation
     from sqlalchemy import Column, ForeignKey, Text
     from sqlalchemy.orm import registry
 
-    from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
+    from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
+        entity_table,
+        map_aggregates,
+    )
 
     @dataclass
     class Pet(Entity):

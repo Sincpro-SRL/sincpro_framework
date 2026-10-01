@@ -16,7 +16,7 @@ it is about to write and can see writes that never went through a repository at 
 from sincpro_framework.ddd.repositories.change_tracking import ChangeTrackingRepositoryMixin
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.repositories.memory_repository import MemoryRepository
-from sincpro_framework.ddd.repositories.repository import Repository
+from sincpro_framework.ddd.repositories.repository import Repository, Upserted
 
 __all__ = [
     "ChangeTrackingRepositoryMixin",
@@ -24,4 +24,5 @@ __all__ = [
     "Hooks",
     "MemoryRepository",
     "Repository",
+    "Upserted",
 ]

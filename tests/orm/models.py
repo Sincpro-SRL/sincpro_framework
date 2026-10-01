@@ -26,8 +26,8 @@ from sincpro_framework.ddd.entity import (
 )
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
-from sincpro_framework.orm.sqlalchemy.data_mapper import (
+from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
     archive_columns,
     audit_columns,
     entity_table,

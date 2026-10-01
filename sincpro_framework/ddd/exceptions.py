@@ -1,12 +1,14 @@
 """What the vocabulary refuses, in its own words.
 
-Four of them, because a caller only ever needs to tell four things apart: what it asked for
-cannot be answered, the contract is being used wrong, or a write lost a race — against a newer
-version of the same aggregate, or against another aggregate already holding a unique value.
+A caller only ever needs to tell these apart: what it asked for cannot be answered, the contract
+is being used wrong — by the code, or by data the database refuses — or a write lost a race:
+against a newer version of the same aggregate, against another aggregate already holding a
+unique value, or against another transaction — or the engine stopped at a bound it was given.
+A stale version and a lost transaction are the ones worth running again.
 
 They inherit from `Exception` and nothing else. Whoever exposes them decides what each one means
-over the wire; an HTTP entrypoint maps `InvalidCriteria` to 400, `ContractViolation` to 422 and
-the two conflicts to 409.
+over the wire; an HTTP entrypoint maps `InvalidCriteria` to 400, `ContractViolation` (and
+`ConstraintViolation`) to 422, the three conflicts to 409 and `TimedOut` to 503.
 """
 
 
@@ -38,6 +40,33 @@ class DuplicateAggregate(DomainError):
 
     Reported as the vocabulary's own word so a use case can resolve the race it was written
     for, without importing the driver's exception to do it.
+    """
+
+
+class ConstraintViolation(ContractViolation):
+    """The database refused a write a rule of its own forbids: a reference to a row that does
+    not exist, an empty value where one is required, a check.
+
+    Unlike a race, running it again changes nothing — the write itself is wrong. The engine's
+    message, naming the constraint, is carried in this one.
+    """
+
+
+class TransactionConflict(DomainError):
+    """The transaction lost to another one running at the same time: a serialization failure,
+    a deadlock, a row lock it would not wait for.
+
+    The one failure that is cured by running the whole unit of work again on a fresh read —
+    which is what `Repository.retrying` does by default.
+    """
+
+
+class TimedOut(DomainError):
+    """The engine stopped at a bound the unit of work set: a row lock it was told not to wait
+    for (`nowait`), or a statement past `timeout`.
+
+    Not retried by default — the bound was the caller's choice, and running into it again at
+    once is what it was set to avoid. A worker that wants the next free row asks `skip_locked`.
     """
 
 

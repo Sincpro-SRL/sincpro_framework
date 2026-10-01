@@ -29,7 +29,8 @@ Three things it does not have: relations, units of work and date grains, which i
 a database starts — and `remove` here deletes, the way it does there; `archive` is the other one.
 """
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from copy import copy
 from typing import Any, overload
 
 from sincpro_framework.ddd.criteria import (
@@ -60,6 +61,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
 from sincpro_framework.ddd.entity.model_meta import Meta, describe_class
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
+    DuplicateAggregate,
     InvalidCriteria,
     StaleAggregate,
 )
@@ -68,6 +70,7 @@ from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.reads import note_read
 from sincpro_framework.ddd.repositories.repository import (
     Repository,
+    Upserted,
     records_of,
     refuse_locking,
     refuse_unarchivable,
@@ -340,9 +343,10 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         identity: Any,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T | None:
         """One record by its identity, or `None`; an archived one answers `None` too."""
-        refuse_locking(for_update)
+        refuse_locking(for_update or skip_locked or nowait)
         aggregate, _holder = model_and_collection(target)
         note_read(aggregate)
         found = self._stored.setdefault(aggregate, {}).get(identity)
@@ -377,6 +381,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> C: ...
 
     @overload
@@ -386,6 +391,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> EntityCollection[T]: ...
 
     def search(
@@ -394,9 +400,10 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> Any:
         """The page this criteria asks for, with its cursor, its count and what was dropped."""
-        refuse_locking(for_update)
+        refuse_locking(for_update or skip_locked or nowait)
         criteria = criteria or Criteria()
         aggregate, holder = model_and_collection(target)
         # Matched without reading: the page is cut first, and only what the caller is handed
@@ -699,3 +706,130 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
 
     def _forget(self, record: Any) -> None:
         self._stored.setdefault(type(record), {}).pop(identity_of(record), None)
+
+    def _matched_for_writing(self, model: type, criteria: Criteria, verb: str) -> list[Any]:
+        """The records a write by criteria reaches, refused as the engine refuses it: a page
+        cannot bound it, and a condition the aggregate cannot answer would widen it."""
+        if criteria.pagination.asked:
+            raise ContractViolation(
+                f"{verb} writes every record its filter matches; a page cannot bound it"
+            )
+        rows, dropped = self._matching(model, criteria, handed_back=False)
+        unanswered = [one.field for one in dropped if one.reason != "not_expandable"]
+        if unanswered:
+            raise ContractViolation(
+                f"{verb} cannot answer {', '.join(unanswered)} on {model.__name__}; a write "
+                "never runs wider than it was asked"
+            )
+        return rows
+
+    def update_all(self, target: type, criteria: Criteria, values: Mapping[str, Any]) -> int:
+        """The engine's `update_all`, over the records held: values set, version raised,
+        `updated_at` stamped, no hook."""
+        self._refuse_reentrant_write()
+        model, _ = model_and_collection(target)
+        meta = self.definition(model)
+        fixed = {meta.identity, "created_at", "version", "updated_at"}
+        wrong = sorted(
+            name
+            for name in values
+            if name not in meta.fields
+            or name in fixed
+            or meta.fields[name].type.is_relational
+        )
+        if wrong:
+            raise ContractViolation(
+                f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a field, "
+                "or one the framework keeps"
+            )
+        rows = self._matched_for_writing(model, criteria, "update_all")
+        now = utc_now()
+        for one in rows:
+            for name, value in values.items():
+                setattr(one, name, value)
+            if isinstance(one, Entity):
+                one.version += 1
+                one.updated_at = now
+        return len(rows)
+
+    def remove_all(self, target: type, criteria: Criteria) -> int:
+        """The engine's `remove_all`, over the records held: no hook, no cascade."""
+        self._refuse_reentrant_write()
+        model, _ = model_and_collection(target)
+        rows = self._matched_for_writing(model, criteria, "remove_all")
+        for one in rows:
+            self._forget(one)
+        return len(rows)
+
+    def upsert(
+        self, record: Any, on: Sequence[str], update: Sequence[str] | None = None
+    ) -> Upserted:
+        """The engine's `upsert`, over the records held: one per key, the last one; a held
+        record with the same key is overwritten and its version raised, a new one is kept as a
+        copy — the records handed in are not refreshed, as the engine leaves them. Answers the
+        same counts the engine does."""
+        self._refuse_reentrant_write()
+        records = records_of(record)
+        kept_by_framework = sorted(
+            {"id", "created_at", "version", "updated_at"} & set(update or ())
+        )
+        if kept_by_framework:
+            raise ContractViolation(
+                f"upsert cannot overwrite {', '.join(kept_by_framework)}: the framework keeps it"
+            )
+        latest: dict[Any, Any] = {}
+        for one in records:
+            values = tuple(getattr(one, name) for name in on)
+            # A key with a NULL in it never conflicts, as in the database.
+            latest[(type(one), *values) if None not in values else ("unkeyed", id(one))] = one
+        for one in latest.values():
+            self._fire("before_save", one)
+        written = 0
+        for one in latest.values():
+            model = type(one)
+            meta = self.definition(model)
+            unknown = [name for name in [*on, *(update or ())] if name not in meta.fields]
+            if unknown:
+                raise ContractViolation(f"{model.__name__} has no field {', '.join(unknown)}")
+            keyed = None not in tuple(getattr(one, name) for name in on)
+            held = next(
+                (
+                    stored
+                    for stored in self._rows(model)
+                    if keyed
+                    and all(getattr(stored, name) == getattr(one, name) for name in on)
+                ),
+                None,
+            )
+            twin = self._stored.get(model, {}).get(identity_of(one))
+            if held is None and twin is not None:
+                raise DuplicateAggregate(
+                    f"{model.__name__} {identity_of(one)} is already stored under another "
+                    f"{', '.join(on)}"
+                )
+            if held is None:
+                kept = copy(one)
+                if isinstance(kept, Entity) and not kept.version:
+                    kept.version = 1
+                    kept.updated_at = kept.updated_at or kept.created_at
+                self._stored.setdefault(model, {})[identity_of(kept)] = kept
+                written += 1
+                continue
+            fixed = {meta.identity, "created_at", "version", "updated_at", *on}
+            fixed |= {"archived_at", "created_by"}
+            overwritten = (
+                list(update)
+                if update is not None
+                else [n for n in meta.fields if n not in fixed]
+            )
+            if not overwritten:
+                continue
+            for name in overwritten:
+                setattr(held, name, getattr(one, name))
+            if isinstance(held, Entity):
+                held.version += 1
+                held.updated_at = utc_now()
+            written += 1
+        for one in latest.values():
+            self._fire("after_save", one)
+        return Upserted(written=written, skipped=len(latest) - written)

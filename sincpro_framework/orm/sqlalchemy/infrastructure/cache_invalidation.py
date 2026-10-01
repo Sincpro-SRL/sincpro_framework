@@ -13,7 +13,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from sincpro_framework.orm.sqlalchemy.database import Database
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 WRITTEN = "sincpro_written_aggregates"
 

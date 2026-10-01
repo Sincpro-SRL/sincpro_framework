@@ -29,7 +29,7 @@ never knows this exists.
 |---|---|---|
 | `ChangeTrackingMixin` | `ddd/entity/mixins/tracking.py` | What counts as a change, and what event to emit |
 | `EntityUpdated` | `ddd/entity/mixins/tracking.py` | The generic event: `changes: {field: (before, after)}`, plus `label` and `field_labels` — the words a person reads |
-| `_tracking` | `orm/sqlalchemy/change_tracking.py` | On SQLAlchemy: the diff the engine is about to write, at `before_flush` |
+| `_tracking` | `orm/sqlalchemy/infrastructure/change_tracking.py` | On SQLAlchemy: the diff the engine is about to write, at `before_flush` |
 | `ChangeTrackingRepositoryMixin` | `ddd/repositories/change_tracking.py` | On a store with no flush: a baseline on the way out, the diff on `save()` |
 | `EventTrackableMixin` | `ddd/events.py` | Delivery state for an event that goes to an outbox |
 

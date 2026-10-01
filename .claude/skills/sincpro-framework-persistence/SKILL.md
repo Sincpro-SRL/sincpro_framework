@@ -19,8 +19,9 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
   database, with a version check against lost updates, a unit of work for atomic writes, batched
   relations (no hidden N+1) and per-aggregate rules (hooks) that run on every write path.
 - **It is not** an Active Record (the class never knows its table), not a generic CRUD layer
-  (there is no update/delete by criteria), and not a query language for complex reporting —
-  joins, windows and bulk statements go through `repository.session` inside `context()`.
+  (writes take the aggregate; the bulk doors `update_all`/`remove_all` are named for what they
+  skip), and not a query language for complex reporting — joins and windows go through
+  `repository.session` inside `context()`.
 - **Do not use it** for data that never lives as an aggregate in this service: another bounded
   context's records are reached through that context's bus (a Command, or `Relation.bus`), and an
   external system is an adapter registered as a dependency.
@@ -112,8 +113,21 @@ Silent ones first — the runtime gives no error for these.
   `archive()` stamps nothing durable and archived rows keep appearing (only a `Dropped("archived_at")`
   hints at it). `AuditedMixin` needs `*audit_columns()` **and** `Database(url, actor=lambda: …)`,
   otherwise `created_by`/`updated_by` stay `None`.
-- **Changing an aggregate without `save` loses the change** against the database — and a test on
-  `MemoryRepository` still passes, because it hands back the very object it holds. Always `save`.
+- **Changing an aggregate without `save`.** It is never written: outside `context()` the change
+  is lost, inside it the change is put back at the end of the block and a warning names it
+  ("Account changed inside context() and was never saved"). A test on `MemoryRepository` passes
+  either way, because it hands back the very object it holds. Always `save`;
+  `context(writes=Writes.CHANGED)` exists for a block that wants the session to write what it
+  tracked.
+- **Removing a child by mutating the collection.** A root saves its children by itself, but only
+  an **assignment inside `context()`** removes: `workspace.repositories = [kept, added]` settles
+  what the relation read and no longer holds. Reading and saving never deletes; outside
+  `context()` an assignment cannot know what it replaced and removes nothing. `remove(root)`
+  settles its children as the relation declares — `orphans=Orphans.DELETE` or
+  `Orphans.DETACH`; with nothing declared it is refused while there are children. `owned=False`
+  declares a reference to another aggregate (better held by id). Hand-written "remove the
+  previous children, set their FK, save them" loops are not needed —
+  `references/repository-and-writes.md`.
 - **Several `save` calls outside `context()` are separate transactions.** A failure in the second
   leaves the first committed. Writes that must succeed together go in one `with repository.context()`.
 - **`after_save` is not "after commit".** Inside `context()` the block can still roll back; sending
@@ -193,9 +207,12 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   UUID v7, so ordering by `id` is ordering by creation.
 - **One table per aggregate, declared once in infrastructure** with `entity_table`.
   `map_aggregates` infers relations from foreign keys; declare only what the tables cannot say.
-- **Writes are explicit, reads are generic.** `save` one or many, `remove`, `archive`. No
-  update/delete by criteria. A hand-built aggregate with an existing id is a duplicate, not an
-  update: read it, change it, save it.
+- **Writes are explicit, reads are generic.** `save` one or many — the root with the children
+  it owns — `remove`, `archive`. A hand-built aggregate with an existing id is a duplicate, not
+  an update: read it, change it, save it. `upsert` and `update_all`/`remove_all` exist for the
+  writes with no rule to keep, and skip the hooks.
+- **The transaction is configured where it begins**: `context(isolation=Isolation.SERIALIZABLE)`,
+  `read_only=True`, `timeout=`; publish in `unit.after_commit(...)`, never in a hook.
 - **A stale write is refused** (`StaleAggregate`); read again and decide again.
 - **`repository.context()` is one unit of work**: everything commits together or not at all.
 - **A relation is resolved once per page, and refused if you did not ask for it.** No hidden N+1.

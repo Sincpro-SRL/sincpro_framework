@@ -17,6 +17,7 @@ import pytest
 ROOT = Path(__file__).parents[2]
 GUIDE = ROOT / "docs" / "persistence" / "guide.md"
 HOOKS = ROOT / "docs" / "persistence" / "hooks.md"
+TRANSACTIONS = ROOT / "docs" / "persistence" / "transactions.md"
 INTERCEPTORS = ROOT / "docs" / "core" / "interceptors.md"
 CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
@@ -57,6 +58,7 @@ def _failing_line(error: Exception, path: Path) -> int:
     [
         GUIDE,
         HOOKS,
+        TRANSACTIONS,
         INTERCEPTORS,
         CRON,
         MIGRATIONS,

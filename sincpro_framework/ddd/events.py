@@ -45,13 +45,18 @@ field instead of the wire name, which is refused at class-declaration time, loud
 """
 
 import dataclasses
+import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sincpro_framework.ddd.entity import Entity, new_entity_id, utc_now
 from sincpro_framework.ddd.exceptions import ContractViolation
+
+if TYPE_CHECKING:
+    from sincpro_framework.ddd.criteria import Criteria
 
 NAME = "name"
 
@@ -173,3 +178,65 @@ class EventTrackableMixin:
 
     def mark_cancelled(self) -> None:
         self.status = EventStatus.CANCELLED
+
+
+ENVELOPE = frozenset(one.name for one in dataclasses.fields(DomainEvent))
+"""The fields every event carries; what an event says on top of them is its payload."""
+
+
+@dataclass(kw_only=True)
+class EventLogEntry(DomainEvent):
+    """Any event of a bounded context, kept in one table: its envelope, its wire name and what it
+    said — the audit trail of an aggregate read back as one ordered history.
+
+        class WorkspaceHistory(EventLogEntry): ...            one per bounded context, mapped once
+        map_aggregates(registry, {WorkspaceHistory: event_log_table("workspace_history", metadata)})
+
+        unit.save(workspace)
+        unit.save(WorkspaceHistory.of_all(workspace.pull_events()))     the same transaction
+        history = repository.fetch_all(WorkspaceHistory, WorkspaceHistory.of_entity(workspace))
+
+    **Not event sourcing.** The aggregate's state stays in its own table; this is what happened
+    to it, for a person or an auditor, in one query instead of one per event class. An entry
+    keeps the event's own `id`, so the same fact saved twice is a `DuplicateAggregate`, not a
+    second line in the history.
+
+    A subclass per context because a class maps to one table: two contexts in one process each
+    keep their own history.
+    """
+
+    event_type: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def of(cls, event: DomainEvent) -> "EventLogEntry":
+        written = json.loads(event.as_json())
+        return cls(
+            id=event.id,
+            label=event.label,
+            created_at=event.created_at,
+            entity_type=event.entity_type,
+            entity_id=event.entity_id,
+            correlation_id=event.correlation_id,
+            causation_id=event.causation_id,
+            sequence=event.sequence,
+            event_type=event.name,
+            payload={key: value for key, value in written.items() if key not in ENVELOPE},
+        )
+
+    @classmethod
+    def of_all(cls, events: Iterable[DomainEvent]) -> list["EventLogEntry"]:
+        return [cls.of(event) for event in events]
+
+    @classmethod
+    def of_entity(cls, entity: Entity) -> "Criteria":
+        """What happened to this entity, oldest first: ids are UUID v7, so their order is time."""
+        from sincpro_framework.ddd.criteria import Condition, Criteria, combined, parse_order
+
+        return Criteria(
+            where=combined(
+                Condition(field="entity_type", value=type(entity).__name__),
+                Condition(field="entity_id", value=entity.id),
+            ),
+            order=parse_order("id"),
+        )

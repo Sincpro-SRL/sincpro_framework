@@ -13,7 +13,7 @@ from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_collection import Count
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 from .models import ROW_COUNT, Thing, Things, a_thing
 

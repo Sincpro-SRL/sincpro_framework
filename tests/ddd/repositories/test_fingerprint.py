@@ -33,7 +33,7 @@ def test_a_different_filter_order_or_mask_is_a_different_key():
 
     assert _key({"where": BIG}) != base
     assert (
-        _key({"where": POSTED, "order": [{"field": "quantity", "direction": "desc"}]}) != base
+        _key({"where": POSTED, "order": [{"field": "quantity", "descending": True}]}) != base
     )
     assert _key({"where": POSTED, "specification": {"journal": {}}}) != base
 

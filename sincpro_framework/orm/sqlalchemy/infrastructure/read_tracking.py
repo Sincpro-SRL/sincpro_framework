@@ -11,7 +11,7 @@ from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.util import find_tables
 
 from sincpro_framework.ddd.repositories.reads import note_read, reading
-from sincpro_framework.orm.sqlalchemy.data_mapper import aggregates_of
+from sincpro_framework.orm.sqlalchemy.domain.registry import aggregates_of
 
 
 def note_statement_reads(state: ORMExecuteState) -> None:

@@ -15,14 +15,19 @@ No ceiling anywhere, only defaults: a to-many node without a page gets 40 per pa
 node that asks for ten million gets ten million.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from sincpro_framework.ddd.criteria import Criteria, Specification
-from sincpro_framework.ddd.entity.entity_collection import Count, Dropped, EntityCollection
+from sincpro_framework.ddd.entity.entity_collection import (
+    Count,
+    Dropped,
+    EntityCollection,
+    identity_of,
+)
 from sincpro_framework.ddd.entity.model_meta import FieldType, Meta
 from sincpro_framework.ddd.entity.relations import (
     Groups,
@@ -30,9 +35,15 @@ from sincpro_framework.ddd.entity.relations import (
 from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
 from sincpro_framework.ddd.entity.relations import cut, key_pair, limit_of, resolve_elsewhere
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.orm.sqlalchemy import sql_translator as sql
-from sincpro_framework.orm.sqlalchemy.data_mapper import RESOLVED, Relation, relations_of
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe, is_mapped
+from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
+from sincpro_framework.orm.sqlalchemy.domain.relations import Held, hold
+from sincpro_framework.orm.sqlalchemy.services import sql_translator as sql
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import Relation
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe, is_mapped
+
+Prepare = Callable[[type, Criteria], tuple[Any, tuple, Meta, list[Dropped]]]
+"""What turns a criteria into its WHERE, its ordering, its definition and what it dropped — the
+one thing a resolution needs from the repository it runs for."""
 
 PARENT_KEY = "_sincpro_parent_key"
 POSITION, TOTAL = sql.POSITION, sql.TOTAL
@@ -90,7 +101,7 @@ def _grouped(
 
 
 def _nested(
-    repository: Any,
+    prepare: Prepare,
     session: Session,
     related: type,
     records: Sequence[Any],
@@ -101,18 +112,18 @@ def _nested(
     """The node's own specification over all the related records at once; the related
     aggregate's definition back, cut by that specification."""
     resolved = resolve_relations(
-        repository, session, related, list(records), node.specification, definition, dropped
+        prepare, session, related, list(records), node.specification, definition, dropped
     )
     return resolved.only(node.specification)
 
 
 def _by_foreign_key_on_related(
-    repository, session, meta, parents, relation, node, limit, dropped
+    prepare, session, meta, parents, relation, node, limit, dropped
 ):
     """A to-many: the related aggregate holds the field this one is matched by."""
     related = relation.related
     here, there = key_pair(meta.identity, relation, many=True)
-    clause, sorts, definition, node_dropped = repository.prepare(related, node)
+    clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
     ids = [getattr(parent, here) for parent in parents]
     key = getattr(related, there)
@@ -128,15 +139,15 @@ def _by_foreign_key_on_related(
         if (found := grouped.get(getattr(parent, here))) is not None
     }
     return groups, _nested(
-        repository, session, related, [r[0] for r in rows], node, definition, dropped
+        prepare, session, related, [r[0] for r in rows], node, definition, dropped
     )
 
 
-def _by_foreign_key_here(repository, session, meta, parents, relation, node, dropped):
+def _by_foreign_key_here(prepare, session, meta, parents, relation, node, dropped):
     """A to-one: this aggregate holds the field the related one is matched by."""
     related = relation.related
     here, there = key_pair(meta.identity, relation, many=False)
-    clause, sorts, definition, node_dropped = repository.prepare(related, node)
+    clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
     wanted = {getattr(parent, here) for parent in parents} - {None}
     if not wanted:
@@ -152,14 +163,14 @@ def _by_foreign_key_here(repository, session, meta, parents, relation, node, dro
         if (key := getattr(parent, here)) in found
     }
     return groups, _nested(
-        repository, session, related, list(found.values()), node, definition, dropped
+        prepare, session, related, list(found.values()), node, definition, dropped
     )
 
 
-def _through_table(repository, session, meta, parents, relation, node, limit, dropped):
+def _through_table(prepare, session, meta, parents, relation, node, limit, dropped):
     """A many-to-many: the pairs live in a table in between."""
     related = relation.related
-    clause, sorts, definition, node_dropped = repository.prepare(related, node)
+    clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
     ids = [getattr(parent, meta.identity) for parent in parents]
     table = relation.through
@@ -178,15 +189,15 @@ def _through_table(repository, session, meta, parents, relation, node, limit, dr
     rows = _partitioned(session, this_key, related, base, clause, sorts, limit)
     groups = _grouped(rows, node, sorts, limit)
     return groups, _nested(
-        repository, session, related, [r[0] for r in rows], node, definition, dropped
+        prepare, session, related, [r[0] for r in rows], node, definition, dropped
     )
 
 
-def _by_id_list(repository, session, meta, parents, relation, node, limit, dropped):
+def _by_id_list(prepare, session, meta, parents, relation, node, limit, dropped):
     """A to-many whose ids this aggregate holds in a column; the cut per parent is in memory,
     because the related aggregate has no column pointing back."""
     related = relation.related
-    clause, sorts, definition, node_dropped = repository.prepare(related, node)
+    clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
     wanted: set[Any] = set()
     for parent in parents:
@@ -207,7 +218,7 @@ def _by_id_list(repository, session, meta, parents, relation, node, limit, dropp
         mine = set(getattr(parent, relation.identified_by) or [])
         items = [r for r in fetched if getattr(r, definition.identity) in mine]
         groups[getattr(parent, meta.identity)] = cut(items, node, sorts, limit, exact=True)
-    return groups, _nested(repository, session, related, fetched, node, definition, dropped)
+    return groups, _nested(prepare, session, related, fetched, node, definition, dropped)
 
 
 def _scoped(declared: DeclaredRelation, node: Criteria) -> Criteria:
@@ -237,7 +248,7 @@ def _scoped(declared: DeclaredRelation, node: Criteria) -> Criteria:
 
 
 def _resolve(
-    repository: Any,
+    prepare: Prepare,
     session: Session,
     meta: Meta,
     parents: Sequence[Any],
@@ -257,19 +268,19 @@ def _resolve(
     match relation.kind:
         case "foreign_key" if many:
             return _by_foreign_key_on_related(
-                repository, session, meta, parents, relation, node, limit, dropped
+                prepare, session, meta, parents, relation, node, limit, dropped
             )
         case "foreign_key":
             return _by_foreign_key_here(
-                repository, session, meta, parents, relation, node, dropped
+                prepare, session, meta, parents, relation, node, dropped
             )
         case "many_to_many":
             return _through_table(
-                repository, session, meta, parents, relation, node, limit, dropped
+                prepare, session, meta, parents, relation, node, limit, dropped
             )
         case "id_list":
             return _by_id_list(
-                repository, session, meta, parents, relation, node, limit, dropped
+                prepare, session, meta, parents, relation, node, limit, dropped
             )
         case "resolver":
             return resolve_elsewhere(meta, parents, relation, node, many, limit)
@@ -280,7 +291,7 @@ def _resolve(
 
 
 def resolve_relations(
-    repository: Any,
+    prepare: Prepare,
     session: Session,
     model: type,
     records: Sequence[Any],
@@ -325,7 +336,7 @@ def resolve_relations(
 
         many = field.many
         groups, definition = _resolve(
-            repository, session, meta, records, declared, node, many, dropped, whole
+            prepare, session, meta, records, declared, node, many, dropped, whole
         )
         for record in records:
             found = groups.get(getattr(record, meta.identity))
@@ -337,7 +348,9 @@ def resolve_relations(
                 )
             else:
                 value = found.first() if found else None
-            record.__dict__.setdefault(RESOLVED, {})[name] = value
+            cut = not whole and (node.expression is not None or (many and value.is_partial))
+            read = frozenset(identity_of(one) for one in value) if many and not cut else None
+            hold(record, name, value, Held.CUT if cut else Held.WHOLE, read)
         fields[name] = field.model_copy(
             update={
                 "identified_by": declared.identified_by,
@@ -350,11 +363,11 @@ def resolve_relations(
 
 
 def resolve_whole(
-    repository: Any, session: Session, model: type, record: Any, name: str
+    prepare: Prepare, session: Session, model: type, record: Any, name: str
 ) -> None:
     """One relation of one record, whole: what a Feature touching it inside a unit of work gets."""
     resolve_relations(
-        repository,
+        prepare,
         session,
         model,
         [record],
