@@ -57,6 +57,10 @@ class Invoice(Entity):
     state: str = "draft"
     customer: Customer | None = None                           # many2one, same FK
 
+    def post(self) -> None:                # the rule lives on the aggregate it changes (§9)
+        self.state = "posted"
+        self.record(InvoicePosted(invoice_id=self.id, total=self.total))
+
 
 class Customers(EntityCollection[Customer]): ...
 
@@ -450,16 +454,10 @@ class InvoicePosted(DomainEvent):
     name = "billing.invoice.v1.posted"     # the wire name; keep it stable
     invoice_id: str = ""
     total: int = 0
-
-
-@dataclass
-class Invoice(Entity):
-    ...
-
-    def post(self) -> None:                # the rule lives on the aggregate it changes
-        self.state = "posted"
-        self.record(InvoicePosted(invoice_id=self.id, total=self.total))
 ```
+
+`Invoice.post()` (declared with the aggregate in §1) changes the state and records
+`InvoicePosted` — the rule lives on the aggregate it changes, never in a free function.
 
 A subscriber is an ordinary Feature on another bounded context's bus, registered for the event
 class. `Subscriber` executes every bus whose registry knows the event:
