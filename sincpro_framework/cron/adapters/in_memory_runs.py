@@ -32,10 +32,9 @@ class InMemoryRuns(CronRuns):
             )
 
     def _own(self, name: str) -> list[Run]:
-        return sorted(
-            (run for run in self._runs.values() if run.name == name and run.key == ""),
-            key=lambda run: run.scheduled_for,
-        )
+        with self._lock:  # another cron's thread claims while this one reads
+            runs = [run for run in self._runs.values() if run.name == name and run.key == ""]
+        return sorted(runs, key=lambda run: run.scheduled_for)
 
     def running(self, name: str, since: datetime) -> bool:
         return any(
