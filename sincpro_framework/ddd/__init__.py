@@ -46,20 +46,29 @@ from sincpro_framework.ddd.entity.entity_collection import (
 )
 from sincpro_framework.ddd.entity.model_meta import FieldMeta, FieldType, Meta
 from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
-from sincpro_framework.ddd.events import DomainEvent, EventStatus, EventTrackableMixin
+from sincpro_framework.ddd.events import (
+    DomainEvent,
+    EventLogEntry,
+    EventStatus,
+    EventTrackableMixin,
+)
 from sincpro_framework.ddd.exceptions import (
+    ConstraintViolation,
     ContractViolation,
     DomainError,
     DuplicateAggregate,
     InvalidCriteria,
     RelationNotResolved,
     StaleAggregate,
+    TimedOut,
+    TransactionConflict,
 )
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 from sincpro_framework.ddd.repositories import (
     ChangeTrackingRepositoryMixin,
     MemoryRepository,
     Repository,
+    Upserted,
 )
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.value_object import ValueObject
@@ -82,6 +91,9 @@ __all__ = [
     "DomainEvent",
     "Dropped",
     "DuplicateAggregate",
+    "ConstraintViolation",
+    "TransactionConflict",
+    "TimedOut",
     "Entity",
     "EntityUpdated",
     "ChangeTrackingRepositoryMixin",
@@ -104,6 +116,7 @@ __all__ = [
     "Query",
     "Relation",
     "Repository",
+    "Upserted",
     "Resolver",
     "ResponsePaginatedQuery",
     "Sort",
@@ -111,6 +124,7 @@ __all__ = [
     "RelationNotResolved",
     "StaleAggregate",
     "EventTrackableMixin",
+    "EventLogEntry",
     "Translated",
     "ValueObject",
     "holds",

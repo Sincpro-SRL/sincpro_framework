@@ -92,6 +92,20 @@ Where the chain holds and where it does not is in [relations.md](relations.md).
 
 `criteria.resuming_from(cursor)` is how a walk continues; `Repository.stream` does it for you.
 
+## Strict about the language, tolerant about the model
+
+Two kinds of unknown, read two ways — the line Elasticsearch draws too:
+
+| Unknown | Example | Answer |
+|---|---|---|
+| a key the **language** does not have | `{"limit": 10}` at the top, `{"field", "op", "value"}`, `{"all": […], "any": […]}` | **refused** — a typo, which would otherwise answer wrong |
+| a field the **model** does not have | `{"field": "legacy_flag", …}` from a saved reading | dropped and reported (below) |
+
+A query read leniently turns a typo into wrong data: a misspelt filter key is dropped and *more*
+rows come back (RFC 9413, "virtuous intolerance"; GraphQL, JSON:API query parameters and
+Elasticsearch refuse it too). A client of another version that sends keys this one does not
+know asks for it where it is read: `Criteria.model_validate(data, context=TOLERANT)`.
+
 ## `dropped`: never a 400
 
 A condition on a field the model does not have, an operator its type does not take, a value that

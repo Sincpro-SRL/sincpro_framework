@@ -11,7 +11,7 @@ from sqlalchemy import Column, Integer, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 mapper_registry = registry()
 

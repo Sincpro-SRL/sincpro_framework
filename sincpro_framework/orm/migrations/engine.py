@@ -56,7 +56,7 @@ from sincpro_framework.migrations.domain import (
     Position,
     Step,
 )
-from sincpro_framework.orm.sqlalchemy.database import Database
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 RenderTypes = Mapping[type[TypeEngine[Any]], TypeEngine[Any]]
 """A column type class — or a base of it — and the SQLAlchemy type a step writes for it."""

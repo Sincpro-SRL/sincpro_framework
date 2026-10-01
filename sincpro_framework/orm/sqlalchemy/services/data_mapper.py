@@ -1,5 +1,6 @@
 """The Data Mapper: where an aggregate lives is declared once, here, and the aggregate never
-learns it. A plain dataclass in `domain/`, a table here, one call that joins them; the Active
+learns it. A plain dataclass in the project's `domain/`, a table here, one call that joins them;
+the Active
 Record alternative, where the class knows its table, is the coupling this module exists to
 avoid.
 
@@ -7,7 +8,7 @@ avoid.
     note_table = entity_table("note", metadata, Column("title", Text, nullable=False))
     map_aggregates(registry(), {Note: note_table})
 
-Imperative mapping, so `domain/` stays plain dataclasses with no import from here. Two things
+Imperative mapping, so a project's `domain/` stays plain dataclasses with no import from here. Two things
 this saves every project from writing again: the four `Entity` columns per table, and the
 guard against mapping a class twice — a context can be built more than once in one process,
 and `map_imperatively` raises on the second time.
@@ -22,13 +23,13 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import MISSING, fields, is_dataclass
 from typing import Any
 
-from sqlalchemy import Column, DateTime, Integer, MetaData, Table, Text, event
+from sqlalchemy import Column, DateTime, Index, Integer, MetaData, Table, Text, event
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import object_session, registry
 from sqlalchemy.types import TypeEngine
 
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.model_meta import (
     annotations_of,
     related_class,
@@ -37,14 +38,16 @@ from sincpro_framework.ddd.entity.model_meta import (
 from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
 from sincpro_framework.ddd.entity.relations import Resolver
 from sincpro_framework.ddd.exceptions import RelationNotResolved
-from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
-
-RESOLVED = "_sincpro_resolved"
-"""Where a record keeps the relations that were resolved for it, by name."""
-
-REPOSITORY = "sincpro_repository"
-"""The key under which a unit of work leaves its repository on the session, so a relation
-touched inside the block can resolve itself."""
+from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
+from sincpro_framework.orm.sqlalchemy.domain.registry import RELATIONS, record_mapping
+from sincpro_framework.orm.sqlalchemy.domain.relations import (
+    REPOSITORY,
+    RESOLVED,
+    Held,
+    Orphans,
+    held,
+    hold,
+)
 
 
 def entity_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
@@ -100,6 +103,27 @@ def event_columns() -> list[Column]:
         Column("causation_id", Text),
         Column("sequence", Integer),
     ]
+
+
+def event_log_table(
+    name: str, metadata: MetaData, datetime_type: TypeEngine | None = None
+) -> Table:
+    """The table an `EventLogEntry` subclass is kept in: the envelope, the wire name, the
+    payload as JSON, and the index that answers one aggregate's history in one read.
+
+        out     id · created_at · updated_at · version · label · entity_type · entity_id
+                correlation_id · causation_id · sequence · event_type · payload JSON
+                INDEX (entity_type, entity_id)
+    """
+    return entity_table(
+        name,
+        metadata,
+        *event_columns(),
+        Column("event_type", Text, nullable=False),
+        Column("payload", JsonText, nullable=False),
+        Index(f"{name}_entity", "entity_type", "entity_id"),
+        datetime_type=datetime_type,
+    )
 
 
 def delivery_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
@@ -174,6 +198,8 @@ class Relation(DeclaredRelation):
         scope: Criteria | None = None,
         parent_field: str | None = None,
         related_field: str | None = None,
+        owned: bool = True,
+        orphans: Orphans = Orphans.REFUSE,
     ) -> None:
         super().__init__(
             kind,
@@ -186,6 +212,8 @@ class Relation(DeclaredRelation):
         )
         self.through = through
         self.related_key = related_key
+        self.owned = owned
+        self.orphans = orphans
 
     @classmethod
     def foreign_key(
@@ -195,8 +223,21 @@ class Relation(DeclaredRelation):
         scope: Criteria | None = None,
         parent_field: str | None = None,
         related_field: str | None = None,
+        owned: bool = True,
+        orphans: Orphans = Orphans.REFUSE,
     ) -> "Relation":
-        """Same database: a column on one side holds the other side's identity."""
+        """Same database: a column on one side holds the other side's identity.
+
+        **A to-many is part of its root unless it says otherwise** — Evans' aggregate: `save`
+        writes the children with the root's key on them, an assignment over a whole reading
+        settles the ones it no longer holds, and `remove` takes them along. `owned=False` makes
+        it a reference to another aggregate, read and never written — Vernon's rule is to hold
+        those by id, so a reference collection is a navigation, not a part. `orphans` says what
+        removing the root — or a child from it — does: `Orphans.REFUSE` by default, so nothing
+        is deleted or detached that nobody declared; `Orphans.DELETE` to take the children with
+        it, `Orphans.DETACH` to set their key to NULL. A to-one is never owned: a child does not
+        own its parent, and `owned` is read only on a to-many.
+        """
         return cls(
             "foreign_key",
             related,
@@ -204,6 +245,8 @@ class Relation(DeclaredRelation):
             scope=scope,
             parent_field=parent_field,
             related_field=related_field,
+            owned=owned,
+            orphans=orphans,
         )
 
     @classmethod
@@ -232,9 +275,6 @@ class Relation(DeclaredRelation):
     ) -> "Relation":
         """Same database, no foreign key: this aggregate holds a list of the related ids."""
         return cls("id_list", related, identified_by, scope=scope)
-
-
-RELATIONS: dict[type, dict[str, DeclaredRelation]] = {}
 
 
 class RelatedAttribute:
@@ -269,19 +309,22 @@ class RelatedAttribute:
         resolved = record.__dict__.get(RESOLVED)
         if resolved is not None and self.name in resolved:
             value = resolved[self.name]
-            partial = isinstance(value, EntityCollection) and value.is_partial
-            # A page cut for a client is not what a Feature inside a unit of work reads: it
-            # gets the whole relation, whatever a specification left on the record before.
-            if not partial or session is None or repository is None:
+            # A value cut for a client — a page, a filter — is not what a Feature inside a unit
+            # of work decides on: it gets the whole relation, whatever was left on the record.
+            if (
+                held(record, self.name) is not Held.CUT
+                or session is None
+                or repository is None
+            ):
                 return value
         if session is None or repository is None:
             raise RelationNotResolved(
                 f"{type(record).__name__}.{self.name} was not asked for; name it in the "
                 "criteria's specification, or read it inside context()"
             )
-        from sincpro_framework.orm.sqlalchemy.relation_resolver import resolve_whole
+        from sincpro_framework.orm.sqlalchemy.services.relation_resolver import resolve_whole
 
-        resolve_whole(repository, session, type(record), record, self.name)
+        resolve_whole(repository.prepare, session, type(record), record, self.name)
         answered = record.__dict__.get(RESOLVED, {})
         if self.name not in answered:
             # The resolver ran and wrote nothing, which a correct declaration never does. The
@@ -296,8 +339,41 @@ class RelatedAttribute:
             )
         return answered[self.name]
 
+    def _written_by_root(self, record: Any) -> bool:
+        """Whether a save of the record writes this relation — the only case its reading is
+        worth a query before an assignment."""
+        if (
+            self.relation.kind != "foreign_key"
+            or getattr(self.relation, "owned", None) is False
+        ):
+            return False
+        annotation = annotations_of(type(record)).get(self.name)
+        return annotation is not None and related_class(annotation)[1]
+
     def __set__(self, record: Any, value: Any) -> None:
-        record.__dict__.setdefault(RESOLVED, {})[self.name] = value
+        """An assignment replaces the set. Context: inside a unit of work, a stored record whose
+        relation was not read whole reads it first — as Rails' `collection=` does — so what it
+        replaced is known; anywhere else that is not possible, and the assignment is blind."""
+        state = sa_inspect(record, raiseerr=False)
+        stored = state is not None and state.has_identity
+        before = held(record, self.name)
+        if (
+            stored
+            and before is not Held.WHOLE
+            and before is not Held.ASSIGNED
+            and self._written_by_root(record)
+        ):
+            session = object_session(record)
+            repository = session.info.get(REPOSITORY) if session is not None else None
+            if session is not None and repository is not None:
+                from sincpro_framework.orm.sqlalchemy.services.relation_resolver import (
+                    resolve_whole,
+                )
+
+                resolve_whole(repository.prepare, session, type(record), record, self.name)
+                before = held(record, self.name)
+        whole = not stored or before is Held.WHOLE or before is Held.ASSIGNED
+        hold(record, self.name, value, Held.ASSIGNED if whole else Held.BLIND)
 
 
 def _dataclass_default(declared: Any) -> Callable[[], Any] | None:
@@ -374,7 +450,7 @@ def _install(aggregate: type, declared: Mapping[str, DeclaredRelation]) -> None:
         )
     if added:
         # `describe` caches per class; a definition read before this point knew no relations.
-        from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+        from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
         describe.cache_clear()
 
@@ -391,6 +467,13 @@ def _inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[s
     is a relation. With several foreign keys between the two tables the column named after the
     attribute, `<name>_id`, decides; with none of those, nothing is inferred and the data
     mapper has to be told.
+
+    A foreign key to a unique column that is not the primary key names both sides, so the
+    match reads the column the key references instead of the identity:
+
+        Repo.workspace_id  →  ForeignKey("ws.workspace_id")
+                           →  Ws.repositories by parent_field="workspace_id",
+                              related_field="workspace_id"
     """
     tables = {mapper.class_: mapper.local_table for mapper in mapper_registry.mappers}
     own = tables.get(aggregate)
@@ -404,22 +487,29 @@ def _inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[s
         if related is None or related not in tables:
             continue
         holder, points_at = (tables[related], own) if many else (own, tables[related])
-        candidates = [
-            column.name
+        candidates = {
+            column.name: fk.column
             for column in holder.c
-            if any(fk.column.table is points_at for fk in column.foreign_keys)
-        ]
+            for fk in column.foreign_keys
+            if fk.column.table is points_at
+        }
         if len(candidates) > 1:
             preferred = f"{name}_id" if not many else f"{getattr(own, 'name', '')}_id"
-            candidates = [c for c in candidates if c == preferred]
-        if len(candidates) == 1:
-            inferred[name] = Relation.foreign_key(related, identified_by=candidates[0])
+            candidates = {c: r for c, r in candidates.items() if c == preferred}
+        if len(candidates) != 1:
+            continue
+        [(holding, referenced)] = candidates.items()
+        if referenced.primary_key:
+            inferred[name] = Relation.foreign_key(related, identified_by=holding)
+        elif many:
+            inferred[name] = Relation.foreign_key(
+                related, parent_field=referenced.name, related_field=holding
+            )
+        else:
+            inferred[name] = Relation.foreign_key(
+                related, parent_field=holding, related_field=referenced.name
+            )
     return inferred
-
-
-def relations_of(aggregate: type) -> dict[str, DeclaredRelation]:
-    """What was declared for this aggregate, by relation name; empty when nothing was."""
-    return RELATIONS.get(aggregate, {})
 
 
 def _parent_table(mapper_registry: registry, parent: type) -> Table:
@@ -441,14 +531,6 @@ def _refuse_a_table_that_does_not_extend(
             f"{entity.__name__} extends {parent.__name__}, so its table {table.name} holds only "
             f"its own columns and must reference {wanted} as its primary key"
         )
-
-
-_aggregates_by_table: dict[Table, list[type]] = {}
-
-
-def aggregates_of(table: Table) -> list[type]:
-    """The aggregates mapped onto `table` — what a statement over it reads."""
-    return _aggregates_by_table.get(table, [])
 
 
 def map_aggregates(
@@ -493,7 +575,7 @@ def map_aggregates(
             options["version_id_col"] = table.c.version
 
         mapper = mapper_registry.map_imperatively(entity, table, **options)
-        _aggregates_by_table.setdefault(table, []).append(entity)
+        record_mapping(table, entity)
         event.listen(
             mapper, "load", _with_transient_defaults(entity, set(mapper.columns.keys()))
         )

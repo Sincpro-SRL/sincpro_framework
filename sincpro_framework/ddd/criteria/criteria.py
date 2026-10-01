@@ -15,9 +15,17 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Union, cast
 
-from pydantic import Field, JsonValue, RootModel, field_validator, model_validator
+from pydantic import (
+    Field,
+    JsonValue,
+    RootModel,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from sincpro_framework.ddd.criteria.pagination import Cursor, Pagination
+from sincpro_framework.ddd.criteria.strict import Strict, tolerates
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -53,7 +61,7 @@ class CountMode(StrEnum):
     EXACT = "exact"
 
 
-class Condition(DataTransferObject):
+class Condition(Strict):
     """One question about one field.
 
     `value` is required: a condition without a value is not a condition, and a `None` default
@@ -75,15 +83,15 @@ class Condition(DataTransferObject):
     operator: Operator = Operator.EQ
 
 
-class All(DataTransferObject):
+class All(Strict):
     all: list["Expression"]
 
 
-class Any_(DataTransferObject):
+class Any_(Strict):
     any: list["Expression"]
 
 
-class Not(DataTransferObject):
+class Not(Strict):
     negate: "Expression"
 
 
@@ -94,7 +102,7 @@ Any_.model_rebuild()
 Not.model_rebuild()
 
 
-class Sort(DataTransferObject):
+class Sort(Strict):
     field: str
     descending: bool = False
 
@@ -102,7 +110,20 @@ class Sort(DataTransferObject):
         return f"-{self.field}" if self.descending else self.field
 
 
-def expression_from(value: Any) -> Any:
+GROUPS = {"any", "all", "negate"}
+
+
+def _refused_or_dropped(value: dict, known: set[str], tolerant: bool) -> dict:
+    unknown = sorted(set(value) - known)
+    if unknown and not tolerant:
+        raise InvalidCriteria(
+            f"a filter node has no {', '.join(repr(one) for one in unknown)}; "
+            f"it takes {sorted(known)}"
+        )
+    return {key: one for key, one in value.items() if key in known}
+
+
+def expression_from(value: Any, tolerant: bool = False) -> Any:
     """A filter as the tree the engine reads.
 
         in   {"field": "row_count", "operator": ">", "value": 1000}
@@ -122,16 +143,18 @@ def expression_from(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
 
-    if "any" in value:
-        return Any_(any=[expression_from(one) for one in value["any"]])
-    if "all" in value:
-        return All(all=[expression_from(one) for one in value["all"]])
+    for group in ("any", "all"):
+        if group in value:
+            _refused_or_dropped(value, {group}, tolerant)
+            children = [expression_from(one, tolerant) for one in value[group]]
+            return Any_(any=children) if group == "any" else All(all=children)
     if "negate" in value:
-        return Not(negate=expression_from(value["negate"]))
+        _refused_or_dropped(value, {"negate"}, tolerant)
+        return Not(negate=expression_from(value["negate"], tolerant))
     if "field" in value:
         # Built, not handed back raw: left as a dict, a criteria did not survive its own
         # `model_dump`, so sending it in a POST or through a queue failed.
-        return Condition(**value)
+        return Condition(**_refused_or_dropped(value, set(Condition.model_fields), tolerant))
 
     raise InvalidCriteria(
         "a filter is {'field', 'operator', 'value'} or an object with 'all', 'any' or 'negate'; "
@@ -220,7 +243,7 @@ anything outside it is refused before a statement exists. Adding one is a change
 string a caller can invent."""
 
 
-class Measure(DataTransferObject):
+class Measure(Strict):
     """One number a group answers: a function over a field, under a name the caller chose.
 
         in      {"function": "sum", "field": "row_count"}
@@ -275,7 +298,7 @@ class Measure(DataTransferObject):
         return self
 
     @classmethod
-    def read(cls, written: Any) -> "Measure":
+    def read(cls, written: Any, tolerant: bool = False) -> "Measure":
         """A measure as it comes in: the object on the wire, or the pair written by hand.
 
         >>> Measure.read({"function": "sum", "field": "row_count"})
@@ -286,7 +309,7 @@ class Measure(DataTransferObject):
         if isinstance(written, Measure):
             return written
         if isinstance(written, dict):
-            return cls(**written)
+            return cls(**_refused_or_dropped(written, set(cls.model_fields), tolerant))
         # A tuple as much as a list: a pair written in Python is `("sum", "row_count")` and
         # the same pair read from JSON is a list. They mean the same measure.
         if not isinstance(written, (list, tuple)) or len(written) != 2 or not all(written):
@@ -297,7 +320,7 @@ class Measure(DataTransferObject):
         return cls(function=written[0], field=written[1])
 
 
-class Level(DataTransferObject):
+class Level(Strict):
     """One level of grouping: the field it splits by, and how finely.
 
     in      "produced_by"           →  Level(field='produced_by', grain=None)
@@ -308,7 +331,7 @@ class Level(DataTransferObject):
     grain: str | None = None
 
     @classmethod
-    def read(cls, written: Any) -> "Level":
+    def read(cls, written: Any, tolerant: bool = False) -> "Level":
         """A level as it comes in JSON: the object — `{"field": "registered_at", "grain": "month"}`.
 
         >>> Level.read({"field": "registered_at", "grain": "month"})
@@ -317,13 +340,13 @@ class Level(DataTransferObject):
         if isinstance(written, Level):
             return written
         if isinstance(written, dict):
-            return cls(**written)
+            return cls(**_refused_or_dropped(written, set(cls.model_fields), tolerant))
         raise InvalidCriteria(
             f"a level is written {{'field': …, 'grain': …}}; got {written!r}"
         )
 
 
-class Grouping(DataTransferObject):
+class Grouping(Strict):
     """How a result set is split: the levels, and the numbers folded out of every group.
 
         in      {"by": ["produced_by", "registered_at:month"], "measures": {"filas": ["sum", "row_count"]}}
@@ -432,7 +455,7 @@ class PivotCell(DataTransferObject):
     measures: dict[str, Any] = {}
 
 
-class Pivot(DataTransferObject):
+class Pivot(Strict):
     """A table of groups crossed by groups: rows down one axis, columns across the other, a
     folded cell where they meet.
 
@@ -528,7 +551,7 @@ class Specification(RootModel[dict[str, "Criteria"]]):
         )
 
 
-class Criteria(DataTransferObject):
+class Criteria(Strict):
     where: Expression | None = None
     """The filter: a `Condition`, or an `All`/`Any`/`Not` grouping more of them.
 
@@ -570,7 +593,7 @@ class Criteria(DataTransferObject):
 
     @field_validator("where", mode="before")
     @classmethod
-    def _reads_the_filter(cls, value: Any) -> Any:
+    def _reads_the_filter(cls, value: Any, info: ValidationInfo) -> Any:
         """The filter in the one form there is — and in its serialisation, which is the same thing.
 
         1. A text is JSON: that is how a filter survives a URL.
@@ -588,27 +611,30 @@ class Criteria(DataTransferObject):
             except ValueError as error:
                 raise InvalidCriteria(f"'where' does not read as JSON: {error}") from error
 
-        return expression_from(value)
+        return expression_from(value, tolerates(info))
 
     @field_validator("grouping", mode="before")
     @classmethod
-    def _reads_the_grouping(cls, value: Any) -> Any:
+    def _reads_the_grouping(cls, value: Any, info: ValidationInfo) -> Any:
         """The levels and the measures of the object, each to its type.
 
-        in      {"by": [{"field": "produced_by"}], "measures": {"filas": ["sum", "row_count"]}}
-        out     Grouping(by=(Level(produced_by),), measures={'filas': Measure(sum, row_count)})
+        in      {"group_by": [{"field": "produced_by"}], "measures": {"filas": ["sum", "row_count"]}}
+        out     Grouping(group_by=(Level(produced_by),), measures={'filas': Measure(sum, row_count)})
         """
         if isinstance(value, dict):
+            tolerant = tolerates(info)
             value = dict(value)
             if "group_by" in value:
-                value["group_by"] = tuple(Level.read(one) for one in value["group_by"])
+                value["group_by"] = tuple(
+                    Level.read(one, tolerant) for one in value["group_by"]
+                )
             if "measures" in value:
                 value["measures"] = {
-                    name: Measure.read(measure)
+                    name: Measure.read(measure, tolerant)
                     for name, measure in (value["measures"] or {}).items()
                 }
             if "where_measures" in value:
-                value["where_measures"] = expression_from(value["where_measures"])
+                value["where_measures"] = expression_from(value["where_measures"], tolerant)
             if isinstance(value.get("order"), str):
                 value["order"] = parse_order(value["order"])
         return value
@@ -617,7 +643,7 @@ class Criteria(DataTransferObject):
     def limit(self) -> int:
         """How many rows this page asks for.
 
-        >>> Criteria(limit=80).limit
+        >>> Criteria.model_validate({"pagination": {"limit": 80}}).limit
         80
         """
         return self.pagination.limit
@@ -626,7 +652,7 @@ class Criteria(DataTransferObject):
     def cursor(self) -> str | None:
         """The token this page resumes from, when the strategy is one that resumes.
 
-        >>> Criteria(cursor="eyJ").cursor
+        >>> Criteria.model_validate({"pagination": {"strategy": {"token": "eyJ"}}}).cursor
         'eyJ'
         >>> Criteria().cursor is None
         True
@@ -636,8 +662,8 @@ class Criteria(DataTransferObject):
     def resuming_from(self, token: str | None) -> "Criteria":
         """The same reading, continued from where a page ended.
 
-            in      Criteria(limit=80), the token that came back with the page
-            out     Criteria(limit=80, pagination=Pagination(limit=80, strategy=Cursor(token=…)))
+            in      a criteria paging by 80, the token that came back with the page
+            out     Criteria(pagination=Pagination(limit=80, strategy=Cursor(token=…)))
 
         **This exists because `model_copy(update={"cursor": …})` does nothing.** `cursor` reads
         through to the strategy, so writing it past validation sets a field nobody reads: the

@@ -1,33 +1,12 @@
-"""Runs a `Criteria` against a database and answers a `EntityCollection`; persists what a use case
-built or changed.
-
-The single door for reads and the single door for writes, so a concern added later — an access
-mask, a cache, an audit — lands in one file. Reads are generic because a filter is a filter;
-writes take the aggregate and nothing else, because a write that skips the aggregate skips its
-rules. There is no update or delete by criteria.
-
-    page = self.repository.search(Dataset, criteria)      a page, with cursor, count and definition
-    one = self.repository.get(Dataset, "ds_01a0…")        by identity, or None
-    self.repository.save(dataset)                         insert or update, version checked
-    with self.repository.context() as repository:         several of those, one transaction
-        run = repository.get(Run, run_id)
-        run.advance()
-        repository.save(run)
-"""
+"""Every reading the repository answers: a criteria to a page, a count, a grouping, a pivot, an
+export, a short question — and the relations a specification names, once per page."""
 
 import types
-from collections.abc import Callable, Generator, Iterator, Sequence
-from contextlib import contextmanager
-from time import sleep
+from collections.abc import Iterator, Sequence
 from typing import Any, cast, overload
 
-from sqlalchemy import Select, Table, distinct, func
-from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import literal, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Select, distinct, func, literal, or_, select
 from sqlalchemy.orm import Session, aliased
-from sqlalchemy.orm.exc import StaleDataError
-from sqlalchemy.schema import sort_tables
 
 from sincpro_framework.ddd.criteria import (
     Bucket,
@@ -45,7 +24,6 @@ from sincpro_framework.ddd.criteria import (
     combined,
     conditions_of,
 )
-from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -57,27 +35,18 @@ from sincpro_framework.ddd.entity.entity_collection import (
 from sincpro_framework.ddd.entity.model_meta import Meta
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
-    DuplicateAggregate,
     InvalidCriteria,
-    StaleAggregate,
 )
 from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
-from sincpro_framework.ddd.repositories.hooks import Hooks
-from sincpro_framework.ddd.repositories.repository import Repository as BaseRepository
-from sincpro_framework.ddd.repositories.repository import records_of, refuse_unarchivable
-from sincpro_framework.orm.sqlalchemy import sql_translator as sql
-from sincpro_framework.orm.sqlalchemy.data_mapper import REPOSITORY, relations_of
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
-from sincpro_framework.orm.sqlalchemy.relation_resolver import resolve_relations
+from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
+from sincpro_framework.orm.sqlalchemy.services import sql_translator as sql
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.services.relation_resolver import resolve_relations
+from sincpro_framework.orm.sqlalchemy.services.workflows.store import Store
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
-# Where counting stops unless somebody asks for more. Past this nobody is reading a total,
-# they are refining a filter — Odoo settled on the same number for the same reason.
 DEFAULT_COUNT_CAP = 10_000
 
-# What a criteria becomes before any statement exists: the WHERE, the ordering, the model and
-# whatever the caller asked for that this model cannot answer.
 Prepared = tuple[Any, tuple[Sort, ...], Meta, list[Dropped]]
 
 COUNT = "count"
@@ -183,160 +152,9 @@ def _relations_named(
     return named
 
 
-def _named(records: list[Any]) -> str:
-    """What a batch is called in an error: the aggregate when they are all one kind, and every
-    kind in it when they are not. One flush writes them together and the engine does not say
-    which one lost the race, so a single name would be a guess."""
-    kinds = sorted({type(one).__name__ for one in records})
-    if not kinds:
-        return "the batch"
-    if len(kinds) == 1:
-        return kinds[0] if len(records) == 1 else f"one of {len(records)} {kinds[0]}"
-    return f"one of {len(records)} records ({', '.join(kinds)})"
-
-
-def _by_dependency(records: list[Any]) -> list[list[Any]]:
-    """The records grouped by table, each table before the ones whose foreign keys point at it.
-
-    Context: SQLAlchemy orders a flush by the relationships a mapping declares, and the
-    framework's relations are its own, so without this one `save` of a zone and an address
-    wrote them in class-name order — the address first, an orphan Postgres refuses. One table
-    is one group: the common save is still one flush.
-    """
-    by_table: dict[Table, list[Any]] = {}
-    for one in records:
-        by_table.setdefault(sa_inspect(one).mapper.local_table, []).append(one)
-    if len(by_table) == 1:
-        return list(by_table.values())
-    return [by_table[table] for table in sort_tables(by_table)]
-
-
-class Repository(BaseRepository):
-    """One database, read and written through one object. Implements `ddd.Repository` and
-    answers more: a use case takes this instance, the protocol holds it to the minimum.
-
-    Built once per bounded context and injected as `self.repository`. Every call opens its own
-    session and commits it — except inside `context`, where the engine handed to the
-    block shares one session and the block is the transaction.
-    """
-
-    def __init__(
-        self,
-        database: Database,
-        hooks: Hooks | None = None,
-        session: Session | None = None,
-        scope: Criteria | None = None,
-        guard: "BaseRepository | None" = None,
-    ) -> None:
-        """`hooks` second, so a wiring reads as what it is — `Repository(database, billing_hooks)`.
-        The rest are what a unit of work and a narrowing carry: its session, its scope, and the
-        repository they are a view of."""
-        super().__init__(hooks, guard)
-        self.database = database
-        self._bound = session
-        self._scope = scope
-
-    def record_changes(self, record: Any) -> Any:
-        """Flushes what is pending for this aggregate and hands back the fact that was written.
-
-            with repository.context() as unit:
-                invoice.post()
-                event = unit.record_changes(invoice)     # settled here, and handed over
-
-        **The same path the automatic mode takes**, asked for now rather than when the unit of
-        work happens to end. Going around it with a second diff would record the change twice —
-        once here and once at the flush — which is exactly what the one-event promise forbids.
-
-        It closes one chapter: whatever moves after this call is a change of its own, with its
-        own event, rather than being folded back into this one.
-        """
-        if self._bound is None:
-            raise ContractViolation(
-                "record_changes needs the unit of work holding this aggregate — outside "
-                "context() there is nothing pending to write down, and a plain save() is "
-                "what settles it"
-            )
-        seen = len(record.recorded_events()) if hasattr(record, "recorded_events") else 0
-        self._written(self._bound, [record])
-        after: tuple[Any, ...] = (
-            record.recorded_events() if hasattr(record, "recorded_events") else ()
-        )
-        return after[-1] if len(after) > seen else None
-
-    def _dialect(self) -> str:
-        """The engine underneath, by name. Read for the one decision that depends on it:
-        whether it can compute a percentile."""
-        return self.database.engine.dialect.name
-
-    def narrowed(self, scope: Criteria) -> "Repository":
-        """The same database seen through a filter nothing can widen: what a tenant, a branch
-        or a permission is.
-
-            books = repository.narrowed(Criteria(where=Condition(field="tenant", value="acme")))
-            books.search(Invoices, criteria)      →  … AND tenant = 'acme'
-            books.save(invoice_of_another_tenant) →  ContractViolation
-
-        Every reading merges the scope with AND, and every write is checked against it before
-        it reaches the database, with the same evaluator the translator is specified by. An
-        aggregate the scope cannot be expressed on is refused outright rather than read wide:
-        a scope that is silently dropped is the one bug this exists to prevent.
-
-        Narrowing again narrows further; the scopes accumulate, they never replace.
-        """
-        return Repository(
-            self.database,
-            session=self._bound,
-            scope=self._scope.merged_with(scope) if self._scope is not None else scope,
-            guard=self._guard,
-        )
-
-    def _asked(self, model: type, meta: Meta, criteria: Criteria) -> Any:
-        """The filter that actually runs: what the caller asked, and what the repository adds.
-
-        1. The scope, when this repository is narrowed, refused outright if this aggregate
-           cannot answer it.
-        2. Final: the archived left out, unless the caller named `archived_at` itself.
-        """
-        expression = criteria.expression
-        if self._scope is not None:
-            kept, dropped = meta.accept(self._scope.expression)
-            if dropped or kept is None:
-                raise ContractViolation(
-                    f"{meta.aggregate} cannot answer the scope this repository was narrowed "
-                    f"by ({', '.join(one.field for one in dropped) or 'nothing survived'}); "
-                    "reading it wide is not an option"
-                )
-            expression = combined(kept, expression)
-        if issubclass(model, ArchivableMixin) and not any(
-            one.field == "archived_at" for one in conditions_of(expression)
-        ):
-            expression = combined(
-                expression,
-                Condition(field="archived_at", operator=Operator.IS_NULL, value=True),
-            )
-        return expression
-
-    def _in_scope(self, record: Any) -> bool:
-        """Whether a record belongs to what this repository may see and write."""
-        return self._scope is None or matches(record, self._scope.expression)
-
-    def _refuse_outside(self, record: Any) -> None:
-        if not self._in_scope(record):
-            raise ContractViolation(
-                f"{type(record).__name__} lies outside what this repository was narrowed to; "
-                "it can neither be written nor removed here"
-            )
-
-    @contextmanager
-    def _session(self) -> Generator[Session]:
-        """The session a call runs in: the bound one inside a unit of work, a fresh one
-        otherwise. The fresh one commits when the call ends; the bound one commits when the
-        unit of work does."""
-        if self._bound is not None:
-            yield self._bound
-            return
-        with self.database.session() as session:
-            yield session
+class Reading(Store):
+    """Reads are generic because a filter is a filter: one `prepare` per criteria, one statement
+    per page, relations resolved once for the whole page."""
 
     def prepare(self, model: type, criteria: Criteria) -> Prepared:
         """Everything a criteria becomes before any statement exists.
@@ -419,7 +237,7 @@ class Repository(BaseRepository):
         if criteria.specification is not None and kept:
             dropped = list(dropped)
             meta = resolve_relations(
-                self, session, model, kept, criteria.specification, meta, dropped
+                self.prepare, session, model, kept, criteria.specification, meta, dropped
             )
 
         return holder(
@@ -433,7 +251,7 @@ class Repository(BaseRepository):
     def _statement_from(self, model: type, criteria: Criteria, prepared: Prepared) -> Select:
         """The select a prepared criteria becomes.
 
-        in      Dataset, Criteria(cursor="eyJ…", limit=20), its prepared parts
+        in      Dataset, a criteria at the cursor "eyJ…" paging by 20, its prepared parts
         out     SELECT dataset.* FROM dataset
                 WHERE dataset.row_count > 1000 AND (dataset_id) < ('ds_01a0…')
                 ORDER BY dataset.dataset_id DESC
@@ -665,115 +483,6 @@ class Repository(BaseRepository):
             pages[path] = (ids, cursor)
         return pages
 
-    def _written(self, session: Session, records: list[Any]) -> None:
-        """Flushes the batch and translates the two ways a write loses a race.
-
-        a newer version in the row     →  StaleAggregate     read again, decide again
-        a unique value already taken   →  DuplicateAggregate  resolve the twin
-
-        **Named for the whole batch, not for its first record.** One flush writes all of them
-        and the engine does not say which one lost, so naming a guess sends somebody to read
-        the wrong aggregate. The engine's own message does name the table; it is carried
-        through rather than summarised away.
-        """
-        try:
-            session.flush()
-        except StaleDataError as error:
-            raise StaleAggregate(
-                f"{_named(records)} changed since it was read; "
-                f"read it again before writing — {error}"
-            ) from error
-        except IntegrityError as error:
-            raise DuplicateAggregate(
-                f"{_named(records)} collides with a record already stored: {error.orig}"
-            ) from error
-
-    @property
-    def session(self) -> Session:
-        """The session a unit of work runs in — the escape hatch for what the criteria will
-        never say: a join across four tables, a window function, a bulk `UPDATE`, raw SQL.
-
-            with self.repository.context() as repository:
-                rows = repository.session.execute(select(Line.account_id, func.sum(Line.amount))…)
-
-        Everything SQLAlchemy has, inside the same transaction, with the same stamping of
-        `updated_at` and the same tracing. Only inside a unit of work: outside there is no
-        session to hand over, and a caller that wanted one for a single statement wants
-        `statement()` and `run()`.
-        """
-        if self._bound is None:
-            raise ContractViolation(
-                "the session exists only inside context(); open one, or use "
-                "statement() and run() for a single read"
-            )
-        return self._bound
-
-    def flush(self) -> None:
-        """Writes what is pending to the database without committing — so a following read
-        in the same unit of work sees it, and a constraint fails here rather than at the end.
-        """
-        self.session.flush()
-
-    def commit(self) -> None:
-        """Ends the current transaction and starts the next one, in the same unit of work.
-
-            with self.repository.context() as repository:
-                for batch in repository.stream(Line, criteria):
-                    reconcile(batch)
-                    repository.commit()                    each batch is durable on its own
-
-        For a process that runs long: one transaction held across a thousand groups is a
-        lock held for the whole run, and a failure at the end loses everything. The objects
-        in hand stay usable — nothing expires on commit.
-        """
-        self.session.commit()
-
-    @contextmanager
-    def savepoint(self) -> Generator[None]:
-        """A part of the unit of work that can fail on its own.
-
-            with self.repository.context() as repository:
-                for group in groups:
-                    try:
-                        with repository.savepoint():
-                            reconcile(group)          raises → only this group is undone
-                    except ReconciliationError:
-                        report(group)
-
-        What a savepoint is for: the groups that reconciled stay reconciled, the one that
-        did not is rolled back to here, and the unit of work goes on.
-        """
-        with self.session.begin_nested():
-            yield
-
-    @contextmanager
-    def context(self) -> Generator["Repository"]:
-        """Several reads and writes as one transaction.
-
-            with self.repository.context() as repository:
-                run = repository.get(Run, run_id)          the same session
-                run.advance()
-                repository.save(run)                       flushed here, committed when the block ends
-            an exception inside                     →  everything rolled back
-
-        The engine handed to the block is this same engine bound to one session, so it
-        answers every method the outer one does, and what it was narrowed to still holds
-        inside. Nesting reuses the session in play.
-        """
-        if self._bound is not None:
-            yield self
-            return
-        with self.database.session() as session:
-            bound = Repository(
-                self.database,
-                session=session,
-                scope=self._scope,
-                guard=self._guard,
-            )
-            # A relation touched inside the block resolves itself through this repository.
-            session.info[REPOSITORY] = bound
-            yield bound
-
     def statement(self, target: type, criteria: Criteria) -> Select:
         """The escape hatch: this criteria as an ordinary `Select`, to take further.
 
@@ -828,6 +537,7 @@ class Repository(BaseRepository):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> C: ...
 
     @overload
@@ -837,6 +547,7 @@ class Repository(BaseRepository):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> EntityCollection[T]: ...
 
     def search(
@@ -845,6 +556,7 @@ class Repository(BaseRepository):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> Any:
         """The page this criteria asks for, with its cursor, its count and what was dropped.
 
@@ -855,13 +567,13 @@ class Repository(BaseRepository):
         `for_update` locks the page's rows until the unit of work commits — a worker that
         takes a batch of pending items and marks them taken. See `get`.
 
-        >>> self.repository.search(Dataset, Criteria(limit=20, order=parse_order("-registered_at")))
+        >>> self.repository.search(Dataset, Criteria(pagination=Pagination(limit=20), order=parse_order("-registered_at")))
         EntityCollection(20 records of 197, more)
         >>> self.repository.search(Dataset)                      # no criteria: first page of everything
         EntityCollection(50 records of 197, more)
         """
         criteria = criteria or Criteria()
-        lock = self._locking(for_update, skip_locked)
+        lock = self._locking(for_update, skip_locked, nowait)
 
         # Prepared once and carried: going through the public `statement()` and `run()` would
         # describe the model, coerce the values and prune the expression twice per search.
@@ -874,7 +586,7 @@ class Repository(BaseRepository):
                 )
         statement = self._statement_from(model, criteria, prepared)
         if lock is not None:
-            statement = statement.with_for_update(skip_locked=skip_locked)
+            statement = statement.with_for_update(**(lock if isinstance(lock, dict) else {}))
         with self._session() as session:
             return self._searched(
                 target, self._page(session, model, holder, statement, criteria, prepared)
@@ -993,20 +705,35 @@ class Repository(BaseRepository):
                 return
             criteria = criteria.resuming_from(page.cursor)
 
-    def _locking(self, for_update: bool, skip_locked: bool) -> Any:
+    def _locking(self, for_update: bool, skip_locked: bool, nowait: bool) -> Any:
         """What `FOR UPDATE` becomes, or nothing.
 
         Refused outside a unit of work: a lock taken by a call that commits on its way out is
         released before the caller can act on it, which is a lock that protects nothing.
+        `skip_locked` and `nowait` say what to do with a row somebody else holds — pass over it,
+        or fail at once — so they cannot both be asked.
         """
         if not for_update:
+            if skip_locked or nowait:
+                raise ContractViolation(
+                    "skip_locked and nowait say how to take a row lock; ask for one with "
+                    "for_update=True"
+                )
             return None
         if self._bound is None:
             raise ContractViolation(
                 "for_update only means something inside context(): the lock is held "
                 "until the block commits"
             )
-        return {"skip_locked": True} if skip_locked else True
+        if skip_locked and nowait:
+            raise ContractViolation(
+                "skip_locked passes over a held row and nowait fails on it; ask for one"
+            )
+        if skip_locked:
+            return {"skip_locked": True}
+        if nowait:
+            return {"nowait": True}
+        return True
 
     def get[T](
         self,
@@ -1014,6 +741,7 @@ class Repository(BaseRepository):
         identity: Any,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T | None:
         """One record by its identity, or `None` when there is none.
 
@@ -1025,10 +753,11 @@ class Repository(BaseRepository):
 
         `for_update` takes the row lock until the unit of work commits — for the process
         that claims an item so no other worker takes it. `skip_locked` steps over rows
-        another worker already holds instead of waiting. SQLite has neither and ignores both.
+        another worker already holds instead of waiting; `nowait` fails at once with
+        `TransactionConflict`. SQLite has no row locks and ignores all three.
         """
         model, _ = model_and_collection(target)
-        lock = self._locking(for_update, skip_locked)
+        lock = self._locking(for_update, skip_locked, nowait)
         with self._session() as session:
             found = (
                 session.get(model, identity)
@@ -1184,7 +913,6 @@ class Repository(BaseRepository):
         return dict(zip(measures, row))
 
     # ------------------------------------------------------------------ the short readings
-
     def exists(self, target: type, criteria: Criteria | None = None) -> bool:
         """Whether anything at all matches, without counting or fetching.
 
@@ -1348,7 +1076,6 @@ class Repository(BaseRepository):
             yield from page.to_records(mask)
 
     # ------------------------------------------------------------------ the whole picture
-
     def pivot(
         self,
         target: type,
@@ -1460,120 +1187,3 @@ class Repository(BaseRepository):
             relations=relations,
             statements=1 + (1 if counted else 0) + len(relations),
         )
-
-    # ------------------------------------------------------------------ writing
-
-    def retrying[T](
-        self,
-        work: Callable[[], T],
-        attempts: int = 3,
-        on: type[Exception] | tuple[type[Exception], ...] = StaleAggregate,
-        wait: float = 0.05,
-    ) -> T:
-        """Runs a unit of work again when it lost a race, and gives up saying so.
-
-            def post() -> ResponsePostEntry:
-                with self.repository.context() as ledger:
-                    …
-            answer = self.repository.retrying(post)
-
-        A callable and not a block, because a `with` cannot run its body twice. The wait
-        doubles between attempts so two workers that collided do not collide again on the
-        same beat; the last failure is raised as it was, not wrapped.
-        """
-        if attempts < 1:
-            raise ContractViolation("retrying needs at least one attempt")
-        for attempt in range(attempts):
-            try:
-                return work()
-            except on:
-                if attempt == attempts - 1:
-                    raise
-                sleep(wait * (2**attempt))
-        raise AssertionError("unreachable")
-
-    def save(self, record: Any) -> None:
-        """Persists one aggregate or several: an insert for what is new, an update for what was
-        loaded.
-
-            in      Note(title="x")                 never stored     →  INSERT, version 1
-            in      the Note that `get` returned, changed           →  UPDATE … WHERE version = 1
-            in      that same Note saved by somebody else first     →  StaleAggregate
-            in      1 000 new lines, or a page      →  one flush, one INSERT
-
-        **One or several is the same call.** Several are written as one flush, with the same
-        promises paid once instead of once per record: the version check holds for every one of
-        them, and a batch that fails leaves the transaction to undo as a whole. This is the door
-        an import or a nightly job uses too.
-
-        **What a batch costs, measured.** A thousand new aggregates are one `INSERT` with a
-        thousand rows. A thousand *loaded* ones are a thousand `UPDATE` statements, one per row,
-        and that is the price of `StaleAggregate`: the engine has to read the affected row count
-        back for each one to know whether somebody moved it first, which is exactly what a
-        batched statement does not report per row. Worth knowing before writing the nightly job
-        — the flush is one, the round trips are not.
-
-        The aggregate is handed over whole and already valid: its rules ran before this call,
-        and nothing here can change a field the aggregate did not. `updated_at` is stamped by
-        the session and `version` raised by the mapping, so the caller does neither.
-
-        Not a merge. A record built by hand with an id that already exists is a duplicate,
-        not an update — the update path is to read the record and change it.
-        """
-        self._refuse_reentrant_write()
-        records = records_of(record)
-        if not records:
-            return
-        for one in records:
-            self._refuse_outside(one)
-        newness = self._before_writes(records)
-        with self._session() as session:
-            for batch in _by_dependency(records):
-                session.add_all(batch)
-                self._written(session, batch)
-        self._after_writes(records, newness)
-
-    def remove(self, record: Any) -> None:
-        """Deletes one aggregate or several, read from this database.
-
-            in      the Note that `get` returned   →  DELETE … WHERE id = :id
-            in      a list, or a page              →  one flush
-
-        Takes records and not ids, so nothing is deleted that was not first loaded — and so a
-        `version` check applies to a delete the way it does to an update.
-
-        **It deletes, and only deletes.** Putting a record away without losing it is
-        `archive`: a different fact, and a different method, because other records point at it
-        and a name that lies about which of the two happened is worse than two names.
-        """
-        self._refuse_reentrant_write()
-        records = records_of(record)
-        if not records:
-            return
-        for one in records:
-            self._refuse_outside(one)
-            self._before_remove(one)
-        with self._session() as session:
-            for one in records:
-                session.delete(one)
-            self._written(session, records)
-        for one in records:
-            self._after_remove(one)
-
-    def archive(self, record: Any) -> None:
-        """Stamps when it left and keeps the row — one aggregate or several.
-
-        What a business usually means by deleting: it has to stop appearing and cannot be
-        lost, because invoices point at it. A reading leaves it out unless its criteria names
-        `archived_at`. Refused for an aggregate that is not `ArchivableMixin`, which has
-        nowhere to write it.
-        """
-        self._refuse_reentrant_write()
-        records = records_of(record)
-        refuse_unarchivable(records)
-        for one in records:
-            self._before_archive(one)
-            one.archive()
-        self.save(records)
-        for one in records:
-            self._after_archive(one)

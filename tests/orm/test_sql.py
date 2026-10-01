@@ -22,7 +22,7 @@ from sincpro_framework.ddd.criteria import (
     Operator,
 )
 from sincpro_framework.ddd.criteria.pagination import Pagination
-from sincpro_framework.orm.sqlalchemy.sql_translator import grouping_column
+from sincpro_framework.orm.sqlalchemy.services.sql_translator import grouping_column
 
 from .models import ROW_COUNT, Thing, Things, a_thing
 
@@ -201,7 +201,7 @@ def test_a_date_grain_is_translated_for_postgres_as_well():
     from sqlalchemy.dialects import postgresql
 
     from sincpro_framework.ddd.criteria import Level
-    from sincpro_framework.orm.sqlalchemy.sql_translator import grouping_column
+    from sincpro_framework.orm.sqlalchemy.services.sql_translator import grouping_column
 
     from .models import Thing
 
@@ -216,7 +216,7 @@ def test_a_date_grain_is_translated_for_postgres_as_well():
 def test_a_dialect_with_no_grain_translation_is_refused_rather_than_guessed():
     from sincpro_framework.ddd.criteria import Level
     from sincpro_framework.ddd.exceptions import ContractViolation
-    from sincpro_framework.orm.sqlalchemy.sql_translator import grouping_column
+    from sincpro_framework.orm.sqlalchemy.services.sql_translator import grouping_column
 
     from .models import Thing
 
@@ -229,7 +229,7 @@ def test_the_week_grain_reads_the_same_on_both_dialects():
     bucket on the other; and the range a week bucket opens is its Monday to the next."""
     from sqlalchemy.dialects import postgresql, sqlite
 
-    from sincpro_framework.orm.sqlalchemy.sql_translator import bucket_range
+    from sincpro_framework.orm.sqlalchemy.services.sql_translator import bucket_range
 
     weekly_sqlite = grouping_column(Thing, Level(field="made_at", grain="week"), "sqlite")
     weekly_pg = grouping_column(Thing, Level(field="made_at", grain="week"), "postgresql")

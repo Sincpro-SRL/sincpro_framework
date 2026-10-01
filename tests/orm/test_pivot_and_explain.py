@@ -16,7 +16,7 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .models import ROW_COUNT, Things
 

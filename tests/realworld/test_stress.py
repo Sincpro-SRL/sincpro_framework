@@ -16,7 +16,7 @@ from sincpro_framework.ddd.criteria import (
     parse_order,
 )
 from sincpro_framework.ddd.criteria.pagination import Pagination
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .contexts import CommandRebuildBalance, ResponseBalances
 from .ledger import Account, Line, Lines

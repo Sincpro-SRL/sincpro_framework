@@ -16,10 +16,16 @@ from contextlib import AbstractContextManager, contextmanager
 import pytest
 from sqlalchemy import event
 
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
+from .engines import ENGINES
 from .models import ROW_COUNT, Thing, a_thing, mapper_registry
+
+
+@pytest.fixture(params=ENGINES, ids=lambda url: url.split(":")[0].split("+")[0])
+def engine_url(request) -> str:
+    return request.param
 
 
 @pytest.fixture

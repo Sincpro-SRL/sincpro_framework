@@ -20,8 +20,8 @@ from sqlalchemy.types import TypeDecorator
 
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
-from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
-from sincpro_framework.orm.sqlalchemy.data_mapper import (
+from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
     Relation,
     entity_table,
     map_aggregates,

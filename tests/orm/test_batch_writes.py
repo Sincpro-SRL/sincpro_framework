@@ -9,7 +9,7 @@ import pytest
 
 from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .models import Note, Notes
 

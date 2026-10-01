@@ -120,7 +120,7 @@ def test_asking_for_no_count_asks_the_database_once(store, queries_run):
 def test_the_count_stops_at_the_ceiling_and_says_so(store, monkeypatch):
     """A ceiling of two over twenty-five rows: the answer is a floor, and it knows it."""
     monkeypatch.setattr(
-        "sincpro_framework.orm.sqlalchemy.repository.DEFAULT_COUNT_CAP",
+        "sincpro_framework.orm.sqlalchemy.services.workflows.reading.DEFAULT_COUNT_CAP",
         2,
     )
     page = store.search(Things, Criteria(pagination=Pagination(limit=1)))

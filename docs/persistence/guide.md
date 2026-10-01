@@ -88,6 +88,7 @@ from sqlalchemy.orm import registry
 
 from sincpro_framework.orm import (
     Database,
+    Relation,
     Repository,
     archive_columns,
     entity_table,
@@ -110,7 +111,12 @@ invoice_table = entity_table(
     Column("total", Integer, nullable=False),
     Column("state", Text, nullable=False),
 )
-map_aggregates(billing, {Customer: customer_table, Invoice: invoice_table})
+map_aggregates(
+    billing,
+    {Customer: customer_table, Invoice: invoice_table},
+    # An invoice is an aggregate of its own: the customer reads them, never writes or removes them.
+    relations={Customer: {"invoices": Relation.foreign_key(Invoice, identified_by="customer_id", owned=False)}},
+)
 
 database = Database("sqlite:///billing.sqlite3")
 billing.metadata.create_all(database.engine)      # a real project runs its migrations instead
@@ -362,6 +368,13 @@ A many-to-many, a relation that lives in another bounded context (answered by it
 answered by any function are declared once beside the tables with `Relation` — see
 [relations.md](relations.md).
 
+An aggregate is saved whole: a to-many tied by a foreign key is a part of its root — written by
+`save`; what an assignment drops, or `remove` leaves, is deleted or detached as the relation
+declares (`orphans=Orphans.DELETE` / `Orphans.DETACH`), and refused until it does. `Customer.invoices` is declared
+`owned=False` above, because an invoice is an aggregate of its own: the customer reads them and
+never writes or removes them. The rules are in
+[relations.md §8](relations.md#8-an-aggregate-is-saved-whole).
+
 ## 8. Hooks
 
 A hook runs **inside the write**, on one aggregate: it validates, computes or refuses. It has
@@ -530,8 +543,37 @@ assert isinstance(updated, EntityUpdated)
 assert updated.changes == {"amount": (100, 120), "method": ("cash", "qr")}
 ```
 
-Publish it like any other event, or store it as an audit trail. More in
-[change-tracking.md](../events/change-tracking.md).
+Publish it like any other event, or keep it in the context's **event log**: one table for every
+event of the bounded context, read back as one aggregate's ordered history. A subclass of
+`EventLogEntry` per context — a class maps to one table — saved in the same unit of work as the
+change it records:
+
+```python
+from sincpro_framework.ddd import EventLogEntry
+from sincpro_framework.orm import event_log_table
+
+
+@dataclass(kw_only=True)
+class BillingHistory(EventLogEntry): ...
+
+
+map_aggregates(billing, {BillingHistory: event_log_table("billing_history", billing.metadata)})
+billing.metadata.create_all(database.engine)
+
+with repository.context() as unit:
+    payment = unit.get(Payment, payment.id)
+    payment.amount = 130
+    unit.save(payment)
+    unit.save(BillingHistory.of_all(payment.pull_events()))
+
+[entry] = repository.fetch_all(BillingHistory, BillingHistory.of_entity(payment)).items
+assert entry.event_type == EntityUpdated.name
+assert entry.payload["changes"] == {"amount": [120, 130]}
+```
+
+It is not event sourcing (§11): the state stays in its own table, and this is what happened to it.
+An entry keeps the event's own id, so saving the same fact twice is a `DuplicateAggregate`. More
+in [change-tracking.md](../events/change-tracking.md).
 
 ## 11. Event sourcing
 

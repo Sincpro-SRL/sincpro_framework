@@ -19,8 +19,8 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import StatusCode
 from sqlalchemy import column, create_engine, insert, table, text
 
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.observability import (
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.orm.sqlalchemy.infrastructure.observability import (
     OPEN_SPANS,
     _close_span,
     observe,
@@ -91,7 +91,9 @@ def collecting(monkeypatch) -> Collecting:
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     active = Collecting(provider, exporter)
-    monkeypatch.setattr("sincpro_framework.orm.sqlalchemy.observability.process", active)
+    monkeypatch.setattr(
+        "sincpro_framework.orm.sqlalchemy.infrastructure.observability.process", active
+    )
     return active
 
 
@@ -116,7 +118,9 @@ def database(collecting, log, tmp_path) -> Database:
 def test_no_span_listener_is_attached_when_nobody_is_collecting(monkeypatch, log):
     """The check is the status and not the tracer: with the SDK installed but no collector,
     `get_tracer` still answers a no-op tracer that would build a span per statement."""
-    monkeypatch.setattr("sincpro_framework.orm.sqlalchemy.observability.process", Idle())
+    monkeypatch.setattr(
+        "sincpro_framework.orm.sqlalchemy.infrastructure.observability.process", Idle()
+    )
     engine = create_engine("sqlite://")
 
     observe(engine, "ledger", cast(Any, log))

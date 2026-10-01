@@ -107,6 +107,26 @@ listener whether or not they share a class.
 Sharing one class across the buses is simpler and cannot drift, and is what most projects
 should do. The rebuild is there for when they genuinely cannot.
 
+## The published language: the events other processes may depend on
+
+The events a context records are defined in its `domain/`; the ones the outside may depend on are
+**chosen** in its `entrypoints/events.py`. That module defines nothing: it imports the public facts
+from the domain, lists them in `PUBLISHED`, exports them with an explicit `__all__`, and can offer a
+`catalog()` (wire name → fields) for whoever integrates. n8n, another service or a webhook consumer
+import it, never the domain — so the domain can change its internals without breaking them.
+
+Versioning lives in the **name**, not in the file layout. `issue.v1.closed` and `issue.v2.closed` are
+two classes; while only v1 exists, one `domain/events.py` is enough, and the day a v2 appears it can
+become `domain/events/{v1,v2}.py` without consumers noticing, because they import from
+`entrypoints/events.py`. A breaking change is always a new class; both versions are published while
+consumers migrate. The aggregate records the current version only: a consumer that still needs v1
+gets a translation in `entrypoints/`, never a second `record` in the domain. Stored history needs no
+old class — an event log keeps the wire name and the JSON payload.
+
+The direction never flips: `entrypoints/` imports `domain/`, and only an entrypoint imports another
+entrypoint. Inside one service, a context that reacts to another's facts declares its own class
+under the same name — the two identities above.
+
 Kafka, RabbitMQ, Redis and NATS are one more `Queue` through FastStream, behind the
 `[faststream]` extra — the same
 `publish(event)` and the same buses: [brokers.md](brokers.md).

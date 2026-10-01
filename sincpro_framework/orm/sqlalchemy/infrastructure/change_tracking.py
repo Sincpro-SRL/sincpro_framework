@@ -34,6 +34,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session, attributes
 
 from sincpro_framework.ddd.entity import ChangeTrackingMixin
+from sincpro_framework.orm.sqlalchemy.infrastructure.flushing import goes_out
 
 
 def changed_columns(record: ChangeTrackingMixin) -> dict[str, tuple[Any, Any]]:
@@ -71,6 +72,6 @@ def _tracking(session: Session) -> None:
     is a Created fact, written by hand, and deliberately not this.
     """
     for record in session.dirty:
-        if not isinstance(record, ChangeTrackingMixin):
+        if not isinstance(record, ChangeTrackingMixin) or not goes_out(session, record):
             continue
         record.record_change(changed_columns(record))

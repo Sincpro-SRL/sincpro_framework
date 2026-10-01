@@ -13,7 +13,7 @@ this design that loses data without raising anything.
 
 from sincpro_framework.ddd.criteria import Operator
 from sincpro_framework.ddd.entity.model_meta import FieldType
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 from .models import Thing
 

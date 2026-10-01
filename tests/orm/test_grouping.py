@@ -27,7 +27,7 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_collection import Count
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.orm.sqlalchemy.sql_translator import bucket_range
+from sincpro_framework.orm.sqlalchemy.services.sql_translator import bucket_range
 
 from .models import Things
 

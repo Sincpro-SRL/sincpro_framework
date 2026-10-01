@@ -17,11 +17,14 @@ from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity import Entity, Translated
 from sincpro_framework.ddd.entity.model_meta import FieldType
-from sincpro_framework.orm.sqlalchemy.custom_fields import TranslatedText
-from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.domain.custom_fields import TranslatedText
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
+    entity_table,
+    map_aggregates,
+)
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 
 class Status(StrEnum):

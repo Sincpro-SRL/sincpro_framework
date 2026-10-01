@@ -334,7 +334,9 @@ def test_the_implementations_declare_the_protocol_they_answer():
     what makes the type checker compare signatures. This test pins the declaration; the
     signature check itself is pyright's, in `make lint`."""
     from sincpro_framework.ddd.repositories.repository import Repository
-    from sincpro_framework.orm.sqlalchemy.repository import Repository as SqlRepository
+    from sincpro_framework.orm.sqlalchemy.entrypoint.repository import (
+        Repository as SqlRepository,
+    )
 
     assert Repository in MemoryRepository.__mro__
     assert Repository in SqlRepository.__mro__

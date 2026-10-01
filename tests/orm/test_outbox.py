@@ -24,10 +24,13 @@ from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
 from sincpro_framework.ddd.entity import ChangeTrackingMixin, Entity, EntityUpdated
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import EventStatus, EventTrackableMixin
-from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
-from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
+    entity_table,
+    map_aggregates,
+)
 
 
 @dataclass(kw_only=True)

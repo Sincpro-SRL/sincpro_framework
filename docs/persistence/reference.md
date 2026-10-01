@@ -104,26 +104,48 @@ with self.repository.context() as repository:                         # several 
 | `count`, `group_by`, `group_by_levels`, `measures` | read | Answered in SQL over the whole result set, never over a page; `group_by_levels` with a page asked also gives every group the ids of its first page and a cursor |
 | `statement` / `run` | read | The escape hatch: a real `Select` out, the usual envelope back in |
 | `fetch_all` | read | Every page, as one complete collection — hands a bounded set to the in-memory algebra |
-| `save`, `remove` | write | Take the aggregate. **No update or delete by criteria** — a generic write path skips the aggregate's rules |
+| `save`, `remove` | write | Take the aggregate, whole: the children it owns are written and removed with it ([relations §8](relations.md#8-an-aggregate-is-saved-whole)) |
+| `upsert(records, on=, update=)` | write | Insert or overwrite by a key the table holds unique; no version check, `before_save`/`after_save` only |
+| `update_all`, `remove_all` | write | Every row a filter matches, one statement, the count back; no hooks or cascade, version raised; a page or an unanswerable condition is refused |
 | `archive` | write | Stamps `archived_at` and keeps the row, for an `ArchivableMixin` aggregate; refused for anything else |
-| `retrying(work)` | write | Runs a unit of work again when it lost a race, and raises the last failure as it was |
+| `retrying(work)` | write | Runs a unit of work again on `StaleAggregate` or `TransactionConflict`, and raises the last failure as it was |
 | `narrowed(criteria)` | both | The same database seen through a filter nothing can widen: a tenant, a branch, a permission |
-| `context` | both | The same engine bound to one session; the block is the transaction |
+| `context(isolation=, read_only=, timeout=, engine=)` | both | The same engine bound to one session; the block is the transaction, configured where it begins ([transactions](transactions.md)) |
+| `after_commit`, `after_rollback` | neither | Inside a unit of work: what runs once this transaction committed, or was undone |
 | `repository.session`, `flush`, `commit`, `savepoint` | both | Inside a unit of work only: SQLAlchemy whole, a checkpoint, a part that fails on its own |
-| `get(…, for_update=True)`, `search(…, for_update=True)` | read | Row locks held until the unit of work commits; `skip_locked` steps over what another worker holds |
+| `get(…, for_update=True)`, `search(…, for_update=True)` | read | Row locks held until the unit of work commits; `skip_locked` steps over what another worker holds, `nowait` fails at once |
 
-One module per responsibility under `sincpro_framework/orm/sqlalchemy/`, each named after what it does:
+The adapter `sincpro_framework/orm/sqlalchemy/` is in the layers every framework component uses,
+one module per responsibility, each named after what it does. A layer imports only the ones
+below it, and inside `services/` the workflows orchestrate the atomic services as an
+ApplicationService orchestrates Features — `tests/orm/test_layers.py` holds it to both:
 
-| Module | What it is |
+| Layer · module | What it is |
 |---|---|
-| `database.py` | `Database`: one engine, one session factory, observed from birth |
-| `repository.py` | `Repository`: runs a `Criteria`, keeps what a use case built |
-| `sql_translator.py` | `Criteria` → `Select`; the grain registry per dialect |
-| `data_mapper.py` | the Data Mapper: tables, the mapping call, the `Entity` columns and `Relation`; the aggregate never learns its table |
-| `relation_resolver.py` | the database kinds of relation a specification names, once per node for a whole page; the vocabulary and the resolver kinds are `ddd/entity/relations.py`; see `specification.md` |
-| `model_introspection.py` | `describe(cls) → Meta`: asks the mapper what a class looks like |
-| `custom_fields.py` | column types: `JsonText`, `TranslatedText` |
-| `observability.py` | every statement to the logger, the tracer and the error tracker |
+| **entrypoint/** `repository.py` | `Repository(UnitOfWork, Reading, Writing)`: the facade a Feature receives as `self.repository` — the typed surface, composed of the workflows |
+| **services/workflows/** `store.py` | `Store`: what the workflows share — the database, the session a call runs in, the scope, the transaction |
+| **services/workflows/** `unit_of_work.py` | `UnitOfWork`: `context`, `savepoint`, `commit`, `flush`, `after_commit`, `retrying`, `narrowed` |
+| **services/workflows/** `reading.py` | `Reading`: every reading — a page, a count, a grouping, a pivot, an export, the short questions |
+| **services/workflows/** `writing.py` | `Writing`: `save`, `remove`, `archive`, and the doors named for what they skip — `upsert`, `update_all`, `remove_all` |
+| **services/** `data_mapper.py` | the Data Mapper: tables, the mapping call, the `Entity` columns and `Relation`; the aggregate never learns its table |
+| **services/** `sql_translator.py` | `Criteria` → `Select`; the grain registry per dialect |
+| **services/** `relation_resolver.py` | the database kinds of relation a specification names, once per node for a whole page |
+| **services/** `cascade.py` | what `save` and `remove` do with the children a root holds |
+| **services/** `upsert.py` | the dialects an upsert speaks, and whether a table holds a key unique |
+| **services/** `model_introspection.py` | `describe(cls) → Meta`: asks the mapper what a class looks like |
+| **domain/** `relations.py` | how a record keeps its relations and the words a cascade decides by: `Held`, `Orphans` |
+| **domain/** `registry.py` | what is mapped: the relations per aggregate, the aggregates per table |
+| **domain/** `transaction.py` | what a unit of work is opened with: `Isolation`, `Transaction` |
+| **domain/** `custom_fields.py` | column types: `JsonText`, `TranslatedText` |
+| **infrastructure/** `database.py` | `Database`: one engine, one session factory, observed from birth |
+| **infrastructure/** `transaction_opening.py` | applying a `Transaction` before the first statement |
+| **infrastructure/** `engine_errors.py` | the driver's errors named by what happened |
+| **infrastructure/** `transaction_hooks.py` | `after_commit` / `after_rollback` per unit of work, savepoints included |
+| **infrastructure/** `observability.py` | every statement to the logger, the tracer and the error tracker |
+| **infrastructure/** `change_tracking.py` · `read_tracking.py` · `cache_invalidation.py` | what every flush and every read goes through without being asked |
+
+What a project imports is what `sincpro_framework.orm` exports; the paths inside are the
+framework's own.
 
 ### Criteria is the boundary language; inside, SQLAlchemy is whole
 

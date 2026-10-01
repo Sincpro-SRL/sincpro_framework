@@ -14,7 +14,7 @@ context and may sit in another database entirely, so no key is possible and the 
 join — `two_databases` runs exactly that, with the same declaration `same_database` uses.
 
 **A world per topology, with classes of its own.** `_install` registers a relation once per
-class and a second call changes nothing (`orm/sqlalchemy/data_mapper.py`), so two topologies
+class and a second call changes nothing (`orm/sqlalchemy/services/data_mapper.py`), so two topologies
 cannot share one `Invoice`: the second declaration would be dropped in silence and both would
 resolve against the first bus.
 """
@@ -31,14 +31,14 @@ from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
-from sincpro_framework.orm.sqlalchemy.data_mapper import (
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
     Relation,
     entity_table,
     event_columns,
     map_aggregates,
 )
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
 
 OWN_KIND = Criteria(where=Condition(field="entity_type", value="Invoice"))
 """The events scope: this log is addressed by `entity_type`/`entity_id`, and an id space is

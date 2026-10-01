@@ -24,8 +24,8 @@ import pytest
 
 from sincpro_framework import UseFramework
 from sincpro_framework.events import BackgroundQueue, Publisher, Subscriber, SyncQueue
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 from .contexts import Heard, ledger_bus, lines_of, notifications_bus, reporting_bus
 from .databases import open_database

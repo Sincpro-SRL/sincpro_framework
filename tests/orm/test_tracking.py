@@ -13,8 +13,9 @@ import pytest
 from sincpro_framework.ddd.criteria import Criteria, Grouping, Level
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity import EntityUpdated
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.domain.transaction import Writes
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 from .models import TrackedNote, TrackedNotes
 
@@ -117,13 +118,12 @@ def _stored(repository: Repository, title: str = "before") -> TrackedNote:
 def test_a_change_made_inside_a_unit_of_work_without_save_is_still_recorded(
     database: Database,
 ):
-    """The idiomatic write: load inside `context()`, change it, let the block commit. The
-    session persists it whether or not anybody called `save()` — so an event that only fired on
-    `save()` left the row changed and the audit silent."""
+    """With `writes=Writes.CHANGED` the commit writes what the block changed, saved or not — so
+    an event that only fired on `save()` would leave the row changed and the audit silent."""
     repository = Repository(database)
     note = _stored(repository)
 
-    with repository.context() as unit:
+    with repository.context(writes=Writes.CHANGED) as unit:
         loaded = unit.get(TrackedNote, note.id)
         assert loaded is not None
         loaded.title = "changed without save"
@@ -209,7 +209,7 @@ def test_it_closes_one_chapter_and_what_moves_after_is_its_own(database: Databas
     repository = Repository(database)
     note = _stored(repository)
 
-    with repository.context() as unit:
+    with repository.context(writes=Writes.CHANGED) as unit:
         loaded = unit.get(TrackedNote, note.id)
         assert loaded is not None
         loaded.title = "first"

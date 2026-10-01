@@ -25,7 +25,7 @@ from sincpro_framework.ddd.criteria import (
     parse_order,
 )
 from sincpro_framework.ddd.exceptions import ContractViolation, RelationNotResolved
-from sincpro_framework.orm.sqlalchemy.model_introspection import describe
+from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 
 from .event_relation_models import World, same_database, two_databases
 

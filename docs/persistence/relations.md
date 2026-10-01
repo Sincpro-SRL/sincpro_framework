@@ -53,7 +53,10 @@ by surprise:
    and exactly one `ForeignKey` ties the two tables; with several, the column named
    `<attribute>_id` (to-one) or `<table>_id` (to-many) decides. Inference runs over the whole
    registry on every mapping call, so a class mapped later completes the relations of one mapped
-   earlier.
+   earlier. The match reads the column the key references: a `ForeignKey("ws.id")` matches the
+   identity, a `ForeignKey("ws.code")` to a unique business key matches `code`, and the
+   relation names both sides (`parent_field`, `related_field`) so the definition says so
+   (`tests/orm/test_relation_by_business_key.py`).
 4. **A pointer nothing identifies is published, not expandable.** Annotation to a mapped class,
    no foreign key, no declaration: it appears with `identified_by = None`; asking for it drops
    with `not_expandable`.
@@ -182,7 +185,88 @@ Feature never decides on a cut page.
 A record built in memory keeps what its constructor was given: `Author(name="x").books == []`.
 A record the mapper loaded starts unresolved.
 
-## 8. Extending it
+## 8. An aggregate is saved whole
+
+A to-many tied by a foreign key is written by its root: `save(root)` writes the children with
+it, in the same flush and through the same rules — hooks, `version`, stamping — with the root's
+key on them.
+
+```python
+workspace = Workspace(code="sp-1", repositories=[CodeRepo(name="api"), CodeRepo(name="web")])
+repository.save(workspace)              # the workspace, then both repositories with its key
+
+with repository.context() as unit:
+    workspace = unit.get_by(Workspace, code="sp-1")
+    workspace.repositories = [CodeRepo(name="cli")]
+    unit.save(workspace)                # cli inserted; api and web are orphans
+```
+
+**An orphan is a child that was read and is no longer held.** Assigning the relation says
+«these are the children now», as Rails' `collection=` does — and inside a unit of work an
+assignment over a relation nobody read reads it first, so what it replaced is known. What is
+settled is exactly what that reading saw:
+
+| The relation | `save(root)` |
+|---|---|
+| never read nor assigned | nothing; no statement for it |
+| read (whole, a page, or filtered) | writes the children that are new or changed |
+| assigned over a whole reading | writes them, and settles the ones that reading saw and the root no longer holds |
+| assigned with no whole reading behind it — over a page, a filter, or outside `context()` | writes them, removes nothing, logs a warning |
+
+A child another transaction added after the reading is not one the reading saw, so it is never
+an orphan; a child it moved to another root is not either. The list a constructor gave is the
+root's whole set, and once written it is what the root read: `Customer(name="Ana")` saved with
+no invoices never removes the invoices saved for her later.
+
+**What a dropped child becomes is declared, and refused until it is.** A child the root no
+longer holds — dropped by an assignment, or left behind by `remove(root)` — is deleted with
+`orphans=Orphans.DELETE`, has its key set to `NULL` with `Orphans.DETACH`, and with nothing
+declared (`Orphans.REFUSE`) the write is refused before any statement runs, naming the relation
+and the two declarations. A delete nobody declared is the one outcome that cannot be taken back —
+Ecto's `on_replace: :raise`, EF Core's `Restrict`. An archived child is never an orphan.
+
+**Removing the root settles its parts as declared.** "A delete removes everything within the
+aggregate boundary at once" (Evans) — once the relation says so: `remove(root)` reads every child
+of the relations the root owns, by the foreign key whatever the relation's `scope` shows, and
+deletes or detaches them as `orphans` declares; a relation that declares nothing refuses while it
+has children. A reference to another aggregate is declared `owned=False` and left to its foreign
+key, which refuses the delete while children point at the root — Vernon's rule keeps that case
+rare: an aggregate holds another by id, not as a collection.
+
+```python
+remove(customer)    # Customer.invoices declares nothing  →  ContractViolation: removing it would
+                    # leave 3 Invoice of Customer.invoices … orphans=Orphans.DELETE takes them along,
+                    # Orphans.DETACH sets their key to NULL
+```
+
+```python
+map_aggregates(registry, tables, relations={
+    Customer: {"invoices": Relation.foreign_key(Invoice, identified_by="customer_id", owned=False)},
+    Ledger: {"lines": Relation.foreign_key(Line, identified_by="ledger_id", orphans=Orphans.DELETE)},
+    Workspace: {"notes": Relation.foreign_key(Note, identified_by="workspace_id", orphans=Orphans.DETACH)},
+})
+```
+
+| Declaration | `save` writes children | a dropped child, a removed root |
+|---|---|---|
+| inferred, or `Relation.foreign_key(...)` | yes | **refused** while there are children |
+| `orphans=Orphans.DELETE` | yes | the children are deleted (a cascade) |
+| `orphans=Orphans.DETACH` | yes | their key is set to `NULL` — the column must be nullable |
+| `owned=False` — a reference to another aggregate | no | left to the foreign key |
+
+A to-one is never owned: a child does not own its parent, and `owned` is read only on a to-many.
+
+A child that is unchanged is not written again; one that changed is written with its own
+`version` checked, so a stale child is refused as a stale root is. **A child moves between roots
+in one call** — `save([old_root, new_root])`: saved apart, the first save removes it as an
+orphan and the second is refused, saying so.
+
+The cascade lives in `orm/sqlalchemy/services/cascade.py`: the relations are the framework's own
+descriptors, not SQLAlchemy relationships, so it is planned before the flush and handed to the
+same write path. `MemoryRepository` keeps the root as the object it is, children inside, so the
+aggregate it hands back is the one it was given.
+
+## 9. Extending it
 
 **A new place to bring a relation from** is a callable. Nothing in the core changes:
 
@@ -210,7 +294,7 @@ writes nothing special: a Feature that takes a `Query` and answers with `Respons
 `ddd/entity/relations.py`: `Relation`, `Resolver`, `resolve_elsewhere`, `cut`, `limit_of`. Only the
 window-function statement is SQLAlchemy's.
 
-## 9. A worked example, all kinds at once
+## 10. A worked example, all kinds at once
 
 `tests/orm/every_kind_models.py` declares one aggregate with every kind of field and
 `tests/orm/test_field_meta_unified.py` asks for all of it in one criteria: nine scalars filtered,

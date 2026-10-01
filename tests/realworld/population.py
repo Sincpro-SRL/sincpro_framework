@@ -13,7 +13,7 @@ from decimal import Decimal
 from random import Random
 
 from sincpro_framework.ddd.criteria import Condition, Operator
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .ledger import ZERO, Account, Entry, Journal, Line, Partner
 
@@ -109,8 +109,9 @@ def populate(repository: Repository, entries: int, seed: int = SEED) -> Census:
     1. Master data: four journals, forty accounts, two hundred partners.
     2. Entries spread over two years, one in ten left as a draft, in batches of 500; the
        balance of every account accumulates from the posted lines as they are built.
-    3. Final: the accounts are written last, balances included, so the invariant holds from
-       the first read.
+    3. Final: the accounts' balances are written last, so the invariant holds from the first
+       read. The accounts themselves go in with the master data: a line points at its account,
+       and an engine that enforces the foreign key refuses a line written before it.
     """
     rng = Random(seed)
     journals = [Journal(code=code, name=name) for code, name in JOURNALS]
@@ -129,7 +130,7 @@ def populate(repository: Repository, entries: int, seed: int = SEED) -> Census:
     span_minutes = MONTHS * 30 * 24 * 60
 
     with repository.context() as ledger:
-        ledger.save([*journals, *partners])
+        ledger.save([*journals, *accounts, *partners])
         ledger.commit()
 
     posted = drafts = line_count = 0

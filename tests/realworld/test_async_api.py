@@ -7,7 +7,7 @@ import asyncio
 
 from sincpro_framework import UseFramework
 from sincpro_framework.events import Publisher, Subscriber, SyncQueue
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .contexts import (
     CommandPostEntry,

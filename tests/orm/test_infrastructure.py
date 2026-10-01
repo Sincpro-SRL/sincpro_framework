@@ -15,8 +15,8 @@ from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.entity.model_meta import FieldType
 from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
-from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText, TranslatedText
-from sincpro_framework.orm.sqlalchemy.sql_translator import where_clause
+from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText, TranslatedText
+from sincpro_framework.orm.sqlalchemy.services.sql_translator import where_clause
 
 from .models import Thing, Things
 
@@ -111,7 +111,7 @@ def test_every_type_reads_the_text_a_url_carries():
 def test_an_annotation_that_is_not_a_class_is_not_a_relation():
     """Context: `is_mapped` is handed whatever the annotation held, including things that are
     not classes at all — `list[str]` leaves `str`, a bare `Any` leaves `Any`."""
-    from sincpro_framework.orm.sqlalchemy.model_introspection import is_mapped
+    from sincpro_framework.orm.sqlalchemy.services.model_introspection import is_mapped
 
     assert is_mapped(Thing) is True
     assert is_mapped("not a class") is False
@@ -155,7 +155,10 @@ def test_mapping_twice_changes_nothing_and_properties_rename_a_column():
     from sqlalchemy.orm import registry
 
     from sincpro_framework.ddd.entity import Entity
-    from sincpro_framework.orm.sqlalchemy.data_mapper import entity_table, map_aggregates
+    from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
+        entity_table,
+        map_aggregates,
+    )
 
     @dataclass
     class Legacy(Entity):

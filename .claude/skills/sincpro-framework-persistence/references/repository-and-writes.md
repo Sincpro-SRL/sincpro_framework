@@ -71,6 +71,28 @@ first.state = "posted"
 repository.save(first)                      # UPDATE … WHERE version = 1 → version 2
 ```
 
+**`save` writes the aggregate whole.** A to-many tied by a foreign key is written by its root:
+its children get the root's key and are inserted or updated with it, and an **assignment over a
+whole reading** settles the children that reading saw and the root no longer holds, as the
+relation declares: `orphans=Orphans.DELETE` deletes them, `Orphans.DETACH` sets their key to NULL,
+and **with nothing declared the write is refused** (`ContractViolation` naming the relation).
+`remove(root)` follows the same declaration: a root with children under a silent relation is
+refused — delete them first, or declare it. A reference (`owned=False`) is left to its foreign
+key. Inside `context()` an assignment over an unread relation reads it first.
+
+```python
+with self.repository.context() as unit:
+    workspace = unit.get_by(Workspace, code=dto.code)
+    workspace.repositories = [CodeRepository(name=n) for n in dto.names]   # the set, now
+    unit.save(workspace)                     # new ones inserted, previous ones deleted
+```
+
+A relation that was only read — whole, paged or filtered — never deletes; an assignment with no
+whole reading behind it (a page, a filter, outside `context()`) saves and logs a warning. A child
+another transaction added after the read is never an orphan. Move a child between roots in one
+call, `save([old_root, new_root])`. `owned=False` makes a reference to another aggregate, never
+written nor removed; `orphans=Orphans.DELETE`/`Orphans.DETACH` overrides the key column.
+
 `updated_at` is stamped and `version` raised by the adapter; the caller does neither.
 `save` is not a merge: an aggregate built by hand with an id that already exists is a
 `DuplicateAggregate`, not an update.
@@ -92,11 +114,20 @@ except StaleAggregate:
     ...                                      # read again, decide again
 ```
 
-Both races, in the layer's own words: `StaleAggregate` (a newer `version` in the row) and
-`DuplicateAggregate` (a unique value or id already taken). Suggested HTTP mapping:
-`InvalidCriteria` → 400, `ContractViolation` → 422, both conflicts → 409.
+What the engine refuses, in the layer's own words — catch these, never a driver exception:
 
-`repository.retrying(work, attempts=3, on=StaleAggregate, wait=0.05)` re-runs a callable when it
+| Raised | When | Retry? |
+|---|---|---|
+| `StaleAggregate` | a newer `version` in the row | yes, on a fresh read |
+| `DuplicateAggregate` | a unique value or id already taken | no |
+| `ConstraintViolation` | a missing referenced row, an empty value, a check | no — the write is wrong |
+| `TransactionConflict` | serialization failure, deadlock | yes, on a fresh read |
+| `TimedOut` | `nowait` on a held row, a statement past `timeout` | no — the bound was yours |
+
+Suggested HTTP mapping: `InvalidCriteria` → 400, `ContractViolation`/`ConstraintViolation` → 422,
+the three conflicts → 409.
+
+`repository.retrying(work, attempts=3, wait=0.05)` re-runs a callable on `StaleAggregate` or `TransactionConflict` when it
 lost a race, with a doubling wait, and re-raises the last failure. The callable must read again:
 
 ```python
@@ -134,17 +165,59 @@ with repository.context() as unit:
     unit.save(Invoice(number="F-004", customer_id=ana.id, total=75))
 ```
 
+**Configured where it begins**: `context(isolation=Isolation.SERIALIZABLE)`, `context(read_only=True)`
+(every write refused), `context(timeout=5.0)` (Postgres), `context(engine={...})` (SQLAlchemy's
+`execution_options`, as they come). A level the engine lacks is refused; SQLite runs every level
+as `serializable`. A nested block that asks for other options is refused, and so is `retrying`
+inside a block — call it around the `context()`.
+
+**The commit writes what the block changed**, saved or not — but only `save` runs hooks and the
+cascade. Always `save`.
+
 Only inside the block:
 
 - relations load lazily on first touch (outside, only what a `specification` named);
-- `get(…, for_update=True, skip_locked=True)` / `search(…, for_update=True)` hold row locks until
-  the block commits (ignored on SQLite; refused outside a block);
-- `unit.session` is SQLAlchemy whole — joins, windows, bulk statements, raw SQL — in the same
-  transaction; `unit.flush()`, `unit.commit()` (long jobs: each batch durable on its own) and
+- `get(…, for_update=True)` / `search(…, for_update=True)` hold row locks until the block commits;
+  `skip_locked=True` passes over held rows, `nowait=True` raises `TimedOut` at once —
+  never both (ignored on SQLite; refused outside a block);
+- `unit.after_commit(fn)` / `unit.after_rollback(fn)`: what runs once **this** transaction
+  committed or was undone — where a Feature publishes. Dropped with a savepoint that rolls back;
+  a raising callback is logged, the rest still run;
+- `unit.session` is SQLAlchemy whole — joins, windows, raw SQL — in the same transaction;
+  `unit.flush()`, `unit.commit()` (long jobs: each batch durable on its own) and
   `with unit.savepoint():` (one part fails alone).
+
+```python
+with self.repository.context(isolation=Isolation.SERIALIZABLE) as unit:
+    account = unit.get(Account, dto.account_id)
+    account.withdraw(dto.amount)                 # the rule lives on the aggregate
+    unit.save(account)
+    unit.after_commit(lambda: self.publisher.publish_all(account.pull_events()))
+```
 
 This is also the shape for an outbox — the state change and its fact commit together
 (`sincpro-framework-domain-events`).
+
+## Writes past the aggregate
+
+Two doors skip the aggregate's machinery on purpose — use them only where there is no rule to
+keep:
+
+```python
+repository.upsert(rates, on=("currency",))                       # insert or overwrite by a unique key
+repository.upsert(rates, on=("currency",), update=("per_usd",))  # overwrite only these
+done = repository.upsert(rates, on=("currency",))                # done.written, done.skipped
+count = repository.update_all(Session, Criteria(where=expired), {"state": "closed"})
+count = repository.remove_all(Session, Criteria(where=expired))
+```
+
+- `upsert`: answers `Upserted(written, skipped)`; the key must be unique in the table; no
+  version check; `before_save`/`after_save` run, `before_create`/`before_update` do not; the
+  records handed in are not refreshed; Postgres and SQLite only.
+- `update_all`/`remove_all`: one statement, the count back; no hooks, no cascade, no change
+  tracking; `version` raised and `updated_at` stamped; scope and archived apply as in a read; a
+  page or a condition the aggregate cannot answer is **refused** (it would widen the write).
+- A child a root owns is written by `save(root)` — never reach for these to rebuild children.
 
 ## Reading
 

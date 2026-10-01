@@ -60,7 +60,7 @@ Today, the mask over scalars, end to end:
 
 Resolution of a named relation. The vocabulary, `Relation`, `Resolver` and `BusResolver`, lives in
 `sincpro_framework.ddd.relations` with no database in it; the kinds only a database has and the
-SQL partitioning live in `orm/sqlalchemy/relation_resolver.py`:
+SQL partitioning live in `orm/sqlalchemy/services/relation_resolver.py`:
 
 - **One declaration, in the data mapper, beside the table.** `map_aggregates(..., relations=
   {Dataset: {"runs": Relation.foreign_key(Run, identified_by="dataset_id")}})`. The annotation on the

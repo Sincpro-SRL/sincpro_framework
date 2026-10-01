@@ -15,7 +15,7 @@
 An entity-side mixin, opt-in like `AuditedMixin`/`ArchivableMixin` beside it. **This half says
 what counts as a change and what the event is called; it does not say when to look.** That is
 the store's, and the two stores do not do it alike: SQLAlchemy asks the engine what it is about
-to write (`orm/sqlalchemy/change_tracking.py`), and a store with no flush compares against a
+to write (`orm/sqlalchemy/infrastructure/change_tracking.py`), and a store with no flush compares against a
 baseline it took on the way out (`ddd/repositories/change_tracking.py`). Either way the diff
 arrives at `record_change`, and the aggregate turns it into its own event.
 

@@ -10,8 +10,8 @@ from datetime import datetime
 import pytest
 
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 from .models import Client, Clients, Draft, StoredEvent, mapper_registry
 
@@ -220,8 +220,8 @@ def test_an_event_table_is_declared_with_the_envelope_it_carries():
     """
     from sqlalchemy import MetaData
 
-    from sincpro_framework.orm.sqlalchemy.custom_fields import JsonText
-    from sincpro_framework.orm.sqlalchemy.data_mapper import (
+    from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
+    from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
         delivery_columns,
         entity_table,
         event_columns,

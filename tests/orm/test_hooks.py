@@ -12,8 +12,8 @@ from sincpro_framework import UseFramework
 from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories import Hook, Hooks
-from sincpro_framework.orm.sqlalchemy.database import Database
-from sincpro_framework.orm.sqlalchemy.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 from .models import Thing, a_thing
 

@@ -48,7 +48,9 @@ to. What an aggregate recorded lives in memory and dies with the object.
 | `QueueOptions` | Consumer settlement: `inbox`, `max_attempts`, dead-letter suffix, `subscription_of` | setting | `sincpro_framework.entrypoints.faststream` |
 | `event_columns()` | The envelope columns for a table that stores events | function | `sincpro_framework.orm` |
 | `delivery_columns()` | Delivery columns whose names do **not** match `EventTrackableMixin` — do not use for an outbox | function | `sincpro_framework.orm` |
-| Event log / event store | Not a class: an event class mapped to a table and saved with the existing `Repository` | pattern | — |
+| `EventLogEntry` | Any event of a context kept in one table — envelope, `event_type`, JSON `payload`; `of`, `of_all`, `of_entity` | dataclass | `sincpro_framework.ddd` |
+| `event_log_table(name, metadata)` | The table an `EventLogEntry` subclass is mapped to, indexed by entity | function | `sincpro_framework.orm` |
+| Event store (sourcing) | Not a class: each event class mapped to its own table and saved with the existing `Repository` | pattern | — |
 | Outbox / relay | Not a class: an `EventTrackableMixin` event saved in the state change's transaction, and a loop you write that claims, delivers and acknowledges | pattern | — |
 
 Look-alikes: `Queue` (carries events) ≠ `QueueGateway` (consumes Commands). `ChangeTrackingMixin`
@@ -175,7 +177,45 @@ class EmailTheCustomer(Feature):
 - **The outbox is what must be right.** The event row commits in the same transaction as the state
   change; a separate relay publishes. Before commit announces what may not happen; after commit
   loses it on a crash.
-- **Event log ≠ event sourcing.** Source only an aggregate whose history is the product.
+- **Event log ≠ event sourcing.** For an audit trail use the event log: subclass `EventLogEntry`
+  once per context, map it to `event_log_table(...)`, and in the same `context()` as the change
+  `unit.save(History.of_all(aggregate.pull_events()))`; read it with
+  `repository.fetch_all(History, History.of_entity(aggregate))`. Never hand-write an
+  `…EventEntry` per context. Source only an aggregate whose history is the product.
+
+## The published language: what other processes depend on
+
+A context's events are defined in its `domain/` — the aggregate records them — but **what the
+outside may depend on is chosen in `entrypoints/events.py`**: an explicit, versioned contract.
+n8n, another service or whoever listens to a webhook imports that module, never `domain/`.
+
+```text
+domains/issue/
+  domain/events.py          every fact the aggregates record (public and internal)
+  entrypoints/events.py     PUBLISHED = (IssueOpened, IssueClosed, …); explicit __all__; catalog()
+```
+
+```python
+# entrypoints/events.py — the contract; nothing here is defined, only chosen
+from my_service.domains.issue.domain.events import IssueClosed, IssueOpened
+
+PUBLISHED = (IssueOpened, IssueClosed)
+__all__ = ["IssueOpened", "IssueClosed", "PUBLISHED"]   # explicit: readable as a contract
+```
+
+- **The name is the contract.** `<context>.<aggregate>.v1.<fact>` is what travels. A breaking
+  change is a **new class** (`IssueClosedV2`, `name = "….v2.closed"`), never an edit of a v1 one;
+  both are exported while consumers migrate, and v1 leaves when nobody reads it.
+- **The direction never flips.** `entrypoints/` imports `domain/`, never the reverse — so the
+  events cannot *move* to `entrypoints/`, only be published from there.
+- **Only an entrypoint imports an entrypoint.** Inside the same service, another context that
+  reacts declares its own class under the same `name` (two identities, one travels).
+- **One `domain/events.py` while there is only v1.** Split it into `domain/events/{v1,v2}.py` the
+  day a v2 appears; `entrypoints/events.py` keeps the same shape, so no consumer notices.
+- **The aggregate records the current version only.** If a consumer still needs v1 after the
+  domain moved to v2, translate in `entrypoints/`, not in the domain.
+- **Stored history does not need old classes.** An event log keeps the wire name and the JSON
+  payload, so a v1 row stays readable after its class is gone.
 
 ## References
 

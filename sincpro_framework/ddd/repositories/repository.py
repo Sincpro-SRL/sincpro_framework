@@ -32,8 +32,9 @@ because the alternative is a loop nobody sees until production.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, overload
 
 from sincpro_framework.ddd.criteria import Bucket, Criteria
@@ -146,6 +147,15 @@ def refuse_unarchivable(records: list[Any]) -> None:
         )
 
 
+@dataclass(frozen=True)
+class Upserted:
+    """What an upsert wrote, per distinct key: inserted or overwritten, and left as it was — a
+    conflict with nothing to overwrite, or a stored row outside the repository's scope."""
+
+    written: int
+    skipped: int
+
+
 class Repository(ABC):
     """What a use case can be written against, whatever is underneath."""
 
@@ -250,14 +260,16 @@ class Repository(ABC):
         identity: Any,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T | None:
         """One aggregate by its identity, or `None`.
 
-        `for_update` claims the row until the unit of work around it ends, and `skip_locked`
-        passes over what somebody else already holds. **They are on the abstraction rather than
-        on the one store that can do them**: a Feature written against `Repository` says
-        `for_update=True`, and a store that swallowed the word would let that Feature pass its
-        tests and lose the race in production.
+        `for_update` claims the row until the unit of work around it ends; `skip_locked`
+        passes over what somebody else already holds, and `nowait` fails at once on it.
+        **They are on the abstraction rather than on the one store that can do them**: a
+        Feature written against `Repository` says `for_update=True`, and a store that
+        swallowed the word would let that Feature pass its tests and lose the race in
+        production.
         """
 
     @overload
@@ -267,6 +279,7 @@ class Repository(ABC):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> C: ...
 
     @overload
@@ -276,6 +289,7 @@ class Repository(ABC):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> EntityCollection[T]: ...
 
     @abstractmethod
@@ -285,6 +299,7 @@ class Repository(ABC):
         criteria: Criteria | None = None,
         for_update: bool = False,
         skip_locked: bool = False,
+        nowait: bool = False,
     ) -> EntityCollection: ...
 
     def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
@@ -301,11 +316,17 @@ class Repository(ABC):
     def save(self, record: Any) -> None:
         """One aggregate or several — `save(invoice)`, `save(invoices)`, `save(page)`. Several
         are written as one flush, with the same promises paid once instead of once per record.
+
+        A store that maps relations writes the children a root holds with it, and settles the
+        ones an assignment dropped; `MemoryRepository` keeps the root as one object, children
+        inside, so a test there sees the aggregate it built rather than rows it wrote.
         """
 
     @abstractmethod
     def remove(self, record: Any) -> None:
-        """Deletes one aggregate or several. The row is gone.
+        """Deletes one aggregate or several. The row is gone — and, on a store that maps
+        relations, the children of every relation declared owned go with it; `MemoryRepository`
+        holds an aggregate as one object, its children inside, so they go with it there too.
 
         **It deletes, and only deletes.** Putting a record away without losing it is
         `archive`, which is a different fact and says so — a `remove` that quietly archived
@@ -320,6 +341,28 @@ class Repository(ABC):
         Only for an aggregate that inherits `ArchivableMixin` — anything else is refused,
         because there is nowhere to write that it was archived.
         """
+
+    @abstractmethod
+    def upsert(
+        self, record: Any, on: Sequence[str], update: Sequence[str] | None = None
+    ) -> Upserted:
+        """Inserts each record, or overwrites the stored one holding the same `on`. It
+        overwrites by definition — no version check — and the records handed in are not
+        refreshed. `update` names what a conflict overwrites; `update=()` leaves it as it is.
+        Answers how many were written and how many skipped.
+        """
+
+    @abstractmethod
+    def update_all(self, target: type, criteria: Criteria, values: Mapping[str, Any]) -> int:
+        """Sets these values on every record the filter matches; how many is the answer. Past
+        the aggregate — no hook, no cascade — but its version is raised. A page, or a condition
+        the aggregate cannot answer, is refused: a write never runs wider than it was asked.
+        """
+
+    @abstractmethod
+    def remove_all(self, target: type, criteria: Criteria) -> int:
+        """Deletes every record the filter matches; how many is the answer. No hook, no
+        cascade. A page, or a condition that cannot be answered, is refused."""
 
     # --- the readings a use case is actually written against -------------------------------
     #
