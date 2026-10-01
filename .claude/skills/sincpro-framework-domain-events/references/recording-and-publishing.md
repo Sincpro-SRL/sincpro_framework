@@ -19,8 +19,13 @@ def post(invoice: Invoice) -> None:
     invoice.record(InvoicePosted(invoice_id=invoice.id, total=invoice.total))
 ```
 
-`record` stamps the aggregate's type, id and sequence onto the event. `pull_events()` hands them
-back **and forgets them** — pull once, after the save.
+- `@dataclass(kw_only=True)` is required on every event class: without it the annotations are not
+  fields and the constructor refuses them.
+- `name` is a plain assignment. A typed `name: str` is refused when the class is declared. A
+  subclass that sets no `name` gets its own class name, never its parent's.
+- `record` stores a **stamped copy** (the aggregate's type, id and position in `sequence`) and
+  returns it; the instance you passed is left as it was. `pull_events()` hands the recorded events
+  back **and forgets them** — pull once, after the save. `recorded_events()` looks without taking.
 
 ```python
 draft = repository.get_by(Invoice, number="F-004")
@@ -41,9 +46,10 @@ class EmailTheCustomer(Feature):
         ...                                # send
 ```
 
-`Subscriber(notifications)` executes every bus whose registry knows the event. A bus declares
-nothing extra: an event is a DTO, so `@bus.feature(SomeEvent)` **is** the subscription. For several
-events on one bus, `@bus.feature([Command1, EventA, EventB])` — only when they share one algorithm.
+`Subscriber(notifications)` executes every bus whose registry knows the event's `name`. A bus
+declares nothing extra: an event is a DTO, so `@bus.feature(SomeEvent)` **is** the subscription.
+For several events on one bus, `@bus.feature([Command1, EventA, EventB])` — only when they share
+one algorithm. An event no bus registered is not an error: `publish` returns and nothing ran.
 
 ## Publisher: the signature of a bus
 
@@ -56,28 +62,41 @@ await publisher.get_async_publisher().publish(event, ResponseDTO)
 The typed form holds only where somebody can answer **in the same call**: a `SyncQueue` with exactly
 one bus for that event. A `BackgroundQueue` cannot answer from another process, and two buses have
 no one answer — both are refused rather than guessed. What a bus raises, the publisher raises.
+Handing it a Command (any non-`DomainEvent`) is refused: a Command is executed on its bus.
 
 `subscriber.handle(event)` / `subscriber.get_async_subscriber().handle(event)` are the two forms on
 the receiving side.
 
-## The two queues
+## Wiring: the publisher is a dependency
 
-**`SyncQueue(subscriber)`** — `publish` runs the buses where it was called and returns. For
-development, tests, and reactions that must be visible at once. It also takes a **function**, which
-is what a composition root wants, because it cuts the wiring circle:
+The Feature reads `self.publisher`, registered like any adapter:
 
 ```python
+# domains/common/infrastructure/events.py — no context imported here
 BUSES: dict[str, UseFramework] = {}
-publisher = Publisher(SyncQueue(lambda: Subscriber(*BUSES.values())))   # before any bus exists
+PUBLISHER = Publisher(SyncQueue(lambda: Subscriber(*BUSES.values())))
+
+# domains/billing/infrastructure/framework.py
+def config_billing_framework(name: str) -> UseFramework[BillingDependencies]:
+    instance = UseFramework[BillingDependencies](name)
+    instance.add_dependency("publisher", PUBLISHER)
+    register_dependencies(instance)
+    BUSES[name] = instance
+    return instance
 ```
 
 A queue needs a subscriber, a subscriber needs the buses, and a bus needs the publisher the queue is
-behind. Handed a function, the queue asks for nothing until somebody publishes, and by then every
-bus is registered.
+behind. Handed a function, `SyncQueue` asks for nothing until somebody publishes — by then every
+bus is registered — and keeps the subscriber it built. `add_dependency` is refused once the bus is
+built, so register the publisher before the first execution.
 
-**Publishing runs the subscriber in the call**, so a subscriber that publishes re-enters the queue
-depth-first. Where order of facts matters, write the fact down in the context it happened in, or
-send it through an outbox whose relay delivers in order.
+## The two queues
+
+**`SyncQueue(subscriber)`** — `publish` runs the buses where it was called and returns. For one
+process, development, tests, and reactions that must be visible at once. **Publishing runs the
+subscriber in the call**, so a subscriber that publishes re-enters the queue depth-first. Where
+order of facts matters, write the fact down in the context it happened in, or send it through an
+outbox whose relay delivers in order.
 
 **`BackgroundQueue(build_subscriber)`** — the smallest "do it in the background":
 
@@ -90,12 +109,26 @@ Publisher(queue).publish(event)            # into a multiprocessing.Queue, and b
 queue.stop()
 ```
 
-The worker builds its own buses (a bus does not cross a process). The event crosses as its **wire
-name** and JSON, and is rebuilt as the class the subscriber knows. `stop()` sends the stop signal
-and waits. A queue never started refuses a publish rather than dropping it.
+- The worker is a *spawned* interpreter (`fork` is refused) that builds its own buses; a built
+  `Subscriber` or a lambda cannot be sent to it.
+- The event crosses as its **wire name** and JSON, and is rebuilt as the class the subscriber knows.
+  An event no bus there registered is skipped; a failing handler is logged and reported in the
+  worker, and the worker continues.
+- `stop()` sends the stop signal and waits. A queue never started refuses a publish.
+- It carries the **trace** as a W3C carrier beside the payload, so the consumer lands under the
+  span that published.
+- Events still in the queue when the process stops are lost: at most once.
 
-`BackgroundQueue` also carries the **trace** as a W3C carrier beside the payload; the worker adopts
-it, so the consumer lands under the span that published.
+## Testing what was published
+
+```python
+from sincpro_framework.testing import RecordingQueue, override_dependencies
+
+published = RecordingQueue()                              # or RecordingQueue(SyncQueue(...)) to also deliver
+with override_dependencies(billing, publisher=Publisher(published)):
+    billing(CommandPostInvoice(invoice_id="F-1"))
+assert [one.invoice_id for one in published.of(InvoicePosted)] == ["F-1"]
+```
 
 ## Two identities, one travels
 

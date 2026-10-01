@@ -52,6 +52,51 @@ the use case. That is transport, and it comes later.
 
 Now you are ready to explore more complex use cases! 🚀
 
+## 🤖 Skills for AI coding agents
+
+This repository is a Claude Code plugin marketplace. The `sincpro-framework` plugin carries 12
+skills: the framework's context, vocabulary and architecture, the mistakes to avoid, and one
+skill per component (persistence, criteria, events, caching, auth, observability, settings,
+entrypoints, operations, analytics). An agent working in any service that uses the framework
+reads them before writing code.
+
+Install once per machine (needs read access to this repository through your git credentials):
+
+```bash
+claude plugin marketplace add Sincpro-SRL/sincpro_framework
+claude plugin install sincpro-framework@sincpro
+```
+
+Pull the skills of the latest commit:
+
+```bash
+claude plugin marketplace update sincpro
+claude plugin update sincpro-framework@sincpro
+```
+
+From a clone of this repository, `make skills-install`, `make skills-update` and
+`make skills-validate` run the same commands. Inside a Claude Code session the equivalents are
+`/plugin marketplace add Sincpro-SRL/sincpro_framework` and
+`/plugin install sincpro-framework@sincpro`.
+
+To give every collaborator of a service the skills with no command, commit this to that
+service's `.claude/settings.json`; Claude Code offers to install it when the folder is trusted:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "sincpro": {
+      "source": { "source": "github", "repo": "Sincpro-SRL/sincpro_framework" }
+    }
+  },
+  "enabledPlugins": { "sincpro-framework@sincpro": true }
+}
+```
+
+The plugin has no `version`: each commit is a version, so an update always brings the skills
+that match the code on `main`. Agents other than Claude Code reach the same guidance through
+Sincpro's knowledge MCP server.
+
 ## 📑 Table of Contents
 
 1. [Overview of Hexagonal Architecture](#-overview-of-hexagonal-architecture)

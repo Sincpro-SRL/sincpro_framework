@@ -235,3 +235,44 @@ def test_a_project_wire_refuses_its_own_clashes_through_the_build():
 
     with pytest.raises(ExposureRefused, match="'billing show' answered by"):
         gateway.build()
+
+
+class CommandStoreDocument(DataTransferObject):
+    content: bytes
+
+
+class ResponseStoredDocument(DataTransferObject):
+    size_bytes: int
+
+
+class BinaryCliWire(CliWire):
+    carries_bytes = True
+
+
+def _documents() -> UseFramework:
+    bus = UseFramework("manifest-documents", log_after_execution=False)
+
+    @bus.feature(CommandStoreDocument)
+    class StoreDocument(Feature):
+        def execute(self, dto: CommandStoreDocument) -> ResponseStoredDocument:
+            return ResponseStoredDocument(size_bytes=len(dto.content))
+
+    declare(StoreDocument, CliBinding(command="documents store"))
+    return bus
+
+
+def test_a_wire_that_carries_bytes_publishes_a_bytes_command():
+    cli = Gateway([_documents()], port=BinaryCliWire(), unguarded=True).build()
+
+    assert cli("documents store", content=b"%PDF-1.7") == {"size_bytes": 8}
+
+
+def test_a_wire_of_json_only_refuses_a_bytes_command_bound_on_it():
+    gateway = Gateway([_documents()], port=CliWire(), unguarded=True)
+
+    assert gateway.verify() == [
+        "CommandStoreDocument (cli): bound, but it has a bytes field and this cli wire carries "
+        "JSON only — nothing would be built for it. Drop the cli binding and publish it with an "
+        "endpoint of the project's that decodes the request and calls the bus (REST: "
+        "`bus_call`), or on a wire that carries bytes"
+    ]

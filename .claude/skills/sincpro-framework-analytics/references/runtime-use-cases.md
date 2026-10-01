@@ -1,6 +1,7 @@
 # Runtime use cases
 
-Depth: `docs/runtime_use_cases/README.md`, PRD_06. Every block there runs as a test.
+Deep doc in the framework repo: `docs/runtime_use_cases/README.md`, PRD_06 and PRD_07 (every
+block there runs as a test). This page stands alone.
 
 `sincpro_framework.runtime_use_cases` keeps Commands, Responses and the Feature or ApplicationService
 that answers them as **data** — the source of a module, in a table or in memory — and loads them onto
@@ -27,8 +28,13 @@ quoted = registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount
 ```
 
 - A `RuntimeUseCase` is a name and the source of a module with one Feature/ApplicationService; the
-  Command it answers is the one its `execute` declares. Its module is `sincpro_runtime.<context>.<name>`,
-  so its Commands are routed by that name (MCP, RPC, a queue, `registry.execute`).
+  Command it answers is the one its `execute` declares (`execute(self, dto: CommandX)` — the
+  annotation is required). Its module is `sincpro_runtime.<context>.<name>`, so its Commands are
+  routed as `sincpro_runtime.<context>.<name>.<Class>`.
+- **An entrypoint holds the bus object it was given.** A gateway (MCP, RPC, gRPC, REST, a queue)
+  built on `billing` never sees a stored use case; built on `registry.current`, it keeps answering
+  that generation after a reload. To serve live generations, resolve `registry.current` per
+  request — e.g. a handler that calls `registry.execute(dto_name, payload)`.
 - **Reach stored use cases by name.** A stored Command is a new class in each generation, and a bus
   answers a class — a Command built against one generation is answered only by that generation's bus.
 - The registry reads its store and builds its first generation on **first use** (`current`, `execute`,
@@ -48,11 +54,16 @@ registry.put(RuntimeUseCase(...))     # check + save + swap in, atomically
 - A request that read a generation finishes on it. What a stored use case gets wrong — syntax,
   imports, a Command the code already answers — is refused in its name (`UseCaseRefused`), and the bus
   answering stays.
+- A stored use case whose Command the code already answers is refused unless it says
+  `replaces="module.Class"`; `replaces` naming the wrong class, or a Feature replacing an
+  ApplicationService, is refused too.
 - A stored source imports the code, so a refactor can break a stored use case that nothing reloads.
   `check_all()` loads every active one against the code as it is now — run it in CI.
 - A stored handler may `replaces=` one in code (`module.Class`). An ApplicationService calls the code's
   Features through `self.feature_bus`.
 - Retiring is saving inactive; the next generation is built without it.
+- Each replica swaps on its own `reload()`; a save by one replica reaches the others only when they
+  reload (a cron calling `registry.reload()` is the usual shape).
 
 ## Where use cases are kept
 

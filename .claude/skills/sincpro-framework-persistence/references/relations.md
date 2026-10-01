@@ -4,25 +4,26 @@ An aggregate reaches another by naming it in a `Criteria` `specification`. Resol
 **one call per relation per page**, never per row — and a relation you did not ask for raises rather
 than lazily loading.
 
-Full depth: `docs/persistence/relations.md`. `tests/orm/every_kind_models.py` is the executable
-version (every kind at once).
+In the framework repo, `docs/persistence/relations.md` and `tests/orm/every_kind_models.py` (every
+kind at once) go deeper; this page is enough to use them.
 
 ## The kinds
 
 | Kind | How it resolves | Who writes it |
 |---|---|---|
-| **Local, mapped FK** — the common case | `selectinload()`, inferred from the FK | the ORM |
-| **Local, id list** in a JSON column | batch in the same session | us, a little |
-| **Many-to-many** | joined through the table in between | declared, because a list cannot say there is a table |
-| **Cross-context** | one command on the other context's bus with the full id list | us |
-| **Any function** | a resolver callable | us |
+| **Local, mapped FK** — the common case | one statement per node, `WHERE fk IN (page ids)`, cut per parent by a window | inferred from the `ForeignKey` |
+| **Local, id list** in a `JsonText` column | one statement per node in the same session | `Relation.id_list(...)` |
+| **Many-to-many** | joined through the table in between | `Relation.many_to_many(...)`, because a list cannot say there is a table |
+| **Cross-context** | one Command on the other context's bus with every parent key | `Relation.bus(...)` |
+| **Any function** | one call of `resolver(keys, criteria)` | `Relation.resolved_by(...)` |
 
 ## Inference precedence
 
 1. A column with that name is a **field**. Never a relation.
 2. A **declaration wins over inference**.
 3. A **foreign key is inferred when unambiguous**: the annotation points at a mapped class and
-   exactly one `ForeignKey` ties the two tables.
+   exactly one `ForeignKey` ties the two tables (with several, the column named `<attribute>_id`
+   decides; with none of those, nothing is inferred — declare it).
 4. A pointer nothing identifies is **published, not expandable** (`identified_by = None`; asking
    drops with `not_expandable`).
 5. Everything else is ignored.
@@ -87,11 +88,20 @@ specification gives way to the whole when touched inside a context.
 | a page with a relation and, inside it, another | `+ 2` |
 | a page with a relation from another context | `+ 1` here, `+ 1` command on the other |
 
-Bound: max depth 3, a default and maximum limit per relation, undeclared path rejected before
-touching the database.
+Defaults, not ceilings: a to-many node without a `pagination` brings 40 per parent; a node that
+asks for more gets more, at any depth. A name the model does not have is dropped as
+`unknown_field`, a relation nothing declared how to resolve as `not_expandable` — both reported in
+`page.dropped`, never raised. A provider that wants a ceiling merges a criteria of its own on the
+way in. `repository.explain(...)` says how many calls a criteria will cost before running it.
 
 ## Cross-context
 
-`Relation.bus(...)` is a `BusResolver`. The other side writes nothing special: a Feature that takes a
-`Query` and answers `ResponsePaginatedQuery.of`. `Relation.remote`/`bus` name the target by string,
-never an imported class — that is what keeps contexts from importing each other.
+`Relation.bus(Review, reviews_bus, CommandSearchReviews, identified_by="book_id")` calls the other
+context's bus with `CommandSearchReviews(criteria=…)`, the criteria carrying every parent key. The
+other side writes nothing special: a Feature that takes a `Query` and answers
+`ResponsePaginatedQuery.of(page, criteria)`. This side imports only that context's Command and the
+class it reads the answer as, never its Features or its repository.
+
+Every relation may carry a `scope=Criteria(...)`: the filter and order every reading of it starts
+from (`scope=Criteria(order=parse_order("-created_at"))` for "newest first"). What a caller names
+in the specification merges on top and can only narrow it.

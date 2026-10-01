@@ -100,6 +100,11 @@ Two consequences worth knowing:
   and Pydantic coerces it back (a fractional value still fails validation); a `version: int` in
   the response reaches the client as `0.0`. Over JSON-RPC the same field stays an int. Clients
   that care about integers read the type from the `Describe` schema, not from the value.
+- A `Struct` has no bytes type, so `GrpcWire` declares `carries_bytes = False`: a Command with a
+  `bytes` field gets no method, and `@grpc()` on it is refused. This is the gateway's design, not
+  gRPC's. Between Sincpro Python services, `remote_execution` (see
+  [bounded-contexts-across-services.md](bounded-contexts-across-services.md)) carries `bytes`
+  natively over one `stream_stream` call.
 
 ---
 

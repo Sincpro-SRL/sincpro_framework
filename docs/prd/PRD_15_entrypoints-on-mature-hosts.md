@@ -310,8 +310,9 @@ when the Command has no `idempotency_key()` (`caching.IDEMPOTENCY_KEY` in the bu
 | `struct` — default | `google.protobuf.Struct`, documented as "JSON over gRPC" | Python to Python, grpcurl, internal | built; its fixes phase 1 |
 | `typed` — opt-in per context | real messages generated from the DTOs, numbered by a **committed lock file** | typed clients, grpc-web/Connect, Envoy transcoding, `buf breaking` | phase 2 |
 
-The typed contract keeps the DTO as the source of truth and turns silent renumbering into a
-reviewed diff: an existing name keeps its number forever, a new field takes `max + 1`, a deleted
+Specified in full — runtime build, the lock, type mapping, streaming, interop — in
+[PRD_16](PRD_16_typed-grpc-contract.md). The typed contract keeps the DTO as the source of truth
+and turns silent renumbering into a reviewed diff: an existing name keeps its number forever, a new field takes `max + 1`, a deleted
 field moves to `reserved` (number and name), a type change is refused unless wire-compatible.
 `lock --check` fails on drift; CI runs `buf lint` and `buf breaking --against main` at WIRE_JSON.
 Types: `int` → int64, `Decimal` → string or `google.type.Money`, `datetime` → Timestamp, `Enum` →

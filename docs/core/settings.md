@@ -141,23 +141,37 @@ shown. An object built by hand has no provenance: its sources read `assigned`.
 
 ## The project layout
 
-One `settings/` package, outside the contexts: a module per shape, the singleton built in its
-`__init__`. Contexts import it; it imports no context — so there is no cycle, whichever is imported
-first.
+Each bounded context owns its settings: a `settings.py` at the context's root, next to its
+`__init__.py`, holding its shape and its object. What every context shares lives the same way in
+`common/`. The YAML stays **one document** at the service root — the deployment's configuration,
+where the cascade comes from.
 
 ```text
 sincpro_payments_sdk/
 ├── conf/sincpro_payments_sdk.yml
-├── settings/
-│   ├── __init__.py        settings = build_config_obj(PaymentsSettings, FILE, "sincpro_payments_sdk")
-│   ├── shared.py          SharedSettings
-│   ├── qr.py              QRSettings(SharedSettings)
-│   ├── cybersource.py     CybersourceSettings(SharedSettings)
-│   └── payments.py        PaymentsSettings(SharedSettings): qr, cybersource
 └── apps/
-    ├── qr/__init__.py     qr = UseFramework(...); qr.add_dependency("settings", settings.qr)
-    └── cybersource/...
+    ├── common/
+    │   └── settings.py        SharedSettings
+    ├── qr/
+    │   ├── settings.py        QRSettings(SharedSettings)
+    │   │                      settings = build_config_obj(QRSettings, FILE, "sincpro_payments_sdk.qr")
+    │   ├── __init__.py        qr = config_qr_framework(...); then import services
+    │   └── infrastructure/
+    │       └── dependencies.py    qr.add_dependency("settings", settings)
+    └── cybersource/
+        └── settings.py        CybersourceSettings(SharedSettings) → "sincpro_payments_sdk.cybersource"
 ```
+
+- A context's shape resolves at its own path and still inherits from the sections above it:
+  `qr.environment` comes from `sincpro_payments_sdk.environment` unless `qr:` sets it.
+- `settings.py` imports only `common/` and the framework, so it never closes an import cycle, and
+  `infrastructure/dependencies.py` imports it before the bus is created.
+- The framework's own fields (`FrameworkSettings`: log, OTLP, Sentry, release) are the
+  **process's**, not a context's. Set them in the root section only: each context's build hands
+  them to the framework, so a context section that changed one would win or lose by import order.
+- A view of the whole service (one `describe_settings` for every context) is a shape of its own,
+  `ServiceSettings(SharedSettings)` with one field per context, built where it is needed — never
+  imported by a context.
 
 ## Each context its own section — a check, for a team that wants it
 
@@ -175,7 +189,7 @@ def test_each_context_reads_only_its_own_settings():
 It reads the source without importing it and returns data — a list of `SettingsScopeViolation`
 (module, line, context, section) — never an exception. A module belongs to the context whose
 section name first appears in its path (`apps/qr/...` is `qr`); a module outside every section —
-`settings/`, a root entrypoint — is not judged.
+a root entrypoint, `common/` — is not judged.
 
 ## The framework's own settings: `FrameworkSettings`
 
@@ -198,8 +212,9 @@ sincpro_payments_sdk:
 Building it hands the framework every one of those fields the project set — from the file, the
 environment, or inherited — and configures the log again when a log field was among them. A field
 left at its default, or a `$ENV:` variable nobody set, is not handed over: the framework's own
-environment still decides it. The framework reads these when a bus sets itself up, so the
-project's singleton is built before its buses — which the layout above guarantees. A project that
+environment still decides it. The framework reads these when a bus sets itself up, so a
+context's settings are built before its bus — which importing them from `dependencies.py`
+guarantees. A project that
 does not inherit `FrameworkSettings` changes nothing of the framework's settings.
 
 ## In the framework

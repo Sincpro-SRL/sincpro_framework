@@ -1,7 +1,9 @@
 # Data analysis
 
-Depth: `docs/data_analysis/README.md`, PRD_09. Every block there runs as a test.
-`pip install sincpro-framework[data-analysis]` (pyarrow). The core needs nothing.
+Deep doc in the framework repo: `docs/data_analysis/README.md`, PRD_09 (every block there runs as
+a test). This page stands alone. `pip install sincpro-framework[data-analysis]` (pyarrow) for
+Arrow/Parquet; the core needs nothing. polars, pandas and DuckDB are the project's own
+dependencies.
 
 `sincpro_framework.data_analysis` holds what a `Criteria` answered as a `DataFrame`, so the same
 question is not sent to the database twice.
@@ -17,10 +19,14 @@ from sincpro_framework.data_analysis import QueryCache
 
 cache = QueryCache(max_rows=2_000_000)
 
-first = cache.fetch(repository, InvoiceLine, posted)            # one page (limit 500)
+first = cache.fetch(repository, InvoiceLine, posted)            # one page: pagination.limit rows (50 by default)
 more  = cache.fetch(repository, InvoiceLine, posted, pages=2)   # reads only the missing page
 again = cache.fetch(repository, InvoiceLine, posted, pages=2)   # reads nothing
 ```
+
+`pages` is how many pages the frame holds after the call, not how many more. The page or offset
+the `Criteria` asks for is not part of the read: every read starts from the first row. A frame
+from `fetch` is usually **not complete** — check `frame.complete` before computing a total.
 
 A frame has a column per field of the aggregate (the `Entity` fields included), or the ones the
 `Criteria`'s specification keeps. Pages are read with the keyset cursor and without a count, and
@@ -54,6 +60,16 @@ frames = invalidate_on_commit(database, QueryCache(), Payment)
 `invalidate_on_commit` (from `sincpro_framework.orm`) notes what a flush writes and lets go of each
 aggregate's reads when that write **commits** — not at the flush, not on a rollback. A cache is per
 process; an aggregate another process writes is not one to hold here.
+
+## Where it goes in a service
+
+Register one cache per process as a dependency of the context, already wired to commits, and read
+it from a Query Feature; the Response carries `to_json()` or Parquet bytes:
+
+```python
+# infrastructure/dependencies.py
+instance.add_dependency("frames", invalidate_on_commit(database, QueryCache(max_rows=2_000_000), InvoiceLine))
+```
 
 ## Handed on
 

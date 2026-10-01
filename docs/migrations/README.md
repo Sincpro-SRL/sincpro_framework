@@ -64,7 +64,7 @@ migrations = Migrations([common_migrations, billing_migrations])
 ```
 
 - A context lists its stores; each store is one **chain** — its steps run in order and it keeps
-  its own position, in the store itself (`alembic_version_<context>_<store>` for Alembic).
+  its own position, in the store itself (`alembic_version__<context>__<store>` for Alembic).
 - A foreign key into another context names that context's column (`ForeignKey(partner.c.id)`),
   not the string `"partner.id"`, which SQLAlchemy resolves only inside one `MetaData`.
 - The composition root ends with `raise SystemExit(command_line(migrations))`, and the Makefile
