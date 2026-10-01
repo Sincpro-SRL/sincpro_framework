@@ -49,7 +49,7 @@ adapters. Rules that hold in every variant:
 
 ```
 my_service/
-  config.py  exceptions.py  logger.py  conf/
+  conf/my_service.yml  exceptions.py  logger.py
   domains/
     common/                    # foundational context (bus optional)
     sales/  billing/  ...
@@ -57,6 +57,9 @@ my_service/
 ```
 
 Nothing domain-specific at the package root. A context that does not exist yet has **no folder**.
+Each context owns its settings: `domains/<ctx>/settings.py`, at the context's root, builds its
+shape at `<pkg>.<ctx>` from the one document in `conf/`; what every context shares is
+`domains/common/settings.py` (`sincpro-framework-settings`). A service with one context keeps a root `config.py`.
 
 Every bounded context:
 

@@ -65,23 +65,26 @@ No ports and no optional extras: the sources are plain functions.
 
 **In a consumer service:**
 
+Each bounded context owns its settings, at its own root. The YAML stays one document.
+
 ```text
 <pkg>/
-├── conf/<pkg>.yml              the one document; secrets as $ENV:NAME
-├── settings/                   outside every context: imports no context, so no import cycle
-│   ├── __init__.py             settings = build_config_obj(ProjectSettings, FILE, "<pkg>")
-│   ├── shared.py               SharedSettings(FrameworkSettings or SincproConfig)
-│   ├── <ctx>.py                <Ctx>Settings(SharedSettings)
-│   └── project.py              ProjectSettings(SharedSettings): one field per context
-└── domains/<ctx>/
-    ├── __init__.py             bus = config_<ctx>_framework("<ctx>"); then import services
-    ├── infrastructure/
-    │   └── dependencies.py     bus.add_dependency("settings", settings.<ctx>)
-    └── services/               self.settings.timeout
+├── conf/<pkg>.yml              the one document: a section per context; secrets as $ENV:NAME
+└── domains/
+    ├── common/
+    │   └── settings.py         SharedSettings(FrameworkSettings or SincproConfig)
+    └── <ctx>/
+        ├── settings.py         <Ctx>Settings(SharedSettings)
+        │                       settings = build_config_obj(<Ctx>Settings, FILE, "<pkg>.<ctx>")
+        ├── __init__.py         bus = config_<ctx>_framework("<ctx>"); then import services
+        ├── infrastructure/
+        │   └── dependencies.py bus.add_dependency("settings", settings)
+        └── services/           self.settings.timeout
 ```
 
-A project with one flat shape keeps a root `config.py` with
-`build_config_obj(Config, FILE, "<pkg>")` instead of the package.
+`<ctx>/settings.py` imports only `common/` and the framework (no import cycle); its shape still
+inherits from the sections above (`<pkg>.environment` reaches `<ctx>` unless `<ctx>:` sets it).
+A service with one context keeps a root `config.py` with `build_config_obj(Config, FILE, "<pkg>")`.
 
 **One resolution:**
 
@@ -108,7 +111,13 @@ env vars ──┘  (<PREFIX>__PATH placed as $ENV: at its path)                
 - **`$ENV:` inside a dict or list value.** Only a field's own string value is resolved; inside a
   mapping it stays the literal text `$ENV:NAME`. Make the entry a field (or a nested shape).
 - **Calling `build_config_obj` in several modules.** Each call re-reads the file and returns a new
-  object. Build the singleton once, in `settings/__init__.py`, and import it.
+  object. Build a context's object once, in its `settings.py`, and import it.
+- **A framework field in a context's section.** `FrameworkSettings` fields (log, OTLP, Sentry,
+  release) are the process's: every context's build hands them to the framework, so one set in
+  `<ctx>:` wins or loses by import order. Set them in the root section only.
+- **A central `settings/` package holding every context's shape.** The context no longer owns its
+  configuration, and moving it to another service leaves its settings behind. Keep each shape at
+  its context's root.
 - **Creating a bus before building the project's settings.** The framework reads its own settings
   when a bus is created (the context map) and when it is built (log, OTLP, Sentry); a
   `FrameworkSettings` built after that is missed by that bus, with no error. Import the settings

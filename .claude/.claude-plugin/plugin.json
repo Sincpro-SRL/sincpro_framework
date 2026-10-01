@@ -1,0 +1,10 @@
+{
+  "name": "sincpro-framework",
+  "description": "Skills to program any bounded context with sincpro_framework: architecture, use cases, persistence, criteria, events, caching, auth, observability, settings, entrypoints, operations and analytics",
+  "author": {
+    "name": "Sincpro SRL",
+    "email": "engineering@sincpro.com.bo"
+  },
+  "repository": "https://github.com/Sincpro-SRL/sincpro_framework",
+  "license": "MIT"
+}

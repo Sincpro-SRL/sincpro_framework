@@ -1,0 +1,17 @@
+{
+  "name": "sincpro",
+  "owner": {
+    "name": "Sincpro SRL",
+    "email": "engineering@sincpro.com.bo"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for building services on sincpro_framework"
+  },
+  "plugins": [
+    {
+      "name": "sincpro-framework",
+      "source": "./.claude",
+      "description": "Skills to program any bounded context with sincpro_framework: architecture, use cases, persistence, criteria, events, caching, auth, observability, settings, entrypoints, operations and analytics"
+    }
+  ]
+}

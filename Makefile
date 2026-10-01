@@ -66,6 +66,21 @@ docs: check-openwiki
 docs-view: check-openwiki
 	$(OPENWIKI) visualize openwiki
 
+SKILLS_MARKETPLACE ?= Sincpro-SRL/sincpro_framework
+SKILLS_PLUGIN := sincpro-framework@sincpro
+
+skills-install:
+	claude plugin marketplace add $(SKILLS_MARKETPLACE)
+	claude plugin install $(SKILLS_PLUGIN)
+
+skills-update:
+	claude plugin marketplace update sincpro
+	claude plugin update $(SKILLS_PLUGIN)
+
+skills-validate:
+	claude plugin validate .
+	claude plugin validate .claude
+
 format-yaml:
 	@if command -v prettier > /dev/null; then \
 		echo "Formatting YAML files with prettier..."; \
@@ -170,4 +185,4 @@ clean-coverage:
 	rm -rf htmlcov coverage.xml .coverage .coverage.*
 
 .PHONY: install start clean criteria-parity test test-realworld test-stress test-all test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
-	docs docs-init docs-view check-openwiki
+	docs docs-init docs-view check-openwiki skills-install skills-update skills-validate

@@ -67,7 +67,8 @@ What it is not:
 | `domain/` | DTOs shared by several use cases, aggregates, value objects, ports (`Protocol`), pure rules, policy constants | its own `domain/`, a lower context's `domain/`, `sincpro_framework.ddd` |
 | `adapters/` | One class per external system or replaceable mechanism (client, repository impl, classifier) | `domain/`; never another adapter |
 | `services/` | One file per use case: DTOs + `@bus.feature`/`@bus.app_service` handler | `domain/`, the context package (for `bus`, `Feature`), other services' **DTOs only** |
-| `infrastructure/` | Wiring: `framework.py`, `dependencies.py`, tables, settings, logger | everything inside the context |
+| `settings.py` (context root) | The context's settings shape and its object, built at `<pkg>.<ctx>` | `common/settings.py`, the framework |
+| `infrastructure/` | Wiring: `framework.py`, `dependencies.py`, tables, logger | everything inside the context |
 | `entrypoints/` | Gateways and, at most, hand-written routes that translate and call the bus | the buses and their DTOs; nothing imports `entrypoints/` |
 
 Dependencies point inward: `entrypoints → bus → services → domain`, with `adapters` implementing
@@ -79,11 +80,13 @@ an acyclic graph; `common/` is the foundation and imports no sibling context.
 
 ```
 my_service/
-  config.py  exceptions.py  conf/        # process-wide, no domain
+  exceptions.py  conf/my_service.yml    # process-wide, no domain; the one settings document
   domains/
     common/                              # shared kernel (bus optional)
+      settings.py                        # SharedSettings: what every context inherits
       domain/  adapters/  infrastructure/  services/  __init__.py
     billing/
+      settings.py                        # BillingSettings(SharedSettings) + its object
       __init__.py                        # bus = config_billing_framework(...); then services
       infrastructure/framework.py        # typed Feature / ApplicationService bases
       infrastructure/dependencies.py     # BillingDependencyContextType + register_dependencies
