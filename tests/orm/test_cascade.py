@@ -354,6 +354,98 @@ def test_a_changed_child_is_written_with_its_version_checked(repository):
         repository.save(stale)
 
 
+# ── the root's version moves with its parts ─────────────────────────────────────────────
+
+
+def version_of(repository: Repository) -> int:
+    workspace = repository.get_by(Workspace, code="sp-1")
+    assert workspace is not None
+    return workspace.version
+
+
+def test_changing_a_part_raises_the_version_of_its_root(repository):
+    stored_workspace(repository, "api")
+
+    with repository.context() as unit:
+        workspace = unit.get_by(Workspace, code="sp-1")
+        [api] = workspace.repositories
+        api.name = "api-v2"
+        unit.save(workspace)
+
+    assert version_of(repository) == 2
+
+
+def test_adding_a_part_raises_the_version_of_its_root(repository):
+    stored_workspace(repository, "api")
+
+    with repository.context() as unit:
+        workspace = unit.get_by(Workspace, code="sp-1")
+        workspace.repositories = [*workspace.repositories, CodeRepo(name="web")]
+        unit.save(workspace)
+
+    assert version_of(repository) == 2
+
+
+def test_dropping_a_part_raises_the_version_of_its_root(repository):
+    stored_workspace(repository, "api", "web")
+
+    with repository.context() as unit:
+        workspace = unit.get_by(Workspace, code="sp-1")
+        workspace.repositories = [one for one in workspace.repositories if one.name == "api"]
+        unit.save(workspace)
+
+    assert version_of(repository) == 2
+    assert names(repository, CodeRepo) == ["api"]
+
+
+def test_a_grandchild_that_changes_moves_the_root_it_belongs_to(repository):
+    repository.save(
+        Workspace(
+            code="sp-1", repositories=[CodeRepo(name="api", checks=[Check(name="lint")])]
+        )
+    )
+
+    with repository.context() as unit:
+        workspace = unit.get_by(Workspace, code="sp-1")
+        [api] = workspace.repositories
+        [lint] = api.checks
+        lint.name = "lint-strict"
+        unit.save(workspace)
+
+    assert version_of(repository) == 2
+    assert repository.get_by(CodeRepo, name="api").version == 1
+
+
+def test_saving_a_root_whose_parts_did_not_move_leaves_its_version(repository):
+    stored_workspace(repository, "api")
+
+    with repository.context() as unit:
+        workspace = unit.get_by(Workspace, code="sp-1")
+        assert [one.name for one in workspace.repositories] == ["api"]
+        unit.save(workspace)
+
+    assert version_of(repository) == 1
+
+
+def test_two_writers_editing_different_parts_of_one_root_do_not_both_win(repository):
+    stored_workspace(repository, "api", "web")
+    with repository.context() as unit:
+        first = unit.get_by(Workspace, code="sp-1")
+        assert len(first.repositories) == 2
+
+    with repository.context() as unit:
+        second = unit.get_by(Workspace, code="sp-1")
+        [web] = [one for one in second.repositories if one.name == "web"]
+        web.name = "web-v2"
+        unit.save(second)
+
+    [api] = [one for one in first.repositories if one.name == "api"]
+    api.name = "api-v2"
+    with pytest.raises(StaleAggregate):
+        repository.save(first)
+    assert names(repository, CodeRepo) == ["api", "web-v2"]
+
+
 def test_a_reference_is_never_written_by_its_root(repository):
     workspace = Workspace(code="sp-1", members=[Member(name="ana")])
     repository.save(workspace)

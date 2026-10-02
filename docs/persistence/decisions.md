@@ -576,3 +576,75 @@ evolve, not query languages. Turned on, it found a test ordering by `"direction"
 the language never had, silently ignored since it was written — and a workflow condition whose
 `all` beside an `any` had never been read.
 
+## 27. A baseline, capabilities on top, and a view per aggregate
+
+**Decision.** `ddd.Repository` is the baseline every store honours — `ReadsAggregates` and
+`WritesAggregates`, with the hooks. What only some stores can do is a capability a store inherits
+when it honours it: `Analyzes` (distinct, measures, group_by), `WritesInBulk` (upsert, update_all,
+remove_all), `Transacts` (context, after_commit, after_rollback). What varies by engine inside one
+store is `repository.capabilities`, a `StoreCapabilities` read at run time — row locks,
+`skip_locked`, `nowait`, savepoints, percentiles — and never repeats what the type says.
+`AggregateRepository[T]` is an optional view of one aggregate over a repository, for questions
+that deserve names; `orm.AggregateRepository[T]` adds everything the database repository has.
+
+**Why.** One block of twenty-two methods held every store to measures and bulk updates; a key-value
+or wide-column store could only fake them with a scan — Hibernate OGM's failure, and Spring Data
+DynamoDB's silent Scan. Spring Data and Jakarta Data split the same way (`CrudRepository`,
+`PagingAndSortingRepository`, a provider's own). Abstract classes and not protocols, for the
+reason `Repository` was one already: `@abstractmethod` refuses a forgotten method and signatures
+are compared, where a runtime-checkable protocol compares names only. The generic repository with a
+`Criteria` stays the first door — EF Core's `DbContext`, Ecto's `Repo` — because a repository class
+per aggregate made simple things slow to write; the view exists for where a name pays for itself,
+and holds no state of its own, so it can never reach around the store.
+
+## 28. The version is the aggregate's
+
+**Decision.** A `save(root)` that writes, adds or drops any of the root's parts — a child, a
+grandchild, an orphan deleted or detached — updates the stored root too, with its version checked
+and raised, even when none of the root's own fields moved. Two requests that edit different lines
+of one invoice no longer both commit: the second is a `StaleAggregate`. A root whose parts did not
+move keeps its version. Writing a part through `save(part)` on its own is a write of that part
+only — the aggregate's rules and its version are reached through its root.
+
+**Why.** Optimistic concurrency guards an invariant, and the invariant is the aggregate's: a total
+over the lines, a credit limit, a stock count. Vernon puts the version on the root and raises it
+with any change inside the boundary; EF Core does it with a concurrency token on the principal,
+Axon and Marten by construction — the stream is the aggregate. Checked per row, each line passed
+its own check and the invariant over all of them broke unseen. SQLAlchemy cannot raise
+`version_id_col` alone, so the root is marked through `updated_at`, which the write stamps anyway;
+change tracking ignores it, so no empty `EntityUpdated` is recorded. The cost is the one Vernon
+names: a large aggregate edited concurrently conflicts more, which is a reason to keep aggregates
+small, not to check less.
+
+## 29. A unit of work is joined by every repository on its database
+
+**Decision.** While a `context()` runs, every repository on the same `Database` — the one each
+Feature called through the bus holds included — runs in it instead of committing on its own. It is
+opened explicitly and joined implicitly, per thread or task, and only on the same `Database`
+object. `context(separate=True)` opens a transaction of its own even inside another.
+
+**Why.** Validating several flows before one commit is the case an `ApplicationService` exists
+for, and without this each Feature committed on its own: the first flow stood when the second
+failed. Passing the unit of work into each Feature would put a session into Commands and
+signatures — the coupling the framework is there to avoid. Spring's `REQUIRED`, .NET's
+`TransactionScope` and Django's `atomic` join the transaction in play; `REQUIRES_NEW` is
+`separate=True`. The explicit opening stays: a transaction is never started by reading a
+repository. Two engines share no transaction, so a repository on another `Database` never joins —
+the outbox and sagas cover that, never a two-phase commit. Tests that played "another process"
+with a second repository on the same thread now run it on another thread, which is what it is.
+
+## 30. Numbers without gaps come from a counter in the same transaction
+
+**Decision.** `Numbering.take(series, count, scope)` takes the next numbers from a counter row in a
+table the project declares (`numbering_table`), inside the unit of work in play — refused outside
+one. Postgres and SQLite take it in one `INSERT … ON CONFLICT DO UPDATE … RETURNING`; other
+dialects update, insert in a savepoint when there was no row, and read back under the lock.
+
+**Why.** A sequence is never gapless: `nextval` survives a rollback by design, which is what makes
+it fast. A counter written in the same transaction as the invoices is committed with them or
+undone with them — Odoo's `no_gap` sequences and every fiscal system do the same. One statement
+leaves no read to race; a batch takes `count` numbers in one write. The price is that one series
+is serial: the row is held until the commit, so numbers are taken last and each point of sale has
+its own scope. Taken outside a unit of work, a number commits alone and the record carrying it
+can fail after — the gap itself — so that is the one refusal.
+

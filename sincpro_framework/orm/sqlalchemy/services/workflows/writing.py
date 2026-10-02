@@ -21,8 +21,8 @@ from sincpro_framework.ddd.entity.entity_collection import (
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
 )
+from sincpro_framework.ddd.repositories.capabilities import Upserted
 from sincpro_framework.ddd.repositories.repository import (
-    Upserted,
     records_of,
     refuse_unarchivable,
 )
@@ -123,8 +123,8 @@ class Writing(Store):
         2. The detached first: a child's key is NULL before its root can go.
         3. The removals, deepest first: an orphan leaves before the child taking its unique
            value arrives.
-        4. Final: the rest, parents before children; the assignments carried out are marked
-           written.
+        4. Final: the rest, parents before children — a root whose parts move is updated with
+           its version checked and raised; the assignments carried out are marked written.
         """
         stored, removed = plan.stored, plan.removed
         for one in [*stored, *removed]:
@@ -132,6 +132,7 @@ class Writing(Store):
         for one in removed:
             self._before_remove(one)
         newness = self._before_writes(stored)
+        plan.version_moves()
         for batch in _by_dependency(plan.detached):
             session.add_all(batch)
             self._written(session, batch)

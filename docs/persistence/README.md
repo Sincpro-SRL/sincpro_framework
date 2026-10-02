@@ -10,6 +10,8 @@ Read in this order:
 
 | Page | What it answers |
 |---|---|
+| [Use cases](use-cases.md) | Every database use case, simple to advanced — vocabulary, adapter, SQLAlchemy underneath, and what is still a gap |
+| [Landscape](landscape.md) | The state of the art across many stores, events, volume and record APIs — what companies hit migrating, and the roadmap |
 | [Manifesto](manifesto.md) | The rules every persistence feature is held to: the port and the type, writing, transactions, money, distributed |
 | [**Guide**](guide.md) | **Start here.** Every use case step by step — aggregate, repository, writes, reads, relations, hooks, events, change tracking, event sourcing, outbox, testing — all runnable and tested |
 | [Introduction](introduction.md) | What problem this solves, the mental model in one page, a first end-to-end example |

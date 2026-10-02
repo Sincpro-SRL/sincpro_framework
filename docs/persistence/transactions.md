@@ -12,7 +12,9 @@ that go past an aggregate on purpose. Every block on this page runs, in order, a
 | To know what the database refused, and to run it again | [4. What the engine refuses](#4-what-the-engine-refuses) |
 | To publish only what committed | [5. After the commit](#5-after-the-commit) |
 | An idempotent import, a mass update | [6. Writes past the aggregate](#6-writes-past-the-aggregate) |
-| SQLAlchemy itself | [7. The passthrough](#7-the-passthrough) |
+| Several use cases validated and committed together | [7. Several use cases, one transaction](#7-several-use-cases-one-transaction) |
+| A correlative without gaps — a fiscal invoice's number | [8. Numbers without gaps](#8-numbers-without-gaps) |
+| SQLAlchemy itself | [9. The passthrough](#9-the-passthrough) |
 
 The rules behind every section are in the [manifesto](manifesto.md).
 
@@ -290,7 +292,119 @@ write and is refused, and so is a condition the aggregate cannot answer — in a
 dropped, in a write it would widen it. A row something still points at refuses `remove_all` as a
 `ConstraintViolation`.
 
-## 7. The passthrough
+## 7. Several use cases, one transaction
+
+A unit of work opened in an `ApplicationService` is the one every Feature it calls writes in: a
+repository on the same `Database` joins the unit of work in play instead of committing on its own.
+Several flows are validated together and committed together — or none of them is.
+
+```python
+from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+
+repository.save([Account(holder="carla", balance=100), Account(holder="dan", balance=0)])
+treasury_bus = UseFramework("treasury", log_after_execution=False)
+treasury_bus.add_dependency("repository", repository)
+
+
+class CommandMove(DataTransferObject):
+    holder: str
+    amount: int                                      # negative takes, positive gives
+
+
+class ResponseMove(DataTransferObject):
+    balance: int
+
+
+class CommandTransfer(DataTransferObject):
+    source: str
+    target: str
+    amount: int
+
+
+class ResponseTransfer(DataTransferObject):
+    source_balance: int
+
+
+@treasury_bus.feature(CommandMove)
+class Move(Feature):
+    repository: Repository
+
+    def execute(self, dto: CommandMove) -> ResponseMove:
+        account = self.repository.get_by(Account, holder=dto.holder)
+        account.withdraw(-dto.amount, "transfer")
+        self.repository.save(account)                # joins the unit of work in play
+        return ResponseMove(balance=account.balance)
+
+
+@treasury_bus.app_service(CommandTransfer)
+class Transfer(ApplicationService):
+    repository: Repository
+
+    def execute(self, dto: CommandTransfer) -> ResponseTransfer:
+        with self.repository.context(isolation=Isolation.SERIALIZABLE):
+            self.feature_bus(CommandMove(holder=dto.target, amount=dto.amount), ResponseMove)
+            taken = self.feature_bus(
+                CommandMove(holder=dto.source, amount=-dto.amount), ResponseMove
+            )
+        return ResponseTransfer(source_balance=taken.balance)
+
+
+done = treasury_bus(CommandTransfer(source="carla", target="dan", amount=40), ResponseTransfer)
+assert done.source_balance == 60
+
+try:
+    treasury_bus(CommandTransfer(source="carla", target="dan", amount=500), ResponseTransfer)
+    raise AssertionError("carla cannot give what she does not have")
+except ConstraintViolation:
+    pass
+assert repository.get_by(Account, holder="dan").balance == 40     # the credit was undone too
+```
+
+**Opened explicitly, joined implicitly, and only on the same `Database`** — the propagation
+Spring calls `REQUIRED`. A repository on another `Database` never joins: two engines share no
+transaction, and that is the outbox's and the saga's job. A Feature called on its own still
+commits on its own. `context(separate=True)` opens a transaction of its own even inside another —
+an audit of the attempt that must outlive the rollback; it needs a database with a connection pool.
+The unit of work belongs to its thread or task: a worker thread started inside the block does not
+join it.
+
+## 8. Numbers without gaps
+
+A fiscal invoice's number has no holes. A database sequence is fast and never gapless —
+`nextval` is not undone by a rollback — so `Numbering` takes numbers from a counter row written in
+the unit of work that saves what carries them: committed with them, or given back with them.
+
+```python
+from sincpro_framework.orm import Numbering, numbering_table
+
+counters = numbering_table("numbering", treasury.metadata)
+treasury.metadata.create_all(database.engine)
+numbering = Numbering(database, counters)
+
+with repository.context():
+    batch = numbering.take("F", count=3, scope="branch-1/2026")    # one write, three numbers
+assert batch == range(1, 4)
+
+try:
+    with repository.context():
+        numbering.take("F", count=2, scope="branch-1/2026")
+        raise RuntimeError("the invoices failed")
+except RuntimeError:
+    pass
+
+with repository.context():
+    assert numbering.next_number("F", scope="branch-1/2026") == 4    # nothing was lost
+```
+
+**One statement, so there is no read to race**: `INSERT … ON CONFLICT DO UPDATE SET last = last +
+n RETURNING last` on Postgres and SQLite, an `UPDATE` then an `INSERT` elsewhere. Two
+transactions taking from one series wait for each other — the counter's row is held until the
+first commits — so take the numbers last, keep that transaction short, and give each point of
+sale or branch its own `scope`. Taken outside a unit of work a number is refused: it would commit
+on its own, and a failure before the invoice is saved is the gap this exists to prevent.
+`MemoryNumbering` is the double for a test.
+
+## 9. The passthrough
 
 | Need | Door | What it keeps |
 |---|---|---|

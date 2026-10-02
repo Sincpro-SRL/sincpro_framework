@@ -1,6 +1,8 @@
 """A unit of work is configured where it begins, takes the locks it asks for, and names what the
 engine refused — so the races it loses are the ones a fresh read can win."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 from sqlalchemy import delete, insert, text
 
@@ -287,8 +289,10 @@ def test_nowait_on_a_held_row_stops_at_once_and_is_not_retried(ledger, opened):
 
     with ledger.context() as holder:
         holder.get(Account, opened.id, for_update=True)
-        with pytest.raises(TimedOut, match="told not to wait"):
-            other.retrying(take)
+        # Another process: on this thread, other would join the unit of work in play.
+        with ThreadPoolExecutor(max_workers=1) as elsewhere:
+            with pytest.raises(TimedOut, match="told not to wait"):
+                elsewhere.submit(other.retrying, take).result()
     assert len(attempts) == 1
 
 
@@ -314,17 +318,22 @@ def test_a_serialization_failure_is_a_conflict_and_retrying_wins_it(ledger, open
     competitor = Repository(ledger.database)
     attempts = []
 
+    def race() -> None:
+        with competitor.context() as theirs:
+            raced = theirs.get(Account, opened.id)
+            assert raced is not None
+            raced.withdraw(30)
+            theirs.save(raced)
+
     def withdraw() -> None:
         attempts.append(1)
         with ledger.context(isolation=Isolation.SERIALIZABLE) as unit:
             account = unit.get(Account, opened.id)
             assert account is not None
             if len(attempts) == 1:
-                with competitor.context() as theirs:
-                    raced = theirs.get(Account, opened.id)
-                    assert raced is not None
-                    raced.withdraw(30)
-                    theirs.save(raced)
+                # Another process: on this thread, competitor would join this unit of work.
+                with ThreadPoolExecutor(max_workers=1) as elsewhere:
+                    elsewhere.submit(race).result()
             account.withdraw(50)
             unit.save(account)
 

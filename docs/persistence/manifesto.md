@@ -126,6 +126,23 @@ that caused it.
 **23. A process that spans contexts compensates; it never locks across them.** A long process is
 a sequence of local transactions, each with the step that undoes it.
 
+## VI. Orchestrated, never a cage
+
+**24. The common case is orchestrated; every case is reachable.** What an enterprise service
+needs — consistency, versions, scope, rules, traces — works by default, with nothing assembled by
+hand. What the framework does not orchestrate, or orchestrates differently than a case needs, is
+reachable underneath without asking: the model is a plain SQLAlchemy mapping, `unit.session` is
+SQLAlchemy whole inside the same transaction, `statement()` hands a real `Select` out. A door
+underneath that keeps the transaction is part of every feature, not an afterthought.
+
+**25. The framework declares; SQLAlchemy executes.** The framework builds what SQLAlchemy does not
+have — the query language, the page per parent, the scope, the hooks, the named errors, relations
+to other contexts — and maps the rest onto what SQLAlchemy already does well. Mechanics rebuilt
+beside a library that has them are a second implementation to keep in step with the first.
+
+The use cases, from the simplest to the advanced, and where each is answered:
+[use-cases.md](use-cases.md).
+
 ## Where each rule stands
 
 | Rule | Status |
@@ -134,3 +151,5 @@ a sequence of local transactions, each with the step that undoes it.
 | 6 | built: the commit writes what was saved; `Writes.CHANGED` for a block that wants the session's tracking (decisions §25) |
 | 13 | built: the outbox, and `after_commit` per unit of work |
 | 23 | not built: workflows compose Commands, but have no compensating step |
+| 24 | built: `unit.session`, `statement()` → `run()`, plain mappings |
+| 25 | partial: the writing of relations is still rebuilt beside `relationship()` — the spike of PRD_18 |

@@ -20,10 +20,23 @@ from sincpro_framework.ddd.entity.model_meta import Meta
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
 )
+from sincpro_framework.ddd.repositories.capabilities import StoreCapabilities
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.repository import Repository as BaseRepository
 from sincpro_framework.orm.sqlalchemy.domain.transaction import Transaction
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.orm.sqlalchemy.infrastructure.unit_in_play import in_play
+
+WITHOUT_PERCENTILES = frozenset({"sqlite"})
+"""The dialects with no `percentile_cont`. Named here so the refusal happens before a
+statement exists, and says which engine could not."""
+
+WITHOUT_ROW_LOCKS = frozenset({"sqlite"})
+"""The dialects that drop `FOR UPDATE`: SQLite locks the whole database on its first write, so
+there is no row to hold — the second writer fails at its write instead."""
+
+WITH_SKIP_LOCKED = frozenset({"postgresql", "mysql", "mariadb", "oracle"})
+"""The dialects that render `SKIP LOCKED` and `NOWAIT`."""
 
 
 class Store(BaseRepository):
@@ -44,9 +57,45 @@ class Store(BaseRepository):
         the transaction was opened with, and the repository they are a view of."""
         super().__init__(hooks, guard)
         self.database = database
-        self._bound = session
+        self._held = session
         self._scope = scope
-        self._transaction = transaction or Transaction()
+        self._opened_with = transaction or Transaction()
+
+    @property
+    def _bound(self) -> Session | None:
+        """The session this repository runs in: the one it was handed by `context()`, or the
+        unit of work in play on its database — so a Feature called inside another one's
+        `context()` writes in that transaction instead of committing on its own."""
+        if self._held is not None:
+            return self._held
+        joined = in_play(self.database)
+        return joined.session if joined is not None else None
+
+    @property
+    def _transaction(self) -> Transaction:
+        """What the transaction it runs in was opened with — read-only, writes saved — the
+        joined one's when it joined."""
+        if self._held is None:
+            joined = in_play(self.database)
+            if joined is not None:
+                return joined.transaction
+        return self._opened_with
+
+    @property
+    def capabilities(self) -> StoreCapabilities:
+        """Read off the engine underneath, because one class runs on several.
+
+        Postgres    row locks · skip_locked · nowait · savepoints · percentiles
+        SQLite      savepoints — no row locks, no percentiles
+        """
+        dialect = self._dialect()
+        return StoreCapabilities(
+            row_locks=dialect not in WITHOUT_ROW_LOCKS,
+            skip_locked=dialect in WITH_SKIP_LOCKED,
+            nowait=dialect in WITH_SKIP_LOCKED,
+            savepoints=True,
+            percentiles=dialect not in WITHOUT_PERCENTILES,
+        )
 
     def _dialect(self) -> str:
         """The engine underneath, by name. Read for the one decision that depends on it:

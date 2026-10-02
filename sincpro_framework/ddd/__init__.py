@@ -65,15 +65,33 @@ from sincpro_framework.ddd.exceptions import (
 )
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 from sincpro_framework.ddd.repositories import (
+    AggregateRepository,
+    Analyzes,
     ChangeTrackingRepositoryMixin,
+    MemoryNumbering,
     MemoryRepository,
+    Numbering,
+    ReadsAggregates,
     Repository,
+    StoreCapabilities,
+    Transacts,
     Upserted,
+    WritesAggregates,
+    WritesInBulk,
 )
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
+    "AggregateRepository",
+    "Analyzes",
+    "MemoryNumbering",
+    "Numbering",
+    "ReadsAggregates",
+    "StoreCapabilities",
+    "Transacts",
+    "WritesAggregates",
+    "WritesInBulk",
     "All",
     "Any",
     "ArchivableMixin",

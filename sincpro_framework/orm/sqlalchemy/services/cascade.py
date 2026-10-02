@@ -7,6 +7,8 @@
                                                  them, a nullable one is set to NULL
     repository.remove(workspace)              →  its children taken along first — the parts of an
                                                  aggregate go with it (`owned=False` excepted)
+    invoice.lines[0].amount = 5; save(invoice)   →  the line written, and the invoice's version
+                                                 raised with it: a part moves its aggregate
 
 The framework's relations are its own descriptors, not SQLAlchemy relationships, so the cascade
 is planned here, before the flush, and handed to the write path every aggregate takes — hooks,
@@ -27,6 +29,7 @@ from sqlalchemy import Table
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from sincpro_framework.ddd.entity.entity_collection import identity_name, identity_of
 from sincpro_framework.ddd.entity.relations import key_pair
@@ -65,12 +68,13 @@ class Owned:
 class Plan:
     """What one `save` or `remove` writes: the children detached (their key set to NULL), the
     levels to delete — the records first, their descendants after — the records to insert or
-    update, and the assignments it carries out."""
+    update, the assignments it carries out, and the stored roots whose parts it writes."""
 
     detached: list[Any] = field(default_factory=list)
     removals: list[list[Any]] = field(default_factory=list)
     writes: list[Any] = field(default_factory=list)
     carried_out: list[tuple[Any, str]] = field(default_factory=list)
+    moved: list[Any] = field(default_factory=list)
 
     @property
     def removed(self) -> list[Any]:
@@ -80,6 +84,24 @@ class Plan:
     def stored(self) -> list[Any]:
         """Every record this plan inserts or updates, the detached included."""
         return [*self.detached, *self.writes]
+
+    def version_moves(self) -> None:
+        """Marks every stored root whose parts this plan writes as changed, so its row is updated
+        with the version check and its version raised — even when none of its own fields moved.
+
+        **The version is the aggregate's, not the row's** (Vernon). Without this, two requests
+        editing different lines of one invoice both commit: neither touched the invoice's row, so
+        neither was checked, and an invariant over the lines — a total, a limit — breaks unseen.
+        The root is marked through `updated_at`, which the write stamps anyway: SQLAlchemy cannot
+        be told to raise `version_id_col` alone.
+        """
+        for root in self.moved:
+            mapper = sa_inspect(root).mapper
+            if mapper.version_id_col is None:
+                continue
+            stamp = "updated_at" if "updated_at" in mapper.attrs else _plain_column(mapper)
+            if stamp is not None:
+                flag_modified(root, stamp)
 
     def written(self) -> None:
         """Marks every assignment this plan carried out as written: the set it wrote is now
@@ -93,6 +115,17 @@ class Plan:
                 record.__dict__.setdefault(READ, {})[name] = frozenset(
                     identity_of(child) for child in children
                 )
+
+
+def _plain_column(mapper: Any) -> str | None:
+    """A column of the root that is neither its key nor its version — what marks the row
+    changed when the mapping has no `updated_at`."""
+    keys = {column.key for column in mapper.primary_key}
+    version = mapper.version_id_col.key
+    for column in mapper.column_attrs:
+        if column.key not in keys and column.columns[0].key != version:
+            return column.key
+    return None
 
 
 def _refused(owned: Owned, root: type, children: list[Any], moment: str) -> ContractViolation:
@@ -228,21 +261,27 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
     2. Per relation a stored root assigned over a whole reading, one read of the children that
        reading saw and no record of this save holds, still pointing at the root that read them:
        the orphans.
-    3. Final: a detached orphan has its key set to NULL; a deleted one is a removal and takes
-       what it owns with it.
+    3. A detached orphan has its key set to NULL; a deleted one is a removal and takes what it
+       owns with it.
+    4. Final: every stored root of this save whose parts are written, detached or removed is
+       marked moved — its version is raised with them (`Plan.version_moves`).
     """
     plan = Plan()
     seen: set[int] = set()
     held_ids: dict[type, set[Any]] = {}
     settling: dict[tuple[type, str], tuple[Owned, dict[Any, set[Any]]]] = {}
+    moved: dict[int, Any] = {}
+    root_by_key: dict[tuple[type, str, Any], list[Any]] = {}
 
-    def visit(record: Any, explicit: bool) -> None:
+    def visit(record: Any, explicit: bool, root: Any) -> None:
         if id(record) in seen:
             return
         seen.add(id(record))
         held_ids.setdefault(type(record), set()).add(identity_of(record))
         if explicit or _changed(record):
             plan.writes.append(record)
+            if not explicit:
+                moved[id(root)] = root
         for owned in owned_by(type(record)):
             how = held(record, owned.name)
             if how is None:
@@ -251,7 +290,7 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
             for child in record.__dict__[RESOLVED][owned.name] or ():
                 if getattr(child, owned.there) != key:
                     setattr(child, owned.there, key)
-                visit(child, explicit=False)
+                visit(child, explicit=False, root=root)
             if how in WRITTEN:
                 plan.carried_out.append((record, owned.name))
             if how is Held.BLIND:
@@ -263,13 +302,14 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
             elif how is Held.ASSIGNED and not getattr(record, "is_new", False):
                 _, read_by_key = settling.setdefault((type(record), owned.name), (owned, {}))
                 read_by_key.setdefault(key, set()).update(read_before(record, owned.name))
+                root_by_key.setdefault((type(record), owned.name, key), []).append(root)
 
     for one in records:
-        visit(one, explicit=True)
+        visit(one, explicit=True, root=one)
     _refuse_a_child_removed_before(plan.writes)
 
     orphans: list[Any] = []
-    for (owner, _), (owned, read_by_key) in settling.items():
+    for (owner, name), (owned, read_by_key) in settling.items():
         held_here = held_ids.get(owned.related, set())
         gone_by_key = {
             key: read - held_here for key, read in read_by_key.items() if key is not None
@@ -290,6 +330,9 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
         if dropped and owned.orphans is Orphans.REFUSE:
             raise _refused(owned, owner, dropped, "the assignment drops")
         for child in dropped:
+            for root in root_by_key.get((owner, name, getattr(child, owned.there)), ()):
+                moved[id(root)] = root
+        for child in dropped:
             if owned.orphans is Orphans.DETACH:
                 setattr(child, owned.there, None)
                 plan.detached.append(child)
@@ -299,4 +342,5 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
         taken = planned_removal(session, orphans)
         plan.removals = taken.removals
         plan.detached.extend(taken.detached)
+    plan.moved = [root for root in moved.values() if not getattr(root, "is_new", False)]
     return plan

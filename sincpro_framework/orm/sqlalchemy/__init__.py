@@ -17,6 +17,10 @@ framework's own. Everything here knows SQLAlchemy; nothing in `sincpro_framework
 from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText, TranslatedText
 from sincpro_framework.orm.sqlalchemy.domain.relations import Orphans
 from sincpro_framework.orm.sqlalchemy.domain.transaction import Isolation, Writes
+from sincpro_framework.orm.sqlalchemy.entrypoint.aggregate_repository import (
+    AggregateRepository,
+)
+from sincpro_framework.orm.sqlalchemy.entrypoint.numbering import Numbering
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.orm.sqlalchemy.infrastructure.cache_invalidation import (
     invalidate_on_commit,
@@ -32,12 +36,16 @@ from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
     event_columns,
     event_log_table,
     map_aggregates,
+    numbering_table,
 )
 from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.services.sql_translator import register_grain_translator
 from sincpro_framework.orm.sqlalchemy.services.workflows.reading import Explained
 
 __all__ = [
+    "AggregateRepository",
+    "Numbering",
+    "numbering_table",
     "Isolation",
     "Writes",
     "Orphans",

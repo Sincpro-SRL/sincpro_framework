@@ -18,14 +18,16 @@ aggregate skips its rules. The two that skip it on purpose — `upsert`, and `up
         repository.after_commit(lambda: announce(run))
 """
 
+from sincpro_framework.ddd.repositories.capabilities import Analyzes, Transacts, WritesInBulk
 from sincpro_framework.orm.sqlalchemy.services.workflows.reading import Reading
 from sincpro_framework.orm.sqlalchemy.services.workflows.unit_of_work import UnitOfWork
 from sincpro_framework.orm.sqlalchemy.services.workflows.writing import Writing
 
 
-class Repository(UnitOfWork, Reading, Writing):
-    """One database, read and written through one object. Implements `ddd.Repository` and
-    answers more: a use case takes this instance, the protocol holds it to the minimum.
+class Repository(UnitOfWork, Reading, Writing, Analyzes, WritesInBulk, Transacts):
+    """One database, read and written through one object. The baseline `ddd.Repository` and
+    every capability on top of it — analyzes, writes in bulk, transacts — and more that is
+    SQLAlchemy's own: a use case takes this instance, the abstractions hold others to less.
 
     Built once per bounded context and injected as `self.repository`. Every call opens its own
     session and commits it — except inside `context`, where the engine handed to the

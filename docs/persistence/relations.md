@@ -213,6 +213,19 @@ settled is exactly what that reading saw:
 | assigned over a whole reading | writes them, and settles the ones that reading saw and the root no longer holds |
 | assigned with no whole reading behind it — over a page, a filter, or outside `context()` | writes them, removes nothing, logs a warning |
 
+**The version is the aggregate's.** When `save(root)` writes, adds or drops any part — a child,
+a grandchild, an orphan — the stored root is updated too, its version checked and raised, even
+if none of its own fields moved. Two requests editing different lines of one invoice do not both
+commit: the second is a `StaleAggregate`, and an invariant over the lines holds. A root whose
+parts did not move keeps its version ([decision 28](decisions.md#28-the-version-is-the-aggregates)).
+
+```python
+with repository.context() as unit:
+    workspace = unit.get_by(Workspace, code="sp-1")
+    workspace.repositories[0].name = "api-v2"
+    unit.save(workspace)                # the repository, and the workspace's version: 1 → 2
+```
+
 A child another transaction added after the reading is not one the reading saw, so it is never
 an orphan; a child it moved to another root is not either. The list a constructor gave is the
 root's whole set, and once written it is what the root read: `Customer(name="Ana")` saved with

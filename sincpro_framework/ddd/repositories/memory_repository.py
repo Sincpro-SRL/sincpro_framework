@@ -65,12 +65,17 @@ from sincpro_framework.ddd.exceptions import (
     InvalidCriteria,
     StaleAggregate,
 )
+from sincpro_framework.ddd.repositories.capabilities import (
+    Analyzes,
+    StoreCapabilities,
+    Upserted,
+    WritesInBulk,
+)
 from sincpro_framework.ddd.repositories.change_tracking import ChangeTrackingRepositoryMixin
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.reads import note_read
 from sincpro_framework.ddd.repositories.repository import (
     Repository,
-    Upserted,
     records_of,
     refuse_locking,
     refuse_unarchivable,
@@ -265,8 +270,15 @@ class _Measured:
         self.__dict__.update(values)
 
 
-class MemoryRepository(ChangeTrackingRepositoryMixin, Repository):
-    """Every read and write the vocabulary can answer without a database."""
+class MemoryRepository(ChangeTrackingRepositoryMixin, Repository, Analyzes, WritesInBulk):
+    """Every read and write the vocabulary can answer without a database. No `Transacts`: a
+    test that needs a unit of work runs on SQLite."""
+
+    @property
+    def capabilities(self) -> StoreCapabilities:
+        """Percentiles, computed the way a database does; no locks and no savepoints, because
+        there is no transaction to hold them."""
+        return StoreCapabilities(percentiles=True)
 
     def __init__(
         self,

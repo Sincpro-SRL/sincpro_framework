@@ -25,10 +25,12 @@ except (
     raise ImportError(SQLALCHEMY_MISSING) from error
 
 from sincpro_framework.orm.sqlalchemy import (
+    AggregateRepository,
     Database,
     Explained,
     Isolation,
     JsonText,
+    Numbering,
     Orphans,
     Relation,
     Repository,
@@ -44,11 +46,15 @@ from sincpro_framework.orm.sqlalchemy import (
     event_log_table,
     invalidate_on_commit,
     map_aggregates,
+    numbering_table,
     register_grain_translator,
 )
 
 __all__ = [
     "SQLALCHEMY_MISSING",
+    "AggregateRepository",
+    "Numbering",
+    "numbering_table",
     "Database",
     "Explained",
     "Isolation",
