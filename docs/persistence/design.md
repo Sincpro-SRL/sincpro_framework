@@ -24,7 +24,7 @@ sincpro_framework/
 │   │   ├── hooks.py              Hook, Hooks, HookChain: what a project puts around its aggregates
 │   │   └── change_tracking.py    change tracking for a store with no flush to ask
 │   ├── query.py                  Query, ResponsePaginatedQuery (the answer, masked on the wire)
-│   ├── events.py                 DomainEvent, EventTrackableMixin, EventStatus
+│   ├── events/                   DomainEvent (domain_event.py), DeliverableEventMixin (mixins.py)
 │   ├── value_object.py           ValueObject
 │   └── exceptions.py             DomainError, InvalidCriteria, ContractViolation, StaleAggregate, DuplicateAggregate, RelationNotResolved
 └── orm/sqlalchemy/               the adapter · the [sqlalchemy] extra

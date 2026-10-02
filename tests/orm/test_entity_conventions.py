@@ -13,7 +13,7 @@ from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
-from .models import Client, Clients, Draft, StoredEvent, mapper_registry
+from .models import Client, Clients, Draft, RunStageReached, mapper_registry
 
 
 @pytest.fixture
@@ -221,31 +221,35 @@ def test_an_event_table_is_declared_with_the_envelope_it_carries():
     from sqlalchemy import MetaData
 
     from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
-    from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-        delivery_columns,
+    from sincpro_framework.orm.sqlalchemy.entrypoint.templates import (
         entity_table,
         event_columns,
     )
 
-    table = entity_table("some_event", MetaData(), *event_columns(), *delivery_columns())
+    table = entity_table("some_event", MetaData(), *event_columns())
 
     assert isinstance(table.c["label"].type, JsonText)
-    for name in ("entity_type", "entity_id", "correlation_id", "causation_id", "sequence"):
-        assert name in table.c
-    for name in ("status", "attempts", "failure", "delivered_at"):
+    for name in (
+        "entity_type",
+        "entity_id",
+        "correlation_id",
+        "causation_id",
+        "entity_version",
+    ):
         assert name in table.c
     assert "id" in table.c and "version" in table.c  # the Entity columns are still there
 
 
 def test_an_event_declared_that_way_actually_round_trips(database: Database):
     """The envelope is not decoration: a `DomainEvent` is an `Entity`, so the repository stores
-    and reads one like any other aggregate. An event store is a table and this repository."""
+    and reads one like any other aggregate: a table per event class, for an event that is its
+    own record."""
     stored = Repository(database)
-    recorded = StoredEvent(run_id="r1", stage="fitted", label={"default": "Advanced"})
+    recorded = RunStageReached(run_id="r1", stage="fitted", label={"default": "Advanced"})
 
     stored.save(recorded)
 
-    read_back = stored.get(StoredEvent, recorded.id)
+    read_back = stored.get(RunStageReached, recorded.id)
     assert read_back is not None
     assert read_back.run_id == "r1"
     assert read_back.label == {"default": "Advanced"}

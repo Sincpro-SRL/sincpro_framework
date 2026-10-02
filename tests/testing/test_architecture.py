@@ -134,6 +134,7 @@ def test_the_framework_has_only_its_known_cycle():
             "sincpro_framework.ddd.entity",
             "sincpro_framework.ddd.entity.mixins.tracking",
             "sincpro_framework.ddd.events",
+            "sincpro_framework.ddd.events.domain_event",
         )
     ]
 

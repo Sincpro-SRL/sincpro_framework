@@ -31,7 +31,7 @@ from sincpro_framework.ddd.entity.model_meta import (
     logical_type,
     without_optional,
 )
-from sincpro_framework.ddd.repositories import Repository
+from sincpro_framework.ddd.repositories import IRepository
 
 FRAME_TYPES = {
     FieldType.TEXT: "string",
@@ -76,7 +76,7 @@ def _no_rows(model: type, criteria: Criteria, where: dict | None) -> DataFrame:
 
 
 def _page(
-    repository: Repository,
+    repository: IRepository,
     target: type,
     criteria: Criteria,
     cursor: str | None,
@@ -111,7 +111,7 @@ class QueryCache:
             del self._held[oldest]
 
     def get(
-        self, repository: Repository, target: type, criteria: Criteria
+        self, repository: IRepository, target: type, criteria: Criteria
     ) -> DataFrame | None:
         """What is held for this read, which counts as using it — or nothing, and no read."""
         key = repository.fingerprint(target, criteria)
@@ -123,7 +123,7 @@ class QueryCache:
             return held.frame
 
     def _read(
-        self, repository: Repository, target: type, criteria: Criteria, pages: int | None
+        self, repository: IRepository, target: type, criteria: Criteria, pages: int | None
     ) -> DataFrame:
         """Up to `pages` pages of this read held — every page when `None` — only the ones not
         held read.
@@ -158,14 +158,14 @@ class QueryCache:
         return held.frame
 
     def fetch(
-        self, repository: Repository, target: type, criteria: Criteria, pages: int = 1
+        self, repository: IRepository, target: type, criteria: Criteria, pages: int = 1
     ) -> DataFrame:
         """This read with at least `pages` pages held — the total, not how many more — only
         the ones not held read."""
         return self._read(repository, target, criteria, pages)
 
     def fetch_all(
-        self, repository: Repository, target: type, criteria: Criteria
+        self, repository: IRepository, target: type, criteria: Criteria
     ) -> DataFrame:
         """Every row of this read — the pages not held yet read now — so the frame is complete
         and can answer a narrower filter by itself."""

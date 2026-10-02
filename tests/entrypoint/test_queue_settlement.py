@@ -44,7 +44,7 @@ from sincpro_framework.entrypoints.faststream import (
     cloud_event_headers,
     inbox_key,
 )
-from sincpro_framework.events.faststream import FastStreamQueue
+from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue
 
 from .test_queue_gateway import (
     ISSUE_CHANNEL,

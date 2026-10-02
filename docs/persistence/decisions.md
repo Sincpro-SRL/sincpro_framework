@@ -346,7 +346,7 @@ first. Storing events, an outbox, session hooks, were built once and removed: du
 project's decision through its own unit of work, and a hook that publishes inside a commit
 publishes what a rollback then undoes.
 
-`ddd/events.py`, `events/`.
+`ddd/events/`, `event_driven/`.
 
 ---
 
@@ -578,14 +578,14 @@ the language never had, silently ignored since it was written — and a workflow
 
 ## 27. A baseline, capabilities on top, and a view per aggregate
 
-**Decision.** `ddd.Repository` is the baseline every store honours — `ReadsAggregates` and
+**Decision.** `ddd.IRepository` is the baseline every store honours — `ReadsAggregates` and
 `WritesAggregates`, with the hooks. What only some stores can do is a capability a store inherits
 when it honours it: `Analyzes` (distinct, measures, group_by), `WritesInBulk` (upsert, update_all,
 remove_all), `Transacts` (context, after_commit, after_rollback). What varies by engine inside one
 store is `repository.capabilities`, a `StoreCapabilities` read at run time — row locks,
 `skip_locked`, `nowait`, savepoints, percentiles — and never repeats what the type says.
 `AggregateRepository[T]` is an optional view of one aggregate over a repository, for questions
-that deserve names; `orm.AggregateRepository[T]` adds everything the database repository has.
+that deserve names; `orm.DatabaseAggregateRepository[T]` adds everything the database repository has.
 
 **Why.** One block of twenty-two methods held every store to measures and bulk updates; a key-value
 or wide-column store could only fake them with a scan — Hibernate OGM's failure, and Spring Data
@@ -635,9 +635,9 @@ with a second repository on the same thread now run it on another thread, which 
 
 ## 30. Numbers without gaps come from a counter in the same transaction
 
-**Decision.** `Numbering.take(series, count, scope)` takes the next numbers from a counter row in a
-table the project declares (`numbering_table`), inside the unit of work in play — refused outside
-one. Postgres and SQLite take it in one `INSERT … ON CONFLICT DO UPDATE … RETURNING`; other
+**Decision.** `DatabaseNumbering.take(series, count, scope)` takes the next numbers from a counter row in a
+table the project declares (`numbering_table`), inside the unit of work in play; outside one it
+commits on its own and the log says a gap can follow. Postgres and SQLite take it in one `INSERT … ON CONFLICT DO UPDATE … RETURNING`; other
 dialects update, insert in a savepoint when there was no row, and read back under the lock.
 
 **Why.** A sequence is never gapless: `nextval` survives a rollback by design, which is what makes
@@ -646,5 +646,104 @@ undone with them — Odoo's `no_gap` sequences and every fiscal system do the sa
 leaves no read to race; a batch takes `count` numbers in one write. The price is that one series
 is serial: the row is held until the commit, so numbers are taken last and each point of sale has
 its own scope. Taken outside a unit of work, a number commits alone and the record carrying it
-can fail after — the gap itself — so that is the one refusal.
+can fail after — the gap itself. That is the caller's choice, warned about rather than refused:
+the framework facilitates, and refuses only what it cannot do.
 
+## 31. A bounded context's events are entities in one table
+
+**Decision.** A `DomainEvent` is an `Entity`, and nothing else stands for it: no stored-event
+wrapper, no event store, no second entity. A bounded context declares its base event class
+(`BillingDomainEvent`), one table from the `event_table` template, and `map_events(registry,
+BillingDomainEvent, table)`; every subclass goes to that table — single-table inheritance, the
+wire `name` as discriminator, the envelope as columns (`id`, `entity_type`, `entity_id`,
+`entity_version`, `correlation_id`, `causation_id`, `label`, `created_at`) and what a subclass
+declares as a JSON `payload`, typed back on load. Events are saved and found through the
+repository the context already has — `repository.save(events)`, `repository.search(InvoicePaid,
+criteria)`, `repository.search(BillingDomainEvent, criteria)` for all of them — and
+`save(aggregate)` keeps what the aggregate recorded in the same transaction, reading them and
+never taking them: `pull_events()` stays open to whoever publishes by hand. An event about no
+entity is kept the same way, its `entity_type` and `entity_id` empty.
+
+What leaves the context is marked `DeliverableEventMixin`, and its delivery is **the event's own
+state**: `is_deliverable`, `delivered_at` and `next_delivery_at` are columns a `Criteria`
+filters; `delivery` is JSON for people to read (attempts, last error, parked, skipped). None of
+the four is ever sent: `as_json()` leaves them out. An `EventRelay(repository, source, publisher,
+on_failure)` reads, over any repository, the deliverable events of `source` not delivered and
+due, oldest first, hands each one on and marks it — inside a unit of work with `FOR UPDATE SKIP
+LOCKED` where the store has row locks. What a failure does is a `DeliveryFailurePolicy`:
+`RetryInPlace` (the default, then `ParkAndContinue`), `RetryLater`, `ParkAndContinue`,
+`SkipAndContinue`, spaced by `ExponentialBackoff` or `FixedBackoff`.
+
+An entity whose state *is* its events is `EventSourcedMixin`: it records through `happened`,
+which numbers the event in the entity's history (`entity_version` 1, 2, 3 …) and applies it;
+`repository.get` rebuilds it from its events, `repository.save` appends the new ones, and
+`UNIQUE (entity_type, entity_id, entity_version)` turns two writers of one version into
+`StaleAggregate`. Table definitions are templates, one file each, in
+`orm/sqlalchemy/entrypoint/templates/` (`entity`, `audit`, `archive`, `numbering`, `events`);
+`data_mapper` only maps.
+
+Removed: `EventStore`, `DatabaseEventStore`, `event_store_table`, `EventStoreQueue`,
+`StoredEvent`, the repository's `event_store=` parameter, `EventSubscription`, its checkpoint,
+lease and subscription tables, `StopSubscription`, `IntegrationEventMixin` (renamed
+`DeliverableEventMixin`) and `DomainEvent.sequence` (replaced by `entity_version`). Sagas are the
+next iteration; snapshots of an event-sourced entity come after.
+
+**Why one entity and one table — the owner's call.** An event already carries everything that
+matters: what happened (`name`), to what (`entity_type`, `entity_id`), when (`created_at`, its
+UUID v7 id), why (`correlation_id`, `causation_id`). A stored-event wrapper beside it repeated
+those fields under another name and made a project learn two entities for one fact. One table
+per context, discriminated by name, answers "every event of billing", "every `InvoicePaid`" and
+"the history of invoice F-1" with the `Criteria` it already writes — and a table per event class
+would make the first question a union nobody maintains.
+
+**Why the repository and not an event store.** An event store with `append`, `events_of` and
+`history` was a second API over the same rows — a repository by another name. The repository is
+already agnostic (SQL, memory, whatever a project adapts), already transacts and already locks,
+so keeping events through it is what puts them in the same commit as the change; the in-memory
+double keeps them the same way, so a test needs nothing new.
+
+**Why delivery state on the event, and no checkpoint.** A checkpoint is the model of a log read
+by many independent readers (KurrentDB, Kafka). That is the broker's job here: the context
+delivers to one place, and fan-out, replay and retention per consumer are what Kafka already does
+— the framework does not rebuild it. A checkpoint also needed a lease, subscription tables and,
+on Postgres, a rule never to read past an uncommitted transaction, because positions commit out
+of order. Per-row state needs none of that: `FOR UPDATE SKIP LOCKED` lets every replica take
+different rows, an uncommitted row is simply not visible yet, and "what was not delivered" is a
+filter a person can run. It is the polling publisher of the transactional outbox (Richardson;
+Microsoft eShop's `IntegrationEventLogEntry`; Wolverine and NServiceBus keep per-message state the
+same way). The mixin was named *Deliverable* and not *Integration* because what it marks is that
+the event is delivered, wherever to.
+
+**Why a marker column beside the class.** The relay asks for "deliverable and not delivered" in
+one query. Knowing it from the class would mean listing every deliverable subclass in an `IN` on
+the name; `is_deliverable`, set from the class on insert, makes it a column, filtered and indexed
+(a partial index on what is still to deliver) like any other.
+
+**Why at least once.** A relay that dies after handing an event on and before its commit leaves
+it unmarked and sends it again. The alternative to a duplicate is a lost event; the consumer's
+inbox makes the duplicate harmless. No transaction is held across the network beyond the pass.
+
+**Why order per entity.** A consumer that hears `InvoicePaid` before `InvoiceIssued` of the same
+invoice is wrong even if both arrive. A retry in place holds the whole pass; a retry later holds
+only the later events of that entity, so the rest of the context keeps flowing.
+
+**Why failures are a strategy.** Every mature consumer splits the same two decisions — whether to
+try again and how (in place, holding the rest: Spring Kafka's `DefaultErrorHandler`, NServiceBus's
+immediate retries; or later, letting the rest go on: Spring's retry topics, NServiceBus's delayed
+retries), and what to do once retries are spent (park, skip: Kafka Connect's `errors.tolerance`).
+An error that cannot succeed (`never_retry`) skips the retries. A policy decides and never acts,
+so a project writes its own without touching the relay.
+
+**Why event sourcing too, and why `entity_version`.** Once events are entities in one table,
+rebuilding an entity from them is ordering by id and applying — there is no reason to refuse it,
+and replay to other systems is Kafka's, not a second store. What event sourcing cannot do
+without is a number per entity: ids say the order but not "this was the third", and only a
+unique number makes two writers of the same state collide in the database instead of both
+winning. It is called `entity_version` because `version` is already the `Entity`'s own
+optimistic lock — on the event it would mean the event's version, not its place in the entity's
+history. Events that are stored and not sourced leave it empty.
+
+**What the framework does not decide.** Whether a project keeps its events at all (with no table
+they are recorded and pulled as before), which events are deliverable, how long they are kept,
+and whether a consumer is idempotent are the project's. Retention and erasing a person from kept
+events (crypto-shredding) come later.

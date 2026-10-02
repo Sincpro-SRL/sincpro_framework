@@ -371,15 +371,15 @@ join it.
 ## 8. Numbers without gaps
 
 A fiscal invoice's number has no holes. A database sequence is fast and never gapless —
-`nextval` is not undone by a rollback — so `Numbering` takes numbers from a counter row written in
+`nextval` is not undone by a rollback — so `DatabaseNumbering` takes numbers from a counter row written in
 the unit of work that saves what carries them: committed with them, or given back with them.
 
 ```python
-from sincpro_framework.orm import Numbering, numbering_table
+from sincpro_framework.orm import DatabaseNumbering, numbering_table
 
 counters = numbering_table("numbering", treasury.metadata)
 treasury.metadata.create_all(database.engine)
-numbering = Numbering(database, counters)
+numbering = DatabaseNumbering(database, counters)
 
 with repository.context():
     batch = numbering.take("F", count=3, scope="branch-1/2026")    # one write, three numbers
@@ -400,8 +400,9 @@ with repository.context():
 n RETURNING last` on Postgres and SQLite, an `UPDATE` then an `INSERT` elsewhere. Two
 transactions taking from one series wait for each other — the counter's row is held until the
 first commits — so take the numbers last, keep that transaction short, and give each point of
-sale or branch its own `scope`. Taken outside a unit of work a number is refused: it would commit
-on its own, and a failure before the invoice is saved is the gap this exists to prevent.
+sale or branch its own `scope`. Taken outside a unit of work a number commits on its own, and the
+log says so: a failure before the invoice is saved leaves a gap. Gapless is the promise inside the
+`context()` that saves what carries the number.
 `MemoryNumbering` is the double for a test.
 
 ## 9. The passthrough

@@ -15,8 +15,7 @@ from sincpro_framework import UseFramework
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.repositories import Hook, Hooks, MemoryRepository
-from sincpro_framework.ddd.repositories import Repository as Store
+from sincpro_framework.ddd.repositories import Hook, Hooks, IRepository, MemoryRepository
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
@@ -24,7 +23,7 @@ from .models import Client, Note, Notes, mapper_registry
 
 
 @pytest.fixture(params=["memory", "sqlalchemy"])
-def stores(request) -> Callable[[Hooks], Store]:
+def stores(request) -> Callable[[Hooks], IRepository]:
     """A store of each kind, built the same way, so one script runs against both."""
     if request.param == "memory":
         return lambda hooks: MemoryRepository(hooks=hooks)
@@ -188,7 +187,7 @@ def counting() -> tuple[Hooks, list[int], list[int]]:
     return hooks, pages, rows
 
 
-def readings(repository: Store, pages: list[int], rows: list[int]) -> dict[str, Any]:
+def readings(repository: IRepository, pages: list[int], rows: list[int]) -> dict[str, Any]:
     """What each reading answered, counted the same way on both stores."""
     answers: dict[str, Any] = {}
     for name, run in (

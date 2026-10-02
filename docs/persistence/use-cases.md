@@ -32,7 +32,7 @@ The columns:
 | What changed | `ChangeTrackingMixin` → `EntityUpdated` | one event per save, per field `(before, after)` | `attributes.get_history` | ✅ |
 | Rules on every write | `Hooks` (`before_save`, `after_create`, …) | run inside the write, refuse or compute | session events | ✅ |
 | A batch of new aggregates | `save([...])` | one INSERT for N rows | `session.add_all` | ✅ |
-| Name one aggregate's questions | `AggregateRepository[T]` over any store | `orm.AggregateRepository[T]`: analysis, bulk, `context()`, `statement()` with the aggregate given | — | ✅ |
+| Name one aggregate's questions | `AggregateRepository[T]` over any store | `orm.DatabaseAggregateRepository[T]`: analysis, bulk, `context()`, `statement()` with the aggregate given | — | ✅ |
 
 ## 2. Querying
 
@@ -150,11 +150,16 @@ The columns:
 | Use case | Vocabulary | Framework · SQLAlchemy | SQLAlchemy directly | Status |
 |---|---|---|---|---|
 | Record a fact on the aggregate | `DomainEvent`, `record` / `pull_events` | — | — | ✅ |
-| Keep an aggregate's history | `EventLogEntry` | `event_log_table`, one query per history | — | ✅ |
-| Event sourcing | events mapped as aggregates | `event_columns()`, append-only hooks | — | 🟡 a recipe: no stream revision, no expected-version append, a read per event class |
-| Projections kept from events, rebuilt on demand | — | — | — | ⬜ checkpointed projections |
+| Keep the context's events, with the change | `DomainEvent` is an `Entity`; `save(aggregate)` keeps what it recorded; `MemoryRepository` keeps them the same way in a test | `event_table` + `map_events(registry, ContextDomainEvent, table)`: one table, single-table inheritance by `name`, subclass fields in `payload` | — | ✅ |
+| Find events by class, and by entity | `search(InvoicePaid, criteria)`, `search(ContextDomainEvent, criteria)` | envelope columns filtered like any column | `statement()` | ✅ — by their own fields: filters inside JSON (gap) |
+| One entity's history | `Criteria` on `entity_type` / `entity_id`, ordered by `id` | indexed `(entity_type, entity_id, id)` | — | ✅ |
+| An event about no entity | `save([DayClosed()])`, `Publisher(RepositoryQueue(repository))` | `entity_type` / `entity_id` empty | — | ✅ |
+| Event sourcing | `EventSourcedMixin`: `happened`, `apply`; `get` rebuilds, `save` appends | `entity_version` + `UNIQUE(entity_type, entity_id, entity_version)` → `StaleAggregate` | — | ✅ — snapshots next |
+| Mark what leaves, and where its delivery stands | `DeliverableEventMixin`: `delivered_at`, `next_delivery_at`, `delivery` | `is_deliverable` column; a partial index on what is still to deliver | — | ✅ |
+| Publish only what committed | `EventRelay(repository, source, publisher)` over any repository | `FOR UPDATE SKIP LOCKED` inside a unit of work; `Crons.run_relay`, `relay_deliverable_events` | — | ✅ at least once, in order per entity |
+| Decide what a failure does | `RetryInPlace`, `RetryLater`, `ParkAndContinue`, `SkipAndContinue`; `ExponentialBackoff`, `FixedBackoff` | — | — | ✅ |
+| Projections kept from events | a Feature subscribed to the event saves a read model | — | — | 🟡 no rebuild helper |
 | Old events read by new code | — | — | — | ⬜ upcasters |
-| Publish only what committed | — | outbox columns (`EventTrackableMixin`) + `skip_locked`, `after_commit` | — | 🟡 the relay is a recipe: no lease, no fix for Postgres' visibility gap ([brokers](../events/brokers.md)) |
 | Deliver across services | `Publisher`, brokers (FastStream), inbox | at least once + idempotent handler | — | ✅ |
 | A process across contexts that compensates | — | — | — | ⬜ sagas |
 
@@ -196,7 +201,7 @@ The columns:
 |---|---|---|---|---|
 | Write a condition briefly | `Criteria` | — | `where()` | 🟡 correct and verbose: no `where(("state", "=", "posted"))` triple |
 | Named scopes that compose | `combined()` | — | — | 🟡 no `&` / `\|` / `~` |
-| Gapless numbering per company, series and year | `Numbering.take(series, count, scope)`, `MemoryNumbering` | `orm.Numbering` over `numbering_table`: one `ON CONFLICT … RETURNING`, given back by a rollback | a locked counter row | ✅ |
+| Gapless numbering per company, series and year | `INumbering.take(series, count, scope)`, `MemoryNumbering` | `orm.DatabaseNumbering` over `numbering_table`: one `ON CONFLICT … RETURNING`, given back by a rollback | a locked counter row | ✅ |
 | Rules bound to the request (tenant, company) on every read and write | `narrowed` | — | — | 🟡 applied by hand; no `check_company` |
 | Money: amount, currency, rounding | — | — | — | 🟡 a rule, no type |
 | Stored derived fields that can be searched | hooks | — | — | 🟡 computed by hand |
@@ -213,19 +218,18 @@ reasoning behind each, front by front, is in [landscape.md](landscape.md).
 
 | # | Gap | Why it matters | Direction |
 |---|---|---|---|
-| 1 | The outbox relay | a crash leaves rows claimed forever; a reader checkpointing on ids skips late commits | a relay component with a lease, batches, order per key, reads below the oldest open transaction |
-| 2 | Event streams | two writers can both append to one aggregate's history | `append(stream, events, expected=…)` over `UNIQUE(stream_id, version)`, a global position |
-| 3 | Writing relations: add/remove, `+=`/`-=`, many2one assignment, many2many link/unlink | the domain cannot say "this line goes" without rebuilding the list; assigning a parent is ignored | PRD_18 — delegated to `relationship()` (the spike: the framework declares, SQLAlchemy executes) |
-| 4 | A concise question | conditions are correct and verbose; scopes do not compose | the `["field", "op", value]` triple of `@sincpro/criteria`, scopes with `&`/`\|`/`~`, a never-iterable `query(T)` |
-| 5 | Reading without hydration | `export` and analytics build every aggregate before Arrow — the slowest path there is | `rows(...)`, `arrow_batches`, a streamed `to_parquet` |
-| 6 | Projections and upcasters | read models cannot be rebuilt; old events break new code | checkpointed projections with `rebuild`; versioned events read through upcasters |
-| 7 | Read-only aggregates on views / materialized views | reporting across aggregates without joins in Features | `map_view` — reads through `Criteria`, writes refused, `refresh()` |
-| 8 | Filter inside JSON; full-text search | semi-structured data and ranked search in every enterprise system | `"address.city"` and a `search` operator, per dialect, index-backed |
-| 9 | Bulk load | `add_all` tops out long before a million rows | `load()` over `COPY` / ADBC |
-| 10 | Sagas | a process across contexts that has to undo its steps | grown from `workflows`: steps with `do` and `undo` |
-| 11 | Request-bound rules, `check_company`, `Money` | multi-company data leaks across a hand-forgotten filter | rules bound to the context, checked on read and write |
-| 12 | Replicas and run-time guards | reads crowd the primary; an N+1 reaches production unseen | `Database(url, replicas=[…])`; warnings, never refusals |
-| 13 | Access patterns and other stores | a second store needs to say how it answers, not only what | capabilities are declared (`Analyzes`, `WritesInBulk`, `Transacts`, `StoreCapabilities`); next: a lock asked of an engine without row locks warns, a key/range/index/scan planner, then Mongo |
+| 1 | Snapshots of an event-sourced entity | a rebuild reads every event of the entity | a snapshot every N versions, the rebuild starting from it |
+| 2 | Writing relations: add/remove, `+=`/`-=`, many2one assignment, many2many link/unlink | the domain cannot say "this line goes" without rebuilding the list; assigning a parent is ignored | PRD_18 — delegated to `relationship()` (the spike: the framework declares, SQLAlchemy executes) |
+| 3 | A concise question | conditions are correct and verbose; scopes do not compose | the `["field", "op", value]` triple of `@sincpro/criteria`, scopes with `&`/`\|`/`~`, a never-iterable `query(T)` |
+| 4 | Reading without hydration | `export` and analytics build every aggregate before Arrow — the slowest path there is | `rows(...)`, `arrow_batches`, a streamed `to_parquet` |
+| 5 | Projections and upcasters | read models cannot be rebuilt; old events break new code | a projection rebuilt from the event table; versioned events read through upcasters |
+| 6 | Read-only aggregates on views / materialized views | reporting across aggregates without joins in Features | `map_view` — reads through `Criteria`, writes refused, `refresh()` |
+| 7 | Filter inside JSON; full-text search | semi-structured data and ranked search in every enterprise system | `"address.city"` and a `search` operator, per dialect, index-backed |
+| 8 | Bulk load | `add_all` tops out long before a million rows | `load()` over `COPY` / ADBC |
+| 9 | Sagas | a process across contexts that has to undo its steps | the next iteration, over the event table and the relay |
+| 10 | Request-bound rules, `check_company`, `Money` | multi-company data leaks across a hand-forgotten filter | rules bound to the context, checked on read and write |
+| 11 | Replicas and run-time guards | reads crowd the primary; an N+1 reaches production unseen | `Database(url, replicas=[…])`; warnings, never refusals |
+| 12 | Access patterns and other stores | a second store needs to say how it answers, not only what | capabilities are declared (`Analyzes`, `WritesInBulk`, `Transacts`, `StoreCapabilities`); next: a lock asked of an engine without row locks warns, a key/range/index/scan planner, then Mongo |
 | — | Window functions | rankings, running totals | stay on `statement()` → `run()` until a case repeats |
 | — | `MemoryRepository` without relations or transactions | a Feature tested on the double can behave differently | persistence is tested on SQLite; the double is for Features' logic |
 

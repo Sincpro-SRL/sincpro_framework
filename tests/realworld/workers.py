@@ -9,7 +9,11 @@ import multiprocessing
 from typing import Any
 
 from sincpro_framework.ddd.exceptions import StaleAggregate
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import (
+    Publisher,
+    Subscriber,
+    SyncQueue,
+)
 
 from .contexts import Heard, notifications_bus, reporting_bus
 from .databases import open_ledger

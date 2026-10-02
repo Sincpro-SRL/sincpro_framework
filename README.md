@@ -756,7 +756,7 @@ takes, and it keeps every event in order — handing each one on to the queue it
 given one, so the subscribers still hear it.
 
 ```python
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 from sincpro_framework.testing import RecordingQueue
 
 
@@ -1070,8 +1070,9 @@ needs nothing installed. `sincpro_framework.orm` is the SQLAlchemy adapter:
 | Hooks | `Rule` functions and `Hook` classes on `before_*` / `after_*` of every write and read |
 | Mixins | `ArchivableMixin`, `AuditedMixin` (who wrote it), `ChangeTrackingMixin` (what changed) |
 | Domain events | Recorded by the aggregate, published by a Feature, answered by other buses |
-| Event sourcing | Events stored as the state (`event_columns()`) and folded back |
-| Outbox | `EventTrackableMixin` + `delivery_columns()` and a relay with `for_update` / `skip_locked` |
+| Event table | A domain event is an entity: one table per bounded context (`event_table`, `map_events`), kept by `save` with the change |
+| Delivery | `DeliverableEventMixin` keeps its delivery on the row; `EventRelay` sends it on — `SKIP LOCKED`, failure policies, at least once |
+| Event sourcing | `EventSourcedMixin`: rebuilt from its events by `get`, appended by `save`, `entity_version` against two writers |
 | Testing | `MemoryRepository`: the same vocabulary with no database |
 
 ### Example
@@ -1131,9 +1132,9 @@ every example runs as part of the test suite — and the page that explains it i
 | Related records | [Guide §7](docs/persistence/guide.md#7-relations) | [specification.md](docs/persistence/specification.md), [relations.md](docs/persistence/relations.md) |
 | Hooks | [Guide §8](docs/persistence/guide.md#8-hooks) | [hooks.md](docs/persistence/hooks.md) |
 | Domain events | [Guide §9](docs/persistence/guide.md#9-domain-events) | [events/README.md](docs/events/README.md) |
-| Change tracking | [Guide §10](docs/persistence/guide.md#10-change-tracking) | [change-tracking.md](docs/events/change-tracking.md) |
+| Change tracking | [Guide §10](docs/persistence/guide.md#10-change-tracking-and-the-contexts-event-table) | [change-tracking.md](docs/events/change-tracking.md) |
 | Event sourcing | [Guide §11](docs/persistence/guide.md#11-event-sourcing) | [shapes.md §3](docs/shapes.md#3-the-facts-are-the-state) |
-| Outbox | [Guide §12](docs/persistence/guide.md#12-an-outbox) | [shapes.md §2](docs/shapes.md#2-a-database-per-context) |
+| Outbox | [Guide §12](docs/persistence/guide.md#12-delivering-events) | [shapes.md §2](docs/shapes.md#2-a-database-per-context) |
 | Testing | [Guide §13](docs/persistence/guide.md#13-testing) | [testing.md](docs/persistence/testing.md) |
 | Extending an aggregate | [Guide §14](docs/persistence/guide.md#14-extending-an-aggregate) | [reference.md](docs/persistence/reference.md) |
 | Why it is designed this way | — | [design.md](docs/persistence/design.md), [decisions.md](docs/persistence/decisions.md) |

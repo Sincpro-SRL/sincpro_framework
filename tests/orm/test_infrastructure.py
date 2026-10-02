@@ -155,10 +155,8 @@ def test_mapping_twice_changes_nothing_and_properties_rename_a_column():
     from sqlalchemy.orm import registry
 
     from sincpro_framework.ddd.entity import Entity
-    from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-        entity_table,
-        map_aggregates,
-    )
+    from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
+    from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
     @dataclass
     class Legacy(Entity):

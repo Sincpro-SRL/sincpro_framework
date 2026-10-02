@@ -27,13 +27,13 @@ from sincpro_framework.ddd.entity import (
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import (
     archive_columns,
     audit_columns,
     entity_table,
     event_columns,
-    map_aggregates,
 )
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 EPOCH = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -119,7 +119,7 @@ class Drafts(EntityCollection[Draft]):
 
 
 @dataclass(kw_only=True)
-class StoredEvent(DomainEvent):
+class RunStageReached(DomainEvent):
     """A fact kept in a table of its own — what an event store and an outbox both are."""
 
     name = "orm.v1.stored_event"
@@ -190,7 +190,7 @@ map_aggregates(
         Client: client_table,
         TrackedNote: tracked_note_table,
         Draft: draft_table,
-        StoredEvent: stored_event_table,
+        RunStageReached: stored_event_table,
     },
 )
 

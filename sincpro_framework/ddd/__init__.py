@@ -2,11 +2,11 @@
 
 `ValueObject` builds a validated primitive. `Entity` is what an aggregate carries and how it
 names itself for a screen. `Criteria` says what to read, `EntityCollection` what came back, `Meta`
-what a model publishes about itself, `Repository` the least a store answers, and
+what a model publishes about itself, `IRepository` the least a store answers, and
 `DomainEvent` what happened.
 
 Nothing here imports an ORM. Running a criteria against a database is `sincpro_framework.orm`,
-an optional extra; carrying events is `sincpro_framework.events`.
+an optional extra; carrying events is `sincpro_framework.event_driven`.
 """
 
 from sincpro_framework.ddd.criteria import (
@@ -34,6 +34,7 @@ from sincpro_framework.ddd.entity import (
     ChangeTrackingMixin,
     Entity,
     EntityUpdated,
+    EventSourcedMixin,
     Translated,
     new_entity_id,
     utc_now,
@@ -47,10 +48,8 @@ from sincpro_framework.ddd.entity.entity_collection import (
 from sincpro_framework.ddd.entity.model_meta import FieldMeta, FieldType, Meta
 from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
 from sincpro_framework.ddd.events import (
+    DeliverableEventMixin,
     DomainEvent,
-    EventLogEntry,
-    EventStatus,
-    EventTrackableMixin,
 )
 from sincpro_framework.ddd.exceptions import (
     ConstraintViolation,
@@ -68,11 +67,11 @@ from sincpro_framework.ddd.repositories import (
     AggregateRepository,
     Analyzes,
     ChangeTrackingRepositoryMixin,
+    INumbering,
+    IRepository,
     MemoryNumbering,
     MemoryRepository,
-    Numbering,
     ReadsAggregates,
-    Repository,
     StoreCapabilities,
     Transacts,
     Upserted,
@@ -86,7 +85,7 @@ __all__ = [
     "AggregateRepository",
     "Analyzes",
     "MemoryNumbering",
-    "Numbering",
+    "INumbering",
     "ReadsAggregates",
     "StoreCapabilities",
     "Transacts",
@@ -100,6 +99,7 @@ __all__ = [
     "BusResolver",
     "EntityCollection",
     "ChangeTrackingMixin",
+    "EventSourcedMixin",
     "Condition",
     "Changes",
     "Count",
@@ -117,7 +117,7 @@ __all__ = [
     "ChangeTrackingRepositoryMixin",
     "Hook",
     "Hooks",
-    "EventStatus",
+    "DeliverableEventMixin",
     "FieldMeta",
     "FieldType",
     "InvalidCriteria",
@@ -133,7 +133,7 @@ __all__ = [
     "PivotCell",
     "Query",
     "Relation",
-    "Repository",
+    "IRepository",
     "Upserted",
     "Resolver",
     "ResponsePaginatedQuery",
@@ -141,8 +141,6 @@ __all__ = [
     "Specification",
     "RelationNotResolved",
     "StaleAggregate",
-    "EventTrackableMixin",
-    "EventLogEntry",
     "Translated",
     "ValueObject",
     "holds",

@@ -25,7 +25,11 @@ from sincpro_framework.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.ddd import Criteria, Entity, MemoryRepository
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import (
+    Publisher,
+    Subscriber,
+    SyncQueue,
+)
 from sincpro_framework.testing import ManualClock
 
 

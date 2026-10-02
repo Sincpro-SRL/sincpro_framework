@@ -23,9 +23,10 @@ from sincpro_framework.ddd.criteria import (
     Specification,
     combined,
     conditions_of,
+    parse_order,
 )
 from sincpro_framework.ddd.criteria.pagination import Pagination
-from sincpro_framework.ddd.entity import ArchivableMixin
+from sincpro_framework.ddd.entity import ArchivableMixin, EventSourcedMixin
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
@@ -756,6 +757,8 @@ class Reading(Store):
         `TransactionConflict`. SQLite has no row locks and ignores all three.
         """
         model, _ = model_and_collection(target)
+        if isinstance(model, type) and issubclass(model, EventSourcedMixin):
+            return cast(Any, self._rebuilt(model, identity))
         lock = self._locking(for_update, skip_locked, nowait)
         with self._session() as session:
             found = (
@@ -768,6 +771,19 @@ class Reading(Store):
         if isinstance(found, ArchivableMixin) and found.is_archived:
             return None
         return cast(Any, self._read(found))
+
+    def _rebuilt(self, model: type[EventSourcedMixin], identity: Any) -> Any:
+        """An event-sourced entity: its events, in the order of its versions, applied."""
+        about = Criteria(
+            where=combined(
+                Condition(field="entity_type", value=model.__name__),
+                Condition(field="entity_id", value=identity),
+            ),
+            order=parse_order("id"),
+        )
+        events = list(self.fetch_all(model.event_base, about).items)
+        found = model.rebuilt(identity, events)
+        return None if found is None else self._read(found)
 
     @overload
     def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...

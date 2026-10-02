@@ -22,7 +22,7 @@ from sincpro_framework.ddd.exceptions import (
 )
 from sincpro_framework.ddd.repositories.capabilities import StoreCapabilities
 from sincpro_framework.ddd.repositories.hooks import Hooks
-from sincpro_framework.ddd.repositories.repository import Repository as BaseRepository
+from sincpro_framework.ddd.repositories.repository import IRepository
 from sincpro_framework.orm.sqlalchemy.domain.transaction import Transaction
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.orm.sqlalchemy.infrastructure.unit_in_play import in_play
@@ -39,7 +39,7 @@ WITH_SKIP_LOCKED = frozenset({"postgresql", "mysql", "mariadb", "oracle"})
 """The dialects that render `SKIP LOCKED` and `NOWAIT`."""
 
 
-class Store(BaseRepository):
+class Store(IRepository):
     """One database seen through one session, one scope and one transaction — the state every
     reading and every write of the repository runs in."""
 
@@ -49,7 +49,7 @@ class Store(BaseRepository):
         hooks: Hooks | None = None,
         session: Session | None = None,
         scope: Criteria | None = None,
-        guard: "BaseRepository | None" = None,
+        guard: "IRepository | None" = None,
         transaction: Transaction | None = None,
     ) -> None:
         """`hooks` second, so a wiring reads as what it is — `Repository(database, billing_hooks)`.

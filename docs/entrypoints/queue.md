@@ -5,7 +5,7 @@ Kafka, RabbitMQ, Redis or NATS. It sits on FastStream (`[faststream]` extra plus
 driver, e.g. `faststream[kafka]`) and adds what a public consumer needs: declared exposure, the
 producer's identity, an inbox, explicit settling, dead letters, CloudEvents and AsyncAPI.
 
-It is not the events module. `Publisher` and `FastStreamQueue` ([events/brokers.md](../events/brokers.md))
+It is not the event-driven module. `Publisher` and `FastStreamQueue` ([events/brokers.md](../events/brokers.md))
 stay how a fact **leaves** a process. `subscribe()` stays the one-line way to hear events — it is
 this gateway over a `Subscriber`'s buses, their events only, so both settle the same way. The
 gateway is what you use when a broker is also a door into your Commands.

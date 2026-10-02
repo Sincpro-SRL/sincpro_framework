@@ -17,12 +17,18 @@ transaction. It buys the thing the other two cannot have: a context that keeps w
 keeps answering, while another one is down.
 """
 
+from datetime import timedelta
+
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError
 
 from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
-from sincpro_framework.ddd.events import EventStatus
+from sincpro_framework.event_driven import (
+    FixedBackoff,
+    ParkAndContinue,
+    RetryInPlace,
+)
 
 from ..shop import billing, inventory, notifications, orders
 from ..shop.contracts import InvoiceIssued, OrderPlaced, StockRejected, StockReserved
@@ -156,7 +162,7 @@ def test_the_fact_and_the_invoice_commit_together_and_nothing_else_can(
     store = four_databases.store("billing")
 
     assert store.count(billing.Invoices).value == 1
-    assert store.count(billing.Outboxes, billing.PENDING).value == 1
+    assert billing.pending(store) == 1
     assert (
         four_databases.store("notifications")
         .count(
@@ -189,13 +195,17 @@ def test_the_relay_is_idempotent(four_databases: Shop):
     assert timeline(four_databases, placed.order_id).steps == 3
 
 
-def test_a_delivered_fact_keeps_its_delivery_state(four_databases: Shop):
+def test_a_delivered_fact_says_when_it_went_out_and_keeps_what_it_said(four_databases: Shop):
+    """The fact stays as it was written; what moved is where its delivery stands."""
     stocked(four_databases)
     an_order(four_databases)
     deliver(four_databases)
+    store = four_databases.store("billing")
 
-    [sent] = four_databases.store("billing").fetch_all(billing.Outboxes)
-    assert sent.status == EventStatus.ACKNOWLEDGED
+    [kept] = billing.facts(store)
+    assert kept.name == InvoiceIssued.name
+    assert kept.delivered_at is not None  # type: ignore[attr-defined]
+    assert billing.pending(store) == 0
 
 
 # --- 4. a context whose entire state arrived from elsewhere -------------------------------------
@@ -282,45 +292,34 @@ def test_a_refusal_that_needs_no_compensation(four_databases: Shop):
 
 
 def test_a_fact_nobody_can_deliver_gives_up_saying_so(four_databases: Shop):
-    """**The dead letter, with no machinery of its own.** A consumer that is down makes every
-    delivery fail. `mark_processing` counts the attempt, `mark_failed` records why, and past a
-    cap the relay stops trying — `mark_cancelled`, which no later claim picks up.
+    """**The dead letter, as a policy.** A consumer that is down makes every delivery fail. The
+    relay tries in place — nothing behind the fact goes first — and after the last attempt parks
+    it with its reason and goes on.
 
     Retrying forever is how a broken consumer takes the producer down with it. Giving up
-    silently is how a fact disappears. This gives up *and says so*, and the row is still there
-    to look at.
+    silently is how a fact disappears. This gives up *and says so*, and the fact is still there
+    to look at and replay.
     """
-    GIVE_UP_AFTER = 3
     stocked(four_databases)
     an_order(four_databases)
     store = four_databases.store("billing")
 
-    def relay_that_keeps_failing() -> None:
-        with store.context() as unit:
-            claimed = list(unit.search(billing.Outboxes, billing.PENDING, for_update=True))
-            for one in claimed:
-                one.mark_processing()
-                unit.save(one)
-        for one in claimed:
-            with store.context() as unit:
-                if one.attempts >= GIVE_UP_AFTER:
-                    one.mark_cancelled()
-                else:
-                    one.mark_failed("the consumer is down")
-                    one.status = EventStatus.PENDING  # back in the queue
-                unit.save(one)
+    class ConsumerDown:
+        def publish(self, event) -> None:
+            raise ConnectionError("the consumer is down")
 
-    seen = []
-    for _ in range(4):
-        relay_that_keeps_failing()
-        [row] = store.fetch_all(billing.Outboxes)
-        seen.append((row.attempts, row.status))
+    give_up_after_three = RetryInPlace(
+        attempts=3, backoff=FixedBackoff(timedelta(0)), then=ParkAndContinue()
+    )
+    passes = [billing.relay(store, ConsumerDown(), give_up_after_three) for _ in range(4)]
 
-    assert seen == [
-        (1, EventStatus.PENDING),
-        (2, EventStatus.PENDING),
-        (3, EventStatus.CANCELLED),
-        (3, EventStatus.CANCELLED),  # nobody claims it again
+    assert [(one.delivered, one.retried, one.parked) for one in passes] == [
+        (0, 1, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+        (0, 0, 0),  # nothing tries it again
     ]
-    [undelivered] = store.fetch_all(billing.Outboxes)
-    assert timeline(four_databases, undelivered.order_id).steps == 2  # never invoiced
+    [parked] = billing.facts(store)
+    assert parked.delivery["attempts"] == 3  # type: ignore[attr-defined]
+    assert "ConnectionError" in parked.delivery["last_error"]  # type: ignore[attr-defined]
+    assert timeline(four_databases, parked.order_id).steps == 2  # type: ignore[attr-defined]

@@ -110,7 +110,7 @@ def test_a_fact_crosses_the_pair_boundary_and_a_key_never_could(two_databases: S
 
 
 def test_what_commits_together_stops_at_the_pair(two_databases: Shop):
-    """`billing` writes its invoice and its outbox row in one transaction — both are in its
+    """`billing` writes its invoice and the fact in one transaction — both are in its
     own database. The order they are about is in the other one, and no transaction spans them.
     """
     stocked(two_databases)
@@ -118,10 +118,10 @@ def test_what_commits_together_stops_at_the_pair(two_databases: Shop):
     store = two_databases.store("billing")
 
     assert store.count(billing.Invoices).value == 1
-    assert store.count(billing.Outboxes, billing.PENDING).value == 1
+    assert billing.pending(store) == 1
 
     assert deliver(two_databases) == 1
-    assert store.count(billing.Outboxes, billing.PENDING).value == 0
+    assert billing.pending(store) == 0
 
 
 def test_each_side_keeps_its_own_record_of_the_same_fact(two_databases: Shop):

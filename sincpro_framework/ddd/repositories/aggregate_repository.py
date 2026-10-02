@@ -32,7 +32,7 @@ from typing import Any, ClassVar, Self, cast, get_args, get_origin
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.repositories.repository import Repository
+from sincpro_framework.ddd.repositories.repository import IRepository
 
 
 class AggregateRepository[T]:
@@ -54,23 +54,23 @@ class AggregateRepository[T]:
             ):
                 cls.declared = arguments[0]
 
-    def __init__(self, repository: Repository, aggregate: type[T] | None = None) -> None:
-        """`aggregate` only when the class does not name one; a class that does cannot be
-        pointed at another."""
+    def __init__(self, repository: IRepository, aggregate: type[T] | None = None) -> None:
+        """`aggregate` only when the class does not name one, or names a base of it — the class
+        a table was mapped to, of the aggregate the view was written for."""
         named = aggregate if aggregate is not None else self.declared
         if named is None:
             raise ContractViolation(
                 f"{type(self).__name__} does not say which aggregate it holds: name it in the "
                 "base, AggregateRepository[Invoice], or hand it in"
             )
-        if self.declared is not None and named is not self.declared:
+        if self.declared is not None and not issubclass(named, self.declared):
             raise ContractViolation(
                 f"{type(self).__name__} holds {self.declared.__name__}, not {named.__name__}"
             )
         self.repository = repository
         self.aggregate = cast(type[T], named)
 
-    def bound_to(self, repository: Repository) -> Self:
+    def bound_to(self, repository: IRepository) -> Self:
         """The same view over another repository — the one a unit of work or a narrowing
         handed back. A copy, so a subclass keeps whatever else it was built with."""
         bound = copy(self)

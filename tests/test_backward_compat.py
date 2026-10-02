@@ -68,13 +68,13 @@ assert bus(CommandGreet(name="ana"), ResponseGreeting).text == "hello ana"
 assert bus(CommandGreetTwice(name="ana"), ResponseGreeting).text == "hello ana, hello ana"
 assert asyncio.run(bus.get_async_bus()(CommandGreet(name="bo"), ResponseGreeting)).text == "hello bo"
 
-new_layers = ("sincpro_framework.ddd", "sincpro_framework.orm", "sincpro_framework.events")
+new_layers = ("sincpro_framework.ddd", "sincpro_framework.orm", "sincpro_framework.event_driven")
 loaded = sorted(name for name in sys.modules if name.startswith(new_layers))
 assert loaded == [], f"the classic path imported the new layers: {loaded}"
 assert "sqlalchemy" not in {name.split(".")[0] for name, module in sys.modules.items() if module}
 
 import sincpro_framework.ddd  # noqa: E402  the vocabulary is there when asked for
-import sincpro_framework.events  # noqa: E402
+import sincpro_framework.event_driven  # noqa: E402
 
 try:
     import sincpro_framework.orm  # noqa: F401

@@ -19,11 +19,9 @@ from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories import Hook, Hooks
 from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-    entity_table,
-    map_aggregates,
-)
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 # --- an aggregate whose identity is two columns --------------------------------------------
 

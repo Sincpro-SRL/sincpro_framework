@@ -24,19 +24,11 @@ from dataclasses import MISSING, fields, is_dataclass
 from typing import Any
 
 from sqlalchemy import (
-    BigInteger,
-    Column,
-    DateTime,
-    Index,
-    Integer,
-    MetaData,
     Table,
-    Text,
     event,
 )
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import object_session, registry
-from sqlalchemy.types import TypeEngine
 
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity import Entity
@@ -48,7 +40,6 @@ from sincpro_framework.ddd.entity.model_meta import (
 from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
 from sincpro_framework.ddd.entity.relations import Resolver
 from sincpro_framework.ddd.exceptions import RelationNotResolved
-from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText
 from sincpro_framework.orm.sqlalchemy.domain.registry import RELATIONS, record_mapping
 from sincpro_framework.orm.sqlalchemy.domain.relations import (
     REPOSITORY,
@@ -58,147 +49,6 @@ from sincpro_framework.orm.sqlalchemy.domain.relations import (
     held,
     hold,
 )
-
-
-def entity_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
-    """The four columns every `Entity` table starts with.
-
-        out     id TEXT PRIMARY KEY · created_at NOT NULL · updated_at · version INTEGER NOT NULL
-
-    `datetime_type` is what a timestamp is stored as — a real `DateTime` by default, or a
-    project's own decorator when its tables predate this layer and keep ISO text.
-    """
-    moment = datetime_type if datetime_type is not None else DateTime(timezone=True)
-    return [
-        Column("id", Text, primary_key=True),
-        Column("created_at", moment, nullable=False),
-        Column("updated_at", moment),
-        Column("version", Integer, nullable=False, default=1),
-    ]
-
-
-def audit_columns() -> list[Column]:
-    """The two columns an `AuditedMixin` aggregate adds.
-
-        out     created_by TEXT · updated_by TEXT
-
-        entity_table("invoice", metadata, *audit_columns(), Column("number", Text))
-
-    Written by the adapter from the `Database`'s actor, never by a use case.
-    """
-    return [Column("created_by", Text), Column("updated_by", Text)]
-
-
-def event_columns() -> list[Column]:
-    """The envelope every `DomainEvent` carries, for a table that stores one.
-
-        out     label JSON · entity_type TEXT · entity_id TEXT
-                correlation_id TEXT · causation_id TEXT · sequence INTEGER
-
-        entity_table("run_advanced", metadata, *event_columns(), Column("run_id", Text))
-
-    **A `DomainEvent` is an `Entity`**, so the repository that already exists stores and queries
-    one like any other aggregate — an event store is a table and that repository, not a second
-    abstraction. These are the envelope's own columns; the event's own fields go beside them.
-
-    `label` is a text per locale and needs `JsonText`, which is the one a hand-written table
-    gets wrong: declaring it `Text` fails at the insert with `type 'dict' is not supported`,
-    naming a parameter number rather than the column.
-    """
-    return [
-        Column("label", JsonText),
-        Column("entity_type", Text),
-        Column("entity_id", Text),
-        Column("correlation_id", Text),
-        Column("causation_id", Text),
-        Column("sequence", Integer),
-    ]
-
-
-def event_log_table(
-    name: str, metadata: MetaData, datetime_type: TypeEngine | None = None
-) -> Table:
-    """The table an `EventLogEntry` subclass is kept in: the envelope, the wire name, the
-    payload as JSON, and the index that answers one aggregate's history in one read.
-
-        out     id · created_at · updated_at · version · label · entity_type · entity_id
-                correlation_id · causation_id · sequence · event_type · payload JSON
-                INDEX (entity_type, entity_id)
-    """
-    return entity_table(
-        name,
-        metadata,
-        *event_columns(),
-        Column("event_type", Text, nullable=False),
-        Column("payload", JsonText, nullable=False),
-        Index(f"{name}_entity", "entity_type", "entity_id"),
-        datetime_type=datetime_type,
-    )
-
-
-def numbering_table(name: str, metadata: MetaData) -> Table:
-    """The counters `Numbering` takes gapless numbers from: one row per series and scope,
-    holding the last number taken.
-
-        out     series TEXT · scope TEXT · last BIGINT · PRIMARY KEY (series, scope)
-
-    Declared by the project, in its metadata and its migrations, like every other table.
-    """
-    return Table(
-        name,
-        metadata,
-        Column("series", Text, primary_key=True),
-        Column("scope", Text, primary_key=True),
-        Column("last", BigInteger, nullable=False),
-    )
-
-
-def delivery_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
-    """What an `EventTrackableMixin` event adds to carry its own delivery state.
-
-        out     status TEXT · attempts INTEGER · failure TEXT · delivered_at DATETIME
-
-        entity_table("outbox", metadata, *event_columns(), *delivery_columns(),
-                     Column("run_id", Text), Index("outbox_pending", "status"))
-
-    What turns a table of events into an outbox: a relay claims the pending rows with
-    `search(..., for_update=True, skip_locked=True)`, marks them, and acknowledges. The index on
-    `status` is what keeps that claim from scanning the whole history.
-    """
-    return [
-        Column("status", Text),
-        Column("attempts", Integer),
-        Column("failure", Text),
-        Column("delivered_at", datetime_type or DateTime),
-    ]
-
-
-def archive_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
-    """The column an `ArchivableMixin` aggregate adds.
-
-        out     archived_at TIMESTAMP NULL
-
-    Indexed by the project when the table is large: every reading that did not ask for the
-    archived ones filters on it.
-    """
-    moment = datetime_type if datetime_type is not None else DateTime(timezone=True)
-    return [Column("archived_at", moment)]
-
-
-def entity_table(
-    name: str,
-    metadata: MetaData,
-    *columns: Any,
-    datetime_type: TypeEngine | None = None,
-) -> Table:
-    """A table for an `Entity` subclass: the four base columns, then the aggregate's own.
-
-        in      "note", metadata, Column("title", Text), Index("note_title", "title")
-        out     Table("note", id, created_at, updated_at, version, title, + the index)
-
-    Anything `Table` accepts after its columns — an `Index`, a constraint — passes through.
-    """
-    return Table(name, metadata, *entity_columns(datetime_type), *columns)
 
 
 class Relation(DeclaredRelation):

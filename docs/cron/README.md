@@ -233,6 +233,24 @@ Both are refused once the registry is built, and for a cron it does not have.
 `kubectl create job --from=cronjob/…`. It is claimed and recorded like any tick: it runs once
 across replicas and becomes the cron's latest run.
 
+## Delivering events
+
+The event relay holds no thread and no timer: a cron drives it. `run_relay` schedules an
+`EventRelay` already built; `relay_deliverable_events` builds it and schedules it in one line:
+
+```
+billing_crons.relay_deliverable_events(
+    repository=billing_repository,
+    source=BillingDomainEvent,                 # the context's base event class
+    to=Publisher(FastStreamQueue(kafka)),
+    every=timedelta(seconds=2),
+)
+```
+
+Each tick is one pass — the deliverable events not delivered and due, taken with `SKIP LOCKED`,
+handed on, marked — so every replica may run it. Named `<registry>.relay` in runs and logs. See
+[persistence guide §12](../persistence/guide.md#12-delivering-events).
+
 ## Not yet
 
 A Temporal runner (a cron as a Workflow, each bus call an Activity) and a Celery runner, windows

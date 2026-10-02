@@ -30,9 +30,7 @@ from sincpro_framework.ddd.criteria.pagination import Pagination  # noqa: E402
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection  # noqa: E402
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository  # noqa: E402
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database  # noqa: E402
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (  # noqa: E402
-    map_aggregates,
-)
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates  # noqa: E402
 
 DAYS = 365
 REGIONS = ("north", "south", "east")

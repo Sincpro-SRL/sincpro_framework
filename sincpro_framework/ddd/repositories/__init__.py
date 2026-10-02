@@ -1,10 +1,10 @@
 """Every repository the domain layer answers against, with no ORM behind it.
 
-    Repository                      the baseline every store answers: reads and writes
+    IRepository                     the baseline every store answers: reads and writes
     Analyzes · WritesInBulk         what a store adds when it can honour it
     Transacts · StoreCapabilities   …and what its engine honours, read at run time
     AggregateRepository[T]          one aggregate's view over a repository, for named questions
-    Numbering · MemoryNumbering     gapless numbers per series and scope — a correlative
+    INumbering · MemoryNumbering     gapless numbers per series and scope — a correlative
     MemoryRepository                one that answers it over records held in memory
     ChangeTrackingRepositoryMixin   change tracking for a store with no flush to ask
     Hook / Hooks                    what a project puts around its own aggregates
@@ -30,8 +30,8 @@ from sincpro_framework.ddd.repositories.capabilities import (
 from sincpro_framework.ddd.repositories.change_tracking import ChangeTrackingRepositoryMixin
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.repositories.memory_repository import MemoryRepository
-from sincpro_framework.ddd.repositories.numbering import MemoryNumbering, Numbering
-from sincpro_framework.ddd.repositories.repository import Repository
+from sincpro_framework.ddd.repositories.numbering import INumbering, MemoryNumbering
+from sincpro_framework.ddd.repositories.repository import IRepository
 
 __all__ = [
     "AggregateRepository",
@@ -41,9 +41,9 @@ __all__ = [
     "Hooks",
     "MemoryNumbering",
     "MemoryRepository",
-    "Numbering",
+    "INumbering",
     "ReadsAggregates",
-    "Repository",
+    "IRepository",
     "StoreCapabilities",
     "Transacts",
     "Upserted",

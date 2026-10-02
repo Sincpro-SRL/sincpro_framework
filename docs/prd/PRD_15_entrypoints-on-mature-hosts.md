@@ -5,7 +5,7 @@
   on PRD_14's declared exposure. Every section's status paragraph says what is left for phase 2.
   Builds on PRD_12 (gateways, catalog), PRD_14 (declared exposure) and PRD_13 (idempotency).
 - **Depends on**: `Gateway`/`Catalog`, `failure_kind`, `AccessControl` and its transports, the
-  observability door (`process`), `@idempotency.once`, `IdempotencyRecords`, `events.faststream`.
+  observability door (`process`), `@idempotency.once`, `IdempotencyRecords`, `event_driven.adapters.faststream`.
 - **Philosophy**: the application layer is the product — use cases and their non-functional
   components (access, idempotency, caching, observability). An entrypoint is an optional adapter
   that **marries the mature host of its protocol** instead of re-implementing it: FastAPI for REST,
@@ -410,7 +410,7 @@ becomes an ApplicationService". Not built: `RpcBinding.notification` is recorded
 
 ### 5. Queues — a wire of its own, on FastStream
 
-Queues are an entrypoint (`entrypoints/queue`, a PRD_14 `Wire`), built on `events/faststream`.
+Queues are an entrypoint (`entrypoints/queue`, a PRD_14 `Wire`), built on `event_driven/adapters/faststream`.
 The events module keeps how a fact leaves the process — `Publisher`, codec, trace carrier, outbox;
 the entrypoint owns what outsiders may make this process do — exposure, the producer's identity,
 the inbox, settling, dead letters, AsyncAPI and the manifest.

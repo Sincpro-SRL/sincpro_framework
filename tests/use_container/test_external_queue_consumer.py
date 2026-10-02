@@ -8,7 +8,9 @@ from dataclasses import dataclass
 
 from sincpro_framework import Feature, UseFramework
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.events import Subscriber
+from sincpro_framework.event_driven import (
+    Subscriber,
+)
 
 
 @dataclass(kw_only=True)

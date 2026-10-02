@@ -8,7 +8,7 @@ from sqlalchemy import MetaData
 
 from sincpro_framework.ddd import MemoryNumbering
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.orm import Numbering, Repository, numbering_table
+from sincpro_framework.orm import DatabaseNumbering, Repository, numbering_table
 from sincpro_framework.orm.sqlalchemy.entrypoint import numbering as numbering_module
 
 from .engines import fresh
@@ -24,12 +24,12 @@ def ledger(engine_url: str) -> Repository:
 
 
 @pytest.fixture
-def numbering(ledger: Repository) -> Numbering:
-    return Numbering(ledger.database, counters)
+def numbering(ledger: Repository) -> DatabaseNumbering:
+    return DatabaseNumbering(ledger.database, counters)
 
 
 @pytest.fixture(params=["one statement", "update then insert"])
-def either_path(request, numbering, monkeypatch) -> Numbering:
+def either_path(request, numbering, monkeypatch) -> DatabaseNumbering:
     """Both ways a counter is taken, on every engine: the upsert, and the path the dialects
     without one take."""
     if request.param == "update then insert":
@@ -71,9 +71,21 @@ def test_a_rollback_gives_the_numbers_back(ledger, either_path):
     assert ledger.count(Owner).value == 0
 
 
-def test_outside_a_unit_of_work_a_number_is_refused(numbering):
-    with pytest.raises(ContractViolation, match="inside the context"):
-        numbering.next_number("F")
+def test_outside_a_unit_of_work_a_number_commits_on_its_own_and_says_so(
+    numbering, monkeypatch
+):
+    """Allowed: the caller chose it. Gapless is promised inside the context() that saves what
+    carries the number, and the log says that this was not that."""
+    told: list[str] = []
+    monkeypatch.setattr(
+        numbering_module,
+        "logger",
+        type("Heard", (), {"warning": staticmethod(told.append)})(),
+    )
+
+    assert numbering.next_number("F") == 1
+    assert numbering.next_number("F") == 2
+    assert "leaves a gap" in told[0]
 
 
 def test_a_read_only_unit_of_work_takes_no_number(ledger, numbering):

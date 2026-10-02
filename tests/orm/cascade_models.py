@@ -19,12 +19,11 @@ from sqlalchemy.orm import registry
 from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity
 from sincpro_framework.orm.sqlalchemy.domain.relations import Orphans
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-    Relation,
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import (
     archive_columns,
     entity_table,
-    map_aggregates,
 )
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import Relation, map_aggregates
 
 
 @dataclass

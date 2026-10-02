@@ -254,9 +254,9 @@ def test_remove_takes_it_out_of_the_repository_altogether(ledger, accounts):
 
 
 def test_it_stands_in_for_the_protocol_a_use_case_declares():
-    from sincpro_framework.ddd.repositories.repository import Repository
+    from sincpro_framework.ddd.repositories.repository import IRepository
 
-    assert isinstance(MemoryRepository(), Repository)
+    assert isinstance(MemoryRepository(), IRepository)
 
 
 def test_the_memory_repository_computes_the_measures_a_database_would():
@@ -333,20 +333,18 @@ def test_the_implementations_declare_the_protocol_they_answer():
     """Both repositories inherit `Repository` rather than only matching its shape — that is
     what makes the type checker compare signatures. This test pins the declaration; the
     signature check itself is pyright's, in `make lint`."""
-    from sincpro_framework.ddd.repositories.repository import Repository
-    from sincpro_framework.orm.sqlalchemy.entrypoint.repository import (
-        Repository as SqlRepository,
-    )
+    from sincpro_framework.ddd.repositories.repository import IRepository
+    from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
-    assert Repository in MemoryRepository.__mro__
-    assert Repository in SqlRepository.__mro__
+    assert IRepository in MemoryRepository.__mro__
+    assert IRepository in Repository.__mro__
 
 
 def test_a_class_that_only_has_the_names_is_no_longer_mistaken_for_a_repository():
     """What the `Protocol` could not refuse. As a protocol this passed: `@runtime_checkable`
     compares names and nothing else, so five methods with absurd signatures satisfied it. As an
     abstract class it does not, and the type checker compares the signatures besides."""
-    from sincpro_framework.ddd.repositories.repository import Repository
+    from sincpro_framework.ddd.repositories.repository import IRepository
 
     class EveryNameWrongSignature:
         def get(self, number: int) -> None: ...
@@ -355,7 +353,7 @@ def test_a_class_that_only_has_the_names_is_no_longer_mistaken_for_a_repository(
         def save(self) -> None: ...
         def remove(self, x, y, z) -> None: ...
 
-    assert not isinstance(EveryNameWrongSignature(), Repository)
+    assert not isinstance(EveryNameWrongSignature(), IRepository)
 
 
 def test_a_store_that_forgot_a_method_cannot_be_built_at_all():
@@ -368,11 +366,11 @@ def test_a_store_that_forgot_a_method_cannot_be_built_at_all():
     """
     import pytest
 
-    from sincpro_framework.ddd.repositories.repository import Repository
+    from sincpro_framework.ddd.repositories.repository import IRepository
 
     halfway = type(
         "Halfway",
-        (Repository,),
+        (IRepository,),
         {
             "get": lambda self, target, identity: None,
             "search": lambda self, target, criteria=None: None,

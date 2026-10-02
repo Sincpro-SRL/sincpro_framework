@@ -20,6 +20,7 @@ from sincpro_framework.ddd.entity.entity import (
 )
 from sincpro_framework.ddd.entity.mixins.archivable import ArchivableMixin
 from sincpro_framework.ddd.entity.mixins.audited import AuditedMixin
+from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
 from sincpro_framework.ddd.entity.mixins.tracking import ChangeTrackingMixin, EntityUpdated
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "ArchivableMixin",
     "AuditedMixin",
     "ChangeTrackingMixin",
+    "EventSourcedMixin",
     "Entity",
     "EntityUpdated",
     "Translated",

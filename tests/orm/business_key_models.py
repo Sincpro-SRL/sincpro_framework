@@ -12,10 +12,8 @@ from sqlalchemy import Column, ForeignKey, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-    entity_table,
-    map_aggregates,
-)
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 
 @dataclass

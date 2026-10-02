@@ -6,7 +6,11 @@ from dataclasses import dataclass
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import (
+    Publisher,
+    Subscriber,
+    SyncQueue,
+)
 from sincpro_framework.testing import RecordingQueue
 
 
