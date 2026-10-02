@@ -42,7 +42,10 @@ from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.orm.sqlalchemy.services import sql_translator as sql
 from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.services.relation_resolver import resolve_relations
-from sincpro_framework.orm.sqlalchemy.services.workflows.store import Store
+from sincpro_framework.orm.sqlalchemy.services.workflows.store import (
+    WITHOUT_PERCENTILES,
+    Store,
+)
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 DEFAULT_COUNT_CAP = 10_000
@@ -51,10 +54,6 @@ Prepared = tuple[Any, tuple[Sort, ...], Meta, list[Dropped]]
 
 COUNT = "count"
 """What a grouping's `where_measures` and `order` call the number of rows in a group."""
-
-WITHOUT_PERCENTILES = frozenset({"sqlite"})
-"""The dialects with no `percentile_cont`. Named here so the refusal happens before a
-statement exists, and says which engine could not."""
 
 
 class Explained(DataTransferObject):

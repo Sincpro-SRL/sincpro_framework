@@ -28,6 +28,7 @@ from sincpro_framework.orm.sqlalchemy.infrastructure.transaction_hooks import (
     register,
 )
 from sincpro_framework.orm.sqlalchemy.infrastructure.transaction_opening import began
+from sincpro_framework.orm.sqlalchemy.infrastructure.unit_in_play import playing
 from sincpro_framework.orm.sqlalchemy.services.workflows.store import Store
 from sincpro_framework.sincpro_logger import logger
 
@@ -53,10 +54,10 @@ class UnitOfWork(Store):
         """
         return type(self)(
             self.database,
-            session=self._bound,
+            session=self._held,
             scope=self._scope.merged_with(scope) if self._scope is not None else scope,
             guard=self._guard,
-            transaction=self._transaction,
+            transaction=self._opened_with,
         )
 
     @property
@@ -181,6 +182,7 @@ class UnitOfWork(Store):
         timeout: float | None = None,
         engine: Mapping[str, Any] | None = None,
         writes: Writes | None = None,
+        separate: bool = False,
     ) -> Generator[Self]:
         """Several reads and writes as one transaction.
 
@@ -211,11 +213,24 @@ class UnitOfWork(Store):
         answers every method the outer one does, and what it was narrowed to still holds
         inside. Nesting reuses the session in play; a nested block that asks for different
         options is refused, because the transaction they would configure has already begun.
+
+        **Every repository on this database joins it while the block runs** — the one a Feature
+        called through the bus holds included (`infrastructure/unit_in_play.py`):
+
+            with self.repository.context():
+                self.feature_bus(CommandPostInvoices(…), ResponsePostInvoices)
+                self.feature_bus(CommandReconcile(…), ResponseReconcile)
+            →  both commit together, or neither does
+
+        `separate=True` opens a transaction of its own even inside another — what a record that
+        must outlive the outer rollback needs, an audit of the attempt. It needs a database with
+        a connection pool: an in-memory SQLite has one connection, and two transactions cannot
+        share it.
         """
         asked = Transaction(
             isolation, read_only, timeout, dict(engine or {}), writes or Writes.SAVED
         )
-        if self._bound is not None:
+        if self._bound is not None and not separate:
             given = (
                 (isolation, timeout, writes) != (None, None, None)
                 or read_only
@@ -243,13 +258,14 @@ class UnitOfWork(Store):
             )
             # A relation touched inside the block resolves itself through this repository.
             session.info[REPOSITORY] = bound
-            yield bound
-            if asked.read_only:
-                # Nothing the block changed in memory reaches the commit; what it read stays
-                # usable after it, and the commit still runs what waited for it.
-                session.expunge_all()
-            elif asked.writes is Writes.SAVED:
-                self._discarded_unsaved(session)
+            with playing(self.database, session, asked):
+                yield bound
+                if asked.read_only:
+                    # Nothing the block changed in memory reaches the commit; what it read
+                    # stays usable after it, and the commit still runs what waited for it.
+                    session.expunge_all()
+                elif asked.writes is Writes.SAVED:
+                    self._discarded_unsaved(session)
 
     def retrying[T](
         self,

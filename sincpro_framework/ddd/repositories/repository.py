@@ -1,14 +1,20 @@
 """The least a repository answers, and the two ways to put something around it.
 
-    class Repository(ABC):
-        get · search · count · save · remove · archive          the writes and the store
-        browse · fetch_all · stream · first · one · get_by      the readings a use case makes
-        exists · pluck · distinct · measures · group_by         …and the ones it asks in SQL
+    class Repository(ReadsAggregates, WritesAggregates):     the baseline every store honours
+        get · search · count · browse · fetch_all · stream · first · one · get_by
+        exists · pluck · save · remove · archive
+        capabilities                                what its engine honours (row locks…)
 
         after_read · before_save · after_save       the hooks, empty, for a subclass
         before_remove · after_remove
 
-    Repository(database, billing_hooks)
+    MemoryRepository(Repository, Analyzes, WritesInBulk)
+    orm.Repository(Repository, Analyzes, WritesInBulk, Transacts)
+
+**The baseline, and capabilities on top.** What every store answers with the same meaning is
+here; what only some stores can — folding numbers, writing past the aggregate, a transaction —
+is a capability a store adds (`capabilities.py`). A use case types the store it runs on; a
+component shared across stores asks for exactly the capabilities it calls.
 
 **An abstract class rather than a protocol.** It was a `Protocol` and nothing was written
 against it structurally: the two implementations inherit it, and the double a test uses is
@@ -31,20 +37,19 @@ refused: a write back through the repository that fired it, directly or through 
 because the alternative is a loop nobody sees until production.
 """
 
-from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import Any, overload
+from typing import Any
 
-from sincpro_framework.ddd.criteria import Bucket, Criteria
 from sincpro_framework.ddd.entity.entity_collection import (
-    Count,
-    EntityCollection,
     model_and_collection,
 )
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
+from sincpro_framework.ddd.repositories.capabilities import (
+    ReadsAggregates,
+    StoreCapabilities,
+    WritesAggregates,
+)
 from sincpro_framework.ddd.repositories.hooks import Hook, HookChain, Hooks
 
 
@@ -147,17 +152,15 @@ def refuse_unarchivable(records: list[Any]) -> None:
         )
 
 
-@dataclass(frozen=True)
-class Upserted:
-    """What an upsert wrote, per distinct key: inserted or overwritten, and left as it was — a
-    conflict with nothing to overwrite, or a stored row outside the repository's scope."""
+class Repository(ReadsAggregates, WritesAggregates):
+    """What every store answers, whatever is underneath: the baseline of reading and writing,
+    and the hooks around both."""
 
-    written: int
-    skipped: int
-
-
-class Repository(ABC):
-    """What a use case can be written against, whatever is underneath."""
+    @property
+    def capabilities(self) -> StoreCapabilities:
+        """What this store's engine honours beyond the baseline — nothing, unless the store
+        says so."""
+        return StoreCapabilities()
 
     def __init__(self, hooks: Hooks | None = None, guard: "Repository | None" = None) -> None:
         """`hooks` is the bounded context's collection; `guard` is the repository this one is a
@@ -252,229 +255,6 @@ class Repository(ABC):
                 "computes or refuses, it does not write — what needs several aggregates is a "
                 "Feature"
             )
-
-    @abstractmethod
-    def get[T](
-        self,
-        target: type[T],
-        identity: Any,
-        for_update: bool = False,
-        skip_locked: bool = False,
-        nowait: bool = False,
-    ) -> T | None:
-        """One aggregate by its identity, or `None`.
-
-        `for_update` claims the row until the unit of work around it ends; `skip_locked`
-        passes over what somebody else already holds, and `nowait` fails at once on it.
-        **They are on the abstraction rather than on the one store that can do them**: a
-        Feature written against `Repository` says `for_update=True`, and a store that
-        swallowed the word would let that Feature pass its tests and lose the race in
-        production.
-        """
-
-    @overload
-    def search[C: EntityCollection](
-        self,
-        target: type[C],
-        criteria: Criteria | None = None,
-        for_update: bool = False,
-        skip_locked: bool = False,
-        nowait: bool = False,
-    ) -> C: ...
-
-    @overload
-    def search[T](
-        self,
-        target: type[T],
-        criteria: Criteria | None = None,
-        for_update: bool = False,
-        skip_locked: bool = False,
-        nowait: bool = False,
-    ) -> EntityCollection[T]: ...
-
-    @abstractmethod
-    def search(
-        self,
-        target: type,
-        criteria: Criteria | None = None,
-        for_update: bool = False,
-        skip_locked: bool = False,
-        nowait: bool = False,
-    ) -> EntityCollection: ...
-
-    def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
-        """One key for every read of `target` that answers the same rows, whatever page it asks
-        for — what `QueryCache` keeps a read under. A repository that reads under a scope makes
-        the scope part of it."""
-        model, _ = model_and_collection(target)
-        return fingerprint_of(model, criteria or Criteria())
-
-    @abstractmethod
-    def count(self, target: type, criteria: Criteria | None = None) -> Count: ...
-
-    @abstractmethod
-    def save(self, record: Any) -> None:
-        """One aggregate or several — `save(invoice)`, `save(invoices)`, `save(page)`. Several
-        are written as one flush, with the same promises paid once instead of once per record.
-
-        A store that maps relations writes the children a root holds with it, and settles the
-        ones an assignment dropped; `MemoryRepository` keeps the root as one object, children
-        inside, so a test there sees the aggregate it built rather than rows it wrote.
-        """
-
-    @abstractmethod
-    def remove(self, record: Any) -> None:
-        """Deletes one aggregate or several. The row is gone — and, on a store that maps
-        relations, the children of every relation declared owned go with it; `MemoryRepository`
-        holds an aggregate as one object, its children inside, so they go with it there too.
-
-        **It deletes, and only deletes.** Putting a record away without losing it is
-        `archive`, which is a different fact and says so — a `remove` that quietly archived
-        would be a name that lies about what happened to the data.
-        """
-
-    @abstractmethod
-    def archive(self, record: Any) -> None:
-        """Puts one aggregate or several away without deleting them: the row stays, stamped
-        with when it left, and readings leave it out unless they ask for it by name.
-
-        Only for an aggregate that inherits `ArchivableMixin` — anything else is refused,
-        because there is nowhere to write that it was archived.
-        """
-
-    @abstractmethod
-    def upsert(
-        self, record: Any, on: Sequence[str], update: Sequence[str] | None = None
-    ) -> Upserted:
-        """Inserts each record, or overwrites the stored one holding the same `on`. It
-        overwrites by definition — no version check — and the records handed in are not
-        refreshed. `update` names what a conflict overwrites; `update=()` leaves it as it is.
-        Answers how many were written and how many skipped.
-        """
-
-    @abstractmethod
-    def update_all(self, target: type, criteria: Criteria, values: Mapping[str, Any]) -> int:
-        """Sets these values on every record the filter matches; how many is the answer. Past
-        the aggregate — no hook, no cascade — but its version is raised. A page, or a condition
-        the aggregate cannot answer, is refused: a write never runs wider than it was asked.
-        """
-
-    @abstractmethod
-    def remove_all(self, target: type, criteria: Criteria) -> int:
-        """Deletes every record the filter matches; how many is the answer. No hook, no
-        cascade. A page, or a condition that cannot be answered, is refused."""
-
-    # --- the readings a use case is actually written against -------------------------------
-    #
-    # Declared here because they are what Features call, not because a store might have them.
-    # Left off, `repository: Repository` type-checked against six methods while the code around
-    # it called eighteen — so a third store could satisfy this class and break every Feature,
-    # and a type checker would have said nothing either time.
-
-    @overload
-    def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...
-
-    @overload
-    def browse[T](self, target: type[T], ids: Sequence[Any]) -> EntityCollection[T]: ...
-
-    @abstractmethod
-    def browse(self, target: type, ids: Sequence[Any]) -> Any:
-        """The aggregates with these ids, as one collection — the ids that are not there are
-        simply absent, which is what makes this the answer to a list of references."""
-
-    @overload
-    def fetch_all[C: EntityCollection](
-        self, target: type[C], criteria: Criteria | None = None
-    ) -> C: ...
-
-    @overload
-    def fetch_all[T](
-        self, target: type[T], criteria: Criteria | None = None
-    ) -> EntityCollection[T]: ...
-
-    @abstractmethod
-    def fetch_all(self, target: type, criteria: Criteria | None = None) -> Any:
-        """Every aggregate the criteria matches, as one complete collection: the reading that
-        does not page, for a result somebody already knows is small."""
-
-    @overload
-    def stream[C: EntityCollection](
-        self, target: type[C], criteria: Criteria | None = None
-    ) -> Iterator[C]: ...
-
-    @overload
-    def stream[T](
-        self, target: type[T], criteria: Criteria | None = None
-    ) -> Iterator[EntityCollection[T]]: ...
-
-    @abstractmethod
-    def stream(self, target: type, criteria: Criteria | None = None) -> Iterator[Any]:
-        """The same aggregates one at a time, for a result too large to hold at once."""
-
-    @overload
-    def first[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
-    ) -> T | None: ...
-
-    @overload
-    def first[T](self, target: type[T], criteria: Criteria | None = None) -> T | None: ...
-
-    @abstractmethod
-    def first(self, target: type, criteria: Criteria | None = None) -> Any:
-        """The first aggregate the criteria matches, or `None`."""
-
-    @overload
-    def one[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
-    ) -> T: ...
-
-    @overload
-    def one[T](self, target: type[T], criteria: Criteria | None = None) -> T: ...
-
-    @abstractmethod
-    def one(self, target: type, criteria: Criteria | None = None) -> Any:
-        """The single aggregate the criteria matches; more than one is an error, because the
-        caller said there would be one."""
-
-    @overload
-    def get_by[T](self, target: type[EntityCollection[T]], **values: Any) -> T | None: ...
-
-    @overload
-    def get_by[T](self, target: type[T], **values: Any) -> T | None: ...
-
-    @abstractmethod
-    def get_by(self, target: type, **values: Any) -> Any:
-        """One aggregate by a natural key — the values that identify it besides its id."""
-
-    @abstractmethod
-    def exists(self, target: type, criteria: Criteria | None = None) -> bool:
-        """Whether anything matches, without reading it."""
-
-    @abstractmethod
-    def pluck(self, target: type, field: str, criteria: Criteria | None = None) -> list[Any]:
-        """One field of every match, without building the aggregates."""
-
-    @abstractmethod
-    def distinct(
-        self, target: type, field: str, criteria: Criteria | None = None
-    ) -> list[Any]:
-        """The values that field takes across the matches, each once."""
-
-    @abstractmethod
-    def measures(
-        self, target: type, criteria: Criteria | None = None, **measures: Any
-    ) -> dict[str, Any]:
-        """Measures over the whole result set, each named by the caller."""
-
-    @abstractmethod
-    def group_by(
-        self, target: type, by: Sequence[str], criteria: Criteria | None = None
-    ) -> list[dict[str, Any]]:
-        """The matches folded by these fields, one row per combination."""
-
-    @abstractmethod
-    def group_by_levels(self, target: type, criteria: Criteria | None = None) -> list[Bucket]:
-        """The same folding as a tree, the way the criteria's grouping describes it."""
 
     def after_read(self, record: Any) -> Any:
         """Every aggregate this store hands back, before the caller sees it. Answer a record

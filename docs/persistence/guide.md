@@ -340,6 +340,41 @@ assert anas_books.count(Invoice).value == 3
 `first`, `one`, `browse(ids)`, `stream`, `group_by`, `pivot`, `export` and `explain` are the
 rest of the surface — see [reference.md](reference.md).
 
+**A repository per aggregate, when its questions deserve names.** The repository above answers
+everything with a type and a `Criteria`, and most Features need nothing else. When the domain
+keeps asking one aggregate the same questions, `AggregateRepository[T]` names them — a thin view
+over the same repository, with the aggregate already given:
+
+```python
+from sincpro_framework.ddd import EntityCollection
+from sincpro_framework.orm import AggregateRepository
+
+
+class InvoiceBook(AggregateRepository[Invoice]):
+    """Billing's questions about invoices, by their names."""
+
+    def drafts_of(self, customer: Customer) -> EntityCollection[Invoice]:
+        return self.search(Criteria.model_validate({
+            "where": {"all": [
+                {"field": "customer_id", "value": customer.id},
+                {"field": "state", "value": "draft"},
+            ]},
+        }))
+
+
+book = InvoiceBook(repository)
+assert [invoice.number for invoice in book.drafts_of(ana).items] == ["F-004"]
+assert book.measures(total=("sum", "total")) == {"total": 475}
+
+with book.context() as unit:                  # the same class, bound to one transaction
+    assert [invoice.number for invoice in unit.drafts_of(ana).items] == ["F-004"]
+```
+
+Every call goes through `repository` — hooks, scope, version check and named errors included —
+and `context()` and `narrowed()` hand back the same class over the bound repository. It is
+optional and never the only door: `book.repository` is the whole store, and `statement()` /
+`run()` take a question past what `Criteria` says.
+
 ## 7. Relations
 
 A `specification` says what to bring back of each record, related records included, each

@@ -23,7 +23,17 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import MISSING, fields, is_dataclass
 from typing import Any
 
-from sqlalchemy import Column, DateTime, Index, Integer, MetaData, Table, Text, event
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    Index,
+    Integer,
+    MetaData,
+    Table,
+    Text,
+    event,
+)
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import object_session, registry
 from sqlalchemy.types import TypeEngine
@@ -123,6 +133,23 @@ def event_log_table(
         Column("payload", JsonText, nullable=False),
         Index(f"{name}_entity", "entity_type", "entity_id"),
         datetime_type=datetime_type,
+    )
+
+
+def numbering_table(name: str, metadata: MetaData) -> Table:
+    """The counters `Numbering` takes gapless numbers from: one row per series and scope,
+    holding the last number taken.
+
+        out     series TEXT · scope TEXT · last BIGINT · PRIMARY KEY (series, scope)
+
+    Declared by the project, in its metadata and its migrations, like every other table.
+    """
+    return Table(
+        name,
+        metadata,
+        Column("series", Text, primary_key=True),
+        Column("scope", Text, primary_key=True),
+        Column("last", BigInteger, nullable=False),
     )
 
 
