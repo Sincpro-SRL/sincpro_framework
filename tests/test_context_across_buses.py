@@ -10,7 +10,11 @@ from typing import Any
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import DomainEvent
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import (
+    Publisher,
+    Subscriber,
+    SyncQueue,
+)
 
 
 class CommandResolveTenant(DataTransferObject):

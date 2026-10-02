@@ -1,4 +1,4 @@
-"""`Numbering`: numbers without gaps, per series and scope — a fiscal invoice's correlative.
+"""`INumbering`: numbers without gaps, per series and scope — a fiscal invoice's correlative.
 
     with self.repository.context() as unit:
         numbers = self.numbering.take("F", count=len(invoices), scope="branch-1/2026")
@@ -28,7 +28,7 @@ def refuse_no_count(count: int) -> None:
         raise ContractViolation(f"take at least one number, not {count}")
 
 
-class Numbering(ABC):
+class INumbering(ABC):
     """Gapless numbers per series and scope."""
 
     @abstractmethod
@@ -41,7 +41,7 @@ class Numbering(ABC):
         return self.take(series, 1, scope).start
 
 
-class MemoryNumbering(Numbering):
+class MemoryNumbering(INumbering):
     """Numbers kept in the process: for a test, where there is no rollback to give them back."""
 
     def __init__(self) -> None:

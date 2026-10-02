@@ -46,7 +46,7 @@ def execute_hosted(
     if dto_type is None:
         raise LookupError(f"{context_name} does not answer {dto!r} in this service")
     from sincpro_framework.auth.transports import authenticated_as
-    from sincpro_framework.events.trace import within_trace
+    from sincpro_framework.event_driven.infrastructure.trace import within_trace
 
     value = unpacked(body, dto_type)
     context: dict[str, Any] = unpack(request_context, None) if request_context else {}

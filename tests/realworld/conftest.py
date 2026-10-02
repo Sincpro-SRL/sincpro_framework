@@ -23,7 +23,12 @@ from time import perf_counter
 import pytest
 
 from sincpro_framework import UseFramework
-from sincpro_framework.events import BackgroundQueue, Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import (
+    BackgroundQueue,
+    Publisher,
+    Subscriber,
+    SyncQueue,
+)
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 

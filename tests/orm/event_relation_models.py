@@ -32,13 +32,9 @@ from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table, event_columns
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-    Relation,
-    entity_table,
-    event_columns,
-    map_aggregates,
-)
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import Relation, map_aggregates
 
 OWN_KIND = Criteria(where=Condition(field="entity_type", value="Invoice"))
 """The events scope: this log is addressed by `entity_type`/`entity_id`, and an id space is

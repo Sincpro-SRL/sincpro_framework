@@ -175,7 +175,7 @@ assert asked == [1]
 assert KeyValueRuns(InMemoryKeyValue()).claim("core", datetime(2026, 9, 27, tzinfo=UTC))
 
 try:
-    import sincpro_framework.events.faststream
+    import sincpro_framework.event_driven.adapters.faststream
 except ImportError as error:
     assert "sincpro-framework[faststream]" in str(error), error
 else:

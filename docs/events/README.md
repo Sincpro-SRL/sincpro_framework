@@ -1,13 +1,14 @@
-# Events: a publisher, a queue, and a subscriber made of buses
+# Events: entities kept with the change, delivered by a relay, carried by queues to buses
 
 ```python
 @dataclass(kw_only=True)
-class DatasetRegistered(DomainEvent):
+class DatasetRegistered(CatalogDomainEvent):                 # the context's base event class
+    name = "catalog.dataset.v1.registered"
     dataset_id: str
 
 dataset.record(DatasetRegistered(dataset_id=dataset.id))     # the aggregate says it; in memory
-self.repository.save(dataset)
-for event in dataset.pull_events():                          # the Feature pulls, explicitly
+self.repository.save(dataset)                                # kept with it, when the context has an event table
+for event in dataset.pull_events():                          # the Feature may still pull and publish
     self.publisher.publish(event)
 
 @planning.feature([CommandBuildPlan, DatasetRegistered])     # the subscriber is a Feature
@@ -16,26 +17,54 @@ class BuildPlan(Feature): ...
 publisher = Publisher(SyncQueue(Subscriber(planning, assurance)))
 ```
 
-Nothing is wired by default and nothing is stored. A project builds the queue it wants with the
-buses it names, and publishes when a Feature decides to. What an aggregate recorded lives in
-memory and dies with the object.
+Nothing is wired by default. A project builds the queue it wants with the buses it names, and
+publishes when a Feature decides to. What an aggregate recorded lives in memory and dies with the
+object — unless the context gives its events a table. **A domain event is an entity**: the
+context maps its base event class to one table (`event_table`, `map_events`), every subclass
+goes there, and the repository it already has keeps and queries them — `save(aggregate)` in the
+same commit as the change, `search(InvoicePaid, criteria)` like any entity. What must leave the
+context is marked `DeliverableEventMixin` and sent on by an `EventRelay`:
+
+```
+   save(aggregate) · save(events)        the events, in the same commit as the change
+            │
+   the context's event table             one table · one row per event · its class by name
+            │  deliverable, not delivered, due
+   EventRelay                            SKIP LOCKED across replicas · a failure policy · marks each row
+            │
+   Publisher(Queue)                      SyncQueue · BackgroundQueue · FastStreamQueue
+            │
+   Subscriber(buses) · the broker's consumers
+```
+
+That is the transactional outbox with the event table as the outbox. An entity whose state *is*
+its events is `EventSourcedMixin`, rebuilt from the same table. How to use it is
+[persistence guide §10–§12](../persistence/guide.md#10-change-tracking-and-the-contexts-event-table);
+why it is shaped this way is [PRD_19](../prd/PRD_19_events-as-entities.md) and
+[decision 31](../persistence/decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table).
 
 **Which of these you need depends on the shape of your system** — one database, a database
-per context, or the facts *as* the state. [shapes.md](../shapes.md) picks the wiring; this page
+per context, or the events *as* the state. [shapes.md](../shapes.md) picks the wiring; this page
 is the parts.
 
 ## The pieces
 
 | Piece | Module | What it is |
 |---|---|---|
-| `DomainEvent` | `ddd/events.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `correlation_id`, `causation_id`, `sequence`, `label` |
-| `Entity.record` / `pull_events` | `ddd/entity/entity.py` | Records with the aggregate's type, id and sequence; pulling hands them back and forgets them |
+| `DomainEvent` | `ddd/events/domain_event.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `entity_version`, `correlation_id`, `causation_id`, `label` |
+| `Entity.record` / `pull_events` | `ddd/entity/entity.py` | Records with the aggregate's type and id; pulling hands them back and forgets them |
 | `ChangeTrackingMixin` | `ddd/entity/mixins/tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
-| `Publisher` | `events/publisher.py` | Emits to a queue, with the signature of a bus |
-| `Subscriber` | `events/subscriber.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event |
-| `Queue` | `events/queue.py` | The protocol: `put` and `aput` |
-| `SyncQueue` | `events/queue.py` | Same process; `publish` runs the subscriber and returns |
-| `BackgroundQueue` | `events/queue.py` | Another process consumes; `start()` / `stop()` |
+| `DeliverableEventMixin` | `ddd/events/mixins.py` | Marks an event delivered beyond the context, and keeps its delivery: `delivered_at`, `next_delivery_at`, `delivery` |
+| `EventSourcedMixin` | `ddd/entity/mixins/event_sourced.py` | An entity whose state is its events: `happened`, `apply`, rebuilt by `get`, appended by `save` |
+| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/templates/events.py`, `orm/sqlalchemy/services/event_mapping.py` | The context's one event table, and its base class mapped to it — every subclass with it |
+| `EventRelay` | `event_driven/entrypoint/relay.py` | Delivers the deliverable events not delivered and due, over any repository; `run_once()` → `RelayPass` |
+| `DeliveryFailurePolicy` | `event_driven/domain/failure.py` | `RetryInPlace` · `RetryLater` · `ParkAndContinue` · `SkipAndContinue`; `ExponentialBackoff`, `FixedBackoff` |
+| `Publisher` | `event_driven/entrypoint/publisher.py` | Emits to a queue, with the signature of a bus |
+| `Subscriber` | `event_driven/services/subscriber.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event |
+| `Queue` | `event_driven/domain/queue.py` | The protocol: `put` and `aput` |
+| `SyncQueue` | `event_driven/adapters/sync_queue.py` | Same process; `publish` runs the subscriber and returns |
+| `BackgroundQueue` | `event_driven/adapters/background_queue.py` | Another process consumes; `start()` / `stop()`; not durable |
+| `RepositoryQueue` | `event_driven/adapters/repository_queue.py` | `publish` keeps the event through the repository, in the unit of work in play, for the relay |
 
 **A bus declares nothing.** Its registry already says which DTOs it answers, an event is a DTO,
 and the subscriber executes the bus with it. `@bus.feature([SomeCommand, SomeEvent])` is the
@@ -120,8 +149,8 @@ two classes; while only v1 exists, one `domain/events.py` is enough, and the day
 become `domain/events/{v1,v2}.py` without consumers noticing, because they import from
 `entrypoints/events.py`. A breaking change is always a new class; both versions are published while
 consumers migrate. The aggregate records the current version only: a consumer that still needs v1
-gets a translation in `entrypoints/`, never a second `record` in the domain. Stored history needs no
-old class — an event log keeps the wire name and the JSON payload.
+gets a translation in `entrypoints/`, never a second `record` in the domain. A kept event of an old
+version is still its own class: the table keeps the wire name and the payload.
 
 The direction never flips: `entrypoints/` imports `domain/`, and only an entrypoint imports another
 entrypoint. Inside one service, a context that reacts to another's facts declares its own class

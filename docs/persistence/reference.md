@@ -23,7 +23,7 @@ catalogue before it moved here.
 | `Repository` | The baseline every store answers: `ReadsAggregates` + `WritesAggregates`, and the hooks | What a store inherits; a Feature types the concrete store it runs on |
 | `Analyzes` · `WritesInBulk` · `Transacts` | Capabilities a store adds when it can honour them: folding numbers, writing past the aggregate, a unit of work | A shared component asks for exactly the ones it calls |
 | `StoreCapabilities` | What the engine under one store honours: row locks, `skip_locked`, `nowait`, savepoints, percentiles | `repository.capabilities`, read at run time |
-| `AggregateRepository[T]` | One aggregate's view over a repository, for questions that deserve names | Optional; `orm.AggregateRepository[T]` adds the database repository's capabilities |
+| `AggregateRepository[T]` | One aggregate's view over a repository, for questions that deserve names | Optional; `orm.DatabaseAggregateRepository[T]` adds the database repository's capabilities |
 | `matches(record, expression)` | The filter language evaluated in memory | Tests without a database; `EntityCollection.filtered_by` |
 | `Translated`, `translations()` | The words a screen shows: the aggregate names itself, each field declares its own in `field(metadata=…)` | `Meta.name` and `Meta.fields[x].label` / `.help` |
 | `DomainEvent`, `Entity.record` / `pull_events` | What happened, said by the aggregate and kept in memory until the Feature pulls it | See [events.md](../events/README.md) |

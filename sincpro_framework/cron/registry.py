@@ -33,7 +33,15 @@ from sincpro_framework.cron.domain import (
     Tick,
     Trigger,
 )
+from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.ddd.repositories import IRepository
 from sincpro_framework.deps import DependencyLocator
+from sincpro_framework.event_driven import (
+    DEFAULT_FAILURE_POLICY,
+    DeliveryFailurePolicy,
+    EventRelay,
+)
+from sincpro_framework.event_driven.entrypoint.relay import Publishes
 from sincpro_framework.exceptions import (
     BusAlreadyBuilt,
     DependencyAlreadyRegistered,
@@ -162,6 +170,54 @@ class Crons[TDeps]:
             return cron_class
 
         return register
+
+    def run_relay(
+        self,
+        relay: EventRelay,
+        every: timedelta = timedelta(seconds=2),
+        name: str | None = None,
+    ) -> EventRelay:
+        """Runs `relay.run_once()` at every tick of `every` — a cron like any other, with its
+        record of runs and its overlap policy.
+
+            billing_crons.run_relay(relay, every=timedelta(seconds=5))
+
+        Its name, in runs and logs, is `<registry>.relay` unless `name` is given.
+        """
+
+        def run(cron: Cron, tick: Tick) -> None:
+            relay.run_once()
+
+        driven = type(
+            "RunEventRelay",
+            (Cron,),
+            {"run": run, "__doc__": f"One pass of the relay of {relay.source.__name__}."},
+        )
+        self.cron(every=every, name=name or f"{self.name}.relay")(driven)
+        return relay
+
+    def relay_deliverable_events(
+        self,
+        repository: IRepository,
+        source: type[DomainEvent],
+        to: Publishes,
+        on_failure: DeliveryFailurePolicy | None = None,
+        every: timedelta = timedelta(seconds=2),
+        name: str | None = None,
+    ) -> EventRelay:
+        """Delivers every `DeliverableEventMixin` event of `source` the repository keeps to `to`
+        — a `Publisher` over the broker — at every tick of `every`.
+
+            billing_crons.relay_deliverable_events(
+                repository=billing_repository,
+                source=BillingDomainEvent,
+                to=Publisher(FastStreamQueue(kafka)),
+            )
+
+        Hands the relay back, to drive by hand or look at.
+        """
+        relay = EventRelay(repository, source, to, on_failure or DEFAULT_FAILURE_POLICY)
+        return self.run_relay(relay, every, name)
 
     def without(self, cron_class: type[Cron]) -> None:
         """Switch a registered cron off — the one in force where it was registered: it never

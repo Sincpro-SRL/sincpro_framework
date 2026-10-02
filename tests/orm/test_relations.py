@@ -484,12 +484,9 @@ def test_a_relation_that_resolves_to_nothing_says_so_instead_of_raising_a_key_er
     from sincpro_framework.ddd.entity import Entity
     from sincpro_framework.ddd.exceptions import RelationNotResolved
     from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+    from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
     from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
-    from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-        Relation,
-        entity_table,
-        map_aggregates,
-    )
+    from sincpro_framework.orm.sqlalchemy.services.data_mapper import Relation, map_aggregates
 
     @dataclass
     class Head(Entity):

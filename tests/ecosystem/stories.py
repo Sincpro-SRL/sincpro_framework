@@ -44,7 +44,7 @@ def an_order(
 
 def deliver(shop: Shop) -> int:
     """Run billing's relay: what crosses the boundary, and when."""
-    return billing.relay(shop.store("billing"), shop.publisher)
+    return billing.relay(shop.store("billing"), shop.publisher).delivered
 
 
 def timeline(shop: Shop, order_id: str) -> notifications.Timeline:

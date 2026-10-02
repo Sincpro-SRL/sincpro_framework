@@ -8,7 +8,11 @@ import pytest
 
 from sincpro_framework import UseFramework
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import (
+    Publisher,
+    Subscriber,
+    SyncQueue,
+)
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .contexts import (

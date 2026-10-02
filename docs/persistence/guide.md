@@ -17,9 +17,9 @@ The other pages explain *why* each piece is the way it is. This one is *how*.
 | Bring related records | [7. Relations](#7-relations) |
 | Validate or compute on every write | [8. Hooks](#8-hooks) |
 | Say what happened, and react to it | [9. Domain events](#9-domain-events) |
-| Record every field that changed | [10. Change tracking](#10-change-tracking) |
+| Record every field that changed, keep the events | [10. Change tracking, and the context's event table](#10-change-tracking-and-the-contexts-event-table) |
 | Keep the facts as the state | [11. Event sourcing](#11-event-sourcing) |
-| Deliver events reliably to another process | [12. An outbox](#12-an-outbox) |
+| Deliver events to other contexts reliably | [12. Delivering events](#12-delivering-events) |
 | Test a Feature without a database | [13. Testing](#13-testing) |
 | Extend an aggregate with fields of its own | [14. Extending an aggregate](#14-extending-an-aggregate) |
 
@@ -75,7 +75,7 @@ class Invoices(EntityCollection[Invoice]): ...
   too — but it types the answer.
 - **Mixins add a capability and its columns.** `ArchivableMixin` adds `archived_at`, so
   `archive()` hides a record instead of deleting it. `AuditedMixin` adds `created_by` /
-  `updated_by`; `ChangeTrackingMixin` records what changed ([§10](#10-change-tracking)).
+  `updated_by`; `ChangeTrackingMixin` records what changed ([§10](#10-change-tracking-and-the-contexts-event-table)).
 
 ## 2. Tables and the repository
 
@@ -347,10 +347,10 @@ over the same repository, with the aggregate already given:
 
 ```python
 from sincpro_framework.ddd import EntityCollection
-from sincpro_framework.orm import AggregateRepository
+from sincpro_framework.orm import DatabaseAggregateRepository
 
 
-class InvoiceBook(AggregateRepository[Invoice]):
+class InvoiceBook(DatabaseAggregateRepository[Invoice]):
     """Billing's questions about invoices, by their names."""
 
     def drafts_of(self, customer: Customer) -> EntityCollection[Invoice]:
@@ -498,7 +498,12 @@ from sincpro_framework.ddd import DomainEvent
 
 
 @dataclass(kw_only=True)
-class InvoicePosted(DomainEvent):
+class BillingEvent(DomainEvent):            # every event of this bounded context (§10)
+    name = "billing.v1.event"
+
+
+@dataclass(kw_only=True)
+class InvoicePosted(BillingEvent):
     name = "billing.invoice.v1.posted"     # the wire name; keep it stable
     invoice_id: str = ""
     total: int = 0
@@ -511,7 +516,7 @@ A subscriber is an ordinary Feature on another bounded context's bus, registered
 class. `Subscriber` executes every bus whose registry knows the event:
 
 ```python
-from sincpro_framework.events import Publisher, Subscriber, SyncQueue
+from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
 notifications = UseFramework("notifications", log_after_execution=False)
 sent: list[str] = []
@@ -536,19 +541,29 @@ assert sent == [draft.id]
 
 `SyncQueue` runs the subscribers in the same call. `BackgroundQueue(build_subscriber).start()`
 runs them in another process, and Kafka or RabbitMQ are one more `Queue`. Nothing is wired by
-default and nothing is stored — see [events](../events/README.md).
+default, and nothing is kept until the context gives its events a table (§10) — see
+[events](../events/README.md).
 
-## 10. Change tracking
+## 10. Change tracking, and the context's event table
 
 `ChangeTrackingMixin` records **one** `EntityUpdated` event per save, with every field that
-changed as `(before, after)`. A field set and set back is no change.
+changed as `(before, after)`. A field set and set back is no change. `change_event` names the
+class it records — here one of the context's own, so it is kept with the rest:
 
 ```python
+from typing import ClassVar
+
 from sincpro_framework.ddd import ChangeTrackingMixin, EntityUpdated
+
+
+@dataclass(kw_only=True)
+class PaymentUpdated(EntityUpdated, BillingEvent):
+    name = "billing.payment.v1.updated"
 
 
 @dataclass
 class Payment(ChangeTrackingMixin, Entity):
+    change_event: ClassVar[type[DomainEvent]] = PaymentUpdated
     amount: int = 0
     method: str = "cash"
     receipt_cache: str = field(default="", metadata={"tracked": False})
@@ -578,183 +593,248 @@ assert isinstance(updated, EntityUpdated)
 assert updated.changes == {"amount": (100, 120), "method": ("cash", "qr")}
 ```
 
-Publish it like any other event, or keep it in the context's **event log**: one table for every
-event of the bounded context, read back as one aggregate's ordered history. A subclass of
-`EventLogEntry` per context — a class maps to one table — saved in the same unit of work as the
-change it records:
+**A domain event is an entity.** It has an id (a UUID v7, so ordering by it is ordering by
+time), it is saved and searched through the repository like any other, and every event of the
+bounded context lives in **one table**: the context declares it with the `event_table`
+template and maps its base class to it. Each subclass goes to the same table — its wire `name`
+tells the rows apart — and what a subclass adds is kept in a `payload` column:
 
 ```python
-from sincpro_framework.ddd import EventLogEntry
-from sincpro_framework.orm import event_log_table
+from sincpro_framework.ddd.criteria import combined, parse_order
+from sincpro_framework.orm import event_table, map_events
 
-
-@dataclass(kw_only=True)
-class BillingHistory(EventLogEntry): ...
-
-
-map_aggregates(billing, {BillingHistory: event_log_table("billing_history", billing.metadata)})
+billing_events = event_table("billing_events", billing.metadata)
+map_events(billing, BillingEvent, billing_events)       # BillingEvent and every subclass
 billing.metadata.create_all(database.engine)
 
-with repository.context() as unit:
-    payment = unit.get(Payment, payment.id)
-    payment.amount = 130
-    unit.save(payment)
-    unit.save(BillingHistory.of_all(payment.pull_events()))
+payment = repository.get(Payment, payment.id)
+payment.amount = 130
+repository.save(payment)                    # the payment, and its PaymentUpdated, one commit
 
-[entry] = repository.fetch_all(BillingHistory, BillingHistory.of_entity(payment)).items
-assert entry.event_type == EntityUpdated.name
-assert entry.payload["changes"] == {"amount": [120, 130]}
+about_the_payment = Criteria(
+    where=Condition(field="entity_id", value=payment.id), order=parse_order("id")
+)
+[kept] = repository.fetch_all(PaymentUpdated, about_the_payment).items   # its history
+assert kept.changes == {"amount": (120, 130)}
+assert [type(one) for one in repository.fetch_all(BillingEvent, about_the_payment).items] == [
+    PaymentUpdated
+]
 ```
 
-It is not event sourcing (§11): the state stays in its own table, and this is what happened to it.
-An entry keeps the event's own id, so saving the same fact twice is a `DuplicateAggregate`. More
-in [change-tracking.md](../events/change-tracking.md).
+| Column | What it is |
+|---|---|
+| `id`, `name`, `created_at` | the event: who it is, which class, when |
+| `entity_type`, `entity_id`, `entity_version` | what it is about — empty for an event about no entity |
+| `correlation_id`, `causation_id`, `label` | the envelope every `DomainEvent` carries |
+| `payload` | what the subclass declares, as JSON, typed back on load |
+| `is_deliverable`, `delivered_at`, `next_delivery_at`, `delivery` | where a deliverable event's delivery stands (§12) |
+
+What this gives, with nothing else to learn:
+
+- **Kept with the change.** `save(aggregate)` writes the events it recorded in the same
+  transaction; a rollback keeps neither. A save repeated keeps an event once.
+- **Read, never taken.** The aggregate still has them: `pull_events()` hands them to whoever
+  publishes by hand (§9).
+- **An event about nothing** — `repository.save([DayClosed()])` — is kept the same way, with
+  `entity_type` and `entity_id` empty.
+- **Queried like any entity.** `fetch_all(PaymentUpdated, criteria)` answers that class;
+  `fetch_all(BillingEvent, criteria)` the whole context, each row as its class.
+
+A project with no table for its events loses nothing: they are recorded, pulled and published
+as in §9. More in [change-tracking.md](../events/change-tracking.md).
 
 ## 11. Event sourcing
 
-When the history *is* the product — a ledger, an audit — nothing is updated: writing is
-appending a fact, and the state is what the facts add up to. A `DomainEvent` is an `Entity`, so
-the same repository stores and queries it. `event_columns()` is the envelope every event
-carries.
+Keeping the events beside the state is *event storing*: the payment still has its row. When the
+history *is* the state — a ledger, an account — the entity keeps no row: `EventSourcedMixin`
+makes its state what its events add up to. Each event it records is applied at once and numbered
+in the entity's history (`entity_version` 1, 2, 3 …); `repository.get` rebuilds it from them and
+`repository.save` appends the new ones.
 
 ```python
-from sincpro_framework.ddd import Sort
-from sincpro_framework.orm import event_columns
-
-ledger = registry()
+from sincpro_framework.ddd import EventSourcedMixin
 
 
 @dataclass(kw_only=True)
-class MoneyDeposited(DomainEvent):
-    name = "bank.v1.money_deposited"
-    account_id: str = ""
+class MoneyDeposited(BillingEvent):
+    name = "billing.account.v1.money_deposited"
     amount: int = 0
 
 
 @dataclass(kw_only=True)
-class MoneyWithdrawn(DomainEvent):
-    name = "bank.v1.money_withdrawn"
-    account_id: str = ""
+class MoneyWithdrawn(BillingEvent):
+    name = "billing.account.v1.money_withdrawn"
     amount: int = 0
 
 
-class Deposits(EntityCollection[MoneyDeposited]): ...
+@dataclass
+class CustomerAccount(EventSourcedMixin, Entity):
+    event_base = BillingEvent                      # where its events are read from
+    balance: int = 0
+
+    def deposit(self, amount: int) -> None:
+        self.happened(MoneyDeposited(amount=amount))
+
+    def withdraw(self, amount: int) -> None:
+        if amount > self.balance:
+            raise ContractViolation("not enough money in the account")
+        self.happened(MoneyWithdrawn(amount=amount))
+
+    def apply(self, event: DomainEvent) -> None:   # how each event moves the state
+        match event:
+            case MoneyDeposited():
+                self.balance += event.amount
+            case MoneyWithdrawn():
+                self.balance -= event.amount
 
 
-class Withdrawals(EntityCollection[MoneyWithdrawn]): ...
+account = CustomerAccount(id="acc-1")
+account.deposit(500)
+account.deposit(300)
+repository.save(account)                           # two events; no row for the account
 
+account = repository.get(CustomerAccount, "acc-1")  # rebuilt from them, in order
+account.withdraw(200)
+repository.save(account)
 
-facts = {
-    MoneyDeposited: entity_table(
-        "money_deposited", ledger.metadata, *event_columns(),
-        Column("account_id", Text), Column("amount", Integer),
-    ),
-    MoneyWithdrawn: entity_table(
-        "money_withdrawn", ledger.metadata, *event_columns(),
-        Column("account_id", Text), Column("amount", Integer),
-    ),
-}
-map_aggregates(ledger, facts)
-ledger.metadata.create_all(database.engine)
-
-account = "acc-1"
-repository.save([
-    MoneyDeposited(account_id=account, amount=500),
-    MoneyDeposited(account_id=account, amount=300),
-])
-repository.save(MoneyWithdrawn(account_id=account, amount=200))
-
-of_account = Criteria(
-    where=Condition(field="account_id", value=account), order=(Sort(field="id"),)
-)
-balance = sum(fact.amount for fact in repository.fetch_all(Deposits, of_account)) - sum(
-    fact.amount for fact in repository.fetch_all(Withdrawals, of_account)
-)
-assert balance == 600
+again = repository.get(CustomerAccount, "acc-1")
+assert (again.balance, again.version) == (600, 3)
 ```
 
-Ordering by `id` is ordering by time: an id is a UUID v7. Rebuilding on every read does not
-scale, so the answer is usually also kept as a projection — an ordinary aggregate saved beside
-the facts. The costs: a fact is forever, so its shape is versioned in its `name` (`bank.v1.…`)
-and a v2 is a new class; a correction is another fact; and append-only is a discipline — make
-it a hook if it must be enforced:
+**Two writers never both win.** `(entity_type, entity_id, entity_version)` is unique in the
+table, so of two copies rebuilt at the same version the second to save finds its number taken:
 
 ```python
-append_only = Hooks(None)
-
-
-@append_only.on(DomainEvent)
-class WrittenOnce(Hook):
-    def before_save(self, fact: DomainEvent) -> None:
-        if not fact.is_new:
-            raise ContractViolation(f"{fact.name} is written once and never replaced")
-
-
-facts_only = Repository(database, append_only)
-
-correction = MoneyDeposited(account_id="acc-2", amount=10)
-facts_only.save(correction)
-correction.amount = 15
+mine = repository.get(CustomerAccount, "acc-1")
+theirs = repository.get(CustomerAccount, "acc-1")
+mine.deposit(10)
+repository.save(mine)
+theirs.withdraw(10)
 try:
-    facts_only.save(correction)
-    raise AssertionError("a fact must not be replaced")
-except ContractViolation:
+    repository.save(theirs)
+    raise AssertionError("the second writer must rebuild first")
+except StaleAggregate:
     pass
 ```
 
-See [shapes.md §3](../shapes.md#3-the-facts-are-the-state).
+The costs are the usual ones. An event is forever, so its shape is versioned in its `name`
+(`billing.account.v1.…`) and a v2 is a new class; a correction is another event. Rebuilding on
+every read grows with the history: a snapshot is the next iteration, and until then a read model
+is an ordinary aggregate saved beside the events. Replaying a history to another system is the
+broker's job (Kafka keeps it), not a second store. See
+[shapes.md §3](../shapes.md#3-the-facts-are-the-state).
 
-## 12. An outbox
+## 12. Delivering events
 
-To deliver an event to another process without losing it when that process is down, store it
-in the same transaction as the change, and let a relay deliver what is pending.
-`EventTrackableMixin` gives an event its own delivery state; `delivery_columns()` adds it to the
-table.
+Publishing after the commit can lose an event: the process can die between the two. The
+transactional outbox closes that gap, and here it is the event table itself: an event marked
+`DeliverableEventMixin` is kept with the change, in the same transaction, with where its
+delivery stands beside it; an `EventRelay` reads the ones not delivered yet, hands each one on,
+and marks it.
 
 ```python
-from sincpro_framework.ddd import EventStatus, EventTrackableMixin
-from sincpro_framework.orm import delivery_columns
-
-outbox = registry()
+from sincpro_framework.ddd import DeliverableEventMixin
+from sincpro_framework.event_driven import EventRelay
 
 
 @dataclass(kw_only=True)
-class InvoiceSent(EventTrackableMixin, DomainEvent):
-    name = "billing.invoice.v1.sent"
+class InvoiceSent(DeliverableEventMixin, BillingEvent):    # it leaves the context
+    name = "billing.invoice.v1.sent"                        # a contract: explicit, versioned
     invoice_id: str = ""
 
 
-class Outbox(EntityCollection[InvoiceSent]): ...
-
-
-outbox_table = entity_table(
-    "outbox", outbox.metadata, *event_columns(), *delivery_columns(),
-    Column("invoice_id", Text),
-)
-map_aggregates(outbox, {InvoiceSent: outbox_table})
-outbox.metadata.create_all(database.engine)
-
-with repository.context() as unit:                 # the change and its fact, together
+with repository.context() as unit:
     invoice = unit.get_by(Invoice, number="F-003")
     invoice.state = "sent"
-    unit.save(invoice)
-    unit.save(InvoiceSent(invoice_id=invoice.id))
+    invoice.record(InvoiceSent(invoice_id=invoice.id))
+    unit.save(invoice)                                 # the invoice and its event, one commit
 
-delivered: list[str] = []
-pending = Criteria(where=Condition(field="status", value=EventStatus.PENDING))
-with repository.context() as unit:                 # the relay
-    for fact in unit.search(Outbox, pending, for_update=True, skip_locked=True).items:
-        delivered.append(fact.invoice_id)          # hand it to the broker here
-        fact.mark_acknowledged()
-        unit.save(fact)
+shipping = UseFramework("shipping", log_after_execution=False)
+shipped: list[str] = []
 
-assert delivered == [invoice.id]
-assert repository.count(Outbox, pending).value == 0
+
+@shipping.feature(InvoiceSent)
+class ShipTheInvoice(Feature):
+    def execute(self, dto: InvoiceSent) -> None:
+        shipped.append(dto.invoice_id)
+
+
+relay = EventRelay(
+    repository,
+    BillingEvent,                                       # the context's events …
+    Publisher(SyncQueue(Subscriber(shipping))),         # … to a queue: or FastStreamQueue(kafka)
+)
+done = relay.run_once()
+
+assert (done.read, done.delivered) == (1, 1)
+assert shipped == [invoice.id]
+assert relay.run_once().read == 0                       # delivered once
+
+[sent] = repository.fetch_all(InvoiceSent).items
+assert sent.delivered_at is not None
+assert "delivered_at" not in sent.as_json()             # its delivery is never sent with it
 ```
 
-`for_update` with `skip_locked` lets several relays run at once without claiming the same row
-(on PostgreSQL; SQLite has one writer anyway). A delivery that fails is `mark_failed(reason)`,
-and `attempts` caps the retries.
+**Delivery is the event's own state**, not a reader's checkpoint: three fields the mixin adds.
+
+| Field | Kept as | What it says |
+|---|---|---|
+| `delivered_at` | column | when it went out — empty while it has not |
+| `next_delivery_at` | column | when the relay may try it — at once when it is made, later after a failure, empty once parked |
+| `delivery` | JSON | for people: `{"attempts": 2, "last_error": "…", "parked": true}` |
+
+`is_deliverable` is a column too, so every question is a `Criteria` over the same repository —
+what is pending, what was parked, what one invoice sent:
+
+```python
+pending = Criteria(
+    where=combined(
+        Condition(field="is_deliverable", value=True),
+        Condition(field="delivered_at", operator=Operator.IS_NULL, value=True),
+    )
+)
+assert repository.count(BillingEvent, pending).value == 0
+```
+
+What one pass does:
+
+| Step | What happens |
+|---|---|
+| claim | the deliverable events of `source` not delivered and due, oldest first, at most `batch` — inside a unit of work, `FOR UPDATE SKIP LOCKED` where the database has it, so replicas never take the same event |
+| hand on | each one to the publisher, in order; a failure is the policy's to decide |
+| mark | `delivered_at`, or the retry, park or skip — saved in the same transaction |
+
+**What a failure does is a strategy.** The default, `RetryInPlace(attempts=5)`, tries the event
+again with exponential backoff and holds everything behind it, then parks it and goes on:
+
+| Policy | An event that fails |
+|---|---|
+| `RetryInPlace(attempts, backoff, then=…, never_retry=…)` | tried again on the next pass; nothing after it goes first |
+| `RetryLater(attempts, backoff, then=…, holds_stream=True)` | tried again at its time; the rest go on, the later events of its entity wait behind it |
+| `ParkAndContinue()` | kept aside with its reason; `event.replayed()` and a save put it back |
+| `SkipAndContinue()` | marked delivered with a log line and the reason in `delivery` |
+
+`ExponentialBackoff` and `FixedBackoff` space the attempts; `never_retry=(ValueError, …)` parks
+at once an error that no retry will fix.
+
+**At least once, never lost.** A relay that dies after handing an event on and before the commit
+leaves it unmarked, and the next pass sends it again — a consumer is idempotent (the
+[inbox](../events/brokers.md)). An event no aggregate records is kept the same way through
+`Publisher(RepositoryQueue(repository))`. Run the relay from a cron:
+
+```python
+from datetime import timedelta
+
+from sincpro_framework.cron import Crons
+
+delivery = Crons("delivery")
+delivery.run_relay(relay, every=timedelta(seconds=5))
+```
+
+`delivery.relay_deliverable_events(repository=…, source=BillingEvent, to=Publisher(…))` builds
+the relay and schedules it in one line. The model and why it is this way are in
+[PRD_19](../prd/PRD_19_events-as-entities.md) and
+[decision 31](decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table).
 
 ## 13. Testing
 

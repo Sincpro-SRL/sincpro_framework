@@ -82,13 +82,14 @@ daemon), both rebuildable; snapshots for long streams; versioned events with upc
    NServiceBus routing slips) or durable execution (Temporal).
 
 **Where we are.** We have the envelope (`correlation_id`, `causation_id`), `record`/`pull_events`,
-the publisher and queues, FastStream brokers with an inbox and per-key ordering, outbox columns
-with `skip_locked`, the event log, `EntityUpdated`, `after_commit`. But **event sourcing and the
-relay are recipes, not components**: `DomainEvent.sequence` is the position in one transaction,
-not a stream revision; rebuilding state reads one table per event class; nothing compares an
-expected version, so two writers can both append; the relay has no lease (a crash leaves rows in
-PROCESSING) and nothing for the visibility gap. And the docs disagree — `brokers.md` says the
-commit-to-publish window is open while the matrix marked it closed.
+the publisher and queues, FastStream brokers with an inbox, `EntityUpdated`, `after_commit` — and
+the model the mature stores share (PRD_19, [decision 31](decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table)):
+a domain event as an entity in one table per bounded context, kept by the repository in the
+transaction of the change; `DeliverableEventMixin` with the delivery state on the row, delivered
+by an `EventRelay` with `FOR UPDATE SKIP LOCKED` and failures decided by a strategy — the outbox's
+polling publisher, with no checkpoint and so no Postgres visibility gap; and `EventSourcedMixin`,
+rebuilt from the same table, two writers kept apart by a unique `entity_version`. Replay and
+fan-out to other systems are the broker's. Snapshots and sagas are not built.
 
 ## 3. Volume: millions of rows and data engineering
 
@@ -134,7 +135,7 @@ the answer** (Django, LINQ's `AsEnumerable` trap) — the source of the expensiv
 | Optimistic lock, idempotency, soft delete, audit, change history, i18n text | ✅ |
 | Tenant scope | ✅ `narrowed`, applied by hand |
 | A concise query and named scopes | 🟡 `Criteria` is correct and verbose; `combined()` only |
-| Gapless numbering per (company, series, year) — fiscal invoices | ✅ `Numbering`, a counter row taken in the unit of work |
+| Gapless numbering per (company, series, year) — fiscal invoices | ✅ `DatabaseNumbering`, a counter row taken in the unit of work |
 | Rules bound to the request (tenant, company) on every read, checked on every write (`check_company`) | ⬜ |
 | Money (amount and currency, rounding per currency) | 🟡 a rule, no type |
 | Stored derived fields that can be searched | 🟡 hooks compute them; nothing declares them |
@@ -163,7 +164,7 @@ capabilities for what varies by store, an explicit transaction handle rather tha
 
 **The shape ours takes** ([decision 27](decisions.md#27-a-baseline-capabilities-on-top-and-a-view-per-aggregate)):
 
-    ddd.Repository                 ReadsAggregates + WritesAggregates     the baseline, any store
+    ddd.IRepository                 ReadsAggregates + WritesAggregates     the baseline, any store
       + Analyzes                   distinct · measures · group_by         when the store can fold
       + WritesInBulk               upsert · update_all · remove_all       when it can write past the aggregate
       + Transacts                  context · after_commit · after_rollback   when it has transactions
@@ -173,7 +174,7 @@ capabilities for what varies by store, an explicit transaction handle rather tha
     orm.Repository                 baseline + every capability + SQLAlchemy's own door
 
     AggregateRepository[T]         one aggregate's view over any repository, for named questions
-    orm.AggregateRepository[T]     the same over the database repository: analysis, bulk,
+    orm.DatabaseAggregateRepository[T]     the same over the database repository: analysis, bulk,
                                    context(), narrowed(), statement() / run(), session
 
 **Two flavours of one repository.** The generic repository with a `Criteria` is the first door: it
@@ -201,7 +202,7 @@ the capabilities it calls; moving each to that is the work of each component.
 | Relations: reading | **Mature** — per page, per parent, across contexts |
 | Relations: writing | **Partial** — safe and declared, but rebuilt beside `relationship()`; PRD_18 open |
 | Collections in memory | **Mature** as an answer; the question side lacks sugar |
-| Events and event sourcing | **Recipes** — the pieces exist; the stream, the relay, projections and sagas are not components |
+| Events and event sourcing | **Partial** — events as entities, the relay and event-sourced entities are built; snapshots, projection rebuilds and sagas are not |
 | Volume and analytics | **Partial** — SQL-side solid, client-side hydrates |
 | Many stores | **Started** — the baseline and capabilities are declared (§5); access plans and a second adapter are missing |
 | Enterprise record concerns | **Partial** — the common ones built; fiscal numbering, money, request-bound rules missing |
@@ -214,13 +215,14 @@ Ordered by what protects data first, then what removes the most hand-written cod
 
 1. ~~The aggregate's `version` moves with its parts.~~ Built: a part written, added or dropped
    updates the root with its version checked ([decision 28](decisions.md#28-the-version-is-the-aggregates)).
-2. ~~Gapless numbering.~~ Built: `Numbering.take(series, count, scope)` in the unit of work, and
+2. ~~Gapless numbering.~~ Built: `DatabaseNumbering.take(series, count, scope)` in the unit of work, and
    every repository on one `Database` joins the unit of work in play, so several Features commit
    together ([decisions 29–30](decisions.md#29-a-unit-of-work-is-joined-by-every-repository-on-its-database)).
-3. The outbox relay as a component: a lease on claimed rows, batches, order per key, the Postgres
-   visibility gap closed; `brokers.md` and the matrix made to agree.
-4. Event sourcing with a stream per aggregate: `append(stream, events, expected=…)` over
-   `UNIQUE(stream_id, version)`, a global position, `load`/`save` for an event-sourced aggregate.
+3. ~~The outbox relay as a component.~~ Built as the context's event table and `EventRelay` —
+   per-row delivery state, `SKIP LOCKED`, failure policies
+   ([decision 31](decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table), PRD_19).
+4. ~~Event sourcing: an expected version on append.~~ Built: `EventSourcedMixin`, `entity_version`
+   unique per entity; snapshots are next.
 
 **Phase 2 — simplicity (less hand-written, nothing rebuilt)**
 

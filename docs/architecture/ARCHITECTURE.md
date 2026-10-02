@@ -56,7 +56,7 @@ The framework is designed for enterprise applications that require:
 | **Value Objects** | `ddd/value_object.py` | DDD Value Objects implementation | Domain | - |
 | **Domain vocabulary** | `ddd/` | `Entity`, `Criteria` with `Specification`, `EntityCollection`, `Meta`, `Query`, `Relation` and `Resolver`, `DomainEvent` — how an aggregate is declared, asked about and related, with no database. See [specification.md](../persistence/specification.md) and [decisions.md](../persistence/decisions.md) | Domain | Pydantic |
 | **Persistence adapter** | `orm/sqlalchemy/` | Runs a `Criteria` against a database, resolves relations once per page, persists aggregates with a version check. See [persistence.md](../persistence/reference.md) | Infrastructure | SQLAlchemy (optional extra) |
-| **Domain events** | `events/` | `Publisher`, `Subscriber` made of buses, `SyncQueue` and `BackgroundQueue`. See [events.md](../events/README.md) | Application | multiprocessing |
+| **Event-driven** | `event_driven/` | `Publisher`, `Subscriber` made of buses, `SyncQueue` and `BackgroundQueue`. See [events.md](../events/README.md) | Application | multiprocessing |
 | **Exception Handling** | `exceptions.py` | Framework-specific exceptions | Cross-cutting | - |
 | **Introspection** | `introspection/` | Read a built framework's Feature/ApplicationService/DTO registries — used by `entrypoints/` | Cross-cutting | use_bus, bus |
 | **Scalar Executor** | `entrypoints/scalar_executor.py` | Scalar (dict) in/out execution against a UseFramework | Exposure | introspection |

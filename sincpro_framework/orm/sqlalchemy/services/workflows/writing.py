@@ -14,12 +14,15 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     conditions_of,
 )
-from sincpro_framework.ddd.entity import utc_now
+from sincpro_framework.ddd.entity import EventSourcedMixin, utc_now
 from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
+from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
+    DuplicateAggregate,
+    StaleAggregate,
 )
 from sincpro_framework.ddd.repositories.capabilities import Upserted
 from sincpro_framework.ddd.repositories.repository import (
@@ -35,6 +38,10 @@ from sincpro_framework.orm.sqlalchemy.services.cascade import (
     Plan,
     planned_removal,
     planned_save,
+)
+from sincpro_framework.orm.sqlalchemy.services.event_mapping import (
+    is_mapped_event,
+    map_new_event_classes,
 )
 from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.services.workflows.store import Store
@@ -144,7 +151,54 @@ class Writing(Store):
             session.add_all(batch)
             self._written(session, batch)
         plan.written()
+        self._facts_kept(session, [*plan.stored, *plan.removed])
         return newness
+
+    def _facts_kept(self, session: Session, records: list[Any]) -> None:
+        """What the records of this write recorded, kept in their context's event table in the
+        same session — after the flush, so the events recorded while flushing (change tracking's
+        `EntityUpdated`) are among them. An event whose class has no event table stays in memory.
+
+        **Read, never taken.** The aggregate keeps its events — `pull_events()` still hands them
+        to whoever wants them. An event is kept once by its id, so saving the same aggregate
+        again keeps only what is new.
+        """
+        events = [
+            event
+            for one in records
+            if not isinstance(one, DomainEvent) and hasattr(one, "recorded_events")
+            for event in one.recorded_events()
+            if is_mapped_event(type(event))
+        ]
+        fresh = self._not_kept(session, events)
+        if fresh:
+            session.add_all(fresh)
+            with named(_named(fresh)):
+                session.flush(objects=fresh)
+
+    def _not_kept(self, session: Session, events: list[Any]) -> list[Any]:
+        """The events not kept yet, each once — by id, in the order given."""
+        map_new_event_classes()
+        fresh: list[Any] = []
+        seen: set[str] = set()
+        with session.no_autoflush:
+            for event in events:
+                if event.id in seen or session.get(type(event), event.id) is not None:
+                    continue
+                seen.add(event.id)
+                fresh.append(event)
+        return fresh
+
+    def _events_of_sourced(self, session: Session, records: list[Any]) -> list[Any]:
+        """The records to write, an event-sourced entity standing for the events it recorded
+        since it was rebuilt — its state has no row; its events are its state."""
+        written: list[Any] = []
+        for one in records:
+            if isinstance(one, EventSourcedMixin):
+                written.extend(self._not_kept(session, one.unsaved_events()))
+            else:
+                written.append(one)
+        return written
 
     def _announced(self, plan: Plan, newness: list[bool]) -> None:
         for one in plan.removed:
@@ -184,9 +238,17 @@ class Writing(Store):
         records = records_of(record)
         if not records:
             return
-        with self._session() as session:
-            plan = planned_save(session, records)
-            newness = self._carried_out(session, plan)
+        try:
+            with self._session() as session:
+                plan = planned_save(session, self._events_of_sourced(session, records))
+                newness = self._carried_out(session, plan)
+        except DuplicateAggregate as error:
+            if "entity_version" in str(error):
+                raise StaleAggregate(
+                    f"{_named(records)} changed since it was rebuilt: another writer appended "
+                    "its next event first; rebuild it and try again"
+                ) from error
+            raise
         self._announced(plan, newness)
 
     def remove(self, record: Any) -> None:

@@ -21,10 +21,8 @@ from sincpro_framework.ddd.entity import Entity, Translated
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-    entity_table,
-    map_aggregates,
-)
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 ZERO = Decimal("0.00")
 

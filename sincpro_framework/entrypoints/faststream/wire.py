@@ -57,8 +57,8 @@ from sincpro_framework.entrypoints.faststream.verdicts import (
     combined,
     failed,
 )
-from sincpro_framework.events.faststream.queue import Broker
-from sincpro_framework.events.trace import within_trace
+from sincpro_framework.event_driven.adapters.faststream.queue import Broker
+from sincpro_framework.event_driven.infrastructure.trace import within_trace
 from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,

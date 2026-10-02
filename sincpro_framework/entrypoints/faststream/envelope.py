@@ -21,8 +21,8 @@ from uuid import uuid4
 from pydantic import ConfigDict
 
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.events.faststream.queue import EVENT_HEADER
-from sincpro_framework.events.trace import trace_carrier
+from sincpro_framework.event_driven.adapters.faststream.queue import EVENT_HEADER
+from sincpro_framework.event_driven.infrastructure.trace import trace_carrier
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 SPEC_VERSION = "1.0"

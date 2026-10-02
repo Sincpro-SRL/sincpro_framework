@@ -7,25 +7,28 @@ import inspect
 import pytest
 from sqlalchemy import func
 
-from sincpro_framework.ddd import AggregateRepository as BaseAggregateRepository
 from sincpro_framework.ddd import (
+    AggregateRepository,
     Analyzes,
     Condition,
     Criteria,
     EntityCollection,
+    IRepository,
     MemoryRepository,
     ReadsAggregates,
+    StoreCapabilities,
+    Transacts,
+    WritesAggregates,
+    WritesInBulk,
 )
-from sincpro_framework.ddd import Repository as DddRepository
-from sincpro_framework.ddd import StoreCapabilities, Transacts, WritesAggregates, WritesInBulk
 from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
-from sincpro_framework.orm import AggregateRepository, Repository
+from sincpro_framework.orm import DatabaseAggregateRepository, Repository
 
 from .engines import fresh
 from .ledger_models import Account, Owner, account_table, bank, declare
 
 
-class Accounts(AggregateRepository[Account]):
+class Accounts(DatabaseAggregateRepository[Account]):
     def of(self, owner: Owner) -> EntityCollection[Account]:
         return self.search(Criteria(where=Condition(field="owner_id", value=owner.id)))
 
@@ -95,14 +98,14 @@ def test_the_aggregate_is_read_off_the_class(ledger, ana):
 
 
 def test_a_view_nobody_names_is_handed_its_aggregate(ledger, ana):
-    owners = AggregateRepository(ledger, Owner)
+    owners = DatabaseAggregateRepository(ledger, Owner)
     found = owners.get_by(name="ana")
     assert found is not None and found.id == ana.id
 
 
 def test_a_view_without_an_aggregate_is_refused(ledger):
     with pytest.raises(ContractViolation, match="which aggregate"):
-        AggregateRepository(ledger)
+        DatabaseAggregateRepository(ledger)
 
 
 def test_a_named_view_cannot_be_pointed_at_another_aggregate(ledger):
@@ -112,7 +115,7 @@ def test_a_named_view_cannot_be_pointed_at_another_aggregate(ledger):
 
 def test_the_baseline_view_runs_on_any_store(ana):
     memory = MemoryRepository(ana)
-    owners = BaseAggregateRepository(memory, Owner)
+    owners = AggregateRepository(memory, Owner)
     assert owners.count().value == 1
     assert owners.exists()
 
@@ -229,7 +232,7 @@ def parameters(function: object) -> list[str]:
 
 @pytest.mark.parametrize(
     ("store", "view"),
-    [(Repository, AggregateRepository), (DddRepository, BaseAggregateRepository)],
+    [(Repository, DatabaseAggregateRepository), (IRepository, AggregateRepository)],
     ids=["orm", "ddd"],
 )
 def test_every_method_of_the_store_is_on_its_view_or_left_to_the_store_by_name(store, view):
@@ -240,7 +243,7 @@ def test_every_method_of_the_store_is_on_its_view_or_left_to_the_store_by_name(s
 
 @pytest.mark.parametrize(
     ("store", "view"),
-    [(Repository, AggregateRepository), (DddRepository, BaseAggregateRepository)],
+    [(Repository, DatabaseAggregateRepository), (IRepository, AggregateRepository)],
     ids=["orm", "ddd"],
 )
 def test_the_view_asks_what_the_store_asks_less_the_aggregate(store, view):

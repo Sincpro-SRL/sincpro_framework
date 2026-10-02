@@ -3,7 +3,7 @@
 The domain keeps two verbs: `publish(event)`, and registering an event on a bus. Which broker
 carries it — a topic, a queue, a channel, a subject — and with which partitions, retries or
 acknowledgements is the broker's configuration. [FastStream](https://faststream.ag2.ai) speaks to
-each one with the same API, and `sincpro_framework.events.faststream` plugs it in on both sides:
+each one with the same API, and `sincpro_framework.event_driven.adapters.faststream` sends and `sincpro_framework.entrypoints.faststream` listens:
 
 - `FastStreamQueue(broker)` is one more `Queue`: `put` for synchronous code, `aput` for async.
 - `subscribe(broker, Subscriber(...))` gives every event the buses registered its subscription.
@@ -46,8 +46,9 @@ class BookPayment(Feature):
 ```python
 from faststream.kafka import KafkaBroker, TestKafkaBroker
 
-from sincpro_framework.events import Publisher, Subscriber
-from sincpro_framework.events.faststream import FastStreamQueue, keyed_by_entity, subscribe
+from sincpro_framework.event_driven import Publisher, Subscriber
+from sincpro_framework.entrypoints.faststream import subscribe
+from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
 
 broker = KafkaBroker("kafka:9092")
 channels = subscribe(broker, Subscriber(accounting))
@@ -85,7 +86,7 @@ A service that is already async and connected the broker itself — a FastAPI li
 FastStream app — uses the queue without starting it: `aput` publishes on the caller's loop.
 
 ```python
-from sincpro_framework.events import AsyncPublisher
+from sincpro_framework.event_driven import AsyncPublisher
 
 
 async def an_async_service() -> None:
@@ -125,8 +126,10 @@ Read this before relying on an event to keep two contexts in step.
   the `publish` where it was called. What the broker then promises — kept on disk, replicated —
   is its configuration (a Kafka topic's replication, a durable RabbitMQ queue).
 - **Between the commit and the publish.** A Feature that saves and then publishes can crash in
-  between: the state is committed and the event is lost. Nothing here closes that window yet —
-  that is an outbox (the event written in the same transaction, sent by a relay).
+  between: the state is committed and the event is lost. The context's event table closes that
+  window: the event is kept in the same transaction as the change, and an `EventRelay` publishes
+  it after, at least once
+  ([persistence guide §12](../persistence/guide.md#12-delivering-events)).
 - **Receiving: at least once.** `subscribe` is the queue entrypoint over the subscriber's buses
   — [`QueueGateway`](../entrypoints/queue.md), their events only — so every subscription
   acknowledges manually, never with FastStream's per-broker default (which commits a Kafka offset

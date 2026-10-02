@@ -81,7 +81,7 @@ class HttpTransport:
         3. Final: the answer rebuilt as `response` as it is read, or the failure raised as itself.
         """
         from sincpro_framework.auth.transports import identity_headers
-        from sincpro_framework.events.trace import trace_carrier
+        from sincpro_framework.event_driven.infrastructure.trace import trace_carrier
 
         headers = {
             "content-type": "application/octet-stream",

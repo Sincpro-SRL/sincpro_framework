@@ -46,7 +46,7 @@ from sincpro_framework.entrypoints.faststream.wire import (
     channel_of,
 )
 from sincpro_framework.entrypoints.gateway import DEFAULT_LAYERS, Buses, Gateway, Published
-from sincpro_framework.events.faststream.queue import Broker
+from sincpro_framework.event_driven.adapters.faststream.queue import Broker
 from sincpro_framework.use_bus import UseFramework
 
 

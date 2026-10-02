@@ -4,26 +4,25 @@ Hears that stock was reserved and issues an invoice. **It does not hold the orde
 needs something the order knows, it asks — a command on the `orders` bus, answered by that
 context. That is the reference that works whether or not the two share a database.
 
-Its outbox is here too: the fact and the invoice commit together, and a relay is what sends it.
+Its events are kept here too: the invoice and the fact it was issued commit together, in
+billing's event table, and the relay is what delivers the fact — the transactional outbox.
 """
 
 from dataclasses import dataclass
 
-from sqlalchemy import Column, Index, Integer, Text
+from sqlalchemy import Column, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
+from sincpro_framework.ddd import Criteria, DeliverableEventMixin, DomainEvent
+from sincpro_framework.ddd.criteria import Condition, Operator, parse_order
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
-from sincpro_framework.ddd.events import EventStatus, EventTrackableMixin
+from sincpro_framework.event_driven import DeliveryFailurePolicy, EventRelay, RelayPass
+from sincpro_framework.orm import event_table, map_events
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-    delivery_columns,
-    entity_table,
-    event_columns,
-    map_aggregates,
-)
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 from .contracts import InvoiceIssued, StockReserved
 
@@ -35,19 +34,22 @@ class Invoice(Entity):
     total: int = 0
 
 
-@dataclass(kw_only=True)
-class Outbox(EventTrackableMixin, InvoiceIssued):
-    """The fact, with its delivery state, written in the same transaction as the invoice."""
-
-    name = "billing.v1.invoice_issued"
-
-
 class Invoices(EntityCollection[Invoice]):
     pass
 
 
-class Outboxes(EntityCollection[Outbox]):
-    pass
+@dataclass(kw_only=True)
+class BillingEvent(DomainEvent):
+    """Every event of billing: its one event table."""
+
+    name = "billing.v1.event"
+
+
+@dataclass(kw_only=True)
+class IssuedInvoice(DeliverableEventMixin, InvoiceIssued, BillingEvent):
+    """The contract other contexts hear, kept in billing's table and delivered by the relay."""
+
+    name = "billing.v1.invoice_issued"
 
 
 mapper = registry()
@@ -60,24 +62,22 @@ invoice_table = entity_table(
     Column("customer", Text),
     Column("total", Integer),
 )
-outbox_table = entity_table(
-    "shop_billing_outbox",
-    metadata,
-    *event_columns(),
-    *delivery_columns(),
-    Column("order_id", Text),
-    Column("invoice_id", Text),
-    Column("total", Integer),
-    Index("shop_billing_pending", "status"),
-)
-map_aggregates(mapper, {Invoice: invoice_table, Outbox: outbox_table})
+events_table = event_table("shop_billing_events", metadata)
+map_aggregates(mapper, {Invoice: invoice_table})
+map_events(mapper, BillingEvent, events_table)
 
-PENDING = Criteria(
-    where=Condition(field="status", value=EventStatus.PENDING.value),
-    # Ordered, and it is not a detail: a relay that claims without an order delivers the facts
-    # in whatever order the engine felt like, and anything that folds them ends up wrong.
-    order=(Sort(field="id"),),
-)
+
+def facts(repository: Repository) -> list[DomainEvent]:
+    """Every event billing kept, oldest first."""
+    return list(repository.fetch_all(BillingEvent, Criteria(order=parse_order("id"))).items)
+
+
+def pending(repository: Repository) -> int:
+    """The deliverable events not delivered yet."""
+    undelivered = Criteria(
+        where=Condition(field="delivered_at", operator=Operator.IS_NULL, value=True)
+    )
+    return repository.count(IssuedInvoice, undelivered).value
 
 
 class ResponseHeard(DataTransferObject):
@@ -104,45 +104,26 @@ def build(repository: Repository, ask_orders, refuse: bool = False) -> UseFramew
         def execute(self, dto: StockReserved) -> ResponseHeard:
             """1. Ask the other context for what only it knows.
             2. The invoice and the fact, in one transaction.
-            3. Final: nothing is published here — the relay sends it."""
+            3. Final: nothing is published here — the relay delivers it."""
             if refuse:
                 raise RefusedToInvoice(f"billing refused order {dto.order_id}")
             told = self.ask_orders(dto.order_id)  # type: ignore[operator]
             invoice = Invoice(order_id=dto.order_id, customer=told.customer, total=told.total)
+            issued = IssuedInvoice(
+                order_id=dto.order_id, invoice_id=invoice.id, total=invoice.total
+            )
             with self.repository.context() as unit:
                 unit.save(invoice)
-                unit.save(
-                    Outbox(
-                        order_id=dto.order_id,
-                        invoice_id=invoice.id,
-                        total=invoice.total,
-                    )
-                )
+                unit.save([issued])
             return ResponseHeard()
 
     return bus
 
 
-def relay(repository: Repository, publisher) -> int:
-    """Claim what is pending, deliver it, acknowledge.
-
-    1. Claim under a row lock, so two relays never take the same fact.
-    2. Publish outside the transaction — a subscriber must not run inside our write.
-    3. Final: acknowledge what went out.
-    """
-    with repository.context() as unit:
-        claimed = list(unit.search(Outboxes, PENDING, for_update=True, skip_locked=True))
-        for one in claimed:
-            one.mark_processing()
-            unit.save(one)
-
-    for one in claimed:
-        publisher.publish(
-            InvoiceIssued(order_id=one.order_id, invoice_id=one.invoice_id, total=one.total)
-        )
-
-    with repository.context() as unit:
-        for one in claimed:
-            one.mark_acknowledged()
-            unit.save(one)
-    return len(claimed)
+def relay(
+    repository: Repository, publisher, on_failure: DeliveryFailurePolicy | None = None
+) -> RelayPass:
+    """One pass of billing's relay."""
+    if on_failure is None:
+        return EventRelay(repository, BillingEvent, publisher).run_once()
+    return EventRelay(repository, BillingEvent, publisher, on_failure).run_once()

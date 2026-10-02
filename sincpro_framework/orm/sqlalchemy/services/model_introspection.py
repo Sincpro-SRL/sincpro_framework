@@ -33,6 +33,10 @@ from sincpro_framework.ddd.entity.model_meta import (
 from sincpro_framework.ddd.entity.relations import key_pair
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
+from sincpro_framework.orm.sqlalchemy.services.event_mapping import (
+    is_mapped_event,
+    map_new_event_classes,
+)
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:
@@ -83,6 +87,16 @@ def _is_shape(candidate: Any) -> bool:
     return is_dataclass(candidate) or hasattr(candidate, "model_fields")
 
 
+def _column_type(column: Any) -> Any:
+    """What a mapped column holds when the class does not say it — a column the mapping adds
+    that no field declares, like a context's event table's delivery columns."""
+    try:
+        python_type = column.type.python_type
+    except NotImplementedError:
+        return Any
+    return python_type | None if column.nullable else python_type
+
+
 @cache
 def describe(entity: type) -> Meta:
     """Context: what a caller is told about this aggregate, read off the model itself.
@@ -107,10 +121,15 @@ def describe(entity: type) -> Meta:
     """
     try:
         mapper = inspect(entity)
-    except NoInspectionAvailable as error:
+    except NoInspectionAvailable:
+        mapper = None
+    if mapper is None and is_mapped_event(entity):
+        map_new_event_classes()  # an event class declared after its base was mapped
+        mapper = inspect(entity)
+    if mapper is None:
         raise ContractViolation(
             f"{entity.__name__} is not a mapped aggregate; there is nothing to query"
-        ) from error
+        )
 
     annotations = annotations_of(entity)
     identity = mapper.primary_key[0].name
@@ -123,7 +142,7 @@ def describe(entity: type) -> Meta:
 
     fields: dict[str, FieldMeta] = {}
     for column in mapper.columns:
-        annotation = annotations.get(column.key, Any)
+        annotation = annotations.get(column.key) or _column_type(column)
         shape, many = related_class(annotation)
         if shape is not None and _is_shape(shape):
             fields[column.key] = FieldMeta.for_embedded(

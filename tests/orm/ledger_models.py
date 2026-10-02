@@ -13,11 +13,11 @@ from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import (
     archive_columns,
     entity_table,
-    map_aggregates,
 )
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 
 @dataclass

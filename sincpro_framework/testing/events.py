@@ -14,7 +14,7 @@ without a harness to learn.
 from typing import Any
 
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.events.queue import Queue
+from sincpro_framework.event_driven.domain.queue import Queue
 
 
 class RecordingQueue:

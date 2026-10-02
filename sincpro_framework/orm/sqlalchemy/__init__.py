@@ -18,33 +18,32 @@ from sincpro_framework.orm.sqlalchemy.domain.custom_fields import JsonText, Tran
 from sincpro_framework.orm.sqlalchemy.domain.relations import Orphans
 from sincpro_framework.orm.sqlalchemy.domain.transaction import Isolation, Writes
 from sincpro_framework.orm.sqlalchemy.entrypoint.aggregate_repository import (
-    AggregateRepository,
+    DatabaseAggregateRepository,
 )
-from sincpro_framework.orm.sqlalchemy.entrypoint.numbering import Numbering
+from sincpro_framework.orm.sqlalchemy.entrypoint.numbering import DatabaseNumbering
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.orm.sqlalchemy.entrypoint.templates import (
+    archive_columns,
+    audit_columns,
+    entity_columns,
+    entity_table,
+    event_columns,
+    event_table,
+    numbering_table,
+)
 from sincpro_framework.orm.sqlalchemy.infrastructure.cache_invalidation import (
     invalidate_on_commit,
 )
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import (
-    Relation,
-    archive_columns,
-    audit_columns,
-    delivery_columns,
-    entity_columns,
-    entity_table,
-    event_columns,
-    event_log_table,
-    map_aggregates,
-    numbering_table,
-)
+from sincpro_framework.orm.sqlalchemy.services.data_mapper import Relation, map_aggregates
+from sincpro_framework.orm.sqlalchemy.services.event_mapping import map_events
 from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.orm.sqlalchemy.services.sql_translator import register_grain_translator
 from sincpro_framework.orm.sqlalchemy.services.workflows.reading import Explained
 
 __all__ = [
-    "AggregateRepository",
-    "Numbering",
+    "DatabaseAggregateRepository",
+    "DatabaseNumbering",
     "numbering_table",
     "Isolation",
     "Writes",
@@ -55,13 +54,13 @@ __all__ = [
     "Relation",
     "archive_columns",
     "audit_columns",
-    "delivery_columns",
     "Repository",
     "TranslatedText",
     "describe",
     "entity_columns",
     "event_columns",
-    "event_log_table",
+    "event_table",
+    "map_events",
     "entity_table",
     "invalidate_on_commit",
     "map_aggregates",

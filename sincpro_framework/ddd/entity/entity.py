@@ -164,7 +164,7 @@ class Entity:
         """Says that something happened to this entity, without telling anybody yet.
 
             note.record(NoteArchived(reason="stale"))
-            →  the event carries this entity's type and id, and its place in the sequence
+            →  the event carries this entity's type and id
 
         Publishing is somebody else's job: the Feature that saved the change pulls what was
         recorded and hands it to an event bus, explicitly. These live in memory and die with
@@ -176,7 +176,6 @@ class Entity:
             event,
             entity_type=event.entity_type or type(self).__name__,
             entity_id=event.entity_id or self.id,
-            sequence=len(recorded),
         )
         recorded.append(stamped)
         return stamped

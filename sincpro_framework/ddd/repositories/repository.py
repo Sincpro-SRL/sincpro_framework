@@ -1,6 +1,6 @@
 """The least a repository answers, and the two ways to put something around it.
 
-    class Repository(ReadsAggregates, WritesAggregates):     the baseline every store honours
+    class IRepository(ReadsAggregates, WritesAggregates):    the baseline every store honours
         get · search · count · browse · fetch_all · stream · first · one · get_by
         exists · pluck · save · remove · archive
         capabilities                                what its engine honours (row locks…)
@@ -9,7 +9,7 @@
         before_remove · after_remove
 
     MemoryRepository(Repository, Analyzes, WritesInBulk)
-    orm.Repository(Repository, Analyzes, WritesInBulk, Transacts)
+    orm.Repository(IRepository, Analyzes, WritesInBulk, Transacts)
 
 **The baseline, and capabilities on top.** What every store answers with the same meaning is
 here; what only some stores can — folding numbers, writing past the aggregate, a transaction —
@@ -86,7 +86,7 @@ class _Hooks:
 
     __slots__ = ("_guard", "_token")
 
-    def __init__(self, repository: "Repository") -> None:
+    def __init__(self, repository: "IRepository") -> None:
         self._guard = id(repository._guard)
         self._token: Any = None
 
@@ -152,7 +152,7 @@ def refuse_unarchivable(records: list[Any]) -> None:
         )
 
 
-class Repository(ReadsAggregates, WritesAggregates):
+class IRepository(ReadsAggregates, WritesAggregates):
     """What every store answers, whatever is underneath: the baseline of reading and writing,
     and the hooks around both."""
 
@@ -162,11 +162,13 @@ class Repository(ReadsAggregates, WritesAggregates):
         says so."""
         return StoreCapabilities()
 
-    def __init__(self, hooks: Hooks | None = None, guard: "Repository | None" = None) -> None:
+    def __init__(
+        self, hooks: Hooks | None = None, guard: "IRepository | None" = None
+    ) -> None:
         """`hooks` is the bounded context's collection; `guard` is the repository this one is a
         view of — a unit of work, a narrowing — which runs the chain of the one it came from
         and counts as it when a hook writes."""
-        self._guard: "Repository" = guard if guard is not None else self
+        self._guard: "IRepository" = guard if guard is not None else self
         self._chain: HookChain = guard._chain if guard is not None else HookChain(hooks)
 
     def _read(self, record: Any) -> Any:

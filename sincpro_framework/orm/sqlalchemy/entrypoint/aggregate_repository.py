@@ -1,7 +1,7 @@
-"""`AggregateRepository[T]` on SQLAlchemy: the baseline view of one aggregate, and every
+"""`DatabaseAggregateRepository[T]`: the baseline view of one aggregate, and every
 capability the database repository has, with the aggregate already given.
 
-    class Invoices(AggregateRepository[Invoice]):
+    class Invoices(DatabaseAggregateRepository[Invoice]):
         def overdue(self, today: date) -> EntityCollection[Invoice]:
             return self.search(Criteria(where=Condition(field="due", operator="<", value=today)))
 
@@ -35,16 +35,14 @@ from sqlalchemy.orm import Session
 from sincpro_framework.ddd.criteria import Bucket, Criteria, Level, Pivot, Specification
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.exceptions import StaleAggregate, TransactionConflict
-from sincpro_framework.ddd.repositories.aggregate_repository import (
-    AggregateRepository as BaseAggregateRepository,
-)
+from sincpro_framework.ddd.repositories.aggregate_repository import AggregateRepository
 from sincpro_framework.ddd.repositories.capabilities import Upserted
 from sincpro_framework.orm.sqlalchemy.domain.transaction import Isolation, Writes
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.orm.sqlalchemy.services.workflows.reading import Explained
 
 
-class AggregateRepository[T](BaseAggregateRepository[T]):
+class DatabaseAggregateRepository[T](AggregateRepository[T]):
     """One aggregate, read and written through the database repository with everything it
     answers: analysis, bulk writes, the unit of work, and SQLAlchemy underneath."""
 

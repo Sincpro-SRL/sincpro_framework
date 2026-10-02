@@ -94,52 +94,36 @@ fact that crosses has to survive a crash between the write and the delivery.
 
 ### The fact and the write commit together
 
-An event is an `Entity`, so the repository already stores one. `EventTrackableMixin` adds its
-delivery state, and that is an outbox — no new class:
+A domain event is an entity: the context maps its base event class to one table, and the
+repository keeps what an aggregate recorded in the same transaction as the change:
+
+```python
+map_events(mapper, ExecutionDomainEvent, event_table("execution_events", md))
+
+with execution_repo.context() as unit:
+    run.advance("fitted")                # records RunAdvanced
+    unit.save(run)                       # the run and its event, the same transaction
+```
+
+Either both landed or neither did. **This is the reason the event is kept in the transaction**:
+publishing after the block commits is a window where a crash loses it for good.
+
+### A relay sends it on
 
 ```python
 @dataclass(kw_only=True)
-class Outbox(EventTrackableMixin, RunAdvanced):
-    name = "execution.v1.run_advanced"
+class RunAdvanced(DeliverableEventMixin, ExecutionDomainEvent):   # it crosses: deliverable
+    name = "execution.run.v1.advanced"
 
-outbox_t = entity_table("outbox", md, *event_columns(), *delivery_columns(),
-                        Column("run_id", Text), Column("stage", Text),
-                        Index("outbox_pending", "status"))
+
+relay = EventRelay(execution_repo, ExecutionDomainEvent, publisher)
+relay.run_once()     # from a cron: take what is due with SKIP LOCKED, hand on, mark each row
 ```
 
-```python
-with execution_repo.context() as unit:
-    run.stage = "fitted"
-    unit.save(run)
-    unit.save(Outbox(run_id=run.id, stage="fitted"))   # the same transaction
-```
-
-Either both landed or neither did. **This is the reason the outbox exists**: publishing after
-the block commits is a window where a crash loses the fact for good.
-
-### The relay: claim, deliver, acknowledge
-
-```python
-PENDING = Criteria(where=Condition(field="status", value=EventStatus.PENDING.value))
-
-with execution_repo.context() as unit:
-    claimed = unit.search(Outboxes, PENDING, for_update=True, skip_locked=True)
-    for one in claimed:
-        one.mark_processing()
-        unit.save(one)
-
-for one in claimed:
-    publisher.publish(RunAdvanced(run_id=one.run_id, stage=one.stage))
-
-with execution_repo.context() as unit:
-    for one in claimed:
-        one.mark_acknowledged()
-        unit.save(one)
-```
-
-`for_update=True, skip_locked=True` is what lets two relays run without ever taking the same
-row. On SQLite those are no-ops, so a test there proves the shape and not the exclusion — run
-that one against Postgres.
+Every replica can run it: each takes different rows, and an event is marked delivered in the
+same transaction it was taken in. A failure is what its policy says: tried again in place with a
+backoff and then parked, by default. See
+[persistence guide §12](persistence/guide.md#12-delivering-events).
 
 ### The contract that crosses
 
@@ -165,58 +149,58 @@ place, and registering a second is refused where you wrote it.
 
 ## 3. The facts are the state
 
-Nothing is updated. Writing is appending, and the state is what the facts add up to.
+Nothing is updated. Writing is appending an event, and the state is what the events add up to.
+The entity is `EventSourcedMixin`: it has no row of its own, `repository.get` rebuilds it from its
+events in the context's event table, and `repository.save` appends the new ones.
 
 ```python
 @dataclass(kw_only=True)
-class MoneyDeposited(DomainEvent):
-    name = "bank.v1.money_deposited"
-    account_id: str = ""
+class MoneyDeposited(BankDomainEvent):
+    name = "bank.account.v1.money_deposited"
     amount: int = 0
 
-deposited_t = entity_table("deposited", md, *event_columns(),
-                           Column("account_id", Text), Column("amount", Integer))
-map_aggregates(registry(), {MoneyDeposited: deposited_t, ...})
+
+@dataclass
+class Account(EventSourcedMixin, Entity):
+    event_base = BankDomainEvent
+    balance: int = 0
+
+    def deposit(self, amount: int) -> None:
+        self.happened(MoneyDeposited(amount=amount))     # numbered, recorded, applied
+
+    def apply(self, event: DomainEvent) -> None:
+        if isinstance(event, MoneyDeposited):
+            self.balance += event.amount
 ```
 
 ```python
-repository.save(AccountOpened(account_id=account, holder="Ana"))
-repository.save([MoneyDeposited(account_id=account, amount=500),
-                 MoneyDeposited(account_id=account, amount=300)])
-repository.save(MoneyWithdrawn(account_id=account, amount=200))
+account = repository.get(Account, "acc-1")      # rebuilt: its events, in order
+account.deposit(300)
+repository.save(account)                        # appended, entity_version = previous + 1
 ```
 
-### Rebuilding, and reading fast
+### Two writers, and reading fast
+
+Each event carries its place in the entity's history, `entity_version`, and
+`(entity_type, entity_id, entity_version)` is unique: of two writers rebuilt at the same version,
+the second to save gets `StaleAggregate` and rebuilds.
+
+Rebuilding on every read grows with the history. Snapshots are the next step; until then a read
+model is an ordinary aggregate saved beside the events, and the events stay queryable with the
+same `Criteria` as everything else:
 
 ```python
-mine = Criteria(where=Condition(field="account_id", value=account), order=(Sort(field="id"),))
-balance = (sum(one.amount for one in repository.fetch_all(Deposits, mine))
-           - sum(one.amount for one in repository.fetch_all(Withdrawals, mine)))
-# 500 + 300 - 200 = 600
-```
-
-Ordering by `id` **is** ordering by time: an id is a UUID v7.
-
-Rebuilding on every read does not scale, so the answer is kept beside the facts as a projection
-— an ordinary aggregate, saved like any other:
-
-```python
-repository.save(Balance(account_id=account, holder="Ana", amount=balance))
-```
-
-And the history stays queryable with the same `Criteria` as everything else:
-
-```python
-repository.measures(Deposits, mine, total=("sum", "amount"))   # {"total": 800}
+repository.measures(MoneyDeposited, Criteria(where=Condition(field="entity_id", value="acc-1")),
+                    total=("count", "id"))
 ```
 
 ### What this shape costs
 
-- **The facts are forever.** A field you add today is missing from every row written before it,
-  so an event's shape is versioned in its `name` (`bank.v1.…`) and a v2 is a new class.
-- **There is no "just fix the row".** A correction is another fact.
-- The framework has no "refuse to replace" mode: append-only is a discipline here, not something
-  the store enforces.
+- **The events are forever.** A field you add today is missing from every event written before
+  it, so an event's shape is versioned in its `name` (`bank.account.v1.…`) and a v2 is a new
+  class.
+- **There is no "just fix the row".** A correction is another event.
+- **Replay to other systems is the broker's**: Kafka keeps the log; the table is this context's.
 
 ---
 
@@ -287,12 +271,12 @@ would silently accept the second.
 what comes back is what the aggregate declared — `[]`, not `None`. A field that declared
 `| None` still gets the `None`: there the NULL is the answer.
 
-### An event store, and an outbox
+### An event table, and the outbox pattern
 
-A `DomainEvent` is an `Entity`, so the repository that already exists stores and queries one.
-`event_columns()` is the envelope, `delivery_columns()` is what turns the table into an outbox.
-Neither is a second abstraction — see [§2](#2-a-database-per-context) and
-[§3](#3-the-facts-are-the-state).
+A context's events are entities in one table (`event_table` + `map_events`), kept by the
+repository with the change; the outbox is that table, with `DeliverableEventMixin` marking what
+leaves and an `EventRelay` delivering it — no second table and no second API. See
+[§2](#2-a-database-per-context) and [§3](#3-the-facts-are-the-state).
 
 ---
 

@@ -21,7 +21,7 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.criteria.pagination import Offset, Pagination
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.ddd.repositories.repository import Repository as RepositoryProtocol
+from sincpro_framework.ddd.repositories.repository import IRepository
 
 from .models import ROW_COUNT, Thing, Things, a_thing
 
@@ -265,7 +265,7 @@ def test_counting_rows_mints_no_token_to_continue(store):
 
 def test_the_concrete_repository_honours_the_protocol(store):
     """The use case takes the concrete instance; the protocol holds it to the minimum."""
-    assert isinstance(store, RepositoryProtocol)
+    assert isinstance(store, IRepository)
 
 
 def test_the_last_page_under_an_offset_still_counts_everything(store):

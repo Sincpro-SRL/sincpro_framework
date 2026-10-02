@@ -31,7 +31,7 @@ never knows this exists.
 | `EntityUpdated` | `ddd/entity/mixins/tracking.py` | The generic event: `changes: {field: (before, after)}`, plus `label` and `field_labels` — the words a person reads |
 | `_tracking` | `orm/sqlalchemy/infrastructure/change_tracking.py` | On SQLAlchemy: the diff the engine is about to write, at `before_flush` |
 | `ChangeTrackingRepositoryMixin` | `ddd/repositories/change_tracking.py` | On a store with no flush: a baseline on the way out, the diff on `save()` |
-| `EventTrackableMixin` | `ddd/events.py` | Delivery state for an event that goes to an outbox |
+| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/templates/events.py` | The context's one event table, where the event is kept in the transaction of the change |
 
 ## Where the diff comes from, and why it is not the same in both stores
 
@@ -240,83 +240,63 @@ header — the synchronous boundary — applied to the asynchronous one.
 OpenTelemetry instrumentation that propagates context through their own message headers; check
 for it before writing this by hand for a new transport.
 
-## Storing the events: no `EventRepository` class exists, and none is needed
+## Keeping the events: no `EventRepository` class exists, and none is needed
 
-`DomainEvent` inherits `Entity` — it has an `id`, a `created_at` and a `version` — so the
-repository that already exists persists and queries it like any other aggregate. Map your event
-class to a table and use `save` / `search` / `get`:
+`DomainEvent` inherits `Entity` — it has an `id` and a `created_at` — so the repository that
+already exists keeps and queries it like any other aggregate. The bounded context declares one
+event table and maps its base event class to it; the update event is one of its subclasses,
+named through `change_event`:
 
 ```python
-event_table = entity_table(
-    "domain_event", metadata,
-    Column("label", JsonText, nullable=False),
-    Column("entity_type", Text, nullable=False),
-    Column("entity_id", Text, nullable=False),
-    Column("correlation_id", Text),
-    Column("causation_id", Text),
-    Column("sequence", Integer, nullable=False),
-    Column("changes", JsonText, nullable=False),
-    Index("event_by_record", "entity_type", "entity_id"),
-)
-map_aggregates(registry, {InvoiceUpdated: event_table})
+@dataclass(kw_only=True)
+class InvoiceUpdated(EntityUpdated, SalesDomainEvent):
+    name = "sales.invoice.v1.updated"
 
-for event in invoice.pull_events():
-    self.repository.save(event)
+
+@dataclass
+class Invoice(ChangeTrackingMixin, Entity):
+    change_event: ClassVar[type[DomainEvent]] = InvoiceUpdated
+    ...
+
+
+map_events(registry, SalesDomainEvent, event_table("sales_events", metadata))
+
+self.repository.save(invoice)          # the invoice, and its InvoiceUpdated, in one commit
 
 history = self.repository.search(
-    InvoiceUpdates,
-    Criteria(where=Condition(field="entity_id", value=invoice.id)),
+    InvoiceUpdated,
+    Criteria(where=Condition(field="entity_id", value=invoice.id), order=parse_order("id")),
 )
 ```
 
 Written in the same unit of work that changed the row, the event and the change commit or roll
-back together — which is the whole point of an outbox, without a second abstraction.
+back together — which is the whole point of an outbox, without a second abstraction. The event
+stays on the aggregate too: `pull_events()` still hands it to whoever publishes by hand.
 
-See `tests/orm/test_event_store.py`.
+## Sent on, without a second abstraction
 
-## An outbox, with what is already here
-
-Add `EventTrackableMixin` to the event and the row carries its own delivery state:
+Mark the update event `DeliverableEventMixin` and an `EventRelay` sends it on, at least once,
+never twice from two replicas:
 
 ```python
 @dataclass(kw_only=True)
-class OrderUpdated(EventTrackableMixin, EntityUpdated):
-    name = "sales.order.v1.updated"
+class InvoiceUpdated(DeliverableEventMixin, EntityUpdated, SalesDomainEvent):
+    name = "sales.invoice.v1.updated"
+
+
+EventRelay(repository, SalesDomainEvent, publisher).run_once()
 ```
 
-| What a relay needs | What answers it |
-|---|---|
-| where it lives | the table you map the event to, in the `Database` you choose |
-| the delivery state | `EventTrackableMixin`: `status`, `attempts`, `error_message`, and `mark_processing()` / `mark_acknowledged()` / `mark_failed()` |
-| claiming a batch | `search(..., for_update=True, skip_locked=True)` — two relays never take the same row |
-| finding one fast | an `Index` on the table, and `Criteria` to ask |
-
-The relay itself, whole:
-
-```python
-with repository.context() as unit:
-    claimed = unit.search(Outbox, PENDING, for_update=True, skip_locked=True)
-    for event in claimed:
-        event.mark_processing()
-        unit.save(event)
-
-for event in claimed:
-    queue.put(event)
-
-with repository.context() as unit:
-    for event in claimed:
-        event.mark_acknowledged()
-        unit.save(event)
-```
-
-See `tests/orm/test_outbox.py` — the claim, the acknowledgement and the failure path.
+Where its delivery stands — `delivered_at`, `next_delivery_at`, `delivery` — is kept on its
+row and never sent. See
+[persistence guide §12](../persistence/guide.md#12-delivering-events).
 
 ## What to know before it bites you
 
 - **A tuple has no JSON of its own.** `changes={"state": ("draft", "posted")}` comes back from
   a JSON column as `{"state": ["draft", "posted"]}` — a list. Compare accordingly.
-- **A `StrEnum` in a `Text` column comes back as a plain string.** `status == EventStatus.PENDING`
-  is true; `status is EventStatus.PENDING` is not.
+- **A `StrEnum` in a `Text` column comes back as a plain string.** `state == OrderState.POSTED`
+  is true; `state is OrderState.POSTED` is not.
 - **A value object in `changes` needs a column that can serialize it.** `event.as_json()`
   handles it — pydantic walks the nested dataclass — but `JsonText` is a plain `json.dumps` and
   raises on it. Store such an event through a column type that serializes the way

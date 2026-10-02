@@ -58,7 +58,9 @@ from sincpro_framework.ddd.entity.entity_collection import (
     identity_of,
     model_and_collection,
 )
+from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
 from sincpro_framework.ddd.entity.model_meta import Meta, describe_class
+from sincpro_framework.ddd.events.domain_event import DomainEvent
 from sincpro_framework.ddd.exceptions import (
     ContractViolation,
     DuplicateAggregate,
@@ -75,7 +77,7 @@ from sincpro_framework.ddd.repositories.change_tracking import ChangeTrackingRep
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.reads import note_read
 from sincpro_framework.ddd.repositories.repository import (
-    Repository,
+    IRepository,
     records_of,
     refuse_locking,
     refuse_unarchivable,
@@ -270,7 +272,7 @@ class _Measured:
         self.__dict__.update(values)
 
 
-class MemoryRepository(ChangeTrackingRepositoryMixin, Repository, Analyzes, WritesInBulk):
+class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, WritesInBulk):
     """Every read and write the vocabulary can answer without a database. No `Transacts`: a
     test that needs a unit of work runs on SQLite."""
 
@@ -306,7 +308,17 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository, Analyzes, Writ
         return describe_class(aggregate, identity_name(aggregate))
 
     def _rows(self, aggregate: type) -> list[Any]:
+        """The records of `aggregate` — of every subclass too when it is a domain event, the way
+        a context's one event table answers its base class."""
         note_read(aggregate)
+        if isinstance(aggregate, type) and issubclass(aggregate, DomainEvent):
+            found = [
+                record
+                for kind, held in self._stored.items()
+                if issubclass(kind, aggregate)
+                for record in held.values()
+            ]
+            return sorted(found, key=identity_of)
         return list(self._stored.setdefault(aggregate, {}).values())
 
     def _live(self, aggregate: type, criteria: Criteria) -> bool:
@@ -360,6 +372,10 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository, Analyzes, Writ
         """One record by its identity, or `None`; an archived one answers `None` too."""
         refuse_locking(for_update or skip_locked or nowait)
         aggregate, _holder = model_and_collection(target)
+        if isinstance(aggregate, type) and issubclass(aggregate, EventSourcedMixin):
+            return self._read(
+                aggregate.rebuilt(identity, self._events_about(aggregate, identity))
+            )
         note_read(aggregate)
         found = self._stored.setdefault(aggregate, {}).get(identity)
         if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
@@ -640,11 +656,59 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, Repository, Analyzes, Writ
         records that production never stored.
         """
         self._refuse_reentrant_write()
-        records = records_of(record)
+        records = self._events_of_sourced(records_of(record))
         newness = self._before_writes(records)
         for one in records:
             self._save_one(one)
+        self._keep_recorded(records)
         self._after_writes(records, newness)
+
+    def _kept(self, event: Any) -> bool:
+        return any(
+            event.id in held for kind, held in self._stored.items() if isinstance(event, kind)
+        )
+
+    def _events_about(self, aggregate: type, identity: Any) -> list[DomainEvent]:
+        return [
+            event
+            for event in self._rows(DomainEvent)
+            if event.entity_type == aggregate.__name__ and event.entity_id == identity
+        ]
+
+    def _events_of_sourced(self, records: list[Any]) -> list[Any]:
+        """An event-sourced entity stands for the events it recorded since it was rebuilt; one
+        whose next version another writer already appended is refused, as the database does.
+        """
+        written: list[Any] = []
+        for one in records:
+            if not isinstance(one, EventSourcedMixin):
+                written.append(one)
+                continue
+            for event in one.unsaved_events():
+                if self._kept(event):
+                    continue
+                taken = {
+                    other.entity_version
+                    for other in self._events_about(type(one), one.id)
+                    if other.id != event.id
+                }
+                if event.entity_version in taken:
+                    raise StaleAggregate(
+                        f"{type(one).__name__} changed since it was rebuilt: another writer "
+                        "appended its next event first; rebuild it and try again"
+                    )
+                written.append(event)
+        return written
+
+    def _keep_recorded(self, records: list[Any]) -> None:
+        """What the aggregates written recorded, kept beside them — read, never taken, and each
+        once — the way the database keeps them in the context's event table."""
+        for one in records:
+            if isinstance(one, DomainEvent) or not hasattr(one, "recorded_events"):
+                continue
+            for event in one.recorded_events():
+                if not self._kept(event):
+                    self._save_one(event)
 
     def _save_one(self, record: Any) -> None:
         stored = self._stored.setdefault(type(record), {})
