@@ -94,6 +94,11 @@ class ExecutionFailed(DeliverableEventMixin, DomainEvent):
 - **One line to switch on**, per bus: `billing.publish_failures(to=publisher)`. Nothing is wired by
   default (as every queue in the framework); whether it should be is decision §9.2.
 
+**As built** (`sincpro_framework.outcomes`, `docs/core/outcomes.md`): a plain `DomainEvent`, emitted
+where the exception escapes the call and never when an error handler answered (so no
+`answered_by_handler`); it names the execution (`execution_id`, `causation_id`, `correlation_id`)
+and classifies the failure as every wire does — `kind` (`refined_failure_kind`) and `retry_after`.
+
 ## 4. Across machines
 
 Every bounded context may run on its own machine. What travels today:
@@ -102,7 +107,7 @@ Every bounded context may run on its own machine. What travels today:
 |---|---|---|
 | Same process, bus → bus | ✅ propagated | the exception, or what an error handler answered |
 | `remote_execution` (gRPC/HTTP) | ✅ as metadata (`sp-request-context-bin`) | the remote exception raised as itself; `ContextTimeout` — **unknown whether it ran**; `ContextUnavailable` — it did not run |
-| Broker (FastStream) | ❌ only `correlation_id` (envelope) and `tenant` (header) | none — publishing is fire and forget |
+| Broker (FastStream) | ✅ as headers (`sincpro-context`, W3C baggage, the identity headers — PRD_22) | none — publishing is fire and forget |
 
 Three consequences:
 
@@ -110,9 +115,8 @@ Three consequences:
    sees it; it writes to a **store both machines share**, keyed by what the context carried (the
    run and the task). That store is the only place the caller's workflow and the callee's truth
    meet.
-2. **A broker must carry the context** — Phase 2: `FastStreamQueue` writes the execution context
-   as headers, and the consumer hands it back to `bus.context(...)`, the way `remote_execution`
-   already does.
+2. **A broker carries the context** — `FastStreamQueue` writes it as headers (`inject`) and the
+   consumer opens it again (`extract`), the way `remote_execution` does (PRD_22).
 3. **An unknown outcome is a state of its own.** `ContextTimeout`, or a process that died between
    starting a task and recording its end, is `UNCERTAIN` (§6).
 
@@ -244,9 +248,9 @@ Ordered by what everything else stands on. Each phase is approved on its own.
 
 | Phase | What | Touches | Why first |
 |---|---|---|---|
-| **0 — the true outcome** | `Execution`, `ExecutionOutcome`, `@bus.observer()`; the bus reports DONE / FAILED / ANSWERED_BY_HANDLER once per execution, observers never break it | `bus.py`, `use_bus.py`, `interceptors.py` | every later phase reads the truth from here |
-| **1 — failure as an event** | `ExecutionFailed`, `publish_failures(to=…)`, fire and forget, the error queue being a queue the project names | `event_driven`, `use_bus` | the clean form; useful alone (alerts, audit, n8n) |
-| **2 — context on the wire** | `FastStreamQueue` carries the execution context as headers, the consumer restores it; a test that a key crosses Kafka and gRPC alike | `event_driven/adapters/faststream`, `entrypoints/faststream` | runs across machines need it |
+| **0 — the true outcome** — **dropped** | an observer reading the outcome before an error handler | — | decided against: an error handler that answers decides the failure does not travel, and an interceptor already sees the raw outcome when a component needs it |
+| **1 — failure as an event** — **built** | `ExecutionFailed` (`sincpro_framework.outcomes`), emitted once where an exception escapes the call and never when an error handler answered; `@bus.on_failure`, `failures.subscribe`, `bus.publish_failures(to=…)`; the exception carries `failure_id` — `docs/core/outcomes.md`; beside it `ExecutionCompleted` for every use case that answered (DTO and response), `@bus.on_completion`, `bus.publish_completions(to=…)` | `bus.py`, `use_bus`, `outcomes.py` | the clean form; useful alone (alerts, audit, n8n) |
+| **2 — context on the wire** — **built** (PRD_22) | `FastStreamQueue` carries the execution context as headers, the consumer restores it (`context.adapters.propagation`) | `event_driven/adapters/faststream`, `entrypoints/faststream` | runs across machines need it |
 | **3 — the engine** | `Workflows`, `@workflow`, `@task`, `run()`, the journal (memory + `KeyValueJournal`), `WorkflowWorker`, `run_due`, `start`/`retry`, versioned names | new package, `cron` (worker beside `CronProcess`) | Temporal's style on the framework's shape |
 | **4 — undo** | `.undo`, `@bus.undo`, `revert()`, the five states, `UNCERTAIN` read off the annotations, idempotency keys | the new package, `use_bus` (`@bus.undo`) | the reason the whole thing exists |
 | **5 — events and time** | `starts_on`, `wait_for`, durable timers, `CommandStartWorkflow` on a bus | the new package | the event-driven style |

@@ -117,8 +117,11 @@ assert "Criteria" in document["components"]["schemas"]
 | a body or query value that is not JSON | 400 | `invalid` |
 | the DTO refused by validation | 422 | `invalid`, with `detail` |
 | `Unauthenticated` / `PermissionDenied` | 401 with `WWW-Authenticate` / 403 | `unauthenticated` / `permission_denied` |
+| an error declaring `failure_kind = FailureKind.NOT_FOUND` | 404 | `not_found` |
 | `StaleAggregate`, `DuplicateAggregate` | 409 | `conflict` |
+| `caching.AlreadyInProgress` / `caching.KeyReused` | 409 / 422 | `in_progress` / `key_reused` |
 | another `DomainError` | 422 | `domain`, with its message |
+| an error declaring `FailureKind.EXHAUSTED` / `FailureKind.UNAVAILABLE` | 429 / 503 | `exhausted` / `unavailable` |
 | anything else | 500 | `internal` — the message stays in the log |
 
 ## Into an app of the project's

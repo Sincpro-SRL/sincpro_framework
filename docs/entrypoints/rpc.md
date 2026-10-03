@@ -201,12 +201,12 @@ now. And an auth refusal's `data.reason` was its text; the text is `data.message
 | `-32602` | Invalid params | invalid | no | the DTO did not validate (`data.errors`), or params by position |
 | `-32001` | Unauthenticated | unauthenticated | no | `Unauthenticated` — a lone request is also HTTP 401 + `WWW-Authenticate` |
 | `-32003` | Permission denied | permission_denied | no | `PermissionDenied` |
-| `-32004` | Not found | not_found | no | reserved: nothing raises it yet — the kind is answered with this code once `transport.failures` classifies it |
+| `-32004` | Not found | not_found | no | an error declaring `failure_kind = FailureKind.NOT_FOUND` |
 | `-32009` | Conflict | conflict | stale: yes, duplicate: no | `StaleAggregate` (a fresh run reads again), `DuplicateAggregate` (sending it again collides again) |
-| `-32029` | Try again later | in_progress / exhausted | yes | `caching.AlreadyInProgress` — the same idempotency key is running; `exhausted` once classified |
+| `-32029` | Try again later | in_progress / exhausted | yes | `caching.AlreadyInProgress` — the same idempotency key is running; an error declaring `FailureKind.EXHAUSTED` |
 | `-32022` | Idempotency key reused | key_reused | no | `caching.KeyReused` — a new request needs a new key |
 | `-32010` | Domain error | domain | no | any other `DomainError`, its text in `data.message` |
-| `-32000` | Unavailable | unavailable | yes | reserved: answered once `transport.failures` classifies it |
+| `-32000` | Unavailable | unavailable | yes | an error declaring `FailureKind.UNAVAILABLE` |
 | `-32603` | Internal error | internal | yes | anything else — **nothing of it is told**: the exception's text carries connection strings, statements and paths; it goes to the log |
 
 The catalogue is published **once**, in the OpenRPC document's `components.errors` (and the

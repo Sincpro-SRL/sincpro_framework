@@ -282,10 +282,9 @@ the reason. It carries connection strings, statements and paths; it goes to the 
 disclosure rule is one function every wire shares (`said_to_the_caller`); only the encoding is
 per protocol.
 
-The refined kinds (`not found`, `in progress`, `key reused`, `exhausted`, `unavailable`) come from
-`refined_failure_kind`. `failure_kind` — what the other wires' tables are keyed by — keeps
-answering the kinds they already encode (an idempotency refusal is still `domain` there) until
-each wire maps the new ones.
+Every wire classifies with `refined_failure_kind` — what the error declares, then the idempotency
+refusals, then the shared kinds — so a failure is the same kind over gRPC, REST, JSON-RPC and in the
+`ExecutionFailed` event.
 
 Binary DTOs (`bytes`) are skipped at catalog time, same as MCP and JSON-RPC — a `Struct` has no
 bytes value. They stay callable in-process via `framework(dto)`.

@@ -251,6 +251,22 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """Switch off an interceptor registered on this bus; refused after build."""
         ...
 
+    def on_completion[L: Callable[..., Any]](self, listener: L) -> L:
+        """Hear every use case of this bus that answered — an `ExecutionCompleted`."""
+        ...
+
+    def publish_completions(self, to: Any) -> None:
+        """Hand every use case of this bus that answered to `to`, a Publisher."""
+        ...
+
+    def on_failure[L: Callable[..., Any]](self, listener: L) -> L:
+        """Hear every failure of this bus that escaped its call — an `ExecutionFailed`."""
+        ...
+
+    def publish_failures(self, to: Any) -> None:
+        """Hand every failure of this bus that escaped its call to `to`, a Publisher."""
+        ...
+
     def execution_ids(self, generator: Callable[[], str]) -> None:
         """Mint every `execution_id` of this bus with `generator` instead of a UUID v7; an id
         given from outside still wins for a root execution. Refused after build."""

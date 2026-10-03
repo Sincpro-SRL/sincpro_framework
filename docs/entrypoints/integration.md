@@ -237,11 +237,17 @@ middleware, interceptors and plugins:
 | `invalid` | the DTO did not validate | 422 (400 if unreadable) | `-32602` | `INVALID_ARGUMENT` | the validation errors |
 | `unauthenticated` | `Unauthenticated` | 401 + `WWW-Authenticate` | `-32001` (a lone call: HTTP 401) | `UNAUTHENTICATED` | the reason, `step_up` |
 | `permission_denied` | `PermissionDenied` | 403 | `-32003` | `PERMISSION_DENIED` | the reason, the requirement |
+| `not_found` | an error declaring `failure_kind = FailureKind.NOT_FOUND` | 404 | `-32004` | `NOT_FOUND` | the message |
 | `conflict` | `StaleAggregate`, `DuplicateAggregate` | 409 | `-32009` | `ABORTED` / `ALREADY_EXISTS` | the message — read again and retry |
+| `in_progress` | `caching.AlreadyInProgress` | 409 | `-32029` | `ABORTED` | retry once it completes |
+| `key_reused` | `caching.KeyReused` | 422 | `-32022` | `FAILED_PRECONDITION` | a new request needs a new key |
 | `domain` | any other `DomainError` | 422 | `-32010` | `FAILED_PRECONDITION` | the message |
+| `exhausted` | an error declaring `FailureKind.EXHAUSTED` | 429 | `-32029` | `RESOURCE_EXHAUSTED` | retry later |
+| `unavailable` | an error declaring `FailureKind.UNAVAILABLE` | 503 | `-32000` | `UNAVAILABLE` | retry later |
 | `internal` | anything else | 500 | `-32603` | `INTERNAL` | nothing — it stays in the log |
 
-`entrypoints.errors.failure_kind(error)` is the one classification; a wire only chooses its code.
+`transport.failures.refined_failure_kind(error)` is the one classification — the wires and the
+`ExecutionFailed` event share it; a wire only chooses its code.
 
 ## What every wire does the same
 

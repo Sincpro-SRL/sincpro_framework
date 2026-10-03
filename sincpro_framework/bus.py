@@ -1,3 +1,4 @@
+import sys
 from logging import Logger
 from typing import Callable, Dict, Optional, Type
 
@@ -12,6 +13,11 @@ from .context.infrastructure.providers import (
 from .context.infrastructure.tree import opened_execution
 from .exceptions import ContextRequired, DTOAlreadyRegistered, UnknownDTOToExecute
 from .ids import new_entity_id
+from .observability.failure import failure_of
+
+FAILED_EXECUTION = "__sincpro_failed_execution__"
+"""Where a bus leaves, on an exception, the execution it failed in (`outcomes`)."""
+OUTCOMES_MODULE = "sincpro_framework.outcomes"
 from .interceptors import Interceptor, run_through
 from .observability import Observability
 from .sincpro_abstractions import (
@@ -23,6 +29,29 @@ from .sincpro_abstractions import (
     TypeDTOResponse,
 )
 from .sincpro_logger import is_logger_in_debug, logger
+
+
+def failed_in(error: BaseException, node: ContextNode) -> None:
+    """The execution `error` was raised in — the innermost one, left for whoever announces it."""
+    if node.execution is not None and not hasattr(error, FAILED_EXECUTION):
+        try:
+            setattr(error, FAILED_EXECUTION, node.execution)
+        except (AttributeError, TypeError):
+            pass
+
+
+def completed_in(
+    dto: object, response: object, bus: str, level: str, node: ContextNode
+) -> None:
+    """The use case answered: to whoever listens — never raising (`outcomes`). Nobody subscribes
+    without importing `outcomes`: until then, nothing is imported and nothing is built."""
+    outcomes = sys.modules.get(OUTCOMES_MODULE)
+    if outcomes is None:
+        return
+    try:
+        outcomes.completed(dto, response, bus, level, node.execution)
+    except Exception:  # noqa: BLE001 - announcing a completion never replaces the response
+        logger.exception("the completion could not be announced")
 
 
 def prepared(node: ContextNode, handler: object, providers: list[ContextProvider]) -> None:
@@ -102,6 +131,7 @@ class FeatureBus(Bus):
                     chain = self.interceptors.get(dto_type, ())
                     response = run_through(chain, feature.execute, dto)
                 except Exception as error:
+                    failed_in(error, node)
                     measured.failed(error)
                     self.observability.failed(error, dto, feature, "feature", span)
                     if not self.handle_error:
@@ -111,6 +141,7 @@ class FeatureBus(Bus):
                     return answer
 
             measured.answered(response)
+            completed_in(dto, response, self.observability.bus_name, "feature", node)
             self.observability.describe(span, feature, response)
             if response:
                 self.logger.debug(
@@ -199,6 +230,7 @@ class ApplicationServiceBus(Bus):
                     chain = self.interceptors.get(dto_type, ())
                     response = run_through(chain, app_service.execute, dto)
                 except Exception as error:
+                    failed_in(error, node)
                     measured.failed(error)
                     self.observability.failed(
                         error, dto, app_service, "application_service", span
@@ -210,6 +242,9 @@ class ApplicationServiceBus(Bus):
                     return answer
 
             measured.answered(response)
+            completed_in(
+                dto, response, self.observability.bus_name, "application_service", node
+            )
             self.observability.describe(span, app_service, response)
             if response:
                 self.logger.debug(
@@ -260,6 +295,16 @@ class FrameworkBus(Bus):
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
 
+    def _failure_escaped(self, error: BaseException, dto: TypeDTO) -> None:
+        """The failure that left the call, to whoever listens — never raising (`outcomes`)."""
+        outcomes = sys.modules.get(OUTCOMES_MODULE)
+        if outcomes is None:
+            return
+        try:
+            outcomes.escaped(error, dto, self.observability.bus_name, failure_of(error))
+        except Exception:  # noqa: BLE001 - announcing a failure never replaces it
+            self.logger.exception("the failure could not be announced")
+
     def _dispatch(self, dto: TypeDTO) -> TypeDTOResponse | None:
         dto_type = dto.__class__
         dto_name = dto_type.__name__
@@ -302,12 +347,14 @@ class FrameworkBus(Bus):
                 if not self.handle_error:
                     if outermost:
                         self.observability.escaped(error, dto)
+                        self._failure_escaped(error, dto)
                     raise
                 try:
                     answer = self.handle_error(error)
                 except Exception as raised:
                     if outermost:
                         self.observability.escaped(raised, dto)
+                        self._failure_escaped(raised, dto)
                     raise
                 self.observability.handled(error, dto)
                 return answer
