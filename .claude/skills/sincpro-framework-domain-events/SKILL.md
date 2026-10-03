@@ -1,14 +1,15 @@
 ---
 name: sincpro-framework-domain-events
-description: Record, publish and store domain events with sincpro_framework — DomainEvent, Entity.record/pull_events, Publisher, SyncQueue/BackgroundQueue, change tracking, event sourcing and the transactional outbox, plus Kafka/RabbitMQ/Redis/NATS through FastStream. Use whenever the task says "when X happens, notify/emit/react", publishes an event, subscribes one context to another, builds an audit trail, an outbox/relay, an event store, or wires a broker in a Sincpro Python service.
+description: Record, store and deliver domain events with sincpro_framework — DomainEvent, event_table/map_events, EventSourcedMixin, DeliverableEventMixin, EventRelay, RepositoryQueue, Publisher, change tracking and FastStream brokers. Use whenever a task publishes or subscribes to events, builds an audit trail, replays an aggregate, implements an outbox or retry policy, or wires a broker in a Sincpro Python service.
 ---
 
 # sincpro-framework-domain-events
 
 A domain event is a fact one bounded context states after its state changed, so that other
-contexts can react without being called. Nothing is wired by default and nothing is stored: a
-project builds the queue it wants over the buses it names, and a Feature publishes when it decides
-to. What an aggregate recorded lives in memory and dies with the object.
+contexts can react without being called. Nothing is wired by default. With a context event table,
+`save(aggregate)` stores its mapped recorded events in the same transaction, without draining
+them. Without that mapping they remain in memory. A Feature can publish after commit; durable
+delivery uses `DeliverableEventMixin` and `EventRelay` over that same event table.
 
 ## Context
 
@@ -28,42 +29,43 @@ to. What an aggregate recorded lives in memory and dies with the object.
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `DomainEvent` | A past-tense fact: an `Entity` with the envelope `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `correlation_id`, `causation_id`, `sequence`, `label`, and a wire `name` | DTO | `sincpro_framework.ddd` |
+| `DomainEvent` | A past-tense fact: an `Entity` with `id` (UUID v7), timestamps, `entity_type`, `entity_id`, `entity_version`, correlation/causation ids, `label`, and a wire `name` | dataclass | `sincpro_framework.ddd` |
 | `name` | The wire identity of an event class (`"billing.invoice.v1.posted"`), a plain class attribute; defaults to the class name. Routing, storage and brokers match on it | setting | (class attribute) |
-| `Entity.record` / `pull_events` / `recorded_events` | The aggregate states a fact (stamped with its type, id, sequence) / the Feature takes them all and they are forgotten / look without taking | function | `sincpro_framework.ddd` (methods of `Entity`) |
+| `Entity.record` / `pull_events` / `recorded_events` | Store a copy stamped with aggregate type/id / drain the in-memory events / inspect without draining | method | `sincpro_framework.ddd` (on `Entity`) |
 | `DomainEvent.caused_by(cause)` | A copy with `causation_id`/`correlation_id` threaded from the incoming event | function | (method) |
 | `ChangeTrackingMixin` | Aggregate mixin: one `EntityUpdated` recorded per save, with every field that changed | DTO | `sincpro_framework.ddd` |
 | `EntityUpdated` | The event `ChangeTrackingMixin` records (`changes`, `field_labels`); subclass it for your own name | DTO | `sincpro_framework.ddd` |
-| `EventTrackableMixin` / `EventStatus` | Event mixin adding delivery state (`status`, `attempts`, `error_message`, `acknowledged_at`, `failed_at`, `mark_*`) — what turns a stored event into an outbox row | DTO | `sincpro_framework.ddd` |
-| `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(event)` or `publish(event, Response)`, into a `Queue` | function | `sincpro_framework.events` |
-| `Queue` | Protocol: `put(event)` / `aput(event)` | port (abstract) | `sincpro_framework.events` |
-| `SyncQueue` | Runs the subscriber inside the `publish` call, same process | adapter | `sincpro_framework.events` |
-| `BackgroundQueue` | A spawned worker process consumes from a `multiprocessing.Queue`; `start()`/`stop()` | adapter | `sincpro_framework.events` |
-| `Subscriber` / `AsyncSubscriber` | The buses that hear events; executes every bus whose registry knows `event.name` | registry | `sincpro_framework.events` |
+| `DeliverableEventMixin` | Marks a fact for relay delivery; `delivered_at`, `next_delivery_at`, `delivery` are stored but excluded from its wire JSON | dataclass mixin | `sincpro_framework.ddd` |
+| `EventSourcedMixin` | No aggregate row: `happened` records/applies/numbers a fact; `get` rebuilds and `save` appends | mixin | `sincpro_framework.ddd` |
+| `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(event)` or `publish(event, Response)`, into a `Queue` | function | `sincpro_framework.event_driven` |
+| `Queue` | Protocol: `put(event)` / `aput(event)` | port (abstract) | `sincpro_framework.event_driven` |
+| `SyncQueue` | Runs the subscriber inside the `publish` call, same process | adapter | `sincpro_framework.event_driven` |
+| `BackgroundQueue` | A spawned worker process consumes from a `multiprocessing.Queue`; `start()`/`stop()` | adapter | `sincpro_framework.event_driven` |
+| `Subscriber` / `AsyncSubscriber` | The buses that hear events; executes every bus whose registry knows `event.name` | registry | `sincpro_framework.event_driven` |
 | `@bus.feature(SomeEvent)` | The subscription itself: an ordinary Feature registered for the event class | decorator | (`UseFramework`) |
 | `RecordingQueue` | Test queue that keeps what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.testing` |
-| `FastStreamQueue` | A `Queue` that sends to Kafka/RabbitMQ/Redis/NATS — extra `[faststream]` | adapter | `sincpro_framework.events.faststream` |
-| `subscribe(broker, subscriber)` | Consumer side: one subscription per channel of the events the buses registered, acknowledged manually | function | `sincpro_framework.events.faststream` |
-| `keyed_by_entity` / `by_event_name` | Kafka message key = `entity_id` / channel = event name | function | `sincpro_framework.events.faststream` |
+| `FastStreamQueue` | A `Queue` that sends to Kafka/RabbitMQ/Redis/NATS — extra `[faststream]` | adapter | `sincpro_framework.event_driven.adapters.faststream` |
+| `subscribe(broker, subscriber)` | Consumer side: one subscription per channel of the events the buses registered, acknowledged manually | function | `sincpro_framework.entrypoints.faststream` |
+| `keyed_by_entity` / `by_event_name` | Kafka message key = `entity_id` / channel = event name | function | `sincpro_framework.event_driven.adapters.faststream` |
 | `QueueOptions` | Consumer settlement: `inbox`, `max_attempts`, dead-letter suffix, `subscription_of` | setting | `sincpro_framework.entrypoints.faststream` |
-| `event_columns()` | The envelope columns for a table that stores events | function | `sincpro_framework.orm` |
-| `delivery_columns()` | Delivery columns whose names do **not** match `EventTrackableMixin` — do not use for an outbox | function | `sincpro_framework.orm` |
-| `EventLogEntry` | Any event of a context kept in one table — envelope, `event_type`, JSON `payload`; `of`, `of_all`, `of_entity` | dataclass | `sincpro_framework.ddd` |
-| `event_log_table(name, metadata)` | The table an `EventLogEntry` subclass is mapped to, indexed by entity | function | `sincpro_framework.orm` |
-| Event store (sourcing) | Not a class: each event class mapped to its own table and saved with the existing `Repository` | pattern | — |
-| Outbox / relay | Not a class: an `EventTrackableMixin` event saved in the state change's transaction, and a loop you write that claims, delivers and acknowledges | pattern | — |
+| `event_table(name, metadata)` / `map_events(registry, base, table)` | One event table per context; subclasses selected by wire name, extra fields in JSON payload | function | `sincpro_framework.orm` |
+| `event_columns()` | Low-level envelope columns; prefer the complete `event_table` for context event storage | function | `sincpro_framework.orm` |
+| `RepositoryQueue` | Stores a published event through the repository for later relay delivery | adapter | `sincpro_framework.event_driven` |
+| `EventRelay` / `RelayPass` | `run_once()` selects due deliverable events, publishes and saves outcomes; returns counts | entrypoint / DTO | `sincpro_framework.event_driven` |
+| `DeliveryFailurePolicy` | `RetryInPlace`, `RetryLater`, `ParkAndContinue`, `SkipAndContinue`; fixed/exponential backoff | strategy | `sincpro_framework.event_driven` |
 
 Look-alikes: `Queue` (carries events) ≠ `QueueGateway` (consumes Commands). `ChangeTrackingMixin`
-(on an aggregate, *records* `EntityUpdated`) ≠ `EventTrackableMixin` (on an event, *tracks its
+(on an aggregate, *records* `EntityUpdated`) ≠ `DeliverableEventMixin` (on an event, *tracks its
 delivery*). Event log (state + history) ≠ event sourcing (history *is* the state).
 
 ## Architecture
 
 **Inside the framework.** `sincpro_framework/ddd/` holds the vocabulary (`DomainEvent`,
-`EventTrackableMixin`, `Entity.record`, `ChangeTrackingMixin`). `sincpro_framework/events/` holds
+`DeliverableEventMixin`, `EventSourcedMixin`, `Entity.record`, `ChangeTrackingMixin`). `sincpro_framework/event_driven/` holds
 `Publisher`, `Subscriber`, the `Queue` protocol and its two standard-library adapters
 (`SyncQueue`, `BackgroundQueue`). Optional extras, never core dependencies:
-`events/faststream/` (`[faststream]` plus the broker driver, e.g. `faststream[kafka]`), the event
+`event_driven/adapters/faststream/` sends; `entrypoints/faststream/` subscribes (`[faststream]`
+plus the broker driver, e.g. `faststream[kafka]`), the event
 tables in `orm/` (`[sqlalchemy]`), and a Redis inbox through `caching.adapters.redis` (`[redis]`).
 
 **Inside a consumer service** (one `UseFramework` per bounded context, created in
@@ -84,7 +86,7 @@ my_service/
       services/email_customer.py     # @notifications.feature(InvoicePosted) — the subscriber
   entrypoints/
     consumer.py                      # broker process: subscribe(broker, Subscriber(...)); FastStream(broker).run()
-    outbox_relay.py                  # the relay loop (a cron or a long-running process)
+    outbox_relay.py                  # drives EventRelay; or register it through Crons
 ```
 
 `common/` imports no sibling: each context adds itself to `BUSES`, and the `SyncQueue` function
@@ -95,13 +97,13 @@ asks for the buses only on the first publish, when all of them exist.
 ```
 Feature.execute(command)
   aggregate.record(Event)        in memory on the aggregate (a stamped copy)
-  repository.save(aggregate)     commit; ChangeTrackingMixin records EntityUpdated here
+  repository.save(aggregate)     state + mapped events; ChangeTrackingMixin records EntityUpdated
   aggregate.pull_events()        handed over once, then forgotten
   publisher.publish(event) ──► Queue.put(event)
       SyncQueue        → Subscriber.handle → each bus with event.name registered → its Feature, in this call
       BackgroundQueue  → multiprocessing.Queue → worker: build_subscriber().handle(event)
       FastStreamQueue  → broker channel (event.name) → subscribe(...) in the consumer → its buses
-outbox: one unit of work saves the aggregate + the event row → relay claims PENDING → put → mark_acknowledged
+outbox: one unit of work saves state + mapped facts → EventRelay reads due events → publish → delivered
 ```
 
 ## Mistakes an agent makes
@@ -120,9 +122,12 @@ outbox: one unit of work saves the aggregate + the event row → relay claims PE
   silently. When the fact leaves the process, use the outbox.
 - **No explicit `name`.** The wire name defaults to the class name: renaming the class silently
   stops routing to consumers and stored rows. Set `name = "<context>.<aggregate>.v1.<verb>"`.
-- **`delivery_columns()` for an outbox table.** It emits `failure`/`delivered_at`, the mixin writes
-  `error_message`/`acknowledged_at`/`failed_at`: those are dropped without error. Declare the five
-  columns (`references/outbox.md`).
+- **Copying the old event-entry/status model.** Use the context base event, `event_table` and
+  `map_events`; delivery is metadata on that event. There is no separate outbox row to maintain.
+- **Direct publication plus a relay for the same fact.** Saving keeps the event without draining
+  it; choose one delivery owner or subscribers receive both sends.
+- **Assuming strict stream ordering from the relay.** Holding later events currently lasts only
+  for the current pass, not across backoff intervals or replicas; see `references/outbox.md`.
 - **Channel mismatch.** A producer using `channel_of=` and a consumer calling `subscribe` without
   the matching `channel_of_name=` never meet.
 - **Two services on one event over RabbitMQ.** Both consume the queue named after the channel and
@@ -133,13 +138,15 @@ outbox: one unit of work saves the aggregate + the event row → relay claims PE
 
 ## The rule that shapes everything
 
-**The aggregate records; the Feature that saved it publishes.** The aggregate never publishes
-itself — a rollback would then undo a fact the world already heard.
+**The aggregate records; storage and delivery are separate.** The Feature saves, the repository
+keeps mapped events, and a relay delivers durable facts. Manual publication is an explicit
+post-commit alternative. The aggregate never publishes: a rollback could undo that fact.
 
 ```python
 from dataclasses import dataclass
 
 from sincpro_framework.ddd import DomainEvent
+from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
 
 @dataclass(kw_only=True)                 # required: without it the fields are not fields
@@ -177,11 +184,10 @@ class EmailTheCustomer(Feature):
 - **The outbox is what must be right.** The event row commits in the same transaction as the state
   change; a separate relay publishes. Before commit announces what may not happen; after commit
   loses it on a crash.
-- **Event log ≠ event sourcing.** For an audit trail use the event log: subclass `EventLogEntry`
-  once per context, map it to `event_log_table(...)`, and in the same `context()` as the change
-  `unit.save(History.of_all(aggregate.pull_events()))`; read it with
-  `repository.fetch_all(History, History.of_entity(aggregate))`. Never hand-write an
-  `…EventEntry` per context. Source only an aggregate whose history is the product.
+- **Event storage ≠ event sourcing.** For an audit trail map a context base `DomainEvent`
+  with `event_table` / `map_events`. Save the row-backed aggregate normally; query the base
+  for the context's history or a subclass for one event type. Use `EventSourcedMixin` only
+  when the facts themselves are the aggregate's state. Never add a parallel `...EventEntry`.
 
 ## The published language: what other processes depend on
 
@@ -214,15 +220,16 @@ __all__ = ["IssueOpened", "IssueClosed", "PUBLISHED"]   # explicit: readable as 
   day a v2 appears; `entrypoints/events.py` keeps the same shape, so no consumer notices.
 - **The aggregate records the current version only.** If a consumer still needs v1 after the
   domain moved to v2, translate in `entrypoints/`, not in the domain.
-- **Stored history does not need old classes.** An event log keeps the wire name and the JSON
-  payload, so a v1 row stays readable after its class is gone.
+- **Stored history still needs its classes.** Import compatible historical event classes while
+  their rows remain: the polymorphic ORM resolves `name` to a mapped class. JSON alone does
+  not supply an unknown discriminator. Removing a historical class needs a migration plan.
 
 ## References
 
 - [references/recording-and-publishing.md](references/recording-and-publishing.md) — record/pull, Publisher, Sync/Background queues, wiring, tests
 - [references/change-tracking.md](references/change-tracking.md) — `ChangeTrackingMixin`, `EntityUpdated`, labels, `caused_by`
-- [references/event-sourcing.md](references/event-sourcing.md) — facts as the state, `event_columns()`, append-only
-- [references/outbox.md](references/outbox.md) — `EventTrackableMixin`, the outbox table, the relay, dead letters
+- [references/event-sourcing.md](references/event-sourcing.md) — `EventSourcedMixin`, `happened`/`apply`, replay, concurrent writers
+- [references/outbox.md](references/outbox.md) — `DeliverableEventMixin`, event table, `EventRelay`, retry policies
 - [references/brokers.md](references/brokers.md) — FastStream: channels, keys, delivery guarantees
 
 Deep docs in the framework repo (not shipped with the package): `docs/events/README.md`,

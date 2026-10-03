@@ -27,6 +27,7 @@ from sincpro_framework.auth import (
     StaticProvider,
     current_identity,
 )
+from sincpro_framework.context import CHAIN_KEYS, EXECUTION_ID
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.entrypoints.exposure import ExposureRefused
 from sincpro_framework.entrypoints.exposure import grpc as expose
@@ -162,12 +163,21 @@ def test_the_helper_runs_under_the_same_feature_span(
     exporter = otel_setup
 
     def spans_of(path: str) -> list[tuple[str, Any]]:
+        """Each span's attributes but its execution's own identity — two calls are two executions."""
         exporter.clear()
         _answer(channel, path, {"total": 5}, metadata=ISSUER)
-        return [
-            (span.name, dict(span.attributes or {}))
+        spans = [
+            dict(span.attributes or {}) | {"name": span.name}
             for span in exporter.get_finished_spans()
             if (span.attributes or {}).get("sincpro.use_case") == "CommandIssueInvoice"
+        ]
+        assert all(EXECUTION_ID in attributes for attributes in spans)
+        return [
+            (
+                attributes.pop("name"),
+                {k: v for k, v in attributes.items() if k not in CHAIN_KEYS},
+            )
+            for attributes in spans
         ]
 
     generated = spans_of(GENERATED)

@@ -198,7 +198,7 @@ carries it and the payload stays DTO fields only.
 
 | Metadata | Framework |
 |---|---|
-| `x-correlation-id` | `correlation_id` in `framework.context` |
+| `x-correlation-id`, `x-causation-id`, `x-execution-id` | the execution's identity in `framework.context` — [context-manager.md](../core/context-manager.md#execution-identity) |
 | `traceparent` / `tracestate` | `carrier` → `framework.with_trace(...)` for OTel parent adoption |
 | `sp-ctx-<key>` | `context["<key>"]` — tenant, user id, whatever the bus reads |
 | the call's deadline (`grpc-timeout`) | `context["deadline"]` — **epoch seconds**, absent when the caller set none |
@@ -219,7 +219,7 @@ with GrpcClient("localhost:50051") as client:
     client.call(
         "/qr.v1.QrService/CheckQRStatusEconomico",
         {"transaction_id": "t-1"},
-        context={"correlation_id": "req-9", "tenant": "acme"},
+        context={"correlation_id": "req-9", "tenant_id": "acme"},
     )
 ```
 

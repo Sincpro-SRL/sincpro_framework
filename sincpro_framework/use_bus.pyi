@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import (
     Any,
     Callable,
@@ -22,8 +23,11 @@ from sincpro_framework.observability import Observability as Observability
 from . import ioc as ioc
 from .aio import AsyncBus as AsyncBus
 from .bus import FrameworkBus as FrameworkBus
-from .context.framework_context import FrameworkContext
-from .context.mixin import ContextMixin
+from .context.domain.level import EntrypointKind
+from .context.domain.store import ContextStore
+from .context.entrypoint.bus import ContextMixin, FrameworkContext
+from .context.entrypoint.facade import Context
+from .context.infrastructure.providers import ContextProviderFunction
 from .deps import TDeps
 from .error_handler import ErrorHandler as ErrorHandler
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
@@ -247,6 +251,11 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """Switch off an interceptor registered on this bus; refused after build."""
         ...
 
+    def execution_ids(self, generator: Callable[[], str]) -> None:
+        """Mint every `execution_id` of this bus with `generator` instead of a UUID v7; an id
+        given from outside still wins for a root execution. Refused after build."""
+        ...
+
     def without_error_handler(self, handler: ErrorHandler) -> None:
         """Switch off an error handler of any of the three kinds registered on this bus."""
         ...
@@ -323,26 +332,45 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         ...
 
     def context(
-        self, context_to_set: Mapping[str, Any], global_scope: bool = False
+        self,
+        context_to_set: Mapping[Any, Any] | None = None,
+        global_scope: bool = False,
+        kind: EntrypointKind | None = None,
+        restore: str | list[str] | None = None,
+        keep_as: str | None = None,
+        ttl: timedelta | None = None,
+        store: ContextStore | None = None,
     ) -> FrameworkContext:
+        """A scope of this bus for the block — every execution inside reads it.
+
+            with framework.context({"user_id": "123", "correlation_id": "abc"}) as app:
+                app(some_dto)
+            with framework.context({"tenant_id": "acme"}, global_scope=True): ...
+            with framework.context(restore=["tenant:acme", f"session:{sid}"]): ...
+            with framework.context(values, keep_as="sale-77", ttl=timedelta(hours=1)): ...
+
+        The first scope of a flow is its entrypoint (`kind`, `DIRECT` by default); `restore` reads
+        what a store kept, under `context_to_set`; `keep_as` keeps what the scope sees.
         """
-        Create a context manager that applies the specified context attributes.
+        ...
 
-        When used with 'with' statement, returns this UseFramework instance
-        with the context applied, allowing for scoped context execution.
+    def current_context(self) -> Context:
+        """The context in play as this bus sees it — the object `self.context` is, read-only."""
+        ...
 
-        Args:
-            context_to_set: Dictionary of context attributes to set
-            global_scope: Publish on the instance so concurrent executions can read them
+    def context_provider(
+        self, needs: Sequence[str] = (), gives: Sequence[str] = ()
+    ) -> Callable[[ContextProviderFunction], ContextProviderFunction]:
+        """Register what gives `gives` from `needs`, run when an execution of this bus opens."""
+        ...
 
-        Returns:
-            FrameworkContext that yields this UseFramework instance when entered
+    def context_schema(self, schema: type) -> None:
+        """Validate and type what a scope of this bus is opened with against `schema`."""
+        ...
 
-        Example:
-            with framework.context({"user_id": "123", "correlation_id": "abc"}) as app_with_context:
-                # app_with_context is the same UseFramework instance but with context applied
-                result = app_with_context(some_dto)  # DTO handlers can access the context
-        """
+    def context_store(self, store: ContextStore) -> None:
+        """The store this bus's scopes keep and restore with."""
+        ...
 
     @property
     def logger(self) -> LoggerProxy:

@@ -150,7 +150,7 @@ the request). A `context` that is not an object is an Invalid Request (`-32600`)
   "params": { "transaction_id": "t-1" },
   "context": {
     "correlation_id": "req-9",
-    "user.id": "operator",
+    "user_id": "operator",
     "trace_id": "abc",
     "span_id": "def"
   }
@@ -161,7 +161,7 @@ the request). A `context` that is not an object is an Invalid Request (`-32600`)
 |---|---|
 | `context` keys | `with framework.context({...})` — Feature reads `self.context` |
 | `trace_id` / `span_id` / `carrier` inside `context` | also `with framework.with_trace(...)` |
-| HTTP `X-Correlation-Id` | `correlation_id` if the body omitted it |
+| HTTP `X-Correlation-Id`, `X-Causation-Id`, `X-Execution-Id` | the execution's identity if the body omitted it — [context-manager.md](../core/context-manager.md#execution-identity) |
 | HTTP `traceparent` | `carrier.traceparent` for OTel parent adoption |
 
 Body `context` wins over headers. Interceptors, error handlers, and bus tracing are unchanged.

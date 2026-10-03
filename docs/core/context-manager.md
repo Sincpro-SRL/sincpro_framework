@@ -1,191 +1,380 @@
-# Context Manager for Sincpro Framework
+# The context: one component, read from anywhere, scoped, typed, carried, kept when asked
 
-The Context Manager provides automatic metadata propagation and scope management for the Sincpro Framework using Python's `contextvars` for thread-safe context storage.
+The context says **who** a request acts for, **for which tenant**, **in which language**, **in which
+flow** — and anything a project adds. It reaches every Feature, ApplicationService, hook, interceptor
+and adapter without a parameter, crosses threads, buses, services and brokers, and can be kept in a
+store for whoever resumes the flow. Why it is shaped this way: [PRD_22](../prd/PRD_22_context-component.md).
 
-## Key Features
+Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
-### 1. Automatic Metadata Propagation
-- Context attributes flow automatically to all Features and ApplicationServices within scope
-- No need to manually pass correlation IDs, user info, or other metadata
-- Supports complex distributed tracing scenarios
-
-### 2. Thread-Safe Context Storage
-- Uses Python's `contextvars` module for proper context isolation
-- Works correctly with asyncio, threading, and concurrent operations
-- No context leakage between different execution paths
-
-### 3. Nested Context Support
-- Supports nested contexts with override capabilities
-- Inner contexts inherit outer context values
-- Inner contexts can override specific values while preserving others
-
-### 4. Context-Aware Error Handling
-- Exceptions are automatically enriched with context information
-- Provides better debugging and tracing capabilities
-- Maintains context information in error logs
-
-## Quick Start
-
-### 1. Simple Context Usage
+## The syntax you already have
 
 ```python
-from sincpro_framework import UseFramework
+from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework.context import EntrypointKind, Level, use_context
 
-app = UseFramework("my-service")
 
-# Use context with the new simplified API
-with app.context({"correlation_id": "123", "user.id": "admin"}) as app_with_context:
-    result = app_with_context(some_dto)
-```
-### 2. Nested Contexts
+class CommandConfirmSale(DataTransferObject):
+    sale_id: str
 
-```python
-# Nested contexts with overrides
-with app.context({"correlation_id": "outer", "environment": "prod"}) as outer_app:
-    with outer_app.context({"correlation_id": "inner"}) as inner_app:  # Override
-        result = inner_app(dto)  # correlation_id="inner", environment="prod"
-```
 
-### 3. Access Context in Features and ApplicationServices
+class CommandCheckCredit(DataTransferObject):
+    pass
 
-```python
-class MyFeature(Feature):
-    def execute(self, dto: MyDTO) -> MyResponse:
-        # Get specific context value
-        correlation_id = self.context.get("correlation_id", "unknown")
-        user_id = self.context.get("user.id")
-        
-        # Get full context dictionary
-        full_context = self.context
-        
-        # Use context in business logic
-        logger.info(f"Processing request {correlation_id} for user {user_id}")
-        
-        return MyResponse(...)
 
-class MyApplicationService(ApplicationService):
-    def execute(self, dto: MyDTO) -> MyResponse:
-        # ApplicationServices also have access to context
-        session_id = self.context.get("session.id")
-        
-        # Execute features - context is automatically inherited
-        feature_result = self.feature_bus.execute(FeatureDTO(...))
-        
-        return MyResponse(...)
+sales = UseFramework("sales-context", log_after_execution=False)
+seen: list = []
+
+
+@sales.feature(CommandCheckCredit)
+class CheckCredit(Feature):
+    def execute(self, dto: CommandCheckCredit) -> None:
+        seen.append(self.context)                      # the bus's context, a dict
+
+
+@sales.app_service(CommandConfirmSale)
+class ConfirmSale(ApplicationService):
+    def execute(self, dto: CommandConfirmSale) -> None:
+        seen.append(use_context())                     # the same, from anywhere
+        self.feature_bus.execute(CommandCheckCredit())
+
+
+with sales.context({"tenant_id": "acme", "user_id": "ana", "lang": "es"}):
+    sales(CommandConfirmSale(sale_id="S-1"))
+
+confirm, check = seen
+assert check["tenant_id"] == "acme" and check.get("tz", "America/La_Paz") == "America/La_Paz"
+assert isinstance(check, dict)                         # json.dumps, **context, as always
 ```
 
-## Advanced Usage
+`with bus.context({...})`, nested `with`, `self.context`, `bus.current_context()` and
+`global_scope=True` work as they always did. What is new is underneath, and what you can reach.
 
-### Multiple Executions in Same Context
+## A tree of nodes, never one context overwritten
 
-```python
-# Context persists across multiple executions
-with app.context({"correlation_id": "batch-001", "batch_id": "B123"}) as app_with_context:
-    result1 = app_with_context(dto1)
-    result2 = app_with_context(dto2)
-    # Both executions share the same context
+```
+ROOT          the process                       defaults, flags, settings
+ └─ BUS        what a bounded context publishes  bus.context(..., global_scope=True)
+     └─ ENTRYPOINT  what the entrance knew        who, tenant, lang, the flow — and its kind
+         └─ APPLICATION  an ApplicationService    each execution, a node of its own
+             └─ FEATURE   a Feature
+                 └─ HOOK  a repository's hook
+                 SCOPE    a block, wherever it is opened
 ```
 
-### Error Handling with Context
+Each node keeps only its own values and a pointer to its parent. **Reading walks up and the nearest
+node wins** — a React provider's rule. Closing a node is returning to its parent.
 
 ```python
+assert [one.level for one in check.lineage()] == [
+    Level.FEATURE,
+    Level.APPLICATION,
+    Level.ENTRYPOINT,
+    Level.BUS,
+    Level.ROOT,
+]
+assert check.entrypoint is not None and check.entrypoint.kind is EntrypointKind.DIRECT
+assert check.application is not None and check.application.label == "CommandConfirmSale"
+assert check.origin("tenant_id").level is Level.ENTRYPOINT
+```
+
+| You ask | You get |
+|---|---|
+| `use_context()` | the node in play — a `dict` of what it sees |
+| `use_context(Level.ENTRYPOINT)`, `context.at(level)` | that level's node, `None` when there is none above |
+| `context.root` · `.bus` · `.entrypoint` · `.application` · `.feature` · `.hook` | the nearest of each |
+| `context.parent` · `context.level` · `context.own` | the tree itself |
+| `context.origin(key)` | `Origin(level, label, execution_id)` — who said it |
+| `context.lineage()` | this node and every one above it |
+| `context.execution` | the identity: `execution_id`, `causation_id`, `correlation_id` |
+
+Every entrance opens the flow with its kind — `REST`, `RPC`, `GRPC`, `MCP`, `QUEUE`, `CRON`, `REMOTE`,
+or `DIRECT` for a call from code. A Feature never needs it; `context.entrypoint.kind` answers when it
+does.
+
+## Writing — two ways, on purpose
+
+```python
+class CommandStamp(DataTransferObject):
+    pass
+
+
+orders = UseFramework("orders-context", log_after_execution=False)
+
+
+@orders.feature(CommandStamp)
+class Stamp(Feature):
+    def execute(self, dto: CommandStamp) -> None:
+        self.context["note"] = "the whole call sees this"     # the scope of the call
+        use_context().set("pos_id", 3)                        # this node: what it runs, only
+
+
+with orders.context({"tenant_id": "acme"}):
+    orders(CommandStamp())
+    assert orders.current_context()["note"] == "the whole call sees this"
+    assert "pos_id" not in orders.current_context()
+
+    with use_context().scoped({"tenant_id": "beta"}) as block:   # a child scope for a block
+        assert block["tenant_id"] == "beta"
+    assert use_context()["tenant_id"] == "acme"
+```
+
+| Write | Lands on | Seen by |
+|---|---|---|
+| `context[key] = value`, `update`, `del` | the scope of the call — the `bus.context(...)` block, or the call | every execution of that call, as `self.context` always behaved |
+| `context.set(key, value)` | the node in play | what it runs afterwards — never its caller or a sibling |
+| `context.entrypoint.set(...)`, `context.root.set(...)` | that level, said on purpose | everything under it |
+
+`bus.current_context()` is the same object, read-only. Deleting a key a scope inherited hides it in
+that scope only.
+
+**A block with only what a level above says.** `scoped()` opens from any level, not only the one in
+play: the block sees that level, without what the nodes under it changed, and stays in the execution
+in play (its identity, its cause):
+
+```python
+class CommandAudit(DataTransferObject):
+    pass
+
+
+audits = UseFramework("audits-context", log_after_execution=False)
+audited: list = []
+
+
+@audits.feature(CommandAudit)
+class Audit(Feature):
+    def execute(self, dto: CommandAudit) -> None:
+        audited.append(use_context())
+
+
+@audits.app_service(CommandConfirmSale)
+class ConfirmAndAudit(ApplicationService):
+    def execute(self, dto: CommandConfirmSale) -> None:
+        use_context().set("tenant_id", "beta")              # this service works for beta
+        with use_context().parent.scoped():                 # the audit runs with what came in
+            self.feature_bus.execute(CommandAudit())
+
+
+with audits.context({"tenant_id": "acme"}):
+    audits(CommandConfirmSale(sale_id="S-2"))
+
+assert audited[0]["tenant_id"] == "acme"
+```
+
+`use_context(Level.ENTRYPOINT).scoped()` runs a block with exactly what the entrance knew.
+
+**The flow is what the context says.** Writing `correlation_id` — `context["correlation_id"] = …`,
+`set`, or a scope that names it — renames the flow from there on: the execution in play, its signals
+and what it runs afterwards all say the new one, and a scope's name ends with the scope.
+`execution_id` and `causation_id` are minted by the framework: written mid-execution they are kept as
+values and warned about; only an entrance's are taken, for a root.
+
+A value can live under its **type** — what a settings object, a client or a store is found by:
+
+```python
+from dataclasses import dataclass
+
+
+@dataclass
+class SiatSettings:
+    url: str
+
+
+use_context().root.set(SiatSettings, SiatSettings(url="https://siat.example"))
+with sales.context({"tenant_id": "acme"}):
+    assert use_context()[SiatSettings].url == "https://siat.example"
+```
+
+## Threads and pools — the same on every Python build
+
+An asyncio task starts from its creator's context. A `ThreadPoolExecutor` hands a worker nothing, and
+a plain `Thread` starts empty on the default build. These hand it on everywhere:
+
+```python
+from sincpro_framework.context import ContextExecutor, ContextThread, in_context
+
+with sales.context({"tenant_id": "acme"}):
+    with ContextExecutor(max_workers=4) as pool:                # every task, the submitter's context
+        tenants = list(pool.map(lambda _: use_context()["tenant_id"], range(4)))
+    thread = ContextThread(target=lambda: tenants.append(use_context()["tenant_id"]))
+    thread.start()
+    thread.join()
+
+assert tenants == ["acme"] * 5
+```
+
+`in_context(fn)` wraps one function for a pool the project already owns. Nodes are copy-on-write: a
+thread never sees another's write half done, and what it `set`s stays in its own node.
+
+## Providers, schemas, requirements, secrets
+
+```python
+from enum import IntEnum
+from typing import TypedDict
+
+from pydantic import Secret
+
+from sincpro_framework.context import requires_context
+from sincpro_framework.exceptions import ContextRequired
+
+
+class Environment(IntEnum):
+    PRODUCTION = 1
+    TEST = 2
+
+
+class SiatContext(TypedDict, total=False):
+    TOKEN: Secret[str]
+    SIAT_ENV: Environment
+    nit_id: str
+
+
+siat = UseFramework("siat-context", log_after_execution=False)
+siat.context_schema(SiatContext)                       # what a scope opens with, typed
+
+
+@siat.context_provider(needs=["nit_id"], gives=["TOKEN", "SIAT_ENV"])
+def credentials(context):                              # "I want context": derived once per scope
+    return {"TOKEN": Secret(f"token-of-{context['nit_id']}"), "SIAT_ENV": 2}
+
+
+class CommandSendInvoice(DataTransferObject):
+    pass
+
+
+@siat.feature(CommandSendInvoice)
+@requires_context("TOKEN", "SIAT_ENV")                 # declared: refused when missing
+class SendInvoice(Feature):
+    def execute(self, dto: CommandSendInvoice) -> None:
+        seen.append(self.context)
+
+
+with siat.context({"nit_id": "N-1"}):
+    siat(CommandSendInvoice())
+
+sent = seen[-1]
+assert sent["TOKEN"].get_secret_value() == "token-of-N-1"
+assert "token-of" not in repr(sent) and "TOKEN" not in sent.to_client()
+
 try:
-    with app.context({"correlation_id": "error-test", "user.id": "admin"}) as app_with_context:
-        result = app_with_context(dto_that_causes_error)
-except Exception as e:
-    # The exception is raised as itself, with nothing attached. The context of the failed call
-    # is on its log line and on its error report (the `sincpro` context of the Sentry event);
-    # read it there, or keep the values you need before the call.
-    print(f"Error {e} for correlation_id error-test")
+    siat(CommandSendInvoice())                          # no nit_id: nothing provides the token
+except ContextRequired as refused:
+    assert refused.missing == ["TOKEN", "SIAT_ENV"]
 ```
 
-### Accessing Context from Anywhere
+- **A provider** runs when an execution opens, has what it `needs` and lacks what it `gives`; its
+  answer lands on that execution's node, so what it runs finds it and it is not asked again.
+- **A schema** validates and types the keys it names — `SIAT_ENV=2` arrives a `SIATEnvironment`; any
+  other key passes as given.
+- **A requirement** is a declaration: refused with `ContextRequired` when missing. A use case that
+  declares nothing is never checked.
+- **A `Secret`** is read where it is, masked on every signal, and never travels.
+
+## Kept outside: N contexts in a store
 
 ```python
-# the bus answers what the context in play says, read-only
+from datetime import timedelta
 
-# Get current context from anywhere in your code
-current_context = bus.current_context()
-correlation_id = current_context.get("correlation_id")
+from sincpro_framework.caching import InMemoryKeyValue
+from sincpro_framework.context import ContextStore, KeyValueContexts
+
+contexts = KeyValueContexts(InMemoryKeyValue())         # RedisKeyValue(redis) in production
+use_context().root.set(ContextStore, contexts)          # the process's; bus.context_store(...) for a bus
+
+contexts.keep("tenant:acme", {"lang": "es", "tz": "America/La_Paz"})
+contexts.keep("session:s1", {"user_id": "ana", "lang": "en"}, ttl=timedelta(hours=8))
+
+with sales.context({"plan": "pro"}, restore=["tenant:acme", "session:s1"]):     # in order
+    restored = use_context()
+    assert (restored["lang"], restored["tz"], restored["user_id"]) == (
+        "en",
+        "America/La_Paz",
+        "ana",
+    )
+
+with sales.context({"tenant_id": "acme"}, keep_as="sale-77", ttl=timedelta(hours=1)):
+    pass
+with sales.context(restore="sale-77"):                  # a worker, a cron, another service
+    assert use_context()["tenant_id"] == "acme"
 ```
 
-### Thread Safety
+A store keeps **what a flow is** — a tenant's defaults, a session, a flow to resume — not what can be
+recomputed (that is a cache). `InMemoryContexts` for one process; `KeyValueContexts` over any
+`KeyValueStore` — Redis, Valkey, Memcached — for every replica and service. How it is written is a
+codec: `PlainCodec` (JSON any language reads, the default), `TypedCodec(SiatContext)` (the types back,
+the same codebase), `PickleCodec` (anything picklable, never bytes from outside).
+
+**The process level, shared by every replica**:
 
 ```python
-import threading
-from concurrent.futures import ThreadPoolExecutor
-
-def worker(thread_id):
-    app = UseFramework(f"worker-{thread_id}")
-    with app.context({"thread_id": thread_id}) as app_with_context:
-        # Each thread has its own isolated context
-        result = app_with_context(SomeDTO(data=f"thread-{thread_id}"))
-        return result
-
-# Run multiple threads - contexts are properly isolated
-with ThreadPoolExecutor(max_workers=5) as executor:
-    futures = [executor.submit(worker, i) for i in range(5)]
-    results = [f.result() for f in futures]
+use_context().root.share(KeyValueContexts(InMemoryKeyValue()), every=timedelta(seconds=5))
+use_context().root.set("maintenance", False)            # every replica reads it within 5 s
 ```
 
-### Across buses
+Read locally, read again only when the store's version moved — never a network call per read.
 
-The context of a request follows it into every bus it reaches. A bus executed from inside
-another one — a Feature calling `self.common(...)`, a subscriber reached through a `SyncQueue` —
-starts from the caller's context, adds its own `context(...)` on top (its keys win), and nothing
-it adds flows back to the caller. Outside an execution nothing is inherited.
+## Across services, brokers and the frontend
+
+| Transport | How the context crosses |
+|---|---|
+| A bus calling another, one process | the whole tree: the callee runs under the caller's node |
+| `remote_execution` (HTTP, gRPC) | the whole context of the caller as one packed header, caused by the calling execution |
+| A broker (FastStream), an HTTP or gRPC entrance | `inject` / `extract`: `baggage` (W3C), `sincpro-context` (JSON, lists too), the identity headers |
+| The frontend | `use_context().to_client()` out; the `sincpro-context` header back, read by every HTTP entrance |
 
 ```python
-with sales.context({"tenant": "acme", "user.id": "ana"}):
-    sales(CommandCreateQuotation())       # its Feature calls self.common(...):
-                                          # common's Features read tenant and user.id too
+from sincpro_framework.context.adapters.propagation import extract, inject
+
+
+class CommandPublish(DataTransferObject):
+    pass
+
+
+messages = UseFramework("messages-context", log_after_execution=False)
+
+
+@messages.feature(CommandPublish)
+class Publish(Feature):
+    def execute(self, dto: CommandPublish) -> None:
+        seen.append(inject(use_context()))               # what a message or a request carries
+
+
+with messages.context({"tenant_id": "acme", "tenant_ids": ["acme", "beta"]}):
+    messages(CommandPublish())
+
+carried = extract(seen[-1])                             # what the other side opens its flow with
+assert carried["tenant_ids"] == ["acme", "beta"] and "causation_id" in carried
 ```
 
-## Best Practices
+Only what is simple travels: text, numbers, booleans and lists of them. An object, a connection or a
+`Secret` stays in its process, with a warning the first time.
 
-### 1. Context Key Naming
-- Use descriptive, hierarchical names: `user.id`, `service.name`
-- Be consistent across your application
-- Include namespace to avoid conflicts
+## Execution identity
 
-### 2. Context Scope Management
-- Keep context scope as narrow as possible
-- Use nested contexts for temporary overrides
-- Clean up context when exiting scope (automatic with `with` statement)
+Every execution knows who it is, what caused it and which flow it belongs to
+([PRD_21](../prd/PRD_21_execution-identity.md)) — the same three attributes and the same rule a
+`DomainEvent` carries, one id space:
 
-### 3. Error Handling
-- Always check for context enrichment in exception handlers
-- Log context information for debugging
-- Include correlation IDs in all log messages
+| Key | Value |
+|---|---|
+| `execution_id` | a UUID v7 of its own; its start is read off it |
+| `causation_id` | the execution that called it, or the event that started it |
+| `correlation_id` | the flow: the cause's, else the cause's own id, else its own |
 
-### 4. Performance Considerations
-- Context lookup is fast but not free - cache values if used frequently
-- Avoid storing large objects in context
-- Keep context data simple and lightweight
+They are on every log line, span and GlitchTip event of the execution, and on `context.execution`. A
+root execution takes what it was handed (`bus.context({...})`, `x-correlation-id` /
+`x-causation-id` / `x-execution-id`); a bus mints with another generator when told
+(`bus.execution_ids(fn)`). An event recorded, published or saved inside an execution joins its chain.
 
-## Integration with Distributed Systems
+## The keys the framework reads
 
-The context manager is designed to work seamlessly with distributed tracing systems:
+| Key | Meaning |
+|---|---|
+| `user_id` | who the execution acts for |
+| `tenant_id` | the tenant it acts in |
+| `tenant_ids` | every tenant it may act across — a list |
+| `correlation_id`, `causation_id`, `execution_id` | the identity |
 
-```python
-# HTTP Middleware example (conceptual)
-class ContextMiddleware:
-    def __init__(self, app):
-        self.app = app
-    
-    def process_request(self, request):
-        # Extract context from HTTP headers
-        context_attrs = {
-            "correlation_id": request.headers.get("X-Correlation-ID"),
-            "user.id": request.headers.get("X-User-ID"),
-            "trace.id": request.headers.get("X-Trace-ID")
-        }
-        
-        # Execute request within context
-        with self.app.context(context_attrs) as app_with_context:
-            return app_with_context(request_dto)
-```
-
-## Examples
-
-See `examples/context_manager_demo.py` for a complete working example demonstrating all features of the context manager.
+`"user.id"` and `"tenant"` are still read, as `user_id` and `tenant_id`, with a warning the first time;
+the key given stays where it was. The signals keep their own names: logs, spans and metrics say
+`tenant` and `user_id`.

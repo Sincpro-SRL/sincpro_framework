@@ -26,7 +26,7 @@ from sincpro_framework.auth.domain import (
     WhenDenied,
 )
 from sincpro_framework.auth.security_context import _decided, current_identity
-from sincpro_framework.context.mixin import executing_context
+from sincpro_framework.context.infrastructure.tree import executing_context
 from sincpro_framework.exceptions import ExtensionRefused
 from sincpro_framework.sincpro_logger import logger
 

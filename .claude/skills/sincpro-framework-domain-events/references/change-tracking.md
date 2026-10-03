@@ -45,30 +45,34 @@ apart by what the annotation inherits, never by whether an ORM maps it.
 - **On SQLAlchemy**, the engine already keeps the loaded and pending value, so the diff is read at
   `before_flush`. It is registered on the **session**, not the repository — so it covers every route
   to the database, including a plain session or a script.
-- **`MemoryRepository`** has no flush to ask: it takes a baseline when it hands an aggregate out and
-  compares on `save()`. A change to an aggregate nobody `save()`d records nothing there and records
-  on SQLAlchemy. Write the test knowing which of the two you are proving.
+- **`MemoryRepository`** has no flush to ask: it takes a baseline when it hands an aggregate out
+  and compares on `save()`. SQLAlchemy tracks at flush, but `context()` defaults to
+  `Writes.SAVED`: changes not saved are discarded at commit. `Writes.CHANGED` or an explicit
+  flush opts into session tracking; that does not replace `save(aggregate)` for automatic
+  persistence of its mapped recorded events.
 
 ## Explicit mode
 
 ```python
 with self.repository.context() as unit:
+  invoice = unit.get(Invoice, invoice_id)
     invoice.post()
     event = unit.record_changes(invoice)       # settled here, and handed over
+  unit.save(invoice)
 if event is not None:
-    self.events.save(event)
     self.publisher.publish(event)
 ```
 
 Returns `None` when nothing differs, or when the aggregate was never stored (a first save is a
 Created fact, not this). **Publish one or the other, never both** — it is the same event
-`pull_events()` will hand over.
+`pull_events()` will hand over. With a mapped context event base, `save(invoice)` already
+stores it; for a deliverable event omit the manual publish and let the relay deliver.
 
 ## A custom `Updated` event and the words
 
 ```python
 @dataclass(kw_only=True)
-class InvoiceUpdated(EntityUpdated):
+class InvoiceUpdated(EntityUpdated, BillingEvent):
     name = "billing.invoice.v1.updated"
     label: dict[str, str] = field(default_factory=lambda: {"default": "Updated", "es": "Se actualizó"})
 
@@ -76,6 +80,9 @@ class InvoiceUpdated(EntityUpdated):
 class Invoice(ChangeTrackingMixin, Entity):
     change_event = InvoiceUpdated
 ```
+
+`BillingEvent` is this context's `DomainEvent` base mapped through `map_events`. This keeps
+`InvoiceUpdated` in its event table without mapping the framework-wide `EntityUpdated` base.
 
 `changes` is enough for a program; the event also carries the words a person reads:
 `event.label`, `event.entity_type`, `event.field_labels` (only the fields that moved). The words

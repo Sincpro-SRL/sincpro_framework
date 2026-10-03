@@ -1,11 +1,11 @@
 ---
 name: sincpro-framework-persistence
-description: Persist aggregates with sincpro_framework — declare an Entity/aggregate, map its table, get/save through the Repository, wrap writes in a unit of work, resolve relations, and put rules on hooks or mixins. Use whenever the task touches aggregates, tables, `Repository`, `save`/`remove`/`archive`, `repository.context()`, `entity_table`, `map_aggregates`, relations, `Hooks`, or `ArchivableMixin`/`AuditedMixin`/`ChangeTrackingMixin` in a Sincpro Python service.
+description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations and hooks. Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, or aggregate mixins in a Sincpro Python service.
 ---
 
 # sincpro-framework-persistence
 
-`sincpro_framework.ddd` is the vocabulary (aggregates, `Repository`, hooks, events) and needs
+`sincpro_framework.ddd` is the vocabulary (aggregates, `IRepository`, hooks, events) and needs
 nothing installed. `sincpro_framework.orm` is the SQLAlchemy adapter:
 `pip install sincpro-framework[sqlalchemy]`. A Feature reads and writes through `self.repository`
 and never learns which database is behind it.
@@ -36,7 +36,9 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | aggregate | Your `@dataclass` subclass of `Entity`; the unit `save` takes | dataclass (yours) | your `domain/` package |
 | `EntityCollection[T]` | A page of records: `items`, `count`, `cursor`, `dropped`, `meta` | dataclass (frozen) | `from sincpro_framework.ddd import EntityCollection` |
 | `ValueObject(base, validate_fn, name)` | Factory for a validated primitive (`Email`, `Money`) | function | `from sincpro_framework.ddd import ValueObject` |
-| `Repository` (ddd) | The abstract store a Feature can be typed against: `get`/`search`/`save`/`remove`/`archive` and the short reads | port (abstract) | `from sincpro_framework.ddd import Repository` |
+| `IRepository` | Aggregate reads and writes, with hooks; optional capabilities are separate | port | `from sincpro_framework.ddd import IRepository` |
+| `ReadsAggregates` / `WritesAggregates` / `Analyzes` / `WritesInBulk` / `Transacts` | Declare the operations a consumer actually requires; `StoreCapabilities` describes backend support | capability ports | `sincpro_framework.ddd` |
+| `AggregateRepository[T]` / `DatabaseAggregateRepository[T]` | Typed view bound to one aggregate; the database view additionally exposes SQL capabilities | adapter views | `sincpro_framework.ddd` / `sincpro_framework.orm` |
 | `Repository` (orm) | The SQLAlchemy implementation; adds `context()`, `narrowed()`, `retrying()`, `statement()`/`run()`, `pivot`, `export`, `explain`, `session` | adapter | `from sincpro_framework.orm import Repository` |
 | `MemoryRepository` | Same vocabulary over a dict, for tests; no unit of work, no relations | adapter (in-memory) | `from sincpro_framework.ddd import MemoryRepository` |
 | `Database` | One engine + session factory; stamps `updated_at`/`created_by`, logs and traces every statement | adapter | `from sincpro_framework.orm import Database` |
@@ -46,6 +48,9 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `Relation` (orm) | Declares what the tables cannot say: `many_to_many`, `id_list`, `foreign_key`, `bus`, `resolved_by` | registry (declared into `map_aggregates(relations=…)`) | `from sincpro_framework.orm import Relation` |
 | `Relation` (ddd) | Same declaration without the database kinds (`bus`, `resolved_by` only) | registry | `from sincpro_framework.ddd import Relation` |
 | unit of work | `with repository.context() as unit:` — one session, one transaction, lazy relations | method (orm) | — |
+| `Writes.SAVED` / `Writes.CHANGED` | Default explicit saves / opt-in session-tracked writes at commit | enum | `sincpro_framework.orm` |
+| `INumbering` / `MemoryNumbering` | `next_number(series, scope="")`, `take(series, count=1, scope="") -> range` | port / test double | `sincpro_framework.ddd` |
+| `DatabaseNumbering` / `numbering_table` | Number allocation participating in the database unit of work | adapter / table factory | `sincpro_framework.orm` |
 | `Hooks` | A bounded context's collection of hooks, handed to a repository | registry | `from sincpro_framework.ddd import Hooks` |
 | `Hook` | One rule class; its methods are moments (`before_save`, `after_create`…) | base class | `from sincpro_framework.ddd import Hook` |
 | `ArchivableMixin` | `archived_at`; `archive()` hides instead of deleting | dataclass mixin | `from sincpro_framework.ddd import ArchivableMixin` |
@@ -61,7 +66,7 @@ framework behaviour of the store — you write hooks, not repository subclasses.
 ## Architecture
 
 **(a) Inside the framework.** `sincpro_framework/ddd/` holds the ports and vocabulary
-(`Entity`, mixins, `Criteria`, the abstract `Repository`, `Hooks`, `MemoryRepository` as the
+(`Entity`, mixins, `Criteria`, `IRepository`, capability ports, `Hooks`, `MemoryRepository` as the
 stdlib default). `sincpro_framework/orm/sqlalchemy/` is the only place SQLAlchemy is imported
 (`Database`, the SQL `Repository`, `data_mapper.py`, `relation_resolver.py`); importing
 `sincpro_framework.orm` without the `[sqlalchemy]` extra raises an `ImportError` naming the extra.
@@ -197,7 +202,7 @@ class RegisterCustomer(Feature):                  # the context's typed base: se
 ```
 
 Type `repository:` on `DependencyContextType` with `sincpro_framework.orm.Repository` when
-Features use `context()`, `narrowed()` or `retrying()`; with the `ddd` abstraction when they only
+Features use `context()`, `narrowed()` or `retrying()`; with `ddd.IRepository` when they only
 use the common surface (then `MemoryRepository` substitutes in tests).
 
 ## The rules that matter
@@ -214,9 +219,23 @@ use the common surface (then `MemoryRepository` substitutes in tests).
 - **The transaction is configured where it begins**: `context(isolation=Isolation.SERIALIZABLE)`,
   `read_only=True`, `timeout=`; publish in `unit.after_commit(...)`, never in a hook.
 - **A stale write is refused** (`StaleAggregate`); read again and decide again.
-- **`repository.context()` is one unit of work**: everything commits together or not at all.
+- **`repository.context()` is one unit of work** shared by repositories using the same
+  `Database` instance, including child Features. Two Database objects or two stores are not
+  one transaction. `separate=True` deliberately opens another transaction.
 - **A relation is resolved once per page, and refused if you did not ask for it.** No hidden N+1.
-- **The aggregate records events; the Feature publishes them** after the write commits.
+- **The aggregate records events; save keeps mapped facts with it.** Use an `EventRelay`
+  for durable delivery; manual publication after commit is not a durable outbox.
+
+## Numbering and aggregate views
+
+Use `AggregateRepository[Invoice](repository, Invoice)` when callers should omit the model
+argument, or `DatabaseAggregateRepository[Invoice]` when they also need SQL operations.
+These wrap the existing store; they are not independent connections or transactions.
+
+`DatabaseNumbering(database, numbering_table(...))` allocates by series and optional scope.
+Allocate the number **inside the same database unit of work that saves the document** so a
+rollback also returns the allocation. Calling outside commits the allocation independently;
+`MemoryNumbering` cannot prove concurrency or rollback. Do not use `MAX(number) + 1`.
 
 ## References
 

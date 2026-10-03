@@ -20,6 +20,19 @@ def _forget_declared_metric_labels():
     reset_metric_labels()
 
 
+@pytest.fixture(autouse=True)
+def _a_process_context_of_its_own():
+    """The process level of the context belongs to the interpreter; what a test sets there —
+    a default, a store, a shared root — must not reach the next one."""
+    from sincpro_framework.context.domain.node import Values
+    from sincpro_framework.context.infrastructure.tree import ROOT
+
+    before = ROOT.values
+    ROOT.values = Values(before.current)
+    yield
+    ROOT.values = before
+
+
 @pytest.fixture(scope="session")
 def otel_provider():
     """Configure the OTel TracerProvider once for the whole test session."""

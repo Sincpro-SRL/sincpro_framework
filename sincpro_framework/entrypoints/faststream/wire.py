@@ -23,6 +23,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sincpro_framework.auth.domain import Credentials
 from sincpro_framework.auth.transports import authenticated_as
 from sincpro_framework.caching import IdempotencyRecords, InMemoryKeyValue, KeyValueRecords
+from sincpro_framework.context.adapters.propagation import extract
+from sincpro_framework.context.domain.execution import CAUSATION_ID, CORRELATION_ID
+from sincpro_framework.context.domain.keys import TENANT_ID
+from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.entrypoints import json_utils
 from sincpro_framework.entrypoints.exposure import (
@@ -112,15 +116,23 @@ def _default_records() -> IdempotencyRecords:
     return KeyValueRecords(InMemoryKeyValue())
 
 
-def queue_context(envelope: Envelope, headers: Mapping[str, str]) -> dict[str, str]:
-    """What a message hands the execution's context: its `correlationid`, and the `tenant` a
-    producer put in its headers — so every signal of the run says them (PRD_03 §4.10)."""
-    carried: dict[str, str] = {}
+def queue_context(envelope: Envelope, headers: Mapping[str, str]) -> dict[str, Any]:
+    """What a message hands the execution's context — so every signal of the run says it
+    (PRD_03 §4.10, PRD_21).
+
+    1. The context the producer's execution carried (`baggage`, `sincpro-context`, the identity).
+    2. The envelope's chain over it: `correlationid`, `causationid`.
+    3. Final: the tenant a producer put in its own headers, when the context names none — as
+       `tenant_id`, and as `tenant`, what this wire wrote before the key was standard.
+    """
+    carried: dict[str, Any] = extract(headers)
     if envelope.correlationid:
-        carried["correlation_id"] = envelope.correlationid
+        carried[CORRELATION_ID] = envelope.correlationid
+    if envelope.causationid:
+        carried[CAUSATION_ID] = envelope.causationid
     tenant = headers.get("tenant") or headers.get("x-tenant")
-    if tenant:
-        carried["tenant"] = tenant
+    if tenant and TENANT_ID not in carried:
+        carried[TENANT_ID] = carried["tenant"] = tenant
     return carried
 
 
@@ -425,7 +437,10 @@ class QueueWire(Wire[QueueBinding]):
         carried = queue_context(envelope, credentials.headers)
 
         def call() -> Any:
-            with authenticated_as(bus, credentials), bus.context(carried):
+            with (
+                authenticated_as(bus, credentials),
+                bus.context(carried, kind=EntrypointKind.QUEUE),
+            ):
                 return bus(dto)
 
         with within_trace(envelope.carrier()):

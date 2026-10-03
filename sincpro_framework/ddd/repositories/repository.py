@@ -41,9 +41,11 @@ from collections.abc import Iterable
 from contextvars import ContextVar
 from typing import Any
 
+from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
+from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories.capabilities import (
     ReadsAggregates,
@@ -219,9 +221,15 @@ class IRepository(ReadsAggregates, WritesAggregates):
         that was never stored says `version == 0`; by `after_save` the write has raised it, so
         asking there would call every create an update and `after_create` would never fire at
         all — which looks exactly like a framework bug and is not one.
+
+        A new event saved inside an execution is caused by it and joins its flow, unless it already
+        says otherwise — the same as one recorded or published.
         """
         newness = [bool(getattr(one, "is_new", False)) for one in records]
         for one, is_new in zip(records, newness):
+            if is_new and isinstance(one, DomainEvent):
+                for key, value in chain_for(one).items():
+                    setattr(one, key, value)
             self._fire("before_save", one)
             self._fire("before_create" if is_new else "before_update", one)
         return newness

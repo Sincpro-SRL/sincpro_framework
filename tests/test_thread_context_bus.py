@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, cast
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context.thread_context_bus import ThreadContextBus
+from sincpro_framework.context.infrastructure.thread_context_bus import ThreadContextBus
 
 
 class ThreadDTO(DataTransferObject):
@@ -128,7 +128,7 @@ class TestThreadContextBus:
 
         # PYTHON 3.14 FREE-THREADING: this already happened — verified failing
         # on 3.14.7t (free-threaded build), passing on 3.14.7/3.12.11 (GIL
-        # builds). See the note in context/thread_context_bus.py for details.
+        # builds). See the note in context/infrastructure/thread_context_bus.py for details.
         # Expected to fail there, not a regression in this codebase.
         """
         framework = _build_framework("thread-context-bare-bug")
@@ -171,7 +171,7 @@ class TestThreadContextBus:
         # PYTHON 3.14 FREE-THREADING: same caveat as
         # test_bare_submit_loses_context_in_new_thread — verified failing on
         # 3.14.7t, passing on 3.14.7/3.12.11. See
-        # context/thread_context_bus.py for details.
+        # context/infrastructure/thread_context_bus.py for details.
         """
         framework = _build_framework("thread-context-fanout-bug")
 

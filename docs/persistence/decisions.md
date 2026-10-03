@@ -281,7 +281,7 @@ reading leaves the archived out unless the criteria names the column.
 
 **Why.** Both are written by hand in every project, and both are wrong in the same way when
 they are: somebody forgets. The actor comes from a callable the provider hands the database,
-usually `lambda: bus.current_context().get("user.id")`, so the adapter never learns what a bus is. What a
+usually `lambda: bus.current_context().get("user_id")`, so the adapter never learns what a bus is. What a
 business calls deleting is almost always archiving, because other records point at the row;
 Odoo spells it `active`, and a column that says *when* it was put away is worth more than a flag.
 
@@ -335,6 +335,10 @@ where the words are known; `Meta` carries them and nothing merges or guesses a l
 
 ## 14. Events: recorded by the aggregate, published by a Feature, stored by nobody
 
+**Historical decision, superseded by section 31.** The in-memory recording and explicit
+publication contracts remain, but mapped events are now stored with the aggregate and
+`EventRelay` provides delivery. Do not use this section as the current persistence recipe.
+
 **Decision.** `Entity.record()` keeps events in memory; `pull_events()` is explicit. A `Publisher`
 has the bus's signature: `publish(event)` or `publish(event, ResponseDTO)`. A `Subscriber` is a
 list of `UseFramework` instances; a bus subscribes by registering a Feature for the event class,
@@ -376,7 +380,7 @@ named after the pattern it implements and against the one it avoids, Active Reco
 
 ## 17. How this is tested, and why that way
 
-- **Unit suites per layer**, `tests/ddd`, `tests/orm`, `tests/events`: fixtures, no `conftest`
+- **Unit suites per layer**, `tests/ddd`, `tests/orm`, `tests/event_driven`: fixtures, no `conftest`
   imports, models in their own module, one in-memory database per test.
 - **The N+1 is pinned by counting statements**, not by shapes: every promise about cost reduces
   to a number, and a number is only a guarantee if a test asserts it.

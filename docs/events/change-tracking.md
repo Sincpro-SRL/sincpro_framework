@@ -46,10 +46,15 @@ this `Database`: a use case holding a plain session, a script, a migration. What
 stamping is registered there.
 
 ```python
-with repository.context() as unit:
+with repository.context(writes=Writes.CHANGED) as unit:
     invoice = unit.get(Invoice, invoice_id)
     invoice.total = 900          # no save(): the session already knows, and so does the event
 ```
+
+`Writes` is exported by `sincpro_framework.orm`. The default is `Writes.SAVED`: changes not
+passed to `save` are discarded at commit with a warning. The example opts into session writes
+to demonstrate tracking at flush, not the recommended aggregate write path. Use `save(invoice)`
+to run hooks and cascade and persist its mapped events in the same transaction.
 
 **`MemoryRepository` has no flush to ask**, so it takes a baseline when it hands an aggregate
 out and compares on `save()`. That is the approximation, and it is honest about its limit: a
@@ -105,12 +110,16 @@ for event in invoice.pull_events():    # the Feature still decides what to do wi
 
 ```python
 with self.repository.context() as unit:
+  invoice = unit.get(Invoice, invoice_id)
     invoice.post()
     event = unit.record_changes(invoice)   # settled here, and handed over
+  unit.save(invoice)                     # state and mapped events, together
 if event is not None:
-    self.events.save(event)                # store it
     self.publisher.publish(event)          # or hand it to a queue
 ```
+
+For an event marked `DeliverableEventMixin`, omit that manual publication and let `EventRelay`
+own delivery. Saving the same fact in a separate transaction is not an atomic outbox.
 
 **On the store, not on the aggregate**, because the diff is the store's answer: one that has an
 engine asks it, one that does not compares against what it handed out, and an aggregate cannot
@@ -204,14 +213,10 @@ correlated *is* the head of its chain. Three services later, one `correlation_id
 whole thing and the `causation_id`s put it in order. A new event comes back; the cause is
 untouched.
 
-**Why it is not filled in automatically.** A bus's context is a `ContextVar` created *per bus
-instance* (`context/mixin.py`), never process-wide — deliberately, because a process runs
-several buses and an aggregate belongs to none of them. There is no ambient request an
-`Entity.record()` could reach for, and inventing a global one to fake it would be wrong the
-moment a second bus exists. The chain is threaded where both ends are actually known.
-
-For the head of a chain — a command, not an event — the Feature already has the request's own
-correlation: `self.context.get("correlation_id")`.
+**Most of the time it is filled in already.** An event recorded, published or saved inside an
+execution joins that execution's chain on its own — `causation_id` the execution, `correlation_id`
+its flow ([context-manager.md](../core/context-manager.md#execution-identity)). `caused_by` is for
+the cause the framework cannot see: an event in hand, from another flow; what it sets is kept.
 
 ## One trace across the process boundary
 
@@ -275,8 +280,10 @@ stays on the aggregate too: `pull_events()` still hands it to whoever publishes 
 
 ## Sent on, without a second abstraction
 
-Mark the update event `DeliverableEventMixin` and an `EventRelay` sends it on, at least once,
-never twice from two replicas:
+Mark the update event `DeliverableEventMixin` and an `EventRelay` sends it on, at least once.
+Row locks prevent concurrent claims of the same row on supporting backends; a crash after
+publication and before commit can still cause duplicates. Memory and SQLite do not establish
+multi-replica exclusion:
 
 ```python
 @dataclass(kw_only=True)
@@ -324,12 +331,9 @@ row and never sent. See
   **The guideline for whoever closes it:** the actor is never read off the aggregate at the
   moment the event is built — `updated_by` is not set yet and never will be in time. It is
   read from the same `actor()` callable the `Database` was already given
-  (`Database(url, actor=lambda: bus.current_context().get("user.id"))`), which is the one place that
+  (`Database(url, actor=lambda: bus.current_context().get("user_id"))`), which is the one place that
   answers "who is writing" for every path, including a raw session. When the global context
   lands, that callable is what it feeds; nothing in the tracking hook has to learn where the
   user came from.
-- **The relay as a shipped component.** The loop above is twenty lines a project writes; no
-  class ships it.
-- **Trace across the asynchronous boundary — done.** See below.
 - **Accumulating across transactions.** One consolidated event for a flow that spans several
   saves needs a scope somebody opens and closes; nothing here does that.

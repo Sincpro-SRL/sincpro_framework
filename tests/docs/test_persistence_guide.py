@@ -19,6 +19,7 @@ GUIDE = ROOT / "docs" / "persistence" / "guide.md"
 HOOKS = ROOT / "docs" / "persistence" / "hooks.md"
 TRANSACTIONS = ROOT / "docs" / "persistence" / "transactions.md"
 INTERCEPTORS = ROOT / "docs" / "core" / "interceptors.md"
+CONTEXT = ROOT / "docs" / "core" / "context-manager.md"
 CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
 WORKFLOWS = ROOT / "docs" / "workflows" / "README.md"
@@ -60,6 +61,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         HOOKS,
         TRANSACTIONS,
         INTERCEPTORS,
+        CONTEXT,
         CRON,
         MIGRATIONS,
         WORKFLOWS,

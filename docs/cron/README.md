@@ -247,8 +247,10 @@ billing_crons.relay_deliverable_events(
 )
 ```
 
-Each tick is one pass — the deliverable events not delivered and due, taken with `SKIP LOCKED`,
-handed on, marked — so every replica may run it. Named `<registry>.relay` in runs and logs. See
+Each tick is one pass: select due deliverable events, publish and save delivery metadata.
+On a backend advertising row locks it uses `FOR UPDATE SKIP LOCKED`; SQLite and memory do not
+prove replica exclusion. Delivery remains at least once, and strict stream order across
+backoff intervals or replicas is not guaranteed. Named `<registry>.relay` in runs and logs. See
 [persistence guide §12](../persistence/guide.md#12-delivering-events).
 
 ## Not yet

@@ -4,11 +4,14 @@ Documentation is organised by layer. Each folder is one layer of the framework: 
 how it is designed, how to use it, and why it is the way it is. The root [README](../README.md) is
 the tutorial; these pages are the reference and the reasoning behind it.
 
+Upgrading a consumer after the persistence and event refactors? Start with
+[events/upgrading.md](events/upgrading.md), including the Forge and MCP Odoo migration checks.
+
 | Layer | Package | Start here | What is in it |
 |---|---|---|---|
 | **Start here** | — | [shapes.md](shapes.md) | What shape is your system — one database, a database per context, or the facts *are* the state — and what to wire for each |
 | **Architecture** | the whole | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | The hexagonal layout, every component with its layer and dependencies, the flow of a request |
-| **Core: the bus** | `sincpro_framework` | [core/](core/README.md) | `UseFramework`, Features and ApplicationServices, dependencies, the context manager, interceptors, error handling |
+| **Core: the bus** | `sincpro_framework` | [core/](core/README.md) | `UseFramework`, Features and ApplicationServices, dependencies, interceptors, error handling; the context — `use_context()` from anywhere, a tree from the process to each execution, threads, providers, stores, carried on every transport ([context-manager.md](core/context-manager.md)) |
 | **Persistence** | `ddd`, `orm` | [persistence/](persistence/README.md) | Aggregates, `Criteria` and `Specification`, relations, the SQLAlchemy adapter, the ledger that proves it, the decisions |
 | **Event-driven** | `event_driven`, `event_driven.adapters.faststream` | [events/](events/README.md) | `DomainEvent`, `Publisher`, `Subscriber` made of buses, `SyncQueue` and `BackgroundQueue`; Kafka, RabbitMQ, Redis and NATS through FastStream (`[faststream]`), sync and async — [brokers.md](events/brokers.md) |
 | **Crons** | `cron` | [cron/](cron/README.md) | `Crons` registry per bounded context, `Cron` classes with their buses injected, `CronProcess` in the background, one run per tick across replicas |

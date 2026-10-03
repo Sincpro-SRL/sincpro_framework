@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-core
-description: Work the cross-cutting parts of a sincpro_framework bus — the context manager (correlation ids, user, propagation across buses, async/thread handoff), interceptors (veto, adjust, audit, cache, retry; replaces=) and error handlers (global/feature/app_service). Use whenever a task passes metadata through a call, wraps a use case from outside, replaces a use case, or maps exceptions to answers.
+description: Work the cross-cutting parts of a sincpro_framework bus — opening a context with bus.context (the component itself is sincpro-framework-context), interceptors (veto, adjust, audit, cache, retry; replaces=) and error handlers (global/feature/app_service). Use whenever a task passes metadata through a call, wraps a use case from outside, replaces a use case, or maps exceptions to answers.
 ---
 
 # sincpro-framework-core
@@ -32,8 +32,9 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `UseFramework` | The bus of one bounded context; registers handlers, dependencies, interceptors, error handlers | registry | `from sincpro_framework import UseFramework` |
 | `bus.context(mapping)` | Context manager: opens metadata for every call made inside the `with` | function | method of `UseFramework` (returns `FrameworkContext`) |
 | `self.context` | What a Feature/ApplicationService reads: the context of the execution in progress | DTO | attribute of `Feature` / `ApplicationService` |
-| `bus.current_context()` | Read-only live view of the context in play, for adapters wired outside handlers | function | method of `UseFramework` |
-| `ThreadContextBus` | A bus handle bound to a captured context, for one `ThreadPoolExecutor` task | adapter | `from sincpro_framework.sincpro_abstractions import ThreadContextBus` |
+| `bus.current_context()` | The context in play as this bus sees it, read-only — the object `self.context` is | function | method of `UseFramework` |
+| `use_context()` | The same context from anywhere, no bus in hand (`sincpro-framework-context`) | function | `from sincpro_framework.context import use_context` |
+| `ThreadContextBus` | A bus handle bound to a captured context, for one `ThreadPoolExecutor` task (prefer `ContextExecutor`) | adapter | `from sincpro_framework.sincpro_abstractions import ThreadContextBus` |
 | `AsyncBus` | Stateless `async` facade over a bus (`asyncio.to_thread` per call) | adapter | `from sincpro_framework.aio import AsyncBus` |
 | `@bus.interceptor(*Commands)` | Registers a function `(dto, call_next) -> response` around those Commands (all when none) | decorator | method of `UseFramework` |
 | `CallNext[R]` | Type of `call_next`: runs the next interceptor or the handler | function | `from sincpro_framework import CallNext` |
@@ -61,13 +62,14 @@ bus.py             FrameworkBus → FeatureBus / ApplicationServiceBus: dispatch
 interceptors.py    CallNext, the chain and its class contract
 error_handler.py   ErrorHandler and the chain (first registered runs first)
 ordering.py        one order for every extension point: before/after, sequence, registration
-context/           FrameworkContext (the with-block), ContextMixin (ContextVar storage),
-                   ThreadContextBus
+context/           the context component — a tree of nodes over a ContextVar
+                   (`sincpro-framework-context`)
 aio/               AsyncBus
 ```
 
-Context storage is a stdlib `ContextVar` per bus. There are no ports or optional adapters in this
-skill's scope; tracing/Sentry around the same calls are the observability extras.
+The context is its own component (`sincpro-framework-context`); this skill only opens it. There are
+no ports or optional adapters in this skill's scope; tracing/Sentry around the same calls are the
+observability extras.
 
 **In a consumer service:**
 
@@ -88,7 +90,7 @@ entrypoints/                 open bus.context({...}) per request, then call the 
 **One call:**
 
 ```text
-entrypoint: with bus.context({"correlation_id": ..., "user.id": ...}):
+entrypoint: with bus.context({"correlation_id": ..., "user_id": ...}):
   bus(Command)
    └─ FrameworkBus ── global error chain ───────────────────────────────┐
        └─ ApplicationServiceBus / FeatureBus ── its scope's error chain ─┤ re-raise → next
@@ -107,10 +109,8 @@ entrypoint: with bus.context({"correlation_id": ..., "user.id": ...}):
   then returns the handler's value and the orchestration continues on it. Register feature
   handlers that answer only when every caller can take that answer; otherwise re-raise.
 - **`executor.submit(bus, dto)` from a `with bus.context(...)` block.** The worker sees an empty
-  context, no error. Submit `self.feature_bus.thread_context().execute` (one call per task), or use
+  context, no error. Use `ContextExecutor` / `in_context(bus)` (`sincpro-framework-context`), or
   `bus.get_async_bus()` from `async def`.
-- **Opening a context on bus A and calling bus B from outside a handler.** B sees nothing: each bus
-  holds its own context, and only a bus executed *inside* another's execution inherits it.
 - **An interceptor module that is never imported.** The decorator never runs and nothing wraps the
   Command, silently. Import it from the context's `__init__.py` before the first call.
 - **`@bus.interceptor()` for an audit.** It wraps every Command, including the Features an
@@ -120,35 +120,33 @@ entrypoint: with bus.context({"correlation_id": ..., "user.id": ...}):
   the answer's class. Only do it for a deliberate cache or veto.
 - **`bus.context(..., global_scope=True)` per request.** It publishes the keys to every concurrent
   execution of that bus on every thread while the block is open. Use the default (isolated) form.
-- **Writing `self.context[...]` as scratch space.** The write stays for the rest of the enclosing
-  `with bus.context(...)` block and goes on every later signal. Keep request data in locals.
+- **Writing `self.context[...]` as scratch space.** A mapping write lands on the scope of the call:
+  it stays for the rest of the enclosing `with bus.context(...)` block and goes on every later
+  signal. Keep request data in locals; `use_context().set(...)` when only what you run should see it.
 
-## Context manager: metadata that travels with a call
+## Opening a context
 
 ```python
-with app.context({"correlation_id": "123", "user.id": "admin"}) as app_with_context:
+with app.context({"correlation_id": "123", "user_id": "admin"}) as app_with_context:
     result = app_with_context(dto)          # app_with_context is app itself
 
-# nested: inner overrides, inherits the rest
-with app.context({"env": "prod", "user": "admin"}) as outer:
+with app.context({"env": "prod", "user_id": "admin"}) as outer:
     with outer.context({"env": "staging"}) as inner:
-        inner(dto)          # env="staging", user="admin"
+        inner(dto)          # env="staging", user_id="admin"
 ```
 
-- The context of a request **follows it into every bus it reaches**: a bus executed from inside a
-  handler (`self.common(...)`, a subscriber through a `SyncQueue`) starts from the caller's context,
-  adds its own on top, and nothing it adds flows back.
-- `bus.current_context()` reads the context in play (read-only, live), e.g.
-  `Database(url, actor=lambda: bus.current_context().get("user.id"))`.
-- Every context key goes on log lines, spans and error events of that bus;
-  `UseFramework(name, hide_in_logs=["TOKEN"])` keeps a key off them.
-- **Threads do not inherit `contextvars`.** `thread_context()` is a method of a built bus
-  (`self.feature_bus` in an ApplicationService, `framework.bus`), called once per task;
-  `get_async_bus()` exists on `UseFramework` and on every bus. `asyncio.to_thread` propagates
-  context by itself.
-- A typed `self.context`: `Feature[Command, Response, MyContext]` with `MyContext` a `TypedDict`.
+The context is its own component — a tree from the process down to each execution, read from
+anywhere with `use_context()`, two ways to write, threads, providers, required keys, stores and
+propagation: **`sincpro-framework-context`**. What matters here:
 
-Depth: [references/context.md](references/context.md).
+- Every context key goes on log lines, spans and error events of that bus;
+  `UseFramework(name, hide_in_logs=["TOKEN"])` keeps a key off them — or make it a `Secret`.
+- A bus called from inside another's execution — or inside its `with` — runs under the caller's
+  context; nothing it adds flows back.
+- A typed `self.context`: `Feature[Command, Response, MyContext]` with `MyContext` a `TypedDict`, and
+  `bus.context_schema(MyContext)` to validate it at the door.
+
+Depth: [references/context.md](references/context.md) and the `sincpro-framework-context` skill.
 
 ## Interceptors: change a use case from outside it
 

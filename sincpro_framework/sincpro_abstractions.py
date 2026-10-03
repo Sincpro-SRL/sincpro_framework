@@ -6,8 +6,8 @@ from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypeVar
 
 from .aio import AsyncBus as AsyncBus
-from .context.framework_context_consumer import ContextConsumer
-from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
+from .context.entrypoint.consumer import ContextConsumer
+from .context.infrastructure.thread_context_bus import ThreadContextBus as ThreadContextBus
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -68,7 +68,7 @@ class Bus(ABC):
         """
         # `Self@Bus` vs. `Bus` here is a known pyright edge case when the base
         # class is only resolvable across modules via a TYPE_CHECKING import
-        # (see context/thread_context_bus.py) — correct at runtime and covered
+        # (see context/infrastructure/thread_context_bus.py) — correct at runtime and covered
         # by tests/test_thread_context_bus.py.
         return ThreadContextBus(self, copy_context())  # pyright: ignore[reportArgumentType]
 
@@ -110,7 +110,7 @@ class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT])
             def execute(self, dto: MyInputDTO) -> MyResponseDTO:
                 # Access context with the new API
                 correlation_id = self.context.get("correlation_id")
-                user_id = self.context.get("user.id")
+                user_id = self.context.get("user_id")
 
                 result = self.database_adapter.query(dto.param)
                 return MyResponseDTO(result=result)
@@ -172,7 +172,7 @@ class ApplicationService(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse,
             def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
                 # Access context with the new API
                 correlation_id = self.context.get("correlation_id")
-                user_id = self.context.get("user.id")
+                user_id = self.context.get("user_id")
 
                 # Execute Features through feature_bus with proper typing
                 step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)

@@ -1,8 +1,9 @@
 # Brokers — Kafka, RabbitMQ, Redis, NATS (`[faststream]`)
 
 The domain keeps two verbs: `publish(event)` and registering an event on a bus. Which broker carries
-it, with which partitions/retries/acknowledgements, is the broker's configuration. FastStream speaks
-to each with one API, and `sincpro_framework.events.faststream` plugs it in on both sides.
+it, with which partitions/retries/acknowledgements, is the broker's configuration. Sending lives in
+`sincpro_framework.event_driven.adapters.faststream`; listening is an entrypoint in
+`sincpro_framework.entrypoints.faststream`.
 
 ```bash
 pip install sincpro-framework[faststream] "faststream[kafka]"     # or [rabbit], [redis], [nats]
@@ -13,8 +14,9 @@ Deeper, in the framework repo: `docs/events/brokers.md` and `docs/entrypoints/qu
 ```python
 from faststream.kafka import KafkaBroker              # or RabbitBroker, RedisBroker, NatsBroker
 
-from sincpro_framework.events import Publisher, Subscriber
-from sincpro_framework.events.faststream import FastStreamQueue, keyed_by_entity, subscribe
+from sincpro_framework.event_driven import Publisher, Subscriber
+from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
+from sincpro_framework.entrypoints.faststream import subscribe
 
 broker = KafkaBroker("kafka:9092")
 
@@ -29,7 +31,7 @@ Publisher(queue).publish(InvoicePaid(amount=120, entity_id="inv-1"))
 queue.stop()
 
 # Sending from async code (the caller owns the loop)
-from sincpro_framework.events import AsyncPublisher
+from sincpro_framework.event_driven import AsyncPublisher
 await AsyncPublisher(FastStreamQueue(broker)).publish(InvoicePaid(amount=80))
 ```
 

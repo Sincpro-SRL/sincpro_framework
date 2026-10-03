@@ -97,6 +97,18 @@ The plugin has no `version`: each commit is a version, so an update always bring
 that match the code on `main`. Agents other than Claude Code reach the same guidance through
 Sincpro's knowledge MCP server.
 
+### Updating existing services
+
+The persistence and event refactors in main (`e6dbe87`, manifest `3.14.5`) change public imports
+and storage recipes. See the [upgrade guide for Forge and MCP Odoo](docs/events/upgrading.md)
+before changing their dependency locks: it separates compatibility, history migration, event
+sourcing and durable delivery, and lists the verified limitations.
+
+Updating the skills plugin does **not** update the installed Python package. Conversely,
+editing this clone does not update a cached plugin or the knowledge MCP server. Check the
+consumer's installed artifact and the skill revision together; a version label alone does
+not prove that the refactored APIs were published.
+
 ## 📑 Table of Contents
 
 1. [Overview of Hexagonal Architecture](#-overview-of-hexagonal-architecture)
@@ -227,7 +239,7 @@ See [docs/core/interceptors.md](docs/core/interceptors.md) for the contract and 
 
 ```python
 # Simple context usage
-with app.context({"correlation_id": "123", "user.id": "admin"}) as app_with_context:
+with app.context({"correlation_id": "123", "user_id": "admin"}) as app_with_context:
     result = app_with_context(some_dto)  # Context automatically available in handlers
 
 # Nested contexts with overrides
@@ -239,7 +251,7 @@ with app.context({"env": "prod", "user": "admin"}) as outer_app:
 class PaymentFeature(Feature):
     def execute(self, dto: PaymentDTO) -> PaymentResponse:
         correlation_id = self.context.get("correlation_id")
-        user_id = self.context.get("user.id")
+        user_id = self.context.get("user_id")
         # Use context in business logic...
 ```
 
@@ -249,7 +261,8 @@ class PaymentFeature(Feature):
   `executor.submit(bus.execute, dto)` runs `execute` in a *new* thread that never saw the
   overlay's `set()` — every Feature's `self.context` there silently falls back to the (usually
   empty) shared context.
-- `bus.thread_context()` captures the calling thread's current context and returns a
+- `bus.thread_context()` on a built bus (`framework.bus` or `self.feature_bus`, not
+  `UseFramework` itself) captures the calling thread's current context and returns a
   `ThreadContextBus` — pass `.execute` (not the raw bus) to the executor instead.
 - Call `thread_context()` **once per task you submit**, not once for a whole batch: a captured
   `contextvars.Context` can only be entered by one thread at a time, so sharing a single one
@@ -271,6 +284,10 @@ class SyncManyFeature(ApplicationService):
 ```
 
 #### Async fan-out with `get_async_bus()`
+
+Current limitation: the async facade does not create the same per-call context boundary as
+`UseFramework.__call__`. Handler writes can persist between calls without an explicit scope;
+parallel calls must not share a mutable context mapping. See the current [audit](AUDIT.md).
 
 - `thread_context()` is for **sync** code manually managing a `ThreadPoolExecutor`. If the
   caller is already `async def` (an async host handler, a script) and wants to fan out

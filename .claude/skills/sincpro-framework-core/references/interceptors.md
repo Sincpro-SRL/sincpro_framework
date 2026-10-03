@@ -45,7 +45,7 @@ Each is a pattern to copy, not a framework piece.
 
 - **Veto**: a credit check raises `ContractViolation` (`sincpro_framework.ddd`).
 - **Audit**: `@bus.interceptor(CommandA, CommandB)` records the command,
-  `bus.current_context().get("user.id")` and the response. Name the Commands: with none it also
+  `bus.current_context().get("user_id")` and the response. Name the Commands: with none it also
   runs on every Feature an ApplicationService calls.
 - **Idempotency**: the key travels in the context; cache the answer, run once (the framework's own
   version is in `sincpro-framework-caching`).

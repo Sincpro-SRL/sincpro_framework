@@ -477,6 +477,7 @@ def test_a_queue_message_hands_its_correlation_and_tenant_to_the_context():
 
     assert queue_context(envelope, {"tenant": "acme"}) == {
         "correlation_id": "corr-1",
-        "tenant": "acme",
+        "tenant_id": "acme",
+        "tenant": "acme",  # what this wire wrote before tenant_id was the standard key
     }
     assert queue_context(Envelope(), {}) == {}

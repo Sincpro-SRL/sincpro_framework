@@ -52,11 +52,11 @@ def _buses() -> tuple[UseFramework, UseFramework]:
 def test_a_bus_called_from_another_sees_the_callers_context():
     _, sales = _buses()
 
-    with sales.context({"tenant": "acme", "user.id": "ana"}):
+    with sales.context({"tenant_id": "acme", "user_id": "ana"}):
         answer = sales(CommandCreateQuotation(), ResponseContext)
 
     assert answer is not None
-    assert answer.seen["inner"] == {"tenant": "acme", "user.id": "ana"}
+    assert answer.seen["inner"] == {"tenant_id": "acme", "user_id": "ana"}
 
 
 def test_the_inner_bus_adds_its_own_keys_on_top_and_nothing_flows_back():
@@ -74,25 +74,29 @@ def test_the_inner_bus_adds_its_own_keys_on_top_and_nothing_flows_back():
     @sales.feature(CommandOverride)
     class Override(Feature):
         def execute(self, dto: CommandOverride) -> ResponseContext:
-            with common.context({"tenant": "override", "stage": "inner"}):
+            with common.context({"tenant_id": "override", "stage": "inner"}):
                 inner = common(CommandResolveTenant(), ResponseContext)
             assert inner is not None
             return ResponseContext(
                 seen={"inner": inner.seen, "outer_after": dict(self.context)}
             )
 
-    with sales.context({"tenant": "acme", "user.id": "ana"}):
+    with sales.context({"tenant_id": "acme", "user_id": "ana"}):
         answer = sales(CommandOverride(), ResponseContext)
 
     assert answer is not None
-    assert answer.seen["inner"] == {"tenant": "override", "user.id": "ana", "stage": "inner"}
-    assert answer.seen["outer_after"] == {"tenant": "acme", "user.id": "ana"}
+    assert answer.seen["inner"] == {
+        "tenant_id": "override",
+        "user_id": "ana",
+        "stage": "inner",
+    }
+    assert answer.seen["outer_after"] == {"tenant_id": "acme", "user_id": "ana"}
 
 
 def test_nothing_is_inherited_outside_an_execution():
     common, sales = _buses()
 
-    with sales.context({"tenant": "acme"}):
+    with sales.context({"tenant_id": "acme"}):
         pass
     answer = common(CommandResolveTenant(), ResponseContext)
 
@@ -122,7 +126,7 @@ def test_a_subscriber_reached_through_a_sync_queue_sees_the_publishers_context()
         def execute(self, dto: CommandPost) -> None:
             publisher.publish(InvoicePosted())
 
-    with billing.context({"tenant": "acme"}):
+    with billing.context({"tenant_id": "acme"}):
         billing(CommandPost())
 
-    assert heard == [{"tenant": "acme"}]
+    assert heard == [{"tenant_id": "acme"}]

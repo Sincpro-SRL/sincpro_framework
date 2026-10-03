@@ -23,6 +23,14 @@ from contextvars import ContextVar
 from typing import Any, Generator, Protocol
 from urllib.parse import unquote
 
+from sincpro_framework.context.domain.keys import (
+    LEGACY_KEYS,
+    LEGACY_TENANT,
+    LEGACY_USER_ID,
+    PLUMBING,
+    TENANT_ID,
+)
+from sincpro_framework.context.infrastructure.tree import current_execution
 from sincpro_framework.observability.domain import UNKNOWN, ObservabilityIdentity
 from sincpro_framework.sincpro_conf import settings
 
@@ -36,9 +44,8 @@ IDENTITY_KEYS = (SERVICE_NAME, SERVICE_VERSION, RELEASE)
 ALWAYS_ON_METRICS = (*IDENTITY_KEYS, TENANT)
 """The keys every series carries, beside what its instrument names and what the buses declare."""
 
-PLUMBING = frozenset({"trace_id", "span_id", "carrier"})
-"""Context keys that carry the trace itself between buses — the span and the event already hold
-them natively, so they are not copied onto either."""
+SAID_ABOVE = frozenset({TENANT_ID, *LEGACY_KEYS})
+"""Context keys a signal says under its own name — `tenant` and `user_id` — never twice."""
 
 
 class ExecutionSource(Protocol):
@@ -129,21 +136,26 @@ def _identity() -> Any:
 
 def execution_context() -> Mapping[str, Any]:
     """The context of the execution in progress, live — what a handler, a hook or an interceptor
-    wrote to it included. Outside a use case, what a caller handed the next bus (`carrying`).
+    wrote to it included, and its identity last: `execution_id`, `causation_id` and
+    `correlation_id` are the execution's own, whatever the context was handed. Outside a use case,
+    what a caller handed the next bus (`carrying`).
     """
     try:
-        from sincpro_framework.context.mixin import live_context
+        from sincpro_framework.context.infrastructure.tree import live_context
 
         live = live_context()
     except Exception:
         live = {}
     said = _said.get()
-    return {**live, **said} if said else live
+    running = current_execution()
+    if not said and running is None:
+        return live
+    return {**live, **(said or {}), **(running.chain() if running is not None else {})}
 
 
 def _hidden() -> frozenset[str]:
     try:
-        from sincpro_framework.context.mixin import hidden_keys
+        from sincpro_framework.context.infrastructure.tree import hidden_keys
 
         return hidden_keys()
     except Exception:
@@ -157,20 +169,26 @@ def _text(value: Any) -> str:
 
 
 def tenant(context: Mapping[str, Any] | None = None) -> str:
-    """The execution's tenant: the context's `tenant`; else the authenticated identity's; else
-    the deployment's."""
+    """The execution's tenant: the context's `tenant_id` (or `tenant`, the key before it); else
+    the authenticated identity's; else the deployment's."""
     context = execution_context() if context is None else context
     return (
-        _text(context.get(TENANT))
+        _text(context.get(TENANT_ID))
+        or _text(context.get(LEGACY_TENANT))
         or _text(getattr(_identity(), "tenant", None))
         or deployment_tenant()
     )
 
 
 def user_id(context: Mapping[str, Any] | None = None) -> str:
-    """Who the execution acts for: the context's `user_id`; else the authenticated subject."""
+    """Who the execution acts for: the context's `user_id` (or `user.id`, the key before it);
+    else the authenticated subject."""
     context = execution_context() if context is None else context
-    return _text(context.get(USER_ID)) or _text(getattr(_identity(), "subject", None))
+    return (
+        _text(context.get(USER_ID))
+        or _text(context.get(LEGACY_USER_ID))
+        or _text(getattr(_identity(), "subject", None))
+    )
 
 
 def identity_keys(identity: ObservabilityIdentity | None) -> dict[str, str]:
@@ -214,7 +232,7 @@ def execution_keys() -> dict[str, Any]:
     if user:
         keys[USER_ID] = user
     for key, value in context.items():
-        if not isinstance(key, str) or key in PLUMBING or value is None:
+        if not isinstance(key, str) or key in PLUMBING or key in SAID_ABOVE or value is None:
             continue
         keys[key] = value
     return {key: value for key, value in keys.items() if key not in hidden}

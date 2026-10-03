@@ -48,7 +48,7 @@ A table that predates the convention maps its own column names onto the `Entity`
 - `engine_options` go straight to `create_engine` (`pool_size=10, pool_pre_ping=True`); the
   framework picks no driver and no pool.
 - `actor` answers who is writing, for `AuditedMixin`:
-  `Database(url, actor=lambda: bus.current_context().get("user.id"))`. Read on every flush.
+  `Database(url, actor=lambda: bus.current_context().get("user_id"))`. Read on every flush.
 - `enforce_foreign_keys=True` makes SQLite refuse orphans as Postgres does (tests).
 - Every statement is logged at DEBUG (as `sincpro_framework.sql`, or to `logger`), gets a span when
   tracing is on, and every failure goes to the error tracker when a Sentry/GlitchTip DSN is set.
@@ -171,8 +171,15 @@ with repository.context() as unit:
 as `serializable`. A nested block that asks for other options is refused, and so is `retrying`
 inside a block — call it around the `context()`.
 
-**The commit writes what the block changed**, saved or not — but only `save` runs hooks and the
-cascade. Always `save`.
+**The default is `Writes.SAVED`.** A commit discards tracked changes that never reached `save`
+and warns about them. `context(writes=Writes.CHANGED)` opts into committing session-tracked
+changes without save hooks or cascade. Explicit `flush()` and `session` are deliberate escape
+hatches; always `save` when aggregate rules must run.
+
+Repositories holding the **same Database instance** join the unit of work in play, even when
+a child Feature uses its own repository attribute. `separate=True` opens an independent
+transaction; it does not join the outer rollback and needs an appropriate connection pool.
+This is not a transaction spanning different databases.
 
 Only inside the block:
 
@@ -192,10 +199,16 @@ with self.repository.context(isolation=Isolation.SERIALIZABLE) as unit:
     account = unit.get(Account, dto.account_id)
     account.withdraw(dto.amount)                 # the rule lives on the aggregate
     unit.save(account)
-    unit.after_commit(lambda: self.publisher.publish_all(account.pull_events()))
+    def publish_recorded() -> None:
+      for event in account.pull_events():
+        self.publisher.publish(event)
+
+    unit.after_commit(publish_recorded)
 ```
 
-This is also the shape for an outbox — the state change and its fact commit together
+An `after_commit` callback is **not** an outbox: a crash before it runs still loses delivery,
+and a callback exception is logged after the commit. For durable delivery map the context's
+events with `event_table` / `map_events`, mark deliverable events, and use `EventRelay`
 (`sincpro-framework-domain-events`).
 
 ## Writes past the aggregate
@@ -252,9 +265,15 @@ anas_books.count(Invoice).value
 
 ## The abstraction and the test double
 
-`sincpro_framework.ddd.Repository` is an abstract class, not a `Protocol`, so an implementation
-with the wrong signatures is refused. `sincpro_framework.orm.Repository` implements it and adds
-`context`, `narrowed`, `retrying`, `statement`/`run`, `pivot`, `export`, `explain`.
+`sincpro_framework.ddd.IRepository` is the aggregate read/write port. `Analyzes`, `WritesInBulk`
+and `Transacts` are separate capabilities; accepting the base port does not promise them.
+`sincpro_framework.orm.Repository` implements the SQL capabilities and adds `context`,
+`narrowed`, `retrying`, `statement`/`run`, `pivot`, `export`, `explain`.
+
+`AggregateRepository[T](repository, T)` binds one model: `get(id)`, `search(criteria)`,
+`save(aggregate)`. Use `orm.DatabaseAggregateRepository[T]` for a bound SQL view, not a new
+custom repository class for every aggregate. Consult `repository.capabilities` before
+relying on `row_locks`, `skip_locked`, `nowait`, `savepoints` or `percentiles`.
 
 `MemoryRepository(*records, hooks=None, actor=None)` implements the abstract surface over a dict:
 version check, `updated_at`/actor stamping, archived rows left out, hooks. It has **no**

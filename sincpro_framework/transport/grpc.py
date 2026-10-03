@@ -19,6 +19,8 @@ from typing import Any
 
 from sincpro_framework.auth.domain import Credentials
 from sincpro_framework.auth.transports import credentials_from_headers
+from sincpro_framework.context.adapters.propagation import extract
+from sincpro_framework.context.domain.execution import IDENTITY_HEADERS
 from sincpro_framework.sincpro_logger import logger
 
 GRPC_MISSING = "grpcio is not installed. Install with: pip install sincpro-framework[grpc]"
@@ -35,6 +37,7 @@ except ImportError as error:  # pragma: no cover - depends on the installed extr
 
 CONTEXT_PREFIX = "sp-ctx-"
 CORRELATION_HEADER = "x-correlation-id"
+HEADER_OF = {key: header for header, key in IDENTITY_HEADERS.items()}
 TRACE_HEADERS = ("traceparent", "tracestate")
 SHUTDOWN_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 DEADLINE_KEY = "deadline"
@@ -85,18 +88,20 @@ def is_past(deadline: float | None) -> bool:
 def context_from_metadata(metadata: Sequence[tuple[str, Any]]) -> dict[str, Any]:
     """Fold call metadata into the framework context without touching the payload.
 
-    1. `x-correlation-id` → correlation_id.
+    1. `x-correlation-id`, `x-causation-id`, `x-execution-id` → the identity.
     2. `traceparent` / `tracestate` → carrier, for OTel parent adoption.
     3. `sp-ctx-<key>` → context[<key>] (tenant, user id, whatever the bus reads).
     4. Final: a context dict; empty when the caller sent none of them.
     """
-    merged: dict[str, Any] = {}
+    merged: dict[str, Any] = extract(
+        {key: value for key, value in metadata if isinstance(value, str)}
+    )
     carrier: dict[str, str] = {}
     for key, value in metadata:
         if key.endswith("-bin") or not isinstance(value, str):
             continue
-        if key == CORRELATION_HEADER:
-            merged["correlation_id"] = value
+        if key in IDENTITY_HEADERS:
+            merged[IDENTITY_HEADERS[key]] = value
         elif key in TRACE_HEADERS:
             carrier[key] = value
         elif key.startswith(CONTEXT_PREFIX) and len(key) > len(CONTEXT_PREFIX):
@@ -114,8 +119,8 @@ def metadata_from_context(
     for key, value in (context or {}).items():
         if value is None:
             continue
-        if key == "correlation_id":
-            metadata.append((CORRELATION_HEADER, str(value)))
+        if key in HEADER_OF:
+            metadata.append((HEADER_OF[key], str(value)))
         elif key == "carrier" and isinstance(value, Mapping):
             metadata.extend(
                 (name, str(item)) for name, item in value.items() if name in TRACE_HEADERS

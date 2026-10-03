@@ -1,7 +1,17 @@
 from logging import Logger
 from typing import Callable, Dict, Optional, Type
 
-from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
+from .context.domain.level import Level
+from .context.domain.node import ContextNode
+from .context.infrastructure.providers import (
+    ContextProvider,
+    missing,
+    provided,
+    required_by,
+)
+from .context.infrastructure.tree import opened_execution
+from .exceptions import ContextRequired, DTOAlreadyRegistered, UnknownDTOToExecute
+from .ids import new_entity_id
 from .interceptors import Interceptor, run_through
 from .observability import Observability
 from .sincpro_abstractions import (
@@ -13,6 +23,18 @@ from .sincpro_abstractions import (
     TypeDTOResponse,
 )
 from .sincpro_logger import is_logger_in_debug, logger
+
+
+def prepared(node: ContextNode, handler: object, providers: list[ContextProvider]) -> None:
+    """1. What the bus's providers give, on the execution's node.
+    2. Final: what the handler declared it requires — refused when missing; nothing declared,
+       nothing checked."""
+    provided(node, providers)
+    required = required_by(handler)
+    if required:
+        absent = missing(node, required)
+        if absent:
+            raise ContextRequired(type(handler).__name__, absent)
 
 
 class FeatureBus(Bus):
@@ -29,6 +51,9 @@ class FeatureBus(Bus):
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
         self.observability = observability or Observability()
+        self.new_execution_id: Callable[[], str] = new_entity_id
+        self.context_owner: object = None
+        self.context_providers: list[ContextProvider] = []
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
@@ -52,6 +77,13 @@ class FeatureBus(Bus):
         if feature is None:
             raise UnknownDTOToExecute(f"{dto_name} is not registered as a feature")
         with (
+            opened_execution(
+                dto,
+                self.observability.bus_name,
+                Level.FEATURE,
+                self.new_execution_id,
+                self.context_owner,
+            ) as node,
             self.observability.span(dto_name, "feature") as span,
             self.observability.measure(dto, feature, "feature") as measured,
         ):
@@ -66,6 +98,7 @@ class FeatureBus(Bus):
 
             with self.observability.handling(dto_name):
                 try:
+                    prepared(node, feature, self.context_providers)
                     chain = self.interceptors.get(dto_type, ())
                     response = run_through(chain, feature.execute, dto)
                 except Exception as error:
@@ -109,6 +142,9 @@ class ApplicationServiceBus(Bus):
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
         self.observability = observability or Observability()
+        self.new_execution_id: Callable[[], str] = new_entity_id
+        self.context_owner: object = None
+        self.context_providers: list[ContextProvider] = []
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -138,6 +174,13 @@ class ApplicationServiceBus(Bus):
                 f"{dto_name} is not registered as an application service"
             )
         with (
+            opened_execution(
+                dto,
+                self.observability.bus_name,
+                Level.APPLICATION,
+                self.new_execution_id,
+                self.context_owner,
+            ) as node,
             self.observability.span(dto_name, "application_service") as span,
             self.observability.measure(dto, app_service, "application_service") as measured,
         ):
@@ -152,6 +195,7 @@ class ApplicationServiceBus(Bus):
 
             with self.observability.handling(dto_name):
                 try:
+                    prepared(node, app_service, self.context_providers)
                     chain = self.interceptors.get(dto_type, ())
                     response = run_through(chain, app_service.execute, dto)
                 except Exception as error:

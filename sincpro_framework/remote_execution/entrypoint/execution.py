@@ -5,6 +5,7 @@ share, whatever wire the call arrived by.
 from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.remote_execution.domain.hosting import hosting
 from sincpro_framework.remote_execution.domain.payload import (
     Readable,
@@ -53,7 +54,7 @@ def execute_hosted(
     with (
         hosting(context_name),
         within_trace(carrier),
-        bus.context(context),
+        bus.context(context, kind=EntrypointKind.REMOTE),
         authenticated_as(bus, credentials),
     ):
         answer = bus(value)

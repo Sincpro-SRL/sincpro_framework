@@ -1,5 +1,8 @@
 # Events: entities kept with the change, delivered by a relay, carried by queues to buses
 
+For an existing service, read [upgrading.md](upgrading.md) before changing imports or migrating
+history. It records the main revision, removed APIs and verified delivery/query limitations.
+
 ```python
 @dataclass(kw_only=True)
 class DatasetRegistered(CatalogDomainEvent):                 # the context's base event class
@@ -150,11 +153,19 @@ become `domain/events/{v1,v2}.py` without consumers noticing, because they impor
 `entrypoints/events.py`. A breaking change is always a new class; both versions are published while
 consumers migrate. The aggregate records the current version only: a consumer that still needs v1
 gets a translation in `entrypoints/`, never a second `record` in the domain. A kept event of an old
-version is still its own class: the table keeps the wire name and the payload.
+version is still its own class: the table keeps the wire name and the payload. Historical
+classes must remain imported and mapped while those rows exist; an unknown discriminator
+cannot be reconstructed just because its JSON is still present. Removing a class requires
+an explicit migration or compatibility plan.
 
 The direction never flips: `entrypoints/` imports `domain/`, and only an entrypoint imports another
 entrypoint. Inside one service, a context that reacts to another's facts declares its own class
 under the same name — the two identities above.
+
+An event recorded, published or saved inside an execution is caused by it and joins its flow
+(`causation_id`, `correlation_id`) unless it already says otherwise, and the execution it starts is
+caused by the event: one chain of executions and events —
+[context-manager.md](../core/context-manager.md#execution-identity).
 
 Kafka, RabbitMQ, Redis and NATS are one more `Queue` through FastStream, behind the
 `[faststream]` extra — the same

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, Field
 
+from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 
 if TYPE_CHECKING:
@@ -77,7 +78,10 @@ def tool_function(
         from sincpro_framework.entrypoints.mcp.auth import acting_for_tool_call
 
         with acting_for_tool_call(bus):
-            return run(kwargs)
+            if bus is None:
+                return run(kwargs)
+            with bus.context(kind=EntrypointKind.MCP):
+                return run(kwargs)
 
     parameters: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {"return": dict[str, Any]}

@@ -16,7 +16,7 @@ regardless of whether opentelemetry is installed.
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 from uuid import uuid4
 
-from sincpro_framework.context.framework_context import FrameworkContext
+from sincpro_framework.context.entrypoint.bus import FrameworkContext
 from sincpro_framework.observability.domain import ObservabilityIdentity
 from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE, tracer_for
 
