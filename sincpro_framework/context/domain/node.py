@@ -75,7 +75,7 @@ class Values:
 class ContextNode:
     """One node: its level, its own values, its parent, and what it is named after."""
 
-    __slots__ = ("level", "parent", "label", "owner", "kind", "execution", "values")
+    __slots__ = ("level", "parent", "label", "owner", "kind", "execution", "values", "key")
 
     def __init__(
         self,
@@ -96,6 +96,8 @@ class ContextNode:
         self.kind = kind
         self.execution = execution
         self.values = values if isinstance(values, Values) else Values(values)
+        self.key: str | None = None
+        """Where a store keeps this node — `None` when it lives in this process only."""
 
     @property
     def own(self) -> Mapping[Any, Any]:
@@ -105,7 +107,8 @@ class ContextNode:
         }
 
     def chain(self) -> Iterator["ContextNode"]:
-        """This node, then each one above it, up to the process."""
+        """This node, then each one above it, up to the process — and the global, when a store
+        shares the context."""
         node: ContextNode | None = self
         while node is not None:
             yield node

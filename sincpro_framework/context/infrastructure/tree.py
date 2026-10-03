@@ -22,6 +22,7 @@ from typing import Any
 
 from sincpro_framework.context.domain.execution import (
     CAUSATION_ID,
+    CONTEXT_NODE,
     CORRELATION_ID,
     EXECUTION_ID,
     Execution,
@@ -30,6 +31,7 @@ from sincpro_framework.context.domain.execution import (
 from sincpro_framework.context.domain.keys import standardized
 from sincpro_framework.context.domain.level import SCOPES, EntrypointKind, Level
 from sincpro_framework.context.domain.node import ContextNode
+from sincpro_framework.context.infrastructure.distributed import sharing_of
 from sincpro_framework.ids import new_entity_id
 
 ROOT = ContextNode(Level.ROOT, None, label="process")
@@ -59,11 +61,24 @@ def child(
     owner: Any = None,
     kind: EntrypointKind | None = None,
 ) -> ContextNode:
-    """A node under the one in play — an entrypoint when no entrance opened the flow yet."""
+    """A node under the one in play — an entrypoint when no entrance opened the flow yet; kept in
+    the store of the bus above it, when that bus shares its context."""
     parent = current()
     if level is Level.SCOPE and parent.nearest(Level.ENTRYPOINT) is None:
         level, kind = Level.ENTRYPOINT, kind or EntrypointKind.DIRECT
-    return ContextNode(level, parent, values, label, owner, kind)
+    return shared(ContextNode(level, parent, values, label, owner, kind))
+
+
+def shared(node: ContextNode, node_id: str | None = None) -> ContextNode:
+    """`node`, kept in the store of the nearest bus that shares its context — as it is, when none
+    does. Free when no bus of the process shares: only a shared process has a global above it.
+    """
+    if ROOT.parent is None:
+        return node
+    sharing = sharing_of(node)
+    if sharing is None:
+        return node
+    return sharing.kept(node, node_id or new_entity_id())
 
 
 @contextmanager
@@ -161,6 +176,7 @@ def opened_execution(
     execution = Execution(own, causation_id, correlation_id, type(dto).__name__, bus, level)
     node = ContextNode(level, current(), label=execution.use_case, owner=owner)
     node.execution = execution
+    shared(node, own)
     with entered(node):
         yield node
 
@@ -170,11 +186,20 @@ def opened_execution(
 
 def handed_on(context: Mapping[str, Any]) -> dict[str, Any]:
     """`context` as an execution elsewhere receives it — another service, a message: caused by
-    the execution in play, in its flow. Its own `execution_id` stays here."""
-    passed = {key: value for key, value in context.items() if key != EXECUTION_ID}
+    the execution in play, in its flow, and — when a store shares the context — pointing at the
+    node in play, so a receiver that set the store reads the chain from there. Its own
+    `execution_id` stays here."""
+    passed = {
+        key: value
+        for key, value in context.items()
+        if key not in (EXECUTION_ID, CONTEXT_NODE)
+    }
     running = current_execution()
     if running is not None:
         passed.update(running.handed_on())
+    kept = next((node.key for node in current().chain() if node.key), None)
+    if kept is not None:
+        passed[CONTEXT_NODE] = kept
     return passed
 
 

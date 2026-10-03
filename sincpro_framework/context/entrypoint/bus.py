@@ -22,13 +22,16 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import TypeAdapter
 
+from sincpro_framework.context.domain.execution import CONTEXT_NODE
 from sincpro_framework.context.domain.keys import standardized
 from sincpro_framework.context.domain.level import SCOPES, EntrypointKind, Level
 from sincpro_framework.context.domain.node import ContextNode, Values
 from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.entrypoint.facade import Context
+from sincpro_framework.context.infrastructure.distributed import SharedContext
 from sincpro_framework.context.infrastructure.providers import ContextProvider
 from sincpro_framework.context.infrastructure.tree import current, entered
+from sincpro_framework.ids import new_entity_id
 from sincpro_framework.observability.correlation import remember
 
 if TYPE_CHECKING:
@@ -47,6 +50,8 @@ class ContextMixin:
         """What this bus publishes for every execution of its own — its `Level.BUS` node's values."""
         self._context_schema: TypeAdapter[Any] | None = None
         self._context_providers: list[ContextProvider] = []
+        self._shared_context: SharedContext | None = None
+        """The store this bus shares its context through — `bus.context_store(store)`."""
 
     @property
     def _context_label(self) -> str:
@@ -65,14 +70,29 @@ class ContextMixin:
     def _scope(
         self, values: Mapping[Any, Any], kind: EntrypointKind | None = None
     ) -> Generator[ContextNode, None, None]:
-        """A scope of this bus under the node in play — under its own node the first time."""
+        """A scope of this bus under the node in play — under its own node the first time.
+
+        1. The bus's node above it, the first time a call reaches this bus.
+        2. An entrance of a bus that shares its context opens under the chain the sender handed
+           on (`sincpro.context_node`), read back from the store.
+        3. Final: the node, kept in the store when this bus shares its context.
+        """
         parent = current()
         if not self._entered_here():
             parent = self._bus_node(parent)
         level = Level.SCOPE if parent.nearest(Level.ENTRYPOINT) else Level.ENTRYPOINT
+        handed = None
+        if CONTEXT_NODE in values:
+            handed = values[CONTEXT_NODE]
+            values = {key: value for key, value in values.items() if key != CONTEXT_NODE}
+        sharing = self._shared_context
         if level is Level.ENTRYPOINT:
             kind = kind or EntrypointKind.DIRECT
+            if sharing is not None:
+                parent, values = sharing.entrance(values, handed, parent)
         node = ContextNode(level, parent, values, self._context_label, owner=self, kind=kind)
+        if sharing is not None:
+            sharing.kept(node, new_entity_id())
         with entered(node):
             yield node
 

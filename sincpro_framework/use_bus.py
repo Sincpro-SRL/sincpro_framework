@@ -26,8 +26,9 @@ from .bus import FrameworkBus
 from .context.domain.level import EntrypointKind
 from .context.domain.store import ContextStore
 from .context.entrypoint.bus import ContextMixin, FrameworkContext
+from .context.infrastructure.distributed import SharedContext, joined
 from .context.infrastructure.providers import ContextProvider, ContextProviderFunction
-from .context.infrastructure.tree import current_execution, handed_on
+from .context.infrastructure.tree import ROOT, current_execution, handed_on
 from .deps import DependencyLocator, TDeps
 from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import (
@@ -843,11 +844,27 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self._context_schema = TypeAdapter(schema)
         self._registrations.append(lambda bus: bus.context_schema(schema))
 
-    def context_store(self, store: ContextStore) -> None:
-        """The store this bus's scopes keep and restore with — over the process's, under one given
-        to a block."""
+    def context_store(
+        self,
+        store: ContextStore,
+        ttl: timedelta = timedelta(hours=24),
+        every: timedelta = timedelta(seconds=1),
+    ) -> None:
+        """Share this bus's context through `store` — and keep and restore with it.
+
+            billing.context_store(KeyValueContexts(RedisKeyValue(redis)))
+
+        The API does not change: `self.context`, `use_context()`, `bus.context(...)` read and
+        write as always, and every node of this bus's executions is kept in the store for `ttl`.
+        A bus of another service — another project too — that set the same store reads the chain
+        it was handed on, the process is kept per service, and `Level.GLOBAL` is shared by every
+        one of them; what others wrote is read again at most once per `every`. Nothing is shared
+        by a bus that did not say so. See `docs/prd/PRD_24_shared-context.md`.
+        """
         self._published.set(ContextStore, store)
-        self._registrations.append(lambda bus: bus.context_store(store))
+        self._shared_context = SharedContext(store, ttl, every)
+        joined(ROOT, self._shared_context, self.observability.identity.service_name)
+        self._registrations.append(lambda bus: bus.context_store(store, ttl=ttl, every=every))
 
     def with_trace(
         self,

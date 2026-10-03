@@ -28,6 +28,13 @@ CORRELATION_ID = "correlation_id"
 CHAIN_KEYS = (EXECUTION_ID, CAUSATION_ID, CORRELATION_ID)
 """The context keys of an execution's identity — the same names a `DomainEvent` carries."""
 
+CONTEXT_NODE = "sincpro.context_node"
+"""The node in play, handed on beside the identity when a store shares the context: a receiving bus
+that set the same store reads the sender's chain from there."""
+CONTEXT_NODE_HEADER = "x-context-node"
+"""The header a message carries `CONTEXT_NODE` in — so a receiver needs no other header to read the
+sender's chain."""
+
 IDENTITY_HEADERS = {
     "x-correlation-id": CORRELATION_ID,
     "x-causation-id": CAUSATION_ID,
