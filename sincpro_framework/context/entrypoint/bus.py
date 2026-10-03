@@ -30,7 +30,8 @@ from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.entrypoint.facade import Context
 from sincpro_framework.context.infrastructure.distributed import SharedContext
 from sincpro_framework.context.infrastructure.providers import ContextProvider
-from sincpro_framework.context.infrastructure.tree import current, entered, shared
+from sincpro_framework.context.infrastructure.tree import current, entered
+from sincpro_framework.ids import new_entity_id
 from sincpro_framework.observability.correlation import remember
 
 if TYPE_CHECKING:
@@ -80,14 +81,19 @@ class ContextMixin:
         if not self._entered_here():
             parent = self._bus_node(parent)
         level = Level.SCOPE if parent.nearest(Level.ENTRYPOINT) else Level.ENTRYPOINT
-        handed = values.get(CONTEXT_NODE)
-        values = {key: value for key, value in values.items() if key != CONTEXT_NODE}
+        handed = None
+        if CONTEXT_NODE in values:
+            handed = values[CONTEXT_NODE]
+            values = {key: value for key, value in values.items() if key != CONTEXT_NODE}
+        sharing = self._shared_context
         if level is Level.ENTRYPOINT:
             kind = kind or EntrypointKind.DIRECT
-            if self._shared_context is not None:
-                parent, values = self._shared_context.entrance(values, handed, parent)
+            if sharing is not None:
+                parent, values = sharing.entrance(values, handed, parent)
         node = ContextNode(level, parent, values, self._context_label, owner=self, kind=kind)
-        with entered(shared(node)):
+        if sharing is not None:
+            sharing.kept(node, new_entity_id())
+        with entered(node):
             yield node
 
     def _get_context(self) -> Context:

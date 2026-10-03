@@ -71,7 +71,10 @@ def child(
 
 def shared(node: ContextNode, node_id: str | None = None) -> ContextNode:
     """`node`, kept in the store of the nearest bus that shares its context — as it is, when none
-    does."""
+    does. Free when no bus of the process shares: only a shared process has a global above it.
+    """
+    if ROOT.parent is None:
+        return node
     sharing = sharing_of(node)
     if sharing is None:
         return node
