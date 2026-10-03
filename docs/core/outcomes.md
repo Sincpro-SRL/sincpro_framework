@@ -69,7 +69,7 @@ assert raised.value.failure_id == failure.id          # the exception names the 
 | `kind` | the `FailureKind` every wire answers it with (`transport.failures`): `domain`, `conflict`, `unavailable`, `internal`… |
 | `retry_after` | seconds to wait before sending the same call again — `None` when sending it again will not help |
 | `execution_id` · `causation_id` · `correlation_id` | the execution that failed, and its flow — what its log line, span and error report carry |
-| `context` | what the flow carried — the keys that travel, never a `Secret` |
+| `context` | what the flow carried — the keys that travel, a `Secret` as its value |
 
 It is a `DomainEvent` (`sincpro.execution.v1.failed`): it is published, kept and carried like any
 other.

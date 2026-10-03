@@ -1,15 +1,15 @@
 """The codecs a context is written with.
 
     PlainCodec()                       {"tenant_id": "acme", "tenant_ids": ["acme", "beta"]}
-    TypedCodec(SIATContext)            SIAT_ENV comes back a SIATEnvironment, not an int
-    TypedCodec(SIATContext, keep_secrets=True)   a Secret written as its value, for a trusted store
+    TypedCodec(SIATContext)            SIAT_ENV comes back a SIATEnvironment, TOKEN a Secret
     PickleCodec()                      any picklable value, the same codebase on both ends
 
 **Plain** is for anything outside this codebase — another language, the frontend, a broker anyone
 reads: only the travelling keys (text, numbers, booleans, lists of them).
 **Typed** is for the same codebase: the schema a project already declares — a `TypedDict` or a DTO —
 validates what comes back and gives each value its type; keys the schema does not name are left out.
-A `Secret` is written masked unless `keep_secrets` says the store may hold it.
+A `Secret` is written as its value and comes back a `Secret` — what the context holds is the
+project's decision, so a store keeps it as it is.
 **Pickle** carries anything picklable; it runs code when it loads, so it never reads bytes that came
 from outside the deployment.
 """
@@ -35,16 +35,13 @@ class PlainCodec(ContextCodec):
 
 
 class TypedCodec(ContextCodec):
-    def __init__(self, schema: type, keep_secrets: bool = False) -> None:
+    def __init__(self, schema: type) -> None:
         self.schema = schema
-        self.keep_secrets = keep_secrets
         self._adapter: TypeAdapter[Any] = TypeAdapter(schema)
 
     def dumps(self, context: Mapping[str, Any]) -> bytes:
         named = {key: value for key, value in context.items() if isinstance(key, str)}
         validated = self._adapter.validate_python(named)
-        if not self.keep_secrets:
-            return self._adapter.dump_json(validated)
         written = self._adapter.dump_python(validated, mode="json")
         fields = validated if isinstance(validated, Mapping) else validated.__dict__
         for key, value in fields.items():

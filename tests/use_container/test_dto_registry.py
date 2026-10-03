@@ -131,7 +131,7 @@ def test_two_domain_events_sharing_an_explicit_wire_name_raise():
                 return None
 
 
-def test_dto_registry_is_a_live_property_built_lazily():
+def test_dto_registry_is_a_live_property_that_builds_nothing():
     Command = _make_command()
     bus = UseFramework("lazy-property", log_after_execution=False)
     assert bus.was_initialized is False
@@ -144,7 +144,7 @@ def test_dto_registry_is_a_live_property_built_lazily():
     assert bus.was_initialized is False
     expected_key = f"{Command.__module__}.{Command.__qualname__}"
     assert expected_key in bus.dto_registry
-    assert bus.was_initialized is True
+    assert bus.was_initialized is False
 
 
 def test_map_to_dto_or_event_rebuilds_a_plain_dto_from_json_text():

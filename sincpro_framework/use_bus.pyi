@@ -33,12 +33,12 @@ from .error_handler import ErrorHandler as ErrorHandler
 from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
 from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
 from .interceptors import Interceptor
-from .remote_execution.domain.address import HostedAt
 from .remote_execution.entrypoint.hosts import Attach, OpenHost
 from .sincpro_abstractions import ApplicationService, DataTransferObject, Feature
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
 from .sincpro_logger import create_logger as create_logger
+from .transport.addresses import HostedAt
 
 DTOClass = Type[DataTransferObject] | Type[DataclassInstance]
 DTORegistration = DTOClass | list[DTOClass]
@@ -161,7 +161,8 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     @property
     def dto_registry(self) -> Mapping[str, type]:
-        """Every DTO name this bus answers, mapped to its class — built now if it wasn't yet."""
+        """Every DTO name this bus answers, mapped to its class — read from the registrations,
+        building nothing."""
         ...
 
     def map_to_dto_or_event(self, name: str, payload: str | dict[str, Any]) -> Any:
@@ -190,6 +191,15 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """`module.Class` of each handler of `dto` that `replaces=` took the place of."""
         ...
 
+    def feature_handlers(self) -> dict[type, type]:
+        """Every DTO a Feature answers now → the Feature, without building the bus."""
+        ...
+
+    def app_service_handlers(self) -> dict[type, type]:
+        """Every DTO an ApplicationService answers now → the ApplicationService, without
+        building the bus."""
+        ...
+
     def handlers(self) -> dict[type, type]:
         """Every DTO answered now → the class answering it, without building the bus."""
         ...
@@ -200,12 +210,30 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     @property
     def hosted_at(self) -> HostedAt | None:
-        """Where another service hosts this bounded context, or `None` when it runs here."""
+        """Where the context map — or `hosted_by` — hosts this bounded context; `None` when
+        nothing places it elsewhere."""
         ...
 
-    def hosted_by(self, address: str) -> None:
-        """Execute every DTO of this context on the service at `address` —
-        `grpc://host:port?timeout=5` or `http://host:port`, what the context map says, in code.
+    @property
+    def is_reference(self) -> bool:
+        """Whether this bus is a reference to a context another service hosts — never built
+        here, every call forwarded."""
+        ...
+
+    @property
+    def is_ready(self) -> bool:
+        """Whether this bus can answer now — built, or a reference."""
+        ...
+
+    def run_here(self) -> None:
+        """Run this context in this process, whatever the context map says — what serving it
+        does."""
+        ...
+
+    def hosted_by(self, address: HostedAt | str) -> None:
+        """Execute every DTO of this context on the service at `address` — a URL
+        (`grpc://host:port?timeout=5`, `http://host:port`) or the typed `HostedAt`; refused with
+        `InvalidAddress` when no wire reaches it.
         """
         ...
 

@@ -254,7 +254,7 @@ with siat.context({"nit_id": "N-1"}):
 
 sent = seen[-1]
 assert sent["TOKEN"].get_secret_value() == "token-of-N-1"
-assert "token-of" not in repr(sent) and "TOKEN" not in sent.to_client()
+assert sent.to_client()["TOKEN"] == "token-of-" + sent["nit_id"]   # it travels, as its value
 
 try:
     siat(CommandSendInvoice())                          # no nit_id: nothing provides the token
@@ -268,7 +268,8 @@ except ContextRequired as refused:
   other key passes as given.
 - **A requirement** is a declaration: refused with `ContextRequired` when missing. A use case that
   declares nothing is never checked.
-- **A `Secret`** is read where it is, masked on every signal, and never travels.
+- **A `Secret`** travels like any value — the framework filters nothing; what goes in the context
+  is the project's decision. An API key the next context needs reaches it.
 
 ## Kept outside: N contexts in a store
 
@@ -346,8 +347,8 @@ carried = extract(seen[-1])                             # what the other side op
 assert carried["tenant_ids"] == ["acme", "beta"] and "causation_id" in carried
 ```
 
-Only what is simple travels: text, numbers, booleans and lists of them. An object, a connection or a
-`Secret` stays in its process, with a warning the first time.
+Only what is simple travels: text, numbers, booleans and lists of them, and a `Secret` as the value
+it holds. An object or a connection stays in its process, with a warning the first time.
 
 ## Execution identity
 

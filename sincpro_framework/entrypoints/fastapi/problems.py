@@ -63,6 +63,7 @@ STATUS_OF: Mapping[FailureKind, int] = {
     FailureKind.DOMAIN: 422,
     FailureKind.EXHAUSTED: 429,
     FailureKind.UNAVAILABLE: 503,
+    FailureKind.UNKNOWN_OUTCOME: 504,
     FailureKind.INTERNAL: 500,
 }
 """The REST column of PRD_15 §1.3 — one row per kind, so no refusal turns into a crash."""
@@ -78,6 +79,7 @@ TITLE_OF: Mapping[FailureKind, str] = {
     FailureKind.DOMAIN: "The domain refused the request",
     FailureKind.EXHAUSTED: "Too many requests",
     FailureKind.UNAVAILABLE: "Unavailable for now",
+    FailureKind.UNKNOWN_OUTCOME: "It may have run — verify before retrying",
     FailureKind.INTERNAL: "Internal error",
 }
 
@@ -88,6 +90,7 @@ KIND_OF_STATUS: Mapping[int, FailureKind] = {
     409: FailureKind.CONFLICT,
     429: FailureKind.EXHAUSTED,
     503: FailureKind.UNAVAILABLE,
+    504: FailureKind.UNKNOWN_OUTCOME,
 }
 """The kind of an `HTTPException` a route or Starlette raised — by its status."""
 

@@ -91,6 +91,14 @@ def _is_domain_event(cls: type) -> "TypeIs[type[DomainEvent]]":
     return events_module is not None and issubclass(cls, events_module.DomainEvent)
 
 
+def registered_name(dto_type: type) -> str:
+    """The name a bus registers a DTO under — the same in every service running the code: an
+    event by its wire `name`, any other DTO by `module.qualname`."""
+    if _is_domain_event(dto_type):
+        return dto_type.name
+    return f"{dto_type.__module__}.{dto_type.__qualname__}"
+
+
 # ---------------------------------------------------------------------------------------------
 # Build processes
 # ---------------------------------------------------------------------------------------------
@@ -109,14 +117,12 @@ def _register_service(
 
     for data_transfer_object in dto_list:
         dto_name = data_transfer_object.__name__
-        if _is_domain_event(data_transfer_object):
-            registry_key = data_transfer_object.name
-            log_label = f'{dto_name}(name="{registry_key}")'
-        else:
-            registry_key = (
-                f"{data_transfer_object.__module__}.{data_transfer_object.__qualname__}"
-            )
-            log_label = dto_name
+        registry_key = registered_name(data_transfer_object)
+        log_label = (
+            f'{dto_name}(name="{registry_key}")'
+            if _is_domain_event(data_transfer_object)
+            else dto_name
+        )
 
         if (
             service_type == ServiceType.FEATURE

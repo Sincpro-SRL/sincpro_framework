@@ -152,15 +152,8 @@ def test_a_typed_codec_gives_every_value_its_type_back():
     back = codec.loads(data)
 
     assert back["SIAT_ENV"] is Environment.TEST
-    assert back["TOKEN"].get_secret_value() != "abc"  # written masked
+    assert isinstance(back["TOKEN"], Secret) and back["TOKEN"].get_secret_value() == "abc"
     assert "extra" not in back
-
-
-def test_a_trusted_store_keeps_the_secret_when_told_to():
-    codec = TypedCodec(SiatContext, keep_secrets=True)
-    back = codec.loads(codec.dumps({"TOKEN": Secret("abc")}))
-
-    assert back["TOKEN"].get_secret_value() == "abc"
 
 
 def test_plain_and_pickle_codecs():
@@ -215,7 +208,7 @@ def test_what_is_injected_is_extracted_the_same():
     back = extract(headers)
     assert back["tenant_id"] == "acme" and back["tenant_ids"] == ["acme", "beta"]
     assert back[CAUSATION_ID] == sender.execution.execution_id  # type: ignore[union-attr]
-    assert "TOKEN" not in back
+    assert back["TOKEN"] == "x"
     assert unbaggaged(headers[BAGGAGE_HEADER])["tenant_id"] == "acme"
 
 

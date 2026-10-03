@@ -72,12 +72,14 @@ class TestAsyncBus:
         async_bus = framework.bus.feature_bus.get_async_bus()
         assert isinstance(async_bus, AsyncBus)
 
-    def test_use_framework_get_async_bus_builds_lazily(self):
+    def test_use_framework_get_async_bus_builds_on_the_first_execution(self):
         framework = _build_framework("async-bus-lazy")
-        assert not framework.was_initialized
         async_bus = framework.get_async_bus()
+        assert isinstance(async_bus, AsyncBus) and not framework.was_initialized
+
+        asyncio.run(async_bus.execute(AsyncThreadDTO(message="hi")))
+
         assert framework.was_initialized
-        assert isinstance(async_bus, AsyncBus)
 
     def test_await_execute_returns_correct_response(self, feature_bus_instance):
         async_bus = feature_bus_instance.get_async_bus()

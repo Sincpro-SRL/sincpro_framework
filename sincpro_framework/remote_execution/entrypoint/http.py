@@ -19,11 +19,13 @@ from sincpro_framework.observability import process
 from sincpro_framework.remote_execution.adapters.http import (
     CONTEXT_HEADER,
     DTO_HEADER,
+    ERROR_DETAILS_HEADER,
     ERROR_KIND_HEADER,
     ERROR_MODULE_HEADER,
     PATH,
     REQUEST_CONTEXT_HEADER,
 )
+from sincpro_framework.remote_execution.domain.errors import error_details
 from sincpro_framework.remote_execution.domain.payload import ChunkReader
 from sincpro_framework.remote_execution.entrypoint.execution import execute_hosted
 from sincpro_framework.sincpro_logger import logger
@@ -56,15 +58,18 @@ def _read_from(
 
 
 def open_host_routes(contexts: Sequence[UseFramework]) -> list[Route]:
-    """The route that hosts `contexts` for calling services, keyed by their names.
+    """The route that hosts `contexts` for calling services, keyed by their names — they run in
+    this process, whatever the context map says.
 
     1. The context, the DTO and the request context from the headers; the DTO's values from the
        body, read as it arrives.
     2. Executed on a worker thread (`execute_hosted`).
-    3. Final: 200 streaming the answer's values; 404 when this service does not host the context
-       or answer the DTO; 500 naming the raised class in headers, its message as the body.
+    3. Final: 200 streaming the answer's values; 404 when this service does not host the
+       context; 500 naming the raised class and its details in headers, its message as the body.
     """
     by_name = {one.name: one for one in contexts}
+    for bus in contexts:
+        bus.run_here()
 
     async def execute(request: Request) -> Response:
         from sincpro_framework.auth.transports import credentials_from_asgi
@@ -98,6 +103,7 @@ def open_host_routes(contexts: Sequence[UseFramework]) -> list[Route]:
                 headers={
                     ERROR_MODULE_HEADER: type(error).__module__,
                     ERROR_KIND_HEADER: type(error).__qualname__,
+                    ERROR_DETAILS_HEADER: base64.b64encode(error_details(error)).decode(),
                 },
             )
         return StreamingResponse(answer, media_type="application/octet-stream")

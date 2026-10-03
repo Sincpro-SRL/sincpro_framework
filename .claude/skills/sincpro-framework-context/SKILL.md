@@ -41,7 +41,7 @@ can be kept in a store for whoever resumes the flow.
 | `Secret` | pydantic's: masked on every signal, never travels, `.get_secret_value()` where it is used | DTO | `from pydantic import Secret` |
 | `ContextStore` | Port: `keep(key, values, ttl)`, `restore(key)`, `forget(key)`, `version(key)` | port | `sincpro_framework.context` |
 | `InMemoryContexts` / `KeyValueContexts(store, codec)` | One process / every replica over any `KeyValueStore` (Redis, Valkey, Memcached) | adapter | `sincpro_framework.context` |
-| `PlainCodec` / `TypedCodec(schema, keep_secrets)` / `PickleCodec` | How a store writes a context: any language / types back / anything picklable | adapter | `sincpro_framework.context` |
+| `PlainCodec` / `TypedCodec(schema)` / `PickleCodec` | How a store writes a context: any language / types back / anything picklable | adapter | `sincpro_framework.context` |
 | `bus.context_store(store)` | The store this bus's scopes keep and restore with | function | method of `UseFramework` |
 | `inject(context)` / `extract(headers)` | The context as text headers and back: `baggage`, `sincpro-context`, `x-correlation-id`/`x-causation-id`/`x-execution-id` | function | `sincpro_framework.context.adapters.propagation` |
 | `Execution` / `current_execution()` | `execution_id`, `causation_id`, `correlation_id`, `use_case`, `bus`, `level`, `started_at` | DTO / function | `sincpro_framework.context` |

@@ -38,6 +38,8 @@ CONFLICT = -32009
 DOMAIN_ERROR = -32010
 """The domain refused the request; `data.message` is its message."""
 KEY_REUSED = -32022
+UNKNOWN_OUTCOME = -32024
+"""The call was sent and no answer came back — it may have run; verify before sending it again."""
 TRY_LATER = -32029
 """An idempotent run of the same key is in flight, or a limit is exhausted — `data.kind` says
 which."""
@@ -78,6 +80,9 @@ METHOD_ERRORS = (
     ErrorCode("KeyReused", KEY_REUSED, "Idempotency key reused", ("key_reused",), False),
     ErrorCode("DomainError", DOMAIN_ERROR, "Domain error", ("domain",), False),
     ErrorCode("Unavailable", UNAVAILABLE, "Unavailable", ("unavailable",), True),
+    ErrorCode(
+        "UnknownOutcome", UNKNOWN_OUTCOME, "Unknown outcome", ("unknown_outcome",), False
+    ),
     ErrorCode("InternalError", INTERNAL_ERROR, "Internal error", ("internal",), True),
 )
 """What a method may answer — PRD_15 §1.3, the JSON-RPC column."""

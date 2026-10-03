@@ -85,7 +85,7 @@ class ExecutionCompleted(DomainEvent):
     execution_id: str = ""
     """The execution that completed."""
     context: dict[str, Any] = field(default_factory=dict)
-    """What the flow carried — the keys that travel; never a `Secret`."""
+    """What the flow carried — the keys that travel, a `Secret` as its value."""
 
 
 @dataclass(kw_only=True)
@@ -114,7 +114,7 @@ class ExecutionFailed(DomainEvent):
     execution_id: str = ""
     """The execution that failed."""
     context: dict[str, Any] = field(default_factory=dict)
-    """What the flow carried — the keys that travel; never a `Secret`."""
+    """What the flow carried — the keys that travel, a `Secret` as its value."""
 
 
 OUTCOMES = (ExecutionCompleted, ExecutionFailed)

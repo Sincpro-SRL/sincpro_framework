@@ -47,9 +47,9 @@ class Operation:
 
 
 def operations_of(bus: UseFramework) -> dict[str, Operation]:
-    """Every operation of the bus — built now if it was not yet."""
-    if not bus.was_initialized:
-        bus.build_root_bus()
+    """Every operation of the bus — built now if it was not yet; a reference is described from
+    its registrations."""
+    bus.build_root_bus()
     described = {**features(bus), **app_services(bus)}
     return {
         name: Operation(name, metadata.dto, metadata.response, metadata.description)

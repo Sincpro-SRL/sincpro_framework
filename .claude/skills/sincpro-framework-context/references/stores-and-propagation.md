@@ -31,7 +31,7 @@ with bus.context(restore=f"flow:{sale_id}"):                                    
 | Codec | Writes | Back |
 |---|---|---|
 | `PlainCodec()` (default) | the travelling keys as JSON | any language; lists stay lists |
-| `TypedCodec(schema, keep_secrets=False)` | the schema's keys, validated | the same codebase: enums, datetimes, DTOs as themselves |
+| `TypedCodec(schema)` | the schema's keys, validated | the same codebase: enums, datetimes, DTOs as themselves |
 | `PickleCodec()` | anything picklable | the same deployment only — it runs code when it loads |
 
 A store is **not a cache**: it keeps what a flow is (a session, a tenant's defaults, a flow to

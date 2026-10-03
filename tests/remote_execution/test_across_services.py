@@ -7,30 +7,23 @@ response, the error, the timeout — is what A's code would have seen locally.
 """
 
 import asyncio
-import socket
-import threading
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
-import uvicorn
-from starlette.applications import Starlette
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.remote_execution import (
-    Attach,
-    ContextFailed,
     ContextTimeout,
     ContextUnavailable,
     HostedAt,
+    Wire,
     transport_for,
 )
-from sincpro_framework.remote_execution.entrypoint.http import open_host_routes
-
-TRANSPORTS = ("grpc", "http")
+from tests.remote_execution.hosting import TRANSPORTS, host_over
 
 
 class InvoiceRefused(DomainError):
@@ -42,7 +35,7 @@ class ProjectError(Exception):
 
 
 class SignerDown(Exception):
-    """An exception that needs more than a message to be built: it cannot be raised as itself."""
+    """An exception that needs more than a message to be built — raised as itself all the same."""
 
     def __init__(self, signer: str, attempts: int) -> None:
         super().__init__(f"{signer} is down after {attempts} attempts")
@@ -129,41 +122,6 @@ def _billing(place: str, served: ServedHere) -> UseFramework:
     return billing
 
 
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
-
-
-def host_over(transport: str, contexts: list[UseFramework]) -> Iterator[str]:
-    """Host `contexts` over `transport` in this process; the base address a caller dials."""
-    if transport == "grpc":
-        host = contexts[0].serve("127.0.0.1:0", Attach.THREAD)
-        try:
-            yield f"grpc://{host.address}"
-        finally:
-            host.stop(0)
-        return
-    port = _free_port()
-    config = uvicorn.Config(
-        Starlette(routes=open_host_routes(contexts)),
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        lifespan="off",
-    )
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    while not server.started:
-        time.sleep(0.01)
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        thread.join(5)
-
-
 @pytest.fixture(params=TRANSPORTS)
 def service_b(request: pytest.FixtureRequest) -> Iterator[tuple[str, ServedHere]]:
     served = ServedHere([])
@@ -244,14 +202,12 @@ def test_any_error_whose_class_is_imported_here_is_raised_as_itself(service_b):
         billing(CommandFail(how="builtin"))
 
 
-def test_an_error_that_cannot_be_rebuilt_from_its_message_is_context_failed(service_b):
+def test_an_error_whose_constructor_takes_more_than_a_message_arrives_as_itself(service_b):
     address, _served = service_b
     billing, _ = _service_a(address)
 
-    with pytest.raises(ContextFailed, match="hsm-1 is down after 3 attempts") as failed:
+    with pytest.raises(SignerDown, match="hsm-1 is down after 3 attempts"):
         billing(CommandFail(how="other"))
-
-    assert failed.value.kind == f"{__name__}.SignerDown"
 
 
 def test_a_call_past_its_deadline_is_context_timeout(service_b):
@@ -329,6 +285,6 @@ def test_a_context_nobody_mapped_elsewhere_runs_here():
 
 @pytest.mark.parametrize("scheme", TRANSPORTS)
 def test_the_transport_to_one_address_is_shared(scheme):
-    hosted_at = HostedAt(scheme, "127.0.0.1:9", 1.0)
+    hosted_at = HostedAt(Wire(scheme), "127.0.0.1:9", 1.0)
 
     assert transport_for(hosted_at) is transport_for(hosted_at)

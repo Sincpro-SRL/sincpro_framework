@@ -56,8 +56,7 @@ class Catalog:
 
     def __init__(self, framework_instance: UseFramework):
 
-        if not framework_instance.was_initialized:
-            framework_instance.build_root_bus()
+        framework_instance.build_root_bus()
 
         self.framework_instance = framework_instance
         self._include: set[str] | None = None
@@ -162,8 +161,7 @@ class Catalog:
     ) -> list[PackedFeatureOrAppService]:
         if filter_binaries_schema:
             return self._json_safe(self.get_scalar_use_cases())
-        if not self.framework_instance.was_initialized:
-            self.framework_instance.build_root_bus()
+        self.framework_instance.build_root_bus()
 
         described_features = inspector.features(self.framework_instance)
         described_app_services = inspector.app_services(self.framework_instance)

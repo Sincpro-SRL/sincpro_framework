@@ -454,9 +454,12 @@ context_map:                                   # the conf file; SINCPRO_CONTEXT_
 `billing(CommandIssueInvoice(...), ResponseIssueInvoice)` is then answered by the service at that
 address, which hosts it in one line — `billing.serve(address)`, `billing.serve(address,
 Attach.THREAD)` beside a REST API, `Attach.PROCESS` in a subprocess of its own, or
-`open_host_routes([billing])` on the REST API's own port for `http://` addresses. `bytes`, `Decimal`
-and the request context travel as they are, in chunks, and an exception raised there is raised here
-as itself. The component is `sincpro_framework.remote_execution`. See [docs/entrypoints/bounded-contexts-across-services.md](docs/entrypoints/bounded-contexts-across-services.md).
+`open_host_routes([billing])` on the REST API's own port for `http://` addresses. Here `billing` is a
+reference: never built, it forwards every call. DTOs, `bytes`, `Decimal` and the whole request
+context travel as they are, in chunks; the answer is the DTO, an exception raised there is raised
+here as itself, and only a DTO that does not fit fails — versions are never compared. Nothing configured, every context runs here; in code,
+`billing.hosted_by("grpc://…")` does the same without configuration (the last one applied wins:
+configuration, then `hosted_by`, then serving). The component is `sincpro_framework.remote_execution`. See [docs/entrypoints/bounded-contexts-across-services.md](docs/entrypoints/bounded-contexts-across-services.md).
 
 - Same catalog, gRPC wire: `GrpcGateway({"qr": qr}).run("0.0.0.0:50051")`.
 - Methods are `/qr.Features/CommandCreateQREconomico` — unary, `google.protobuf.Struct` in and out.
