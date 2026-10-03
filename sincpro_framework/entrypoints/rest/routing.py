@@ -27,8 +27,8 @@ from sincpro_framework.entrypoints.catalog import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.const import Scalar
 from sincpro_framework.transport.failures import (
     FailureKind,
-    failure_kind,
     json_safe_validation_errors,
+    refined_failure_kind,
 )
 from sincpro_framework.use_bus import UseFramework
 
@@ -160,8 +160,13 @@ STATUS_OF = {
     FailureKind.INVALID: 422,
     FailureKind.UNAUTHENTICATED: 401,
     FailureKind.PERMISSION_DENIED: 403,
+    FailureKind.NOT_FOUND: 404,
     FailureKind.CONFLICT: 409,
+    FailureKind.IN_PROGRESS: 409,
+    FailureKind.KEY_REUSED: 422,
     FailureKind.DOMAIN: 422,
+    FailureKind.EXHAUSTED: 429,
+    FailureKind.UNAVAILABLE: 503,
     FailureKind.INTERNAL: 500,
 }
 
@@ -172,7 +177,7 @@ def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
     process. A request that could not be read at all is a 400."""
     if isinstance(error, InvalidRequest):
         return 400, {"kind": FailureKind.INVALID.value, "message": str(error)}
-    kind = failure_kind(error)
+    kind = refined_failure_kind(error)
     if isinstance(error, ValidationError):
         return STATUS_OF[kind], {
             "kind": kind.value,

@@ -208,6 +208,16 @@ framework.add_app_service_error_handler(handler)
 
 Depth: [references/errors.md](references/errors.md).
 
+**Hearing what a call did** (`sincpro_framework.outcomes`). Every Feature and ApplicationService
+that answered emits an `ExecutionCompleted` — the DTO, the response, the execution, the flow's
+context; none when an error handler answered for it. When no handler answered and the exception
+reaches the caller, an `ExecutionFailed` goes with it — once, where it left the call, with its
+`kind` and `retry_after`; the exception carries `failure_id`. Listen with `@bus.on_completion` /
+`@bus.on_failure` (one bus), `completions.subscribe(fn)` / `failures.subscribe(fn)` (the process),
+or `bus.publish_completions(to=…)` / `bus.publish_failures(to=…)` (a queue). Nobody listening costs
+nothing. Depth: `docs/core/outcomes.md`.
+
+
 ## References
 
 - [references/context.md](references/context.md): propagation, threads, async, global scope

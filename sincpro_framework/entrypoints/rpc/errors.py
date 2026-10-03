@@ -15,12 +15,11 @@ from pydantic import ValidationError
 
 from sincpro_framework.auth.domain import AuthError
 from sincpro_framework.auth.transports import refusal_body
-from sincpro_framework.caching.domain.exceptions import AlreadyInProgress, KeyReused
 from sincpro_framework.ddd.exceptions import DuplicateAggregate
 from sincpro_framework.transport.failures import (
     FailureKind,
-    failure_kind,
     json_safe_validation_errors,
+    refined_failure_kind,
     said_to_the_caller,
 )
 
@@ -115,14 +114,6 @@ def protocol_error(code: ErrorCode, reason: str, **disclosed: Any) -> Answer:
     )
 
 
-def _kind_of(error: Exception) -> str:
-    if isinstance(error, AlreadyInProgress):
-        return "in_progress"
-    if isinstance(error, KeyReused):
-        return "key_reused"
-    return failure_kind(error).value
-
-
 def answer_for(error: Exception) -> Answer:
     """The code, message and `data` a failure of a method is answered with.
 
@@ -142,7 +133,7 @@ def answer_for(error: Exception) -> Answer:
             errors=json_safe_validation_errors(error),
         )
         return code.code, code.message, data
-    kind = _kind_of(error)
+    kind = refined_failure_kind(error).value
     code = BY_KIND.get(kind, BY_KIND[FailureKind.INTERNAL.value])
     if code.code == INTERNAL_ERROR:
         return code.code, code.message, error_data("internal", "INTERNAL_ERROR", True)

@@ -14,6 +14,9 @@ from .sincpro_abstractions import Feature as Feature
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
 
+FAILED_EXECUTION: str
+"""Where a bus leaves, on an exception, the execution it failed in (`failures`)."""
+
 class FeatureBus(Bus):
     """
     First layer of the framework, atomic features.

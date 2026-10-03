@@ -6,11 +6,10 @@ classification, the stable reason and the disclosure policy do not (PRD_15 §1.3
     class InvoiceNotFound(DomainError):
         failure_kind = FailureKind.NOT_FOUND        # an error declares a kind of its own
 
-Context: `failure_kind` is the classification every wire encodes today, and it stays exactly
-that — a wire maps its kinds with a table, and a kind it has no row for would turn a domain
-refusal into a crash. `refined_failure_kind` is the same classification with the kinds only some
-wires encode yet (`NOT_FOUND`, `IN_PROGRESS`, `KEY_REUSED`, `EXHAUSTED`, `UNAVAILABLE`); a wire
-adopts it when its table has a row for each.
+Context: `refined_failure_kind` is the classification every wire (REST, JSON-RPC, gRPC, FastAPI,
+queues) and the `ExecutionFailed` event answer with — each wire's table has a row for every kind.
+`failure_kind` is its shared core: the kinds a failure has whatever it declares (`INVALID`,
+`UNAUTHENTICATED`, `PERMISSION_DENIED`, `CONFLICT`, `DOMAIN`, `INTERNAL`).
 """
 
 import json
@@ -84,9 +83,9 @@ def _declared_kind(error: Exception) -> FailureKind | None:
 
 
 def refined_failure_kind(error: Exception) -> FailureKind:
-    """`failure_kind` with the kinds only some wires encode yet: what the error declares
+    """The kind every wire answers a failure with: what the error declares
     (`failure_kind = FailureKind.NOT_FOUND` on its class), then the idempotency refusals, then
-    the classification every wire shares."""
+    the shared kinds (`failure_kind`)."""
     from sincpro_framework.caching.domain.exceptions import AlreadyInProgress, KeyReused
 
     declared = _declared_kind(error)

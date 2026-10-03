@@ -20,6 +20,7 @@ HOOKS = ROOT / "docs" / "persistence" / "hooks.md"
 TRANSACTIONS = ROOT / "docs" / "persistence" / "transactions.md"
 INTERCEPTORS = ROOT / "docs" / "core" / "interceptors.md"
 CONTEXT = ROOT / "docs" / "core" / "context-manager.md"
+OUTCOMES = ROOT / "docs" / "core" / "outcomes.md"
 CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
 WORKFLOWS = ROOT / "docs" / "workflows" / "README.md"
@@ -62,6 +63,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         TRANSACTIONS,
         INTERCEPTORS,
         CONTEXT,
+        OUTCOMES,
         CRON,
         MIGRATIONS,
         WORKFLOWS,

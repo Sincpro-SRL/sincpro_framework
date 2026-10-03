@@ -24,7 +24,12 @@ from sincpro_framework.entrypoints.grpc import GrpcGateway
 from sincpro_framework.entrypoints.grpc.wire import scalar_to_struct
 from sincpro_framework.entrypoints.rest import RestGateway
 from sincpro_framework.entrypoints.rpc import RpcGateway
-from sincpro_framework.entrypoints.rpc.jrpc import CONFLICT, DOMAIN_ERROR, INTERNAL_ERROR
+from sincpro_framework.entrypoints.rpc.jrpc import (
+    CONFLICT,
+    DOMAIN_ERROR,
+    INTERNAL_ERROR,
+    NOT_FOUND,
+)
 from sincpro_framework.transport.failures import (
     FailureKind,
     failure_kind,
@@ -49,6 +54,8 @@ def _billing() -> UseFramework:
     @billing.feature(CommandFail)
     class Fail(Feature):
         def execute(self, dto: CommandFail) -> None:
+            if dto.how == "not_found":
+                raise InvoiceNotFound("invoice F-9 does not exist")
             raise RAISED[dto.how]
 
     return billing
@@ -68,9 +75,9 @@ class InvoiceNotFound(DomainError):
 
 
 def test_the_refined_kinds_name_what_the_shared_ones_cannot() -> None:
-    """The idempotency refusals and a kind an error declares are told apart where a wire
-    encodes them (gRPC) — and `failure_kind`, which every wire's table is keyed by, keeps
-    answering one of the kinds those tables already have a row for."""
+    """The idempotency refusals and a kind an error declares are told apart — every wire
+    answers them (`refined_failure_kind`) — while `failure_kind` keeps the shared kinds only.
+    """
     refined = [AlreadyInProgress("k"), KeyReused("k"), InvoiceNotFound("F-9")]
 
     assert [refined_failure_kind(one) for one in refined] == [
@@ -95,6 +102,7 @@ def _rpc_catalog() -> RpcGateway:
         ("stale", CONFLICT, "invoice F-1 was written by someone else"),
         ("duplicate", CONFLICT, "invoice F-1 already exists"),
         ("internal", INTERNAL_ERROR, None),
+        ("not_found", NOT_FOUND, "invoice F-9 does not exist"),
     ],
 )
 def test_json_rpc_answers_each_kind_with_its_code(
@@ -143,6 +151,7 @@ def grpc_call() -> Iterator[Any]:
         ("stale", grpc.StatusCode.ABORTED),
         ("duplicate", grpc.StatusCode.ALREADY_EXISTS),
         ("internal", grpc.StatusCode.INTERNAL),
+        ("not_found", grpc.StatusCode.NOT_FOUND),
     ],
 )
 def test_grpc_answers_each_kind_with_its_code(grpc_call: Any, how: str, code: Any) -> None:
@@ -160,6 +169,7 @@ def test_grpc_answers_each_kind_with_its_code(grpc_call: Any, how: str, code: An
         ("stale", 409, "conflict"),
         ("duplicate", 409, "conflict"),
         ("internal", 500, "internal"),
+        ("not_found", 404, "not_found"),
     ],
 )
 def test_rest_answers_each_kind_with_its_status(how: str, status: int, kind: str) -> None:
