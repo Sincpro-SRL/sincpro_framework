@@ -4,7 +4,9 @@ Single place that knows the bus's internal shape (feature_bus.feature_registry,
 app_service_bus.app_service_registry, dto_registry) and how to describe a
 registered Feature/ApplicationService/DTO. entrypoints builds on this same
 metadata; it never reaches into FrameworkBus or resolves docstrings on its
-own.
+own. A reference to a context hosted elsewhere is never built, so it is
+described from its registrations — the classes, no instance, no interceptor
+(they run where the context is hosted).
 """
 
 import inspect
@@ -48,7 +50,8 @@ class FeatureOrAppServiceMetadata(DataTransferObject):
 
     name: DtoName
     type: type
-    instance: Feature | ApplicationService
+    instance: Feature | ApplicationService | None
+    """`None` for a reference — nothing of a context hosted elsewhere is built here."""
     dto: type
     description: str
     response: Any | None = None
@@ -126,14 +129,17 @@ def _resolve_response(feature_or_app_type: type) -> Any | None:
 
 
 def _describe_all(
-    registry: Mapping[type, Feature | ApplicationService],
+    registry: Mapping[type, Feature | ApplicationService | type],
     interceptors: Mapping[type, tuple[Interceptor, ...]],
     replacements: Mapping[type, tuple[str, ...]],
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
+    """Each handler described — an instance of a built bus, or the class a reference
+    registered."""
     metadata: dict[DtoName, FeatureOrAppServiceMetadata] = {}
-    for dto_type, instance in registry.items():
+    for dto_type, handler in registry.items():
         name = dto_type.__name__
-        feature_or_app_type = instance.__class__
+        instance = None if isinstance(handler, type) else handler
+        feature_or_app_type = handler if isinstance(handler, type) else type(handler)
         metadata[name] = FeatureOrAppServiceMetadata(
             name=name,
             type=feature_or_app_type,
@@ -147,8 +153,20 @@ def _describe_all(
     return metadata
 
 
+def _registered(
+    framework_instance: UseFramework, classes: Mapping[type, type]
+) -> dict[DtoName, FeatureOrAppServiceMetadata]:
+    """A reference's handlers described from what was registered — never built."""
+    replacements = {
+        dto_type: framework_instance.replaced_for(dto_type) for dto_type in classes
+    }
+    return _describe_all(classes, {}, replacements)
+
+
 def features(framework_instance: UseFramework) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """Feature registry keyed by DTO name, described."""
+    if framework_instance.is_reference:
+        return _registered(framework_instance, framework_instance.feature_handlers())
     bus = built_bus(framework_instance)
     feature_bus = bus.feature_bus
     return _describe_all(
@@ -160,6 +178,8 @@ def app_services(
     framework_instance: UseFramework,
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """ApplicationService registry keyed by DTO name, described."""
+    if framework_instance.is_reference:
+        return _registered(framework_instance, framework_instance.app_service_handlers())
     bus = built_bus(framework_instance)
     app_service_bus = bus.app_service_bus
     return _describe_all(
@@ -171,10 +191,9 @@ def app_services(
 
 def dtos(framework_instance: UseFramework) -> dict[DtoName, DtoMetadata]:
     """DTO classes keyed by name, feature and application service DTOs both included."""
-    bus = built_bus(framework_instance)
     return {
         name: DtoMetadata(name=name, type=dto_type, description=_own_docstring(dto_type))
-        for name, dto_type in bus.dto_registry.items()
+        for name, dto_type in framework_instance.dto_registry.items()
     }
 
 

@@ -97,6 +97,7 @@ CODE_OF = {
     FailureKind.DOMAIN: grpc.StatusCode.FAILED_PRECONDITION,
     FailureKind.EXHAUSTED: grpc.StatusCode.RESOURCE_EXHAUSTED,
     FailureKind.UNAVAILABLE: grpc.StatusCode.UNAVAILABLE,
+    FailureKind.UNKNOWN_OUTCOME: grpc.StatusCode.DEADLINE_EXCEEDED,
     FailureKind.INTERNAL: grpc.StatusCode.INTERNAL,
 }
 """Each kind's code (PRD_15 §1.3). A duplicate is `ALREADY_EXISTS`, the one conflict it refines."""
@@ -437,13 +438,13 @@ class Readiness:
 
 
 def default_health_check(specs: Mapping[str, GrpcMethodSpec]) -> Callable[[], bool]:
-    """Every published `UseFramework` is built — verified live on every `Check` instead of
+    """Every published `UseFramework` is ready — built, or a reference — verified live on every `Check` instead of
     assumed once. A caller wanting a deeper probe (a DB ping, a queue connection) passes its
     own `health_check`."""
     frameworks = {spec.framework for spec in specs.values()}
 
     def check() -> bool:
-        return all(f.was_initialized and f.bus is not None for f in frameworks)
+        return all(f.is_ready for f in frameworks)
 
     return check
 

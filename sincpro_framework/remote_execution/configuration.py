@@ -1,29 +1,45 @@
-"""Where the framework's configuration hosts each bounded context — the conf file's `context_map`,
-with `$ENV:SINCPRO_CONTEXT_MAP` winning per context.
+"""Where this process's configuration hosts each bounded context — the conf file's `context_map`,
+with the environment's `SINCPRO_CONTEXT_MAP` winning per context.
 
-    configured_host("billing")    →  HostedAt("grpc", "billing-service:50051", 5.0)   or None
+    configured_host("billing")    →  HostedAt(Wire.GRPC, "billing-service:50051", 5.0)   or None
+
+Context: a context runs here unless this process's configuration says otherwise. Each deployment
+names only what *it* reaches elsewhere — the service hosting `billing` does not name it, so its
+server, its workers and its crons all run it. The conf file's entries are validated when it is
+loaded; the environment is read whether or not the project's own conf file declares
+`$ENV:SINCPRO_CONTEXT_MAP` — a deployment that sets it is never ignored — and an address it gets
+wrong is refused naming the variable.
 """
 
+import os
 from functools import lru_cache
 
-from sincpro_framework.remote_execution.domain.address import (
+from sincpro_framework.transport.addresses import (
     HostedAt,
-    context_map_of,
-    parse_context_map,
+    HostedContext,
+    InvalidAddress,
 )
+
+CONTEXT_MAP_ENV = "SINCPRO_CONTEXT_MAP"
 
 
 @lru_cache(maxsize=1)
 def _configured(
-    entries: tuple[tuple[tuple[str, str], ...], ...], override: str | None
+    from_file: tuple[HostedContext, ...], from_environment: str | None
 ) -> dict[str, HostedAt]:
-    return {**context_map_of(dict(one) for one in entries), **parse_context_map(override)}
+    """Each context's address — the conf file's entries, then the environment's, the later
+    winning."""
+    try:
+        overriding = HostedContext.parse_all(from_environment)
+    except InvalidAddress as error:
+        raise InvalidAddress(f"{CONTEXT_MAP_ENV}: {error}") from None
+    return {entry.context: entry.at for entry in (*from_file, *overriding)}
 
 
 def configured_host(context: str) -> HostedAt | None:
-    """Where the framework's configuration hosts `context` — the conf file's `context_map`, with
-    `$ENV:SINCPRO_CONTEXT_MAP` winning per context — or `None` when it runs here."""
+    """Where this process's configuration hosts `context` — the conf file's `context_map`, with
+    `SINCPRO_CONTEXT_MAP` winning per context — or `None` when it runs here."""
     from sincpro_framework.sincpro_conf import settings
 
-    entries = tuple(tuple(sorted(one.items())) for one in settings.context_map or ())
-    return _configured(entries, settings.context_map_override).get(context)
+    from_environment = os.environ.get(CONTEXT_MAP_ENV) or settings.context_map_override
+    return _configured(tuple(settings.context_map), from_environment).get(context)

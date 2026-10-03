@@ -1,6 +1,7 @@
 """The mechanics of each technology, exposing nothing — what the entrypoints and remote execution
 both stand on (PRD_15 §0.1).
 
+    transport.addresses  where a bounded context is reached: `Wire`, `HostedAt`, the context map
     transport.failures   the one classification of failures every wire encodes its own way
     transport.grpc       a gRPC server, health, request context and credentials in metadata
 

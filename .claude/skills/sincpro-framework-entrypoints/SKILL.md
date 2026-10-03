@@ -275,7 +275,7 @@ handler inherits, wire by wire, the binding of the one it replaces.
 - [references/gateway.md](references/gateway.md) — the shared gateway: catalog, declared exposure, groups, precedence, manifest, the `Wire` port
 - [references/wires.md](references/wires.md) — REST, JSON-RPC, gRPC, MCP mapping and naming
 - [references/queue.md](references/queue.md) — `QueueGateway`: consuming Commands/events from a broker
-- [references/remote-execution.md](references/remote-execution.md) — a bounded context hosted by another service (`serve`, context map)
+- [references/remote-execution.md](references/remote-execution.md) — a bounded context hosted by another service (`serve`, context map, `hosted_by` in code — and which wins)
 
 ## Related
 

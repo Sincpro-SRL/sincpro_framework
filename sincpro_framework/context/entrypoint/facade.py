@@ -277,7 +277,7 @@ class Context(dict[Any, Any]):
 
     def to_client(self) -> dict[str, Any]:
         """What a client — the frontend — may hold and send back: the travelling keys, a `Secret`
-        never among them."""
+        as its value."""
         return travelling(self)
 
     def share(

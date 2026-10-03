@@ -167,6 +167,7 @@ STATUS_OF = {
     FailureKind.DOMAIN: 422,
     FailureKind.EXHAUSTED: 429,
     FailureKind.UNAVAILABLE: 503,
+    FailureKind.UNKNOWN_OUTCOME: 504,
     FailureKind.INTERNAL: 500,
 }
 

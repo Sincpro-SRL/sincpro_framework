@@ -12,15 +12,20 @@ the standard key, with a warning the first time — the key given stays where it
 reads it breaks.
 
 **What travels is what is simple**: text, numbers, booleans, and lists of them — `tenant_ids`, an
-idempotency key, the identity, the keys a project adds. An object, a connection or a callable stays
-in its process, with a warning the first time, never an error. How it is written on a transport is
+idempotency key, the identity, the keys a project adds — and a `Secret` holding one, as its value:
+an API key the next context needs reaches it. What goes in the context is the project's decision;
+the framework filters nothing. An object, a connection or a callable stays in its process, with a
+warning the first time, never an error. How it is written on a transport is
 `sincpro_framework.context.adapters.propagation`.
 
-Only the standard library: the context package imports this, and nothing here imports a bus.
+The standard library and pydantic only: the context package imports this, and nothing here imports
+a bus.
 """
 
 from collections.abc import Mapping
 from typing import Any
+
+from pydantic import Secret, SecretStr
 
 from sincpro_framework.sincpro_logger import logger
 
@@ -66,10 +71,13 @@ def _simple(value: Any) -> bool:
 
 
 def travelling(context: Mapping[str, Any]) -> dict[str, Any]:
-    """The keys of `context` a header can carry: simple values, the trace's plumbing left to its
-    own headers. What cannot travel is warned about once per key and stays here."""
+    """The keys of `context` a header can carry: simple values — a `Secret` as the value it
+    holds — the trace's plumbing left to its own headers. What cannot travel is warned about once
+    per key and stays here."""
     found: dict[str, Any] = {}
     for key, value in context.items():
+        if isinstance(value, (Secret, SecretStr)):
+            value = value.get_secret_value()
         if not isinstance(key, str) or key in PLUMBING or value is None:
             continue
         if _simple(value):

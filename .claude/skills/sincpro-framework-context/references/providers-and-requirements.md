@@ -53,6 +53,8 @@ class SendInvoice(Feature): ...
 `pydantic.Secret` (the one settings use). In the context:
 
 - read where it is used: `self.context["TOKEN"].get_secret_value()`;
-- masked in `repr`, logs, spans and errors;
-- dropped from every header (`inject`), from `to_client()`, and written masked by `TypedCodec`
-  unless `TypedCodec(schema, keep_secrets=True)` for a store you trust.
+- it travels like any value — the framework filters nothing, what goes in the context is the
+  project's decision: as a `Secret` to a context hosted elsewhere (`remote_execution`), as its
+  value in every header (`inject`) and in `to_client()`, and as its value through `TypedCodec`,
+  which gives it back as a `Secret`;
+- its `repr` is pydantic's (`'**********'`), so a log line that prints it shows that.

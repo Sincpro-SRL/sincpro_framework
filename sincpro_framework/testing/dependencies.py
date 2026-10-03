@@ -16,6 +16,11 @@ from ..use_bus import UseFramework
 
 
 def _built_handlers(framework: UseFramework) -> list[Any]:
+    if framework.is_reference:
+        raise SincproFrameworkNotBuilt(
+            f"'{framework.name}' is hosted by another service: nothing of it is built here, so "
+            "it has no dependency to replace — replace it where it runs"
+        )
     framework.build_root_bus()
     bus = framework.bus
     if bus is None:

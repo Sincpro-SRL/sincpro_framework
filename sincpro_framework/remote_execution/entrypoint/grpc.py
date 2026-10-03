@@ -15,14 +15,17 @@ from typing import Any
 
 from sincpro_framework.observability import process
 from sincpro_framework.remote_execution.adapters.grpc import (
+    ACCEPTED_HEADER,
     CONTEXT_HEADER,
     DTO_HEADER,
+    ERROR_DETAILS,
     ERROR_KIND,
     ERROR_MODULE,
     METHOD,
     REQUEST_CONTEXT_HEADER,
     SERVICE,
 )
+from sincpro_framework.remote_execution.domain.errors import error_details
 from sincpro_framework.remote_execution.domain.payload import ChunkReader
 from sincpro_framework.remote_execution.entrypoint.execution import execute_hosted
 from sincpro_framework.sincpro_logger import logger
@@ -41,6 +44,7 @@ def open_host_handler(contexts: Mapping[str, UseFramework]) -> Any:
     def execute(requests: Iterator[bytes], call: Any) -> Iterator[bytes]:
         from sincpro_framework.auth.transports import credentials_from_headers
 
+        call.send_initial_metadata(((ACCEPTED_HEADER, "1"),))
         metadata = call.invocation_metadata()
         name = _header(metadata, CONTEXT_HEADER) or ""
         answer: Iterator[bytes] = iter(())
@@ -63,6 +67,7 @@ def open_host_handler(contexts: Mapping[str, UseFramework]) -> Any:
                 (
                     (ERROR_MODULE, type(error).__module__),
                     (ERROR_KIND, type(error).__qualname__),
+                    (ERROR_DETAILS, error_details(error)),
                 )
             )
             call.abort(grpc.StatusCode.UNKNOWN, str(error))
@@ -75,7 +80,8 @@ def open_host_handler(contexts: Mapping[str, UseFramework]) -> Any:
 
 class OpenHostDoor:
     """The internal door for `contexts`, to mount on a gRPC server — its own, or one shared with
-    a public gateway on purpose."""
+    a public gateway on purpose. The contexts it hosts run in this process, whatever the context
+    map says."""
 
     def __init__(
         self, contexts: "Sequence[UseFramework] | Mapping[str, UseFramework]"
@@ -85,11 +91,11 @@ class OpenHostDoor:
             if isinstance(contexts, Mapping)
             else {one.name: one for one in contexts}
         )
+        for bus in self.contexts.values():
+            bus.run_here()
 
     def is_ready(self) -> bool:
-        return all(
-            one.was_initialized and one.bus is not None for one in self.contexts.values()
-        )
+        return all(one.is_ready for one in self.contexts.values())
 
     def handlers(self, health: bool = True) -> tuple[Any, ...]:
         """`sincpro.Contexts/Execute` and, with `health`, `grpc.health.v1.Health` for it."""
@@ -109,8 +115,7 @@ class OpenHostDoor:
         """A server of its own: the door and its health, nothing else — no public method, no
         introspection, no reflection. Not started, no port."""
         for bus in self.contexts.values():
-            if not bus.was_initialized:
-                bus.build_root_bus()
+            bus.build_root_bus()
         return self.mount(transport.server(max_workers), health=True)
 
 

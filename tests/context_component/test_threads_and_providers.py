@@ -184,7 +184,7 @@ def test_a_declared_requirement_refuses_and_nothing_declared_is_never_checked():
     assert ran == ["work", "send"]
 
 
-def test_a_secret_is_read_where_it_is_and_never_travels():
+def test_a_secret_travels_as_its_value():
     seen: list[Context] = []
     sdk = _bus("context-secret", seen)
 
@@ -193,8 +193,7 @@ def test_a_secret_is_read_where_it_is_and_never_travels():
 
     context = seen[0]
     assert context["TOKEN"].get_secret_value() == "abc"
-    assert "abc" not in repr(context)
-    assert context.to_client() == {"tenant_id": "acme"}
+    assert context.to_client() == {"TOKEN": "abc", "tenant_id": "acme"}
 
 
 def test_an_async_call_keeps_what_it_writes_to_itself():

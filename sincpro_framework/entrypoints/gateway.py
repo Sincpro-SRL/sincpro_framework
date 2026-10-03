@@ -337,7 +337,7 @@ class Gateway:
 
     def is_healthy(self) -> bool:
         """Every bus is still built — what every wire's health check answers."""
-        return all(one.was_initialized and one.bus is not None for one in self.buses())
+        return all(one.is_ready for one in self.buses())
 
     # Declared exposure — the composition's word (PRD_14 §5, §7)
 

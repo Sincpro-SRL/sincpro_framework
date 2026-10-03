@@ -42,16 +42,15 @@ from .observability.correlation import declare_metric_labels
 from .ordering import DEFAULT_SEQUENCE, Placement, name_of, ordered
 from .remote_execution.adapters import transport_for
 from .remote_execution.configuration import configured_host
-from .remote_execution.domain.address import HostedAt, parse_address
-from .remote_execution.domain.hosting import hosted_here
 from .remote_execution.entrypoint.hosts import Attach, OpenHost, serve_contexts
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
+from .transport.addresses import HostedAt
 
 
 class _Forwarded:
     """What the async facade runs on its worker thread: the bus's own call — so every async call
-    opens its scope as a sync one does (nothing one writes reaches the next), and a context hosted
-    by another service forwards.
+    opens its scope as a sync one does (nothing one writes reaches the next), builds the bus on
+    first use as a sync one does, and a context hosted by another service forwards.
     """
 
     def __init__(self, framework: "UseFramework") -> None:
@@ -158,8 +157,13 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self._build_lock = threading.RLock()
         self.bus: FrameworkBus | None = None
 
-        self._hosted_at: HostedAt | None = configured_host(bundled_context_name)
+        self._hosted_at: HostedAt | None = None
         """Where another service hosts this bounded context — the context map, or `hosted_by`."""
+        self._runs_here: bool = False
+        """Run in this process whatever the map says — it serves the context (`run_here`)."""
+        configured = configured_host(bundled_context_name)
+        if configured is not None:
+            self._reach_at(configured)
 
     def _refuse_when_built(self, what: str) -> None:
         if self.was_initialized:
@@ -218,17 +222,21 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         first — empty when the one answering is the first registered."""
         return tuple(self._sp_container.replacements.kwargs.get(dto, ()))
 
+    def feature_handlers(self) -> dict[type, type]:
+        """Every DTO a Feature answers now → the Feature — read without building the bus."""
+        registry = self._sp_container.feature_registry.kwargs
+        return {dto: registered.provides for dto, registered in registry.items()}
+
+    def app_service_handlers(self) -> dict[type, type]:
+        """Every DTO an ApplicationService answers now → the ApplicationService — read without
+        building the bus."""
+        registry = self._sp_container.app_service_registry.kwargs
+        return {dto: registered.provides for dto, registered in registry.items()}
+
     def handlers(self) -> dict[type, type]:
         """Every DTO a Feature or ApplicationService answers now → the class answering it —
         read without building the bus, so a check made at startup changes nothing."""
-        return {
-            dto: registered.provides
-            for registry in (
-                self._sp_container.feature_registry.kwargs,
-                self._sp_container.app_service_registry.kwargs,
-            )
-            for dto, registered in registry.items()
-        }
+        return {**self.feature_handlers(), **self.app_service_handlers()}
 
     def extend(self, extension: Callable[["UseFramework[TDeps]"], None]) -> None:
         """Wire a component into this bus and into every generation `fresh()` makes of it —
@@ -405,24 +413,17 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         ]
 
     def build_root_bus(self):
-        """Build the root bus with the dependencies provided by the user.
+        """Build the root bus with the dependencies provided by the user — nothing, for a
+        reference to a context another service hosts (`is_reference`).
 
         Under a lock, and only once: two threads that reach a not-yet-built bus at the same
         time, as an async fan-out or an event fan-out does, would otherwise both build it and
         one of them would execute against a half-wired registry.
         """
         with self._build_lock:
-            if self.was_initialized and self.bus is not None:
+            if self.is_reference or (self.was_initialized and self.bus is not None):
                 return
             self._build_root_bus()
-
-    def _built_bus(self) -> FrameworkBus:
-        """The bus, built on first use — refused when building left none."""
-        if not self.was_initialized:
-            self.build_root_bus()
-        if self.bus is None:
-            raise SincproFrameworkNotBuilt(f"'{self.name}' was built, but it has no bus")
-        return self.bus
 
     def _build_root_bus(self):
         self._add_dependencies_provided_by_user()
@@ -492,13 +493,13 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     @property
     def dto_registry(self) -> Mapping[str, type]:
-        """Every DTO name this bus answers, mapped to its class — built now if it wasn't yet.
+        """Every DTO name this bus answers, mapped to its class — read from the registrations,
+        so it builds nothing: a reference answers it as the service hosting it does.
 
-        A live query, not a snapshot: it reads straight off the built bus, so it always
-        answers what is registered at the moment it's asked, not what was registered when
-        this property was first read.
+        A live query, not a snapshot: it always answers what is registered at the moment it's
+        asked, not what was registered when this property was first read.
         """
-        return self._built_bus().dto_registry
+        return self._sp_container.dto_registry.kwargs
 
     def map_to_dto_or_event(self, name: str, payload: "str | dict[str, Any]") -> Any:
         """The DTO or event registered under `name`, rebuilt from raw data.
@@ -892,8 +893,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
                 with traced.context({"user_id": "u-123"}) as app_with_ctx:
                     result = app_with_ctx(MyDTO(...))
         """
-        if not self.was_initialized:
-            self.build_root_bus()
+        self.build_root_bus()
         return self.observability.trace_context(
             cast(Any, self), trace_id=trace_id, span_id=span_id, carrier=carrier
         )
@@ -931,25 +931,26 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             with framework.with_parent_trace() as fw:
                 result = fw(CreateOrderDTO(...), OrderResult)
         """
-        if not self.was_initialized:
-            self.build_root_bus()
+        self.build_root_bus()
         return self.observability.trace_context(cast(Any, self), adopt_active=True)
 
     def get_async_bus(self) -> AsyncBus:
         """Return a stateless async facade over this framework's bus.
 
-        Builds the root bus if it wasn't built yet (same lazy behavior as
-        ``__call__``). Use this from a caller that is itself ``async def`` and
-        wants to fan out several DTOs concurrently, e.g. via ``asyncio.gather``,
-        without blocking its event loop. See ``Bus.get_async_bus`` /
+        Each call runs the bus's own call on a worker thread, so the bus is built on first use
+        (same lazy behavior as ``__call__``) and a reference forwards. Use this from a caller
+        that is itself ``async def`` and wants to fan out several DTOs concurrently, e.g. via
+        ``asyncio.gather``, without blocking its event loop. See ``Bus.get_async_bus`` /
         ``AsyncBus`` for the propagation and reuse semantics.
         """
-        self._built_bus()
         return AsyncBus(_Forwarded(self))
 
     def _declared_response(self, dto_type: type) -> Any:
+        """What the handler of `dto_type` declares it answers — `None` when it declares nothing
+        a value can be rebuilt as (`Any`), so the answer comes back as the host sent it."""
         handler = self.handler_of(dto_type)
-        return None if handler is None else get_type_hints(handler.execute).get("return")
+        declared = None if handler is None else get_type_hints(handler.execute).get("return")
+        return None if declared is Any else declared
 
     def _executed_where_hosted(self, dto: Any, return_type: Any) -> Any:
         """The DTO executed by the service hosting this context, answered as `return_type` —
@@ -968,19 +969,50 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     @property
     def hosted_at(self) -> HostedAt | None:
-        """Where another service hosts this bounded context, or `None` when it runs here."""
+        """Where the context map — or `hosted_by` — hosts this bounded context; `None` when
+        nothing places it elsewhere."""
         return self._hosted_at
 
-    def hosted_by(self, address: str) -> None:
+    @property
+    def is_reference(self) -> bool:
+        """Whether this bus is a reference to a context another service hosts: a client with the
+        face of the bus — never built here, no Feature instantiated, no dependency resolved —
+        that forwards every call. A context this process runs (`run_here`) never is one."""
+        return self._hosted_at is not None and not self._runs_here
+
+    @property
+    def is_ready(self) -> bool:
+        """Whether this bus can answer now — built, or a reference, which has nothing to build."""
+        return self.is_reference or (self.was_initialized and self.bus is not None)
+
+    def run_here(self) -> None:
+        """Run this context in this process, whatever the context map says — what serving it
+        does (`serve`, an open host), so a service whose map names itself never calls itself.
+        """
+        if not self._runs_here:
+            self._runs_here = True
+            self._registrations.append(lambda bus: bus.run_here())
+
+    def _reach_at(self, hosted_at: HostedAt) -> None:
+        """Point this bus at the service hosting it — said once in the logs, so a process's start
+        shows every context it reaches elsewhere."""
+        self._hosted_at = hosted_at
+        self.logger.info(
+            f"{self.name} is hosted at {hosted_at}: this bus forwards every call"
+        )
+
+    def hosted_by(self, address: HostedAt | str) -> None:
         """Execute every DTO of this context on the service at `address` — what the context map
-        says, in code.
+        says, in code: a URL, or the typed address.
 
             billing.hosted_by("grpc://10.0.0.5:50051?timeout=5")
-            billing.hosted_by("http://billing-service:8000")
+            billing.hosted_by(HostedAt(Wire.HTTPS, "billing-service:443", timeout=5))
+
+        An address no wire reaches is refused here (`InvalidAddress`), saying what to write.
 
         See `docs/entrypoints/bounded-contexts-across-services.md`.
         """
-        self._hosted_at = parse_address(self.name, address)
+        self._reach_at(HostedAt.of(address))
         self._registrations.append(lambda bus: bus.hosted_by(address))
 
     @overload
@@ -1019,8 +1051,8 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """Main function to execute the framework — here, or on the service hosting this context
-        (the context map, `hosted_by`), unless this execution is that service's."""
-        if self._hosted_at is not None and not hosted_here(self.name):
+        when this bus is a reference to it (`is_reference`)."""
+        if self.is_reference:
             return self._executed_where_hosted(dto, return_type)
         if not self.was_initialized:
             self.build_root_bus()

@@ -25,6 +25,8 @@ from pydantic import (
     model_validator,
 )
 
+from sincpro_framework.transport.addresses import HostedContext
+
 logger = logging.getLogger("sincpro_framework")
 
 __all__ = [
@@ -161,8 +163,9 @@ class DefaultFrameworkConfig(SincproConfig):
     """Context keys on every metric series of the process, beside release, service, version and
     tenant — `[company, channel]` (PRD_03 §4.10)."""
 
-    context_map: list[dict[str, str]] = []
-    """Where bounded contexts are hosted by another service — `[{context: billing, at: grpc://…}]`."""
+    context_map: list[HostedContext] = []
+    """Where bounded contexts are hosted by another service — `[{context: billing, at: grpc://…}]`,
+    each address validated when the file is loaded."""
     context_map_override: str | None = None
     """`$ENV:SINCPRO_CONTEXT_MAP` — `billing=grpc://host:port?timeout=5,…`, winning per context."""
 

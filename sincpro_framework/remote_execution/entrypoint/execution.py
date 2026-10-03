@@ -3,14 +3,17 @@ share, whatever wire the call arrived by.
 """
 
 from collections.abc import Iterator, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from pydantic import ValidationError
 
 from sincpro_framework.context.domain.level import EntrypointKind
-from sincpro_framework.remote_execution.domain.hosting import hosting
+from sincpro_framework.exceptions import UnknownDTOToExecute
+from sincpro_framework.remote_execution.domain.errors import DTODoesNotFit
 from sincpro_framework.remote_execution.domain.payload import (
     Readable,
     packed,
-    unpack,
+    unpack_context,
     unpacked,
 )
 
@@ -30,12 +33,15 @@ def execute_hosted(
 ) -> Iterator[bytes]:
     """The execution a caller asked for, on the context it named, answered as chunks.
 
-    1. The context and the DTO class, by name — `LookupError` when this service has neither.
-    2. The DTO rebuilt by its class from `body` as it is read, the request context unpacked.
-    3. Final: executed here — whatever the configuration says of this context — inside the
-       caller's request context and trace, as whoever `credentials` say the call acts for — by
-       this context's `AccessControl`, never by what the request context claims; finished before the first chunk of the answer, so a
-       failure is answered as one and never as a cut stream.
+    1. The context, by name — `LookupError` when this service does not host it.
+    2. The DTO class, by its registered name — `UnknownDTOToExecute` when the context answers no
+       DTO of that name here.
+    3. The DTO rebuilt by its class from `body` as it is read — `DTODoesNotFit` naming the fields
+       when the caller's values do not fit it; the request context unpacked.
+    4. Final: executed here, inside the caller's request context and trace, as whoever
+       `credentials` say the call acts for — by this context's `AccessControl`, never by what
+       the request context claims; finished before the first chunk of the answer, so a failure
+       is answered as one and never as a cut stream.
     """
     bus = contexts.get(context_name)
     if bus is None:
@@ -45,14 +51,16 @@ def execute_hosted(
         )
     dto_type = bus.dto_registry.get(dto)
     if dto_type is None:
-        raise LookupError(f"{context_name} does not answer {dto!r} in this service")
+        raise UnknownDTOToExecute(f"{context_name} does not answer {dto!r} in this service")
     from sincpro_framework.auth.transports import authenticated_as
     from sincpro_framework.event_driven.infrastructure.trace import within_trace
 
-    value = unpacked(body, dto_type)
-    context: dict[str, Any] = unpack(request_context, None) if request_context else {}
+    try:
+        value = unpacked(body, dto_type)
+    except ValidationError as error:
+        raise DTODoesNotFit(f"{dto} sent to {context_name}", error) from None
+    context = unpack_context(request_context) if request_context else {}
     with (
-        hosting(context_name),
         within_trace(carrier),
         bus.context(context, kind=EntrypointKind.REMOTE),
         authenticated_as(bus, credentials),

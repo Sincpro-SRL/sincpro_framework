@@ -11,7 +11,8 @@ What is written, and read back in this order — the later wins:
     x-correlation-id · x-causation-id · x-execution-id     the identity (PRD_21)
 
 `inject` writes the execution in play as the cause of whatever receives it. Only what travels is
-written: text, numbers, booleans and lists of them — never a `Secret`, an object, a connection.
+written: text, numbers, booleans and lists of them, a `Secret` as its value — never an object or
+a connection.
 `remote_execution` carries the whole context its own way (one packed header): both ends are this
 codebase.
 """

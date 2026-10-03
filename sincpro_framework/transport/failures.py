@@ -20,8 +20,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
-
 
 class FailureKind(StrEnum):
     """What a failure is, whatever the wire — each wire answers it with its own code, so a
@@ -45,6 +43,9 @@ class FailureKind(StrEnum):
     """A quota or a rate was spent — retry later. Declared by the error."""
     UNAVAILABLE = "unavailable"
     """Something this call needs is down for now — retry. Declared by the error."""
+    UNKNOWN_OUTCOME = "unknown_outcome"
+    """The call was sent and no answer came back: it may have run. Verify — or retry with an
+    idempotency key — before doing it again or undoing it. Declared by the error."""
     INTERNAL = "internal"
     """The inside of the process failed — nothing of it is told."""
 
@@ -60,6 +61,11 @@ UPPER_SNAKE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-
 
 def failure_kind(error: Exception) -> FailureKind:
     from sincpro_framework.auth.domain import PermissionDenied, Unauthenticated
+    from sincpro_framework.ddd.exceptions import (
+        DomainError,
+        DuplicateAggregate,
+        StaleAggregate,
+    )
 
     if isinstance(error, ValidationError):
         return FailureKind.INVALID
@@ -146,4 +152,6 @@ def said_to_the_caller(error: Exception) -> str | None:
     That whole string used to reach the client as the error's `data`. The log still gets all of
     it — the host's `logger.exception` runs either way — which is where it belongs.
     """
+    from sincpro_framework.ddd.exceptions import DomainError
+
     return str(error) if isinstance(error, DomainError) else None
