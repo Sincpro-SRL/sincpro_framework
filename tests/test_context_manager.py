@@ -9,7 +9,7 @@ from typing import Any, Dict, cast
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context.framework_context import FrameworkContext
+from sincpro_framework.context.entrypoint.bus import FrameworkContext
 
 
 # Test DTOs

@@ -47,7 +47,7 @@ from sincpro_framework.auth.guard import (
     qualified,
 )
 from sincpro_framework.auth.security_context import current_identity
-from sincpro_framework.context.mixin import executing_context
+from sincpro_framework.context.infrastructure.tree import executing_context
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.exceptions import ExtensionRefused
 from sincpro_framework.sincpro_abstractions import DataTransferObject

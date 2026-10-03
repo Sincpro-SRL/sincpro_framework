@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     # Kept out of the runtime import graph on purpose: sincpro_abstractions
     # imports *this* module for `Bus.thread_context()`, so a real import back
     # here would be circular. Every use below is a quoted forward reference.
-    from ..sincpro_abstractions import Bus, TypeDTO, TypeDTOResponse
+    from sincpro_framework.sincpro_abstractions import Bus, TypeDTO, TypeDTOResponse
 
 
 class ThreadContextBus:

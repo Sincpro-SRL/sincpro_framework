@@ -20,6 +20,7 @@ from pydantic import ValidationError
 
 from sincpro_framework.auth.domain import AuthError, Unauthenticated
 from sincpro_framework.auth.transports import challenges_of, refusal_body
+from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.ddd.exceptions import DuplicateAggregate
 from sincpro_framework.entrypoints.const import RunFn, Scalar
 from sincpro_framework.entrypoints.exposure import ExposureRefused
@@ -271,7 +272,9 @@ def through_the_bus(
     if transport.is_past(deadline):
         _abort(context, deadline_exceeded(domain))
     try:
-        return execute(framework, run, payload, call_context or None, credentials)
+        return execute(
+            framework, run, payload, call_context or None, credentials, EntrypointKind.GRPC
+        )
     except Exception as error:
         if not isinstance(error, ValidationError) and not process.was_reported(error):
             logger.exception("gRPC call [%s] in [%s] failed", subject(), domain)

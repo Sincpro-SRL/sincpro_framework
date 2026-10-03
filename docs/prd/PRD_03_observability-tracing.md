@@ -369,7 +369,7 @@ time it sees its name.
 - **Status**: built. A rule of the spec: every signal of every bus obeys it. It replaces §3.1
   rules 1 and 3 and §4.4 where they refused, and §4.9 where it kept version and tenant off the
   series.
-- **Code**: `observability/correlation.py` (what every signal reads), `context/mixin.py` (the
+- **Code**: `observability/correlation.py` (what every signal reads), `context/infrastructure/tree.py` (the
   live context of the execution), `metrics/infrastructure/active.py` (`correlated`, where every
   measurement passes), `errors/record_error.py`, `api.py` (`Observability.span`).
 

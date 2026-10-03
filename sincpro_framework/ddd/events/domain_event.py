@@ -51,8 +51,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from sincpro_framework.ddd.entity import Entity, new_entity_id, utc_now
+from sincpro_framework.context.domain.execution import chained
+from sincpro_framework.ddd.entity import Entity, utc_now
 from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.ids import new_entity_id
 
 NAME = "name"
 
@@ -114,18 +116,17 @@ class DomainEvent(Entity):
         later, one `correlation_id` names the whole thing and the `causation_id`s put it in
         order.
 
-        **Explicit on purpose, and it cannot be otherwise.** A bus's context is a `ContextVar`
-        per bus instance (`context/mixin.py`), never process-wide — a process runs several
-        buses and an aggregate belongs to none of them. There is no ambient request an
-        `Entity` could reach for, so the chain is threaded where it is known: by whoever is
-        holding both events.
+        **For an event that caused another.** An event recorded, published or saved inside an
+        execution already joins that execution's chain on its own (`chain_for`); `caused_by` is
+        for the cause the framework cannot see — an event in hand, from another flow — and what it
+        sets is kept.
 
-        A new event comes back; the one handed in is untouched, the way a fact should be.
+        A new event comes back; the one handed in is untouched, the way a fact should be. The rule
+        is `chained`, the one an execution follows too (`sincpro_framework.context.domain.execution`).
         """
+        causation_id, correlation_id = chained(cause.id, cause.correlation_id, self.id)
         return dataclasses.replace(
-            self,
-            causation_id=cause.id,
-            correlation_id=cause.correlation_id or cause.id,
+            self, causation_id=causation_id, correlation_id=correlation_id
         )
 
     def __repr__(self) -> str:

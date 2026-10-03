@@ -68,6 +68,11 @@ class Observability:
         self.logger: LoggerProxy = create_logger(bus or "sincpro_framework")
 
     @property
+    def bus_name(self) -> str:
+        """The bounded context this bus is — what its executions name as theirs."""
+        return self._bus
+
+    @property
     def identity(self) -> ObservabilityIdentity:
         """Resolved once, on first use — the distribution lookup behind it is not free."""
         if self._identity is None:

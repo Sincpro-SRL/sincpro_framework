@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, Type, overload
 
 from sincpro_log.logger import LoggerProxy
 
+from .context.infrastructure.providers import ContextProvider
 from .exceptions import DTOAlreadyRegistered as DTOAlreadyRegistered
 from .exceptions import UnknownDTOToExecute as UnknownDTOToExecute
 from .interceptors import Interceptor
@@ -28,6 +29,9 @@ class FeatureBus(Bus):
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability
+    new_execution_id: Callable[[], str]
+    context_owner: object
+    context_providers: list[ContextProvider]
 
     def __init__(
         self, logger_bus: LoggerProxy = ..., observability: Observability | None = ...
@@ -71,6 +75,9 @@ class ApplicationServiceBus(Bus):
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability
+    new_execution_id: Callable[[], str]
+    context_owner: object
+    context_providers: list[ContextProvider]
 
     def __init__(
         self, logger_bus: LoggerProxy = ..., observability: Observability | None = ...

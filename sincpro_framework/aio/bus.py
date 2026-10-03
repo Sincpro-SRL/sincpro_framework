@@ -1,6 +1,6 @@
 """AsyncBus: async facade over a sync `Bus`, for callers that are themselves async.
 
-`Bus.execute` is sync end to end (see `context/thread_context_bus.py`). A caller
+`Bus.execute` is sync end to end (see `context/infrastructure/thread_context_bus.py`). A caller
 that is already `async def` and wants to fan out several independent DTOs
 concurrently (e.g. `asyncio.gather`) still needs a way to hop off the event loop
 without losing `self.context` (a `ContextVar` overlay, isolated per OS thread) in
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Protocol, Type
 
 if TYPE_CHECKING:
     # Kept out of the runtime import graph on purpose, same reason as
-    # context/thread_context_bus.py: sincpro_abstractions imports *this*
+    # context/infrastructure/thread_context_bus.py: sincpro_abstractions imports *this*
     # module (via the aio package) for `Bus.get_async_bus()`, so a real
     # import back here would be circular.
     from ..sincpro_abstractions import TypeDTO, TypeDTOResponse

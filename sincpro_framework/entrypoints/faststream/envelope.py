@@ -20,6 +20,9 @@ from uuid import uuid4
 
 from pydantic import ConfigDict
 
+from sincpro_framework.context.adapters.propagation import inject
+from sincpro_framework.context.domain.execution import CAUSATION_ID, CORRELATION_ID
+from sincpro_framework.context.infrastructure.tree import handed_on, live_context
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.event_driven.adapters.faststream.queue import EVENT_HEADER
 from sincpro_framework.event_driven.infrastructure.trace import trace_carrier
@@ -142,9 +145,10 @@ def cloud_event_headers(
 
     1. A DomainEvent gives its own id, wire name, entity, time and chain.
     2. A Command gives its class name as the type and a fresh id — publish the same headers
-       again when retrying, so the inbox recognises the retry.
-    3. Final: the running trace, and the `sincpro-event` header for a DomainEvent, so
-       `subscribe()` routes it as well.
+       again when retrying, so the inbox recognises the retry — and the chain of the execution
+       sending it: caused by it, in its flow.
+    3. Final: the running trace, the execution's context (`sincpro-context`), and the
+       `sincpro-event` header for a DomainEvent, so `subscribe()` routes it as well.
     """
     if isinstance(message, DomainEvent):
         envelope = Envelope(
@@ -157,11 +161,14 @@ def cloud_event_headers(
             causationid=message.causation_id,
         )
     else:
+        chain = handed_on({})
         envelope = Envelope(
             id=id or uuid4().hex,
             source=source,
             type=type or (None if message is None else type_name(message)),
             subject=subject,
+            correlationid=chain.get(CORRELATION_ID),
+            causationid=chain.get(CAUSATION_ID),
         )
     carrier = trace_carrier()
     envelope = envelope.model_copy(
@@ -171,6 +178,7 @@ def cloud_event_headers(
         }
     )
     headers = envelope.as_headers()
+    headers = {**inject(live_context()), **headers}
     if isinstance(message, DomainEvent):
         headers[EVENT_HEADER] = message.name
     return headers

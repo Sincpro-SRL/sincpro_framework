@@ -1,5 +1,234 @@
 # Framework audit — findings, fixes, and what needs a decision
 
+## 2026-10-02: persistence and event refactor review
+
+**Baseline:** main `e6dbe87` (#145-#147), manifest `3.14.5`. The initial tree was clean.
+Concurrent local saga implementation appeared during this review; it is not part of that
+main baseline and was not authored or reverted by this documentation task.
+
+**Decision:** the refactored API is usable, but do not migrate a strict-ordering event stream
+on the assumption that the relay currently enforces that ordering. Documentation and skills
+were updated; the following runtime findings are **reported, not fixed**.
+
+### Confirmed findings
+
+1. **P1 [side-effect] Retry backoff does not hold the entity stream across passes.**
+  [EventRelay._due](sincpro_framework/event_driven/entrypoint/relay.py#L113) excludes not-yet-due
+  predecessors and [_carried_out](sincpro_framework/event_driven/entrypoint/relay.py#L146)
+  rebuilds its held set each pass. Using the existing relay test models, `O-1/dhl` failed
+  with a ten-second backoff and held `O-1/ups` in pass one. Without advancing the clock,
+  pass two delivered `ups` while `dhl` remained pending. This can invert dependent effects.
+  **Fix direction:** account for blocking predecessors beyond the current due batch, and
+  validate entity ordering across passes and PostgreSQL replicas. `SKIP LOCKED` on rows
+  alone does not establish a per-entity stream lock.
+
+2. **P2 [type-error] Event `name` equality filters are dropped, widening the query.**
+  [map_events](sincpro_framework/orm/sqlalchemy/services/event_mapping.py#L100) maps the column
+  under `wire_name`, while the event's `name` remains its class-level wire identity. With
+  `Paid` and `DayClosed` stored in temporary SQLite, querying `LedgerEvent` with
+  `Condition(field="name", value=Paid.name)` returned **both** types and
+  `Dropped(field='name', reason='unsupported_operator')`. Querying `Paid` directly returned
+  only `Paid`. This is not an observed `WHERE false` bug: the public filter is rejected
+  before it narrows the query. Callers must inspect `dropped`.
+  **Fix direction:** align event metadata, supported operators and mapped attribute lookup;
+  protect the public Criteria contract with a mixed-event-table regression case.
+
+3. **P2 [side-effect] The memory store accepts duplicate stream positions in one batch.**
+  [_events_of_sourced](sincpro_framework/ddd/repositories/memory_repository.py#L680) checks
+  persisted events but not earlier pending entries in the same batch. Two new wallets with
+  id `W-1`, credited 10 and 20, were accepted by `save([first, second])`; `get` rebuilt
+  **balance 30, version 1**. Both events occupied version 1. SQL's unique constraint rejects
+  that shape, so a memory-only test can give false confidence.
+  **Fix direction:** validate occupied stream positions across the whole batch before
+  mutating storage; keep a parity case against SQL.
+
+4. **P2 [side-effect] Event-sourced reads bypass locking-option validation.**
+  [Reading.get](sincpro_framework/orm/sqlalchemy/services/workflows/reading.py#L760) returns
+  through replay before the usual locking path. On a persisted SQLite wallet,
+  `get(Wallet, "W-1", skip_locked=True)` succeeded outside a unit of work without
+  `for_update=True`. The caller's locking request is silently ignored.
+  **Fix direction:** explicitly reject unsupported replay locks or define a real event-stream
+  locking contract. Continue using optimistic stream versions; do not imply a state-row lock.
+
+### Reproduction and verification
+
+The findings were reproduced without editing runtime code, using models already in
+[test_relay.py](tests/event_driven/test_relay.py) and
+[test_events_table.py](tests/orm/test_events_table.py), MemoryRepository and temporary SQLite.
+No PostgreSQL service, real broker or consumer suite was used.
+
+- Relay: repeat `run_once()` before advancing the ten-second retry clock, unlike the existing
+  happy retry test which jumps directly to the due time.
+- Name filter: store both event classes; assert the base query's returned types and `dropped`,
+  then compare with querying the subclass directly.
+- Batch parity: create two `Wallet(id="W-1")`, credit each, save together and inspect replay.
+- Lock options: persist a sourced wallet, then request `skip_locked=True` without `for_update`
+  or `context()`; the call currently returns the wallet rather than refusing.
+
+Documentation validation: 54 documents, 130 unique imports from parseable Python examples,
+all skill frontmatter and parsed local links passed. Plugin manifests passed with the existing
+warning about their intentionally absent version. Focused executable documentation and
+transaction/event tests: **56 passed, 6 skipped**; one Starlette/httpx deprecation warning.
+Additional focused repository, numbering and broker tests: **75 passed, 8 skipped**.
+
+`make verify-format` completed formatters and Pyright with **0 errors and 0 warnings** in
+runtime and tests, then failed its dirty-tree condition. It did not establish a clean release
+gate; documentation edits and concurrent work remain uncommitted. No commit was made.
+
+### Consumer upgrade decision
+
+Both inspected consumers declare `^3.14.4` and lock `3.14.4`; registry publication of the new
+source was not verified. Forge has removed-package imports and manual history wrappers;
+MCP Odoo did not show ORM/event usage in the reviewed source. The migration guide separates
+dependency compatibility, data migration and optional event sourcing:
+[docs/events/upgrading.md](docs/events/upgrading.md).
+
+### Engineering rationale
+
+The changes align the published contract, not runtime behavior: **Repository** and **Unit of
+Work** decide durable state; **Event Sourcing** rebuilds it; **Transactional Outbox** separates
+commit from delivery; a **Strategy** decides failures. Conflating these patterns hid the
+difference between stored history, replay and ordered delivery. In accordance with
+`sincpro_architecture_guidelines`, `sincpro_critical_testing_strategy` and
+`sincpro_teaching_mode`, verification targeted rollback, ordering, filters and parity rather
+than adding abstractions or treating test count as proof of production maturity.
+
+## 2026-10-02: maturity assessment
+
+**Recommendation: controlled adoption, with hardening required before broader rollout.**
+The synchronous bus and aggregate persistence have substantial behavioral coverage; this is
+not a prototype. That does not make every execution boundary equally mature. Confirmed
+isolation, confidentiality and ordering defects prevent a blanket production-readiness claim.
+The four event/persistence findings above remain open; the seven additional findings below
+bring this review to **11 reproduced runtime defects**. None was fixed in this task.
+
+### Additional confirmed findings, by risk
+
+1. **P1 [side-effect] Hidden context values appear inside DEBUG log messages.**
+  [FrameworkContext.__enter__](sincpro_framework/context/framework_context.py#L55) interpolates
+  the raw context dictionary. With `hide_in_logs=["token"]` and a synthetic marker, the
+  marker appeared in the captured `event` message. Structured-field filtering is not whole
+  message redaction. The existing test checks that records lack a `token` key, not that the
+  value is absent from their serialized content.
+  **Fix direction:** omit or redact the raw mapping and assert the marker is absent from
+  the entire captured log, not merely from its top-level keys. Do not put secrets in context.
+
+2. **P1 [side-effect] Async execution does not preserve root per-call context isolation.**
+  [UseFramework.get_async_bus](sincpro_framework/use_bus.py#L802) wraps the internal bus;
+  [AsyncBus.execute](sincpro_framework/aio/bus.py#L75) invokes it without the root call's
+  context boundary. A handler that reads and then writes `self.context["stamp"]` returned
+  `None` on the second synchronous root call, but returned `"first"` on the second async
+  call without an explicit context. Request state can leak between calls.
+  **Fix direction:** preserve the root execution boundary in the facade and test cleanup,
+  inheritance and concurrent calls. Copying ContextVars does not deep-copy the dictionaries
+  they reference; an explicit shared mutable scope is not a concurrency fix.
+
+3. **P1 [side-effect] Invalid secret configuration is logged in plaintext.**
+  [SincproConfig.resolve_env_variables](sincpro_framework/settings/domain/config.py#L99)
+  logs `env_value!r` when validation fails before falling back to the default. With a
+  `Secret[int]` field and a synthetic invalid environment value, the raw marker appeared
+  in the INFO log. Masking a successfully constructed Secret does not protect this path.
+  **Fix direction:** log the variable name and validation reason, never its raw value;
+  test invalid and absent secret paths as well as successful masked serialization.
+
+4. **P2 [side-effect] Equal nested scopes remove the wrong registered overlay.**
+  [_pop_overlay](sincpro_framework/context/mixin.py#L138) removes by dictionary equality.
+  Entering `context({"tenant": "A"})`, then entering/exiting `context({})`, then opening
+  `context({"flag": True}, global_scope=True)` left the active outer context's flag at
+  `None`. The equivalent inner dictionary caused the outer one to be unregistered.
+  **Fix direction:** remove the exact overlay by identity, and test global publication
+  and restoration after identical nested scopes. Global scope remains unsuitable for
+  request-specific data even after this defect is corrected.
+
+5. **P2 [side-effect] A remote handler's LookupError becomes a missing-context response.**
+  [HTTP host](sincpro_framework/remote_execution/entrypoint/http.py#L89) catches any
+  `LookupError` around both destination resolution and handler execution. A registered
+  Feature raising `KeyError` returned HTTP **404** through the real ASGI route in TestClient.
+  The [HTTP adapter](sincpro_framework/remote_execution/adapters/http.py#L120) maps that status
+  to `ContextUnavailable`, losing the intended classification of the business failure.
+  **Fix direction:** distinguish destination lookup errors from handler exceptions. The
+  analogous gRPC catch needs the same regression case; only HTTP was reproduced here.
+  The HTTP adapter does not automatically retry the command.
+
+6. **P2 [type-error] A malformed service token raises AttributeError, not Unauthenticated.**
+  [ServiceTokenProvider._claims](sincpro_framework/auth/adapters/service_token_provider.py#L98)
+  assumes decoded JSON is an object. Synthetic token `W10.e30.x` decodes its header to a
+  list and raised `AttributeError` before signature validation. This is error handling,
+  **not a demonstrated authentication bypass**.
+  **Fix direction:** validate header/claim shapes and normalize malformed input to
+  `Unauthenticated`; cover list/null/scalar JSON as well as bad signatures and expiry.
+
+7. **P2 [side-effect] ThreadContextBus rewrites a handler RuntimeError as a concurrency error.**
+  [ThreadContextBus.execute](sincpro_framework/context/thread_context_bus.py#L62) catches all
+  `RuntimeError` from `Context.run`. A single-threaded handler failure was replaced with
+  the message that the snapshot was entered concurrently; the original survived only as
+  `__cause__`. The reproduction uses a built `framework.bus.thread_context()`;
+  `UseFramework` itself has no `thread_context` method.
+  **Fix direction:** distinguish entry-to-context failure from callback failure and verify
+  that an ordinary handler RuntimeError retains its original classification/message.
+
+### Evidence and maturity by surface
+
+| Surface | Assessment | Evidence and remaining gate |
+|---|---|---|
+| Synchronous bus, DI, DTO routing | Established functional foundation | Handler lifetime, late registration, context and compatibility suites pass locally; adapters shared across requests still need their own concurrency guarantees |
+| Async/thread execution | Conditional | Propagation tests pass, but isolation and error-preservation defects above need regression cases and fixes |
+| SQL aggregate persistence | Substantial local coverage | Shared UoW, rollback, versioning, typed views and numbering tested; PostgreSQL locking/concurrency not certified by this run |
+| Event storage and sourcing | Recent, partially hardened | Save/replay/rollback tests pass; name queries, replay lock validation and memory parity are open; no automatic snapshots |
+| Relay and distributed effects | Conditional | Retry/park/replay are exercised; strict ordering fails across backoff passes, and crash/redelivery behavior needs deployment-backend evidence |
+| Auth and observability | Functional, confidentiality hardening required | Guards, permissions and signal contracts have tests; plaintext-log paths and malformed-token handling remain open |
+| HTTP/gRPC/MCP and brokers | Integration foundation | Local transport tests and mocked broker settlement exist; production TLS, credential rotation, broker durability and shared-inbox failover remain separate gates |
+| Skills and documentation | Aligned to the reviewed main source | Imports, plugin structure, links and executable docs checked; local edits are not yet distributed to plugin/MCP consumers |
+| Release and consumer compatibility | Not certified | Manifest version 3.14.5 predates the refactors; registry artifact not inspected, Forge/MCP Odoo still lock 3.14.4 |
+| Sagas | Outside this main-baseline assessment | Concurrent local implementation exists and was preserved; no independent crash/compensation/concurrency audit of it was performed |
+
+### What was run
+
+`make test COVERAGE_ARGS='--no-cov -q'` on the current working tree:
+**2657 passed, 23 skipped, 45 deselected, 5 warnings**, in 63.91 seconds. The selector excludes
+realworld tests. This is the working tree, including concurrent additions, not an isolated
+checkout or a built wheel of `e6dbe87`. Coverage was intentionally disabled to avoid rewriting
+the tracked report; no coverage percentage is claimed.
+
+The warnings were one Starlette/httpx deprecation and four intentional legacy ValueObject
+deprecations. The earlier `make verify-format` ran formatters and Pyright successfully and
+then failed the dirty-tree condition. Subsequent edits from this task were Markdown only.
+Standalone reproduction snippets exercised the findings with synthetic data and temporary
+stores; no real secrets were inspected and no persistent regression tests were added.
+
+Not run: realworld/stress suites, PostgreSQL multi-replica cases, real broker recovery,
+production credentials/TLS, consumer test suites, package publication or data migration.
+The generated OpenWiki was not refreshed; maintained docs and source/tests are authoritative.
+This is a risk-based audit, not an exhaustive security review of every module.
+
+### Prioritized next actions
+
+1. Correct plaintext-log paths and per-call async isolation, with focused regression tests.
+2. Correct relay ordering before dependent effects or financial streams rely on it; exercise
+  backoff, crash-after-send and multiple PostgreSQL workers.
+3. Correct event filtering, batch-version parity and exception/locking classification;
+  retain tests that failed before the fix, not only existing happy paths.
+4. Produce a traceable release artifact and smoke-test its selected extras in the two
+  consumers. Follow the [upgrade guide](docs/events/upgrading.md); reconcile Forge history
+  before retiring manual wrappers or sending historical facts.
+5. Audit sagas separately once that work is stable: command idempotency, durable pending
+  effects, duplicate event consumption, deadlines, failed compensation and crash recovery.
+
+### Why these gates matter
+
+The architectural strength is **Facade + DI + scoped execution context**, backed by a
+**Repository/Unit of Work** boundary. The cost is that every facade must preserve isolation,
+error classification and redaction, not merely return the right DTO. **Transactional Outbox**
+proves atomic storage, not ordered or exactly-once delivery. Following `sincpro_code_review`
+and `sincpro_teaching_mode`, the report names observable failures and how to verify their
+correction rather than converting a large green test count into a maturity score.
+
+## Historical audit (predates the event refactor)
+
+The notes below are preserved as history. Their old event-entry, status and manual-relay
+recipes are superseded by the dated review above and current event documentation. Historical
+test counts and claims of fixes are not results of the current audit.
+
 Not documentation: a working note for review. Delete it once the decisions in §3 are made.
 
 Everything in §1 and §2 was measured by running it. Nothing in §3 has been done.

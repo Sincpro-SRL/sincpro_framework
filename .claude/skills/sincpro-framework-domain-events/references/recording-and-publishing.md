@@ -4,7 +4,8 @@
 
 ```python
 from dataclasses import dataclass
-from sincpro_framework.ddd import DomainEvent
+from sincpro_framework.ddd import DomainEvent, Entity
+from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
 
 @dataclass(kw_only=True)
@@ -27,9 +28,14 @@ class Invoice(Entity):
   fields and the constructor refuses them.
 - `name` is a plain assignment. A typed `name: str` is refused when the class is declared. A
   subclass that sets no `name` gets its own class name, never its parent's.
-- `record` stores a **stamped copy** (the aggregate's type, id and position in `sequence`) and
+- `record` stores a **stamped copy** (the aggregate's type and id) and
   returns it; the instance you passed is left as it was. `pull_events()` hands the recorded events
   back **and forgets them** — pull once, after the save. `recorded_events()` looks without taking.
+- With `map_events` on the context's base event, `save(aggregate)` keeps these facts in the
+  same transaction without pulling them. Plain `record` does not assign a stream version;
+  `EventSourcedMixin.happened` assigns `entity_version` and applies the fact.
+- For durable delivery, mark the event `DeliverableEventMixin` and let `EventRelay` send it.
+  Do not also publish it in the manual loop below.
 
 ```python
 draft = repository.get_by(Invoice, number="F-004")

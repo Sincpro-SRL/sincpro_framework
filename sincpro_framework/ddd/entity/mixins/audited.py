@@ -12,7 +12,7 @@ class AuditedMixin:
             number: str
 
     Nobody writes these two. The adapter stamps them on every flush from the actor the
-    `Database` was given — usually `lambda: bus.current_context().get("user.id")`, the same
+    `Database` was given — usually `lambda: bus.current_context().get("user_id")`, the same
     id the bus already carries through the call. Without an actor they stay `None`, and the
     aggregate works unchanged.
 

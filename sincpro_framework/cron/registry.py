@@ -21,7 +21,8 @@ from typing import Any, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
-from sincpro_framework.context.mixin import carrying
+from sincpro_framework.context.domain.level import EntrypointKind
+from sincpro_framework.context.infrastructure.tree import carrying
 from sincpro_framework.cron.domain import (
     Cron,
     CronDefinition,
@@ -272,7 +273,10 @@ class Crons[TDeps]:
         """
         instance = self._instances[definition.name]
         context = {"cron": definition.name, "scheduled_for": tick.scheduled_for.isoformat()}
-        with self.observability.execution() as outermost, carrying(context):
+        with (
+            self.observability.execution() as outermost,
+            carrying(context, EntrypointKind.CRON),
+        ):
             with self.observability.span(definition.name, "cron") as span:
                 with self.observability.handling(definition.name):
                     try:

@@ -165,7 +165,7 @@ collection, not written onto the class: the same class may be registered in two 
   reads it — so the collection may be given its bus before or after the repository is built,
   including the knot where the repository is itself a dependency of the bus. Declared on the
   context's `DependencyContextType`, the IDE knows its type.
-- **`self.context`** is the request in play, read-only — `user.id`, `tenant_id`,
+- **`self.context`** is the request in play, read-only — `user_id`, `tenant_id`,
   `correlation_id` — and `{}` outside one. `context` is therefore never a dependency's name.
 - **One instance per hook per repository**, built the first time one of its moments fires —
   never while the repository is being built, so a hook that cannot be built does not take the
@@ -231,11 +231,11 @@ class RespectsTheCreditLimit(SalesHook):
         customer = self.customers.get(Customer, order.customer_id)  # another repository
         rate = self.bus(QueryExchangeRate(currency=order.currency), ResponseExchangeRate).rate
         if customer is None or order.total * rate > customer.credit_limit:
-            raise ContractViolation(f"over the credit limit, asked by {self.context.get('user.id')}")
+            raise ContractViolation(f"over the credit limit, asked by {self.context.get('user_id')}")
 
 
 orders = MemoryRepository(hooks=sales_hooks)
-with sales.context({"user.id": "ana"}):
+with sales.context({"user_id": "ana"}):
     orders.save(SalesOrder(customer_id="c1", total=900))  # 900 BOB: within the limit
     try:
         orders.save(SalesOrder(customer_id="c1", total=200, currency="USD"))  # 1 400 BOB

@@ -10,10 +10,15 @@ names the type it expects and gets it back typed. It only holds where somebody c
 the same call — a `SyncQueue` with exactly one bus for that event. A `BackgroundQueue` cannot
 answer from another process, and two buses have no one answer, so both are refused rather than
 guessed.
+
+An event published inside an execution goes out caused by it and in its flow (`causation_id`,
+`correlation_id`), unless it already says otherwise.
 """
 
+import dataclasses
 from typing import Any, TypeVar, overload
 
+from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.event_driven.domain.queue import Queue
@@ -51,6 +56,13 @@ def refuse_orders(event: Any) -> None:
         )
 
 
+def in_its_chain(event: DomainEvent) -> DomainEvent:
+    """The event as it goes out: caused by the execution publishing it and in its flow, unless it
+    already says so — a copy; the one handed in is untouched."""
+    missing = chain_for(event)
+    return dataclasses.replace(event, **missing) if missing else event
+
+
 class AsyncPublisher:
 
     def __init__(self, queue: Queue) -> None:
@@ -64,7 +76,7 @@ class AsyncPublisher:
 
     async def publish(self, event: DomainEvent, return_type: Any = None) -> Any:
         refuse_orders(event)
-        answers = await self.queue.aput(event)
+        answers = await self.queue.aput(in_its_chain(event))
         return None if return_type is None else _one_answer(self.queue, event, answers)
 
 
@@ -90,7 +102,7 @@ class Publisher:
         happened, which is why everybody who hears it may react and nobody has to.
         """
         refuse_orders(event)
-        answers = self.queue.put(event)
+        answers = self.queue.put(in_its_chain(event))
         return None if return_type is None else _one_answer(self.queue, event, answers)
 
     def get_async_publisher(self) -> "AsyncPublisher":

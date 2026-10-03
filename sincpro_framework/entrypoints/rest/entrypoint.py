@@ -23,6 +23,7 @@ from typing import Any
 
 from sincpro_framework.auth.domain import Credentials
 from sincpro_framework.auth.transports import challenges_of, credentials_from_asgi
+from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.entrypoints.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.entrypoints.rest.openapi import openapi_document
 from sincpro_framework.entrypoints.rest.routing import (
@@ -101,7 +102,12 @@ class RestGateway(Gateway):
         response; the transport-free path a test or another host takes."""
         try:
             return 200, execute(
-                route.bus, route.operation.run, dict(payload), context, credentials
+                route.bus,
+                route.operation.run,
+                dict(payload),
+                context,
+                credentials,
+                EntrypointKind.REST,
             )
         except Exception as error:
             status, body = failure_answer(error)

@@ -112,7 +112,7 @@ class Database:
         what the process already configured.
 
         `actor` answers who is writing, for an `AuditedMixin` aggregate:
-        `Database(url, actor=lambda: bus.current_context().get("user.id"))`. It is read on
+        `Database(url, actor=lambda: bus.current_context().get("user_id"))`. It is read on
         every flush, so one database serves every request of a process.
 
         `enforce_foreign_keys` makes SQLite refuse an orphan, as Postgres does — off by default

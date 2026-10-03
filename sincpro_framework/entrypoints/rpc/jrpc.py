@@ -13,6 +13,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from sincpro_framework.auth.domain import AuthError, Credentials
+from sincpro_framework.context.adapters.propagation import extract
+from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.entrypoints.const import Scalar
 from sincpro_framework.entrypoints.exposure import Resolved, RpcBinding
 from sincpro_framework.entrypoints.rpc.errors import (
@@ -103,15 +105,13 @@ def jsonrpc_answer(answer: Answer, request_id: Any = None) -> dict[str, Any]:
 def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
     """Fold transport headers into the framework context without touching DTO params.
 
-    1. correlation_id from X-Correlation-Id (body context, merged later, still wins).
+    1. The context the caller carried — `baggage`, `sincpro-context` (what a frontend sends
+       back), the identity headers (body context, merged later, still wins).
     2. carrier.traceparent from the W3C header, for OTel parent adoption.
     3. Final: a context dict handle_payload treats as inherited; empty becomes {}.
     """
     lowered = {key.lower(): value for key, value in headers.items()}
-    merged: dict[str, Any] = {}
-    correlation = lowered.get("x-correlation-id")
-    if correlation:
-        merged["correlation_id"] = correlation
+    merged: dict[str, Any] = extract(lowered)
     traceparent = lowered.get("traceparent")
     if traceparent:
         merged["carrier"] = {"traceparent": traceparent}
@@ -176,7 +176,9 @@ def dispatch_method(
             "PARAMS_BY_POSITION", "params must be a JSON object: this API is by-name only"
         )
     operation = resolved.operation
-    return execute(operation.bus, operation.run, payload, context, credentials)
+    return execute(
+        operation.bus, operation.run, payload, context, credentials, EntrypointKind.RPC
+    )
 
 
 def is_valid_id(request_id: Any) -> bool:

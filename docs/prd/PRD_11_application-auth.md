@@ -87,7 +87,7 @@ Additions outside the package, all generic:
 | `UseFramework.replaced_for(dto)` | which handlers a `replaces=` took the place of | a replacement inherits a declaration |
 | `Hooks.gate(gate)` | a function asked before each hook's moment, handed the running collection — `False` skips it, raising refuses it; held live by every copy and combination, one gate run once | the hook guard |
 | `Hooks.registered()` | the hooks registered so far, without walking nor closing the collection | describing changes nothing |
-| `context.mixin.executing_context()` | the context of the execution in progress, from outside a bus | the `context` a provider decides with |
+| `context.infrastructure.tree.executing_context()` | the context of the execution in progress, from outside a bus | the `context` a provider decides with |
 | `deprecations.PositionalFields` | a DTO that was a dataclass still takes its fields positionally, with a `DeprecationWarning`, until the next major version | `Run` and `RuntimeUseCase` became DTOs within a minor version |
 
 ## Credentials and identity

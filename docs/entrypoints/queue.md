@@ -177,6 +177,10 @@ headers = cloud_event_headers(command, source="urn:svc:sales", id=request_id)
 await broker.publish(command.model_dump_json().encode(), "billing.invoices.issue", headers=headers)
 ```
 
+Sent from inside an execution, a command's `ce_correlationid` / `ce_causationid` are the sending
+execution's flow and id, and `sincpro-context` carries its context — the consumer restores both
+([context-manager.md](../core/context-manager.md#what-travels)).
+
 `producers=` is checked against the producer's identity **before** the message is decoded and
 before the bus runs. A producer that is not allowed, or a message that names no producer, is
 dead-lettered as `PRODUCER_NOT_ALLOWED`. By default the identity is `ce_source`, which is only

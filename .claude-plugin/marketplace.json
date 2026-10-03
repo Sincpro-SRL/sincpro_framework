@@ -11,7 +11,7 @@
     {
       "name": "sincpro-framework",
       "source": "./.claude",
-      "description": "Skills to program any bounded context with sincpro_framework: architecture, use cases, persistence, criteria, events, caching, auth, observability, settings, entrypoints, operations and analytics"
+      "description": "Skills to program any bounded context with sincpro_framework: architecture, use cases, the context, persistence, criteria, events, caching, auth, observability, settings, entrypoints, operations and analytics"
     }
   ]
 }

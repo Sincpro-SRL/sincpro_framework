@@ -19,7 +19,9 @@ sincpro_framework/
 │   │   ├── pagination.py         Pagination, Cursor (keyset), Offset, CursorKeys
 │   │   └── evaluate.py           matches(): the in-memory evaluator, the specification of the translator
 │   ├── repositories/
-│   │   ├── repository.py         Repository: the abstract store a use case is written against
+│   │   ├── repository.py         IRepository and the read/write/analysis/transaction capabilities
+│   │   ├── aggregate_repository.py  AggregateRepository: one aggregate's typed view
+│   │   ├── numbering.py          INumbering, MemoryNumbering
 │   │   ├── memory_repository.py  the same vocabulary answered over records held in memory
 │   │   ├── hooks.py              Hook, Hooks, HookChain: what a project puts around its aggregates
 │   │   └── change_tracking.py    change tracking for a store with no flush to ask
@@ -28,16 +30,11 @@ sincpro_framework/
 │   ├── value_object.py           ValueObject
 │   └── exceptions.py             DomainError, InvalidCriteria, ContractViolation, StaleAggregate, DuplicateAggregate, RelationNotResolved
 └── orm/sqlalchemy/               the adapter · the [sqlalchemy] extra
-    ├── database.py               Database: engine, session factory, observed from birth, and the two
-    │                             things it guarantees about every write — who, and what changed
-    ├── repository.py             Repository: the reads, the writes, context, narrowed, pivot, explain
-    ├── change_tracking.py        the diff the engine is about to write, at before_flush
-    ├── sql_translator.py         Criteria → Select; grains per dialect
-    ├── data_mapper.py            entity_table, map_aggregates, Relation (foreign_key, many_to_many, id_list), foreign-key inference
-    ├── model_introspection.py    describe(): the class and its table → Meta
-    ├── relation_resolver.py      the database kinds of relation, one statement per node
-    ├── custom_fields.py          JsonText, TranslatedText
-    └── observability.py          every statement to the logger, the tracer and the error tracker
+   ├── entrypoint/               Repository facade, aggregate views, numbering, table templates
+   ├── services/workflows/       Reading, Writing, UnitOfWork, shared Store
+   ├── services/                data/event mapping, Criteria translation, relation resolution
+   ├── domain/                  transaction options, relations, registry, column types
+   └── infrastructure/          Database, session tracking, shared unit in play, observability
 ```
 
 The line between the two is a test: `tests/orm/test_optional_extra.py` imports the vocabulary
@@ -93,7 +90,7 @@ the checkpoint a batch uses so one failing group does not undo the others.
 | Another bounded context as the other side | `Relation.bus(Related, bus, Command, identified_by=…)`; the other side is an ordinary `search` | no |
 | A date grain for another SQL dialect | `register_grain_translator("mysql", translator)` | no |
 | A column type of the project's own | a SQLAlchemy `TypeDecorator`; `describe()` reads the annotation, not the column type | no |
-| A second persistence backend | a package beside `orm/sqlalchemy/` inheriting `Repository` and implementing `describe()` | — |
+| A second persistence backend | implement `ddd.IRepository` and only the optional capabilities the backend can honour | — |
 | A tenant, a branch, a permission | `repository.narrowed(criteria)`, handed to the bus instead of the wide one | no |
 | Who wrote a record | `AuditedMixin` on the aggregate, `Database(url, actor=…)` | no |
 | Deleting that keeps the row | `ArchivableMixin` on the aggregate | no |
@@ -113,7 +110,9 @@ the checkpoint a batch uses so one failing group does not undo the others.
 7. **Nothing that reaches SQL comes from the wire unvalidated.** Field names pass through `Meta`,
    fold functions through a closed list, values through the field's own reader.
 8. **Defaults, never ceilings.** What the client said is what the client gets.
-9. **Events are recorded in memory and published by a Feature after its unit of work.** The
-   framework stores none.
+9. **The aggregate records; the repository keeps mapped events with its explicit save.** Map
+   one context event base with `event_table` / `map_events`. A relay delivers marked events;
+   without a mapping, events remain in memory for explicit publication. Event-sourced
+   aggregates use `EventSourcedMixin` and have no state row of their own.
 10. **A narrowed repository never reads wide.** An aggregate that cannot express the scope is
     refused; a scope that is silently dropped would hand over the whole table.

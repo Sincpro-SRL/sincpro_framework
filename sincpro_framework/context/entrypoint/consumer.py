@@ -1,12 +1,15 @@
+"""`self.context` in a Feature or an ApplicationService — the bus's `Context`, read where the
+handler runs."""
+
 from typing import Any
 
 
 class ContextConsumer:
-    """Runtime access to the UseFramework context dict from Feature / ApplicationService.
+    """`self.context`: the `Context` of the execution in play, as its bus sees it — read and written
+    like a mapping, navigated like `use_context()` (`self.context.entrypoint`, `.parent`).
 
-    Autocomplete of ``self.context`` is declared on the Feature stub as ``ContextT``,
-    not here. This class only binds the live dict (overlay or shared) after the bus
-    is built.
+    Autocomplete of ``self.context`` is declared on the Feature stub as ``ContextT``, not here. This
+    class only binds the bus once it is built.
     """
 
     _context_binder: Any

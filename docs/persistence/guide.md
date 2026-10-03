@@ -805,17 +805,22 @@ What one pass does:
 | mark | `delivered_at`, or the retry, park or skip — saved in the same transaction |
 
 **What a failure does is a strategy.** The default, `RetryInPlace(attempts=5)`, tries the event
-again with exponential backoff and holds everything behind it, then parks it and goes on:
+again with exponential backoff and stops the current pass, then parks it after the cap:
 
 | Policy | An event that fails |
 |---|---|
-| `RetryInPlace(attempts, backoff, then=…, never_retry=…)` | tried again on the next pass; nothing after it goes first |
-| `RetryLater(attempts, backoff, then=…, holds_stream=True)` | tried again at its time; the rest go on, the later events of its entity wait behind it |
+| `RetryInPlace(attempts, backoff, then=…, never_retry=…)` | schedules a retry and stops the current pass |
+| `RetryLater(attempts, backoff, then=…, holds_stream=True)` | schedules a retry; later events of its entity wait within the current pass |
 | `ParkAndContinue()` | kept aside with its reason; `event.replayed()` and a save put it back |
 | `SkipAndContinue()` | marked delivered with a log line and the reason in `delivery` |
 
 `ExponentialBackoff` and `FixedBackoff` space the attempts; `never_retry=(ValueError, …)` parks
 at once an error that no retry will fix.
+
+**Current ordering limit:** the held-entity set is local to one pass. A failed event whose
+retry is not yet due is excluded from the next pass, so later events can overtake it. Row
+locks exclude competing claims of a row, not an entire entity stream. Do not rely on strict
+ordering across backoff intervals or replicas without an additional verified mechanism.
 
 **At least once, never lost.** A relay that dies after handing an event on and before the commit
 leaves it unmarked, and the next pass sends it again — a consumer is idempotent (the

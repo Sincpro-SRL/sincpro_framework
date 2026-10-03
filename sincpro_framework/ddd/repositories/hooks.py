@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Generic, cast
 
+from sincpro_framework.context.domain.level import Level
+from sincpro_framework.context.infrastructure.tree import child, entered
 from sincpro_framework.exceptions import DependencyNotRegistered, ExtensionRefused
 from sincpro_framework.ordering import DEFAULT_SEQUENCE, Ordered, Placement, name_of, ordered
 from sincpro_framework.sincpro_abstractions import ContextT
@@ -516,7 +518,8 @@ class HookChain:
         """
         for link in self._compiled()[moment]:
             if isinstance(record, link.entities) and self._admits(link.hook, moment, record):
-                getattr(self._instance(link.hook), moment)(record)
+                with entered(child(Level.HOOK, label=link.hook.__name__)):
+                    getattr(self._instance(link.hook), moment)(record)
 
     def read(self, record: Any) -> Any:
         """`after_read`, in order; a hook that answers a record puts it in place, `None` keeps

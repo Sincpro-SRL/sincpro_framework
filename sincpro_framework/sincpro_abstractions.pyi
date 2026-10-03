@@ -8,7 +8,7 @@ from typing_extensions import TypeVar
 
 from .aio import AsyncBus as AsyncBus
 from .bus import FeatureBus
-from .context.thread_context_bus import ThreadContextBus as ThreadContextBus
+from .context.infrastructure.thread_context_bus import ThreadContextBus as ThreadContextBus
 
 class DataTransferObject(BaseModel): ...
 

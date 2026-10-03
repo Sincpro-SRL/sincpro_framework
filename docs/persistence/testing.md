@@ -2,7 +2,7 @@
 
 `tests/realworld/` runs the persistence and events layers the way a service would use them,
 over a populated accounting ledger, at a volume the run decides. The unit suites under
-`tests/ddd`, `tests/orm` and `tests/events` prove each piece; this one proves they hold together
+`tests/ddd`, `tests/orm` and `tests/event_driven` prove each piece; this one proves they hold together
 under load, concurrency and a process boundary.
 
 ```

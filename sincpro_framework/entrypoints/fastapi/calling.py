@@ -22,12 +22,15 @@ from typing import Any
 import anyio.to_thread
 from anyio import CapacityLimiter
 from fastapi import Depends, Request
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from sincpro_framework.auth.domain import Credentials
 from sincpro_framework.auth.transports import authenticated_as, credentials_from_asgi
 from sincpro_framework.caching import IDEMPOTENCY_KEY, declares_once
 from sincpro_framework.caching.domain.idempotent_command import IdempotentCommand
+from sincpro_framework.context.adapters.propagation import extract
+from sincpro_framework.context.domain.execution import CHAIN_KEYS, IDENTITY_HEADERS
+from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.entrypoints.fastapi.problems import (
     BUSES_STATE,
     TRACE_STATE,
@@ -50,13 +53,19 @@ class RequestContext(DataTransferObject):
     traceparent: str | None = None
     tracestate: str | None = None
     correlation_id: str | None = None
+    causation_id: str | None = None
+    execution_id: str | None = None
+    carried: dict[str, Any] = Field(default_factory=dict)
+    """What the caller carried beside the identity — `baggage`, `sincpro-context` (what a
+    frontend sends back)."""
 
     def bus_context(self) -> dict[str, Any]:
-        found: dict[str, Any] = {}
+        found: dict[str, Any] = dict(self.carried)
         if self.idempotency_key:
             found[IDEMPOTENCY_KEY] = self.idempotency_key
-        if self.correlation_id:
-            found["correlation_id"] = self.correlation_id
+        for key in CHAIN_KEYS:
+            if getattr(self, key):
+                found[key] = getattr(self, key)
         return found
 
     @property
@@ -72,13 +81,16 @@ async def acting_credentials(request: Request) -> Credentials:
 
 
 async def request_context(request: Request) -> RequestContext:
-    """The `Idempotency-Key`, the W3C trace headers and the correlation id of the request."""
+    """The `Idempotency-Key`, the W3C trace headers, the identity of the request and the context
+    the caller carried (`baggage`, `sincpro-context`)."""
     headers = request.headers
+    carried = extract(dict(headers))
     return RequestContext(
         idempotency_key=headers.get("idempotency-key") or None,
         traceparent=headers.get("traceparent") or None,
         tracestate=headers.get("tracestate") or None,
-        correlation_id=headers.get("x-correlation-id") or None,
+        **{key: headers.get(header) or None for header, key in IDENTITY_HEADERS.items()},
+        carried={key: value for key, value in carried.items() if key not in CHAIN_KEYS},
     )
 
 
@@ -114,7 +126,7 @@ def run_on_bus(
         stack.enter_context(authenticated_as(bus, credentials))
         extra = context.bus_context()
         if extra:
-            stack.enter_context(bus.context(extra))
+            stack.enter_context(bus.context(extra, kind=EntrypointKind.REST))
         if _host_span_active():
             stack.enter_context(bus.with_parent_trace())
         elif context.traceparent:

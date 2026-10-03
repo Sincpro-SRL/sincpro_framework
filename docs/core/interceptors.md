@@ -126,13 +126,13 @@ def audit(dto: Any, call_next: CallNext[Any]) -> Any:
     response = call_next(dto)
     audit_trail.append({
         "command": type(dto).__name__,
-        "user": billing.current_context().get("user.id"),
+        "user": billing.current_context().get("user_id"),
         "response": response,
     })
     return response
 
 
-with billing.context({"user.id": "ana"}):
+with billing.context({"user_id": "ana"}):
     billing(CommandCreateInvoice(customer_id="acme", total=100))
 
 assert audit_trail[0]["command"] == "CommandCreateInvoice"
@@ -259,15 +259,15 @@ def early_payment(
     dto: CommandCreateInvoice, call_next: CallNext[ResponseCreateInvoice]
 ) -> ResponseCreateInvoice:
     response = call_next(dto)
-    if billing.current_context().get("tenant") in early_payment_discount:
+    if billing.current_context().get("tenant_id") in early_payment_discount:
         return response.model_copy(update={"note": "2% if paid within 10 days"})
     return response
 
 
-with billing.context({"tenant": "acme"}):
+with billing.context({"tenant_id": "acme"}):
     assert billing(CommandCreateInvoice(customer_id="c1", total=1), ResponseCreateInvoice).note
 
-with billing.context({"tenant": "globex"}):
+with billing.context({"tenant_id": "globex"}):
     assert not billing(CommandCreateInvoice(customer_id="c1", total=1), ResponseCreateInvoice).note
 ```
 

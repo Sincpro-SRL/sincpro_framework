@@ -1,5 +1,6 @@
 import json
 import threading
+from datetime import timedelta
 from typing import (
     Any,
     Callable,
@@ -16,13 +17,17 @@ from typing import (
     overload,
 )
 
+from pydantic import TypeAdapter
 from sincpro_log.logger import LoggerProxy, create_logger
 
 from . import ioc
 from .aio import AsyncBus
 from .bus import FrameworkBus
-from .context.framework_context import FrameworkContext
-from .context.mixin import ContextMixin
+from .context.domain.level import EntrypointKind
+from .context.domain.store import ContextStore
+from .context.entrypoint.bus import ContextMixin, FrameworkContext
+from .context.infrastructure.providers import ContextProvider, ContextProviderFunction
+from .context.infrastructure.tree import current_execution, handed_on
 from .deps import DependencyLocator, TDeps
 from .error_handler import ErrorHandler, build_error_handler_chain
 from .exceptions import (
@@ -44,8 +49,9 @@ from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
 class _Forwarded:
-    """What the async facade of a context hosted by another service runs on its worker thread:
-    the bus's own call, which forwards — or runs here, when this execution is that service's.
+    """What the async facade runs on its worker thread: the bus's own call — so every async call
+    opens its scope as a sync one does (nothing one writes reaches the next), and a context hosted
+    by another service forwards.
     """
 
     def __init__(self, framework: "UseFramework") -> None:
@@ -146,6 +152,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
         self._interceptors: list[InterceptorRegistration] = []
         self._interceptors_off: list[Interceptor] = []
+        self._execution_ids: Callable[[], str] | None = None
 
         self.was_initialized: bool = False
         self._build_lock = threading.RLock()
@@ -268,11 +275,17 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self._sp_container.observability.override(observability)
 
     def _context_for_logs(self) -> Dict[str, Any]:
-        """The execution's context, as fields on every log line this bus writes."""
+        """The execution's context, as fields on every log line this bus writes — its identity
+        included, the execution's own over what the context was handed."""
+        running = current_execution()
+        context = {
+            **self._get_context().copy(),
+            **(running.chain() if running is not None else {}),
+        }
         return {
             key: value
-            for key, value in self._get_context().items()
-            if key not in self._hidden_in_logs
+            for key, value in context.items()
+            if isinstance(key, str) and key not in self._hidden_in_logs
         }
 
     def _add_dependencies_provided_by_user(self):
@@ -433,6 +446,12 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
         # Set the DTO registry Tricky way but it works
         self.bus.dto_registry = dto_registry
+        for handlers in (self.bus.feature_bus, self.bus.app_service_bus):
+            handlers.context_owner = self
+            handlers.context_providers = self._context_providers
+        if self._execution_ids is not None:
+            self.bus.feature_bus.new_execution_id = self._execution_ids
+            self.bus.app_service_bus.new_execution_id = self._execution_ids
 
         # The container already injects this into the three buses; kept as a guard so
         # the guarantee does not depend on the provider still being the one the
@@ -546,6 +565,23 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self._refuse_when_built(f"switching off interceptor {interceptor.__qualname__}")
         self._interceptors_off.append(interceptor)
         self._registrations.append(lambda bus: bus.without_interceptor(interceptor))
+
+    def execution_ids(self, generator: Callable[[], str]) -> None:
+        """Mint the `execution_id` of every execution of this bus with `generator` instead of a
+        UUID v7 — a ULID, a UUID v4, a Snowflake id. Before the bus is built.
+
+            billing.execution_ids(lambda: str(ulid.new()))
+
+        Context: an id given from outside — `bus.context({"execution_id": …})`, a header — still
+        wins for a root execution; the generator only mints the ones nobody gave.
+        """
+        self._refuse_when_built("an execution id generator")
+        if not callable(generator):
+            raise TypeError(
+                f"execution_ids takes a function that returns a str, not {generator!r}"
+            )
+        self._execution_ids = generator
+        self._registrations.append(lambda bus: bus.execution_ids(generator))
 
     def _error_chain(self, placements: list[Placement]) -> Optional[ErrorHandler]:
         registered = {one.item for one in placements}
@@ -690,27 +726,73 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         self.observability.ignore(*exc_types)
 
     def context(
-        self, context_to_set: Mapping[str, Any], global_scope: bool = False
+        self,
+        context_to_set: Mapping[Any, Any] | None = None,
+        global_scope: bool = False,
+        kind: EntrypointKind | None = None,
+        restore: str | list[str] | None = None,
+        keep_as: str | None = None,
+        ttl: timedelta | None = None,
+        store: ContextStore | None = None,
     ) -> FrameworkContext:
-        """
-        Create a context manager with the specified attributes.
+        """A scope of this bus for the block — every execution inside reads it, nothing outside does.
 
-        Default is isolated per task/thread. Concurrent executions of this
-        instance do not see each other's keys. Pass global_scope=True to
-        publish keys on this instance so concurrent executions can read them.
-
-        Args:
-            context_to_set: Dictionary of context attributes to set
-            global_scope: Publish on the instance instead of isolating the task
-
-        Returns:
-            FrameworkContext instance ready to be used with 'with' statement
-
-        Example:
             with app.context({"correlation_id": "123", "user_id": "456"}) as app_with_context:
-                result = app_with_context(some_dto)
+                app_with_context(some_dto)
+
+            with app.context({"tenant_id": "acme"}, global_scope=True):    every execution of
+                ...                                                          this bus reads it
+            with app.context(restore=["tenant:acme", f"session:{sid}"]):    what a store kept
+            with app.context(values, keep_as="sale-77", ttl=timedelta(hours=1)):
+
+        Context: isolated per thread and task. The first scope of a flow is its entrypoint —
+        `kind` says which entrance opened it, `EntrypointKind.DIRECT` when none is named; a scope
+        inside another is a child of it. `restore` reads each key from the store (`store`, else
+        the nearest `ContextStore` in the context), in order, under `context_to_set`; `keep_as`
+        keeps what the scope sees, with the flow's chain, for whoever resumes it.
         """
-        return FrameworkContext(cast(Any, self), context_to_set, global_scope)
+        return FrameworkContext(
+            cast(Any, self), context_to_set, global_scope, kind, restore, keep_as, ttl, store
+        )
+
+    def context_provider(
+        self, needs: Sequence[str] = (), gives: Sequence[str] = ()
+    ) -> Callable[[ContextProviderFunction], ContextProviderFunction]:
+        """Register the decorated function as what gives `gives` from `needs` — run when an
+        execution of this bus opens, has every key it needs and lacks one it gives.
+
+            @siat_soap_sdk.context_provider(needs=["nit_id"], gives=["TOKEN", "SIAT_ENV"])
+            def siat_credentials(context): ...
+
+        Its answer is written on that execution's node: what it runs finds it there.
+        """
+
+        def register(function: ContextProviderFunction) -> ContextProviderFunction:
+            self._context_providers.append(
+                ContextProvider(function, tuple(needs), tuple(gives))
+            )
+            self._registrations.append(
+                lambda bus: bus.context_provider(needs, gives)(function)
+            )
+            return function
+
+        return register
+
+    def context_schema(self, schema: type) -> None:
+        """Validate and type what a scope of this bus is opened with against `schema` — the
+        `TypedDict` or DTO a project declares its context with:
+
+            siat_soap_sdk.context_schema(SIATContext)     SIAT_ENV=2 arrives a SIATEnvironment
+
+        The keys the schema names are validated; any other key passes as it was given."""
+        self._context_schema = TypeAdapter(schema)
+        self._registrations.append(lambda bus: bus.context_schema(schema))
+
+    def context_store(self, store: ContextStore) -> None:
+        """The store this bus's scopes keep and restore with — over the process's, under one given
+        to a block."""
+        self._published.set(ContextStore, store)
+        self._registrations.append(lambda bus: bus.context_store(store))
 
     def with_trace(
         self,
@@ -753,7 +835,7 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
             # Compose with context()
             with app.with_trace(carrier=headers) as traced:
-                with traced.context({"user.id": "u-123"}) as app_with_ctx:
+                with traced.context({"user_id": "u-123"}) as app_with_ctx:
                     result = app_with_ctx(MyDTO(...))
         """
         if not self.was_initialized:
@@ -808,9 +890,8 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         without blocking its event loop. See ``Bus.get_async_bus`` /
         ``AsyncBus`` for the propagation and reuse semantics.
         """
-        if self._hosted_at is not None:
-            return AsyncBus(_Forwarded(self))
-        return self._built_bus().get_async_bus()
+        self._built_bus()
+        return AsyncBus(_Forwarded(self))
 
     def _declared_response(self, dto_type: type) -> Any:
         handler = self.handler_of(dto_type)
@@ -818,16 +899,18 @@ class UseFramework(ContextMixin, Generic[TDeps]):
 
     def _executed_where_hosted(self, dto: Any, return_type: Any) -> Any:
         """The DTO executed by the service hosting this context, answered as `return_type` —
-        or the response its handler here declares, when none is given."""
+        or the response its handler here declares, when none is given.
+
+        Context: it is handed the context of the execution calling it — its caller's, then what
+        this bus was given — caused by that execution and in its flow (`handed_on`)."""
         hosted_at = self._hosted_at
         if hosted_at is None:
             raise SincproFrameworkNotBuilt(f"'{self.name}' is not hosted by another service")
         response = (
             return_type if return_type is not None else self._declared_response(type(dto))
         )
-        return transport_for(hosted_at).execute(
-            self.name, dto, response, self.current_context()
-        )
+        context = handed_on({**self._inherited_context(), **self.current_context()})
+        return transport_for(hosted_at).execute(self.name, dto, response, context)
 
     @property
     def hosted_at(self) -> HostedAt | None:
@@ -896,19 +979,10 @@ class UseFramework(ContextMixin, Generic[TDeps]):
             self.observability.record_error(error, "", "framework", kind="framework")
             raise error
 
-        implicit_token = None
-        implicit_overlay = None
-        if self._overlay_var.get() is None and not self._in_global_var.get():
-            implicit_token, implicit_overlay = self._push_overlay(
-                {**self._inherited_context(), **self._shared_context}
-            )
-
-        try:
-            with self._executing_with_context():
-                return self.bus.execute(dto)
-        finally:
-            if implicit_token is not None and implicit_overlay is not None:
-                self._pop_overlay(implicit_token, implicit_overlay)
+        if self._entered_here():
+            return self.bus.execute(dto)
+        with self._scope({}):
+            return self.bus.execute(dto)
 
     @property
     def logger(self) -> LoggerProxy:

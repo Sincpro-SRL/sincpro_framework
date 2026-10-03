@@ -14,8 +14,9 @@ This skill stands alone: it explains what the framework is, its vocabulary and t
 service, then routes to the layer skill. The framework repo also carries deep docs (`docs/…` in the
 framework repo); they are not shipped with the package, and nothing here depends on them.
 
-> Written against **sincpro-framework 3.14.4**. If the project pins another minor, check the code
-> of the installed package before trusting an example.
+> Verified against **main at e6dbe87** (manifest version **3.14.5**, refactors #145-#147).
+> A version string alone does not establish these APIs: verify the installed artifact and
+> lockfile before upgrading a consumer. Skills from main can be newer than its dependency.
 
 ## Context
 
@@ -50,7 +51,8 @@ What it is not:
 | Dependencies registry | `bus.add_dependency("name", instance)` → `self.name` inside a handler, `bus.deps.name` outside. Registering a name twice raises. | method | on `UseFramework` |
 | `feature_bus` / `app_service_bus` | The two halves of the root bus. `self.feature_bus` is injected into every ApplicationService and executes **Features only**; `app_service_bus` is internal and never injected — an ApplicationService cannot call another one. | attribute | `from sincpro_framework.bus import FeatureBus` (typing only) |
 | `Entity` / aggregate | `@dataclass` with `id`, `created_at`, `updated_at`. The aggregate is the Entity a `Repository` reads and writes as one unit. Not a DTO. | base class | `from sincpro_framework.ddd import Entity` |
-| `Repository` | The port every store answers: `get`, `search`, `count`, `save`, `remove`, `archive`. The SQL implementation adds `context()`, one unit of work. | port | `from sincpro_framework.ddd import Repository` |
+| `IRepository` | The read/write aggregate port. `Analyzes`, `WritesInBulk` and `Transacts` are separate capabilities; the SQL adapter is `orm.Repository`. | port | `from sincpro_framework.ddd import IRepository` |
+| `AggregateRepository[T]` | Typed view of one aggregate over a repository; `get(id)`, `search(criteria)`, `save(aggregate)`. SQL-specific view: `orm.DatabaseAggregateRepository[T]`. | adapter view | `from sincpro_framework.ddd import AggregateRepository` |
 | `DomainEvent` | A fact that happened. An `Entity` subclass with correlation/causation ids, recorded on an aggregate (`record`) and drained (`pull_events`). | base class | `from sincpro_framework.ddd import DomainEvent` |
 | `DomainError` + `failure_kind` | Base of every expected refusal. A subclass declares `failure_kind = FailureKind.NOT_FOUND` (…) and every wire maps it to its code. | exception | `from sincpro_framework.ddd import DomainError`; `from sincpro_framework.transport.failures import FailureKind` |
 | Adapter | A class in `adapters/` that wraps an external system or a replaceable mechanism, registered as a dependency. | convention | — |
@@ -199,7 +201,8 @@ Anything that fits none of these: stop and ask. Do not invent a fourth kind of s
 |---|---|
 | Know where a file goes, pick the repo variant | [references/module-structure.md](references/module-structure.md) |
 | Decide a cross-context import, `common/`, domain vs adapters | [references/context-boundaries.md](references/context-boundaries.md) |
-| Context manager, interceptors, `replaces=`, error handlers | `sincpro-framework-core` |
+| The context: `use_context()`, levels, threads, providers, required keys, stores, propagation | `sincpro-framework-context` |
+| Interceptors, `replaces=`, error handlers, opening `bus.context` | `sincpro-framework-core` |
 | Aggregate, table, repository, unit of work, hooks, mixins | `sincpro-framework-persistence` |
 | Filter, order, page, count, aggregate, relations | `sincpro-framework-criteria` |
 | Domain events, outbox, event sourcing, brokers | `sincpro-framework-domain-events` |

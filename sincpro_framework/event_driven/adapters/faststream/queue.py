@@ -10,9 +10,10 @@ works from any synchronous caller and waits until the broker took the message �
 surfaces where it was published. Never started, the queue is for a service that is already
 async and connected the broker itself: `aput` publishes on the caller's loop.
 
-What travels is the event as JSON, on the channel named after it, with the event's wire name
-and the publishing trace as headers. Topics, partitions, exchanges, retries and acks are the
-broker's configuration, not this queue's.
+What travels is the event as JSON, on the channel named after it, with the event's wire name,
+the publishing trace and the publishing execution's context (`sincpro-context`: caused by it, in
+its flow) as headers — read where the event is published, before it is handed to the queue's loop.
+Topics, partitions, exchanges, retries and acks are the broker's configuration, not this queue's.
 """
 
 import asyncio
@@ -20,6 +21,8 @@ import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Protocol
 
+from sincpro_framework.context.adapters.propagation import inject
+from sincpro_framework.context.infrastructure.tree import live_context
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.event_driven.infrastructure.trace import trace_carrier
@@ -104,8 +107,12 @@ class FastStreamQueue:
         self._loop.close()
         self._loop, self._thread = None, None
 
-    async def _publish(self, event: DomainEvent) -> None:
-        headers = {**trace_carrier(), EVENT_HEADER: event.name}
+    def _headers(self, event: DomainEvent) -> dict[str, str]:
+        """Read where the event is published: the queue's loop runs in a thread of its own, where
+        neither the trace nor the execution's context is."""
+        return {**inject(live_context()), **trace_carrier(), EVENT_HEADER: event.name}
+
+    async def _publish(self, event: DomainEvent, headers: dict[str, str]) -> None:
         await self.broker.publish(
             event.as_json().encode(),
             self.channel_of(event),
@@ -115,12 +122,14 @@ class FastStreamQueue:
 
     def put(self, event: DomainEvent) -> None:
         """Publish from synchronous code and wait until the broker took it."""
-        self._on_own_loop(lambda: self._publish(event), None)
+        headers = self._headers(event)
+        self._on_own_loop(lambda: self._publish(event, headers), None)
 
     async def aput(self, event: DomainEvent) -> None:
         """Publish from async code — on the queue's loop when it was started, else on this one."""
+        headers = self._headers(event)
         if self._loop is None:
-            await self._publish(event)
+            await self._publish(event, headers)
             return
-        future = asyncio.run_coroutine_threadsafe(self._publish(event), self._loop)
+        future = asyncio.run_coroutine_threadsafe(self._publish(event, headers), self._loop)
         await asyncio.wrap_future(future)

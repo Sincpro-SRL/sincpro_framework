@@ -22,24 +22,23 @@ first insert and raises it on every write, refusing a save that carries an older
 the row holds — two callers that both loaded version 3 cannot both write version 4. That is
 the conditional update a worker needs, and it is the ORM's own machinery doing it.
 
-Python 3.12 and 3.13 have no `uuid.uuid7`; `uuid7()` below is RFC 9562 by hand and defers to
-the standard library where it exists.
+`uuid7()` and `new_entity_id()` live in `sincpro_framework.ids` — the same ids an event and an
+execution get — and are named here as they always were.
 
 **`AuditedMixin`, `ArchivableMixin` and `ChangeTrackingMixin` live in `entity/mixins/`** — an
 aggregate opts into each independently, the same way it opts into this base class.
 """
 
 import dataclasses
-import os
-import threading
-import time
-import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from pydantic import TypeAdapter
+
+from sincpro_framework.context.infrastructure.tree import chain_for
+from sincpro_framework.ids import new_entity_id
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.events import DomainEvent
@@ -50,50 +49,6 @@ RECORDED = "_recorded_events"
 @lru_cache(maxsize=None)
 def json_serializer(cls: type) -> TypeAdapter:
     return TypeAdapter(cls)
-
-
-_MINTING = threading.Lock()
-_last_millisecond = 0
-_counter = 0
-
-
-def uuid7() -> uuid.UUID:
-    """A time-ordered UUID (RFC 9562 version 7).
-
-        layout  48 bits unix milliseconds · 4 bits version · 12 bits counter within the ms
-                2 bits variant · 62 bits random
-
-    >>> uuid7().version
-    7
-    """
-    native = getattr(uuid, "uuid7", None)
-    if native is not None:
-        return native()
-
-    milliseconds = time.time_ns() // 1_000_000
-    entropy = int.from_bytes(os.urandom(10), "big")
-    rand_b = entropy & ((1 << 62) - 1)
-    with _MINTING:
-        # RFC 9562 method 1: within one millisecond the 12 bits are a counter, so ids minted
-        # in order sort in order; a new millisecond starts the counter at a random point.
-        global _last_millisecond, _counter
-        if milliseconds == _last_millisecond and _counter < 0xFFF:
-            _counter += 1
-        else:
-            _last_millisecond = milliseconds
-            _counter = (entropy >> 62) & 0x7FF
-        rand_a = _counter
-    value = (milliseconds << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
-    return uuid.UUID(int=value)
-
-
-def new_entity_id() -> str:
-    """The id a fresh entity gets when nobody passes one.
-
-    >>> len(new_entity_id())
-    32
-    """
-    return uuid7().hex
 
 
 def utc_now() -> datetime:
@@ -170,12 +125,16 @@ class Entity:
         recorded and hands it to an event bus, explicitly. These live in memory and die with
         the object — nothing here stores them. An entity that published directly would
         announce facts a rollback then undoes.
+
+        Recorded inside an execution, the event is caused by it and joins its flow
+        (`causation_id`, `correlation_id`) unless it already says otherwise.
         """
         recorded: list[DomainEvent] = self.__dict__.setdefault(RECORDED, [])
         stamped = dataclasses.replace(
             event,
             entity_type=event.entity_type or type(self).__name__,
             entity_id=event.entity_id or self.id,
+            **chain_for(event),
         )
         recorded.append(stamped)
         return stamped

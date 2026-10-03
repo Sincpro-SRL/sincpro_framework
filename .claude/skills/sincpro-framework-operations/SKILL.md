@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-operations
-description: Run scheduled work and move schemas with sincpro_framework — the Crons registry per bounded context, CronProcess/CronGateway, one run per tick across replicas, and the Migrations timeline across every context and store. Use whenever a task needs a scheduled job, a cron, a background tick, a database schema change, an Alembic migration, or one command to upgrade/downgrade the whole system.
+description: Run scheduled work and move schemas with sincpro_framework — Crons, CronProcess/CronGateway, EventRelay scheduling and the Migrations timeline across contexts and stores. Use whenever a task needs a cron, background tick, run_relay/relay_deliverable_events, a schema change, an Alembic migration, or a system upgrade/downgrade.
 ---
 
 # sincpro-framework-operations
@@ -27,6 +27,7 @@ This skill stands alone; the deep docs it names live in the framework repository
 | Term | What it is | Kind | Import |
 |---|---|---|---|
 | `Crons` | The crons of one bounded context: a name (log/trace identity), dependencies by name, `@cron`, `without`; refuses changes once built | registry | `from sincpro_framework.cron import Crons` |
+| `run_relay` / `relay_deliverable_events` | Register an existing `EventRelay` or build one from `repository`, `source` and `to`; default interval two seconds | methods | on `Crons` |
 | `Cron` | Base class of a cron: `run(self, tick)`; every registry dependency is set on it as an attribute | port (abstract) | `from sincpro_framework.cron import Cron` |
 | `@crons.cron(...)` | Registers a class: `"0 2 * * *"` + `timezone=`, or `every=timedelta(...)`; `overlap`, `missed`, `missed_window`, `stale_after`, `replaces`, `name` | decorator | method of `Crons` |
 | `Overlap` / `Missed` | Policies: previous run still going (`SKIP`/`ALLOW`); ticks missed while down (`SKIP`/`RUN_LATEST`/`RUN_ALL`) | setting | `from sincpro_framework.cron import Overlap, Missed` |
