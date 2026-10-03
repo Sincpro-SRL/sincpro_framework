@@ -13,14 +13,12 @@ from typing import (
     overload,
 )
 
-from _typeshed import DataclassInstance, Incomplete
+from _typeshed import DataclassInstance
 from sincpro_log.logger import LoggerProxy
-from typing_extensions import Self
 
 from sincpro_framework.observability import FrameworkSpanContext as FrameworkSpanContext
 from sincpro_framework.observability import Observability as Observability
 
-from . import ioc as ioc
 from .aio import AsyncBus as AsyncBus
 from .bus import FrameworkBus as FrameworkBus
 from .context.domain.level import EntrypointKind
@@ -30,14 +28,11 @@ from .context.entrypoint.facade import Context
 from .context.infrastructure.providers import ContextProviderFunction
 from .deps import TDeps
 from .error_handler import ErrorHandler as ErrorHandler
-from .exceptions import DependencyAlreadyRegistered as DependencyAlreadyRegistered
-from .exceptions import SincproFrameworkNotBuilt as SincproFrameworkNotBuilt
 from .interceptors import Interceptor
 from .remote_execution.entrypoint.hosts import Attach, OpenHost
-from .sincpro_abstractions import ApplicationService, DataTransferObject, Feature
+from .sincpro_abstractions import DataTransferObject
 from .sincpro_abstractions import TypeDTO as TypeDTO
 from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
-from .sincpro_logger import create_logger as create_logger
 from .transport.addresses import HostedAt
 
 DTOClass = Type[DataTransferObject] | Type[DataclassInstance]
@@ -412,8 +407,15 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         """Validate and type what a scope of this bus is opened with against `schema`."""
         ...
 
-    def context_store(self, store: ContextStore) -> None:
-        """The store this bus's scopes keep and restore with."""
+    def context_store(
+        self,
+        store: ContextStore,
+        ttl: timedelta = ...,
+        every: timedelta = ...,
+    ) -> None:
+        """Share this bus's context through `store` — and keep and restore with it. The API does
+        not change; every node of its executions is kept for `ttl`, what others wrote is read
+        again at most once per `every` (PRD_24)."""
         ...
 
     @property

@@ -45,6 +45,7 @@ from sincpro_framework.context.infrastructure.tree import (
     handed_on,
     recorrelated,
     scope_of,
+    shared,
 )
 from sincpro_framework.sincpro_logger import logger
 
@@ -201,7 +202,7 @@ class Context(dict[Any, Any]):
         running = current_execution()
         if running is not None and self.execution is not running:
             node.execution = running
-        with entered(node):
+        with entered(shared(node)):
             yield Context(node, self._owner)
 
     # --- the tree -------------------------------------------------------------------------------

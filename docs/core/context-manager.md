@@ -271,6 +271,36 @@ except ContextRequired as refused:
 - **A `Secret`** travels like any value — the framework filters nothing; what goes in the context
   is the project's decision. An API key the next context needs reaches it.
 
+## Shared across services: the same tree, kept in a store
+
+A bus that says so keeps its context in a store — Redis through `KeyValueContexts(RedisKeyValue(redis))`.
+The API does not change: `self.context`, `use_context()`, `bus.context(...)` and the levels read and
+write as always; only where each node is kept changes. Nothing is shared by default, and no
+environment variable turns it on.
+
+```text
+billing.context_store(KeyValueContexts(RedisKeyValue(redis)))      each bus that shares, in code
+
+global          use_context().at(Level.GLOBAL) — every service and replica that set the store
+ └ process      this service's replicas — never another service
+    └ bus       local
+       └ entrypoint → application → feature → hook → scope    one node per execution, kept
+```
+
+- **Across a queue or the remote bus only an id travels** (`x-context-node`, beside the identity):
+  the receiving bus that set the same store opens under the sender's nodes, read back from the
+  store. What service A's ApplicationService wrote — `self.context["discount"] = 10` — service B's
+  Feature reads with `self.context.get("discount")`, even when A wrote it after handing on.
+- **The sender's nodes are read, never written**; B's writes land on B's nodes, by the rules above.
+- **No collision**: every node has its own id (the execution's), so five requests are five chains;
+  the process is kept per service; only `Level.GLOBAL` is one for everyone.
+- Two projects that set the same store (same prefix) share as well; the default codec is plain JSON,
+  so they need no classes in common.
+- `context_store(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))`: a node lives `ttl`;
+  what others wrote is read again at most once per `every`.
+
+See `docs/prd/PRD_24_shared-context.md`.
+
 ## Kept outside: N contexts in a store
 
 ```python
@@ -303,7 +333,8 @@ A store keeps **what a flow is** — a tenant's defaults, a session, a flow to r
 recomputed (that is a cache). `InMemoryContexts` for one process; `KeyValueContexts` over any
 `KeyValueStore` — Redis, Valkey, Memcached — for every replica and service. How it is written is a
 codec: `PlainCodec` (JSON any language reads, the default), `TypedCodec(SiatContext)` (the types back,
-the same codebase), `PickleCodec` (anything picklable, never bytes from outside).
+the same codebase), `PickleCodec` (anything picklable, never bytes from outside — each value on its own: a reader
+lacking a value's class reads the context without that key, with a warning).
 
 **The process level, shared by every replica**:
 

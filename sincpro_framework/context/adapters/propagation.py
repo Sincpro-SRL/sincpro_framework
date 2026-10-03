@@ -9,6 +9,7 @@ What is written, and read back in this order — the later wins:
                                 other stack (text only, ≤ 8192 bytes, ≤ 180 members)
     sincpro-context             the travelling keys as JSON — lists too (`tenant_ids`)
     x-correlation-id · x-causation-id · x-execution-id     the identity (PRD_21)
+    x-context-node              the node in play, when a store shares the context (PRD_24)
 
 `inject` writes the execution in play as the cause of whatever receives it. Only what travels is
 written: text, numbers, booleans and lists of them, a `Secret` as its value — never an object or
@@ -22,7 +23,11 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote, unquote
 
-from sincpro_framework.context.domain.execution import IDENTITY_HEADERS
+from sincpro_framework.context.domain.execution import (
+    CONTEXT_NODE,
+    CONTEXT_NODE_HEADER,
+    IDENTITY_HEADERS,
+)
 from sincpro_framework.context.domain.keys import standardized, travelling
 from sincpro_framework.context.infrastructure.tree import handed_on
 from sincpro_framework.sincpro_logger import logger
@@ -87,6 +92,8 @@ def inject(context: Mapping[Any, Any]) -> dict[str, str]:
         for header, key in IDENTITY_HEADERS.items()
         if carried.get(key)
     }
+    if carried.get(CONTEXT_NODE):
+        headers[CONTEXT_NODE_HEADER] = str(carried[CONTEXT_NODE])
     headers[CONTEXT_HEADER] = written(carried)
     members = baggage(carried)
     if members:
@@ -107,4 +114,6 @@ def extract(headers: Mapping[str, Any]) -> dict[str, Any]:
             if lowered.get(header)
         }
     )
+    if lowered.get(CONTEXT_NODE_HEADER):
+        found[CONTEXT_NODE] = lowered[CONTEXT_NODE_HEADER]
     return standardized(found)

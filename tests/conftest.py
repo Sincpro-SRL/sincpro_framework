@@ -27,10 +27,10 @@ def _a_process_context_of_its_own():
     from sincpro_framework.context.domain.node import Values
     from sincpro_framework.context.infrastructure.tree import ROOT
 
-    before = ROOT.values
+    before, above = ROOT.values, ROOT.parent
     ROOT.values = Values(before.current)
     yield
-    ROOT.values = before
+    ROOT.values, ROOT.parent = before, above
 
 
 @pytest.fixture(scope="session")

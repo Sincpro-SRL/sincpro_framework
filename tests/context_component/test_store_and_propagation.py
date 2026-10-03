@@ -1,13 +1,17 @@
 """Contexts kept by name outside the process — N of them, in memory or over any `KeyValueStore` — and
 the context written on a transport's headers and read back (PRD_22 §4.5-§4.7)."""
 
+import sys
+import threading
 import time
+import types
 from datetime import timedelta
 from enum import IntEnum
 from typing import TypedDict
 
 import pytest
 from pydantic import Secret
+from structlog.testing import capture_logs
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.caching import InMemoryKeyValue
@@ -224,3 +228,33 @@ def test_baggage_is_read_under_the_frameworks_own_header():
     )
 
     assert found == {"lang": "en", "tenant_id": "acme"}
+
+
+def test_a_pickled_value_whose_class_the_reader_lacks_is_left_out_and_the_rest_is_read():
+    module = types.ModuleType("only_in_the_writer")
+
+    class Order:
+        def __init__(self, number: str) -> None:
+            self.number = number
+
+    Order.__module__ = module.__name__
+    Order.__qualname__ = "Order"
+    module.Order = Order  # type: ignore[attr-defined]
+    sys.modules[module.__name__] = module
+    try:
+        data = PickleCodec().dumps({"order": Order("F-9"), "env": Environment.TEST})
+        assert PickleCodec().loads(data)["order"].number == "F-9"  # the reader has the code
+    finally:
+        del sys.modules[module.__name__]
+
+    with capture_logs() as logs:
+        back = PickleCodec().loads(data)  # the reader lacks it
+
+    assert back == {"env": Environment.TEST}
+    assert any("'order' could not be read here" in line["event"] for line in logs)
+
+
+def test_a_value_that_cannot_be_pickled_stays_in_its_process():
+    back = PickleCodec().loads(PickleCodec().dumps({"lock": threading.Lock(), "n": 1}))
+
+    assert back == {"n": 1}

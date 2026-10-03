@@ -42,7 +42,8 @@ can be kept in a store for whoever resumes the flow.
 | `ContextStore` | Port: `keep(key, values, ttl)`, `restore(key)`, `forget(key)`, `version(key)` | port | `sincpro_framework.context` |
 | `InMemoryContexts` / `KeyValueContexts(store, codec)` | One process / every replica over any `KeyValueStore` (Redis, Valkey, Memcached) | adapter | `sincpro_framework.context` |
 | `PlainCodec` / `TypedCodec(schema)` / `PickleCodec` | How a store writes a context: any language / types back / anything picklable | adapter | `sincpro_framework.context` |
-| `bus.context_store(store)` | The store this bus's scopes keep and restore with | function | method of `UseFramework` |
+| `bus.context_store(store, ttl=, every=)` | Shares this bus's context through the store — every node kept, the sender's chain read back across services — and keeps/restores with it | function | method of `UseFramework` |
+| `Level.GLOBAL` | Above every process: what every service that set the same store shares — `use_context().at(Level.GLOBAL)` | enum member | `sincpro_framework.context` |
 | `inject(context)` / `extract(headers)` | The context as text headers and back: `baggage`, `sincpro-context`, `x-correlation-id`/`x-causation-id`/`x-execution-id` | function | `sincpro_framework.context.adapters.propagation` |
 | `Execution` / `current_execution()` | `execution_id`, `causation_id`, `correlation_id`, `use_case`, `bus`, `level`, `started_at` | DTO / function | `sincpro_framework.context` |
 | `bus.execution_ids(fn)` | Mint execution ids with another generator (ULID, UUID v4) | function | method of `UseFramework` |
@@ -73,6 +74,7 @@ entrypoint/      facade.py (Context, use_context) · bus.py (ContextMixin, Frame
 **The tree:**
 
 ```text
+GLOBAL       only with bus.context_store(store): shared by every service that set the store
 ROOT         the process: defaults, flags, settings under their type, a store
  └─ BUS       what a bounded context publishes (global_scope=True, context_store)
      └─ ENTRYPOINT   what the entrance knew + its EntrypointKind (opened by REST/RPC/gRPC/MCP/queue/cron/remote, or DIRECT)
@@ -111,8 +113,13 @@ entrypoints/*                                gateways open the ENTRYPOINT themse
   gives=["TOKEN", "SIAT_ENV"])` and open `bus.context({"nit_id": ...})`.
 - **A missing tenant falling back silently.** Declare `@requires_context("TOKEN")` on the use case
   that must never run under a default; nothing else is checked.
-- **A secret as a plain string.** Wrap it: `Secret(token)`. It is masked in logs, spans and errors,
-  dropped from headers and `to_client()`.
+- **A secret as a plain string.** Wrap it: `Secret(token)` — its `repr` is masked by pydantic; it
+  travels like any value (as its value in headers and `to_client()`): the framework filters nothing.
+- **Expecting another service to see the context without a store.** Sharing is explicit: each bus
+  that shares calls `bus.context_store(store)` with the same store. Without it only what travelled
+  in the call or the message is there.
+- **Passing values along to share them.** With a store, only an id travels (`x-context-node`): the
+  receiver reads the sender's chain from the store, fresh. Don't copy values into the DTO for that.
 - **`"user.id"` / `"tenant"`.** Read as `user_id` / `tenant_id` with a warning — write the standard
   keys. Use `tenant_ids` (a list) for an execution acting across tenants.
 - **Restoring with no store.** `restore=`/`keep_as=` find the nearest `ContextStore` — set one with
@@ -179,10 +186,11 @@ with siat.context({"nit_id": nit.id}):                # the caller says which te
 - [references/levels-and-writes.md](references/levels-and-writes.md) — the tree, navigation, the two writes, scopes, values by type, the standard keys
 - [references/threads.md](references/threads.md) — pools, threads, async, why the framework hands it on
 - [references/providers-and-requirements.md](references/providers-and-requirements.md) — `context_provider`, `context_schema`, `requires_context`, `Secret`
-- [references/stores-and-propagation.md](references/stores-and-propagation.md) — `ContextStore`, codecs, `keep_as`/`restore`, `root.share`, `inject`/`extract`, the frontend
+- [references/stores-and-propagation.md](references/stores-and-propagation.md) — `ContextStore`, codecs, the context shared across services (`bus.context_store`, `Level.GLOBAL`), `keep_as`/`restore`, `root.share`, `inject`/`extract`, the frontend
 
 Deep docs in the framework repo: `docs/core/context-manager.md` (runs as a test),
-`docs/prd/PRD_22_context-component.md`, `docs/prd/PRD_21_execution-identity.md`.
+`docs/prd/PRD_22_context-component.md`, `docs/prd/PRD_24_shared-context.md`,
+`docs/prd/PRD_21_execution-identity.md`.
 
 ## Related
 

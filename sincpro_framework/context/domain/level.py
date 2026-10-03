@@ -7,6 +7,9 @@ from enum import StrEnum
 class Level(StrEnum):
     """A node's place in the tree — the layers of the architecture, outermost first."""
 
+    GLOBAL = "global"
+    """Above every process: what every service that set the same context store shares — it
+    exists only once a bus of the process set one (`bus.context_store(store)`)."""
     ROOT = "root"
     """The process: its defaults, its flags, what any execution of it may read."""
     BUS = "bus"

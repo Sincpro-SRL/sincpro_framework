@@ -67,9 +67,16 @@ class KeyValueContexts(ContextStore):
     def _key(self, key: str) -> str:
         return f"{self.prefix}:{key}"
 
+    def _version_key(self, key: str) -> str:
+        return f"{self._key(key)}:version"
+
     def keep(self, key: str, values: Mapping[str, Any], ttl: timedelta | None = None) -> None:
+        """`values` under `key`, its version moved — both gone after `ttl`, so a store that keeps
+        a node per execution never grows without end."""
         self.store.set(self._key(key), self.codec.dumps(values), ttl)
-        self.store.increment(f"{self._key(key)}:version")
+        moved = self.store.increment(self._version_key(key))
+        if ttl is not None:
+            self.store.set(self._version_key(key), str(moved).encode(), ttl)
 
     def restore(self, key: str) -> dict[str, Any] | None:
         data = self.store.get(self._key(key))
@@ -77,7 +84,8 @@ class KeyValueContexts(ContextStore):
 
     def forget(self, key: str) -> None:
         self.store.delete(self._key(key))
+        self.store.delete(self._version_key(key))
 
     def version(self, key: str) -> int:
-        counted = self.store.get(f"{self._key(key)}:version")
+        counted = self.store.get(self._version_key(key))
         return 0 if counted is None else int(counted)
