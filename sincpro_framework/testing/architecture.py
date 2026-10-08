@@ -349,7 +349,9 @@ def _layer_rule(edge: _Edge, graph: _Graph) -> LayerViolation | None:
     if layer == "adapters" and other_layer == "adapters" and unit != other_unit:
         return violation(
             "adapters-are-independent",
-            "an adapter never imports another adapter; composing two is a Feature's job",
+            "an adapter module does not import a different one; files inside one folder "
+            "under adapters/ may import each other and the folder exposes one facade. "
+            "Composing two modules is a Feature's job",
         )
     return None
 
@@ -434,7 +436,9 @@ def layer_violations(package: str, ignore: Iterable[str] = ()) -> list[LayerViol
 
     Rules:
         domain-is-vocabulary         domain/ imports only domain/ of its own context
-        adapters-are-independent     an adapter does not import a different adapter
+        adapters-are-independent     files inside one folder under adapters/ may import
+                                     each other; that folder exposes one facade. A different
+                                     adapter module is not imported
         services-reused-through-bus  no registered handler class or function is imported
                                      from a service module; its DTO goes on the bus
         entrypoints-are-outermost    only entrypoints import entrypoints

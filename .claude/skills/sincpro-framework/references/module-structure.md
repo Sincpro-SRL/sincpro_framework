@@ -42,7 +42,7 @@ adapters. Rules that hold in every variant:
 - Contexts form a layered, acyclic graph; `common/` imports no sibling context.
 - Code two contexts need and neither owns goes in `common/domain/` or `common/adapters/`. A module
   with one consumer belongs to that consumer, however general its name sounds.
-- An adapter never imports another adapter. Composing two is a Feature's job.
+- Files inside one folder under `adapters/` may import each other. That folder exposes one facade (or one proxy) and that is the API registered in `dependencies.py`. A different adapter module is not imported; a Feature composes two.
 - No `utils/`, `helpers/`, `models/`, `core/`.
 
 ## Variant A — several contexts (primary)

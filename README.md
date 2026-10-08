@@ -840,7 +840,7 @@ context named by the path before it:
 | Rule | Meaning |
 |---|---|
 | `domain-is-vocabulary` | `domain/` imports only `domain/` of its own context |
-| `adapters-are-independent` | an adapter does not import a different adapter |
+| `adapters-are-independent` | files inside one folder under `adapters/` may import each other, and that folder exposes one facade. A different adapter module is not imported |
 | `services-reused-through-bus` | a registered Feature/ApplicationService class, or a function, is never imported from a service module — its DTO goes on the bus. DTO names are free (`Command…`, `Query…`, anything) |
 | `entrypoints-are-outermost` | only entrypoints import entrypoints |
 | `contexts-are-acyclic` | two contexts never depend on each other |
@@ -861,8 +861,9 @@ import:
   it from the module that defines it.
 - **Two contexts need each other** → the more foundational one stops reaching up: move the
   shared piece into it, or pass the value in the Command.
-- **An adapter needs another adapter** → a Feature composes both; the record they exchange
-  goes to `domain/`.
+- **An adapter module needs a different adapter module** → a Feature composes both; the
+  record they exchange goes to `domain/`. Files inside one folder under `adapters/` may
+  import each other, and that folder exposes one facade.
 
 ---
 
