@@ -7,6 +7,10 @@ the tutorial; these pages are the reference and the reasoning behind it.
 Upgrading a consumer after the persistence and event refactors? Start with
 [events/upgrading.md](events/upgrading.md), including the Forge and MCP Odoo migration checks.
 
+For the Forge-driven assessment of context composition, public contracts, entrypoint discovery
+and durable delivery, see [PRD_25](prd/PRD_25_context-composition-and-durable-delivery.md).
+It separates existing capabilities from proposed corrections and unverified acceptance criteria.
+
 | Layer | Package | Start here | What is in it |
 |---|---|---|---|
 | **Start here** | — | [shapes.md](shapes.md) | What shape is your system — one database, a database per context, or the facts *are* the state — and what to wire for each |
@@ -15,6 +19,7 @@ Upgrading a consumer after the persistence and event refactors? Start with
 | **Persistence** | `ddd`, `orm` | [persistence/](persistence/README.md) | Aggregates, `Criteria` and `Specification`, relations, the SQLAlchemy adapter, the ledger that proves it, the decisions |
 | **Event-driven** | `event_driven`, `event_driven.adapters.faststream` | [events/](events/README.md) | `DomainEvent`, `Publisher`, `Subscriber` made of buses, `SyncQueue` and `BackgroundQueue`; Kafka, RabbitMQ, Redis and NATS through FastStream (`[faststream]`), sync and async — [brokers.md](events/brokers.md) |
 | **Crons** | `cron` | [cron/](cron/README.md) | `Crons` registry per bounded context, `Cron` classes with their buses injected, `CronProcess` in the background, one run per tick across replicas |
+| **Process** | `process.py` | [process/](process/README.md) | The program that stays up and runs loops (`run` / `stop`): `CronGateway`, `Poll`, anything with those two methods. Not a wire under `entrypoints/` |
 | **Migrations** | `migrations`, `orm.migrations` | [migrations/](migrations/README.md) | Every context and store on one timeline: `ContextMigrations`, `Migrations`, `status` / `upgrade` / `downgrade --to`, `MigrationEngine` for any store, Alembic for SQL |
 | **Data analysis** | `data_analysis` | [data_analysis/](data_analysis/README.md) | A query read once: `QueryCache` holds each read by the repository's fingerprint, continues it page by page and narrows a complete `DataFrame` with no read; Parquet, Arrow and the hand-off to pandas, polars, DuckDB |
 | **Runtime use cases** | `runtime_use_cases` | [runtime_use_cases/](runtime_use_cases/README.md) | Commands, Responses and a Feature or ApplicationService stored as source, loaded onto a new generation of the bus, checked and swapped in whole; `SqlUseCases` for a table the replicas share |

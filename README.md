@@ -126,6 +126,8 @@ not prove that the refactored APIs were published.
     - [Application Service Orchestration](#-application-service-orchestration)
     - [IDE Support with Typing](#-ide-support-with-typing)
     - [Crons](#crons)
+    - [Registry of one process](#registry-of-one-process)
+    - [One process, the loops it runs](#one-process-the-loops-it-runs)
     - [Migrations](#migrations)
     - [Data analysis](#data-analysis)
     - [Runtime use cases](#runtime-use-cases)
@@ -368,6 +370,25 @@ See [docs/caching/](docs/caching/README.md).
   `QueryCaching(store).on(bus, Query, CachePolicy(ttl=…, vary_by=("tenant_id",)))`.
 - An answer is tagged by what the repository noted it read and let go of when a commit writes it;
   `KeyValueStore` is the provider contract — memory in the core, Redis/Valkey and Memcached as extras.
+
+### Registry of one process
+
+See [docs/registry/README.md](docs/registry/README.md).
+
+- `registry.add(billing)` in the context, once the instance exists. An entrypoint imports the
+  context packages and then reads `registry.all()` — a gateway, a `Subscriber`, `serve()`.
+- The registry is this process's memory, in the order the contexts were added. It does not
+  build them and it does not sort them. Another replica builds its own. A context another
+  service hosts stays on the context map.
+
+### One process, the loops it runs
+
+See [docs/process/README.md](docs/process/README.md).
+
+- `Process` stays up and runs each loop (`run` / `stop`) on its own thread until SIGINT,
+  SIGTERM, or `stop`. `CronGateway` is a loop. `Poll` calls a function every interval.
+- The function is the project's: a relay pass, or the Commands that claim a row. There is no
+  job type. A broker stays `faststream run`. A server stays its gateway.
 
 ### Crons
 

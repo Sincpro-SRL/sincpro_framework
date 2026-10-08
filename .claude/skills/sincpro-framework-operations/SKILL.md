@@ -1,13 +1,14 @@
 ---
 name: sincpro-framework-operations
-description: Run scheduled work and move schemas with sincpro_framework — Crons, CronProcess/CronGateway, EventRelay scheduling and the Migrations timeline across contexts and stores. Use whenever a task needs a cron, background tick, run_relay/relay_deliverable_events, a schema change, an Alembic migration, or a system upgrade/downgrade.
+description: Run scheduled work, keep a process up, and move schemas with sincpro_framework — Crons, CronProcess/CronGateway, Process/Poll, EventRelay scheduling and the Migrations timeline across contexts and stores. Use whenever a task needs a cron, a process that stays up and runs loops, a poll of a table or a relay, a background tick, run_relay/relay_deliverable_events, a schema change, an Alembic migration, or a system upgrade/downgrade.
 ---
 
 # sincpro-framework-operations
 
-Two things that live beside the buses of a service, never on them: **crons** (scheduled callers of
-use cases) and **migrations** (schema changes of every store, in one order). Neither is a use case.
-This skill stands alone; the deep docs it names live in the framework repository, not in the package.
+Three things that live beside the buses of a service, never on them: **crons** (scheduled callers
+of use cases), the **process** that stays up and runs those loops, and **migrations** (schema
+changes of every store, in one order). None of them is a use case. This skill stands alone; the
+deep docs it names live in the framework repository, not in the package.
 
 ## Context
 
@@ -15,7 +16,13 @@ This skill stands alone; the deep docs it names live in the framework repository
   is a *caller*, like an RPC method: it decides what to execute and executes Commands on the buses
   it is given. It is not a Feature, not a job queue, not a workflow engine and not a distributed
   lock. Work triggered by something that happened is a domain event; a one-off long job is a
-  Command run once.
+  Command run once. `CronProcess` is the clock in a child beside a server. `workers=` on
+  `CronGateway` is how many ticks run at once.
+- **Process** answers "this program stays up and runs one or more loops". It lives in
+  `sincpro_framework.process`, beside `registry.py`, not under `entrypoints/`. A loop is `run`
+  and `stop`. `CronGateway` is one. `Poll` calls a function every interval; the function is the
+  project's (a relay pass, or the Commands that claim a row). There is no job-queue table. A
+  broker stays `faststream run`. A server stays its gateway. `docs/process/README.md`.
 - **Migrations** answer "in what order do the schema changes of every context and store run, where
   does the whole system stand, and how do I put it back". It runs with the system down, as one
   command. It is not for data backfills (those are Commands on the bus, run as a job), and a
@@ -35,6 +42,9 @@ This skill stands alone; the deep docs it names live in the framework repository
 | `tick.once(key)` | `True` the first time `key` is asked for this tick, on any replica — an item-level, at-most-once guard | function | method of `Tick` |
 | `CronGateway` | The orchestrator: looks every 5 s, claims each due tick, runs each in its own thread; `run`, `stop`, `wait`, `plan`, `status`, `run_now` | adapter (entrypoint) | `from sincpro_framework.cron import CronGateway` |
 | `CronProcess` | Runs a gateway in a spawned child process beside the service; `start`, `stop`, `is_alive` | adapter (entrypoint) | `from sincpro_framework.cron import CronProcess` |
+| `Process` | This OS process stays up and runs each loop on its own thread until SIGINT, SIGTERM or `stop` | adapter | `from sincpro_framework.process import Process` |
+| `Poll` | A loop: call `tick` every `every`, at once and then on the interval; a failing tick is logged and the loop continues | adapter | `from sincpro_framework.process import Poll` |
+| `Loop` | `run` blocks, `stop` makes it return. `CronGateway` and `Poll` are loops | port | `sincpro_framework.process` |
 | `CronRuns` | The record of runs and the once-per-tick claim: `claim`, `finish`, `running`, `last`, `last_success` | port (abstract) | `from sincpro_framework.cron import CronRuns` |
 | `InMemoryRuns` | Default `CronRuns`, in the process — one replica only | adapter | `from sincpro_framework.cron import InMemoryRuns` |
 | `KeyValueRuns` | `CronRuns` over any `KeyValueStore` (Redis/Valkey/Memcached) — shared by replicas | adapter | `from sincpro_framework.cron import KeyValueRuns` |

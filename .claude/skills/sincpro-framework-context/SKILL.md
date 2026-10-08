@@ -47,13 +47,15 @@ can be kept in a store for whoever resumes the flow.
 | `inject(context)` / `extract(headers)` | The context as text headers and back: `baggage`, `sincpro-context`, `x-correlation-id`/`x-causation-id`/`x-execution-id` | function | `sincpro_framework.context.adapters.propagation` |
 | `Execution` / `current_execution()` | `execution_id`, `causation_id`, `correlation_id`, `use_case`, `bus`, `level`, `started_at` | DTO / function | `sincpro_framework.context` |
 | `bus.execution_ids(fn)` | Mint execution ids with another generator (ULID, UUID v4) | function | method of `UseFramework` |
-| `carrying(values, kind)` | Opens a flow for code that is not a bus (a worker) | function | `sincpro_framework.context` |
+| `carrying(values, kind)` | Opens a flow for code that is not a bus call (a cron tick, a poll tick) | function | `sincpro_framework.context` |
 | `USER_ID` · `TENANT_ID` · `TENANT_IDS` | The standard keys: `user_id`, `tenant_id`, `tenant_ids` | setting | `sincpro_framework.context` |
 
 Look-alikes: `context[key] = v` (the scope of the call — siblings see it) ≠ `context.set(key, v)` (this
 node — only what it runs). `bus.context(...)` **opens** a scope; `use_context()` / `self.context`
 **read** it. A store (`ContextStore`) ≠ a cache (`caching`). `inject`/`extract` (text headers) ≠
-`remote_execution` (the whole context packed, same codebase).
+`remote_execution` (the whole context packed, same codebase). A thread-pool slot and
+`BackgroundQueue`'s child are not `sincpro_framework.process.Process` (the program that stays
+up and runs loops — `sincpro-framework-operations`).
 
 ## Architecture
 
@@ -93,7 +95,7 @@ domains/<ctx>/infrastructure/framework.py    bus = UseFramework(...); bus.contex
 domains/<ctx>/infrastructure/context.py      @bus.context_provider(...) functions; bus.context_store(...)
 domains/<ctx>/services/*.py                  read self.context / use_context(); @requires_context where a key is vital
 domains/<ctx>/adapters/*.py                  read use_context() (tenant, credentials) — never write
-entrypoints/*                                gateways open the ENTRYPOINT themselves; a worker uses carrying(...)
+entrypoints/*                                gateways open the ENTRYPOINT themselves; a cron or a poll uses carrying(...)
 ```
 
 ## Mistakes an agent makes
