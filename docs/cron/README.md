@@ -116,7 +116,9 @@ and the service's requests and its crons share no thread, pool or crash. The sam
 `BackgroundQueue`.
 
 **As a deployment of its own**: `CronGateway([cron_payments, cron_billing], runs=…).run()` blocks
-the process on the clock; `stop()` ends it and waits for the runs in progress. When it starts, `run()` logs
+the process on the clock; `stop()` ends it and waits for the runs in progress. The gateway is
+also a loop: [a process](../process/README.md) runs it beside a `Poll` or any other `run`/`stop`.
+`CronProcess` remains the clock in a child beside a server. When it starts, `run()` logs
 one line — how many crons and when each one ticks next, `2 crons: cron-payments.Reconcile next
 2026-09-26T06:00:00+00:00, …` — so a process waiting for its first tick is not mistaken for a stuck
 one.
@@ -128,7 +130,8 @@ Inside, the gateway is an in-memory orchestrator for every cron of every registr
 - **what is due** — each look asks every cron's trigger, and a due tick is claimed in `runs`
   before it runs, so it runs once across replicas;
 - **who runs it** — each run has a thread of its own, so a long cron never delays another's
-  tick; `workers=` caps how many run at once. The ticks of one cron run in
+  tick; `workers=` caps how many run at once (a thread cap, not the process that hosts the
+  gateway). The ticks of one cron run in
   order.
 
 ```

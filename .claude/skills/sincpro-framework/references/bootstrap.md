@@ -104,6 +104,13 @@ After the services, in this order:
    builds it too. A built bus refuses every later registration — Feature, dependency, interceptor —
    with `BusAlreadyBuilt`.
 
+A process with several contexts registers each bus once the instance exists
+(`from sincpro_framework.registry import registry` then `registry.add(billing)`). The entrypoint
+imports the context packages and reads `registry.all()`. Creating a `UseFramework` does not add
+it, and `fresh()` is not the registered bus until the project adds that generation. The registry
+is this process, in add order; it does not build or sort the contexts. Another replica builds
+its own (`docs/registry/README.md`).
+
 ## What the bus offers outside a Feature
 
 - `my_framework.deps.token_adapter` — the same instance a Feature sees as `self.token_adapter`.

@@ -40,7 +40,7 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(event)` or `publish(event, Response)`, into a `Queue` | function | `sincpro_framework.event_driven` |
 | `Queue` | Protocol: `put(event)` / `aput(event)` | port (abstract) | `sincpro_framework.event_driven` |
 | `SyncQueue` | Runs the subscriber inside the `publish` call, same process | adapter | `sincpro_framework.event_driven` |
-| `BackgroundQueue` | A spawned worker process consumes from a `multiprocessing.Queue`; `start()`/`stop()` | adapter | `sincpro_framework.event_driven` |
+| `BackgroundQueue` | A spawned child consumes from a `multiprocessing.Queue`; `start()`/`stop()`. That child is this queue's, not `sincpro_framework.process.Process` | adapter | `sincpro_framework.event_driven` |
 | `Subscriber` / `AsyncSubscriber` | The buses that hear events; executes every bus whose registry knows `event.name` | registry | `sincpro_framework.event_driven` |
 | `@bus.feature(SomeEvent)` | The subscription itself: an ordinary Feature registered for the event class | decorator | (`UseFramework`) |
 | `RecordingQueue` | Test queue that keeps what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.testing` |
@@ -134,7 +134,8 @@ outbox: one unit of work saves state + mapped facts → EventRelay reads due eve
   *compete*: each sees part of the events. Use `QueueOptions(subscription_of=...)` with an exchange
   per group, or Kafka/NATS consumer groups.
 - **Trusting `BackgroundQueue`, Redis Pub/Sub or core NATS with a fact that matters.** All are at
-  most once; a `BackgroundQueue` failure is logged in the worker process only.
+  most once; a `BackgroundQueue` failure is logged in its child process only. Driving an outbox
+  is a cron or a `Poll` (`sincpro-framework-operations`), not this child.
 
 ## The rule that shapes everything
 

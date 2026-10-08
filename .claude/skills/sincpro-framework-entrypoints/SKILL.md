@@ -21,6 +21,9 @@ service, an LLM agent, a broker) need them over a protocol. An entrypoint is the
 adapter** of the hexagon: it turns a request into the DTO, calls the bus, and turns the answer or
 the failure into the protocol's shape. It holds no business logic and no use cases of its own.
 It is not where a use case is defined, composed or adapted. That happens in `services/`.
+The wires of this package are the transports above. A program that stays up and runs loops
+(`CronGateway`, a poll of a table the project owns) is `sincpro-framework-operations`
+(`sincpro_framework.process`), not a wire here.
 
 ## Abstractions
 

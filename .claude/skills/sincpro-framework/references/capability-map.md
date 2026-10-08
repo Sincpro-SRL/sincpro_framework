@@ -9,6 +9,8 @@ so read it only when the framework repo is at hand.
 | Capability | Package | Skill | Deep doc (framework repo) |
 |---|---|---|---|
 | Bus, Feature, ApplicationService, DTO | `use_bus.py`, `sincpro_abstractions.py`, `bus.py` | `sincpro-framework` | README, `docs/core/README.md` |
+| Registry of one process | `registry.py` | [bootstrap.md](bootstrap.md) | `docs/registry/README.md` |
+| A process and the loops it runs | `process.py` | `sincpro-framework-operations` | `docs/process/README.md` |
 | Dependency injection + typing | `use_bus.py` (`add_dependency`, `deps`), `ioc.py` | [bootstrap.md](bootstrap.md) | README "Recommended Infrastructure Structure" |
 | Folder layout, repo variants | — | [module-structure.md](module-structure.md) | `docs/architecture/ARCHITECTURE.md` |
 | Boundaries, `common/`, domain vs adapters | `testing/architecture.py` (the checks) | [context-boundaries.md](context-boundaries.md) | `docs/architecture/ARCHITECTURE.md` |

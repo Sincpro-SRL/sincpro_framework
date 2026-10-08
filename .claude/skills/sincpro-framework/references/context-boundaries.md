@@ -12,7 +12,7 @@ that does not follow a rule passes its name in `ignore=`.
 | Rule | What it says |
 |---|---|
 | `domain-is-vocabulary` | within a context, `domain/` imports only `domain/` |
-| `adapters-are-independent` | within a context, an adapter never imports a different adapter |
+| `adapters-are-independent` | files inside one folder under `adapters/` may import each other; that folder exposes one facade. A different adapter module is not imported |
 | `services-reused-through-bus` | no handler class and no function is imported from a service module; its DTO goes on the bus |
 | `entrypoints-are-outermost` | only `entrypoints/` imports `entrypoints/` |
 | `contexts-are-acyclic` | two contexts never depend on each other |
@@ -113,20 +113,32 @@ With the mechanism behind a port, `dependencies.py` is the only file that choose
 library, a legacy implementation or a faster rewrite arrives as a second adapter and no Feature
 changes.
 
-## An adapter never imports another adapter
+## One adapter module, one facade
 
-Two adapters that need each other are two adapters being **composed**, and composition is a
-Feature's job. An adapter reaching for a peer puts orchestration where nothing traces it and makes
-the pair un-swappable.
+An adapter module is the first folder under `adapters/` (`adapters/hosts/`, `adapters/odoo/`).
+Files inside that folder may import each other: they are one mechanism, split so each file stays
+readable. The folder exposes one facade — or one proxy — and that class is the API the rest of
+the context calls. `dependencies.py` registers the facade. A Feature calls the facade. Nothing
+outside the folder imports the pieces behind it.
 
-The fix is almost always the same:
+```
+adapters/hosts/
+  __init__.py          # exports HostDirectory, the facade
+  directory.py         # may import local, ssh, kubernetes_pod
+  local.py
+  ssh.py
+  kubernetes_pod.py
+```
 
-- the **protocol or record** moves into `domain/` (the rules, the invariants, the key layout);
-- the **mechanism** stays in its own adapter;
-- the **Feature** calls both, in order, and owns the sequence.
+`layer_violations` already treats that folder as one unit. The rule `adapters-are-independent`
+compares the first name under `adapters/`. Imports inside `hosts/` are clean.
+`adapters/host_transport.py` importing `adapters/hosts/` is two adapter modules, and the check
+reports it. A file sitting directly in `adapters/` (`adapters/mail.py`) is its own unit; to share
+imports with siblings, put them in a folder and export the facade from it.
 
-An adapter may import a port its context's `domain/` declares: that is the abstraction it
-implements, not a peer it calls.
+Two adapter modules that need each other are composed by a Feature, not by one module reaching
+into the other. The record they exchange lives in `domain/`. An adapter may import a port its
+context's `domain/` declares: that is the abstraction it implements, not a peer it calls.
 
 ## Adapters expose a rich API; Features orchestrate
 
@@ -146,6 +158,6 @@ through `self.feature_bus`. Both keep the logic in `services/`, where it is obse
 - Would each context still extract cleanly as a service?
 - Does anything in `common/` have exactly one consumer? Move it to that consumer.
 - Is anything in `common/` shared only because the shapes matched? Duplicate it instead.
-- Does any adapter import another adapter?
+- Does an adapter module import a different adapter module? Inside one folder, do outsiders call the facade?
 - Is there a mechanism sitting in `domain/` because it happens to be pure?
 - Does any adapter loop over a collection that a Feature should be walking?

@@ -181,6 +181,23 @@ def test_an_adapter_importing_another_adapter(write_package):
     assert _rules(layer_violations(package)) == ["adapters-are-independent"]
 
 
+def test_files_inside_one_adapter_module_may_import_each_other(write_package):
+    package = write_package(
+        {
+            "sales/adapters/hosts/__init__.py": (
+                "from PKG.sales.adapters.hosts.directory import HostDirectory\n"
+            ),
+            "sales/adapters/hosts/directory.py": (
+                "from PKG.sales.adapters.hosts.local import LocalHost\n"
+                "class HostDirectory: ...\n"
+            ),
+            "sales/adapters/hosts/local.py": "class LocalHost: ...\n",
+        }
+    )
+
+    assert layer_violations(package) == []
+
+
 def test_a_service_calling_another_use_case_without_the_bus(write_package):
     package = write_package(
         {

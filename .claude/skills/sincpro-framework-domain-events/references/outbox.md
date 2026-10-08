@@ -101,7 +101,7 @@ ordering until both scenarios have been addressed and verified on the deployment
 | storage | context base event mapped once with `event_table` / `map_events` |
 | delivery state | `DeliverableEventMixin`: `delivered_at`, `next_delivery_at`, `delivery` |
 | one pass | `EventRelay.run_once()` returning `RelayPass` counts |
-| scheduling | `Crons.run_relay` / `Crons.relay_deliverable_events`, or a project worker |
+| scheduling | `Crons.run_relay` / `Crons.relay_deliverable_events`, or `Poll(every, relay.run_once)` inside a `Process` (`docs/process/README.md`). The relay has no timer |
 | failure behavior | a `DeliveryFailurePolicy`, not a second relay implementation |
 
 Framework evidence: `tests/event_driven/test_relay.py`, `tests/orm/test_events_table.py`,

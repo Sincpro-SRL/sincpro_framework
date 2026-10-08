@@ -86,6 +86,17 @@ process. The service's requests and its crons share no thread, pool or crash.
 CronGateway([cron_payments, cron_billing], runs=shared_runs).run()   # blocks on the clock
 ```
 
+The same gateway is a loop. A deployment that also polls a table or a relay hosts it in
+`Process` (`sincpro_framework.process`, `docs/process/README.md`), not under `entrypoints/`:
+
+```python
+from sincpro_framework.process import Poll, Process
+
+Process(gateway, Poll(timedelta(seconds=5), tick)).run()
+```
+
+`workers=` on `CronGateway` is a cap on how many ticks run at once. It is not that process.
+
 Inside, the gateway looks every 5 s (`look_every=`), plus up to `jitter=` so replicas started
 together do not claim at the same instant; claims each due tick in `runs` before running it; and
 gives each run a thread of its own (`workers=` caps how many at once). The ticks of one cron run in
@@ -151,7 +162,9 @@ relay = crons.relay_deliverable_events(
 ```
 
 Or register an existing `EventRelay` with `crons.run_relay(relay, every=...)`. Both schedule
-`run_once`; the relay itself has no timer or worker. Register before building the gateway.
+`run_once`; the relay itself has no timer. A `Poll` that calls `relay.run_once` is the same
+pass on an interval, inside a `Process` with other loops. Register a cron relay before
+building the gateway.
 This does not create an event table or make an event deliverable: map the context base and
 use `DeliverableEventMixin` first (`sincpro-framework-domain-events`).
 

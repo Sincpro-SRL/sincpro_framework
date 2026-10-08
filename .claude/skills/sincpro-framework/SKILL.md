@@ -211,7 +211,7 @@ Anything that fits none of these: stop and ask. Do not invent a fourth kind of s
 | Configuration, secrets, environment | `sincpro-framework-settings` |
 | REST / FastAPI / RPC / gRPC / MCP / queue, context map | `sincpro-framework-entrypoints` |
 | Permissions, identity, providers | `sincpro-framework-auth` |
-| Crons, migrations | `sincpro-framework-operations` |
+| Crons, a process and its loops, migrations | `sincpro-framework-operations` |
 | DataFrames, runtime use cases, workflows | `sincpro-framework-analytics` |
 | Test a use case | [references/testing.md](references/testing.md) |
 | Everything, one line each | [references/capability-map.md](references/capability-map.md) |
