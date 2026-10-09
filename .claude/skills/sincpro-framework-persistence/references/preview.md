@@ -101,7 +101,7 @@ self.repository.save(invoice)        # derivations recomputed, before_save hooks
   aggregate, so nothing leaks into a store; but a derivation answers a value, it does not
   rewrite the lines.
 - **Expecting every relation in a preview.** The stored record is read with
-  `presentation.detail` plus every relation its derivations read; a relation neither names
+  `DEFAULT_READING` plus every relation its derivations read; a relation neither names
   comes back empty.
 - **Expecting a preview's `Decimal` at the column's scale.** Nothing rounds it; a derivation
   that must match `Numeric(12, 2)` quantizes its own result.

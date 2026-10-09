@@ -17,14 +17,12 @@ from sincpro_framework.ddd import (
     Derivations,
     Derive,
     Entity,
-    Expand,
     Is,
-    Match,
     Presentation,
     When,
     presentation_of,
 )
-from sincpro_framework.ddd.criteria import Operator
+from sincpro_framework.ddd.criteria import Operator, Sort
 from sincpro_framework.ddd.entity.model_meta import derivations_of
 from sincpro_framework.ddd.repositories import Hook, Hooks, MemoryRepository
 
@@ -50,9 +48,6 @@ class AsList(Entity):
         return Decimal(self.count)
 
     presentation = Presentation["AsList"](
-        search=lambda a: [Match.equal(a.code), Match.contains(a.name)],
-        order=lambda a: [a.code],
-        detail=lambda a: [a.code, Expand(a.lines)],
         readonly=lambda a: [a.code],
         required=lambda a: [a.name],
         readonly_when=lambda a: [When(Is(a.state, Operator.NE, "draft"), a.name)],
@@ -77,9 +72,6 @@ class AsTuple(Entity):
     total: Decimal = Decimal("0")
 
     presentation = Presentation["AsTuple"](
-        search=lambda a: (Match.equal(a.code), Match.contains(a.name)),
-        order=lambda a: (a.code,),
-        detail=lambda a: (a.code, Expand(a.lines)),
         readonly=lambda a: (a.code,),
         required=lambda a: (a.name,),
         readonly_when=lambda a: (When(Is(a.state, Operator.NE, "draft"), a.name),),
@@ -104,9 +96,6 @@ class AsOne(Entity):
     total: Decimal = Decimal("0")
 
     presentation = Presentation["AsOne"](
-        search=lambda a: [Match.equal(a.code), Match.contains(a.name)],
-        order=lambda a: a.code,
-        detail=lambda a: [a.code, Expand(a.lines)],
         readonly=lambda a: a.code,
         required=lambda a: a.name,
         readonly_when=lambda a: When(Is(a.state, Operator.NE, "draft"), a.name),
@@ -131,20 +120,49 @@ class OneDerive(Entity):
     )
 
 
+@dataclass
+class OrderedAsOne(Entity):
+    code: str = ""
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return Sort(field="code")  # type: ignore[return-value] — one alone, as a reader writes it
+
+
+@dataclass
+class OrderedAsList(Entity):
+    code: str = ""
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return [Sort(field="code")]  # type: ignore[return-value]
+
+
+@dataclass
+class OrderedAsTuple(Entity):
+    code: str = ""
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="code"),)
+
+
+def test_a_default_order_reads_the_same_as_a_list_a_tuple_or_one_alone():
+    orders = [
+        presentation_of(one).order for one in (OrderedAsOne, OrderedAsList, OrderedAsTuple)
+    ]
+
+    assert orders == [(Sort(field="code"),)] * 3
+
+
 def test_a_presentation_reads_the_same_as_a_list_a_tuple_or_one_alone():
     read = [presentation_of(one) for one in (AsList, AsTuple, AsOne)]
 
     first = read[0]
     for one in read[1:]:
-        assert (one.search, one.order, one.detail) == (
-            first.search,
-            first.order,
-            first.detail,
-        )
         assert (one.readonly, one.required) == (first.readonly, first.required)
         for part in ("readonly_when", "required_when", "visible_when"):
             assert getattr(one, part) == getattr(first, part), part
-    assert [match.field for match in first.search] == ["code", "name"]
     assert first.readonly >= {"code"} and first.required >= {"name"}
     assert set(first.visible_when) == {"total"}
 

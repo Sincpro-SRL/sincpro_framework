@@ -1,7 +1,8 @@
-"""The reads of one aggregate, answered by one Feature from what the entity declared.
+"""The reads of one aggregate, answered by one Feature from what the entity answers.
 
 The project names its DTOs and its responses; the base of each DTO names the entity and the
-response, and `EntityReads` answers all three from the `presentation`.
+response, and `EntityReads` answers them from the entity's `DEFAULT_*` class methods. What a
+caller's criteria names wins over each of them.
 """
 
 from dataclasses import dataclass
@@ -10,22 +11,28 @@ import pytest
 
 from sincpro_framework import UseFramework
 from sincpro_framework.ddd import (
+    TEXT,
     AggregateNotFound,
+    All,
+    Any,
+    Condition,
     Criteria,
     EntityReads,
     Get,
     GetMany,
     LiteralSearch,
-    Match,
     MemoryRepository,
-    Presentation,
+    Operator,
     ResponsePaginatedQuery,
     ResponseRecord,
     ResponseRecords,
     Search,
+    Sort,
     Specification,
+    presentation_of,
 )
 from sincpro_framework.ddd.entity import Entity
+from sincpro_framework.ddd.entity.model_meta import describe_class
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.reads import declared_by
 from sincpro_framework.transport.failures import FailureKind, refined_failure_kind
@@ -37,10 +44,21 @@ class Account(Entity):
     name: str = ""
     city: str = ""
 
-    presentation = Presentation["Account"](
-        search=lambda a: (Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)),
-        order=lambda a: (a.code,),
-    )
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="code"),)
+
+    @classmethod
+    def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+        return Criteria(
+            where=Any(
+                any=[
+                    Condition(field="code", value=TEXT),
+                    Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
+                    Condition(field="name", operator=Operator.LIKE, value=TEXT),
+                ]
+            )
+        )
 
 
 class ResponseAccount(ResponseRecord):
@@ -234,3 +252,335 @@ def test_get_many_of_nothing_is_an_empty_list():
     answer = bus(QueryGetManyAccounts(ids=[]), ResponseAccounts)
 
     assert answer.accounts == [] and answer.missing == []
+
+
+# --- What the entity answers is the default; what the caller names wins ---------------------
+
+
+@dataclass
+class Ledger(Entity):
+    code: str
+    name: str = ""
+    city: str = ""
+    active: bool = True
+
+    @classmethod
+    def DEFAULT_GET_ID(cls) -> str:
+        return "code"
+
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification:
+        return Specification.model_validate({"code": {}, "name": {}})
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="code", descending=True),)
+
+    @classmethod
+    def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+        return Criteria(
+            where=All(
+                all=[
+                    Condition(field="name", operator=Operator.LIKE, value=TEXT),
+                    Condition(field="active", value=True),
+                ]
+            )
+        )
+
+
+class ResponseLedger(ResponseRecord):
+    ledger: Ledger
+
+
+class ResponseLedgers(ResponseRecords):
+    ledgers: list[Ledger]
+
+
+class ResponseListLedgers(ResponsePaginatedQuery):
+    ledgers: list[Ledger]
+
+
+class QueryGetLedger(Get[Ledger, ResponseLedger]):
+    pass
+
+
+class QueryGetManyLedgers(GetMany[Ledger, ResponseLedgers]):
+    pass
+
+
+class QueryFindLedgers(LiteralSearch[Ledger, ResponseListLedgers]):
+    pass
+
+
+class QueryListLedgers(Search[Ledger, ResponseListLedgers]):
+    pass
+
+
+CASH = Ledger(code="1.1", name="Caja", city="La Paz")
+BANK = Ledger(code="1.2", name="Banco", city="Santa Cruz")
+CLOSED = Ledger(code="1.3", name="Caja vieja", city="Sucre", active=False)
+
+
+def ledgers(*records: Ledger) -> UseFramework:
+    bus = UseFramework("ledgers", log_after_execution=False)
+    bus.add_dependency("repository", MemoryRepository().add(*records))
+
+    @bus.feature([QueryGetLedger, QueryGetManyLedgers, QueryFindLedgers, QueryListLedgers])
+    class LedgerReads(EntityReads[Ledger]):
+        pass
+
+    return bus
+
+
+def test_get_finds_a_record_by_the_key_the_entity_names():
+    bus = ledgers(CASH, BANK)
+
+    answer = bus(QueryGetLedger(id="1.2"), ResponseLedger)
+
+    assert answer.ledger.id == BANK.id
+    with pytest.raises(AggregateNotFound):
+        bus(QueryGetLedger(id=BANK.id), ResponseLedger)
+
+
+def test_get_many_finds_by_that_key_and_names_the_missing_by_it():
+    bus = ledgers(CASH, BANK)
+
+    answer = bus(QueryGetManyLedgers(ids=["1.2", "9.9", "1.1"]), ResponseLedgers)
+
+    assert [one.code for one in answer.ledgers] == ["1.2", "1.1"]
+    assert answer.missing == ["9.9"]
+
+
+def test_get_reads_what_the_entity_answers_when_the_caller_names_nothing():
+    bus = ledgers(CASH)
+
+    for asked in (QueryGetLedger(id="1.1"), QueryGetLedger(id="1.1", criteria=Criteria())):
+        written = bus(asked, ResponseLedger).model_dump(mode="json")
+        assert written["ledger"] == {"id": CASH.id, "code": "1.1", "name": "Caja"}
+
+
+def test_a_caller_specification_replaces_the_reading_even_to_ask_for_more():
+    bus = ledgers(CASH)
+    asked = Criteria(specification=Specification({"city": Criteria()}))
+
+    written = bus(QueryGetLedger(id="1.1", criteria=asked), ResponseLedger).model_dump(
+        mode="json"
+    )
+
+    assert written["ledger"] == {"id": CASH.id, "city": "La Paz"}
+
+
+def test_a_caller_filter_adds_to_the_key_instead_of_replacing_it():
+    bus = ledgers(CASH, CLOSED)
+    only_active = Criteria(where=Condition(field="active", value=True))
+
+    with pytest.raises(AggregateNotFound):
+        bus(QueryGetLedger(id="1.3", criteria=only_active), ResponseLedger)
+    assert (
+        bus(QueryGetLedger(id="1.1", criteria=only_active), ResponseLedger).ledger.code
+        == "1.1"
+    )
+
+
+def test_a_search_takes_the_entity_order_and_reading_unless_the_caller_names_them():
+    bus = ledgers(CASH, BANK, CLOSED)
+
+    by_default = bus(QueryListLedgers(), ResponseListLedgers)
+    by_caller = bus(
+        QueryListLedgers(criteria=Criteria(order=(Sort(field="name"),))), ResponseListLedgers
+    )
+
+    assert [one.code for one in by_default.ledgers] == ["1.3", "1.2", "1.1"]
+    assert set(by_default.model_dump(mode="json")["ledgers"][0]) == {"id", "code", "name"}
+    assert [one.name for one in by_caller.ledgers] == ["Banco", "Caja", "Caja vieja"]
+
+
+def test_a_scope_merged_into_the_criteria_does_not_hide_the_entity_defaults():
+    bus = ledgers(CASH, BANK)
+    scoped = Criteria(where=Condition(field="city", value="La Paz")).merged_with(Criteria())
+
+    answer = bus(QueryListLedgers(criteria=scoped), ResponseListLedgers)
+
+    assert answer.model_dump(mode="json")["ledgers"] == [
+        {"id": CASH.id, "code": "1.1", "name": "Caja"}
+    ]
+
+
+def test_a_literal_fills_the_template_and_keeps_what_it_asks_besides_the_text():
+    bus = ledgers(CASH, BANK, CLOSED)
+
+    found = bus(QueryFindLedgers(text="caja"), ResponseListLedgers)
+    blank = bus(QueryFindLedgers(text=" "), ResponseListLedgers)
+
+    assert [one.code for one in found.ledgers] == ["1.1"]
+    assert [one.code for one in blank.ledgers] == ["1.2", "1.1"]
+
+
+def test_meta_publishes_what_the_entity_answers():
+    meta = describe_class(Ledger, "id")
+
+    assert (meta.get_id, meta.display, meta.default_order) == ("code", "name", "-code")
+    assert meta.detail == Criteria(specification=Ledger.DEFAULT_READING())
+    assert meta.search == Ledger.DEFAULT_LITERAL_SEARCH()
+
+
+# --- What the entity answers is checked when the class is described --------------------------
+
+
+def _described(entity: type) -> None:
+    presentation_of.cache_clear()
+    presentation_of(entity)
+
+
+def test_a_key_that_is_not_a_scalar_field_of_its_own_is_refused():
+    @dataclass
+    class Unknown(Entity):
+        @classmethod
+        def DEFAULT_GET_ID(cls) -> str:
+            return "code"
+
+    @dataclass
+    class Flag(Entity):
+        on: bool = False
+
+        @classmethod
+        def DEFAULT_GET_ID(cls) -> str:
+            return "on"
+
+    with pytest.raises(ContractViolation, match="not a field of Unknown"):
+        _described(Unknown)
+    with pytest.raises(ContractViolation, match="a boolean field"):
+        _described(Flag)
+
+
+def test_a_reading_must_be_a_specification_of_its_fields():
+    @dataclass
+    class Filtered(Entity):
+        @classmethod
+        def DEFAULT_READING(cls) -> Specification:
+            return Criteria(where=Condition(field="id", value="x"))  # type: ignore[return-value]
+
+    @dataclass
+    class Misnamed(Entity):
+        @classmethod
+        def DEFAULT_READING(cls) -> Specification:
+            return Specification({"title": Criteria()})
+
+    with pytest.raises(ContractViolation, match="never which records"):
+        _described(Filtered)
+    with pytest.raises(ContractViolation, match="title"):
+        _described(Misnamed)
+
+
+def test_a_literal_search_is_a_where_holding_text_on_fields_that_answer_it():
+    @dataclass
+    class NoText(Entity):
+        name: str = ""
+
+        @classmethod
+        def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+            return Criteria(where=Condition(field="name", value="x"))
+
+    @dataclass
+    class Paged(Entity):
+        name: str = ""
+
+        @classmethod
+        def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+            return Criteria(
+                where=Condition(field="name", operator=Operator.LIKE, value=TEXT),
+                order=(Sort(field="name"),),
+            )
+
+    @dataclass
+    class PrefixOnNumber(Entity):
+        size: int = 0
+
+        @classmethod
+        def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+            return Criteria(
+                where=Condition(field="size", operator=Operator.STARTS_WITH, value=TEXT)
+            )
+
+    with pytest.raises(ContractViolation, match="never uses TEXT"):
+        _described(NoText)
+    with pytest.raises(ContractViolation, match="sets order"):
+        _described(Paged)
+    with pytest.raises(ContractViolation, match="cannot answer"):
+        _described(PrefixOnNumber)
+
+
+def test_a_default_declared_as_anything_but_a_class_method_is_refused():
+    with pytest.raises(
+        ContractViolation, match="Declare it as `@classmethod def DEFAULT_GET_ID"
+    ):
+
+        @dataclass
+        class Constant(Entity):
+            code: str = ""
+            DEFAULT_GET_ID = "code"  # type: ignore[assignment]
+
+    with pytest.raises(ContractViolation, match="DEFAULT_ORDER is staticmethod"):
+
+        @dataclass
+        class Static(Entity):
+            @staticmethod
+            def DEFAULT_ORDER() -> tuple[Sort, ...]:  # type: ignore[override]
+                return ()
+
+    with pytest.raises(ContractViolation, match="DEFAULT_DISPLAY is a field"):
+
+        @dataclass
+        class Annotated(Entity):
+            DEFAULT_DISPLAY: str  # type: ignore[assignment]
+
+
+def test_the_entity_defaults_need_nothing_declared():
+    @dataclass
+    class Note(Entity):
+        name: str = ""
+        size: int = 0
+
+    read = presentation_of(Note)
+
+    assert (read.get_id, read.display, read.order, read.detail) == (
+        "id",
+        "name",
+        (Sort(field="id", descending=True),),
+        None,
+    )
+    assert read.search == Criteria(
+        where=Condition(field="name", operator=Operator.LIKE, value=TEXT)
+    )
+
+
+def test_a_literal_fills_text_inside_a_list_too():
+    @dataclass
+    class Coded(Entity):
+        code: str = ""
+
+        @classmethod
+        def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+            return Criteria(
+                where=Condition(field="code", operator=Operator.IN, value=[TEXT, "0"])
+            )
+
+    bus = UseFramework("coded", log_after_execution=False)
+    bus.add_dependency(
+        "repository",
+        MemoryRepository().add(Coded(code="7"), Coded(code="0"), Coded(code="9")),
+    )
+
+    class ResponseCoded(ResponsePaginatedQuery):
+        coded: list[Coded]
+
+    class QueryFindCoded(LiteralSearch[Coded, ResponseCoded]):
+        pass
+
+    @bus.feature(QueryFindCoded)
+    class CodedReads(EntityReads[Coded]):
+        pass
+
+    found = bus(QueryFindCoded(text="7"), ResponseCoded)
+
+    assert sorted(one.code for one in found.coded) == ["0", "7"]

@@ -39,6 +39,14 @@ from pydantic import TypeAdapter
 
 from sincpro_framework.annotations import is_class_var, own_annotations
 from sincpro_framework.context.infrastructure.tree import chain_for
+from sincpro_framework.ddd.criteria import (
+    TEXT,
+    Condition,
+    Criteria,
+    Operator,
+    Sort,
+    Specification,
+)
 from sincpro_framework.ddd.entity.derivations import Derivations
 from sincpro_framework.ddd.entity.presentation import Presentation
 from sincpro_framework.ddd.exceptions import ContractViolation
@@ -76,6 +84,18 @@ _MEANING = {
     "version": " (the optimistic lock)",
 }
 _RENAMED = {"version": ", e.g. `revision`", "id": ", e.g. `code`"}
+
+DEFAULT_HOOKS = (
+    "DEFAULT_GET_ID",
+    "DEFAULT_READING",
+    "DEFAULT_ORDER",
+    "DEFAULT_DISPLAY",
+    "DEFAULT_LITERAL_SEARCH",
+)
+"""What an entity answers about how it is read, each a class method `Entity` defines and a
+subclass may override — always `@classmethod`, the shape it overrides, so a type checker and
+the framework agree. Upper case so it never meets a field, and so a reader knows the framework
+calls it."""
 
 
 def reserved_fields(declared: type) -> dict[str, str]:
@@ -115,10 +135,15 @@ class Entity:
     reads identity by. `translations()` is read once per class into the definition; a field's
     own label and help are read off `field(metadata=...)`, not from here.
 
-    `presentation` says how the aggregate is read — its display field, how a literal finds it,
-    the list order and what a detail brings (`Presentation`). It is a class attribute, not a
-    field: it is never stored and never travels with a record. Left alone, a field called
-    `name` is the display.
+    How it is read is the entity's own answer, five class methods a subclass overrides:
+    `DEFAULT_GET_ID` (the field `Get` finds it by), `DEFAULT_READING` (what one record
+    brings), `DEFAULT_ORDER` (the list order), `DEFAULT_DISPLAY` (the field shown beside its
+    identity) and `DEFAULT_LITERAL_SEARCH` (how a typed text finds it). They are defaults: a
+    criteria a caller sends wins for every part it names.
+
+    `presentation` says how a form shows each field — read-only, required, visible — as hints
+    a client starts from (`Presentation`). It is a class attribute, not a field: it is never
+    stored and never travels with a record.
 
     `derivations` lists the fields it computes from others (`Derivations`), so a preview and a
     save compute them the same way. A class attribute too; left alone, nothing is computed.
@@ -154,6 +179,17 @@ class Entity:
         super().__init_subclass__(**kwargs)
         if cls.__module__.startswith("sincpro_framework."):
             return
+        annotated = own_annotations(cls)
+        for hook in DEFAULT_HOOKS:
+            declared = cls.__dict__.get(hook)
+            if hook in annotated or (
+                declared is not None and not isinstance(declared, classmethod)
+            ):
+                kind = "a field" if hook in annotated else type(declared).__name__
+                raise ContractViolation(
+                    f"{cls.__name__}.{hook} is {kind}: it is a class method the framework "
+                    f"calls. Declare it as `@classmethod def {hook}(cls) -> …`."
+                )
         reserved = reserved_fields(cls)
         taken = [name for name in own_annotations(cls) if name in reserved]
         if taken:
@@ -174,6 +210,72 @@ class Entity:
         are not here — see `field(metadata={"label": …, "help": …})`.
         """
         return {"default": cls.__name__}
+
+    @classmethod
+    def DEFAULT_GET_ID(cls) -> str:
+        """The field `Get` and `GetMany` find a record by. Override it for a natural key.
+
+            return "code"           QueryGetAccount(id="1.2.3") reads the account coded 1.2.3
+
+        Only how a record is asked for: the identity it is stored, related and ordered by is
+        still `id`. Checked when the class is described: a scalar field of its own.
+        """
+        return "id"
+
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification | None:
+        """What one record brings when the caller names nothing: `Get`, `GetMany`, `Search`.
+
+            return Specification.model_validate(
+                {"title": {}, "runs": {"specification": {"steps": {}}}}
+            )
+
+        A `Specification`, not a `Criteria`: it says what of each record, at any depth, and
+        never which records — a filter here would hide records from every read. `None` is
+        every scalar and no relation. A caller's `criteria.specification` replaces it.
+        """
+        return None
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        """The order of a list, and of this entity's records where another one holds them,
+        when the caller names none. Newest identity first unless overridden.
+
+            return (Sort(field="code"),)
+        """
+        return (Sort(field="id", descending=True),)
+
+    @classmethod
+    def DEFAULT_DISPLAY(cls) -> str:
+        """The field shown beside the identity: what a select lists and a reference carries.
+        The field called `name` when there is one; empty when nothing is shown."""
+        return "name" if "name" in {one.name for one in dataclasses.fields(cls)} else ""
+
+    @classmethod
+    def DEFAULT_LITERAL_SEARCH(cls) -> Criteria | None:
+        """How a text a person typed finds records: a template whose `where` holds `TEXT`.
+
+            return Criteria(where=Any([
+                Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
+                Condition(field="name", operator=Operator.LIKE, value=TEXT),
+            ]))
+
+        A template rather than a function of the text, so `Meta` publishes it and a client
+        fills it the same way. Containment on a text display unless overridden; `None` when
+        there is nothing to search.
+        """
+        # Imported here: model_meta reads this module to describe a class.
+        from sincpro_framework.ddd.entity.model_meta import (
+            TEXT_TYPES,
+            annotations_of,
+            logical_type,
+        )
+
+        display = cls.DEFAULT_DISPLAY()
+        annotation = annotations_of(cls).get(display)
+        if annotation is None or logical_type(annotation) not in TEXT_TYPES:
+            return None
+        return Criteria(where=Condition(field=display, operator=Operator.LIKE, value=TEXT))
 
     @property
     def is_new(self) -> bool:

@@ -1,5 +1,6 @@
 """The reads of one aggregate, written once: `Get`, `GetMany`, `LiteralSearch`, `Search` and
-`Preview`, answered by one Feature that reads what the entity's `presentation` declared.
+`Preview`, answered by one Feature that reads what the entity answers about itself: its
+`DEFAULT_*` class methods (the key, what a record brings, the order, how a text finds it).
 
     class ResponseAccount(ResponseRecord):
         account: Account
@@ -10,7 +11,7 @@
     class ResponseListAccounts(ResponsePaginatedQuery):
         accounts: list[Account]
 
-    class QueryGetAccount(Get[Account, ResponseAccount]):                   one record, its detail
+    class QueryGetAccount(Get[Account, ResponseAccount]):                   one record, as the entity reads it
         pass
 
     class QueryGetManyAccounts(GetMany[Account, ResponseAccounts]):         several, by identity
@@ -36,6 +37,11 @@ them and a project names its own DTOs. Each read is a method (`get`, `get_many`,
 `literal_search`, `search`, `preview`): override one and call `super()` to act before or after it.
 `reads_from` is the repository, the dependency named `repository` unless overridden. Nothing here is required: a
 Feature written by hand with `matching`, `detail_of` and `repository.search` does the same.
+
+**The caller's criteria wins, part by part.** What the entity answers is the default; every
+part the caller's `criteria` names (`specification`, `order`, `pagination`, …) replaces it,
+and its `where` adds to the read's own filter (`Criteria.replaced_by`). A `Criteria()` names
+nothing, so it reads exactly what the entity says.
 """
 
 import copy
@@ -51,6 +57,7 @@ from sincpro_framework.ddd.criteria import (
     Operator,
     Pagination,
     Specification,
+    combined,
 )
 from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.entity.editing import adapter_of, assign, owned, recompute
@@ -79,27 +86,29 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject, Feature
 
 
 class Get[T, R: ResponseRecord](DataTransferObject):
-    """One record by its identity, with the relations the entity's `detail` names.
+    """One record by its key (`DEFAULT_GET_ID`), as the entity's `DEFAULT_READING` brings it.
 
-    QueryGetAccount(id="01a1…")                                    the declared detail
-    QueryGetAccount(id="01a1…", criteria=Criteria(specification=…)) narrowed by the caller
+    QueryGetAccount(id="1.2.3")                                    what the entity reads
+    QueryGetAccount(id="1.2.3", criteria=Criteria(specification=…)) what the caller names instead
     """
 
     id: str
+    """The value of the entity's `DEFAULT_GET_ID` field: its identity unless it names a key."""
     criteria: Criteria = Criteria()
-    """Merged over the declared detail: its specification can only narrow it."""
+    """Over the entity's `DEFAULT_READING`: every part it names replaces the default."""
 
 
 class GetMany[T, R: ResponseRecords](DataTransferObject):
-    """Several records by their identities, as a list in the order asked, each with the
-    declared detail. Not a page: every identity asked is answered, or listed as missing.
+    """Several records by their keys, as a list in the order asked, each as the entity's
+    `DEFAULT_READING` brings it. Not a page: every key asked is answered, or listed as missing.
 
     QueryGetManyAccounts(ids=["01a1…", "01a2…"])
     """
 
     ids: list[str]
+    """Values of the entity's `DEFAULT_GET_ID` field."""
     criteria: Criteria = Criteria()
-    """Merged over the declared detail: its specification can only narrow it."""
+    """Over the entity's `DEFAULT_READING`: every part it names replaces the default."""
 
 
 class LiteralSearch[T, R: ResponsePaginatedQuery](DataTransferObject):
@@ -108,11 +117,13 @@ class LiteralSearch[T, R: ResponsePaginatedQuery](DataTransferObject):
 
     text: str = ""
     criteria: Criteria = Criteria()
-    """Merged over the match: a filter the select adds, a page size it prefers."""
+    """Over the filled template: a filter the select adds, a page size or what each reference
+    brings, each replacing the select's own."""
 
 
 class Search[T, R: ResponsePaginatedQuery](Query):
-    """A page by criteria, ordered as the entity declared when the criteria names no order."""
+    """A page by criteria: each record as the entity's `DEFAULT_READING` brings it, in its
+    `DEFAULT_ORDER`, unless the criteria names its own."""
 
 
 class FieldState(DataTransferObject):
@@ -151,7 +162,17 @@ class Preview[T, R: ResponsePreview](DataTransferObject):
     values: dict[str, Any] = {}
     changed: list[str] = []
     id: str | None = None
-    """The stored record being edited; `None` for a new one."""
+    """The `DEFAULT_GET_ID` of the stored record being edited; `None` for a new one."""
+
+
+def key_of(entity: type) -> str:
+    """The field `Get`, `GetMany` and `Preview` find a record by: the entity's
+    `DEFAULT_GET_ID`, or its identity when it answers none (a plain model).
+
+    in      Account (DEFAULT_GET_ID = "code")   →  out  "code"
+    in      Note (Entity's default)             →  out  "id"
+    """
+    return presentation_of(entity).get_id or identity_name(entity)
 
 
 def declared_by(dto: type) -> tuple[type, type]:
@@ -210,10 +231,10 @@ class EntityReads[T](Feature):
         )
 
     def get(self, dto: Any) -> Any:
-        """The record and its declared detail, or `AggregateNotFound`."""
+        """The record found by its key, as the entity reads it, or `AggregateNotFound`."""
         entity, response = declared_by(type(dto))
         criteria = self.by_identity(
-            entity, Condition(field=identity_name(entity), value=dto.id), 1, dto.criteria
+            entity, Condition(field=key_of(entity), value=dto.id), 1, dto.criteria
         )
         page = self.reads_from().search(entity, criteria)
         if not page.items:
@@ -221,11 +242,11 @@ class EntityReads[T](Feature):
         return response.of(page.items[0], page, criteria)
 
     def get_many(self, dto: Any) -> Any:
-        """The records of `ids`, in that order, each with its declared detail; the ids with no
+        """The records of `ids`, in that order, each as the entity reads it; the ids with no
         record are listed as missing."""
         entity, response = declared_by(type(dto))
         ids = list(dict.fromkeys(dto.ids))
-        identity = identity_name(entity)
+        identity = key_of(entity)
         criteria = self.by_identity(
             entity,
             Condition(field=identity, value=ids, operator=Operator.IN),
@@ -238,15 +259,16 @@ class EntityReads[T](Feature):
     def by_identity(
         self, entity: type, where: Expression, limit: int, asked: Criteria
     ) -> Criteria:
-        """The declared detail narrowed by `asked`, filtered by identity, read as one page.
+        """The entity's `DEFAULT_READING` with every part `asked` names in its place, filtered
+        by key besides `asked`'s own filter, read as one page.
 
         A page and not `repository.get`/`browse`, so the definition and the relations come
         back the same way from every store and the answer is cut by the same specification.
         """
-        declared = detail_of(entity) or Criteria()
-        return declared.merged_with(asked).model_copy(
+        read = (detail_of(entity) or Criteria()).replaced_by(asked)
+        return read.model_copy(
             update={
-                "where": where,
+                "where": combined(where, read.expression),
                 "pagination": Pagination(limit=limit),
                 "count": CountMode.NONE,
             }
@@ -255,20 +277,23 @@ class EntityReads[T](Feature):
     def literal_search(self, dto: Any) -> Any:
         """The short page a select shows for the literal."""
         entity, response = declared_by(type(dto))
-        criteria = matching(entity, dto.text).merged_with(dto.criteria)
+        criteria = matching(entity, dto.text).replaced_by(dto.criteria)
         return response.of(self.reads_from().search(entity, criteria), criteria)
 
     def search(self, dto: Any) -> Any:
-        """The page the criteria asks for."""
+        """The page the criteria asks for, each record as the entity reads it unless the
+        criteria names what to bring. The store applies the entity's order when none is named.
+        """
         entity, response = declared_by(type(dto))
-        return response.of(self.reads_from().search(entity, dto.criteria), dto.criteria)
+        criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
+        return response.of(self.reads_from().search(entity, criteria), criteria)
 
     def preview(self, dto: Any) -> Any:
         """What the record becomes with the form's values, computed over a record nobody saves.
 
         1. Inside `previewing()`: every write of every store raises, advice is collected.
-        2. Start from a copy of the stored record, read with its declared detail and every
-           relation its derivations read (`AggregateNotFound` when the id has none), or from a
+        2. Start from a copy of the stored record, read as its `DEFAULT_READING` brings it and
+           with every relation its derivations read (`AggregateNotFound` when the id has none), or from a
            new one with the class defaults.
         3. `assign` the form's values, read as each field's type; `recompute` what `changed`
            reaches, the records it owns first, as a save does — every derivation when nothing
@@ -300,13 +325,13 @@ class EntityReads[T](Feature):
         return response(values=values, fields=states_of(record), advice=list(advice))
 
     def previewed(self, entity: type, identity: str | None) -> Any:
-        """The record a preview starts from: a copy of the stored one, read with its declared
-        detail and the relations its derivations read, or a new one holding the class defaults
-        (`None` where a field has none)."""
+        """The record a preview starts from: a copy of the stored one found by its key, read as
+        its `DEFAULT_READING` brings it and with the relations its derivations read, or a new
+        one holding the class defaults (`None` where a field has none)."""
         if identity is None:
             return blank(entity)
         criteria = self.by_identity(
-            entity, Condition(field=identity_name(entity), value=identity), 1, Criteria()
+            entity, Condition(field=key_of(entity), value=identity), 1, Criteria()
         )
         page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
         if not page.items:
@@ -316,10 +341,10 @@ class EntityReads[T](Feature):
 
 def with_derived_relations(entity: type, criteria: Criteria) -> Criteria:
     """`criteria`, also bringing every relation the computation of `entity` reads (`owned`) — a
-    total over lines the declared detail does not name still reads the lines.
+    total over lines the entity's reading does not name still reads the lines.
 
-    in      Sale (detail: customer_id), subtotal ← lines
-    out     the detail plus {"lines": {}}: each line, every scalar
+    in      Sale (DEFAULT_READING: customer_id), subtotal ← lines
+    out     the reading plus {"lines": {}}: each line, every scalar
     """
     read = set(owned(entity))
     named = criteria.specification.root if criteria.specification is not None else {}

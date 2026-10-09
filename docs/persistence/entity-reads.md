@@ -1,9 +1,9 @@
 # The reads of one aggregate: `EntityReads`
 
-A screen asks four things of an aggregate: one record, several records by identity, the short
+A screen asks four things of an aggregate: one record, several records by key, the short
 list a select shows for what the user typed, and a page by criteria. `EntityReads` answers the
-four from what the entity declared in its `presentation` ([Specification](specification.md)),
-as one Feature registered for the DTOs a project names.
+four from what the entity answers about itself — its `DEFAULT_*` class methods
+([Specification](specification.md)) — as one Feature registered for the DTOs a project names.
 
 Nothing here is required. A Feature written by hand with `matching`, `detail_of` and
 `repository.search` does the same; `EntityReads` is that Feature, written once.
@@ -14,17 +14,21 @@ Nothing here is required. A Feature written by hand with `matching`, `detail_of`
 from dataclasses import dataclass
 
 from sincpro_framework.ddd import (
+    TEXT,
+    Any,
+    Condition,
+    Criteria,
     Entity,
     EntityReads,
     Get,
     GetMany,
     LiteralSearch,
-    Match,
-    Presentation,
+    Operator,
     ResponsePaginatedQuery,
     ResponseRecord,
     ResponseRecords,
     Search,
+    Sort,
 )
 
 
@@ -33,10 +37,16 @@ class Account(Entity):
     code: str
     name: str = ""
 
-    presentation = Presentation["Account"](
-        search=lambda a: [Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)],
-        order=lambda a: a.code,
-    )
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="code"),)
+
+    @classmethod
+    def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+        return Criteria(where=Any(any=[
+            Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
+            Condition(field="name", operator=Operator.LIKE, value=TEXT),
+        ]))
 
 
 class ResponseAccount(ResponseRecord):
@@ -83,27 +93,51 @@ nothing requires a prefix, and the records keep their own name (`account`, `acco
 
 | DTO | Carries | Answers | When nothing is there |
 |---|---|---|---|
-| `Get[T, R]` | `id`, `criteria` | `R(ResponseRecord)`: the one record with the declared `detail` | `AggregateNotFound` |
-| `GetMany[T, R]` | `ids`, `criteria` | `R(ResponseRecords)`: a list in the order of `ids`, each with the declared `detail` | the absent ids in `missing` |
-| `LiteralSearch[T, R]` | `text`, `criteria` | `R(ResponsePaginatedQuery)`: a page of 8, identity and display | an empty page |
-| `Search[T, R]` | `criteria` | `R(ResponsePaginatedQuery)`: the page asked, in the declared order | an empty page |
+| `Get[T, R]` | `id`, `criteria` | `R(ResponseRecord)`: the one record whose `DEFAULT_GET_ID` is `id`, as `DEFAULT_READING` brings it | `AggregateNotFound` |
+| `GetMany[T, R]` | `ids`, `criteria` | `R(ResponseRecords)`: a list in the order of `ids`, each as `DEFAULT_READING` brings it | the absent ids in `missing` |
+| `LiteralSearch[T, R]` | `text`, `criteria` | `R(ResponsePaginatedQuery)`: `DEFAULT_LITERAL_SEARCH` filled, a page of 8, identity and display | an empty page |
+| `Search[T, R]` | `criteria` | `R(ResponsePaginatedQuery)`: the page asked, as `DEFAULT_READING` brings it, in `DEFAULT_ORDER` | an empty page |
 
-- **`Get` and `GetMany` start from the declared `detail`.** The caller's `criteria` merges on
-  top, and its specification can only narrow it: a caller that names `code` gets the identity
-  and `code`, never more than the detail.
-- **`GetMany` is a list, not a page.** No cursor and no count: every identity asked is
-  answered, or named in `missing`. A repeated identity is answered once. An empty `ids` is an
+### What the caller sends wins, part by part
+
+What the entity answers is the default. The caller's `criteria` replaces each part it **names**
+— `specification`, `order`, `pagination`, `count`… — and its `where` adds to the read's own
+filter (the key for a `Get`, the template for a select). This is `Criteria.replaced_by`.
+
+| The caller sends | It reads |
+|---|---|
+| nothing, or `Criteria()` | exactly what the entity answers |
+| `Criteria(specification=...)` | that specification, even one asking for more than `DEFAULT_READING` |
+| `Criteria(order=(Sort(field="name"),))` | in that order |
+| `Criteria(where=active = true)` | the key **and** `active = true`: a `Get` of an inactive record is not found |
+
+"Names" is what pydantic records as set (`model_fields_set`), not what differs from a default:
+`Criteria(order=())` names the order on purpose. A scope merged with `merged_with` keeps only
+what either side named, so a list that adds its tenant to the caller's criteria still reads
+the entity's defaults:
+
+```python
+@accounting.feature(QueryListAccounts)
+class ListAccounts(EntityReads[Account]):
+    def search(self, dto: QueryListAccounts) -> ResponseListAccounts:
+        scope = Criteria(where=Condition(field="tenant_id", value=dto.tenant_id))
+        return super().search(dto.model_copy(update={"criteria": scope.merged_with(dto.criteria)}))
+```
+
+- **`GetMany` is a list, not a page.** No cursor and no count: every key asked is
+  answered, or named in `missing`. A repeated key is answered once. An empty `ids` is an
   empty list.
 - **`AggregateNotFound` is `not_found` on every wire**: 404 over REST, its own code over
   JSON-RPC, gRPC and MCP. An archived record, or one outside the scope the repository was
   narrowed to, is not found too.
-- **`LiteralSearch` is the select.** The literal matches as `presentation.search` says, and a
-  blank literal is the first page in the declared order. The caller's `criteria` adds a filter
-  or a page size.
-- **`Search` is the list.** The criteria is the client's; the declared order applies when it
-  names none.
+- **`LiteralSearch` is the select.** The literal fills `DEFAULT_LITERAL_SEARCH`, and a blank
+  literal is the first page in the entity's order (what the template asks besides the text
+  still applies). The caller's `criteria` adds a filter or sets a page size.
+- **`Search` is the list.** Each record comes as `DEFAULT_READING` brings it, in
+  `DEFAULT_ORDER`, unless the criteria names its own. An entity whose reading is deep makes
+  deep lists: a caller that wants a light one names a specification.
 
-`Get` and `GetMany` read as a page filtered by identity, not through `repository.get`. That
+`Get` and `GetMany` read as a page filtered by the key, not through `repository.get`. That
 way the definition (`model_meta_data`) and the relations come back the same from every store,
 and the answer is cut by the same specification a page is. A Feature that is about to change
 the record reads it with `repository.get(id, detail=detail_of(Account))`, which hands back the

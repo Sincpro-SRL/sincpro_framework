@@ -1,6 +1,6 @@
-"""The presentation against a mapped class: SQLAlchemy replaces the class attributes with its
-own, and none of that reaches what the entity declared, because the declaration names fields
-through the entity and never reads the class attribute.
+"""What the entity answers about how it is read, against a mapped class: SQLAlchemy replaces
+the class attributes of the fields with its own, and none of that reaches the entity's
+`DEFAULT_*` class methods, which name fields as text and are never a field.
 """
 
 from dataclasses import dataclass, field
@@ -11,20 +11,24 @@ from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework
 from sincpro_framework.ddd import (
+    TEXT,
     AggregateNotFound,
+    Any,
+    Condition,
+    Criteria,
     EntityReads,
-    Expand,
     Get,
     GetMany,
-    Match,
-    MatchMode,
-    Presentation,
+    Operator,
     ResponseRecord,
     ResponseRecords,
+    Sort,
+    Specification,
     detail_of,
     matching,
 )
 from sincpro_framework.ddd.entity import Entity
+from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
@@ -38,17 +42,37 @@ class Ledger(Entity):
     name: str = ""
     entries: list["Entry"] = field(default_factory=list)
 
-    presentation = Presentation["Ledger"](
-        search=lambda a: (Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)),
-        order=lambda a: (a.code,),
-        detail=lambda a: (a.code, a.name, Expand(a.entries, 300)),
-    )
+    @classmethod
+    def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+        return Criteria(
+            where=Any(
+                any=[
+                    Condition(field="code", value=TEXT),
+                    Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
+                    Condition(field="name", operator=Operator.LIKE, value=TEXT),
+                ]
+            )
+        )
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="code"),)
+
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification:
+        return Specification.model_validate(
+            {"code": {}, "name": {}, "entries": {"pagination": {"limit": 300}}}
+        )
 
 
 @dataclass
 class Entry(Entity):
     ledger_id: str
     amount: int = 0
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="amount", descending=True),)
 
 
 books = registry()
@@ -90,12 +114,8 @@ def ledgers() -> Repository:
 def test_the_mapped_class_publishes_what_the_entity_declared():
     meta = describe(Ledger)
 
-    assert meta.display == "name"
-    assert [(one.field, one.mode) for one in meta.search] == [
-        ("code", MatchMode.EQUAL),
-        ("code", MatchMode.PREFIX),
-        ("name", MatchMode.CONTAINS),
-    ]
+    assert (meta.get_id, meta.display) == ("id", "name")
+    assert meta.search == Ledger.DEFAULT_LITERAL_SEARCH()
     assert meta.default_order == "code"
     assert "presentation" not in meta.fields
 
@@ -189,3 +209,52 @@ def test_get_many_through_the_bus_brings_each_record_with_its_relation(ledgers):
     assert [one["code"] for one in written["ledgers"]] == ["4", "1.2.3"]
     assert [one["entries"]["items"][0]["amount"] for one in written["ledgers"]] == [17, 4]
     assert written["missing"] == ["gone"]
+
+
+def test_a_relation_comes_in_its_own_entity_order_when_the_reading_names_none():
+    database = Database("sqlite://")
+    books.metadata.create_all(database.engine)
+    store = Repository(database)
+    ledger = Ledger(code="9", name="Ordenado")
+    with store.context() as repository:
+        repository.save(ledger)
+        for amount in (2, 7, 4):
+            repository.save(Entry(ledger_id=ledger.id, amount=amount))
+
+    read = store.get(Ledger, ledger.id, detail=detail_of(Ledger))
+
+    assert read is not None
+    assert [one.amount for one in read.entries] == [7, 4, 2]
+
+
+def test_a_key_other_than_the_identity_must_be_unique_on_disk():
+    @dataclass
+    class Coded(Entity):
+        code: str = ""
+
+        @classmethod
+        def DEFAULT_GET_ID(cls) -> str:
+            return "code"
+
+    @dataclass
+    class Unique(Entity):
+        code: str = ""
+
+        @classmethod
+        def DEFAULT_GET_ID(cls) -> str:
+            return "code"
+
+    keyed = registry()
+    map_aggregates(
+        keyed,
+        {
+            Coded: entity_table("loose_code", keyed.metadata, Column("code", Text)),
+            Unique: entity_table(
+                "unique_code", keyed.metadata, Column("code", Text, unique=True)
+            ),
+        },
+    )
+
+    with pytest.raises(ContractViolation, match="loose_code.code is not unique"):
+        describe(Coded)
+    assert describe(Unique).get_id == "code"

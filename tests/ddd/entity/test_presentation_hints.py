@@ -66,8 +66,11 @@ class Invoice(Entity):
     amount: Decimal = Decimal("0")
     notes: list[str] = field(default_factory=list)
 
+    @classmethod
+    def DEFAULT_DISPLAY(cls) -> str:
+        return "number"
+
     presentation = Presentation["Invoice"](
-        display=lambda i: i.number,
         readonly=lambda i: (i.number, i.state),
         readonly_when=lambda i: (
             When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount),

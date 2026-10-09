@@ -10,6 +10,7 @@ an optional extra; carrying events is `sincpro_framework.event_driven`.
 """
 
 from sincpro_framework.ddd.criteria import (
+    TEXT,
     All,
     Any,
     Bucket,
@@ -64,13 +65,8 @@ from sincpro_framework.ddd.entity.model_meta import (
 from sincpro_framework.ddd.entity.presentation import (
     AllHold,
     AnyHolds,
-    Descending,
-    Expand,
     Is,
-    Match,
-    MatchMode,
     Presentation,
-    Reference,
     When,
 )
 from sincpro_framework.ddd.entity.query_entity import NAME_SEARCH_LIMIT, detail_of, matching
@@ -135,17 +131,12 @@ __all__ = [
     "KeyValueDrafts",
     "refuse_stale",
     "NAME_SEARCH_LIMIT",
-    "Descending",
-    "Expand",
     "AllHold",
     "AnyHolds",
     "Is",
     "When",
     "presentation_of",
-    "Match",
-    "MatchMode",
     "Presentation",
-    "Reference",
     "detail_of",
     "matching",
     "AggregateRepository",
@@ -226,6 +217,7 @@ __all__ = [
     "ResponsePaginatedQuery",
     "Sort",
     "Specification",
+    "TEXT",
     "RelationNotResolved",
     "StaleAggregate",
     "Translated",

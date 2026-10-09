@@ -44,9 +44,10 @@ from sincpro_framework.ddd.criteria import (
     Expression,
     Not,
     Operator,
-    Pagination,
     Sort,
     Specification,
+    conditions_of,
+    holds_text,
 )
 from sincpro_framework.ddd.entity.derivations import Derivations, Derive
 from sincpro_framework.ddd.entity.entity import Translated
@@ -54,14 +55,9 @@ from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
     AllHold,
     AnyHolds,
-    Descending,
-    Expand,
     Fields,
     Is,
-    Match,
-    MatchMode,
     Presentation,
-    Reference,
     When,
     field_name,
 )
@@ -522,16 +518,20 @@ class Meta(DataTransferObject):
     aggregate: str
     identity: str
     default_order: str
-    """The list order when a criteria names none: the entity's declared order, or newest
-    identity first."""
+    """The list order when a criteria names none: the entity's `DEFAULT_ORDER`, or newest
+    identity first for a class that answers none."""
+    get_id: str = ""
+    """The field `Get` and `GetMany` find a record by (`DEFAULT_GET_ID`); the identity unless the
+    entity names a natural key. Empty for a value object."""
     display: str = ""
-    """The field shown beside the identity: what a select lists and a reference carries. Empty
-    when the aggregate names none."""
-    search: tuple[Match, ...] = ()
-    """How a literal finds a record, field by field. `matching` asks it."""
+    """The field shown beside the identity: what a select lists and a reference carries
+    (`DEFAULT_DISPLAY`). Empty when the aggregate names none."""
+    search: Criteria | None = None
+    """How a typed text finds a record (`DEFAULT_LITERAL_SEARCH`): a template whose `where`
+    holds `TEXT`, which a client fills as `matching` does. `None` when nothing is searched."""
     detail: Criteria | None = None
-    """What a detail brings with the record. `detail_of` answers it; `None` is every scalar and
-    no relation."""
+    """What one record brings when nobody asks otherwise (`DEFAULT_READING`). `detail_of`
+    answers it; `None` is every scalar and no relation."""
     fields: dict[str, FieldMeta]
     name: Translated
     """The aggregate's own name, exactly as the class's `translations()` answered it. A
@@ -756,16 +756,18 @@ TEXT_TYPES = frozenset({FieldType.TEXT, FieldType.TRANSLATED})
 
 @dataclasses.dataclass(frozen=True)
 class Presented:
-    """An entity's `presentation`, read: field names in place of lambdas, checked against the
-    class.
+    """What an entity answers about how it is read and shown, checked against the class: its
+    `DEFAULT_*` class methods, and the form hints of its `presentation` with field names in
+    place of lambdas.
 
-        in      Account(display=name, search=equal code · prefix code · contains name, order=code)
-        out     Presented("name", (Match(code, equal), Match(code, prefix), Match(name, contains)),
-                          (Sort(code),), None)
+        in      Account(DEFAULT_GET_ID=code, DEFAULT_ORDER=code, DEFAULT_DISPLAY=name)
+        out     Presented(get_id="code", display="name", search=name like TEXT,
+                          order=(Sort(code),), detail=None, …)
     """
 
+    get_id: str = ""
     display: str = ""
-    search: tuple[Match, ...] = ()
+    search: Criteria | None = None
     order: tuple[Sort, ...] = ()
     detail: Criteria | None = None
     readonly: frozenset[str] = frozenset()
@@ -784,69 +786,130 @@ def _entries(answered: object) -> tuple[object, ...]:
     return tuple(answered) if isinstance(answered, (list, tuple)) else (answered,)
 
 
-def _searched(owner: str, answered: object, annotations: dict[str, Any]) -> tuple[Match, ...]:
-    """The declared matches, each on a field that can answer its mode.
+KEY_TYPES = frozenset({FieldType.TEXT, FieldType.INTEGER, FieldType.UUID})
+"""What a field `Get` finds a record by may hold: a value a person or a URL names it with."""
+
+
+def _get_id_checked(owner: str, answered: object, annotations: dict[str, Any]) -> str:
+    """`DEFAULT_GET_ID`: a text, integer or uuid field of the entity's own."""
+    if not isinstance(answered, str) or answered not in annotations:
+        raise ContractViolation(
+            f"{owner}.DEFAULT_GET_ID answers {answered!r}, which is not a field of {owner}"
+        )
+    kind = logical_type(annotations[answered])
+    if kind not in KEY_TYPES:
+        raise ContractViolation(
+            f"{owner}.DEFAULT_GET_ID answers {answered}, a {kind} field: a record is found by "
+            f"a text, integer or uuid field"
+        )
+    return answered
+
+
+def _display_checked(owner: str, answered: object, annotations: dict[str, Any]) -> str:
+    """`DEFAULT_DISPLAY`: empty, or a field that is neither a relation nor embedded."""
+    if answered == "":
+        return ""
+    if not isinstance(answered, str) or answered not in annotations:
+        raise ContractViolation(
+            f"{owner}.DEFAULT_DISPLAY answers {answered!r}, which is not a field of {owner}"
+        )
+    kind = logical_type(annotations[answered])
+    if kind.is_relational or kind in (FieldType.EMBEDDED, FieldType.UNKNOWN):
+        raise ContractViolation(
+            f"{owner}.DEFAULT_DISPLAY answers {answered}, a {kind} field: what is shown beside "
+            f"the identity is a value of the record itself"
+        )
+    return answered
+
+
+def _order_checked(
+    owner: str, answered: object, annotations: dict[str, Any]
+) -> tuple[Sort, ...]:
+    """`DEFAULT_ORDER`: `Sort`s over fields of the entity."""
+    entries = tuple(answered) if isinstance(answered, (list, tuple)) else (answered,)
+    for entry in entries:
+        if not isinstance(entry, Sort):
+            raise ContractViolation(
+                f'{owner}.DEFAULT_ORDER answers Sort, as in (Sort(field="code"),); '
+                f"it was given {entry!r}"
+            )
+        if entry.field not in annotations:
+            raise ContractViolation(
+                f"{owner}.DEFAULT_ORDER orders by {entry.field}, which is not a field of {owner}"
+            )
+    return cast(tuple[Sort, ...], entries)
+
+
+def _reading_checked(
+    owner: str, answered: object, annotations: dict[str, Any]
+) -> Criteria | None:
+    """`DEFAULT_READING`: a `Specification` naming fields of the entity, as the criteria a read
+    starts from; `None` is every scalar and no relation.
+
+    Only the first level is checked here: below it a node names the related entity's fields,
+    which a store answers or reports as dropped (rule 7 of the specification).
+    """
+    if answered is None:
+        return None
+    if not isinstance(answered, Specification):
+        raise ContractViolation(
+            f"{owner}.DEFAULT_READING answers a Specification — what of each record, never "
+            f"which records —; it was given {type(answered).__name__}"
+        )
+    unknown = sorted(set(answered.root) - set(annotations))
+    if unknown:
+        raise ContractViolation(
+            f"{owner}.DEFAULT_READING names {', '.join(unknown)}, "
+            f"which {'is' if len(unknown) == 1 else 'are'} not a field of {owner}"
+        )
+    return Criteria(specification=answered)
+
+
+def _search_checked(
+    owner: str, answered: object, annotations: dict[str, Any]
+) -> Criteria | None:
+    """`DEFAULT_LITERAL_SEARCH`: a template with only a `where`, holding `TEXT` at least once,
+    each condition on a field that can answer its operator.
 
     A prefix asks a text; containment asks a text or a translated text. Anything else would be
     dropped by the store and widen the search, so it is refused here.
     """
-    matches = _entries(answered)
-    for match in matches:
-        if not isinstance(match, Match):
+    if answered is None:
+        return None
+    if not isinstance(answered, Criteria):
+        raise ContractViolation(
+            f"{owner}.DEFAULT_LITERAL_SEARCH answers a Criteria whose where holds TEXT; "
+            f"it was given {type(answered).__name__}"
+        )
+    extra = sorted(answered.model_fields_set - {"where"})
+    if extra:
+        raise ContractViolation(
+            f"{owner}.DEFAULT_LITERAL_SEARCH sets {', '.join(extra)}: a template is a where "
+            f"alone — the page, the order and what each record brings are the read's own"
+        )
+    conditions = conditions_of(answered.where)
+    if not any(holds_text(one) for one in conditions):
+        raise ContractViolation(
+            f"{owner}.DEFAULT_LITERAL_SEARCH never uses TEXT: a template says where the typed "
+            f'text goes, as in Condition(field="name", operator=Operator.LIKE, value=TEXT)'
+        )
+    for one in conditions:
+        if one.field not in annotations:
             raise ContractViolation(
-                f"{owner}.presentation search takes Match, as in "
-                f"lambda a: [Match.contains(a.name)]; it was given {match!r}"
+                f"{owner}.DEFAULT_LITERAL_SEARCH searches {one.field}, "
+                f"which is not a field of {owner}"
             )
-        if match.field not in annotations:
-            raise ContractViolation(
-                f"{owner}.presentation searches {match.field}, which is not a field of {owner}"
-            )
-        kind = logical_type(annotations[match.field])
-        if (match.mode is MatchMode.PREFIX and kind is not FieldType.TEXT) or (
-            match.mode is MatchMode.CONTAINS and kind not in TEXT_TYPES
+        if not holds_text(one):
+            continue
+        kind = logical_type(annotations[one.field])
+        if (one.operator is Operator.STARTS_WITH and kind is not FieldType.TEXT) or (
+            one.operator is Operator.LIKE and kind not in TEXT_TYPES
         ):
             raise ContractViolation(
-                f"{owner}.presentation searches {match.field} by {match.mode}, "
-                f"which a {kind} field cannot answer"
+                f"{owner}.DEFAULT_LITERAL_SEARCH searches {one.field} by "
+                f"{one.operator.value}, which a {kind} field cannot answer"
             )
-    return cast(tuple[Match, ...], matches)
-
-
-def _ordered(answered: object) -> tuple[Sort, ...]:
-    """The declared order: a bare field ascending, `Descending` the other way."""
-    return tuple(
-        (
-            Sort(field=field_name(entry.field, "Descending(a.posted_at)"), descending=True)
-            if isinstance(entry, Descending)
-            else Sort(field=field_name(entry, "[a.code, Descending(a.posted_at)]"))
-        )
-        for entry in _entries(answered)
-    )
-
-
-def _related(specification: Specification | None, limit: int | None) -> Criteria:
-    """One relation's node: what of each related record, and how many."""
-    if limit is None:
-        return Criteria(specification=specification)
-    return Criteria(specification=specification, pagination=Pagination(limit=limit))
-
-
-def _detailed(answered: object) -> Criteria:
-    """The declared detail as a specification.
-
-    in      [a.code, Expand(a.lines, 300), Reference(a.partner)]
-    out     {"code": {}, "lines": {limit 300}, "partner": {"specification": {}}}
-    """
-    nodes: dict[str, Criteria] = {}
-    for entry in _entries(answered):
-        if isinstance(entry, Expand):
-            nodes[field_name(entry.field, "Expand(a.lines)")] = _related(None, entry.limit)
-        elif isinstance(entry, Reference):
-            name = field_name(entry.field, "Reference(a.partner)")
-            nodes[name] = _related(Specification({}), entry.limit)
-        else:
-            nodes[field_name(entry, "[a.code, Expand(a.lines)]")] = Criteria()
-    return Criteria(specification=Specification(nodes))
+    return answered
 
 
 def _condition(owner: str, declared: object) -> Expression:
@@ -953,35 +1016,34 @@ def defaults_of(declared: type) -> dict[str, Any]:
 
 @cache
 def presentation_of(declared: type) -> Presented:
-    """The class's `presentation`, read once and checked against its fields.
+    """What the class answers about how it is read and shown, read once and checked against
+    its fields.
 
-    1. A class with no `Presentation` (a value object, a plain dataclass) presents nothing.
-    2. Each declared lambda runs once over `Fields`; an unknown name is refused, naming it.
-    3. Undeclared parts take the defaults:
-       3.1 the display is the field called `name`, when there is one;
-       3.2 a text display is searched by containment;
-       3.3 the order and the detail stay empty: the store's order, every scalar.
+    1. How it is read comes from its `DEFAULT_*` class methods (every `Entity` has them, with
+       their defaults); a class without them — a value object, a plain model — answers none.
+    2. Each answer is checked: a key, a display and an order over fields of its own, a reading
+       that is a `Specification`, a literal search that is a template holding `TEXT`.
+    3. The form hints come from its `presentation`, each lambda run once over `Fields`; an
+       unknown name is refused, naming it. Left alone, the fields the framework writes are
+       read-only and a field with no default that cannot be `None` is required.
     Final: the names, ready for `Meta`, `matching` and `detail_of`.
     """
-    presentation = getattr(declared, "presentation", None)
-    if not isinstance(presentation, Presentation):
-        return Presented()
     owner = declared.__name__
     annotations = annotations_of(declared)
+    read: dict[str, Any] = {}
+    if callable(getattr(declared, "DEFAULT_GET_ID", None)):
+        read = {
+            "get_id": _get_id_checked(owner, declared.DEFAULT_GET_ID(), annotations),
+            "display": _display_checked(owner, declared.DEFAULT_DISPLAY(), annotations),
+            "search": _search_checked(owner, declared.DEFAULT_LITERAL_SEARCH(), annotations),
+            "order": _order_checked(owner, declared.DEFAULT_ORDER(), annotations),
+            "detail": _reading_checked(owner, declared.DEFAULT_READING(), annotations),
+        }
+    presentation = getattr(declared, "presentation", None)
+    if not isinstance(presentation, Presentation):
+        return Presented(**read)
     fields = Fields(owner, annotations)
     system = framework_fields(declared)
-
-    if presentation.display is not None:
-        display = field_name(presentation.display(fields), "a.name")
-    else:
-        display = "name" if "name" in annotations else ""
-
-    if presentation.search is not None:
-        search = _searched(owner, presentation.search(fields), annotations)
-    elif display and logical_type(annotations[display]) in TEXT_TYPES:
-        search = (Match(field=display, mode=MatchMode.CONTAINS),)
-    else:
-        search = ()
 
     readonly = system & frozenset(annotations)
     if presentation.readonly is not None:
@@ -991,10 +1053,7 @@ def presentation_of(declared: type) -> Presented:
         required |= _named(presentation.required(fields), "a.partner_id")
 
     return Presented(
-        display=display,
-        search=search,
-        order=_ordered(presentation.order(fields)) if presentation.order else (),
-        detail=_detailed(presentation.detail(fields)) if presentation.detail else None,
+        **read,
         readonly=readonly,
         required=required,
         readonly_when=(
@@ -1118,10 +1177,11 @@ def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
 
 
 def default_order_of(declared: type, identity: str) -> str:
-    """The order a list takes when nobody asks: the declared one, or newest identity first.
+    """The order a list takes when nobody asks: `DEFAULT_ORDER`, or newest identity first for
+    a class that has none.
 
-    in      Account (order=code), "id"     →  out  "code"
-    in      Note (nothing declared), "id"  →  out  "-id"
+    in      Account (DEFAULT_ORDER=code), "id"   →  out  "code"
+    in      Note (Entity's default), "id"        →  out  "-id"
     """
     declared_order = ",".join(str(sort) for sort in presentation_of(declared).order)
     return declared_order or (f"-{identity}" if identity else "")
@@ -1164,6 +1224,7 @@ def describe_class(declared: type, identity: str = "") -> "Meta":
         aggregate=declared.__name__,
         identity=identity,
         default_order=default_order_of(declared, identity),
+        get_id=presented.get_id,
         display=presented.display,
         search=presented.search,
         detail=presented.detail,

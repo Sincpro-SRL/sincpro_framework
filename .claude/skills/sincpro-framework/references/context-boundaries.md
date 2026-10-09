@@ -98,7 +98,8 @@ Yes → `adapters/`. No, and it is wiring → `infrastructure/`.
 | DTOs shared by use cases, aggregates, value objects | `domain/` | Vocabulary |
 | Policy constants and thresholds | `domain/` | The business decides these; a mechanism applies them |
 | Pure invariants and rules on a model | `domain/`, as a method of that model | Belongs with the thing it constrains — never a loose function |
-| A port (`typing.Protocol`) an adapter implements | `domain/` | The abstraction, not the mechanism |
+| A port (`typing.Protocol`) the use cases call: typed in `dependencies.py`, called from `services/` | `domain/` | The abstraction, not the mechanism |
+| A contract only an adapter calls: what a facade holds its implementations by | `adapters/<module>/`, beside the facade | Only the mechanism uses it; it is not the domain's vocabulary |
 | A detector, classifier or heuristic | `adapters/` | Swap it and the results change |
 | An encoder, a serialisation strategy | `adapters/` | Swap it and what downstream learns changes |
 | A statistical or numerical kernel | `adapters/` | Swap it and the output distribution changes |
@@ -140,6 +141,23 @@ imports with siblings, put them in a folder and export the facade from it.
 Two adapter modules that need each other are composed by a Feature, not by one module reaching
 into the other. The record they exchange lives in `domain/`. An adapter may import a port its
 context's `domain/` declares: that is the abstraction it implements, not a peer it calls.
+
+**A `Protocol` lives with its consumer.** Ask who calls its methods. A Feature, an
+ApplicationService or the domain → it is a port, in `domain/`. Only the adapter → it is part of
+the mechanism, in the adapter's folder. A facade that picks one implementation by name
+(`ChannelDirectory.of("github")`, `SandboxProviders.get("odoo")`) holds them by a `Protocol`
+that no Feature names: the Feature calls the facade. That `Protocol` goes beside the facade:
+
+```
+adapters/channels/
+  __init__.py          # exports ChannelDirectory, the facade
+  channel.py           # class Channel(Protocol): the contract of its implementations
+  directory.py         # ChannelDirectory: dict[str, Channel]
+  github.py
+  webhook.py
+```
+
+A `Protocol` in `domain/` that only files under `adapters/` import is a misplaced one.
 
 ## Adapters expose a rich API; Features orchestrate
 

@@ -58,12 +58,13 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `ChangeTrackingMixin` | One `EntityUpdated` per save of a stored aggregate, with every changed field; an insert records nothing — record your own created event | dataclass mixin | `from sincpro_framework.ddd import ChangeTrackingMixin` |
 | `StaleAggregate` / `DuplicateAggregate` | A write lost a race: newer version / unique value taken | exception | `from sincpro_framework.ddd import StaleAggregate, DuplicateAggregate` |
 | `ContractViolation` / `RelationNotResolved` | API used against its contract / relation read that nobody asked for | exception | `from sincpro_framework.ddd import ContractViolation, RelationNotResolved` |
-| `Presentation` | Class attribute of an entity: `display`, `search`, `order`, `detail`, and form hints (`readonly`, `required`, `readonly_when`, `required_when`, `visible_when`), fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
+| `DEFAULT_GET_ID` / `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_DISPLAY` / `DEFAULT_LITERAL_SEARCH` | How the entity is read: the key `Get` finds it by, what one record brings (`Specification`), the list order (`Sort`s), the field shown beside the identity, the template a typed text fills (`Criteria` with `TEXT`). `@classmethod`s `Entity` defines with defaults; override what you need; what a caller's criteria names wins | `@classmethod` on the entity | `Entity`; `TEXT` from `sincpro_framework.ddd` |
+| `Presentation` | Class attribute of an entity: form hints only (`readonly`, `required`, `readonly_when`, `required_when`, `visible_when`), fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
 | `Is` / `When` / `AllHold` / `AnyHolds` | A hint's condition as the Criteria triple: `When(Is(i.state, Operator.NE, State.DRAFT), i.partner_id)` | declaration | `sincpro_framework.ddd` |
 | `Get` / `GetMany` / `LiteralSearch` / `Search` | Generic DTO bases naming entity and response: `class QueryGetInvoice(Get[Invoice, ResponseInvoice])` | DTO bases | `sincpro_framework.ddd` |
-| `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `presentation`; extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
-| `ResponseRecord` / `ResponseRecords` | One record / a list by identity (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
-| `AggregateNotFound` | `Get` named an identity with no record; `not_found` on every wire (404 REST) | exception | `from sincpro_framework.ddd import AggregateNotFound` |
+| `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `DEFAULT_*`; the caller's criteria wins part by part (`Criteria.replaced_by`); extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
+| `ResponseRecord` / `ResponseRecords` | One record / a list by key (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
+| `AggregateNotFound` | `Get` named a key with no record; `not_found` on every wire (404 REST) | exception | `from sincpro_framework.ddd import AggregateNotFound` |
 | `Derivations` / `Derive` | Class attribute: fields the entity computes from others, by its own methods, run in dependency order by `recompute` and by `save` (children first, `recompute_whole`); `upsert`/`update_all` compute nothing | declaration | `sincpro_framework.ddd` |
 | `assign` / `recompute` | Put a form's values on a record (read as each field's type) / run the derivations a change reaches | functions | `sincpro_framework.ddd` |
 | `Preview` / `ResponsePreview` / `FieldState` | DTO base answered by `EntityReads.preview`: values that moved, field states, advice — nothing stored | DTO bases | `sincpro_framework.ddd` |
@@ -263,12 +264,14 @@ use the common surface (then `MemoryRepository` substitutes in tests).
 - **A relation is resolved once per page, and refused if you did not ask for it.** No hidden N+1.
 - **`get(id)` is the stored aggregate**: every scalar, no relation, never a page.
   `get(id, detail=detail_of(Model))` is still that one aggregate, with the relations the
-  entity's `presentation.detail` names resolved onto it on SQL; `MemoryRepository` already
+  entity's `DEFAULT_READING` names resolved onto it on SQL; `MemoryRepository` already
   holds them.
 - **Reads of one aggregate are `EntityReads`, not hand-copied Features.** Name the DTOs
   (`Get`, `GetMany`, `LiteralSearch`, `Search` with `[Entity, Response]`), register them on one
-  `EntityReads[Entity]`, override a read and call `super()` to extend it. Writes stay Commands
-  with an intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
+  `EntityReads[Entity]`, override a read and call `super()` to extend it. What they bring by
+  default is the entity's own `DEFAULT_*` class methods — never a `default_factory` on each
+  DTO — and a caller's criteria wins for every part it names. Writes stay Commands with an
+  intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
 - **A value a form must see before saving is a derivation, not a hook.** Declare
   `derivations` on the entity; `save` and `EntityReads.preview` run the same `recompute`, and
   nothing is written inside a preview (`WriteInPreview`). Recipe:
@@ -298,7 +301,7 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 - [references/repository-and-writes.md](references/repository-and-writes.md) — tables, `save`/`remove`/`archive`, unit of work, reads, testing
 - [references/relations.md](references/relations.md) — the kinds, inference, cost
 - [references/hooks-and-mixins.md](references/hooks-and-mixins.md) — `Hook`/`Hooks`, moments, wiring, ordering
-- [references/entity-reads.md](references/entity-reads.md) — `presentation` + `EntityReads`: get, get many, select by text, list
+- [references/entity-reads.md](references/entity-reads.md) — `DEFAULT_*` + `EntityReads`: get, get many, select by text, list
 - [references/preview.md](references/preview.md) — derived fields, `assign`, `Preview`: what a record becomes before it is saved
 - [references/drafts.md](references/drafts.md) — drafts between requests in memory or Redis, conflicts, activating with `refuse_stale`
 - [references/form-hints.md](references/form-hints.md) — form hints in `presentation`, what a client receives, enforcing one with a hook

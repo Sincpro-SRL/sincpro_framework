@@ -1,29 +1,8 @@
-"""How an entity is read: the field shown beside its identity, how a literal finds it, the order
-of a list and what a detail brings.
+"""How a form shows each field of an entity: hints a client builds from, never rules.
 
     @dataclass
-    class Account(Entity):
-        code: str
-        name: str = ""
-        lines: list[Line] = field(default_factory=list)
-
-        presentation = Presentation["Account"](
-            display=lambda a: a.name,
-            search=lambda a: [Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)],
-            order=lambda a: a.code,
-            detail=lambda a: [a.code, a.name, Expand(a.lines, 300)],
-        )
-
-A part answers one entry alone or a list of them. Each lambda names its fields through the entity, so a type checker reads `a.code` against
-`Account` and a rename reaches it. It runs once, when the class is described, against
-`Fields`: a stand-in whose attributes are the field names. It never sees a record.
-
-Nothing declared is a declaration too: a field called `name` is the display, and a literal
-finds it by containment. `describe` publishes the result on `Meta`; `matching` and `detail_of`
-turn it into the criteria a Feature hands to `search` and `get`.
-
-It also says how a form shows each field, as defaults a client builds from:
-
+    class Invoice(Entity):
+        ...
         presentation = Presentation["Invoice"](
             readonly=lambda i: i.number,
             required=lambda i: i.partner_id,
@@ -33,20 +12,25 @@ It also says how a form shows each field, as defaults a client builds from:
             visible_when=lambda i: When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
         )
 
+Each lambda names its fields through the entity, so a type checker reads `i.number` against
+`Invoice` and a rename reaches it. It runs once, when the class is described, against `Fields`:
+a stand-in whose attributes are the field names. It never sees a record.
+
 **These are hints, never rules.** `Meta` publishes them so a screen shows an asterisk, greys
 a field or hides it without being told twice; a component that says otherwise wins. The
 framework checks none of them: a save of a confirmed invoice with another partner goes
 through. A rule the server keeps is the project's own hook (`before_save`), which may read
 the same condition from `presentation_of(Invoice)`.
+
+How the entity is read — its key, what a record brings, the order, the display and how a text
+finds it — is not here: it is the entity's own `DEFAULT_*` class methods (`Entity`).
 """
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 
-from sincpro_framework.ddd.criteria import Condition, Operator
+from sincpro_framework.ddd.criteria import Operator
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 @dataclass(frozen=True)
@@ -81,10 +65,9 @@ class Fields:
 def field_name(value: object, form: str) -> str:
     """The name behind a `FieldRef`; anything else is refused, showing the form it takes.
 
-    in      FieldRef("code"), "Match.prefix(a.code)"    →  out  "code"
-    in      "code", "Match.prefix(a.code)"              →  ContractViolation: takes a field read
-                                                           through the entity, as in
-                                                           lambda a: Match.prefix(a.code)
+    in      FieldRef("number"), "i.number"    →  out  "number"
+    in      "number", "i.number"              →  ContractViolation: takes a field read through
+                                                 the entity, as in lambda a: i.number
     """
     if isinstance(value, FieldRef):
         return value.name
@@ -92,78 +75,6 @@ def field_name(value: object, form: str) -> str:
         f"a presentation takes a field read through the entity, as in lambda a: {form}; "
         f"it was given {value!r}"
     )
-
-
-class MatchMode(StrEnum):
-    """How a literal is compared with one field."""
-
-    EQUAL = "equal"
-    PREFIX = "prefix"
-    CONTAINS = "contains"
-
-
-OPERATOR_OF_MODE: dict[MatchMode, Operator] = {
-    MatchMode.EQUAL: Operator.EQ,
-    MatchMode.PREFIX: Operator.STARTS_WITH,
-    MatchMode.CONTAINS: Operator.LIKE,
-}
-
-
-class Match(DataTransferObject):
-    """One field a literal is compared with, and how. What `Meta.search` publishes.
-
-    Match.equal(a.code)        the code is the text
-    Match.prefix(a.code)       the code starts with the text: 1.2.3 finds 1.2.3.01
-    Match.contains(a.name)     the name contains the text, case-insensitive
-    """
-
-    field: str
-    mode: MatchMode
-
-    @classmethod
-    def equal(cls, field: object) -> "Match":
-        return cls(field=field_name(field, "Match.equal(a.code)"), mode=MatchMode.EQUAL)
-
-    @classmethod
-    def prefix(cls, field: object) -> "Match":
-        return cls(field=field_name(field, "Match.prefix(a.code)"), mode=MatchMode.PREFIX)
-
-    @classmethod
-    def contains(cls, field: object) -> "Match":
-        return cls(field=field_name(field, "Match.contains(a.name)"), mode=MatchMode.CONTAINS)
-
-    def condition(self, text: str) -> Condition:
-        """This match asked with a literal.
-
-        in      Match(code, PREFIX), "1.2.3"    →  out  Condition(code, STARTS_WITH, "1.2.3")
-        """
-        return Condition(field=self.field, value=text, operator=OPERATOR_OF_MODE[self.mode])
-
-
-@dataclass(frozen=True)
-class Descending:
-    """A field a list is ordered by, newest or largest first: `Descending(a.posted_at)`."""
-
-    field: object
-
-
-@dataclass(frozen=True)
-class Expand:
-    """A relation a detail brings whole: every scalar of each related record.
-
-    `limit` pages a to-many relation. Without it the relation keeps the nested default.
-    """
-
-    field: object
-    limit: int | None = None
-
-
-@dataclass(frozen=True)
-class Reference:
-    """A relation a detail brings as its identity and display field: what a many2one shows."""
-
-    field: object
-    limit: int | None = None
 
 
 @dataclass(frozen=True)
@@ -215,24 +126,14 @@ class When:
 
 @dataclass(frozen=True)
 class Presentation[T]:
-    """What the entity declares about how it is read. Every part is optional.
+    """How a form shows each field: hints a client may override, none of them checked.
 
-    `display` is the field shown beside the identity. `search` is how a literal finds a record
-    (containment on the display when not declared). `order` is the list order, a bare field
-    ascending and `Descending(...)` the other way. `detail` is what `get` brings when a caller
-    asks for the detail: bare fields, `Expand(...)` and `Reference(...)`.
-
-    The form hints, all defaults a client may override and none of them checked:
     `readonly` and `required` always; `readonly_when`, `required_when` and `visible_when`
     while a condition holds over the record (`When(...)`). Left alone, the fields the framework
     writes (`id`, `version`, …) are read-only and a field with no default that cannot be
     `None` is required.
     """
 
-    display: Callable[[T], object] | None = None
-    search: Callable[[T], Match | Sequence[Match]] | None = None
-    order: Callable[[T], object] | None = None
-    detail: Callable[[T], object] | None = None
     readonly: Callable[[T], object] | None = None
     required: Callable[[T], object] | None = None
     readonly_when: Callable[[T], When | Sequence[When]] | None = None

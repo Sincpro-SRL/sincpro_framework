@@ -13,6 +13,7 @@ Context: the class behind `Any` is `Any_`, because the modules that define and r
 
 from sincpro_framework.ddd.criteria.criteria import (
     MULTI_VALUED,
+    TEXT,
     All,
     Any_,
     Bucket,
@@ -32,7 +33,9 @@ from sincpro_framework.ddd.criteria.criteria import (
     combined,
     conditions_of,
     expression_from,
+    holds_text,
     parse_order,
+    with_text,
 )
 from sincpro_framework.ddd.criteria.evaluate import holds, matches
 from sincpro_framework.ddd.criteria.pagination import Cursor, CursorKeys, Offset, Pagination
@@ -43,6 +46,7 @@ Any = Any_
 __all__ = [
     "TOLERANT",
     "MULTI_VALUED",
+    "TEXT",
     "All",
     "Any",
     "Any_",
@@ -67,7 +71,9 @@ __all__ = [
     "combined",
     "conditions_of",
     "expression_from",
+    "holds_text",
     "holds",
     "matches",
     "parse_order",
+    "with_text",
 ]

@@ -14,7 +14,7 @@ from decimal import Decimal
 from functools import cache
 from typing import Any, TypeGuard, cast
 
-from sqlalchemy import inspect
+from sqlalchemy import UniqueConstraint, inspect
 from sqlalchemy.exc import NoInspectionAvailable
 
 from sincpro_framework.ddd.entity import Translated
@@ -98,6 +98,31 @@ def _column_type(column: Any) -> Any:
     except NotImplementedError:
         return Any
     return python_type | None if column.nullable else python_type
+
+
+def _key_is_unique(entity: type, table: Any, key: str, identity: str) -> None:
+    """A `DEFAULT_GET_ID` other than the identity must be unique on disk: a `Get` reads one
+    record by it, and two rows sharing a key would make it answer whichever came first.
+
+        in      Account(DEFAULT_GET_ID="code"), Column("code", Text, unique=True)    →  ok
+        in      Account(DEFAULT_GET_ID="code"), Column("code", Text)                 →  refused
+
+    Unique as the column says, or as a unique constraint or index on that column alone.
+    """
+    if not key or key == identity or key not in table.c:
+        return
+    column = table.c[key]
+    alone = {
+        tuple(one.columns.keys())
+        for one in (*table.constraints, *table.indexes)
+        if isinstance(one, UniqueConstraint) or getattr(one, "unique", False)
+    }
+    if column.primary_key or column.unique or (key,) in alone:
+        return
+    raise ContractViolation(
+        f"{entity.__name__}.DEFAULT_GET_ID answers {key}, and {table.name}.{key} is not "
+        f"unique: a Get reads one record by it. Declare the column unique=True."
+    )
 
 
 @cache
@@ -198,10 +223,12 @@ def describe(entity: type) -> Meta:
 
     fields = hinted(fields, entity)
     presented = presentation_of(entity)
+    _key_is_unique(entity, mapper.local_table, presented.get_id, identity)
     return Meta(
         aggregate=entity.__name__,
         identity=identity,
         default_order=default_order_of(entity, identity),
+        get_id=presented.get_id,
         display=presented.display,
         search=presented.search,
         detail=presented.detail,

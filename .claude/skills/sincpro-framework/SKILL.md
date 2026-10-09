@@ -14,7 +14,8 @@ This skill stands alone: it explains what the framework is, its vocabulary and t
 service, then routes to the layer skill. The framework repo also carries deep docs (`docs/…` in the
 framework repo); they are not shipped with the package, and nothing here depends on them.
 
-> Verified against **main at e6dbe87** (manifest version **3.14.5**, refactors #145-#147).
+> Verified against **v3.15.0** (main at 07fc0ce). Production stays on 3.x; 4.0.0 is an
+> exploration (`docs/version-4.md`).
 > A version string alone does not establish these APIs: verify the installed artifact and
 > lockfile before upgrading a consumer. Skills from main can be newer than its dependency.
 
@@ -56,7 +57,7 @@ What it is not:
 | `DomainEvent` | A fact that happened. An `Entity` subclass with correlation/causation ids, recorded on an aggregate (`record`) and drained (`pull_events`). | base class | `from sincpro_framework.ddd import DomainEvent` |
 | `DomainError` + `failure_kind` | Base of every expected refusal. A subclass declares `failure_kind = FailureKind.NOT_FOUND` (…) and every wire maps it to its code. | exception | `from sincpro_framework.ddd import DomainError`; `from sincpro_framework.transport.failures import FailureKind` |
 | Adapter | A class in `adapters/` that wraps an external system or a replaceable mechanism, registered as a dependency. | convention | — |
-| Port | A `typing.Protocol` in `domain/` that an adapter implements, when there are 2+ implementations or a test double is a real consumer. | convention | `from typing import Protocol` |
+| Port | A `typing.Protocol` the use cases call (a Feature, an ApplicationService or the domain), in `domain/`, when there are 2+ implementations or a test double is a real consumer. A contract only an adapter calls — the one a facade holds its implementations by — lives in that adapter's folder, not in `domain/`. | convention | `from typing import Protocol` |
 | Gateway / entrypoint | A wire that reads one or more buses and publishes their use cases (REST, JSON-RPC, gRPC, MCP, queue). Built in `entrypoints/`; never registers a use case. | class | `from sincpro_framework.entrypoints import Gateway` (base) |
 | Exposure decorators | `@rest.get(...)`, `@rpc()`, `@grpc()`, `@mcp()`, `@queue(...)`, `@internal` on the existing handler in `services/`. Import no transport library. | decorator | `from sincpro_framework.entrypoints.exposure import rest, rpc, grpc, mcp, queue, internal` |
 
@@ -66,7 +67,7 @@ What it is not:
 
 | Layer | Holds | May import |
 |---|---|---|
-| `domain/` | DTOs shared by several use cases, aggregates, value objects, ports (`Protocol`), pure rules, policy constants | its own `domain/`, a lower context's `domain/`, `sincpro_framework.ddd` |
+| `domain/` | DTOs shared by several use cases, aggregates, value objects, ports (`Protocol`) the use cases call, pure rules, policy constants | its own `domain/`, a lower context's `domain/`, `sincpro_framework.ddd` |
 | `adapters/` | One class per external system or replaceable mechanism (client, repository impl, classifier) | `domain/`; never another adapter |
 | `services/` | One file per use case: DTOs + `@bus.feature`/`@bus.app_service` handler | `domain/`, the context package (for `bus`, `Feature`), other services' **DTOs only** |
 | `settings.py` (context root) | The context's settings shape and its object, built at `<pkg>.<ctx>` | `common/settings.py`, the framework |

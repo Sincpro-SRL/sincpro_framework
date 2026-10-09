@@ -11,6 +11,10 @@ For the Forge-driven assessment of context composition, public contracts, entryp
 and durable delivery, see [PRD_25](prd/PRD_25_context-composition-and-durable-delivery.md).
 It separates existing capabilities from proposed corrections and unverified acceptance criteria.
 
+How an entity answers how it is read — its key, what a record brings, the order, the display
+and the literal search, as `DEFAULT_*` class methods a caller's criteria overrides — and why
+that left `presentation`: [PRD_27](prd/PRD_27_entity-default-reads.md).
+
 | Layer | Package | Start here | What is in it |
 |---|---|---|---|
 | **Version 4.0.0** | — | [version-4.md](version-4.md) | Exploration of ORM, Criteria, Entrypoints, Entity and events: production stays on 3.x until the architect is convinced; the spec is the essence, the style may change |

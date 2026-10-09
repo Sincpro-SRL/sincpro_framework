@@ -1,5 +1,9 @@
 # PRD_26: UI-ready entities — what a generic screen or an agent needs, declared once
 
+- **Superseded in part by [PRD_27](PRD_27_entity-default-reads.md)**: how an entity is read
+  (`display`, `search`, `order`, `detail`) moved out of `presentation` into the entity's
+  `DEFAULT_*` class methods; `Match`, `Expand`, `Reference` and `Descending` are gone. §0 and
+  the matching rows of §5 describe what was built then, not what holds now.
 - **Status**: phase 0 and its criteria follow-ups merged (#153), 2026-10-09. Phase 1 (form
   hints) merged (#154). Phase 5 (§6: derived fields, `assign`, preview, the no-write guard,
   drafts in memory and over a `KeyValueStore`) built on `feat/preview`, not committed. The

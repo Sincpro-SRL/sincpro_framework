@@ -19,10 +19,8 @@ from sincpro_framework.ddd import (
     Derivations,
     Derive,
     EntityReads,
-    Expand,
     InMemoryDrafts,
     MemoryRepository,
-    Presentation,
     Preview,
     ResponsePreview,
     Specification,
@@ -70,7 +68,10 @@ class Sale(Entity):
             Derive(s.total, depends=(s.subtotal, s.discount), by=Sale.total_of),
         )
     )
-    presentation = Presentation["Sale"](detail=lambda s: (s.customer_id, Expand(s.lines)))
+
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification:
+        return Specification.model_validate({"customer_id": {}, "lines": {}})
 
 
 books = registry(metadata=MetaData())

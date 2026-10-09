@@ -325,7 +325,7 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 | `sincpro_framework.transport.addresses` | `Wire`, `HostedAt`, `HostedContext`, `InvalidAddress` — where a context is reached; the settings declare it too, so it imports neither |
 | `domain/payload.py` | the published language: `pack` / `packed`, `unpack` / `unpacked`, `pack_context` / `unpack_context`, the allow-list, `ChunkReader` |
 | `domain/errors.py` | what a failed call raises, an error's details, and raising a remote exception as itself |
-| `domain/transport.py` | `Transport`, the port a transport implements |
+| `adapters/transport.py` | `Transport`, the contract `transport_for` holds the transports by (only the adapters call it) |
 | `adapters/http.py` | the caller's side over HTTP — the standard library, no extra |
 | `adapters/grpc.py` | the caller's side over gRPC — `[grpc]`, imported only when an address names it |
 | `adapters/__init__.py` | `transport_for(address)`, chosen by the scheme |
