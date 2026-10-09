@@ -17,7 +17,8 @@ Read in this order:
 | [Introduction](introduction.md) | What problem this solves, the mental model in one page, a first end-to-end example |
 | [Design](design.md) | The two packages, the flow of a read and of a write, the module map, the invariants, where to extend |
 | [Criteria](criteria.md) | The boundary language: its grammar, what *reflexive* means, how two criterias merge, what `dropped` is |
-| [Specification](specification.md) | What to bring back of each record, at any depth: the rules |
+| [Specification](specification.md) | What to bring back of each record, at any depth: the rules, and what the entity declares in `presentation` |
+| [Entity reads](entity-reads.md) | `EntityReads`: one Feature for get, get many, the select by text and the list, from the entity's `presentation` |
 | [Relations](relations.md) | The paper: the model, the precedence, the resolution algorithm per kind, cost, and how to add a new way to resolve |
 | [Transactions](transactions.md) | The unit of work and its options, locks, what the engine refuses and `retrying`, `after_commit`, `upsert` and writes by criteria — runnable |
 | [Lifecycle](lifecycle.md) | What runs when something is written, and who each layer reaches |

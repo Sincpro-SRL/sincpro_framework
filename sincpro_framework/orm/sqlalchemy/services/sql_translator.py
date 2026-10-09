@@ -19,6 +19,7 @@ from sqlalchemy import (
     not_,
     or_,
     select,
+    true,
     tuple_,
 )
 from sqlalchemy.sql.elements import UnaryExpression
@@ -66,6 +67,26 @@ def _is_empty_list(value: Any) -> bool:
     return isinstance(value, list) and not value
 
 
+LIKE_ESCAPE = "\\"
+
+
+def _escaped(value: Any) -> str:
+    """A value as `LIKE` reads it literally: its wildcards and the escape itself escaped.
+
+    in      "50%"     →  out  "50\\%"      the text 50%, not «starts with 50»
+    in      "a_b"     →  out  "a\\_b"      the text a_b, not a, any one character, b
+    """
+    text = str(value)
+    for special in (LIKE_ESCAPE, "%", "_"):
+        text = text.replace(special, LIKE_ESCAPE + special)
+    return text
+
+
+def _literal(value: Any) -> str:
+    """`_escaped`, lowercased: what a case-insensitive `LIKE` compares against."""
+    return _escaped(str(value).lower())
+
+
 def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bool]:
     """One operator as the SQL comparison it means.
 
@@ -74,6 +95,9 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
 
     in      Dataset.name, Operator.LIKE, "Labs"
     out     lower(dataset.name) LIKE '%labs%'      containment, case-insensitive
+
+    in      Dataset.name, Operator.STARTS_WITH, "Labs"
+    out     lower(dataset.name) LIKE 'labs%'       prefix, case-insensitive
 
     in      Dataset.column_names, Operator.CONTAINS, "edad"
     out     CAST(dataset.column_names AS TEXT) LIKE '%"edad"%'
@@ -111,11 +135,15 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
             return column.is_(None) if value else column.is_not(None)
         case Operator.LIKE:
             # Case-insensitive containment: what the interface has always meant by searching.
-            return func.lower(column).like(f"%{str(value).lower()}%")
+            return func.lower(column).like(f"%{_literal(value)}%", escape=LIKE_ESCAPE)
+        case Operator.STARTS_WITH:
+            return func.lower(column).like(f"{_literal(value)}%", escape=LIKE_ESCAPE)
         case Operator.CONTAINS:
-            return _as_stored_text(column).like(f'%"{value}"%')
+            return _as_stored_text(column).like(f'%"{_escaped(value)}"%', escape=LIKE_ESCAPE)
         case Operator.NOT_CONTAINS:
-            return not_(_as_stored_text(column).like(f'%"{value}"%'))
+            return not_(
+                _as_stored_text(column).like(f'%"{_escaped(value)}"%', escape=LIKE_ESCAPE)
+            )
         case _:
             raise InvalidCriteria(f"no SQL translation for operator '{operator}'")
 
@@ -142,8 +170,11 @@ def clause_over(
             parts = (clause_over(resolve, part) for part in expression.any)
             return or_(*(one for one in parts if one is not None))
         case Not():
+            # The complement of what the inner expression matches, as memory and the client
+            # answer it. A bare `NOT` over a comparison with a NULL is NULL, which drops the row:
+            # `not owner = 'ana'` would leave out the records with no owner.
             inner = clause_over(resolve, expression.negate)
-            return not_(inner) if inner is not None else None
+            return not_(inner.is_(true())) if inner is not None else None
 
 
 def where_clause(entity: type, expression: Expression | None) -> ColumnElement[bool] | None:

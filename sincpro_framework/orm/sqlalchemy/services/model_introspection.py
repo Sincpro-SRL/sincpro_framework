@@ -23,10 +23,12 @@ from sincpro_framework.ddd.entity.model_meta import (
     FieldType,
     Meta,
     annotations_of,
+    default_order_of,
     describe_class,
     enum_of,
     field_translations,
     logical_type,
+    presentation_of,
     related_class,
     without_optional,
 )
@@ -193,10 +195,14 @@ def describe(entity: type) -> Meta:
             for name, meta in fields.items()
         }
 
+    presented = presentation_of(entity)
     return Meta(
         aggregate=entity.__name__,
         identity=identity,
-        default_order=f"-{identity}",
+        default_order=default_order_of(entity, identity),
+        display=presented.display,
+        search=presented.search,
+        detail=presented.detail,
         fields=fields,
         name=aggregate_name,
     )

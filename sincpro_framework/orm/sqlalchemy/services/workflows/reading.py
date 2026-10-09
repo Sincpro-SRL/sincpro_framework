@@ -742,6 +742,7 @@ class Reading(Store):
         for_update: bool = False,
         skip_locked: bool = False,
         nowait: bool = False,
+        detail: Criteria | None = None,
     ) -> T | None:
         """One record by its identity, or `None` when there is none.
 
@@ -749,7 +750,8 @@ class Reading(Store):
             in      Dataset, "gone"        →  out  None
 
         The read a use case does before it decides: what it gets back is the aggregate as
-        stored, ready to be changed and handed to `save`.
+        stored, ready to be changed and handed to `save`. `detail` names the relations to
+        resolve onto that one record (`detail_of(Model)`); the answer is still the record.
 
         `for_update` takes the row lock until the unit of work commits — for the process
         that claims an item so no other worker takes it. `skip_locked` steps over rows
@@ -766,11 +768,23 @@ class Reading(Store):
                 if lock is None
                 else session.get(model, identity, with_for_update=lock)
             )
-        if found is None or not self._in_scope(found):
-            return None
-        if isinstance(found, ArchivableMixin) and found.is_archived:
-            return None
-        return cast(Any, self._read(found))
+            if found is None or not self._in_scope(found):
+                return None
+            if isinstance(found, ArchivableMixin) and found.is_archived:
+                return None
+            read = self._read(found)
+            if detail is not None and detail.specification is not None and read is not None:
+                _, _, meta, dropped = self.prepare(model, detail)
+                resolve_relations(
+                    self.prepare,
+                    session,
+                    model,
+                    [read],
+                    detail.specification,
+                    meta,
+                    list(dropped),
+                )
+        return cast(Any, read)
 
     def _rebuilt(self, model: type[EventSourcedMixin], identity: Any) -> Any:
         """An event-sourced entity: its events, in the order of its versions, applied."""

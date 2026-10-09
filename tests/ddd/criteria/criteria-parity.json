@@ -230,6 +230,45 @@
       ]
     },
     {
+      "name": "like reads a percent sign as itself, not as a wildcard",
+      "where": {
+        "field": "name",
+        "operator": "like",
+        "value": "%"
+      },
+      "expected": []
+    },
+    {
+      "name": "like reads an underscore as itself, not as any one character",
+      "where": {
+        "field": "name",
+        "operator": "like",
+        "value": "s_c"
+      },
+      "expected": []
+    },
+    {
+      "name": "starts with is case-insensitive and anchored at the start",
+      "where": {
+        "field": "name",
+        "operator": "starts with",
+        "value": "LAB"
+      },
+      "expected": [
+        "a",
+        "e"
+      ]
+    },
+    {
+      "name": "starts with does not match in the middle",
+      "where": {
+        "field": "name",
+        "operator": "starts with",
+        "value": "csv"
+      },
+      "expected": []
+    },
+    {
       "name": "contains asks about one member of a list",
       "where": {
         "field": "tags",

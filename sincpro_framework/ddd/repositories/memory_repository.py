@@ -368,10 +368,17 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         for_update: bool = False,
         skip_locked: bool = False,
         nowait: bool = False,
+        detail: Criteria | None = None,
     ) -> T | None:
-        """One record by its identity, or `None`; an archived one answers `None` too."""
+        """One record by its identity, or `None`; an archived one answers `None` too.
+
+        `detail` is checked against the definition exactly as `search` checks a specification.
+        The record held here already carries its relations, so nothing more is resolved.
+        """
         refuse_locking(for_update or skip_locked or nowait)
         aggregate, _holder = model_and_collection(target)
+        if detail is not None:
+            self.definition(aggregate).accept_specification(detail.specification)
         if isinstance(aggregate, type) and issubclass(aggregate, EventSourcedMixin):
             return self._read(
                 aggregate.rebuilt(identity, self._events_about(aggregate, identity))

@@ -21,6 +21,7 @@ from sincpro_framework.ddd.criteria import (
     Not,
     Operator,
 )
+from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.orm.sqlalchemy.services.sql_translator import grouping_column
 
@@ -93,6 +94,17 @@ def test_contains_matches_a_whole_member_and_not_a_fragment(store):
     found = matching(store, Condition(field="tags", operator=Operator.CONTAINS, value="n1"))
 
     assert found == {"th_0001"}
+
+
+@pytest.mark.parametrize("value", ["n_", "n%", "%"])
+def test_contains_reads_a_wildcard_as_itself_as_memory_does(store, value):
+    """Context: the stored JSON is matched with `LIKE`, so an unescaped `_` or `%` would find
+    `n1` for `n_`. In memory, membership is equality; the database answers the same."""
+    holds = Condition(field="tags", operator=Operator.CONTAINS, value=value)
+    lacks = Condition(field="tags", operator=Operator.NOT_CONTAINS, value=value)
+
+    assert matching(store, holds) == expected(lambda thing: matches(thing, holds)) == set()
+    assert matching(store, lacks) == expected(lambda thing: matches(thing, lacks))
 
 
 def test_a_conjunction_narrows(store):

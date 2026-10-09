@@ -85,8 +85,12 @@ class ReadsAggregates(ABC):
         for_update: bool = False,
         skip_locked: bool = False,
         nowait: bool = False,
+        detail: Criteria | None = None,
     ) -> T | None:
         """One aggregate by its identity, or `None`.
+
+        `detail` is what comes with that one record: the relations its specification names
+        (`detail_of(Model)`). It does not filter and it does not make the answer a page.
 
         `for_update` claims the row until the unit of work around it ends; `skip_locked`
         passes over what somebody else already holds, and `nowait` fails at once on it.

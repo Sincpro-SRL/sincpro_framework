@@ -150,8 +150,8 @@ publish: configure-gemfury
 STRESS_ENTRIES ?= 25000
 
 criteria-parity:
-	@poetry run python tests/ddd/test_criteria_parity.py
-	@echo "   the TypeScript package reads tests/ddd/criteria-parity.json: copy it over when it changes"
+	@poetry run python tests/ddd/criteria/test_criteria_parity.py
+	@echo "   the TypeScript package reads tests/ddd/criteria/criteria-parity.json: copy it over when it changes"
 
 test:
 	poetry run pytest tests -m "not realworld" $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml

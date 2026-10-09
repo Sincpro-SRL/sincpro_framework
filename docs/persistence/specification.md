@@ -17,7 +17,8 @@ as outside. A scalar's is `{}`. A relation's carries `where`, `order`, `paginati
 `specification`, so the vocabulary inside a node is the vocabulary outside it, recursively.
 
 `None` and `{}` are not the same thing. `None` is «nothing asked»: every scalar, no relation.
-`{}` is «asked, and nothing survived»: the identity alone.
+`{}` is «asked, and nothing survived»: the identity, and the display field when the entity
+names one (`Meta.display`). That pair is the reference a select lists and a many2one carries.
 
 ## The rules
 
@@ -30,6 +31,80 @@ as outside. A scalar's is `{}`. A relation's carries `where`, `order`, `paginati
 | 5 | The identity always travels, at every level, asked or not. |
 | 6 | What is asked is a union: order does not matter, repeats collapse, a bare node wins over its own children. |
 | 7 | What cannot be answered is dropped and reported, never a 400: `unknown_field`, `not_expandable`. |
+| 8 | An empty specification keeps the identity and, when the entity names one, its display field. |
+
+## What the entity declares: `presentation`
+
+How an aggregate is read is said once, on the class, so a select, a list and a detail do not
+each assemble it. `presentation` is a class attribute, not a field: it is never stored and never
+travels with a record. Each part names its fields through the entity, `lambda a: a.code`, so a
+type checker reads the name against the class and a rename reaches it.
+
+```python
+from dataclasses import dataclass, field
+
+from sincpro_framework.ddd import Descending, Entity, Expand, Match, Presentation, Reference
+
+
+@dataclass
+class Partner(Entity):
+    name: str
+    city: str = ""
+
+
+@dataclass
+class Account(Entity):
+    code: str
+    name: str = ""
+    partner_id: str | None = None
+    partner: Partner | None = None
+    lines: list["Line"] = field(default_factory=list)
+
+    presentation = Presentation["Account"](
+        display=lambda a: a.name,
+        search=lambda a: (Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)),
+        order=lambda a: (a.code,),
+        detail=lambda a: (a.code, a.name, Reference(a.partner), Expand(a.lines, 300)),
+    )
+```
+
+| Part | What it says | Left alone |
+|---|---|---|
+| `display` | The field shown beside the identity | the field called `name`, when there is one |
+| `search` | How a literal finds a record, field by field | containment on a text display |
+| `order` | The list order; `Descending(a.posted_at)` for the other way | newest identity first |
+| `detail` | What `get` brings when asked for the detail | every scalar, no relation |
+
+`Partner` declares nothing and needs nothing: `name` is its display and a literal finds it by
+containment. The lambdas run once, when the class is described, against a stand-in whose
+attributes are the field names. A name that is not a field is refused there, naming it, and so
+is a prefix or a containment on a field that is not text.
+
+A detail entry is a bare field (that scalar), `Expand(a.lines, limit)` (the relation, every
+scalar of each related record) or `Reference(a.partner, limit)` (the relation as identity and
+display, rule 8).
+
+| Mode | Operator | `"1.2.3"` finds |
+|---|---|---|
+| `Match.equal` | `=` | `1.2.3` |
+| `Match.prefix` | `starts with` | `1.2.3`, `1.2.30`, `1.2.3.01` — not `1.2.1.2.3` |
+| `Match.contains` | `like` | any text holding `1.2.3`, case-insensitive |
+
+A literal is read as itself: `50%` finds `Descuento 50% off`, and `a_b` does not find `axb`.
+
+`describe` publishes it on `Meta` (`display`, `search`, `default_order`, `detail`), and two
+functions turn it into the criteria a Feature runs:
+
+| Call | What comes back |
+|---|---|
+| `accounts.search(matching(Account, "1.2.3"))` | a page of `NAME_SEARCH_LIMIT` (8), identity and display on the wire |
+| `accounts.search(matching(Account, ""))` | the first 8 in the list order |
+| `accounts.get(account_id)` | the stored `Account`: every scalar, no relation |
+| `accounts.get(account_id, detail=detail_of(Account))` | that one `Account`, with the relations `detail` names |
+
+`matching` and `detail_of` build a criteria and never run it. `EntityReads` runs them for a
+project's own DTOs: [Entity reads](entity-reads.md). A list asks nothing extra: the
+declared order is `Meta.default_order`, which the store applies when a criteria names none.
 
 Rule 1 said another way: with `dataset_id: str` and `dataset: Dataset` on an aggregate, a read
 that asks nothing returns `dataset_id` and not `dataset`. `Meta.fields["dataset"]`, of type `many2one`, tells the

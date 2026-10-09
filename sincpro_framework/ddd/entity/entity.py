@@ -33,11 +33,12 @@ import dataclasses
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import TypeAdapter
 
 from sincpro_framework.context.infrastructure.tree import chain_for
+from sincpro_framework.ddd.entity.presentation import Presentation
 from sincpro_framework.ids import new_entity_id
 
 if TYPE_CHECKING:
@@ -83,6 +84,11 @@ class Entity:
     because these come first in the field order — which is the convention `EntityCollection`
     reads identity by. `translations()` is read once per class into the definition; a field's
     own label and help are read off `field(metadata=...)`, not from here.
+
+    `presentation` says how the aggregate is read — its display field, how a literal finds it,
+    the list order and what a detail brings (`Presentation`). It is a class attribute, not a
+    field: it is never stored and never travels with a record. Left alone, a field called
+    `name` is the display.
     """
 
     id: str = field(default_factory=new_entity_id)
@@ -94,6 +100,7 @@ class Entity:
     version: int = 0
     """How many times it has been written. Zero means never — the adapter raises it, and a
     save carrying a number older than the row's is refused as `StaleAggregate`."""
+    presentation: ClassVar[Presentation[Any]] = Presentation()
 
     @classmethod
     def translations(cls) -> Translated:

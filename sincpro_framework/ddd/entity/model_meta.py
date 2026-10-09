@@ -19,7 +19,17 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum, StrEnum
-from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints
+from functools import cache
+from typing import (
+    Any,
+    ClassVar,
+    Literal,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from pydantic import computed_field
 
@@ -28,13 +38,26 @@ from sincpro_framework.ddd.criteria import (
     All,
     Any_,
     Condition,
+    Criteria,
     Expression,
     Not,
     Operator,
+    Pagination,
+    Sort,
     Specification,
 )
 from sincpro_framework.ddd.entity.entity import Translated
 from sincpro_framework.ddd.entity.entity_collection import Dropped
+from sincpro_framework.ddd.entity.presentation import (
+    Descending,
+    Expand,
+    Fields,
+    Match,
+    MatchMode,
+    Presentation,
+    Reference,
+    field_name,
+)
 from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -124,7 +147,14 @@ COMPARABLE: tuple[Operator, ...] = (
 )
 
 OPERATORS_BY_TYPE: dict[FieldType, tuple[Operator, ...]] = {
-    FieldType.TEXT: (Operator.EQ, Operator.NE, Operator.LIKE, Operator.IN, Operator.NOT_IN),
+    FieldType.TEXT: (
+        Operator.EQ,
+        Operator.NE,
+        Operator.LIKE,
+        Operator.STARTS_WITH,
+        Operator.IN,
+        Operator.NOT_IN,
+    ),
     FieldType.INTEGER: COMPARABLE + (Operator.IN, Operator.NOT_IN),
     FieldType.NUMBER: COMPARABLE,
     FieldType.BOOLEAN: (Operator.EQ,),
@@ -175,19 +205,25 @@ def without_optional(annotation: Any) -> Any:
 
 
 def annotations_of(declared: type) -> dict[str, Any]:
-    """The class's annotations with forward references resolved against its module.
+    """The class's field annotations with forward references resolved against its module.
 
         in  Dataset  →  out  {'dataset_id': str, 'row_count': int, …}
 
+    A `ClassVar` is left out: it belongs to the class, not to a record (`Entity.presentation`).
     A reference that does not resolve fails here, at boot, and names the class: a typo in a
     forward reference should not surface as a missing relation at the first request.
     """
     try:
-        return get_type_hints(declared, vars(sys.modules[declared.__module__]))
+        hints = get_type_hints(declared, vars(sys.modules[declared.__module__]))
     except NameError as error:
         raise ContractViolation(
             f"{declared.__name__} names a type that cannot be resolved at runtime: {error}"
         ) from error
+    return {
+        name: hint
+        for name, hint in hints.items()
+        if hint is not ClassVar and get_origin(hint) is not ClassVar
+    }
 
 
 def enum_of(annotation: Any) -> type[Enum] | None:
@@ -465,6 +501,16 @@ class Meta(DataTransferObject):
     aggregate: str
     identity: str
     default_order: str
+    """The list order when a criteria names none: the entity's declared order, or newest
+    identity first."""
+    display: str = ""
+    """The field shown beside the identity: what a select lists and a reference carries. Empty
+    when the aggregate names none."""
+    search: tuple[Match, ...] = ()
+    """How a literal finds a record, field by field. `matching` asks it."""
+    detail: Criteria | None = None
+    """What a detail brings with the record. `detail_of` answers it; `None` is every scalar and
+    no relation."""
     fields: dict[str, FieldMeta]
     name: Translated
     """The aggregate's own name, exactly as the class's `translations()` answered it. A
@@ -591,10 +637,24 @@ class Meta(DataTransferObject):
                 dropped.append(Dropped(field=name, reason="unknown_field"))
         return Specification(kept), dropped
 
+    def masked(self, specification: Specification) -> list[str]:
+        """The names a specification keeps besides the identity.
+
+            in      {"code": {}, "name": {}}    →  out  ["code", "name"]
+            in      {}                          →  out  ["name"]      the display, when named
+
+        An empty specification is a reference: the identity and the display travel together.
+        """
+        named = specification.named
+        if not named and self.display:
+            return [self.display]
+        return named
+
     def only(self, specification: Specification | None) -> "Meta":
         """This definition as the masked payload will look: the same shape, narrowed.
 
             in      {"name": {}}        →  out  fields={identity, name}
+            in      {}                  →  out  fields={identity, display}
             in      nothing asked       →  out  every scalar and embedded field, no relation
             in      {"size": {"specification": {"width": {}}}}
                                         →  out  the embedded shape cut to {width}, identity kept
@@ -618,7 +678,7 @@ class Meta(DataTransferObject):
             )
 
         kept: dict[str, FieldMeta] = {}
-        for name in dict.fromkeys([self.identity, *specification.named]):
+        for name in dict.fromkeys([self.identity, *self.masked(specification)]):
             field = self.fields.get(name)
             if field is None:
                 continue
@@ -670,6 +730,144 @@ def _worded(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldM
     }
 
 
+TEXT_TYPES = frozenset({FieldType.TEXT, FieldType.TRANSLATED})
+
+
+@dataclasses.dataclass(frozen=True)
+class Presented:
+    """An entity's `presentation`, read: field names in place of lambdas, checked against the
+    class.
+
+        in      Account(display=name, search=equal code · prefix code · contains name, order=code)
+        out     Presented("name", (Match(code, equal), Match(code, prefix), Match(name, contains)),
+                          (Sort(code),), None)
+    """
+
+    display: str = ""
+    search: tuple[Match, ...] = ()
+    order: tuple[Sort, ...] = ()
+    detail: Criteria | None = None
+
+
+def _entries(answered: object) -> tuple[object, ...]:
+    """What a lambda answered, as a tuple: `lambda a: a.code` is read as `(a.code,)`."""
+    return answered if isinstance(answered, tuple) else (answered,)
+
+
+def _searched(owner: str, answered: object, annotations: dict[str, Any]) -> tuple[Match, ...]:
+    """The declared matches, each on a field that can answer its mode.
+
+    A prefix asks a text; containment asks a text or a translated text. Anything else would be
+    dropped by the store and widen the search, so it is refused here.
+    """
+    matches = _entries(answered)
+    for match in matches:
+        if not isinstance(match, Match):
+            raise ContractViolation(
+                f"{owner}.presentation search takes Match, as in "
+                f"lambda a: (Match.contains(a.name),); it was given {match!r}"
+            )
+        if match.field not in annotations:
+            raise ContractViolation(
+                f"{owner}.presentation searches {match.field}, which is not a field of {owner}"
+            )
+        kind = logical_type(annotations[match.field])
+        if (match.mode is MatchMode.PREFIX and kind is not FieldType.TEXT) or (
+            match.mode is MatchMode.CONTAINS and kind not in TEXT_TYPES
+        ):
+            raise ContractViolation(
+                f"{owner}.presentation searches {match.field} by {match.mode}, "
+                f"which a {kind} field cannot answer"
+            )
+    return cast(tuple[Match, ...], matches)
+
+
+def _ordered(answered: object) -> tuple[Sort, ...]:
+    """The declared order: a bare field ascending, `Descending` the other way."""
+    return tuple(
+        (
+            Sort(field=field_name(entry.field, "(Descending(a.posted_at),)"), descending=True)
+            if isinstance(entry, Descending)
+            else Sort(field=field_name(entry, "(a.code, Descending(a.posted_at))"))
+        )
+        for entry in _entries(answered)
+    )
+
+
+def _related(specification: Specification | None, limit: int | None) -> Criteria:
+    """One relation's node: what of each related record, and how many."""
+    if limit is None:
+        return Criteria(specification=specification)
+    return Criteria(specification=specification, pagination=Pagination(limit=limit))
+
+
+def _detailed(answered: object) -> Criteria:
+    """The declared detail as a specification.
+
+    in      (a.code, Expand(a.lines, 300), Reference(a.partner))
+    out     {"code": {}, "lines": {limit 300}, "partner": {"specification": {}}}
+    """
+    nodes: dict[str, Criteria] = {}
+    for entry in _entries(answered):
+        if isinstance(entry, Expand):
+            nodes[field_name(entry.field, "Expand(a.lines)")] = _related(None, entry.limit)
+        elif isinstance(entry, Reference):
+            name = field_name(entry.field, "Reference(a.partner)")
+            nodes[name] = _related(Specification({}), entry.limit)
+        else:
+            nodes[field_name(entry, "(a.code, Expand(a.lines))")] = Criteria()
+    return Criteria(specification=Specification(nodes))
+
+
+@cache
+def presentation_of(declared: type) -> Presented:
+    """The class's `presentation`, read once and checked against its fields.
+
+    1. A class with no `Presentation` (a value object, a plain dataclass) presents nothing.
+    2. Each declared lambda runs once over `Fields`; an unknown name is refused, naming it.
+    3. Undeclared parts take the defaults:
+       3.1 the display is the field called `name`, when there is one;
+       3.2 a text display is searched by containment;
+       3.3 the order and the detail stay empty: the store's order, every scalar.
+    Final: the names, ready for `Meta`, `matching` and `detail_of`.
+    """
+    presentation = getattr(declared, "presentation", None)
+    if not isinstance(presentation, Presentation):
+        return Presented()
+    owner = declared.__name__
+    annotations = annotations_of(declared)
+    fields = Fields(owner, annotations)
+
+    if presentation.display is not None:
+        display = field_name(presentation.display(fields), "a.name")
+    else:
+        display = "name" if "name" in annotations else ""
+
+    if presentation.search is not None:
+        search = _searched(owner, presentation.search(fields), annotations)
+    elif display and logical_type(annotations[display]) in TEXT_TYPES:
+        search = (Match(field=display, mode=MatchMode.CONTAINS),)
+    else:
+        search = ()
+
+    return Presented(
+        display=display,
+        search=search,
+        order=_ordered(presentation.order(fields)) if presentation.order else (),
+        detail=_detailed(presentation.detail(fields)) if presentation.detail else None,
+    )
+
+
+def default_order_of(declared: type, identity: str) -> str:
+    """The order a list takes when nobody asks: the declared one, or newest identity first.
+
+    in      Account (order=code), "id"     →  out  "code"
+    in      Note (nothing declared), "id"  →  out  "-id"
+    """
+    declared_order = ",".join(str(sort) for sort in presentation_of(declared).order)
+    return declared_order or (f"-{identity}" if identity else "")
+
+
 def describe_class(declared: type, identity: str = "") -> "Meta":
     """A definition read off the annotations alone, with no table behind it.
 
@@ -701,10 +899,14 @@ def describe_class(declared: type, identity: str = "") -> "Meta":
         },
         declared,
     )
+    presented = presentation_of(declared)
     return Meta(
         aggregate=declared.__name__,
         identity=identity,
-        default_order=f"-{identity}" if identity else "",
+        default_order=default_order_of(declared, identity),
+        display=presented.display,
+        search=presented.search,
+        detail=presented.detail,
         fields=fields,
         name=name,
     )
