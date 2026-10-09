@@ -102,8 +102,9 @@ service module (`layer_violations`, rule `services-reused-through-bus`).
 `domain/` imports only `domain/` — its own, or a lower context's — and `sincpro_framework.ddd`. A
 function that takes a client/store/gateway is I/O wearing a domain name. The discriminator: *would
 replacing this with something equivalent change business behaviour?* Yes → adapter; no →
-infrastructure. DTOs, aggregates, value objects, ports (`Protocol`), pure rules and policy constants
-are domain. Detail: [context-boundaries.md](context-boundaries.md).
+infrastructure. DTOs, aggregates, value objects, ports (`Protocol`) the use cases call, pure rules
+and policy constants are domain. A `Protocol` only an adapter calls (the contract a facade holds
+its implementations by) is the adapter's, in its folder. Detail: [context-boundaries.md](context-boundaries.md).
 
 ## 5. One bus per context, built before services import
 

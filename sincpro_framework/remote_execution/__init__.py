@@ -20,7 +20,7 @@ bus is a reference: a client with the face of the bus, never built, that forward
 See `docs/entrypoints/bounded-contexts-across-services.md`.
 """
 
-from sincpro_framework.remote_execution.adapters import transport_for
+from sincpro_framework.remote_execution.adapters import Transport, transport_for
 from sincpro_framework.remote_execution.configuration import configured_host
 from sincpro_framework.remote_execution.domain import (
     CHUNK_SIZE,
@@ -31,7 +31,6 @@ from sincpro_framework.remote_execution.domain import (
     ContextTimeout,
     ContextUnavailable,
     DTODoesNotFit,
-    Transport,
     pack,
     pack_context,
     packed,

@@ -12,7 +12,7 @@ and additive features.
 | **ORM** | how an aggregate is kept, read and related across stores |
 | **Criteria** | the one language a screen, an API, SQL, memory and the client speak |
 | **Entrypoints** | how a bus reaches every client: REST, JSON-RPC, gRPC, MCP, CLI, queues |
-| **Entity** | what an aggregate declares about itself: structure, presentation, derivations |
+| **Entity** | what an aggregate declares about itself: structure, how it is read (`DEFAULT_*`), form hints (`presentation`), derivations |
 | **Event architecture** | how facts are recorded, stored and delivered |
 
 Each area is studied, analysed and compared against mature frameworks before anything is fixed.

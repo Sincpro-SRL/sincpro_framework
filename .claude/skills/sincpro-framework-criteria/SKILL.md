@@ -32,7 +32,7 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `Criteria` | `where`, `order`, `pagination`, `specification`, `grouping`, `count`, `meta` | DTO | `from sincpro_framework.ddd import Criteria` |
 | `Condition` | One question: `field`, `operator` (default `=`), `value` | DTO | `from sincpro_framework.ddd import Condition` |
 | `All` / `Any` / `Not` | Combine conditions; JSON keys `all`, `any`, `negate` | DTO | `from sincpro_framework.ddd import All, Any, Not` |
-| `Operator` | `=` `!=` `in` `not in` `like` `>` `>=` `<` `<=` `is null` `contains` `not contains` `between` | enum | `from sincpro_framework.ddd import Operator` |
+| `Operator` | `=` `!=` `in` `not in` `like` `starts with` `>` `>=` `<` `<=` `is null` `contains` `not contains` `between` — `%` and `_` are text, never wildcards | enum | `from sincpro_framework.ddd import Operator` |
 | `Sort` / `parse_order` | One ordering key (`field`, `descending`) / `"-total,number"` → sorts | DTO / function | `from sincpro_framework.ddd import Sort`; `from sincpro_framework.ddd.criteria import parse_order` |
 | `Pagination` | `limit` (default 50, no ceiling) + `strategy` | DTO | `from sincpro_framework.ddd import Pagination` |
 | `Cursor` / `Offset` | Keyset strategy (`token`, the default) / row-skipping strategy (`rows`) | DTO | `from sincpro_framework.ddd import Cursor, Offset` |
@@ -45,8 +45,9 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `model_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
 | `Bucket` / `Pivot` | A group with its count, measures and the `criteria` that opens it / a cross table with margins | DTO | `from sincpro_framework.ddd import Bucket, Pivot` |
 | `matches` | Evaluates a filter in memory, the same semantics as the SQL translator | function | `from sincpro_framework.ddd import matches` |
-| `Presentation` / `Match` | What an entity declares once: display, search (`equal`/`prefix`/`contains`), order, detail, and form hints whose conditions are Criteria triples (`When(Is(...))`) | class attribute | `from sincpro_framework.ddd import Presentation, Match` |
-| `matching` / `detail_of` | The select criteria for a literal / the detail criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
+| `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_LITERAL_SEARCH` | What an entity answers once, as criteria: what a record brings (`Specification`), the list order (`Sort`s), the template a typed text fills (`Criteria` whose `where` holds `TEXT`) — with `DEFAULT_GET_ID` and `DEFAULT_DISPLAY`. `@classmethod`s on `Entity`; a caller's criteria wins for each part it names (`Criteria.replaced_by`) | `@classmethod` | `Entity`; `TEXT` from `sincpro_framework.ddd` |
+| `Presentation` | Form hints only, whose conditions are Criteria triples (`When(Is(...))`) | class attribute | `from sincpro_framework.ddd import Presentation` |
+| `matching` / `detail_of` | `DEFAULT_LITERAL_SEARCH` filled with a literal / `DEFAULT_READING` as the criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
 | `InvalidCriteria` | A question that cannot be answered (unorderable field, bad grouping, unknown measure) | exception | `from sincpro_framework.ddd import InvalidCriteria` |
 
 Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `where` filters rows,
@@ -115,10 +116,12 @@ Silent ones first — the runtime gives no error for these.
 - **`specification: {}` is not `None`.** `None` brings every scalar and no relation; `{}` brings
   the identity and, when the entity names one, its display field.
 - **`matching` does not search.** It builds the criteria; `search(Model, matching(Model, text))`
-  runs it. A blank literal lists the first 8 in the list order; an entity with nothing to
-  search answers an empty page. A literal is read as itself: `%` and `_` are not wildcards.
-- **A presentation names fields through the entity**, `lambda a: Match.prefix(a.code)`, never
-  a string. A typo is refused when the class is described.
+  runs it. A blank literal drops the conditions holding `TEXT` and lists the first 8 in the
+  list order; an entity with nothing to search answers an empty page. A literal is read as itself: `%` and `_` are not wildcards.
+- **An entity's `DEFAULT_*` are checked when the class is described.** A field that does not
+  exist, a template without `TEXT`, a reading that is not a `Specification` or a prefix on a
+  number is refused naming it. Form hints in `presentation` name fields through the entity
+  (`lambda a: a.code`).
 - **A screen that reads one entity** (get, get many, the select, the list) registers its DTOs
   on one `EntityReads[Entity]` instead of writing four Features: recipe in
   `sincpro-framework-persistence` → `references/entity-reads.md`.

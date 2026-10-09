@@ -55,6 +55,14 @@ MULTI_VALUED: frozenset[Operator] = frozenset(
     {Operator.IN, Operator.NOT_IN, Operator.BETWEEN}
 )
 
+TEXT = "${text}"
+"""Where a template leaves the text a person typed: an entity's `DEFAULT_LITERAL_SEARCH`.
+
+    Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT)
+
+`with_text` puts the literal in its place. A value, not a type, so a template is still a
+`Criteria` that travels as JSON and a client fills the same way."""
+
 
 class CountMode(StrEnum):
     NONE = "none"
@@ -207,6 +215,52 @@ def conditions_of(expression: Expression | None) -> list[Condition]:
             return [leaf for part in expression.any for leaf in conditions_of(part)]
         case Not():
             return conditions_of(expression.negate)
+
+
+def holds_text(condition: Condition) -> bool:
+    """Whether a template's condition waits for the literal: its value is `TEXT`, or a list
+    holding it (`code in [TEXT, "0"]`)."""
+    value = condition.value
+    return value == TEXT or (isinstance(value, list) and TEXT in value)
+
+
+def with_text(expression: Expression | None, text: str) -> Expression | None:
+    """A template's filter with the literal in place of every `TEXT`.
+
+        in   Any([code starts with TEXT, active = true]), "1.2"
+        out  Any([code starts with "1.2", active = true])
+        in   All([name like TEXT, active = true]), ""
+        out  active = true                        a blank literal asks nothing of the text
+
+    1. A condition holding `TEXT` — alone or in a list — takes the literal; with no literal,
+       it is dropped.
+    2. A grouping keeps what is left of its parts: none is no filter, one needs no wrapper.
+    Final: the filter the store runs; the template itself is never changed.
+    """
+    match expression:
+        case None:
+            return None
+        case Condition():
+            if not holds_text(expression):
+                return expression
+            if not text:
+                return None
+            value = expression.value
+            filled = (
+                [text if one == TEXT else one for one in value]
+                if isinstance(value, list)
+                else text
+            )
+            return expression.model_copy(update={"value": filled})
+        case All():
+            parts = [one for one in (with_text(part, text) for part in expression.all) if one]
+            return None if not parts else parts[0] if len(parts) == 1 else All(all=parts)
+        case Any_():
+            parts = [one for one in (with_text(part, text) for part in expression.any) if one]
+            return None if not parts else parts[0] if len(parts) == 1 else Any_(any=parts)
+        case Not():
+            kept = with_text(expression.negate, text)
+            return Not(negate=kept) if kept is not None else None
 
 
 def parse_order(raw: str) -> tuple[Sort, ...]:
@@ -708,7 +762,7 @@ class Criteria(Strict):
         The cursor is replaced and never carried over: it belongs to one ordering over one
         filter, and a merge that changed either would page through a set that no longer exists.
         """
-        return Criteria(
+        merged = Criteria(
             where=combined(self.expression, other.expression),
             order=other.order or self.order,
             pagination=(
@@ -730,6 +784,34 @@ class Criteria(Strict):
             # the default of the one it refines.
             meta=self.meta and other.meta,
         )
+        # What either side asked stays asked, and nothing more: a merge must not turn an
+        # untouched default into a request that would hide the entity's own (`replaced_by`).
+        return Criteria.model_construct(
+            self.model_fields_set | other.model_fields_set, **dict(merged)
+        )
+
+    def replaced_by(self, other: "Criteria") -> "Criteria":
+        """This criteria, with every part `other` asked for put in its place.
+
+            in      Criteria(order=-created_at, specification={runs: {}})
+                    + Criteria(specification={title: {}})
+            out     Criteria(order=-created_at, specification={title: {}})
+
+        Context: how an entity's defaults meet what a caller sends. The caller wins part by
+        part, and only for the parts it named (`model_fields_set`): `Criteria()` names nothing,
+        so it keeps every default, while a `Criteria(order=())` asks for the store's order on
+        purpose. Filters are the exception: both apply, so they accumulate.
+
+        Not `merged_with`: that one intersects the specification, because a scope can only take
+        away. A default is not a scope — a caller asking for more than the default gets it.
+        """
+        asked = other.model_fields_set
+        values = {
+            name: getattr(other if name in asked else self, name)
+            for name in Criteria.model_fields
+        }
+        values["where"] = combined(self.expression, other.expression)
+        return Criteria.model_construct(self.model_fields_set | asked, **values)
 
 
 Specification.model_rebuild()

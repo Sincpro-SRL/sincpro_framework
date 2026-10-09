@@ -1,8 +1,8 @@
 """The entity says once how it is read, and the select, the list and the detail follow from it.
 
-`presentation` names fields through the entity (`lambda a: a.code`), so a typo is refused when
-the class is described, a field with a default is still a field, and a field called `order`
-does not collide with anything.
+Its `DEFAULT_*` class methods answer the key, what a record brings, the order, the display and
+how a text finds it; `Entity` answers each when a class says nothing. Upper case, so a field
+called `order` collides with nothing, and checked when the class is described.
 """
 
 from dataclasses import dataclass, field, fields
@@ -11,14 +11,10 @@ import pytest
 
 from sincpro_framework.ddd import (
     NAME_SEARCH_LIMIT,
-    Descending,
+    TEXT,
     Entity,
-    Expand,
-    Match,
-    MatchMode,
     MemoryRepository,
     Presentation,
-    Reference,
     detail_of,
     matching,
 )
@@ -50,22 +46,44 @@ class Account(Entity):
     order: int = 0
     lines: list[str] = field(default_factory=list)
 
-    presentation = Presentation["Account"](
-        search=lambda a: (Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)),
-        order=lambda a: (a.code,),
-        detail=lambda a: (a.code, a.name, Expand(a.lines, 300)),
-    )
+    @classmethod
+    def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+        return Criteria(
+            where=Any_(
+                any=[
+                    Condition(field="code", value=TEXT),
+                    Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
+                    Condition(field="name", operator=Operator.LIKE, value=TEXT),
+                ]
+            )
+        )
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="code"),)
+
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification:
+        return Specification.model_validate(
+            {"code": {}, "name": {}, "lines": {"pagination": {"limit": 300}}}
+        )
 
 
 @dataclass
 class Journal(Account):
     posted: str = ""
 
-    presentation = Presentation["Journal"](
-        display=lambda a: a.code,
-        order=lambda a: (Descending(a.posted), a.code),
-        detail=lambda a: (a.code, Reference(a.lines)),
-    )
+    @classmethod
+    def DEFAULT_DISPLAY(cls) -> str:
+        return "code"
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="posted", descending=True), Sort(field="code"))
+
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification:
+        return Specification.model_validate({"code": {}, "lines": {"specification": {}}})
 
 
 @dataclass
@@ -92,8 +110,9 @@ def accounts() -> AggregateRepository[Account]:
     return AggregateRepository(repository, Account)
 
 
-def test_presentation_is_a_class_attribute_and_never_a_field():
-    assert "presentation" not in [one.name for one in fields(Account)]
+def test_presentation_and_the_defaults_are_never_fields():
+    names = [one.name for one in fields(Account)]
+    assert "presentation" not in names and "DEFAULT_ORDER" not in names
     assert "presentation" not in describe_class(Account, "id").fields
 
 
@@ -101,26 +120,24 @@ def test_nothing_declared_makes_the_field_called_name_the_display_searched_by_co
     meta = describe_class(Partner, "id")
 
     assert meta.display == "name"
-    assert meta.search == (Match(field="name", mode=MatchMode.CONTAINS),)
+    assert meta.search == Criteria(
+        where=Condition(field="name", operator=Operator.LIKE, value=TEXT)
+    )
     assert meta.default_order == "-id"
-    assert meta.detail is None
+    assert (meta.get_id, meta.detail) == ("id", None)
 
 
 def test_a_class_with_no_name_field_has_no_display_and_nothing_to_search():
     meta = describe_class(Line, "id")
 
-    assert (meta.display, meta.search) == ("", ())
+    assert (meta.display, meta.search) == ("", None)
 
 
 def test_the_definition_publishes_what_the_entity_declared():
     meta = describe_class(Account, "id")
 
     assert meta.display == "name"
-    assert [(one.field, one.mode) for one in meta.search] == [
-        ("code", MatchMode.EQUAL),
-        ("code", MatchMode.PREFIX),
-        ("name", MatchMode.CONTAINS),
-    ]
+    assert meta.search == Account.DEFAULT_LITERAL_SEARCH()
     assert meta.default_order == "code"
     assert meta.detail is not None and meta.detail.specification is not None
     assert meta.detail.specification.named == ["code", "name", "lines"]
@@ -128,9 +145,10 @@ def test_the_definition_publishes_what_the_entity_declared():
     assert meta.detail.specification.root["lines"].specification is None
 
 
-def test_a_subclass_overrides_the_presentation_and_keeps_its_own_fields():
+def test_a_subclass_overrides_some_defaults_and_inherits_the_others():
     meta = describe_class(Journal, "id")
 
+    assert meta.search == Account.DEFAULT_LITERAL_SEARCH()
     assert meta.display == "code"
     assert meta.default_order == "-posted,code"
     assert presentation_of(Journal).order == (
@@ -147,15 +165,22 @@ def test_an_unknown_field_is_refused_when_the_class_is_described():
     class Typo(Entity):
         code: str
 
-        presentation = Presentation["Typo"](display=lambda a: a.cde)  # type: ignore[attr-defined]
+        @classmethod
+        def DEFAULT_DISPLAY(cls) -> str:
+            return "cde"
 
-    with pytest.raises(ContractViolation, match="Typo.presentation names cde"):
+    @dataclass
+    class HintTypo(Entity):
+        code: str
+
+        presentation = Presentation["HintTypo"](
+            readonly=lambda a: a.cde  # type: ignore[attr-defined]
+        )
+
+    with pytest.raises(ContractViolation, match="DEFAULT_DISPLAY answers 'cde'"):
         describe_class(Typo, "id")
-
-
-def test_a_match_takes_a_field_read_through_the_entity_not_a_string():
-    with pytest.raises(ContractViolation, match=r"lambda a: Match.prefix\(a.code\)"):
-        Match.prefix("code")
+    with pytest.raises(ContractViolation, match="HintTypo.presentation names cde"):
+        describe_class(HintTypo, "id")
 
 
 def test_a_prefix_on_a_number_is_refused_instead_of_widening_the_search():
@@ -163,13 +188,17 @@ def test_a_prefix_on_a_number_is_refused_instead_of_widening_the_search():
     class Numbered(Entity):
         number: int = 0
 
-        presentation = Presentation["Numbered"](search=lambda a: (Match.prefix(a.number),))
+        @classmethod
+        def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+            return Criteria(
+                where=Condition(field="number", operator=Operator.STARTS_WITH, value=TEXT)
+            )
 
-    with pytest.raises(ContractViolation, match="searches number by prefix"):
+    with pytest.raises(ContractViolation, match="searches number by starts with"):
         describe_class(Numbered, "id")
 
 
-def test_matching_asks_any_declared_match_for_a_short_page_of_references():
+def test_matching_fills_the_template_for_a_short_page_of_references():
     criteria = matching(Account, " 1.2.3 ")
 
     assert criteria.where == Any_(

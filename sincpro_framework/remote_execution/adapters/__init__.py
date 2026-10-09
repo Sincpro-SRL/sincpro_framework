@@ -9,7 +9,7 @@ extra.
 
 from functools import lru_cache
 
-from sincpro_framework.remote_execution.domain.transport import Transport
+from sincpro_framework.remote_execution.adapters.transport import Transport
 from sincpro_framework.transport.addresses import HostedAt, Wire
 
 
@@ -26,4 +26,4 @@ def transport_for(hosted_at: HostedAt) -> Transport:
             return HttpTransport(hosted_at)
 
 
-__all__ = ["transport_for"]
+__all__ = ["Transport", "transport_for"]

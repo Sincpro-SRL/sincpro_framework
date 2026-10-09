@@ -18,10 +18,9 @@ from sincpro_framework.ddd import (
     Derivations,
     Derive,
     EntityReads,
-    Expand,
-    Presentation,
     Preview,
     ResponsePreview,
+    Specification,
     assign,
 )
 from sincpro_framework.ddd.entity import Entity
@@ -52,7 +51,10 @@ class Order(Entity):
     derivations = Derivations["Order"](
         lambda o: Derive(o.total, depends=o.lines, by=Order.total_of)
     )
-    presentation = Presentation["Order"](detail=lambda o: [o.customer_id, Expand(o.lines)])
+
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification:
+        return Specification.model_validate({"customer_id": {}, "lines": {}})
 
 
 orders = registry(metadata=MetaData())

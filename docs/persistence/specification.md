@@ -33,18 +33,19 @@ names one (`Meta.display`). That pair is the reference a select lists and a many
 | 7 | What cannot be answered is dropped and reported, never a 400: `unknown_field`, `not_expandable`. |
 | 8 | An empty specification keeps the identity and, when the entity names one, its display field. |
 
-## What the entity declares: `presentation`
+## What the entity answers: its `DEFAULT_*` class methods
 
 How an aggregate is read is said once, on the class, so a select, a list and a detail do not
-each assemble it. `presentation` is a class attribute, not a field: it is never stored and never
-travels with a record. Each part names its fields through the entity, `lambda a: a.code`, so a
-type checker reads the name against the class and a rename reaches it. A part answers one
-entry alone (`order=lambda a: a.code`) or a list of them (`detail=lambda a: [a.code, a.name]`).
+each assemble it. `Entity` answers five class methods, each with a default, and a subclass
+overrides the ones it needs. They are defaults: every part a caller's criteria names wins
+([Entity reads](entity-reads.md)).
 
 ```python
 from dataclasses import dataclass, field
 
-from sincpro_framework.ddd import Descending, Entity, Expand, Match, Presentation, Reference
+from sincpro_framework.ddd import (
+    TEXT, Any, Condition, Criteria, Entity, Operator, Sort, Specification,
+)
 
 
 @dataclass
@@ -61,56 +62,89 @@ class Account(Entity):
     partner: Partner | None = None
     lines: list["Line"] = field(default_factory=list)
 
-    presentation = Presentation["Account"](
-        display=lambda a: a.name,
-        search=lambda a: [Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)],
-        order=lambda a: a.code,
-        detail=lambda a: [a.code, a.name, Reference(a.partner), Expand(a.lines, 300)],
-    )
+    @classmethod
+    def DEFAULT_READING(cls) -> Specification:
+        return Specification.model_validate({
+            "code": {}, "name": {},
+            "partner": {"specification": {}},                    # identity and display
+            "lines": {"pagination": {"limit": 300}},             # in Line's DEFAULT_ORDER
+        })
+
+    @classmethod
+    def DEFAULT_ORDER(cls) -> tuple[Sort, ...]:
+        return (Sort(field="code"),)
+
+    @classmethod
+    def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
+        return Criteria(where=Any(any=[
+            Condition(field="code", value=TEXT),
+            Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
+            Condition(field="name", operator=Operator.LIKE, value=TEXT),
+        ]))
 ```
 
-| Part | What it says | Left alone |
+| Class method | What it answers | `Entity`'s default |
 |---|---|---|
-| `display` | The field shown beside the identity | the field called `name`, when there is one |
-| `search` | How a literal finds a record, field by field | containment on a text display |
-| `order` | The list order; `Descending(a.posted_at)` for the other way | newest identity first |
-| `detail` | What `get` brings when asked for the detail | every scalar, no relation |
+| `DEFAULT_GET_ID` | The field `Get` and `GetMany` find a record by | `"id"` |
+| `DEFAULT_READING` | What one record brings, at any depth: a `Specification` | `None`: every scalar, no relation |
+| `DEFAULT_ORDER` | The order of a list, and of this entity's records where another one holds them | `(Sort(field="id", descending=True),)`: newest first |
+| `DEFAULT_DISPLAY` | The field shown beside the identity (rule 8) | the field called `name`, when there is one |
+| `DEFAULT_LITERAL_SEARCH` | How a typed text finds records: a template whose `where` holds `TEXT` | containment on a text display; `None` without one |
 
 `Partner` declares nothing and needs nothing: `name` is its display and a literal finds it by
-containment. The lambdas run once, when the class is described, against a stand-in whose
-attributes are the field names. A name that is not a field is refused there, naming it, and so
-is a prefix or a containment on a field that is not text.
+containment.
 
-A detail entry is a bare field (that scalar), `Expand(a.lines, limit)` (the relation, every
-scalar of each related record) or `Reference(a.partner, limit)` (the relation as identity and
-display, rule 8).
+- **Always `@classmethod`, always upper case.** Upper case so it never meets a field and a
+  reader knows the framework calls it; a class method because that is what it overrides. A
+  value (`DEFAULT_GET_ID = "code"`), a `@staticmethod` or a field with one of these names is
+  refused when the class is declared.
+- **Checked when the class is described.** A key, a display or an order over a field that does
+  not exist; a key that is not a text, integer or uuid field; a reading that is not a
+  `Specification` (a `where` there would hide records from every read); a template that never
+  uses `TEXT`, sets anything besides `where`, or asks a prefix of a number — each is refused
+  naming it. A mapped class whose key is not the identity needs that column unique.
+- **`DEFAULT_READING` is a `Specification`, and its nodes are criteria.** The order, page and
+  depth of a relation live in its node; a relation whose node names no order comes in the
+  related entity's own `DEFAULT_ORDER`. Below the first level a name is not checked at import:
+  a store drops it and reports it (rule 7).
+- **The key is how a record is asked for, not its identity.** `DEFAULT_GET_ID = "code"` makes
+  `Get(id="1.2.3")` read the account coded `1.2.3`; it is still stored, related and ordered by
+  `id`.
 
-| Mode | Operator | `"1.2.3"` finds |
+### The literal search template
+
+`TEXT` marks where the typed text goes; it may stand alone or inside a list
+(`code in [TEXT, "0"]`). `matching` fills it:
+
+| Condition | Operator | `"1.2.3"` finds |
 |---|---|---|
-| `Match.equal` | `=` | `1.2.3` |
-| `Match.prefix` | `starts with` | `1.2.3`, `1.2.30`, `1.2.3.01` — not `1.2.1.2.3` |
-| `Match.contains` | `like` | any text holding `1.2.3`, case-insensitive |
+| `Condition(field="code", value=TEXT)` | `=` | `1.2.3` |
+| `Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT)` | `starts with` | `1.2.3`, `1.2.30`, `1.2.3.01` — not `1.2.1.2.3` |
+| `Condition(field="name", operator=Operator.LIKE, value=TEXT)` | `like` | any text holding `1.2.3`, case-insensitive |
 
 A literal is read as itself: `50%` finds `Descuento 50% off`, and `a_b` does not find `axb`.
+A blank literal drops the conditions that hold `TEXT` and keeps the rest of the template: an
+`active = true` beside the text still applies.
 
-`describe` publishes it on `Meta` (`display`, `search`, `default_order`, `detail`), and two
-functions turn it into the criteria a Feature runs:
+`describe` publishes all of it on `Meta` (`get_id`, `display`, `search`, `default_order`,
+`detail`) — the template as a criteria, so a client fills it the same way — and two functions
+turn it into the criteria a Feature runs:
 
 | Call | What comes back |
 |---|---|
 | `accounts.search(matching(Account, "1.2.3"))` | a page of `NAME_SEARCH_LIMIT` (8), identity and display on the wire |
 | `accounts.search(matching(Account, ""))` | the first 8 in the list order |
 | `accounts.get(account_id)` | the stored `Account`: every scalar, no relation |
-| `accounts.get(account_id, detail=detail_of(Account))` | that one `Account`, with the relations `detail` names |
+| `accounts.get(account_id, detail=detail_of(Account))` | that one `Account`, as `DEFAULT_READING` brings it |
 
 `matching` and `detail_of` build a criteria and never run it. `EntityReads` runs them for a
 project's own DTOs: [Entity reads](entity-reads.md). A list asks nothing extra: the
-declared order is `Meta.default_order`, which the store applies when a criteria names none.
+entity's order is `Meta.default_order`, which the store applies when a criteria names none.
 
 ### Form hints: defaults for a client, never rules
 
-`presentation` also says how a form shows each field. Every field of `Meta.fields` carries the
-result, so a client builds a form without being told twice:
+`presentation` says how a form shows each field — and only that. Every field of `Meta.fields`
+carries the result, so a client builds a form without being told twice:
 
 ```python
 from sincpro_framework.ddd import AllHold, Is, Presentation, When

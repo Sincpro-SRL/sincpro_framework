@@ -25,8 +25,10 @@
 | `count` | `none`, `capped` (default), `exact` | |
 | `meta` | whether the model definition travels | `true` by default |
 
-Unknown keys are ignored by the DTO, not refused — `op`, `desc`, a top-level `limit` or
-`grouping.by` change nothing and the defaults apply. Use the names above exactly.
+Unknown keys are refused: `op`, `desc`, a top-level `limit` or `grouping.by` raise a
+`ValidationError` naming them, so a typo never silently falls back to a default. Use the names
+above exactly. A caller that must accept extra keys (a link written against an older schema)
+reads with `Criteria.model_validate(value, context=TOLERANT)` (`from sincpro_framework.ddd.criteria import TOLERANT`), which leaves them out.
 
 ## In Python
 

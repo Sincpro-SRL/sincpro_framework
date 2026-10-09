@@ -17,8 +17,8 @@ Read in this order:
 | [Introduction](introduction.md) | What problem this solves, the mental model in one page, a first end-to-end example |
 | [Design](design.md) | The two packages, the flow of a read and of a write, the module map, the invariants, where to extend |
 | [Criteria](criteria.md) | The boundary language: its grammar, what *reflexive* means, how two criterias merge, what `dropped` is |
-| [Specification](specification.md) | What to bring back of each record, at any depth: the rules, and what the entity declares in `presentation` |
-| [Entity reads](entity-reads.md) | `EntityReads`: one Feature for get, get many, the select by text and the list, from the entity's `presentation` |
+| [Specification](specification.md) | What to bring back of each record, at any depth: the rules, what the entity answers in its `DEFAULT_*` class methods, and the form hints of `presentation` |
+| [Entity reads](entity-reads.md) | `EntityReads`: one Feature for get, get many, the select by text and the list, from the entity's `DEFAULT_*` class methods; what the caller names wins |
 | [Preview](preview.md) | What a record becomes before it is saved: derived fields, `assign`, `Preview` on `EntityReads`, and the guard that makes a preview unable to write |
 | [Drafts](drafts.md) | What a form keeps between requests: `InMemoryDrafts` / `KeyValueDrafts` (Redis), optimistic versions, a TTL, `refuse_stale` before activating |
 | [Relations](relations.md) | The paper: the model, the precedence, the resolution algorithm per kind, cost, and how to add a new way to resolve |

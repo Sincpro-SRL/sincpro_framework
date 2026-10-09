@@ -144,8 +144,9 @@ bus(QueryPreviewInvoice(id=invoice_id, values={"discount": "50"}, changed=["disc
 | `fields` | each field's form hints evaluated over the new record: `{"card_reference": {"readonly": false, "required": true, "visible": true}}` |
 | `advice` | what the domain said through `advise(...)`, field by field |
 
-1. With `id`, the preview starts from the stored record, read with its declared `detail` (so a
-   to-many in the detail comes with it), and copied: the record a store keeps is never touched.
+1. With `id` (the record's `DEFAULT_GET_ID`), the preview starts from the stored record,
+   read as its `DEFAULT_READING` brings it (so a to-many it names comes with it), and copied:
+   the record a store keeps is never touched.
    With no `id`, it starts from a new record holding the class defaults.
 2. `assign` puts the form's values on it; `recompute` runs what `changed` reaches — every
    derivation when nothing is named.
@@ -189,8 +190,8 @@ of work writes at its own commit once the preview is over.
 preview the advice is collected and travels back, outside one it does nothing. A preview inside
 another hands its advice to the outer one too.
 
-A stored record is previewed from a copy, read with its declared detail and every relation its
-derivations read, so a total over lines the detail does not name still sums them. Values are
+A stored record is previewed from a copy, read as its `DEFAULT_READING` brings it and with every
+relation its derivations read, so a total over lines the reading does not name still sums them. Values are
 compared as values: `0` and `0.00` are one amount, not a change.
 
 ## What is left out

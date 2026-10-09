@@ -158,8 +158,12 @@ the services import: [bootstrap.md](bootstrap.md).
 A DTO + Feature/ApplicationService for one use case?
   → <context>/services/<verb_noun>.py
 
-Pure vocabulary (DTO shared by use cases, aggregate, value object, Protocol, enum, rule)?
+Pure vocabulary (DTO shared by use cases, aggregate, value object, a Protocol the use cases
+call, enum, rule)?
   → <context>/domain/   or  common/domain/ when 2+ contexts need it and neither owns it
+
+A Protocol only an adapter calls (what its facade holds the implementations by)?
+  → <context>/adapters/<module>/, beside the facade
 
 A wrapper for an external system, or a mechanism whose replacement changes results?
   → <context>/adapters/ or  common/adapters/ when 2+ contexts need it

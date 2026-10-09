@@ -24,7 +24,6 @@ from sincpro_framework.remote_execution.domain.payload import (
     unpack_context,
     unpacked,
 )
-from sincpro_framework.remote_execution.domain.transport import Transport
 
 __all__ = [
     "CHUNK_SIZE",
@@ -35,7 +34,6 @@ __all__ = [
     "ContextTimeout",
     "ContextUnavailable",
     "DTODoesNotFit",
-    "Transport",
     "error_details",
     "pack",
     "pack_context",
