@@ -550,21 +550,21 @@ def test_a_subclass_that_overrides_the_method_is_heard():
 
 def test_a_back_reference_in_the_copy_points_at_the_copy():
     @dataclass
-    class Folder(Entity):
-        notes: list["Note"] = field(default_factory=list)
+    class Binder(Entity):
+        memos: list["Memo"] = field(default_factory=list)
 
     @dataclass
-    class Note(Entity):
-        folder: Folder | None = None
+    class Memo(Entity):
+        binder: Binder | None = None
 
-    folder = Folder()
-    folder.notes.append(Note(folder=folder))
+    binder = Binder()
+    binder.memos.append(Memo(binder=binder))
 
-    copy = copied(folder)
+    copy = copied(binder)
 
-    assert copy is not folder
-    assert copy.notes[0] is not folder.notes[0]
-    assert copy.notes[0].folder is copy
+    assert copy is not binder
+    assert copy.memos[0] is not binder.memos[0]
+    assert copy.memos[0].binder is copy
 
 
 def test_the_advice_of_a_preview_inside_another_reaches_the_outer_one():
