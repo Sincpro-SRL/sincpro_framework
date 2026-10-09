@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories.numbering import INumbering, refuse_no_count
+from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
 from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.orm.sqlalchemy.infrastructure.unit_in_play import in_play
 from sincpro_framework.sincpro_logger import logger
@@ -50,6 +51,7 @@ class DatabaseNumbering(INumbering):
         self.table = table
 
     def take(self, series: str, count: int = 1, scope: str = "") -> range:
+        refuse_writing_in_preview("take")
         refuse_no_count(count)
         with self._session() as session:
             dialect = session.get_bind().dialect.name

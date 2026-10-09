@@ -42,7 +42,7 @@ _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False
 
 
 @contextmanager
-def _writing_out() -> Iterator[None]:
+def writing_out() -> Iterator[None]:
     token = _SERIALISING.set(True)
     try:
         yield
@@ -198,7 +198,7 @@ class ResponsePaginatedQuery(DataTransferObject):
         """
         mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
         records = self.records_field()
-        with _writing_out():
+        with writing_out():
             written = {
                 records: [
                     _record(item, self._specification, self._meta, mode)
@@ -328,7 +328,7 @@ class ResponseRecord(DataTransferObject):
         each named relation under its own name, as a record of a page does."""
         mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
         field = self.record_field()
-        with _writing_out():
+        with writing_out():
             written = {
                 field: _record(getattr(self, field), self._specification, self._meta, mode),
                 "model_meta_data": (
@@ -426,7 +426,7 @@ class ResponseRecords(DataTransferObject):
         """On the wire, each record shows what the specification named plus its identity."""
         mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
         field = self.records_field()
-        with _writing_out():
+        with writing_out():
             written = {
                 field: [
                     _record(one, self._specification, self._meta, mode)

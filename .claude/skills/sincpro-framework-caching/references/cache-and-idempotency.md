@@ -19,7 +19,7 @@ tenants = Cache(InMemoryKeyValue(), namespace="catalog")
 policy = KeepPolicy[Tenant](
     freshness=TimeToLive(ttl=timedelta(minutes=5), jitter=0.1, stale_for=timedelta(minutes=1)),
     validation=ExternalVersion(registry.current_version, kept=version_of, trusted_for=timedelta(minutes=5)),
-    failure=FailSafe(serve_for=timedelta(hours=1), errors=(ConnectionError, TimeoutError)),
+    failure=FailSafe(serve_for=timedelta(hours=1), errors=[ConnectionError, TimeoutError]),
 )
 value = tenants.get_or_compute(("catalog", "acme"), lambda: registry.resolve("acme"), policy, JsonCodec(Tenant))
 tenants.forget(("catalog", "acme"), JsonCodec(Tenant))
@@ -38,7 +38,7 @@ tenants.forget(("catalog", "acme"), JsonCodec(Tenant))
 - **validation** — `Unconditional()` (default, freshness is the whole answer) or
   `ExternalVersion(current, kept=, trusted_for=)` (an ETag; a moved version forces recompute, never
   serves stale).
-- **failure** — `Raise()` (default) or `FailSafe(serve_for=, throttle_for=30s, errors=(Exception,))`
+- **failure** — `Raise()` (default) or `FailSafe(serve_for=, throttle_for=30s, errors=Exception)`
   (serves the last good value through an outage, re-keeps it fresh for `throttle_for`; never serves a
   value validation *rejected*). Name `errors` (`ConnectionError`, `TimeoutError`): the default
   covers every exception, a 401 included.
@@ -77,7 +77,7 @@ receipts.ignore_sentry_exceptions(AlreadyInProgress, KeyReused)
     expires_after=timedelta(minutes=2),        # a transport retry, not a person
     in_progress_for=timedelta(minutes=1),      # a claim left by a dead replica expires
     wait_for_completion=timedelta(seconds=5),  # a duplicate mid-run waits for the answer
-    vary_by=("tenant_id",),
+    vary_by="tenant_id",
 )
 class IssueReceipt(Feature): ...
 ```

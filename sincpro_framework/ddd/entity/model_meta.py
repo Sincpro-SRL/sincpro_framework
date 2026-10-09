@@ -48,6 +48,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
+from sincpro_framework.ddd.entity.derivations import Derivations, Derive
 from sincpro_framework.ddd.entity.entity import Translated
 from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
@@ -775,8 +776,12 @@ class Presented:
 
 
 def _entries(answered: object) -> tuple[object, ...]:
-    """What a lambda answered, as a tuple: `lambda a: a.code` is read as `(a.code,)`."""
-    return answered if isinstance(answered, tuple) else (answered,)
+    """What a declaration answered, as entries: a list, a tuple or one value alone.
+
+    in      [a.code, a.name]    →  out  (a.code, a.name)
+    in      a.code              →  out  (a.code,)
+    """
+    return tuple(answered) if isinstance(answered, (list, tuple)) else (answered,)
 
 
 def _searched(owner: str, answered: object, annotations: dict[str, Any]) -> tuple[Match, ...]:
@@ -790,7 +795,7 @@ def _searched(owner: str, answered: object, annotations: dict[str, Any]) -> tupl
         if not isinstance(match, Match):
             raise ContractViolation(
                 f"{owner}.presentation search takes Match, as in "
-                f"lambda a: (Match.contains(a.name),); it was given {match!r}"
+                f"lambda a: [Match.contains(a.name)]; it was given {match!r}"
             )
         if match.field not in annotations:
             raise ContractViolation(
@@ -811,9 +816,9 @@ def _ordered(answered: object) -> tuple[Sort, ...]:
     """The declared order: a bare field ascending, `Descending` the other way."""
     return tuple(
         (
-            Sort(field=field_name(entry.field, "(Descending(a.posted_at),)"), descending=True)
+            Sort(field=field_name(entry.field, "Descending(a.posted_at)"), descending=True)
             if isinstance(entry, Descending)
-            else Sort(field=field_name(entry, "(a.code, Descending(a.posted_at))"))
+            else Sort(field=field_name(entry, "[a.code, Descending(a.posted_at)]"))
         )
         for entry in _entries(answered)
     )
@@ -829,7 +834,7 @@ def _related(specification: Specification | None, limit: int | None) -> Criteria
 def _detailed(answered: object) -> Criteria:
     """The declared detail as a specification.
 
-    in      (a.code, Expand(a.lines, 300), Reference(a.partner))
+    in      [a.code, Expand(a.lines, 300), Reference(a.partner)]
     out     {"code": {}, "lines": {limit 300}, "partner": {"specification": {}}}
     """
     nodes: dict[str, Criteria] = {}
@@ -840,7 +845,7 @@ def _detailed(answered: object) -> Criteria:
             name = field_name(entry.field, "Reference(a.partner)")
             nodes[name] = _related(Specification({}), entry.limit)
         else:
-            nodes[field_name(entry, "(a.code, Expand(a.lines))")] = Criteria()
+            nodes[field_name(entry, "[a.code, Expand(a.lines)]")] = Criteria()
     return Criteria(specification=Specification(nodes))
 
 
@@ -877,7 +882,7 @@ def _while(owner: str, answered: object, part: str) -> dict[str, Expression]:
         if not isinstance(entry, When):
             raise ContractViolation(
                 f"{owner}.presentation {part} takes When, as in "
-                f"lambda a: (When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id),); "
+                f"lambda a: [When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id)]; "
                 f"it was given {entry!r}"
             )
         condition = _condition(owner, entry.condition)
@@ -980,10 +985,10 @@ def presentation_of(declared: type) -> Presented:
 
     readonly = system & frozenset(annotations)
     if presentation.readonly is not None:
-        readonly |= _named(presentation.readonly(fields), "(a.number,)")
+        readonly |= _named(presentation.readonly(fields), "a.number")
     required = _required_by_structure(declared, system)
     if presentation.required is not None:
-        required |= _named(presentation.required(fields), "(a.partner_id,)")
+        required |= _named(presentation.required(fields), "a.partner_id")
 
     return Presented(
         display=display,
@@ -1028,6 +1033,88 @@ def hinted(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMe
         )
         for name, meta in fields.items()
     }
+
+
+@dataclasses.dataclass(frozen=True)
+class Derivation:
+    """One `Derive`, read: field names in place of lambdas."""
+
+    field: str
+    depends: tuple[str, ...]
+    by: Any
+
+
+@cache
+def derivations_of(declared: type) -> tuple[Derivation, ...]:
+    """The class's `derivations`, read once, checked against its fields and put in the order
+    they have to run.
+
+    in      Invoice: total ← (subtotal, discount), subtotal ← (lines,)
+    out     (Derivation(subtotal, (lines,)), Derivation(total, (subtotal, discount)))
+
+    1. A class with no `Derivations` computes nothing.
+    2. The lambda runs once over `Fields`; an unknown name is refused, naming it.
+    3. A field derived twice is refused: two computations would race for it.
+    4. Ordered so a field is computed after every derived field it reads; among the free ones,
+       the order they were declared in.
+       4.1 A cycle has no order and is refused, naming the fields in it.
+    Final: the derivations, ready for `recompute`.
+    """
+    declaration = getattr(declared, "derivations", None)
+    if not isinstance(declaration, Derivations) or declaration.declared is None:
+        return ()
+    owner = declared.__name__
+    fields = Fields(owner, annotations_of(declared), "derivations")
+    read: dict[str, Derivation] = {}
+    for entry in _entries(declaration.declared(fields)):
+        if not isinstance(entry, Derive):
+            raise ContractViolation(
+                f"{owner}.derivations takes Derive, as in lambda i: "
+                f"[Derive(i.total, depends=i.subtotal, by={owner}.total_of)]; "
+                f"it was given {entry!r}"
+            )
+        name = field_name(entry.field, "Derive(i.total, ...)")
+        if name in read:
+            raise ContractViolation(f"{owner}.derivations computes {name} twice")
+        if not callable(entry.by):
+            raise ContractViolation(
+                f"{owner}.derivations computes {name} by {entry.by!r}, which is not callable"
+            )
+        read[name] = Derivation(
+            field=name,
+            depends=tuple(
+                field_name(one, "Derive(..., depends=i.lines)")
+                for one in _entries(entry.depends)
+            ),
+            by=entry.by,
+        )
+    return tuple(read[name] for name in _derivation_order(owner, read))
+
+
+def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
+    """The derived fields, each after the derived fields it reads (Kahn, declaration order among
+    the free ones). A cycle is refused, naming it."""
+    waiting = {
+        name: {one for one in derivation.depends if one in read and one != name}
+        for name, derivation in read.items()
+    }
+    for name, derivation in read.items():
+        if name in derivation.depends:
+            raise ContractViolation(f"{owner}.derivations computes {name} from itself")
+    ordered: list[str] = []
+    while waiting:
+        free = [name for name, needs in waiting.items() if not needs]
+        if not free:
+            cycle = " → ".join(sorted(waiting))
+            raise ContractViolation(
+                f"{owner}.derivations depend on each other in a cycle: {cycle}"
+            )
+        for name in free:
+            ordered.append(name)
+            del waiting[name]
+        for needs in waiting.values():
+            needs.difference_update(free)
+    return ordered
 
 
 def default_order_of(declared: type, identity: str) -> str:

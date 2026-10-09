@@ -1,8 +1,9 @@
 # PRD_26: UI-ready entities — what a generic screen or an agent needs, declared once
 
 - **Status**: phase 0 and its criteria follow-ups merged (#153), 2026-10-09. Phase 1 (form
-  hints) built on `feat/presentation-field-hints`, not committed. Phases 2-7 are a proposal;
-  each is approved on its own before anything is written.
+  hints) merged (#154). Phase 5 (§6: derived fields, `assign`, preview, the no-write guard,
+  drafts in memory and over a `KeyValueStore`) built on `feat/preview`, not committed. The
+  other phases are a proposal; each is approved on its own before anything is written.
 - **Depends on**: the specification and `Meta` (`docs/persistence/specification.md`), Criteria
   and its TypeScript twin `@sincpro/criteria` (one triple, evaluated the same in Python, SQL and
   TypeScript, held by `criteria-parity.json`), hooks, `ordering.py` (Kahn), the auth module
@@ -29,7 +30,7 @@
 
 | Piece | Verdict | Why |
 |---|---|---|
-| `presentation` on the entity | **keep** | It is metadata only and never claims to enforce anything — exactly what Odoo (`_rec_name`, `_order`), Django (`Meta.ordering`) and SAP CDS UI annotations are. The research's main failure (§6.1) is a declaration that *looks* enforced and is not; `presentation` has no such field. |
+| `presentation` on the entity | **keep** | It is metadata only and never claims to enforce anything — exactly what Odoo (`_rec_name`, `_order`), Django (`Meta.ordering`) and SAP CDS UI annotations are. The research's main failure (§7.1) is a declaration that *looks* enforced and is not; `presentation` has no such field. |
 | Lambdas over the entity | **keep, with one rule** | They run once against a recorder and compile to data (field names, `Criteria`), so what they declare is serializable and publishable. The rule: a declaration lambda only records; it never runs per record. A predicate that can only run in Python is not a declaration. |
 | `Meta` cached per class (`describe` is `@cache`) | **keep** | Structure and hints are per class, the same for every caller; nothing about who is asking is written into it. |
 | Hooks (`before_save`, dependencies, `self.context`, order, `replaces`, gates) | **the place for server rules** | They already are the per-bounded-context extension point; a rule a project wants kept is a `before_save` hook, which can read a hint's condition so it is written once. |
@@ -39,7 +40,7 @@
 ## 2. Scope: what the framework gives, what it leaves to the developer
 
 Simplicity and freedom first: the framework hands tools and defaults, and blocks nothing a
-developer may need to do differently. Decided 2026-10-09 after the research in §6.
+developer may need to do differently. Decided 2026-10-09 after the research in §7.
 
 | Concern | Lives in | What the framework does |
 |---|---|---|
@@ -51,7 +52,7 @@ developer may need to do differently. Decided 2026-10-09 after the research in �
 - **A hint is a default, never a rule.** `readonly`, `required`, `default`, `readonly_when`,
   `required_when`, `visible_when` are what a client starts from. A component that says
   otherwise wins; the API accepts the write either way. This is stated wherever a hint is
-  documented, because the failure every platform shares (§6.1) is a declaration that looks
+  documented, because the failure every platform shares (§7.1) is a declaration that looks
   like a protection.
 - **One condition, written once.** A `*_when` condition is a Criteria triple, so the client
   evaluates it with `@sincpro/criteria` and a project hook can read the same condition from
@@ -71,10 +72,14 @@ class Invoice(Entity):
     card_reference: str = ""
 
     presentation = Presentation["Invoice"](
-        readonly=lambda i: (i.number,),
-        readonly_when=lambda i: (When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id),),
-        required_when=lambda i: (When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),),
-        visible_when=lambda i: (When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),),
+        readonly=lambda i: i.number,
+        readonly_when=lambda i: When(
+            Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id
+        ),
+        required_when=lambda i: When(
+            Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference
+        ),
+        visible_when=lambda i: When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
     )
 ```
 
@@ -116,9 +121,132 @@ Each is approved on its own; none enforces a hint by default.
 | No `constraint()` door, no `validate` moment | `on()` + `before_save` already does it, ordered with `after=`/`sequence=` |
 | Groups, permissions and tenants out of the entity | the entity is the same for every caller |
 
-## 6. Research (2026-10)
+## 6. Phase 5 spec: preview, derived fields, drafts
 
-### 6.1 What looks enforced and is not
+A form asks the server "if I change this, what does the record become?" before anything is
+saved, and sometimes keeps what it has between requests. Three tools, each optional, each
+usable alone; the framework never requires one to save a record.
+
+### 6.1 Derived fields: one computation for the preview and for the save
+
+```python
+@dataclass
+class Invoice(Entity):
+    lines: list[InvoiceLine] = field(default_factory=list)
+    discount: Decimal = Decimal("0")
+    subtotal: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
+
+    def subtotal_of(self) -> Decimal:
+        return sum((line.qty * line.price for line in self.lines), Decimal("0"))
+
+    def total_of(self) -> Decimal:
+        return self.subtotal - self.discount
+
+    derivations = Derivations["Invoice"](
+        lambda i: [
+            Derive(i.subtotal, depends=i.lines, by=Invoice.subtotal_of),
+            Derive(i.total, depends=[i.subtotal, i.discount], by=Invoice.total_of),
+        ]
+    )
+```
+
+- Declared once on the entity, fields named by lambda like `presentation`. `by` is a plain
+  method of the entity: the computation is the domain's, the framework only orders it.
+- Read when the class is described: the dependency graph is ordered (Kahn, beside
+  `presentation_of` in `model_meta`; `ordering.py` orders extensions and refuses with
+  `ExtensionRefused`, a field graph refuses with `ContractViolation`), and a cycle, a field
+  computed twice, a self-dependency or an unknown field is refused there, naming it.
+- `recompute(record, changed)` runs, in order, every derivation reachable from `changed`
+  (all of them when `changed` is empty) and answers the fields it changed.
+- **A save runs the same computation** (`recompute_whole`: the records the aggregate owns
+  first, then the aggregate) before the `before_save` hooks, for an entity that declared
+  derivations — so what the preview showed is what is stored. An entity with none is saved
+  exactly as today, with nothing extra read. `upsert` does not recompute: it is the write that
+  skips the rules.
+- **A save never reads, and never computes over a relation it does not hold whole.** A
+  derivation over a relation not loaded, cut by a specification or assigned blind is skipped
+  and keeps its stored value; a derivation that reads it computes from that value — never a
+  wrong value written, never a save that worked made to fail. A preview computes the same way,
+  so preview and save agree.
+
+### 6.2 Preview: the form's question, answered over a transient aggregate
+
+```python
+class ResponsePreviewInvoice(ResponsePreview):
+    pass
+
+class QueryPreviewInvoice(Preview[Invoice, ResponsePreviewInvoice]):
+    pass
+
+@billing.feature([QueryGetInvoice, QueryPreviewInvoice])
+class InvoiceReads(EntityReads[Invoice]):
+    pass
+
+bus(QueryPreviewInvoice(id=invoice_id, values={"discount": "50"}, changed=["discount"]),
+    ResponsePreviewInvoice)
+# → values {"total": "1150.00"}   what differs from what the form sent: derived fields
+#   fields {"card_reference": {"readonly": false, "required": false, "visible": false}, …}
+#   advice []
+```
+
+1. Start from the stored record when `id` is given (read with `get`, read hooks run), or from
+   a new one built from the class defaults (`changed` empty is Odoo's `default_get`).
+2. `assign(record, values)` puts the form's values on it, each read as its field's type
+   (`"50"` → `Decimal("50")`, a list of dicts → the line entities). It refuses nothing a hint
+   says: hints are not rules.
+3. `recompute(record, changed)`.
+4. The answer: the values that differ from what the form sent — for a new record with nothing
+   changed yet, every value (the defaults); otherwise only what moved (derived fields included), each
+   field's state resolved over the new record (`readonly`/`required`/`visible` from the
+   hints, evaluated with `matches` — what a native app or an agent with no Criteria evaluator
+   needs), and the advice the domain gave.
+5. **Nothing is written, by construction and by guard.** The record is never handed to a
+   store; the preview runs inside `previewing()`, and any `save`, `remove`, `archive`,
+   `upsert`, `update_all`, `remove_all` or numbering `take` inside it raises `WriteInPreview`
+   naming the call. A preview that writes would corrupt data silently; refusing loudly is the
+   one place a refusal is warranted. Events the aggregate records are pulled and dropped.
+6. Advice, not errors: a method may call `advise("discount above 10% needs approval",
+   field="discount")`; inside a preview it is collected, outside it does nothing.
+
+A to-many field changed by the form comes back whole when it differs, not as line commands.
+
+### 6.3 Drafts: what a form keeps between requests, optional
+
+```python
+drafts = KeyValueDrafts(RedisKeyValue(redis), ttl=timedelta(days=7))   # InMemoryDrafts(ttl=…) in tests
+
+draft = drafts.keep("invoice:01a1…:ana", values, origin_version=invoice.version, expected=0)
+draft = drafts.read("invoice:01a1…:ana")           # Draft(values, version, origin_version, kept_at) | None
+drafts.keep(key, newer_values, invoice.version, expected=draft.version)  # DraftConflict if another tab won
+drafts.discard(key)
+```
+
+- A port with two stores, like the context stores: `InMemoryDrafts` and `KeyValueDrafts` over
+  any `KeyValueStore` (Redis, Valkey, Memcached). The key is the caller's: who, which record.
+- **Optimistic, never a lock.** Each keep names the version it read; another tab that kept in
+  between makes it `DraftConflict` carrying the current version. On a `KeyValueStore` the
+  compare-and-set is an atomic `add` of the next version's slot, so two writers of the same
+  version cannot both win, with no store-specific script.
+- **A TTL always**, renewed on each keep: an abandoned draft disappears on its own.
+- **Activating is the project's Command**: read the stored record, `refuse_stale(draft,
+  record)` — `StaleAggregate` when its version moved since the draft started, RAP's total ETag
+  — then `assign` the draft's values, `save`, `discard`. Setting `version` back on a loaded
+  record is not a check: the mapping writes it as a new value (found building it, SQLite).
+- Versions only grow per key: after a discard or an expiry the next draft starts above the
+  last one, so a tab holding an old version cannot bring a discarded draft back.
+- The other draft is a stored record with `state=DRAFT` (Odoo's draft invoice, Frappe's
+  `docstatus=0`), when others must see it. Nothing new is needed for that one.
+
+### 6.4 What is deliberately left out
+
+Locks (RAP's 15-minute exclusive lock): optimistic versions instead. `@onchange` methods per
+field: derivations and advice cover them without an imperative loop. Save-then-rollback, as a
+way to preview: refused by the guard. Line commands for to-many fields.
+
+## 7. Research (2026-10)
+
+### 7.1 What looks enforced and is not
 
 - **Odoo 18**: a model field's `readonly=True` is not checked in `write()`; it is a UI default
   and `fields_get` metadata. `required=True` holds through the database's `NOT NULL`. `groups=`
@@ -134,7 +262,7 @@ Each is approved on its own; none enforces a hint by default.
 - **Frappe**: `mandatory_depends_on` / `read_only_depends_on` are client JavaScript; the server
   checks only `reqd`.
 
-### 6.2 What is enforced, and where
+### 7.2 What is enforced, and where
 
 - Field access by role is always a separate server layer: Salesforce field-level security
   (Apex in user mode by default since API 67.0), Dataverse field security profiles, Frappe
@@ -149,7 +277,7 @@ Each is approved on its own; none enforces a hint by default.
   `fields_get`, Frappe meta, OData `$metadata`, Salesforce Describe; Hasura even generates a
   schema per role.
 
-### 6.3 What rotted
+### 7.3 What rotted
 
 Rules duplicated between a client expression and a server validation; validation split over
 three places (Django model, admin, DRF serializer); silent discards and ambiguous `null`;
@@ -157,7 +285,7 @@ imperative `condition` functions nothing can introspect; policy and API availabi
 axes kept in sync by hand (ABP); side paths that skip the rule (Payload's CVEs); the profile ×
 record type × layout matrix (Salesforce).
 
-### 6.4 DDD literature
+### 7.4 DDD literature
 
 - Invariants on the entity and value objects, checked before the state changes (Khorikov,
   "always-valid"; Microsoft eShop guidance). State-dependent rules as aggregate methods with a
@@ -168,7 +296,7 @@ record type × layout matrix (Salesforce).
 - Specification shared by selection and validation (Evans, Fowler); Khorikov warns against
   generic, unnamed specifications — named rules, not arbitrary filters.
 
-### 6.5 Agents and generic UIs
+### 7.5 Agents and generic UIs
 
 MCP elicitation takes a flat object of primitives (string, number, boolean, enum); a tool's
 JSON Schema carries `readOnly`, `enum`, `required`, `default`. Server-driven UI trends toward
@@ -184,3 +312,22 @@ permissions and presets; directus.com access control; abp.io module entity exten
 docs.frappe.io DocField; enterprisecraftsmanship.com always-valid, validation and DDD,
 specification; martinfowler.com Notification; cosmicpython.com appendix E;
 modelcontextprotocol.io elicitation; jsonforms.io rules.
+
+### 7.6 Preview and drafts
+
+- **Odoo 18 `onchange`** (`addons/web/models/models.py`, read locally): a `NewId` record in
+  the cache, snapshots before and after, `@api.depends` computes and a `while todo` loop of
+  `@api.onchange`; `{value, warning}` back, x2many as commands, an empty change is
+  `default_get`. **No transactional guard**: no savepoint, no read-only cursor; an
+  `@api.onchange` that calls `create()` or a sequence commits it.
+- **SAP RAP draft**: draft tables beside the active ones, actions Edit/Prepare/Activate/
+  Discard/Resume, an exclusive lock of 15 minutes then an optimistic phase, a total ETag
+  (the active instance) and an ETag (each draft write), drafts collected after 28 days.
+- **Frappe** `run_doc_method` builds the doc from the client's JSON and saves nothing unless
+  the method does; its draft is `docstatus=0`, a stored record. **Salesforce**
+  `Formula.recalculateFormulas` recomputes in memory with no DML. **Django** `full_clean`,
+  **Rails** `valid?`/`changes`: validate without saving; Django's `GeneratedField` is computed
+  by the database, so it cannot be previewed.
+- Drafts outside the business tables: a key with a TTL and a monotonic version, compared and
+  set atomically; over HTTP, `ETag` + `If-Match` and 412 (RFC 9110).
+

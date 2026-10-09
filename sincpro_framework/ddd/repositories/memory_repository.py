@@ -82,6 +82,7 @@ from sincpro_framework.ddd.repositories.repository import (
     refuse_locking,
     refuse_unarchivable,
     refuse_wiring_as_a_record,
+    refuse_writing_in_preview,
 )
 
 
@@ -662,6 +663,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         fired, while the engine wrote nothing at all. A test against this double would see
         records that production never stored.
         """
+        refuse_writing_in_preview("save")
         self._refuse_reentrant_write()
         records = self._events_of_sourced(records_of(record))
         newness = self._before_writes(records)
@@ -740,6 +742,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
 
         Three passes, for the reason `save` gives: a batch is refused whole or applied whole.
         """
+        refuse_writing_in_preview("remove")
         self._refuse_reentrant_write()
         records = records_of(record)
         for one in records:
@@ -751,6 +754,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
 
     def archive(self, record: Any) -> None:
         """Stamps when it left and keeps the row — one aggregate or several."""
+        refuse_writing_in_preview("archive")
         self._refuse_reentrant_write()
         records = records_of(record)
         refuse_unarchivable(records)
@@ -809,6 +813,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
     def update_all(self, target: type, criteria: Criteria, values: Mapping[str, Any]) -> int:
         """The engine's `update_all`, over the records held: values set, version raised,
         `updated_at` stamped, no hook."""
+        refuse_writing_in_preview("update_all")
         self._refuse_reentrant_write()
         model, _ = model_and_collection(target)
         meta = self.definition(model)
@@ -837,6 +842,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
 
     def remove_all(self, target: type, criteria: Criteria) -> int:
         """The engine's `remove_all`, over the records held: no hook, no cascade."""
+        refuse_writing_in_preview("remove_all")
         self._refuse_reentrant_write()
         model, _ = model_and_collection(target)
         rows = self._matched_for_writing(model, criteria, "remove_all")
@@ -851,6 +857,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         record with the same key is overwritten and its version raised, a new one is kept as a
         copy — the records handed in are not refreshed, as the engine leaves them. Answers the
         same counts the engine does."""
+        refuse_writing_in_preview("upsert")
         self._refuse_reentrant_write()
         records = records_of(record)
         kept_by_framework = sorted(

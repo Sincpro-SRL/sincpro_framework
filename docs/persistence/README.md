@@ -19,6 +19,8 @@ Read in this order:
 | [Criteria](criteria.md) | The boundary language: its grammar, what *reflexive* means, how two criterias merge, what `dropped` is |
 | [Specification](specification.md) | What to bring back of each record, at any depth: the rules, and what the entity declares in `presentation` |
 | [Entity reads](entity-reads.md) | `EntityReads`: one Feature for get, get many, the select by text and the list, from the entity's `presentation` |
+| [Preview](preview.md) | What a record becomes before it is saved: derived fields, `assign`, `Preview` on `EntityReads`, and the guard that makes a preview unable to write |
+| [Drafts](drafts.md) | What a form keeps between requests: `InMemoryDrafts` / `KeyValueDrafts` (Redis), optimistic versions, a TTL, `refuse_stale` before activating |
 | [Relations](relations.md) | The paper: the model, the precedence, the resolution algorithm per kind, cost, and how to add a new way to resolve |
 | [Transactions](transactions.md) | The unit of work and its options, locks, what the engine refuses and `retrying`, `after_commit`, `upsert` and writes by criteria — runnable |
 | [Lifecycle](lifecycle.md) | What runs when something is written, and who each layer reaches |

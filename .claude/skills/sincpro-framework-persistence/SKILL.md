@@ -64,6 +64,11 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `presentation`; extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
 | `ResponseRecord` / `ResponseRecords` | One record / a list by identity (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
 | `AggregateNotFound` | `Get` named an identity with no record; `not_found` on every wire (404 REST) | exception | `from sincpro_framework.ddd import AggregateNotFound` |
+| `Derivations` / `Derive` | Class attribute: fields the entity computes from others, by its own methods, run in dependency order by `recompute` and by `save` (children first, `recompute_whole`); `upsert`/`update_all` compute nothing | declaration | `sincpro_framework.ddd` |
+| `assign` / `recompute` | Put a form's values on a record (read as each field's type) / run the derivations a change reaches | functions | `sincpro_framework.ddd` |
+| `Preview` / `ResponsePreview` / `FieldState` | DTO base answered by `EntityReads.preview`: values that moved, field states, advice — nothing stored | DTO bases | `sincpro_framework.ddd` |
+| `Drafts` / `InMemoryDrafts` / `KeyValueDrafts` / `refuse_stale` | What a form keeps between requests: optimistic version (`DraftConflict`, 409), a TTL; `refuse_stale` before activating over the stored record | port / adapters / function | `sincpro_framework.ddd` |
+| `previewing` / `is_previewing` / `advise` / `WriteInPreview` | The block where every store write, numbering `take` and SQL session flush raises; advice collected inside it | context manager / function / exception | `sincpro_framework.ddd` |
 
 "Aggregate" is the DDD root; a sum or a count is a **measure** (`sincpro-framework-criteria`).
 A `Hook` is your rule for one aggregate; a repository mixin (`ChangeTrackingRepositoryMixin`) is
@@ -237,6 +242,11 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   (`Get`, `GetMany`, `LiteralSearch`, `Search` with `[Entity, Response]`), register them on one
   `EntityReads[Entity]`, override a read and call `super()` to extend it. Writes stay Commands
   with an intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
+- **A value a form must see before saving is a derivation, not a hook.** Declare
+  `derivations` on the entity; `save` and `EntityReads.preview` run the same `recompute`, and
+  nothing is written inside a preview (`WriteInPreview`). Recipe:
+  [references/preview.md](references/preview.md). What a form keeps between requests is a draft
+  (`KeyValueDrafts` over Redis), never a half-saved record: [references/drafts.md](references/drafts.md).
 - **Form hints are defaults for a client, never rules.** `presentation`'s `readonly`,
   `required`, `*_when` and the dataclass defaults reach `Meta.fields`; nothing checks them on
   save. A rule the server keeps is the project's own `before_save` hook, reading the same
@@ -262,6 +272,8 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 - [references/relations.md](references/relations.md) — the kinds, inference, cost
 - [references/hooks-and-mixins.md](references/hooks-and-mixins.md) — `Hook`/`Hooks`, moments, wiring, ordering
 - [references/entity-reads.md](references/entity-reads.md) — `presentation` + `EntityReads`: get, get many, select by text, list
+- [references/preview.md](references/preview.md) — derived fields, `assign`, `Preview`: what a record becomes before it is saved
+- [references/drafts.md](references/drafts.md) — drafts between requests in memory or Redis, conflicts, activating with `refuse_stale`
 - [references/form-hints.md](references/form-hints.md) — form hints in `presentation`, what a client receives, enforcing one with a hook
 
 ## Related

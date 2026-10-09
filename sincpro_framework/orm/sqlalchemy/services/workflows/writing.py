@@ -28,6 +28,7 @@ from sincpro_framework.ddd.repositories.capabilities import Upserted
 from sincpro_framework.ddd.repositories.repository import (
     records_of,
     refuse_unarchivable,
+    refuse_writing_in_preview,
 )
 from sincpro_framework.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.orm.sqlalchemy.infrastructure.engine_errors import named
@@ -233,6 +234,7 @@ class Writing(Store):
         Not a merge. A record built by hand with an id that already exists is a duplicate,
         not an update — the update path is to read the record and change it.
         """
+        refuse_writing_in_preview("save")
         self._refuse_reentrant_write()
         self._refuse_read_only()
         records = records_of(record)
@@ -264,6 +266,7 @@ class Writing(Store):
         `archive`: a different fact, and a different method, because other records point at it
         and a name that lies about which of the two happened is worse than two names.
         """
+        refuse_writing_in_preview("remove")
         self._refuse_reentrant_write()
         self._refuse_read_only()
         records = records_of(record)
@@ -282,6 +285,7 @@ class Writing(Store):
         `archived_at`. Refused for an aggregate that is not `ArchivableMixin`, which has
         nowhere to write it.
         """
+        refuse_writing_in_preview("archive")
         self._refuse_reentrant_write()
         records = records_of(record)
         refuse_unarchivable(records)
@@ -327,6 +331,7 @@ class Writing(Store):
         `updated_at` stamped. The scope it was narrowed to and the archived apply as in a read;
         a page, or a condition the aggregate cannot answer, is refused.
         """
+        refuse_writing_in_preview("update_all")
         self._refuse_reentrant_write()
         self._refuse_read_only()
         model, _ = model_and_collection(target)
@@ -361,6 +366,7 @@ class Writing(Store):
         nothing hanging from them: expired sessions, a staging table. The scope and the
         archived apply as in a read; a page, or a condition that cannot be answered, is refused.
         """
+        refuse_writing_in_preview("remove_all")
         self._refuse_reentrant_write()
         self._refuse_read_only()
         model, _ = model_and_collection(target)
@@ -453,6 +459,7 @@ class Writing(Store):
         which one happened only the database knows. No cascade and no change tracking.
         Postgres and SQLite (3.35+) are spoken; another dialect is refused.
         """
+        refuse_writing_in_preview("upsert")
         self._refuse_reentrant_write()
         self._refuse_read_only()
         by_model: dict[type, list[Any]] = {}

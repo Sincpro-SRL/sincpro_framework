@@ -2,7 +2,7 @@
 
     Raise()                                                 the default: the error, nothing served
     FailSafe(serve_for=timedelta(hours=1), throttle_for=timedelta(seconds=30),
-             errors=(ConnectionError, TimeoutError))        the last good value, throttled
+             errors=[ConnectionError, TimeoutError])        the last good value, throttled
 
 Context: a source that is down turns every call of a cached value into an error the moment the
 value lapses — although the value was right a minute ago, and still is, as far as anybody knows.
@@ -18,6 +18,7 @@ surprise: `Raise` is the default, and every fallback is reported as `CacheOutcom
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import timedelta
 
 
@@ -44,13 +45,16 @@ class FailSafe(FailurePolicy):
         self,
         serve_for: timedelta,
         throttle_for: timedelta = timedelta(seconds=30),
-        errors: tuple[type[Exception], ...] = (Exception,),
+        errors: type[Exception] | Sequence[type[Exception]] = Exception,
     ) -> None:
         """`serve_for` is how long past its servable life the last good value may still stand
-        in; `errors` the failures it stands in for — a timeout is not a 401."""
+        in; `errors` the failures it stands in for — one alone or a list
+        (`errors=[TimeoutError, ConnectionError]`): a timeout is not a 401."""
         self.last_resort_for = serve_for
         self.throttle_for = throttle_for
-        self.errors = errors
+        self.errors: tuple[type[Exception], ...] = (
+            (errors,) if isinstance(errors, type) else tuple(errors)
+        )
 
     def handles(self, error: Exception) -> bool:
         return isinstance(error, self.errors)

@@ -2,7 +2,7 @@
 never knows — and let go of when an aggregate it read is written.
 
     caching = QueryCaching(RedisKeyValue(client), near=timedelta(seconds=5))
-    caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
+    caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
     invalidate_on_commit(database, caching)                 # writes of this process
     Subscriber(..., caching.invalidated_by({InvoiceIssued: [Invoice]}))   # writes of others
 

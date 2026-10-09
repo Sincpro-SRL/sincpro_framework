@@ -10,7 +10,7 @@
     idempotency = Idempotency(RedisKeyValue(client))    # or IdempotencyRecords of your database
 
     @billing.feature(CommandIssueInvoice)
-    @idempotency.once(expires_after=timedelta(minutes=2), vary_by=("tenant_id",))
+    @idempotency.once(expires_after=timedelta(minutes=2), vary_by="tenant_id")
     class IssueInvoice(Feature): ...
 
     receipt = idempotency.run(                          # or by hand, around anything
@@ -48,7 +48,7 @@ import functools
 import inspect
 import time
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import timedelta
@@ -220,7 +220,7 @@ class Idempotency:
         expires_after: timedelta,
         in_progress_for: timedelta = timedelta(minutes=1),
         wait_for_completion: timedelta = timedelta(0),
-        vary_by: tuple[str, ...] = (),
+        vary_by: str | Sequence[str] = (),
     ):
         """Run the decorated Feature or ApplicationService once per key — see
         `IdempotencyPolicy` for each knob. The key is the bus, the Command, what the Command's
