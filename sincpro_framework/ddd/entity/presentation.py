@@ -21,6 +21,25 @@ Each lambda names its fields through the entity, so a type checker reads `a.code
 Nothing declared is a declaration too: a field called `name` is the display, and a literal
 finds it by containment. `describe` publishes the result on `Meta`; `matching` and `detail_of`
 turn it into the criteria a Feature hands to `search` and `get`.
+
+It also says how a form shows each field, as defaults a client builds from:
+
+        presentation = Presentation["Invoice"](
+            readonly=lambda i: (i.number,),
+            required=lambda i: (i.partner_id,),
+            readonly_when=lambda i: (
+                When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount),
+            ),
+            visible_when=lambda i: (
+                When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+            ),
+        )
+
+**These are hints, never rules.** `Meta` publishes them so a screen shows an asterisk, greys
+a field or hides it without being told twice; a component that says otherwise wins. The
+framework checks none of them: a save of a confirmed invoice with another partner goes
+through. A rule the server keeps is the project's own hook (`before_save`), which may read
+the same condition from `presentation_of(Invoice)`.
 """
 
 from collections.abc import Callable, Iterable
@@ -145,6 +164,53 @@ class Reference:
 
 
 @dataclass(frozen=True)
+class Is:
+    """One condition over a field, the triple a Criteria carries.
+
+    Is(i.state, Operator.NE, InvoiceState.DRAFT)     →   ["state", "!=", "draft"]
+    """
+
+    field: object
+    operator: Operator
+    value: object
+
+
+@dataclass(frozen=True, init=False)
+class AllHold:
+    """Every condition holds: `AllHold(Is(i.state, ...), Is(i.payment, ...))`."""
+
+    conditions: tuple[object, ...]
+
+    def __init__(self, *conditions: object) -> None:
+        object.__setattr__(self, "conditions", conditions)
+
+
+@dataclass(frozen=True, init=False)
+class AnyHolds:
+    """At least one condition holds: `AnyHolds(Is(i.kind, ...), Is(i.kind, ...))`."""
+
+    conditions: tuple[object, ...]
+
+    def __init__(self, *conditions: object) -> None:
+        object.__setattr__(self, "conditions", conditions)
+
+
+@dataclass(frozen=True, init=False)
+class When:
+    """The fields a hint covers while a condition holds.
+
+    When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount)
+    """
+
+    condition: object
+    fields: tuple[object, ...]
+
+    def __init__(self, condition: object, *fields: object) -> None:
+        object.__setattr__(self, "condition", condition)
+        object.__setattr__(self, "fields", fields)
+
+
+@dataclass(frozen=True)
 class Presentation[T]:
     """What the entity declares about how it is read. Every part is optional.
 
@@ -152,9 +218,20 @@ class Presentation[T]:
     (containment on the display when not declared). `order` is the list order, a bare field
     ascending and `Descending(...)` the other way. `detail` is what `get` brings when a caller
     asks for the detail: bare fields, `Expand(...)` and `Reference(...)`.
+
+    The form hints, all defaults a client may override and none of them checked:
+    `readonly` and `required` always; `readonly_when`, `required_when` and `visible_when`
+    while a condition holds over the record (`When(...)`). Left alone, the fields the framework
+    writes (`id`, `version`, …) are read-only and a field with no default that cannot be
+    `None` is required.
     """
 
     display: Callable[[T], object] | None = None
     search: Callable[[T], tuple[Match, ...]] | None = None
     order: Callable[[T], tuple[object, ...]] | None = None
     detail: Callable[[T], tuple[object, ...]] | None = None
+    readonly: Callable[[T], tuple[object, ...]] | None = None
+    required: Callable[[T], tuple[object, ...]] | None = None
+    readonly_when: Callable[[T], tuple[When, ...]] | None = None
+    required_when: Callable[[T], tuple[When, ...]] | None = None
+    visible_when: Callable[[T], tuple[When, ...]] | None = None

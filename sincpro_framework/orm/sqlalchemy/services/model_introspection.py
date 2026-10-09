@@ -27,6 +27,7 @@ from sincpro_framework.ddd.entity.model_meta import (
     describe_class,
     enum_of,
     field_translations,
+    hinted,
     logical_type,
     presentation_of,
     related_class,
@@ -195,6 +196,7 @@ def describe(entity: type) -> Meta:
             for name, meta in fields.items()
         }
 
+    fields = hinted(fields, entity)
     presented = presentation_of(entity)
     return Meta(
         aggregate=entity.__name__,

@@ -106,6 +106,69 @@ functions turn it into the criteria a Feature runs:
 project's own DTOs: [Entity reads](entity-reads.md). A list asks nothing extra: the
 declared order is `Meta.default_order`, which the store applies when a criteria names none.
 
+### Form hints: defaults for a client, never rules
+
+`presentation` also says how a form shows each field. Every field of `Meta.fields` carries the
+result, so a client builds a form without being told twice:
+
+```python
+from sincpro_framework.ddd import AllHold, Is, Presentation, When
+from sincpro_framework.ddd.criteria import Operator
+
+
+@dataclass
+class Invoice(Entity):
+    partner_id: str
+    number: str = "/"
+    state: InvoiceState = InvoiceState.DRAFT
+    payment: Payment = Payment.CASH
+    card_reference: str = ""
+    amount: Decimal = Decimal("0")
+
+    presentation = Presentation["Invoice"](
+        readonly=lambda i: (i.number,),
+        readonly_when=lambda i: (
+            When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount),
+        ),
+        required_when=lambda i: (When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),),
+        visible_when=lambda i: (When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),),
+    )
+```
+
+| `FieldMeta` | A form | Left alone |
+|---|---|---|
+| `readonly` | shows the field read-only | the fields the framework writes: `id`, `created_at`, `updated_at`, `version`, a mixin's |
+| `required` | asks for it | a field with no default that cannot be `None` |
+| `default` | starts a new record with it | the dataclass default, as JSON; nothing for a `default_factory` |
+| `readonly_when` | shows it read-only while the condition holds over the record | — |
+| `required_when` | asks for it while the condition holds | — |
+| `visible_when` | shows it only while the condition holds | always shown |
+
+A condition is the triple a criteria carries, written through the entity:
+`Is(i.state, Operator.NE, InvoiceState.DRAFT)` is published as
+`{"field": "state", "operator": "!=", "value": "draft"}`. `AllHold(...)` and `AnyHolds(...)`
+combine them; a field named by two `When` is covered while either holds. A client evaluates it
+with the same evaluator it filters with (`@sincpro/criteria`), reading each value as its
+field's type: an amount travels as the text `"0"`.
+
+**They are hints.** The framework checks none of them: a confirmed invoice saved with another
+partner, or paid by card with no reference, is saved. A component that says otherwise wins —
+a form may ask for a field the definition does not, or hide one by the user's groups. A rule
+the server keeps is the project's own hook, and it can read the same condition so the rule is
+written once:
+
+```python
+@billing_hooks.on(Invoice)
+class PaymentNeedsItsReference(BillingHook):
+    def before_save(self, invoice: Invoice) -> None:
+        for name, condition in presentation_of(Invoice).required_when.items():
+            if matches(invoice, condition) and not getattr(invoice, name):
+                raise ConstraintViolation(f"{name} is required for this invoice")
+```
+
+Hiding a field in a form does not keep it from the answer: a field that must not reach a
+caller is cut on the server, by the specification or by a hook (`after_read`).
+
 Rule 1 said another way: with `dataset_id: str` and `dataset: Dataset` on an aggregate, a read
 that asks nothing returns `dataset_id` and not `dataset`. `Meta.fields["dataset"]`, of type `many2one`, tells the
 client the relation exists and what identifies it, so it can ask for it or filter by the key

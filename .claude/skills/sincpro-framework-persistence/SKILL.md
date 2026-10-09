@@ -58,7 +58,8 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `ChangeTrackingMixin` | One `EntityUpdated` per save with every changed field | dataclass mixin | `from sincpro_framework.ddd import ChangeTrackingMixin` |
 | `StaleAggregate` / `DuplicateAggregate` | A write lost a race: newer version / unique value taken | exception | `from sincpro_framework.ddd import StaleAggregate, DuplicateAggregate` |
 | `ContractViolation` / `RelationNotResolved` | API used against its contract / relation read that nobody asked for | exception | `from sincpro_framework.ddd import ContractViolation, RelationNotResolved` |
-| `Presentation` | Class attribute of an entity: `display`, `search`, `order`, `detail`, fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
+| `Presentation` | Class attribute of an entity: `display`, `search`, `order`, `detail`, and form hints (`readonly`, `required`, `readonly_when`, `required_when`, `visible_when`), fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
+| `Is` / `When` / `AllHold` / `AnyHolds` | A hint's condition as the Criteria triple: `When(Is(i.state, Operator.NE, State.DRAFT), i.partner_id)` | declaration | `sincpro_framework.ddd` |
 | `Get` / `GetMany` / `LiteralSearch` / `Search` | Generic DTO bases naming entity and response: `class QueryGetInvoice(Get[Invoice, ResponseInvoice])` | DTO bases | `sincpro_framework.ddd` |
 | `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `presentation`; extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
 | `ResponseRecord` / `ResponseRecords` | One record / a list by identity (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
@@ -236,6 +237,10 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   (`Get`, `GetMany`, `LiteralSearch`, `Search` with `[Entity, Response]`), register them on one
   `EntityReads[Entity]`, override a read and call `super()` to extend it. Writes stay Commands
   with an intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
+- **Form hints are defaults for a client, never rules.** `presentation`'s `readonly`,
+  `required`, `*_when` and the dataclass defaults reach `Meta.fields`; nothing checks them on
+  save. A rule the server keeps is the project's own `before_save` hook, reading the same
+  condition from `presentation_of(Entity)`. Recipe: [references/form-hints.md](references/form-hints.md).
 - **The aggregate records events; save keeps mapped facts with it.** Use an `EventRelay`
   for durable delivery; manual publication after commit is not a durable outbox.
 
@@ -257,6 +262,7 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 - [references/relations.md](references/relations.md) — the kinds, inference, cost
 - [references/hooks-and-mixins.md](references/hooks-and-mixins.md) — `Hook`/`Hooks`, moments, wiring, ordering
 - [references/entity-reads.md](references/entity-reads.md) — `presentation` + `EntityReads`: get, get many, select by text, list
+- [references/form-hints.md](references/form-hints.md) — form hints in `presentation`, what a client receives, enforcing one with a hook
 
 ## Related
 
