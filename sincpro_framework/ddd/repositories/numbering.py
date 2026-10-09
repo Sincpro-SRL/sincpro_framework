@@ -21,6 +21,7 @@ from abc import ABC, abstractmethod
 from threading import Lock
 
 from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
 
 
 def refuse_no_count(count: int) -> None:
@@ -49,6 +50,7 @@ class MemoryNumbering(INumbering):
         self._lock = Lock()
 
     def take(self, series: str, count: int = 1, scope: str = "") -> range:
+        refuse_writing_in_preview("take")
         refuse_no_count(count)
         with self._lock:
             last = self._last.get((series, scope), 0) + count

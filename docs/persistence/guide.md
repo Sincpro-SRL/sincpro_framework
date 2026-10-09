@@ -443,7 +443,7 @@ class TotalIsPositive(Hook):
             raise ContractViolation(f"invoice {invoice.number} has no total")
 
 
-@invoicing_hooks.on(Invoice, after=(TotalIsPositive,))
+@invoicing_hooks.on(Invoice, after=TotalIsPositive)
 class NumberNewInvoices(Hook):
     numbering: Numbering
 

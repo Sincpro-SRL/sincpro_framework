@@ -10,6 +10,7 @@ hand. And it observes itself: every statement goes to the logger at DEBUG, to a 
 process is collecting, and every failure to the error tracker; see `observability.py`.
 """
 
+import re
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any
@@ -18,8 +19,11 @@ from sincpro_log.logger import LoggerProxy
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql.elements import TextClause
 
 from sincpro_framework.ddd.entity import utc_now
+from sincpro_framework.ddd.preview import is_previewing
+from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
 from sincpro_framework.orm.sqlalchemy.infrastructure.change_tracking import _tracking
 from sincpro_framework.orm.sqlalchemy.infrastructure.engine_errors import named
 from sincpro_framework.orm.sqlalchemy.infrastructure.flushing import goes_out
@@ -135,6 +139,10 @@ class Database:
         # a use case holding a plain session must not be able to step around them.
         self.before_flush(_stamping(actor))
         self.before_flush(_tracking)
+        # A preview stores nothing, whichever door a write takes: a repository call, a unit of
+        # work committing what it tracks, a plain session.
+        self.before_flush(_refused_in_preview)
+        event.listen(self.open_session, "do_orm_execute", _statement_refused_in_preview)
         event.listen(self.open_session, "do_orm_execute", note_statement_reads)
         hooks_per_transaction(self.open_session)
 
@@ -218,3 +226,63 @@ class Database:
             raise
         finally:
             session.close()
+
+
+def _refused_in_preview(session: Session) -> None:
+    """A flush with something to write, inside `previewing()`, is refused: `record_changes`,
+    the commit of a unit of work tracking changes, a record added to the session by hand.
+
+    Outside the guard: a statement sent on a raw connection, and a thread started without the
+    framework's context (`ContextExecutor`), which does not see the preview at all.
+    """
+    if session.new or session.dirty or session.deleted:
+        refuse_writing_in_preview("a flush")
+
+
+def _statement_refused_in_preview(state: Any) -> None:
+    """A statement sent through a session inside `previewing()` that writes or locks is refused:
+    an INSERT, UPDATE or DELETE, a text statement that is not a read, a read that locks rows.
+
+        UPDATE … / text("DELETE …")             →  WriteInPreview
+        SELECT … FOR UPDATE                      →  WriteInPreview
+        SELECT … / text("SELECT …")             →  runs, without an autoflush
+    """
+    if not is_previewing():
+        return
+    if state.is_select:
+        # A read inside a preview never flushes what the unit of work holds pending: that
+        # flush would be a write, refused, and the read would fail for nothing. The preview
+        # sees what is stored, not the unit of work's unflushed changes.
+        state.update_execution_options(autoflush=False)
+    if state.is_insert or state.is_update or state.is_delete:
+        refuse_writing_in_preview("a statement that writes")
+    statement = state.statement
+    if isinstance(statement, TextClause) and not _reads_only(statement.text):
+        refuse_writing_in_preview("a text statement that is not a read")
+    if getattr(statement, "_for_update_arg", None) is not None:
+        refuse_writing_in_preview("a read that locks rows")
+
+
+LEADING_NOISE = re.compile(r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/|\()*", re.DOTALL)
+"""Whitespace, comments and opening parentheses before a statement's first word."""
+LOCKING = re.compile(r"\bFOR\s+(?:NO\s+KEY\s+)?(?:UPDATE|SHARE|KEY\s+SHARE)\b", re.IGNORECASE)
+WRITING = re.compile(r"\b(?:INSERT|UPDATE|DELETE|MERGE)\b", re.IGNORECASE)
+
+
+def _reads_only(sql: str) -> bool:
+    """Whether a text statement is one read and nothing else.
+
+        SELECT … / WITH … SELECT … / -- a note\nSELECT …          →  True
+        WITH … UPDATE … / SELECT … FOR UPDATE / SELECT 1; DELETE …  →  False
+
+    Conservative on purpose: a single statement, starting with SELECT, or with WITH and no word
+    that writes anywhere in it, and no row lock. A rare read that trips it — a column named
+    `update` inside a WITH — is refused inside a preview; outside one nothing is asked.
+    """
+    body = LEADING_NOISE.sub("", sql).rstrip().rstrip(";")
+    if ";" in body or LOCKING.search(body):
+        return False
+    first = body.split(None, 1)[0].upper() if body else ""
+    if first == "SELECT":
+        return True
+    return first == "WITH" and WRITING.search(body) is None

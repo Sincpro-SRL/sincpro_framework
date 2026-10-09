@@ -38,7 +38,8 @@ names one (`Meta.display`). That pair is the reference a select lists and a many
 How an aggregate is read is said once, on the class, so a select, a list and a detail do not
 each assemble it. `presentation` is a class attribute, not a field: it is never stored and never
 travels with a record. Each part names its fields through the entity, `lambda a: a.code`, so a
-type checker reads the name against the class and a rename reaches it.
+type checker reads the name against the class and a rename reaches it. A part answers one
+entry alone (`order=lambda a: a.code`) or a list of them (`detail=lambda a: [a.code, a.name]`).
 
 ```python
 from dataclasses import dataclass, field
@@ -62,9 +63,9 @@ class Account(Entity):
 
     presentation = Presentation["Account"](
         display=lambda a: a.name,
-        search=lambda a: (Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)),
-        order=lambda a: (a.code,),
-        detail=lambda a: (a.code, a.name, Reference(a.partner), Expand(a.lines, 300)),
+        search=lambda a: [Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)],
+        order=lambda a: a.code,
+        detail=lambda a: [a.code, a.name, Reference(a.partner), Expand(a.lines, 300)],
     )
 ```
 
@@ -126,12 +127,14 @@ class Invoice(Entity):
     amount: Decimal = Decimal("0")
 
     presentation = Presentation["Invoice"](
-        readonly=lambda i: (i.number,),
-        readonly_when=lambda i: (
-            When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount),
+        readonly=lambda i: i.number,
+        readonly_when=lambda i: When(
+            Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount
         ),
-        required_when=lambda i: (When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),),
-        visible_when=lambda i: (When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),),
+        required_when=lambda i: When(
+            Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference
+        ),
+        visible_when=lambda i: When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
     )
 ```
 

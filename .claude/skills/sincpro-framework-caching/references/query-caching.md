@@ -8,7 +8,7 @@ from datetime import timedelta
 from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
-caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
+caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
 
 with billing.context({"tenant_id": "acme"}):
     first = billing(QueryBalance(customer_id="c1"), ResponseBalance)
@@ -51,7 +51,7 @@ kept — there would be nothing to let it go by (one warning on the `sincpro_fra
 logger). A Query that reads through an HTTP adapter or a raw connection declares what it depends on:
 
 ```python
-CachePolicy(ttl=timedelta(minutes=5), depends_on=(Invoice,))   # invalidating Invoice lets it go
+CachePolicy(ttl=timedelta(minutes=5), depends_on=[Invoice])   # invalidating Invoice lets it go
 ```
 
 A write that does not reach `invalidate`, `invalidate_on_commit` or `invalidated_by` — a

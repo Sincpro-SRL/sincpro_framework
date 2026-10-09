@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import TypeAdapter
 
 from sincpro_framework.context.infrastructure.tree import chain_for
+from sincpro_framework.ddd.entity.derivations import Derivations
 from sincpro_framework.ddd.entity.presentation import Presentation
 from sincpro_framework.ids import new_entity_id
 
@@ -89,6 +90,9 @@ class Entity:
     the list order and what a detail brings (`Presentation`). It is a class attribute, not a
     field: it is never stored and never travels with a record. Left alone, a field called
     `name` is the display.
+
+    `derivations` lists the fields it computes from others (`Derivations`), so a preview and a
+    save compute them the same way. A class attribute too; left alone, nothing is computed.
     """
 
     id: str = field(default_factory=new_entity_id)
@@ -101,6 +105,7 @@ class Entity:
     """How many times it has been written. Zero means never — the adapter raises it, and a
     save carrying a number older than the row's is refused as `StaleAggregate`."""
     presentation: ClassVar[Presentation[Any]] = Presentation()
+    derivations: ClassVar[Derivations[Any]] = Derivations()
 
     @classmethod
     def translations(cls) -> Translated:

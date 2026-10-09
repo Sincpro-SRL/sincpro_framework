@@ -75,7 +75,7 @@ class Balance(ApplicationService):
 from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
-caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
+caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
 
 with billing.context({"tenant_id": "acme"}):
     first = billing(QueryBalance(customer_id="c1"), ResponseBalance)
@@ -273,7 +273,7 @@ assert opened == ["tok"]
 ### When the source fails: `FailSafe`
 
 A source that goes down turns every call into an error the moment its value lapses — although the
-value was right a minute ago. `FailSafe(serve_for=, throttle_for=30s, errors=(Exception,))` is
+value was right a minute ago. `FailSafe(serve_for=, throttle_for=30s, errors=Exception)` is
 RFC 5861's `stale-if-error`: when computing raises one of `errors`, the last good value is served
 for up to `serve_for` past its servable life, and re-kept fresh for `throttle_for`, so the source
 is asked once per window, not once per call. It never serves a value its validation *rejected* —
@@ -292,7 +292,7 @@ class DownRegistry(Registry):
 flaky = DownRegistry()
 fail_safe = KeepPolicy[Tenant](
     freshness=TimeToLive(ttl=timedelta(minutes=5)),
-    failure=FailSafe(serve_for=timedelta(hours=1), errors=(ConnectionError, TimeoutError)),
+    failure=FailSafe(serve_for=timedelta(hours=1), errors=[ConnectionError, TimeoutError]),
 )
 guarded = Cache(now=clock.now, namespace="tenants", observer=observed)
 before = guarded.get_or_compute("acme", lambda: flaky.resolve("acme"), fail_safe)
@@ -378,7 +378,7 @@ issued: list[int] = []
     expires_after=timedelta(minutes=2),       # a transport retry, not a person on purpose
     in_progress_for=timedelta(minutes=1),     # a claim left by a dead replica expires
     wait_for_completion=timedelta(seconds=5), # a duplicate mid-run waits for the answer
-    vary_by=("tenant_id",),                   # two tenants never share an answer
+    vary_by="tenant_id",                   # two tenants never share an answer
 )
 class IssueReceipt(Feature):
     def execute(self, dto: CommandIssueReceipt) -> ResponseIssueReceipt:

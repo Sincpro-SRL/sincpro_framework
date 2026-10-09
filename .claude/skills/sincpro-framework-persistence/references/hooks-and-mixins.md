@@ -36,7 +36,7 @@ class TotalIsPositive(Hook):
             raise ContractViolation(f"invoice {invoice.number} has no total")
 
 
-@invoicing_hooks.on(Invoice, after=(TotalIsPositive,))
+@invoicing_hooks.on(Invoice, after=TotalIsPositive)
 class NumberNewInvoices(Hook):
     numbering: Numbering                    # a dependency of the bus the hooks are injected into
 
@@ -96,7 +96,7 @@ log). `archive` is a save: `before_archive`, then the save's moments (`before_sa
 `before_*` of a batch runs before the flush and every `after_*` after it; `after_*` still runs
 **before the commit** inside `context()`.
 
-Ordering and extension: `on(X, after=(Other,), before=(...), sequence=5)`,
+Ordering and extension: `on(X, after=Other, before=[...], sequence=5)`,
 `on(X, replaces=Other)` (takes its place), `on(X, extends=Other)` (a subclass; `super()` runs it),
 `hooks.without(Other)` and `core_hooks.combined_with(client_hooks)` give new collections and leave
 the original whole.

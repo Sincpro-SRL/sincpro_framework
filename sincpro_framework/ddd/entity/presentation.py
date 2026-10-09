@@ -9,12 +9,12 @@ of a list and what a detail brings.
 
         presentation = Presentation["Account"](
             display=lambda a: a.name,
-            search=lambda a: (Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)),
-            order=lambda a: (a.code,),
-            detail=lambda a: (a.code, a.name, Expand(a.lines, 300)),
+            search=lambda a: [Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)],
+            order=lambda a: a.code,
+            detail=lambda a: [a.code, a.name, Expand(a.lines, 300)],
         )
 
-Each lambda names its fields through the entity, so a type checker reads `a.code` against
+A part answers one entry alone or a list of them. Each lambda names its fields through the entity, so a type checker reads `a.code` against
 `Account` and a rename reaches it. It runs once, when the class is described, against
 `Fields`: a stand-in whose attributes are the field names. It never sees a record.
 
@@ -25,14 +25,12 @@ turn it into the criteria a Feature hands to `search` and `get`.
 It also says how a form shows each field, as defaults a client builds from:
 
         presentation = Presentation["Invoice"](
-            readonly=lambda i: (i.number,),
-            required=lambda i: (i.partner_id,),
-            readonly_when=lambda i: (
-                When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount),
+            readonly=lambda i: i.number,
+            required=lambda i: i.partner_id,
+            readonly_when=lambda i: When(
+                Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount
             ),
-            visible_when=lambda i: (
-                When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
-            ),
+            visible_when=lambda i: When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
         )
 
 **These are hints, never rules.** `Meta` publishes them so a screen shows an asterisk, greys
@@ -42,7 +40,7 @@ through. A rule the server keeps is the project's own hook (`before_save`), whic
 the same condition from `presentation_of(Invoice)`.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -59,18 +57,23 @@ class FieldRef:
 
 
 class Fields:
-    """The stand-in a presentation lambda runs against. An unknown name fails here, naming the
-    class, so a typo is refused when the class is described and not on the first empty page.
+    """The stand-in a declaration's lambda runs against (`presentation`, `derivations`). An
+    unknown name fails here, naming the class, so a typo is refused when the class is described
+    and not on the first empty page.
     """
 
-    def __init__(self, owner: str, names: Iterable[str]) -> None:
+    def __init__(
+        self, owner: str, names: Iterable[str], declaration: str = "presentation"
+    ) -> None:
         self._owner = owner
         self._names = frozenset(names)
+        self._declaration = declaration
 
     def __getattr__(self, name: str) -> FieldRef:
         if name not in self._names:
             raise ContractViolation(
-                f"{self._owner}.presentation names {name}, which is not a field of {self._owner}"
+                f"{self._owner}.{self._declaration} names {name}, "
+                f"which is not a field of {self._owner}"
             )
         return FieldRef(name)
 
@@ -227,11 +230,11 @@ class Presentation[T]:
     """
 
     display: Callable[[T], object] | None = None
-    search: Callable[[T], tuple[Match, ...]] | None = None
-    order: Callable[[T], tuple[object, ...]] | None = None
-    detail: Callable[[T], tuple[object, ...]] | None = None
-    readonly: Callable[[T], tuple[object, ...]] | None = None
-    required: Callable[[T], tuple[object, ...]] | None = None
-    readonly_when: Callable[[T], tuple[When, ...]] | None = None
-    required_when: Callable[[T], tuple[When, ...]] | None = None
-    visible_when: Callable[[T], tuple[When, ...]] | None = None
+    search: Callable[[T], Match | Sequence[Match]] | None = None
+    order: Callable[[T], object] | None = None
+    detail: Callable[[T], object] | None = None
+    readonly: Callable[[T], object] | None = None
+    required: Callable[[T], object] | None = None
+    readonly_when: Callable[[T], When | Sequence[When]] | None = None
+    required_when: Callable[[T], When | Sequence[When]] | None = None
+    visible_when: Callable[[T], When | Sequence[When]] | None = None

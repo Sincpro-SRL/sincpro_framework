@@ -39,6 +39,7 @@ from sincpro_framework.ddd.exceptions import (
     InvalidCriteria,
 )
 from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
+from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
 from sincpro_framework.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.orm.sqlalchemy.services import sql_translator as sql
 from sincpro_framework.orm.sqlalchemy.services.model_introspection import describe
@@ -720,6 +721,7 @@ class Reading(Store):
                     "for_update=True"
                 )
             return None
+        refuse_writing_in_preview("a read that locks rows")
         if self._bound is None:
             raise ContractViolation(
                 "for_update only means something inside context(): the lock is held "

@@ -174,6 +174,15 @@ def _calling_package() -> str | None:
     return None if not name or name == "__main__" else name
 
 
+def _hooks(named: "type[Hook] | Sequence[type[Hook]]") -> tuple[type["Hook"], ...]:
+    """`before=`/`after=` as a tuple: one hook class alone or a list of them.
+
+    in      Checks              →  out  (Checks,)
+    in      [Numbers, Totals]   →  out  (Numbers, Totals)
+    """
+    return (named,) if isinstance(named, type) else tuple(named)
+
+
 class Hooks:
     """The hooks of a bounded context: registered with `on`, ordered, and handed to a
     repository whole.
@@ -235,7 +244,7 @@ class Hooks:
             raise ExtensionRefused(
                 f"{hook.__name__} extends {extends.__name__}, so it has to be a subclass of it "
                 f"— super() is how it runs {extends.__name__}; to run beside it, "
-                f"register it with after=({extends.__name__},)"
+                f"register it with after={extends.__name__}"
             )
         if not _implemented(hook):
             raise ExtensionRefused(
@@ -259,8 +268,8 @@ class Hooks:
         entity: Entities,
         replaces: type[Hook] | None = None,
         extends: type[Hook] | None = None,
-        before: Sequence[type[Hook]] = (),
-        after: Sequence[type[Hook]] = (),
+        before: type[Hook] | Sequence[type[Hook]] = (),
+        after: type[Hook] | Sequence[type[Hook]] = (),
         sequence: int = DEFAULT_SEQUENCE,
     ) -> Callable[[H], H]:
         """Register the decorated class for `entity`, placed among the rest.
@@ -270,7 +279,8 @@ class Hooks:
             @hooks.on(object)                                   for every record
             @hooks.on(Invoice, replaces=Checks)                 instead of Checks, in its place
             @hooks.on(Invoice, extends=Checks)                  a subclass: super() runs Checks
-            @hooks.on(Invoice, after=(Checks,), sequence=5)     ordered among the rest
+            @hooks.on(Invoice, after=Checks, sequence=5)        ordered among the rest
+            @hooks.on(Invoice, before=[Numbers, Totals])        one hook or a list of them
 
         1. Refused when it is late, or when what it declares cannot work (see `_checked`).
         2. The aggregates it is for kept by the collection, never written onto the class.
@@ -283,7 +293,7 @@ class Hooks:
             takes_the_place_of = self._checked(hook, replaces, extends)
             self._entities[hook] = entities
             self._placements.append(
-                Placement(hook, sequence, tuple(before), tuple(after), takes_the_place_of)
+                Placement(hook, sequence, _hooks(before), _hooks(after), takes_the_place_of)
             )
             return hook
 

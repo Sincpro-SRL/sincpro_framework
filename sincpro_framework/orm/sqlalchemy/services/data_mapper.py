@@ -32,13 +32,14 @@ from sqlalchemy.orm import object_session, registry
 
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity import Entity
+from sincpro_framework.ddd.entity.entity_collection import identity_name
 from sincpro_framework.ddd.entity.model_meta import (
     annotations_of,
     related_class,
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import Relation as DeclaredRelation
-from sincpro_framework.ddd.entity.relations import Resolver
+from sincpro_framework.ddd.entity.relations import Resolver, key_pair
 from sincpro_framework.ddd.exceptions import RelationNotResolved
 from sincpro_framework.orm.sqlalchemy.domain.registry import RELATIONS, record_mapping
 from sincpro_framework.orm.sqlalchemy.domain.relations import (
@@ -215,6 +216,51 @@ class RelatedAttribute:
                 "`map_aggregates` infers on its own when the column declares it"
             )
         return answered[self.name]
+
+    def holds_whole(self, record: Any) -> bool:
+        """Whether the record holds this relation whole, answered without reading anything.
+
+            resolved whole, or assigned over a whole reading    →  True
+            cut by a specification, assigned blind, not read    →  False
+
+        What a save asks before a derivation reads the relation: a save never triggers a read,
+        and never computes a total over lines it does not hold.
+        """
+        resolved = record.__dict__.get(RESOLVED)
+        if resolved is None or self.name not in resolved:
+            return False
+        return held(record, self.name) in (Held.WHOLE, Held.ASSIGNED)
+
+    def held_in_part(self, record: Any) -> str:
+        """How the record holds part of this relation and not all of it, answered without
+        reading anything: `"cut"`, `"blind"`, or `""` — held whole, or not held at all.
+
+            resolved through a specification that filtered it   →  "cut"
+            assigned with no whole reading behind it            →  "blind"
+            resolved whole, assigned over one, or never read     →  ""
+
+        What a save asks to tell a derivation it skipped apart from one it can never miss: a
+        relation never read cannot have changed; one held in part may have.
+        """
+        resolved = record.__dict__.get(RESOLVED)
+        if resolved is None or self.name not in resolved:
+            return ""
+        state = held(record, self.name)
+        return state.value if state is Held.CUT or state is Held.BLIND else ""
+
+    def joined_by(self, record: Any) -> tuple[str, str] | None:
+        """How a new record of this relation is tied to `record`, when a save of `record` writes
+        it: `record`'s field, and the field of the new record that holds its value.
+
+            Sale.lines       →  ("id", "sale_id")    a new line takes the sale's id
+            Sale.customer    →  None                 another aggregate, not written from here
+
+        What `assign` asks before building a line a form sent without its key: the form cannot
+        know it, least of all for a sale that is not stored yet.
+        """
+        if not self._written_by_root(record):
+            return None
+        return key_pair(identity_name(type(record)), self.relation, True)
 
     def _written_by_root(self, record: Any) -> bool:
         """Whether a save of the record writes this relation — the only case its reading is

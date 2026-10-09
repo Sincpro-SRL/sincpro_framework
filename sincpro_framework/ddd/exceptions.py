@@ -83,6 +83,13 @@ class RelationNotResolved(ContractViolation):
     """
 
 
+class WriteInPreview(ContractViolation):
+    """A write was attempted inside `previewing()`: a save, a removal, a bulk write or a number
+    taken while answering a form's question. A preview stores nothing; the write belongs to the
+    Command that saves.
+    """
+
+
 class AggregateNotFound(DomainError):
     """A read named one record by its identity and there is none: never stored, archived, or
     outside the scope the repository was narrowed to.

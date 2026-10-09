@@ -20,9 +20,9 @@ class Invoice(Entity):
 
     presentation = Presentation["Invoice"](
         display=lambda i: i.number,
-        search=lambda i: (Match.equal(i.number), Match.prefix(i.number), Match.contains(i.name)),
-        order=lambda i: (i.number,),                         # Descending(i.posted_at) for desc
-        detail=lambda i: (i.number, Reference(i.customer), Expand(i.lines, 300)),
+        search=lambda i: [Match.equal(i.number), Match.prefix(i.number), Match.contains(i.name)],
+        order=lambda i: i.number,                         # Descending(i.posted_at) for desc
+        detail=lambda i: [i.number, Reference(i.customer), Expand(i.lines, 300)],
     )
 ```
 

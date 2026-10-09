@@ -114,13 +114,13 @@ bus(CommandIssueReceipt) → once(): key = handler + Command + idempotency_key()
 
 - **A Query that reads through an adapter.** Only repository reads are noted; an answer that read
   nothing noted and declares no `depends_on` is answered and **never kept** (one log warning). Add
-  `CachePolicy(depends_on=(...))`, or cache the remote call with `Cache` in the adapter.
+  `CachePolicy(depends_on=[...])`, or cache the remote call with `Cache` in the adapter.
 - **Writes that never invalidate.** A `MemoryRepository`, a raw session without
   `invalidate_on_commit`, another process without `invalidated_by`, or a second `QueryCaching` in
   another `namespace`: answers stay stale until their ttl.
 - **A tenant or user carried in the context but missing from `vary_by`.** One tenant's answer is
   served to another. List those keys in `QueryCaching(sensitive=...)` so the omission is refused.
-- **`@idempotency.once` without `vary_by=("tenant_id",)`** when the key is only unique per tenant:
+- **`@idempotency.once` without `vary_by="tenant_id"`** when the key is only unique per tenant:
   tenant B gets tenant A's replayed answer.
 - **A Command with no `idempotency_key()` and a generated field** (`Field(default_factory=uuid4)`,
   a timestamp): every retry is a new key and the write runs again.
@@ -129,7 +129,7 @@ bus(CommandIssueReceipt) → once(): key = handler + Command + idempotency_key()
 - **`in_progress_for` shorter than the longest run.** The claim expires mid-run and a duplicate runs.
 - **`get_or_compute(key, compute)` with no policy.** `KeepPolicy()` defaults to
   `TimeToLive(ttl=None)`: the value is kept until forgotten or a validation rejects it.
-- **`FailSafe(serve_for=...)` with default `errors=(Exception,)`.** It serves the old value through
+- **`FailSafe(serve_for=...)` with default `errors=Exception`.** It serves the old value through
   a 401 or a bug, not only an outage. Name the transient errors.
 - **A `Cache` key that omits a parameter** the value depends on (the tenant): one value is shared.
 
@@ -140,7 +140,7 @@ from datetime import timedelta
 from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
-caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
+caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
 ```
 
 - Its `execute` must declare its return type — the answer is read back as that type.
@@ -164,7 +164,7 @@ receipts.ignore_sentry_exceptions(AlreadyInProgress, KeyReused)
     expires_after=timedelta(minutes=2),
     in_progress_for=timedelta(minutes=1),
     wait_for_completion=timedelta(seconds=5),
-    vary_by=("tenant_id",),
+    vary_by="tenant_id",
 )
 class IssueReceipt(Feature): ...
 ```
@@ -187,7 +187,7 @@ tenants = Cache(InMemoryKeyValue(), namespace="catalog")     # Cache() keeps obj
 policy = KeepPolicy[Tenant](
     freshness=TimeToLive(ttl=timedelta(minutes=5), jitter=0.1, stale_for=timedelta(minutes=1)),
     validation=ExternalVersion(registry.current_version, kept=version_of, trusted_for=timedelta(minutes=5)),
-    failure=FailSafe(serve_for=timedelta(hours=1), errors=(ConnectionError, TimeoutError)),
+    failure=FailSafe(serve_for=timedelta(hours=1), errors=[ConnectionError, TimeoutError]),
 )
 value = tenants.get_or_compute(("catalog", "acme"), lambda: registry.resolve("acme"), policy, JsonCodec(Tenant))
 ```

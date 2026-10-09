@@ -276,7 +276,7 @@ class Early(Hook):
     def before_save(self, invoice: Invoice) -> None: ...
 
 
-@ordering.on(Invoice, sequence=99, before=(Early,))
+@ordering.on(Invoice, sequence=99, before=Early)
 class FirstOfAll(Hook):
     def before_save(self, invoice: Invoice) -> None: ...
 

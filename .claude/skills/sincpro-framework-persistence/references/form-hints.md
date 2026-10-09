@@ -22,17 +22,17 @@ class Invoice(Entity):
     discount_reason: str = ""
 
     presentation = Presentation["Invoice"](
-        readonly=lambda i: (i.number, i.state),       # the domain writes them
-        required=lambda i: (i.partner_id,),
-        readonly_when=lambda i: (
-            When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.discount),
+        readonly=lambda i: [i.number, i.state],       # the domain writes them
+        required=lambda i: i.partner_id,
+        readonly_when=lambda i: When(
+            Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.discount
         ),
-        required_when=lambda i: (
+        required_when=lambda i: [
             When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
             When(AllHold(Is(i.state, Operator.EQ, InvoiceState.DRAFT),
                          Is(i.discount, Operator.GT, Decimal("0"))), i.discount_reason),
-        ),
-        visible_when=lambda i: (When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),),
+        ],
+        visible_when=lambda i: When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
     )
 ```
 

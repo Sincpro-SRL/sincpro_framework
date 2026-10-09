@@ -28,6 +28,14 @@ from sincpro_framework.ddd.criteria import (
     holds,
     matches,
 )
+from sincpro_framework.ddd.drafts import (
+    Draft,
+    DraftConflict,
+    Drafts,
+    InMemoryDrafts,
+    KeyValueDrafts,
+    refuse_stale,
+)
 from sincpro_framework.ddd.entity import (
     ArchivableMixin,
     AuditedMixin,
@@ -39,6 +47,8 @@ from sincpro_framework.ddd.entity import (
     new_entity_id,
     utc_now,
 )
+from sincpro_framework.ddd.entity.derivations import Derivations, Derive
+from sincpro_framework.ddd.entity.editing import assign, recompute, recompute_whole
 from sincpro_framework.ddd.entity.entity_collection import (
     Changes,
     Count,
@@ -80,14 +90,25 @@ from sincpro_framework.ddd.exceptions import (
     StaleAggregate,
     TimedOut,
     TransactionConflict,
+    WriteInPreview,
 )
+from sincpro_framework.ddd.preview import Advice, advise, is_previewing, previewing
 from sincpro_framework.ddd.query import (
     Query,
     ResponsePaginatedQuery,
     ResponseRecord,
     ResponseRecords,
 )
-from sincpro_framework.ddd.reads import EntityReads, Get, GetMany, LiteralSearch, Search
+from sincpro_framework.ddd.reads import (
+    EntityReads,
+    FieldState,
+    Get,
+    GetMany,
+    LiteralSearch,
+    Preview,
+    ResponsePreview,
+    Search,
+)
 from sincpro_framework.ddd.repositories import (
     AggregateRepository,
     Analyzes,
@@ -107,6 +128,12 @@ from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
+    "Draft",
+    "DraftConflict",
+    "Drafts",
+    "InMemoryDrafts",
+    "KeyValueDrafts",
+    "refuse_stale",
     "NAME_SEARCH_LIMIT",
     "Descending",
     "Expand",
@@ -159,6 +186,19 @@ __all__ = [
     "ResponseRecords",
     "GetMany",
     "Search",
+    "Advice",
+    "Derivations",
+    "Derive",
+    "FieldState",
+    "Preview",
+    "ResponsePreview",
+    "WriteInPreview",
+    "advise",
+    "assign",
+    "previewing",
+    "is_previewing",
+    "recompute",
+    "recompute_whole",
     "Entity",
     "EntityUpdated",
     "ChangeTrackingRepositoryMixin",

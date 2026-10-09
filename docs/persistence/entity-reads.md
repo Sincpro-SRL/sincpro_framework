@@ -34,8 +34,8 @@ class Account(Entity):
     name: str = ""
 
     presentation = Presentation["Account"](
-        search=lambda a: (Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)),
-        order=lambda a: (a.code,),
+        search=lambda a: [Match.equal(a.code), Match.prefix(a.code), Match.contains(a.name)],
+        order=lambda a: a.code,
     )
 
 
