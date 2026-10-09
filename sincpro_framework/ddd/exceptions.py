@@ -7,10 +7,12 @@ unique value, or against another transaction — or the engine stopped at a boun
 or the one record a read named is not there.
 A stale version and a lost transaction are the ones worth running again.
 
-They inherit from `Exception` and nothing else. Whoever exposes them decides what each one means
-over the wire; an HTTP entrypoint maps `InvalidCriteria` to 400, `ContractViolation` (and
-`ConstraintViolation`) to 422, the three conflicts to 409, `TimedOut` to 503 and
-`AggregateNotFound` to 404.
+They inherit from `Exception` and nothing else. Every wire answers them through one
+classification (`transport.failures.refined_failure_kind`): `StaleAggregate` and
+`DuplicateAggregate` are a conflict (409 over HTTP), `AggregateNotFound` declares not found
+(404), and the rest — `InvalidCriteria` and `ContractViolation` included — is the domain
+refusing the request (422). An error of a project's own declares another kind with
+`failure_kind = FailureKind...` on its class.
 """
 
 from sincpro_framework.transport.failures import FailureKind

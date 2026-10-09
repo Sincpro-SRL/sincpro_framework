@@ -102,8 +102,8 @@ from sincpro_framework.entrypoints.exposure import rest
 @rest.post("/invoices", status=201)
 class IssueInvoice(Feature): ...
 
-@billing.feature(QueryInvoice)
-@rest.get("/invoices/{invoice_id}")      # {invoice_id} must be a field of QueryInvoice
+@billing.feature(QueryInvoice)         # QueryInvoice subclasses sincpro_framework.ddd.Query:
+@rest.get("/invoices/{invoice_id}")      # a GET on any other DTO is refused; {invoice_id} is its field
 class GetInvoice(Feature): ...
 
 # 2. entrypoints/http/app.py — the only new file
@@ -268,9 +268,10 @@ handler inherits, wire by wire, the binding of the one it replaces.
   the project add middleware, interceptors, plugins. `.run(...)` is the one-liner.
 - **Snapshot the surface in CI.** `gateway.manifest()` is frozen, JSON-safe and sorted; assert it
   against a snapshot so the public API only moves on purpose.
-- **One failure classification, each wire's code.** `entrypoints.errors.failure_kind(error)` decides
-  `invalid` / `unauthenticated` / `permission_denied` / `conflict` / `domain` / `internal`; the wire
-  maps it (REST status, JSON-RPC code, gRPC status). A `DomainError`'s message reaches the caller;
+- **One failure classification, each wire's code.** `transport.failures.refined_failure_kind(error)`
+  decides the kind — the one the error's class declares (`failure_kind = …`), else `invalid` /
+  `unauthenticated` / `permission_denied` / `conflict` / `domain` / `internal`; every wire maps it
+  (REST status, JSON-RPC code, gRPC status). A project's own `Wire` calls the same function. A `DomainError`'s message reaches the caller;
   an internal failure says nothing.
 
 ## References

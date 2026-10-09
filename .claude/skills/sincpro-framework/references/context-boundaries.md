@@ -103,7 +103,8 @@ Yes → `adapters/`. No, and it is wiring → `infrastructure/`.
 | An encoder, a serialisation strategy | `adapters/` | Swap it and what downstream learns changes |
 | A statistical or numerical kernel | `adapters/` | Swap it and the output distribution changes |
 | A repository implementation, a client, a store | `adapters/` | Always |
-| Bus wiring, dependencies, tables, settings, observability | `infrastructure/` | Swap it and nothing about the business changes |
+| Bus wiring, dependencies, tables, observability | `infrastructure/` | Swap it and nothing about the business changes |
+| The context's settings | `<ctx>/settings.py` (a shape shared by several contexts: `common/settings.py`) | Read once, typed; `sincpro-framework-settings` |
 
 A thousand lines of computation with no I/O is still an adapter. "Pure" is not the test —
 *replaceability with behavioural consequence* is. A numerical kernel in `domain/` is the common

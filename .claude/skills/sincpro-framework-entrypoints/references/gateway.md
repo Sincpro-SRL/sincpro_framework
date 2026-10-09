@@ -89,15 +89,22 @@ Subclass `Wire[MyBinding]` (`binding`, `derive`, `name_of`, `validate`, `build`)
 
 ## Failures
 
-One classification, each wire's code: `entrypoints.errors.failure_kind(error)`.
+One classification, each wire's code: `sincpro_framework.transport.failures.refined_failure_kind(error)`
+— the kind the error's class declares (`failure_kind = …`), else the shared kinds below. Every wire
+(FastAPI, REST, JSON-RPC, gRPC, the queue) uses it; a project's own `Wire` calls it too.
+`failure_kind(error)`, its shared core, ignores the declared kind.
 
 | Kind | Raised | REST | JSON-RPC | gRPC |
 |---|---|---|---|---|
 | invalid | DTO did not validate | 422 (400 unreadable) | `-32602` | `INVALID_ARGUMENT` |
 | unauthenticated | `Unauthenticated` | 401 + `WWW-Authenticate` | `-32001` | `UNAUTHENTICATED` |
 | permission_denied | `PermissionDenied` | 403 | `-32003` | `PERMISSION_DENIED` |
+| not_found | an error declaring `FailureKind.NOT_FOUND` | 404 | `-32004` | `NOT_FOUND` |
 | conflict | `StaleAggregate`, `DuplicateAggregate` | 409 | `-32009` | `ABORTED`/`ALREADY_EXISTS` |
 | domain | any other `DomainError` | 422 | `-32010` | `FAILED_PRECONDITION` |
+| exhausted | an error declaring `FailureKind.EXHAUSTED` | 429 | `-32029` | `RESOURCE_EXHAUSTED` |
+| unavailable | an error declaring `FailureKind.UNAVAILABLE` | 503 | `-32000` | `UNAVAILABLE` |
+| unknown_outcome | a call sent with no answer back | 504 | `-32024` | `DEADLINE_EXCEEDED` |
 | internal | anything else | 500 (nothing told) | `-32603` | `INTERNAL` |
 
 An error declares its own kind with `failure_kind = FailureKind.NOT_FOUND` (or `INVALID`,

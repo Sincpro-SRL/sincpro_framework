@@ -64,6 +64,8 @@ process serves runs there even if its own map names it (a safety net: never call
 ## Hosting a context — the Open Host Service
 
 ```python
+from sincpro_framework.remote_execution.entrypoint.http import open_host_routes
+
 billing.serve("0.0.0.0:50051")                             # its own deployment: blocks
 host = billing.serve("0.0.0.0:50051", Attach.THREAD)       # beside a REST API, one process
 host = billing.serve("0.0.0.0:50051", Attach.PROCESS)      # a subprocess of its own

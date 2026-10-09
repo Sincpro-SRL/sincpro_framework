@@ -66,8 +66,9 @@ Tempo filters and groups by span attributes.
 
 ## Error handling by layer
 
-Three independent scopes — **global** (framework bus), **feature**, **app service**. First
-registered runs first; re-raise to delegate to the next.
+Three nested scopes — **feature** (innermost), **app service** (only when the Feature runs
+through an ApplicationService), **global** (the bus, outermost). Within a scope the first
+registered runs first; a re-raise passes to the next handler, then to the next scope out.
 
 ```python
 framework.add_global_error_handler(handler)

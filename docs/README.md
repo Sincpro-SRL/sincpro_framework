@@ -13,6 +13,7 @@ It separates existing capabilities from proposed corrections and unverified acce
 
 | Layer | Package | Start here | What is in it |
 |---|---|---|---|
+| **Version 4.0.0** | — | [version-4.md](version-4.md) | Exploration of ORM, Criteria, Entrypoints, Entity and events: production stays on 3.x until the architect is convinced; the spec is the essence, the style may change |
 | **Start here** | — | [shapes.md](shapes.md) | What shape is your system — one database, a database per context, or the facts *are* the state — and what to wire for each |
 | **Architecture** | the whole | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | The hexagonal layout, every component with its layer and dependencies, the flow of a request |
 | **Core: the bus** | `sincpro_framework` | [core/](core/README.md) | `UseFramework`, Features and ApplicationServices, dependencies, interceptors, error handling; the context — `use_context()` from anywhere, a tree from the process to each execution, threads, providers, stores, carried on every transport ([context-manager.md](core/context-manager.md)) |

@@ -184,7 +184,7 @@ Two races a write can lose, and how they surface:
 - **`DuplicateAggregate`** — a unique value already taken (an id, a fingerprint). Reported in the
   layer's own word so a use case resolves the race without importing the driver's exception.
 
-Suggested HTTP mapping: `InvalidCriteria` → 400, `ContractViolation` → 422, both conflicts → 409.
+Every gateway already maps these: `InvalidCriteria` and `ContractViolation` → 422 (kind `domain`), both conflicts → 409. Do not remap them by hand.
 
 ### Declaring a mapping
 

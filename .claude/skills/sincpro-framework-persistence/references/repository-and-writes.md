@@ -124,7 +124,7 @@ What the engine refuses, in the layer's own words — catch these, never a drive
 | `TransactionConflict` | serialization failure, deadlock | yes, on a fresh read |
 | `TimedOut` | `nowait` on a held row, a statement past `timeout` | no — the bound was yours |
 
-Suggested HTTP mapping: `InvalidCriteria` → 400, `ContractViolation`/`ConstraintViolation` → 422,
+Every gateway already maps these, do not remap them by hand: `InvalidCriteria`, `ContractViolation`/`ConstraintViolation` → 422 (kind `domain`),
 the three conflicts → 409.
 
 `repository.retrying(work, attempts=3, wait=0.05)` re-runs a callable on `StaleAggregate` or `TransactionConflict` when it

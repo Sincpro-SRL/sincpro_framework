@@ -113,13 +113,19 @@ bus(CommandIssueReceipt) → once(): key = handler + Command + idempotency_key()
 ## Mistakes an agent makes
 
 - **A Query that reads through an adapter.** Only repository reads are noted; an answer that read
-  nothing noted and declares no `depends_on` is answered and **never kept** (one log warning). Add
+  nothing noted and declares no `depends_on` is answered and **never kept** (a log warning on every such call). Add
   `CachePolicy(depends_on=[...])`, or cache the remote call with `Cache` in the adapter.
 - **Writes that never invalidate.** A `MemoryRepository`, a raw session without
   `invalidate_on_commit`, another process without `invalidated_by`, or a second `QueryCaching` in
   another `namespace`: answers stay stale until their ttl.
+- **A tenant that is not in the context.** `vary_by` names **context keys only**; the
+  authenticated identity is not put in the context by default, so with nothing in the context
+  every tenant shares one answer. Give the key from the identity with a context provider:
+  `@billing.context_provider(gives=["tenant_id"])` returning `{"tenant_id": current_identity().tenant}`
+  (`references/query-caching.md`).
 - **A tenant or user carried in the context but missing from `vary_by`.** One tenant's answer is
-  served to another. List those keys in `QueryCaching(sensitive=...)` so the omission is refused.
+  served to another. List those keys in `QueryCaching(sensitive=...)`: a call that carries one the
+  policy does not vary by is refused (`ContractViolation`), checked on every call, not at `on()`.
 - **`@idempotency.once` without `vary_by="tenant_id"`** when the key is only unique per tenant:
   tenant B gets tenant A's replayed answer.
 - **A Command with no `idempotency_key()` and a generated field** (`Field(default_factory=uuid4)`,

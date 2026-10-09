@@ -51,6 +51,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
+from sincpro_framework.annotations import own_annotations
 from sincpro_framework.context.domain.execution import chained
 from sincpro_framework.ddd.entity import Entity, utc_now
 from sincpro_framework.ddd.exceptions import ContractViolation
@@ -94,7 +95,7 @@ class DomainEvent(Entity):
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        if NAME in cls.__dict__.get("__annotations__", {}):
+        if NAME in own_annotations(cls):
             raise ContractViolation(
                 f"{cls.__name__} declares 'name' as a typed field — 'name' is reserved for "
                 "the wire name every DomainEvent subclass gets (see this module's docstring). "

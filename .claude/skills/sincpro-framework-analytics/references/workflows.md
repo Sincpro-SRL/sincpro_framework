@@ -55,8 +55,12 @@ Every run is a trace: each step's status, what it received and answered, how lon
 skipped or failed, and the version it ran on. A run that stops raises `WorkflowFailed` with the trace
 in `error.run` — it never answers something that looks like success.
 
-`workflows.expose()` makes it one more Command, so every entrypoint that serves the bus (MCP, RPC,
-gRPC) runs workflows too. Call it once, before the bus is built — `catalog()`, `validate()`,
+`workflows.expose()` registers `CommandRunWorkflow` on the bus without a binding. Gateways publish
+only declared use cases (`Exposure.DECLARED`, the default), so bind it on the gateway that should
+serve it — `McpGateway({...}).bind(CommandRunWorkflow, McpBinding())`, or `RpcBinding()`,
+`GrpcBinding()` (all from `sincpro_framework.entrypoints`). On a bus guarded by `AccessControl`,
+declare its access first: `auth.requires(Permission.RUN)(billing.handler_of(CommandRunWorkflow))`.
+Call `expose()` once, before the bus is built — `catalog()`, `validate()`,
 `current` and the first execution build it; after that it raises `RuntimeError`.
 
 A run is not a transaction: each `execute` is its own call on the bus, and a step that fails

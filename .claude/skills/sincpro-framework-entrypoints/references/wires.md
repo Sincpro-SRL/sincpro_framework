@@ -8,7 +8,7 @@ Each gateway publishes the same catalog with its own names. Full depth: `docs/en
 |---|---|
 | a Command | `POST /{alias}/{kebab-name}`, body is the DTO |
 | a `Query` | `GET /{alias}/{kebab-name}?field=…&criteria=<json>` (or `POST` when the criteria is too long) |
-| a project's path | `rest.route(Dto, "GET /billing/invoices/{invoice_id}")` |
+| a project's path | `@rest.get("/billing/invoices/{invoice_id}")` on the handler, or `api.bind(QueryInvoice, RestBinding(method="GET", path="/billing/invoices/{invoice_id}"))` |
 
 The path never carries the layer. `openapi()` gives OpenAPI 3.1 (`operationId` is the DTO's name).
 `RestGateway` is frozen; **`FastApiGateway` is the host for new REST** — declared resources, RFC 9457
@@ -48,7 +48,8 @@ AIP names: package `billing.v1`, service `BillingService`, method `IssueInvoice`
 `google.protobuf.Struct` in and out (field names verbatim). Server reflection (v1 + v1alpha) and
 `sincpro.Introspection/Describe`; no `protoc`, no generated stubs. `.write_proto_files(dir)` for a
 Go/TS client at build time. `.server()` / `.handlers()` / `.mount()` for a host's own server;
-`GrpcClient(target)` is a dict-in/dict-out Python caller.
+`GrpcClient(target)` (`from sincpro_framework.entrypoints.grpc.client import GrpcClient`) is a
+dict-in/dict-out Python caller.
 
 - **The response shape** is the declared `execute` return annotation (or
   `Feature[Command, Response, Ctx]`); an unannotated `execute` still runs, only the promise is

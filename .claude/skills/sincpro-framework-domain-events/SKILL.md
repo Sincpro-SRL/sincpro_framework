@@ -33,8 +33,8 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `name` | The wire identity of an event class (`"billing.invoice.v1.posted"`), a plain class attribute; defaults to the class name. Routing, storage and brokers match on it | setting | (class attribute) |
 | `Entity.record` / `pull_events` / `recorded_events` | Store a copy stamped with aggregate type/id / drain the in-memory events / inspect without draining | method | `sincpro_framework.ddd` (on `Entity`) |
 | `DomainEvent.caused_by(cause)` | A copy with `causation_id`/`correlation_id` threaded from the incoming event | function | (method) |
-| `ChangeTrackingMixin` | Aggregate mixin: one `EntityUpdated` recorded per save, with every field that changed | DTO | `sincpro_framework.ddd` |
-| `EntityUpdated` | The event `ChangeTrackingMixin` records (`changes`, `field_labels`); subclass it for your own name | DTO | `sincpro_framework.ddd` |
+| `ChangeTrackingMixin` | Aggregate mixin: one `EntityUpdated` recorded per update, with every field that changed | dataclass mixin | `sincpro_framework.ddd` |
+| `EntityUpdated` | The event `ChangeTrackingMixin` records (`changes`, `field_labels`); subclass it for your own name | dataclass (`DomainEvent`) | `sincpro_framework.ddd` |
 | `DeliverableEventMixin` | Marks a fact for relay delivery; `delivered_at`, `next_delivery_at`, `delivery` are stored but excluded from its wire JSON | dataclass mixin | `sincpro_framework.ddd` |
 | `EventSourcedMixin` | No aggregate row: `happened` records/applies/numbers a fact; `get` rebuilds and `save` appends | mixin | `sincpro_framework.ddd` |
 | `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(event)` or `publish(event, Response)`, into a `Queue` | function | `sincpro_framework.event_driven` |
@@ -146,7 +146,7 @@ post-commit alternative. The aggregate never publishes: a rollback could undo th
 ```python
 from dataclasses import dataclass
 
-from sincpro_framework.ddd import DomainEvent
+from sincpro_framework.ddd import DomainEvent, Entity
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
 
@@ -156,12 +156,21 @@ class InvoicePosted(DomainEvent):
     invoice_id: str = ""
 
 
+# domain/invoice.py — the rule and the fact live on the aggregate
+@dataclass
+class Invoice(Entity):
+    state: str = "draft"
+
+    def post(self) -> None:
+        self.state = "posted"
+        self.record(InvoicePosted(invoice_id=self.id))
+
+
 @billing.feature(CommandPostInvoice)
 class PostInvoice(Feature):
     def execute(self, dto: CommandPostInvoice) -> None:
         invoice = self.repository.get(Invoice, dto.invoice_id)
-        invoice.state = "posted"
-        invoice.record(InvoicePosted(invoice_id=invoice.id))
+        invoice.post()
         self.repository.save(invoice)
         for event in invoice.pull_events():
             self.publisher.publish(event)

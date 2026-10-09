@@ -54,8 +54,8 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `Hooks` | A bounded context's collection of hooks, handed to a repository | registry | `from sincpro_framework.ddd import Hooks` |
 | `Hook` | One rule class; its methods are moments (`before_save`, `after_create`…) | base class | `from sincpro_framework.ddd import Hook` |
 | `ArchivableMixin` | `archived_at`; `archive()` hides instead of deleting | dataclass mixin | `from sincpro_framework.ddd import ArchivableMixin` |
-| `AuditedMixin` | `created_by`/`updated_by`, stamped from `Database(actor=…)` | dataclass mixin | `from sincpro_framework.ddd import AuditedMixin` |
-| `ChangeTrackingMixin` | One `EntityUpdated` per save with every changed field | dataclass mixin | `from sincpro_framework.ddd import ChangeTrackingMixin` |
+| `AuditedMixin` | `created_by` on insert, `updated_by` on each later update (it stays `None` until the first update), from `Database(actor=…)` | dataclass mixin | `from sincpro_framework.ddd import AuditedMixin` |
+| `ChangeTrackingMixin` | One `EntityUpdated` per save of a stored aggregate, with every changed field; an insert records nothing — record your own created event | dataclass mixin | `from sincpro_framework.ddd import ChangeTrackingMixin` |
 | `StaleAggregate` / `DuplicateAggregate` | A write lost a race: newer version / unique value taken | exception | `from sincpro_framework.ddd import StaleAggregate, DuplicateAggregate` |
 | `ContractViolation` / `RelationNotResolved` | API used against its contract / relation read that nobody asked for | exception | `from sincpro_framework.ddd import ContractViolation, RelationNotResolved` |
 | `Presentation` | Class attribute of an entity: `display`, `search`, `order`, `detail`, and form hints (`readonly`, `required`, `readonly_when`, `required_when`, `visible_when`), fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
@@ -90,14 +90,17 @@ domains/billing/
   domain/invoice.py           @dataclass Invoice(Entity) · Invoices(EntityCollection[Invoice]) — no DB import
   infrastructure/
     tables.py                 registry() · entity_table(...) · def apply_mappings(): map_aggregates(...)
+    hooks.py                  billing_hooks = Hooks("<pkg>.billing.services.hooks")   # names the package it walks
     dependencies.py           DependencyContextType (repository: Repository) · register_dependencies():
+                                from .hooks import billing_hooks
                                 billing_hooks.inject(bus); add_dependency("repository", Repository(database, billing_hooks))
     framework.py              typed Feature/ApplicationService/Hook bases · config_billing_framework():
                                 UseFramework(...), apply_mappings(), register_dependencies()
   services/
     register_invoice.py       Command* · Response* · @billing.feature(...) class RegisterInvoice(Feature)
-    hooks/__init__.py         billing_hooks = Hooks()        # walks this package on first use
-    hooks/total_is_positive.py  @billing_hooks.on(Invoice) class TotalIsPositive(Hook)
+    hooks/__init__.py         (empty)
+    hooks/total_is_positive.py  from <pkg>.billing.infrastructure.hooks import billing_hooks
+                                @billing_hooks.on(Invoice) class TotalIsPositive(Hook)
 ```
 
 The bus is built in `infrastructure/framework.py` and created in the context's `__init__.py`
@@ -149,6 +152,10 @@ Silent ones first — the runtime gives no error for these.
 - **`after_save` is not "after commit".** Inside `context()` the block can still roll back; sending
   an email or publishing from a hook announces a fact that may never happen. Publish
   `pull_events()` after the block (or use the outbox, `sincpro-framework-domain-events`).
+- **`infrastructure/` importing from `services/`.** The hook collection lives in
+  `infrastructure/hooks.py`, never in `services/hooks/__init__.py`: `services/__init__.py` imports
+  the use cases, they import the bus still being built, and boot fails with a circular
+  `ImportError`.
 - **Hooks that never run.** `Hooks()` imports the package whose `__init__.py` created it; built
   in an ordinary module it imports only that module, so hooks elsewhere never register. A
   collection not passed to the repository (`Repository(database, billing_hooks)`,
@@ -160,20 +167,35 @@ Silent ones first — the runtime gives no error for these.
   stale-write check: concurrent writers overwrite each other quietly.
 - **`retrying(work)` with a `work` that does not re-read** fails the same way every attempt. The
   callable opens `context()`, reads, decides and saves.
+- **A read record that cannot be printed or compared.** Outside `context()`, `repr()`, `==`,
+  `f"{record}"` and `asdict()` read every field, relations included, and an unread relation raises
+  `RelationNotResolved`. Declare relation fields `field(default=None, repr=False, compare=False)` /
+  `field(default_factory=list, repr=False, compare=False)`; never `asdict` an aggregate — build the
+  Response field by field.
+- **Redeclaring a reserved field.** `id`, `created_at`, `updated_at` and `version` (and a mixin's
+  own fields: `archived_at`, `created_by`, `updated_by`) belong to `Entity`; a subclass that
+  redeclares one is refused when the class is defined — `version` is the optimistic lock.
 - Loud, but common: reading a relation outside `context()` that the `specification` did not name
   raises `RelationNotResolved`; `for_update=True` outside `context()` raises `ContractViolation`.
 
 ## The shape
 
 ```python
-# domains/billing/domain/invoice.py
+# domains/billing/domain/customer.py  — one aggregate per file
 from dataclasses import dataclass, field
-from sincpro_framework.ddd import Entity, EntityCollection
+from sincpro_framework.ddd import Entity
 
 @dataclass
 class Customer(Entity):
     name: str = ""
-    invoices: list["Invoice"] = field(default_factory=list)   # one2many, read off the FK
+    invoices: list["Invoice"] = field(default_factory=list, repr=False, compare=False)  # one2many
+
+from .invoice import Invoice  # noqa: E402 — at the bottom, never under TYPE_CHECKING
+
+# domains/billing/domain/invoice.py
+from dataclasses import dataclass, field
+from sincpro_framework.ddd import Entity, EntityCollection
+from .customer import Customer
 
 @dataclass
 class Invoice(Entity):
@@ -181,7 +203,12 @@ class Invoice(Entity):
     customer_id: str = ""
     total: int = 0
     state: str = "draft"
-    customer: Customer | None = None                          # many2one, same FK
+    customer: Customer | None = field(default=None, repr=False, compare=False)  # many2one, same FK
+
+    def post(self) -> None:                       # the rule lives on the aggregate it changes
+        if self.total <= 0:
+            raise ValueError("an empty invoice cannot be posted")
+        self.state = "posted"
 
 class Invoices(EntityCollection[Invoice]): ...
 

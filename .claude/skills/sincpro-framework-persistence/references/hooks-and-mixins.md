@@ -54,12 +54,18 @@ numbered = Repository(database, invoicing_hooks)
 In a project the pieces live apart:
 
 ```text
-services/hooks/__init__.py        billing_hooks = Hooks()       walks this package on first use
-services/hooks/invoices.py        @billing_hooks.on(Invoice) class InvoiceMustBalance(BillingHook)
-infrastructure/framework.py       class BillingHook(Hook[BillingContext], DependencyContextType)
-infrastructure/dependencies.py    billing_hooks.inject(framework)
+infrastructure/hooks.py           billing_hooks = Hooks("myapp.billing.services.hooks")   names the package it walks
+infrastructure/dependencies.py    from .hooks import billing_hooks
+                                  billing_hooks.inject(framework)
                                   framework.add_dependency("repository", Repository(database, billing_hooks))
+infrastructure/framework.py       class BillingHook(Hook[BillingContext], DependencyContextType)
+services/hooks/__init__.py        (empty)
+services/hooks/invoices.py        from myapp.billing.infrastructure.hooks import billing_hooks
+                                  @billing_hooks.on(Invoice) class InvoiceMustBalance(BillingHook)
 ```
+
+`infrastructure/` never imports anything under `services/`: `services/__init__.py` imports the
+use cases, and they import the bus that is still being built — a circular `ImportError` at boot.
 
 | Built as | Walks |
 |---|---|
@@ -73,8 +79,8 @@ implements no moment, or `extends=X` on a class that is not a subclass of `X`, i
 `on(...)`. `assert list(billing_hooks)` in a test reads the collection at once.
 
 `self.<name>` is any dependency of the injected bus, `self.context` the request in play (`{}`
-outside one), `self.bus` the bus (to execute a Query). Without `inject(bus)` reading any of them
-raises `DependencyNotRegistered`. One instance per hook per repository serves every request:
+outside one), `self.bus` the bus (to execute a Query). Without `inject(bus)` reading a dependency
+or `self.bus` raises `DependencyNotRegistered`; `self.context` answers `{}`. One instance per hook per repository serves every request:
 request state lives in locals, never on `self`.
 
 ## The moments, in order
@@ -109,8 +115,8 @@ A hook that writes through the repository that fired it — directly, through `c
 | Mixin | Columns | Effect |
 |---|---|---|
 | `ArchivableMixin` | `archive_columns()` | `archive()` hides; reads skip archived unless asked |
-| `AuditedMixin` | `audit_columns()` | `created_by`/`updated_by`, stamped at every flush from `Database(actor=…)`; `None` without an actor |
-| `ChangeTrackingMixin` | — | one `EntityUpdated` event per save (see domain-events skill) |
+| `AuditedMixin` | `audit_columns()` | `created_by` on insert, `updated_by` on each later update (it stays `None` until the first update), from `Database(actor=…)`; `None` without an actor |
+| `ChangeTrackingMixin` | — | one `EntityUpdated` per save of a stored aggregate, with every changed field; an insert records nothing — record your own created event (see domain-events skill) |
 
 ## Append-only, with a hook
 
