@@ -39,11 +39,18 @@ metadata from `as_json()` so retries do not change the published fact's shape.
 ## The write and the fact commit together
 
 ```python
+# domain/invoice.py
+class Invoice(Entity):
+    def send(self) -> None:
+        self.state = "sent"
+        self.record(InvoiceSent(invoice_id=self.id))     # stamped with entity_type / entity_id
+
+
+# the Feature
 with repository.context() as unit:
     invoice = unit.get_by(Invoice, number="F-003")
-    invoice.state = "sent"
-    invoice.record(InvoiceSent(invoice_id=invoice.id))
-    unit.save(invoice)
+    invoice.send()
+    unit.save(invoice)                                    # the row and the recorded fact, together
 ```
 
 Either both land or neither does. Do not also publish these events directly: the relay owns

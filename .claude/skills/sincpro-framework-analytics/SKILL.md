@@ -45,7 +45,7 @@ skill stands alone; the deep docs it names live in the framework repository, not
 | `SnippetEngine` / `PythonSnippets` | What runs a `code` step / Python in this process (default) | port / adapter | `from sincpro_framework.workflows import SnippetEngine, PythonSnippets` |
 | `Limits` | `max_steps=1000`, `max_items=1000`, `max_depth=5` | setting | `from sincpro_framework.workflows import Limits` |
 | `WorkflowRun` / `StepRun` / `StepStatus` / `RunStatus` | The trace of a run / of a step / `RAN`, `SKIPPED`, `FAILED` / `SUCCEEDED`, `FAILED` | DTO | `from sincpro_framework.workflows import ...` |
-| `CommandRunWorkflow` / `ResponseRunWorkflow` | The Command `expose()` registers, so every entrypoint runs workflows | DTO | `from sincpro_framework.workflows import ...` |
+| `CommandRunWorkflow` / `ResponseRunWorkflow` | The Command `expose()` registers on the bus; a gateway serves it once bound (`gateway.bind(CommandRunWorkflow, McpBinding())`) | DTO | `from sincpro_framework.workflows import ...` |
 | `Issue` | One validation problem: `workflow`, `step`, `path`, `message` | DTO (frozen dataclass) | `from sincpro_framework.workflows import Issue` |
 
 Exceptions: `NotComplete` (narrowing a frame that stopped at a page), `SchemaMismatch`

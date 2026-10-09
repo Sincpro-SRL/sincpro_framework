@@ -9,6 +9,7 @@ from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCachin
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
 caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
+# a call with `user_id` in its context is refused: this policy does not vary by it
 
 with billing.context({"tenant_id": "acme"}):
     first = billing(QueryBalance(customer_id="c1"), ResponseBalance)
@@ -26,8 +27,20 @@ Command, but a Command decides from the database, never a cache.
 
 The bus, the Query and its values written canonically, the hash of the response's JSON Schema — a
 deploy that changes the answer's shape never reads the old one — and the context keys the policy
-varies by. A context key named `sensitive` that the policy does not vary by is **refused**: two users
-never share an answer.
+varies by — **context keys only**. The authenticated identity is not in the context unless something
+puts it there, so a cache that must not cross tenants gets the key from a context provider:
+
+```python
+from sincpro_framework.auth.security_context import current_identity
+
+@billing.context_provider(gives=["tenant_id"])
+def tenant_of_the_caller(context):
+    return {"tenant_id": current_identity().tenant}
+```
+
+A context key named in `sensitive` that the policy does not vary by makes that call **refused**
+(`ContractViolation`) — checked on every call, not when the policy is registered: two users never
+share an answer.
 
 ## Invalidation is the mechanism; ttl is the safety net
 
@@ -47,8 +60,8 @@ their domain events: `caching.invalidated_by({InvoiceIssued: [Invoice]})` is a b
 `Subscriber` beside the others.
 
 An answer that read nothing a repository noted, and declares no `depends_on`, is answered and never
-kept — there would be nothing to let it go by (one warning on the `sincpro_framework.caching`
-logger). A Query that reads through an HTTP adapter or a raw connection declares what it depends on:
+kept — there would be nothing to let it go by (a warning on the `sincpro_framework.caching`
+logger on every such call). A Query that reads through an HTTP adapter or a raw connection declares what it depends on:
 
 ```python
 CachePolicy(ttl=timedelta(minutes=5), depends_on=[Invoice])   # invalidating Invoice lets it go
@@ -84,7 +97,7 @@ billing_cache = QueryCaching(shared, namespace="billing")
 catalog_cache = QueryCaching(shared, namespace="catalog")
 billing_cache.invalidate()        # billing's answers only
 billing_cache.enabled = False     # every billing query runs its use case, nothing kept
-caching.policies()                # what is cached and how
+billing_cache.policies()          # what is cached and how
 ```
 
 A namespace is a cache of its own. Contexts that read the same aggregates and must see each other's

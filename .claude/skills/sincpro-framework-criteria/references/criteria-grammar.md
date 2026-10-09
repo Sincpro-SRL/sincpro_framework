@@ -82,7 +82,7 @@ unanswerable condition is removed and reported and the request still runs. A dro
 *widens* the result: tell the client, and never rely on a server-side condition you have not seen
 survive. Scopes that must hold go through `repository.narrowed(...)`, which refuses instead.
 
-What is **raised** (`InvalidCriteria`, suggested HTTP 400): ordering by an unknown or unorderable
+What is **raised** (`InvalidCriteria`, kind `domain`: every gateway answers 422, do not remap it by hand): ordering by an unknown or unorderable
 field, an unknown measure function, a `where_measures` name outside the measures, a grouping by
 nothing, a `percentile` on SQLite.
 

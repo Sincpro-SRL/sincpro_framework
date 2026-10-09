@@ -6,8 +6,12 @@
 stored) from update. `updated_at` is when it was last written — `created_at` on insert — so
 "untouched since" is one column.
 
+One aggregate per file, named after it:
+
 ```python
+# domain/customer.py
 from dataclasses import dataclass, field
+
 from sincpro_framework.ddd import Entity, EntityCollection
 
 
@@ -15,7 +19,22 @@ from sincpro_framework.ddd import Entity, EntityCollection
 class Customer(Entity):
     name: str = ""
     email: str = ""
-    invoices: list["Invoice"] = field(default_factory=list)   # one2many — read off the FK
+    invoices: list["Invoice"] = field(default_factory=list, repr=False, compare=False)  # one2many
+
+
+class Customers(EntityCollection[Customer]): ...
+
+
+from .invoice import Invoice  # noqa: E402 — at the bottom, never under TYPE_CHECKING
+```
+
+```python
+# domain/invoice.py
+from dataclasses import dataclass, field
+
+from sincpro_framework.ddd import Entity, EntityCollection
+
+from .customer import Customer
 
 
 @dataclass
@@ -24,12 +43,21 @@ class Invoice(Entity):
     customer_id: str = ""
     total: int = 0
     state: str = "draft"
-    customer: Customer | None = None                           # many2one — same FK
+    customer: Customer | None = field(default=None, repr=False, compare=False)  # many2one
 
 
-class Customers(EntityCollection[Customer]): ...
 class Invoices(EntityCollection[Invoice]): ...
 ```
+
+**Two aggregates that reference each other** import the second at the **bottom** of the first
+module. `map_aggregates` resolves annotations at runtime against the module's globals
+(`get_type_hints`), so an import under `if TYPE_CHECKING:` fails at boot with
+`ContractViolation: Customer names a type that cannot be resolved at runtime`.
+
+**Relation fields are `repr=False, compare=False`.** The dataclass `repr`, `==` and f-strings read
+every field; a relation not read raises `RelationNotResolved` outside `context()`, so a record that
+declares it could not be logged or compared in a test. `asdict()` still reads every field: never
+`asdict` an aggregate, build the Response field by field.
 
 **Relations are annotations.** `list["Invoice"]` is one2many, `Customer | None` is many2one; the
 column linking them is read from the table's foreign key. Do not declare the relation twice.
@@ -43,8 +71,8 @@ types the answer and gives the collection its own methods.
 | Mixin | Adds | Then |
 |---|---|---|
 | `ArchivableMixin` | `archived_at` | `repository.archive(record)` hides it; reads skip it unless asked |
-| `AuditedMixin` | `created_by`, `updated_by` | stamped at every flush from `Database(url, actor=lambda: …)`; without an actor they stay `None` |
-| `ChangeTrackingMixin` | one `EntityUpdated` event per save | see `sincpro-framework-domain-events` |
+| `AuditedMixin` | `created_by`, `updated_by` | `created_by` on insert, `updated_by` on each later update (`None` until then), from `Database(url, actor=lambda: …)`; without an actor they stay `None` |
+| `ChangeTrackingMixin` | one `EntityUpdated` per save of a stored aggregate; an insert records nothing | see `sincpro-framework-domain-events` |
 
 ```python
 @dataclass
@@ -70,21 +98,23 @@ object appears when there is a **rule to defend** (`Money` that must not cross c
 `Cursor`), not for tidiness. An id with no rule stays a `str`.
 
 ```python
-from sincpro_framework.ddd import ValueObject
+@dataclass(frozen=True)
+class Email:
+    value: str
+
+    def __post_init__(self) -> None:
+        if "@" not in self.value:
+            raise ValueError(f"{self.value!r} is not an email")
 
 
-def must_be_an_email(value: str) -> None:
-    if "@" not in value:
-        raise ValueError(f"{value!r} is not an email")
-
-
-Email = ValueObject(str, must_be_an_email, name="Email")
-Email("ana@acme.bo")          # Email('ana@acme.bo')
+Email("ana@acme.bo")          # Email(value='ana@acme.bo')
 ```
 
-`validate_fn` **raises** to refuse; whatever non-`None` value it returns **replaces** the input.
-A predicate such as `lambda v: "@" in v` returns `True`/`False`, so `Email("ana@acme.bo")` would
-silently become the text `'True'`.
+The check lives on the type, never in a loose module-level `def`. The `ValueObject(base,
+validate_fn, name)` factory makes a validated primitive instead (`Email("ana@acme.bo")` stays a
+`str`): its `validate_fn` is a `@staticmethod` of a type, and it **raises** to refuse — whatever
+non-`None` value it returns **replaces** the input, so a predicate such as `lambda v: "@" in v`
+would silently turn the text into `'True'`.
 
 ## Extending an aggregate
 

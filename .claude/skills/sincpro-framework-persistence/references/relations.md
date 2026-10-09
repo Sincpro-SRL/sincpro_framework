@@ -83,6 +83,11 @@ page = self.repository.search(Entries)
 page[0].lines                      # RelationNotResolved: name it in the specification
 ```
 
+Outside `context()` the same holds for anything that reads every field: `repr()`, `==`,
+`f"{entry}"` and `asdict()` touch the relation and raise `RelationNotResolved`. Declare relation
+fields with `repr=False, compare=False` so a read record can be logged and compared; never
+`asdict` an aggregate.
+
 The rule is the same one that made the algorithm: **no hidden N+1**. A page a client cut with the
 specification gives way to the whole when touched inside a context.
 

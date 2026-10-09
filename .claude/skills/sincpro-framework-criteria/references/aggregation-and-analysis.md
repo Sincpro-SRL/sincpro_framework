@@ -65,7 +65,8 @@ for row in repository.export(Invoice, criteria):     # every page as dicts, one 
 repository.explain(Invoice, criteria)                # Explained(sql, ordering, dropped, relations, statements)
 ```
 
-`export(target, criteria, specification)` takes an optional mask for the columns written. On an
+`export(target, criteria, specification)` takes an optional mask for the columns written — a
+`Specification({...})`; a raw dict as the third argument raises `AttributeError`. On an
 aggregate that declares relations, pass one (or a criteria with a `specification`): unmasked, the
 first row touches every relation and raises `RelationNotResolved` outside `context()`.
 `explain` runs nothing: what SQL the criteria becomes, what it dropped and how many calls it costs.

@@ -7,6 +7,7 @@ this is what you use when a broker is also a door into your Commands. Full depth
 `docs/entrypoints/queue.md`.
 
 ```python
+from faststream import FastStream
 from faststream.kafka import KafkaBroker
 from sincpro_framework.entrypoints.faststream import QueueGateway
 

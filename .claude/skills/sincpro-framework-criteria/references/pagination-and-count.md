@@ -74,12 +74,16 @@ c = repository.search(Invoices, criteria)   # 20 of 8,412
 c.sum_by(lambda i: i.total)                 # raises ContractViolation, naming repository.measures(...)
 ```
 
-A partial collection (a cursor, a capped count, or fewer items than the count) refuses to fold
-itself. `fetch_all` answers a complete collection, where `sum_by`, `grouped` and the set operations
-are allowed. A wrong number is worse than no number.
+Only `sum_by`, `average_by`, `min_by` and `max_by` called **directly on a page** (a cursor, a
+capped count, or fewer items than the count) refuse. `count_where` counts what is held, never what
+exists. `grouped`, `filtered`, `partition`, `|`, `&` and `-` work on whatever is held: their result
+carries no count, so it is no longer marked partial, and folding it answers about the page only,
+with no error. For totals over a query use `repository.measures` / `group_by`, or fold a
+`fetch_all` — never a fold over anything derived from `search`.
 
 ## Derived collections carry no page
 
 Any filtered/unioned/re-sorted collection returns `cursor=None, count=None`. It is not a page of
 anything; carrying the cursor would let someone ask for "the next page" of a set that no longer
-exists. The metadata is either true or absent, never wrong.
+exists. The metadata is either true or absent, never wrong — and absent also means the
+collection no longer knows it came from a page.

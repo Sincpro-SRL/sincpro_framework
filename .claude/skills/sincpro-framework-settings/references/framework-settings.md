@@ -15,7 +15,7 @@ service usually configures the framework with environment variables alone.
 | `sentry_dsn` | `SENTRY_PYTHON_DSN` | `None` | error reporting; needs the `sentry` extra |
 | `otlp_endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | `None` | trace export; needs the `opentelemetry` extra |
 | `otlp_traces_sample_rate` | `OTEL_TRACES_SAMPLER_ARG` | `1.0` | share of new traces recorded, `0.0`–`1.0` |
-| `otel_service_name` | `OTEL_SERVICE_NAME` | `None` | names the artifact when `APP_RELEASE` holds only a version |
+| `otel_service_name` | `OTEL_SERVICE_NAME` | `None` | names the service only when `APP_RELEASE` is absent; ignored when `APP_RELEASE` is set, even to a bare version — set `APP_RELEASE=artifact:version` |
 | `otel_metrics_exporter` | `OTEL_METRICS_EXPORTER` | `None` | `otlp`, `prometheus`, `none` |
 | `otel_traces_exporter` | `OTEL_TRACES_EXPORTER` | `None` | `otlp` or `none` |
 | `otel_sdk_disabled` | `OTEL_SDK_DISABLED` | `False` | `true` turns every OpenTelemetry signal of the framework off |
@@ -37,7 +37,7 @@ class SharedSettings(FrameworkSettings):
 ```yaml
 sincpro_payments_sdk:
   app_release: $ENV:APP_RELEASE
-  sentry_dsn: $ENV:SENTRY_DSN
+  sentry_dsn: $ENV:SENTRY_PYTHON_DSN
   sincpro_framework_log_level: INFO
 ```
 

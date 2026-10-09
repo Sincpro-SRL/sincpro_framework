@@ -21,7 +21,7 @@ blocks that thread only.
 The provider that authenticated an identity (`Identity.provider`) is the one asked about it. An
 identity opened by hand (`provider=None` — a test, in-process code) answers with its own
 `permissions`. An identity stamped with a provider name the `AccessControl` does not hold is
-refused (`ExtensionRefused`), so its permissions are never taken on its word.
+refused (`ExtensionRefused`, from `sincpro_framework.exceptions`), so its permissions are never taken on its word.
 
 Prove a provider with `sincpro_framework.testing.AuthProviderContract`: inherit it, answer
 `make_provider`, `accepted`, `foreign` and `rejected`, run with pytest.

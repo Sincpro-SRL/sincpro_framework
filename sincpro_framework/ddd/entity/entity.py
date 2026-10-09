@@ -37,9 +37,11 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import TypeAdapter
 
+from sincpro_framework.annotations import is_class_var, own_annotations
 from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.entity.derivations import Derivations
 from sincpro_framework.ddd.entity.presentation import Presentation
+from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ids import new_entity_id
 
 if TYPE_CHECKING:
@@ -65,6 +67,33 @@ answers for the aggregate's own name, and the same shape `field(metadata={"label
 …})` uses for one field. A field's label and help are never in `translations()` — they live on
 the field itself, read by `describe_class`/`describe` straight off the dataclass, because they
 are a property of that field, not of the class."""
+
+
+_MEANING = {
+    "id": " (the identity)",
+    "created_at": " (stamped when first stored)",
+    "updated_at": " (stamped on every write)",
+    "version": " (the optimistic lock)",
+}
+_RENAMED = {"version": ", e.g. `revision`", "id": ", e.g. `code`"}
+
+
+def reserved_fields(declared: type) -> dict[str, str]:
+    """The fields of `declared` the framework writes, each with the class that declares it.
+
+    in      Spec(Entity)                        →  {"id": "Entity", …, "version": "Entity"}
+    in      Client(ArchivableMixin, Entity)     →  … plus {"archived_at": "ArchivableMixin"}
+    """
+    found: dict[str, str] = {}
+    for owner in declared.__mro__[1:]:
+        if not owner.__module__.startswith("sincpro_framework."):
+            continue
+        if owner is not Entity and isinstance(owner, type) and issubclass(owner, Entity):
+            continue
+        for name, annotation in own_annotations(owner).items():
+            if not is_class_var(annotation):
+                found.setdefault(name, owner.__name__)
+    return found
 
 
 @dataclass(kw_only=True)
@@ -106,6 +135,34 @@ class Entity:
     save carrying a number older than the row's is refused as `StaleAggregate`."""
     presentation: ClassVar[Presentation[Any]] = Presentation()
     derivations: ClassVar[Derivations[Any]] = Derivations()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Refuse a subclass that redeclares a field the framework writes.
+
+            class Spec(Entity):
+                version: int = 3        →  ContractViolation: Spec.version redeclares
+                                           Entity.version, the optimistic lock …
+
+        1. A framework class is not checked: `DomainEvent` restates `id` and `created_at`.
+        2. The reserved fields are `Entity`'s own and those of a framework mixin in the class's
+           bases (`archived_at`, `created_by`, …); a framework subclass of `Entity`, like
+           `DomainEvent`, adds none — its envelope (`label`, `entity_type`) is set by its own
+           subclasses on purpose.
+        Final: a redeclared one is refused here, when the class is declared, instead of being
+        taken over in silence at the first save.
+        """
+        super().__init_subclass__(**kwargs)
+        if cls.__module__.startswith("sincpro_framework."):
+            return
+        reserved = reserved_fields(cls)
+        taken = [name for name in own_annotations(cls) if name in reserved]
+        if taken:
+            name = taken[0]
+            raise ContractViolation(
+                f"{cls.__name__}.{name} redeclares {reserved[name]}.{name}, a field the "
+                f"framework writes{_MEANING.get(name, '')}. Rename it"
+                f"{_RENAMED.get(name, '')}."
+            )
 
     @classmethod
     def translations(cls) -> Translated:

@@ -124,11 +124,11 @@ Full skeleton: [references/bootstrap.md](references/bootstrap.md).
 HTTP / MCP / RPC / cron / test / another context
         │  Command DTO
         ▼
-  gateway (entrypoints/)  ── auth, idempotency, failure_kind → status
+  gateway (entrypoints/)  ── auth, Idempotency-Key header → context, failure kind → status
         │  bus(Command, Response)
         ▼
   UseFramework (bus) ── context, interceptors, span, error report
-        ├── FeatureBus ──────────► Feature.execute(dto)
+        ├── FeatureBus ──────────► Feature.execute(dto)        (@idempotency.once wraps it here)
         └── ApplicationServiceBus ► ApplicationService.execute(dto)
                                          └─ self.feature_bus(ChildCommand, ChildResponse) → Feature
         ▼

@@ -164,7 +164,7 @@ Pure vocabulary (DTO shared by use cases, aggregate, value object, Protocol, enu
 A wrapper for an external system, or a mechanism whose replacement changes results?
   → <context>/adapters/ or  common/adapters/ when 2+ contexts need it
 
-Wiring (bus builder, dependencies, tables, settings, logger)?
+Wiring (bus builder, dependencies, tables, logger)?
   → <context>/infrastructure/
 
 A route, tool, RPC method or consumer for use cases that already exist?
