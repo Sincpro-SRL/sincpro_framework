@@ -13,6 +13,7 @@ knows the ORM.
 """
 
 import dataclasses
+import inspect
 import sys
 import types
 import uuid
@@ -31,7 +32,8 @@ from typing import (
     get_type_hints,
 )
 
-from pydantic import computed_field
+from pydantic import PydanticSchemaGenerationError, TypeAdapter, computed_field
+from pydantic_core import PydanticSerializationError
 
 from sincpro_framework.ddd.criteria import (
     MULTI_VALUED,
@@ -49,13 +51,17 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.entity.entity import Translated
 from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
+    AllHold,
+    AnyHolds,
     Descending,
     Expand,
     Fields,
+    Is,
     Match,
     MatchMode,
     Presentation,
     Reference,
+    When,
     field_name,
 )
 from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
@@ -319,6 +325,20 @@ class FieldMeta(DataTransferObject):
     help: Translated = {}
     """What this field is for, longer than the label — `field(metadata={"help": {...}})`.
     Empty when the field declared none."""
+
+    readonly: bool = False
+    """A form shows it read-only. A hint: nothing refuses a write to it."""
+    required: bool = False
+    """A form asks for it. A hint: nothing refuses a save without it."""
+    default: Any = None
+    """What a form for a new record starts with: the dataclass default, as JSON. `None` when
+    the field has none, or builds it each time (`default_factory`)."""
+    readonly_when: Expression | None = None
+    """While this holds over the record, a form shows the field read-only. A hint."""
+    required_when: Expression | None = None
+    """While this holds over the record, a form asks for the field. A hint."""
+    visible_when: Expression | None = None
+    """A form shows the field only while this holds over the record. A hint."""
 
     sortable: bool
     """False for every nullable column: a keyset comparison omits rows holding NULL, so
@@ -747,6 +767,11 @@ class Presented:
     search: tuple[Match, ...] = ()
     order: tuple[Sort, ...] = ()
     detail: Criteria | None = None
+    readonly: frozenset[str] = frozenset()
+    required: frozenset[str] = frozenset()
+    readonly_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
+    required_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
+    visible_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
 
 
 def _entries(answered: object) -> tuple[object, ...]:
@@ -819,6 +844,108 @@ def _detailed(answered: object) -> Criteria:
     return Criteria(specification=Specification(nodes))
 
 
+def _condition(owner: str, declared: object) -> Expression:
+    """A `When`'s condition as the expression a Criteria carries.
+
+    in      Is(a.state, NE, InvoiceState.DRAFT)           →  out  Condition(state, !=, "draft")
+    in      AllHold(Is(a.state, …), Is(a.payment, …))       →  out  All([…, …])
+    """
+    if isinstance(declared, Is):
+        value = declared.value
+        if isinstance(value, Enum) and not isinstance(value, (str, int)):
+            value = value.value
+        return Condition(
+            field=field_name(declared.field, "Is(a.state, Operator.EQ, State.DRAFT)"),
+            operator=declared.operator,
+            value=cast(Any, value),
+        )
+    if isinstance(declared, AllHold):
+        return All(all=[_condition(owner, one) for one in declared.conditions])
+    if isinstance(declared, AnyHolds):
+        return Any_(any=[_condition(owner, one) for one in declared.conditions])
+    raise ContractViolation(
+        f"{owner}.presentation takes a condition as Is, AllHold or AnyHolds, as in "
+        f"When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id); it was given {declared!r}"
+    )
+
+
+def _while(owner: str, answered: object, part: str) -> dict[str, Expression]:
+    """Each field a `When` covers, with its condition. A field covered twice is covered while
+    either holds."""
+    covered: dict[str, list[Expression]] = {}
+    for entry in _entries(answered):
+        if not isinstance(entry, When):
+            raise ContractViolation(
+                f"{owner}.presentation {part} takes When, as in "
+                f"lambda a: (When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id),); "
+                f"it was given {entry!r}"
+            )
+        condition = _condition(owner, entry.condition)
+        for one in entry.fields:
+            covered.setdefault(field_name(one, "When(..., a.partner_id)"), []).append(
+                condition
+            )
+    return {
+        name: conditions[0] if len(conditions) == 1 else Any_(any=conditions)
+        for name, conditions in covered.items()
+    }
+
+
+def _named(answered: object, form: str) -> frozenset[str]:
+    """The fields a lambda listed."""
+    return frozenset(field_name(one, form) for one in _entries(answered))
+
+
+def framework_fields(declared: type) -> frozenset[str]:
+    """The fields a framework class declares — `Entity`'s, a mixin's: written by the framework,
+    so a form shows them read-only. Found by the class that declares each one, never by name.
+    """
+    found: set[str] = set()
+    for owner in declared.__mro__:
+        if owner.__module__.startswith("sincpro_framework."):
+            found.update(inspect.get_annotations(owner))
+    return frozenset(found)
+
+
+def _required_by_structure(declared: type, system: frozenset[str]) -> frozenset[str]:
+    """The fields a record cannot be built without: no default, no factory, not optional."""
+    if not dataclasses.is_dataclass(declared):
+        return frozenset()
+    annotations = annotations_of(declared)
+    return frozenset(
+        one.name
+        for one in dataclasses.fields(declared)
+        if one.name not in system
+        and one.name in annotations
+        and one.default is dataclasses.MISSING
+        and one.default_factory is dataclasses.MISSING
+        and annotations[one.name] == without_optional(annotations[one.name])
+    )
+
+
+@cache
+def defaults_of(declared: type) -> dict[str, Any]:
+    """What a new record of `declared` starts with, as JSON: each plain dataclass default.
+
+    in      Invoice(currency_id="BOB", state=InvoiceState.DRAFT, lines=factory)
+    out     {"currency_id": "BOB", "state": "draft"}
+    """
+    if not dataclasses.is_dataclass(declared):
+        return {}
+    annotations = annotations_of(declared)
+    found: dict[str, Any] = {}
+    for one in dataclasses.fields(declared):
+        if one.default is dataclasses.MISSING or one.default is None:
+            continue
+        try:
+            found[one.name] = TypeAdapter(annotations.get(one.name, Any)).dump_python(
+                one.default, mode="json", warnings=False
+            )
+        except (PydanticSerializationError, PydanticSchemaGenerationError, ValueError):
+            continue  # a default nothing can write as JSON is left for the client
+    return found
+
+
 @cache
 def presentation_of(declared: type) -> Presented:
     """The class's `presentation`, read once and checked against its fields.
@@ -837,6 +964,7 @@ def presentation_of(declared: type) -> Presented:
     owner = declared.__name__
     annotations = annotations_of(declared)
     fields = Fields(owner, annotations)
+    system = framework_fields(declared)
 
     if presentation.display is not None:
         display = field_name(presentation.display(fields), "a.name")
@@ -850,12 +978,56 @@ def presentation_of(declared: type) -> Presented:
     else:
         search = ()
 
+    readonly = system & frozenset(annotations)
+    if presentation.readonly is not None:
+        readonly |= _named(presentation.readonly(fields), "(a.number,)")
+    required = _required_by_structure(declared, system)
+    if presentation.required is not None:
+        required |= _named(presentation.required(fields), "(a.partner_id,)")
+
     return Presented(
         display=display,
         search=search,
         order=_ordered(presentation.order(fields)) if presentation.order else (),
         detail=_detailed(presentation.detail(fields)) if presentation.detail else None,
+        readonly=readonly,
+        required=required,
+        readonly_when=(
+            _while(owner, presentation.readonly_when(fields), "readonly_when")
+            if presentation.readonly_when
+            else {}
+        ),
+        required_when=(
+            _while(owner, presentation.required_when(fields), "required_when")
+            if presentation.required_when
+            else {}
+        ),
+        visible_when=(
+            _while(owner, presentation.visible_when(fields), "visible_when")
+            if presentation.visible_when
+            else {}
+        ),
     )
+
+
+def hinted(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
+    """`fields`, each carrying the form hints the class declared or its structure implies:
+    read-only, required, the default and the three conditions."""
+    presented = presentation_of(declared)
+    defaults = defaults_of(declared)
+    return {
+        name: meta.model_copy(
+            update={
+                "readonly": name in presented.readonly,
+                "required": name in presented.required,
+                "default": defaults.get(name),
+                "readonly_when": presented.readonly_when.get(name),
+                "required_when": presented.required_when.get(name),
+                "visible_when": presented.visible_when.get(name),
+            }
+        )
+        for name, meta in fields.items()
+    }
 
 
 def default_order_of(declared: type, identity: str) -> str:
@@ -899,6 +1071,7 @@ def describe_class(declared: type, identity: str = "") -> "Meta":
         },
         declared,
     )
+    fields = hinted(fields, declared)
     presented = presentation_of(declared)
     return Meta(
         aggregate=declared.__name__,

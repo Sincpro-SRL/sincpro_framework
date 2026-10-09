@@ -45,7 +45,7 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `model_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
 | `Bucket` / `Pivot` | A group with its count, measures and the `criteria` that opens it / a cross table with margins | DTO | `from sincpro_framework.ddd import Bucket, Pivot` |
 | `matches` | Evaluates a filter in memory, the same semantics as the SQL translator | function | `from sincpro_framework.ddd import matches` |
-| `Presentation` / `Match` | What an entity declares once: display, search (`equal`/`prefix`/`contains`), order, detail | class attribute | `from sincpro_framework.ddd import Presentation, Match` |
+| `Presentation` / `Match` | What an entity declares once: display, search (`equal`/`prefix`/`contains`), order, detail, and form hints whose conditions are Criteria triples (`When(Is(...))`) | class attribute | `from sincpro_framework.ddd import Presentation, Match` |
 | `matching` / `detail_of` | The select criteria for a literal / the detail criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
 | `InvalidCriteria` | A question that cannot be answered (unorderable field, bad grouping, unknown measure) | exception | `from sincpro_framework.ddd import InvalidCriteria` |
 

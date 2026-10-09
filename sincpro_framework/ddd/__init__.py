@@ -45,14 +45,23 @@ from sincpro_framework.ddd.entity.entity_collection import (
     Dropped,
     EntityCollection,
 )
-from sincpro_framework.ddd.entity.model_meta import FieldMeta, FieldType, Meta
+from sincpro_framework.ddd.entity.model_meta import (
+    FieldMeta,
+    FieldType,
+    Meta,
+    presentation_of,
+)
 from sincpro_framework.ddd.entity.presentation import (
+    AllHold,
+    AnyHolds,
     Descending,
     Expand,
+    Is,
     Match,
     MatchMode,
     Presentation,
     Reference,
+    When,
 )
 from sincpro_framework.ddd.entity.query_entity import NAME_SEARCH_LIMIT, detail_of, matching
 from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
@@ -101,6 +110,11 @@ __all__ = [
     "NAME_SEARCH_LIMIT",
     "Descending",
     "Expand",
+    "AllHold",
+    "AnyHolds",
+    "Is",
+    "When",
+    "presentation_of",
     "Match",
     "MatchMode",
     "Presentation",
