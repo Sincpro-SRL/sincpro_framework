@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-persistence
-description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations and hooks. Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, or aggregate mixins in a Sincpro Python service.
+description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations, hooks, and the built-in reads of one aggregate (presentation, EntityReads with Get/GetMany/LiteralSearch/Search). Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, aggregate mixins, or a Feature that reads one entity (get by id, get many, a select by text, a list) in a Sincpro Python service.
 ---
 
 # sincpro-framework-persistence
@@ -58,6 +58,11 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `ChangeTrackingMixin` | One `EntityUpdated` per save with every changed field | dataclass mixin | `from sincpro_framework.ddd import ChangeTrackingMixin` |
 | `StaleAggregate` / `DuplicateAggregate` | A write lost a race: newer version / unique value taken | exception | `from sincpro_framework.ddd import StaleAggregate, DuplicateAggregate` |
 | `ContractViolation` / `RelationNotResolved` | API used against its contract / relation read that nobody asked for | exception | `from sincpro_framework.ddd import ContractViolation, RelationNotResolved` |
+| `Presentation` | Class attribute of an entity: `display`, `search`, `order`, `detail`, fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
+| `Get` / `GetMany` / `LiteralSearch` / `Search` | Generic DTO bases naming entity and response: `class QueryGetInvoice(Get[Invoice, ResponseInvoice])` | DTO bases | `sincpro_framework.ddd` |
+| `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `presentation`; extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
+| `ResponseRecord` / `ResponseRecords` | One record / a list by identity (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
+| `AggregateNotFound` | `Get` named an identity with no record; `not_found` on every wire (404 REST) | exception | `from sincpro_framework.ddd import AggregateNotFound` |
 
 "Aggregate" is the DDD root; a sum or a count is a **measure** (`sincpro-framework-criteria`).
 A `Hook` is your rule for one aggregate; a repository mixin (`ChangeTrackingRepositoryMixin`) is
@@ -223,6 +228,14 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   `Database` instance, including child Features. Two Database objects or two stores are not
   one transaction. `separate=True` deliberately opens another transaction.
 - **A relation is resolved once per page, and refused if you did not ask for it.** No hidden N+1.
+- **`get(id)` is the stored aggregate**: every scalar, no relation, never a page.
+  `get(id, detail=detail_of(Model))` is still that one aggregate, with the relations the
+  entity's `presentation.detail` names resolved onto it on SQL; `MemoryRepository` already
+  holds them.
+- **Reads of one aggregate are `EntityReads`, not hand-copied Features.** Name the DTOs
+  (`Get`, `GetMany`, `LiteralSearch`, `Search` with `[Entity, Response]`), register them on one
+  `EntityReads[Entity]`, override a read and call `super()` to extend it. Writes stay Commands
+  with an intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
 - **The aggregate records events; save keeps mapped facts with it.** Use an `EventRelay`
   for durable delivery; manual publication after commit is not a durable outbox.
 
@@ -243,6 +256,7 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 - [references/repository-and-writes.md](references/repository-and-writes.md) — tables, `save`/`remove`/`archive`, unit of work, reads, testing
 - [references/relations.md](references/relations.md) — the kinds, inference, cost
 - [references/hooks-and-mixins.md](references/hooks-and-mixins.md) — `Hook`/`Hooks`, moments, wiring, ordering
+- [references/entity-reads.md](references/entity-reads.md) — `presentation` + `EntityReads`: get, get many, select by text, list
 
 ## Related
 

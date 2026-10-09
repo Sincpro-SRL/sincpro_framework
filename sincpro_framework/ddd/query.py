@@ -34,7 +34,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
     EntityCollection,
     identity_name,
 )
-from sincpro_framework.ddd.entity.model_meta import FieldType, Meta
+from sincpro_framework.ddd.entity.model_meta import FieldType, Meta, presentation_of
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -101,8 +101,12 @@ def _record(
     if specification is None:
         return written
 
-    identity = meta.identity if meta is not None else identity_name(type(record))
-    keep = {identity, *specification.named}
+    if meta is not None:
+        keep = {meta.identity, *meta.masked(specification)}
+    else:
+        display = presentation_of(type(record)).display
+        named = specification.named or ([display] if display else [])
+        keep = {identity_name(type(record)), *named}
     written = {name: value for name, value in written.items() if name in keep}
     for name, node in specification.root.items():
         if meta is None or name not in meta.fields:
@@ -186,7 +190,8 @@ class ResponsePaginatedQuery(DataTransferObject):
     def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
         """On the wire, a record shows what the specification named plus its identity, and each
         named relation under its own name: a to-one as an object or `null`, a to-many as
-        `{"items", "count", "cursor"}`. Without a specification, every scalar and no relation.
+        `{"items", "count", "cursor"}`. An empty specification keeps the identity and the
+        display field. Without a specification, every scalar and no relation.
 
         The mask is applied here and nowhere earlier: inside the process the records stay the
         typed aggregates they are, so a Feature reading the page still has every field.
@@ -286,6 +291,207 @@ class ResponsePaginatedQuery(DataTransferObject):
             **{cls.records_field(): list(page.items)},
             cursor=page.cursor,
             count=page.count,
+            model_meta_data=(
+                page.meta.only(criteria.specification)
+                if criteria.meta and page.meta is not None
+                else None
+            ),
+            dropped=list(page.dropped),
+        )
+        response._specification = criteria.specification
+        response._meta = page.meta
+        return response
+
+
+class ResponseRecord(DataTransferObject):
+    """What a read of one record returns beside it.
+
+    class ResponseAccount(ResponseRecord):
+        account: Account            →   .account .model_meta_data .dropped
+
+    The record keeps the subclass's own name for the same reason a page's records do. On the
+    wire it is cut by the specification exactly as a record of a page is.
+    """
+
+    model_meta_data: Meta | None = None
+    """What may be asked about the model, unless the criteria said `meta=false`."""
+
+    dropped: list[Dropped] = []
+    """What the specification named and the model could not answer."""
+
+    _specification: Specification | None = PrivateAttr(default=None)
+    _meta: Meta | None = PrivateAttr(default=None)
+
+    @model_serializer(mode="plain")
+    def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
+        """On the wire, the record shows what the specification named plus its identity, and
+        each named relation under its own name, as a record of a page does."""
+        mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
+        field = self.record_field()
+        with _writing_out():
+            written = {
+                field: _record(getattr(self, field), self._specification, self._meta, mode),
+                "model_meta_data": (
+                    self.model_meta_data.model_dump(mode=mode)
+                    if self.model_meta_data
+                    else None
+                ),
+                "dropped": [one.model_dump(mode=mode) for one in self.dropped],
+            }
+        return written
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: Any, handler: GetJsonSchemaHandler
+    ) -> dict[str, Any]:
+        """The declared fields, said for the OpenAPI too: a plain serializer alone publishes
+        `{"type": "object"}`."""
+        if handler.mode != "serialization":
+            return handler(core_schema)
+
+        fields = core_schema["schema"]["fields"]
+        return {
+            "type": "object",
+            "title": cls.__name__,
+            "description": (
+                "One record with what the engine says about it. When the criteria carried a "
+                "specification, the record holds the fields it named plus the identity."
+            ),
+            "properties": {name: handler(one["schema"]) for name, one in fields.items()},
+            "required": sorted(fields),
+        }
+
+    @classmethod
+    def record_field(cls) -> str:
+        """The one field the subclass added: where its record goes.
+
+        class ResponseAccount(ResponseRecord):
+            account: Account            →   out  'account'
+        """
+        own = [name for name in cls.model_fields if name not in ResponseRecord.model_fields]
+        if len(own) != 1:
+            raise ContractViolation(
+                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
+                "a record response declares exactly one, holding its record"
+            )
+        return own[0]
+
+    @classmethod
+    def of(cls, record: Any, page: EntityCollection, criteria: Criteria) -> Any:
+        """One record as the answer that goes out, with the definition of the page it was
+        read in.
+
+            in      Account(1105, 'Caja'), the page it came in, the criteria it answered
+            out     ResponseAccount(account=Account(1105, 'Caja'), model_meta_data=Meta(...))
+        """
+        response = cls(
+            **{cls.record_field(): record},
+            model_meta_data=(
+                page.meta.only(criteria.specification)
+                if criteria.meta and page.meta is not None
+                else None
+            ),
+            dropped=list(page.dropped),
+        )
+        response._specification = criteria.specification
+        response._meta = page.meta
+        return response
+
+
+class ResponseRecords(DataTransferObject):
+    """What a read of several records by their identities returns: a list, not a page.
+
+    class ResponseAccounts(ResponseRecords):
+        accounts: list[Account]     →   .accounts .missing .model_meta_data .dropped
+
+    The records come in the order the identities were asked, each one cut by the specification
+    as a record of a page is. An identity with no record is listed in `missing`, not raised:
+    a list of references outlives some of what it points at.
+    """
+
+    missing: list[str] = []
+    """The identities asked that have no record."""
+
+    model_meta_data: Meta | None = None
+    """What may be asked about the model, unless the criteria said `meta=false`."""
+
+    dropped: list[Dropped] = []
+    """What the specification named and the model could not answer."""
+
+    _specification: Specification | None = PrivateAttr(default=None)
+    _meta: Meta | None = PrivateAttr(default=None)
+
+    @model_serializer(mode="plain")
+    def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
+        """On the wire, each record shows what the specification named plus its identity."""
+        mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
+        field = self.records_field()
+        with _writing_out():
+            written = {
+                field: [
+                    _record(one, self._specification, self._meta, mode)
+                    for one in getattr(self, field)
+                ],
+                "missing": list(self.missing),
+                "model_meta_data": (
+                    self.model_meta_data.model_dump(mode=mode)
+                    if self.model_meta_data
+                    else None
+                ),
+                "dropped": [one.model_dump(mode=mode) for one in self.dropped],
+            }
+        return written
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: Any, handler: GetJsonSchemaHandler
+    ) -> dict[str, Any]:
+        """The declared fields, said for the OpenAPI too: a plain serializer alone publishes
+        `{"type": "object"}`."""
+        if handler.mode != "serialization":
+            return handler(core_schema)
+
+        fields = core_schema["schema"]["fields"]
+        return {
+            "type": "object",
+            "title": cls.__name__,
+            "description": (
+                "The records asked by identity, in the order asked, and the identities that "
+                "have none. When the criteria carried a specification, each record holds the "
+                "fields it named plus the identity."
+            ),
+            "properties": {name: handler(one["schema"]) for name, one in fields.items()},
+            "required": sorted(fields),
+        }
+
+    @classmethod
+    def records_field(cls) -> str:
+        """The one field the subclass added: where its records go.
+
+        class ResponseAccounts(ResponseRecords):
+            accounts: list[Account]     →   out  'accounts'
+        """
+        own = [name for name in cls.model_fields if name not in ResponseRecords.model_fields]
+        if len(own) != 1:
+            raise ContractViolation(
+                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
+                "a records response declares exactly one, holding its records"
+            )
+        return own[0]
+
+    @classmethod
+    def of(
+        cls, ids: list[str], page: EntityCollection, criteria: Criteria, identity: str
+    ) -> Any:
+        """The records of a page, put back in the order of `ids`.
+
+        in      ids ["b", "gone", "a"], a page holding a and b
+        out     ResponseAccounts(accounts=[b, a], missing=["gone"])
+        """
+        found = {str(getattr(one, identity)): one for one in page.items}
+        response = cls(
+            **{cls.records_field(): [found[one] for one in ids if one in found]},
+            missing=[one for one in ids if one not in found],
             model_meta_data=(
                 page.meta.only(criteria.specification)
                 if criteria.meta and page.meta is not None

@@ -7,10 +7,10 @@ whose meaning shifts by one row, a `NULL` treated as a value, a list compared by
 and the drift shows up as a number that is quietly different, not as a failure.
 
 So the cases live in a file instead of in one suite: this module writes
-`tests/ddd/criteria-parity.json`, right beside the tests for `evaluate.py` since that is the
+`tests/ddd/criteria/criteria-parity.json`, right beside the tests for `evaluate.py` since that is the
 module it is holding to a promise, checks that the in-memory evaluator answers every one of
-them, and the client repository copies the same file into its own suite and runs it through
-its own engine. A case is added here once and both sides are held to it.
+them, `tests/orm/test_criteria_parity_sql.py` runs the same file through the SQL translator,
+and the client repository copies it into its own suite and runs it through its own engine. A case is added here once and both sides are held to it.
 
 Regenerating is `make criteria-parity`, and the file is committed: a file generated at test
 time proves only that the code agrees with itself.
@@ -113,6 +113,22 @@ CASES: list[dict[str, Any]] = [
     {
         "name": "like is case-insensitive and partial",
         "where": {"field": "name", "operator": "like", "value": "labs"},
+    },
+    {
+        "name": "like reads a percent sign as itself, not as a wildcard",
+        "where": {"field": "name", "operator": "like", "value": "%"},
+    },
+    {
+        "name": "like reads an underscore as itself, not as any one character",
+        "where": {"field": "name", "operator": "like", "value": "s_c"},
+    },
+    {
+        "name": "starts with is case-insensitive and anchored at the start",
+        "where": {"field": "name", "operator": "starts with", "value": "LAB"},
+    },
+    {
+        "name": "starts with does not match in the middle",
+        "where": {"field": "name", "operator": "starts with", "value": "csv"},
     },
     {
         "name": "contains asks about one member of a list",

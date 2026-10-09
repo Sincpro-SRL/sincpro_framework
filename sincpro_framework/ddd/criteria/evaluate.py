@@ -72,6 +72,8 @@ def _holds(actual: Any, operator: Operator, value: Any) -> bool:
             return value[0] <= actual <= value[1]
         case Operator.LIKE:
             return str(value).lower() in str(actual).lower()
+        case Operator.STARTS_WITH:
+            return str(actual).lower().startswith(str(value).lower())
         case Operator.CONTAINS:
             return value in actual
         case Operator.NOT_CONTAINS:

@@ -84,8 +84,15 @@ class AggregateRepository[T]:
         for_update: bool = False,
         skip_locked: bool = False,
         nowait: bool = False,
+        detail: Criteria | None = None,
     ) -> T | None:
-        return self.repository.get(self.aggregate, identity, for_update, skip_locked, nowait)
+        """The one record, with what `detail` asks to bring along. Not a page.
+
+        account = accounts.get(account_id, detail=detail_of(Account))
+        """
+        return self.repository.get(
+            self.aggregate, identity, for_update, skip_locked, nowait, detail
+        )
 
     def search(
         self,

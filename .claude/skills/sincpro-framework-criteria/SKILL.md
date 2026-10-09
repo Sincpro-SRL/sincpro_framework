@@ -45,6 +45,8 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `model_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
 | `Bucket` / `Pivot` | A group with its count, measures and the `criteria` that opens it / a cross table with margins | DTO | `from sincpro_framework.ddd import Bucket, Pivot` |
 | `matches` | Evaluates a filter in memory, the same semantics as the SQL translator | function | `from sincpro_framework.ddd import matches` |
+| `Presentation` / `Match` | What an entity declares once: display, search (`equal`/`prefix`/`contains`), order, detail | class attribute | `from sincpro_framework.ddd import Presentation, Match` |
+| `matching` / `detail_of` | The select criteria for a literal / the detail criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
 | `InvalidCriteria` | A question that cannot be answered (unorderable field, bad grouping, unknown measure) | exception | `from sincpro_framework.ddd import InvalidCriteria` |
 
 Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `where` filters rows,
@@ -110,8 +112,16 @@ Silent ones first — the runtime gives no error for these.
 - **A hand-built response loses the contract.** Returning `items=list(page.items)` drops the
   cursor, count, `dropped`, `model_meta_data` and the specification mask on the wire. Use
   `ResponsePaginatedQuery.of(page, criteria)`.
-- **`specification: {}` is not `None`.** `None` brings every scalar and no relation; `{}` means
-  "asked, nothing survived" and brings the identity alone.
+- **`specification: {}` is not `None`.** `None` brings every scalar and no relation; `{}` brings
+  the identity and, when the entity names one, its display field.
+- **`matching` does not search.** It builds the criteria; `search(Model, matching(Model, text))`
+  runs it. A blank literal lists the first 8 in the list order; an entity with nothing to
+  search answers an empty page. A literal is read as itself: `%` and `_` are not wildcards.
+- **A presentation names fields through the entity**, `lambda a: Match.prefix(a.code)`, never
+  a string. A typo is refused when the class is described.
+- **A screen that reads one entity** (get, get many, the select, the list) registers its DTOs
+  on one `EntityReads[Entity]` instead of writing four Features: recipe in
+  `sincpro-framework-persistence` → `references/entity-reads.md`.
 - **`Offset` for a listing people page through** repeats and skips rows under concurrent inserts.
   Keep the default cursor; `Offset` is for a one-off read and for paging groups.
 - Loud, but common: ordering by a nullable or unknown field raises `InvalidCriteria`; folding a

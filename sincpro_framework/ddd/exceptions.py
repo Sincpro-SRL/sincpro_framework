@@ -3,13 +3,17 @@
 A caller only ever needs to tell these apart: what it asked for cannot be answered, the contract
 is being used wrong — by the code, or by data the database refuses — or a write lost a race:
 against a newer version of the same aggregate, against another aggregate already holding a
-unique value, or against another transaction — or the engine stopped at a bound it was given.
+unique value, or against another transaction — or the engine stopped at a bound it was given —
+or the one record a read named is not there.
 A stale version and a lost transaction are the ones worth running again.
 
 They inherit from `Exception` and nothing else. Whoever exposes them decides what each one means
 over the wire; an HTTP entrypoint maps `InvalidCriteria` to 400, `ContractViolation` (and
-`ConstraintViolation`) to 422, the three conflicts to 409 and `TimedOut` to 503.
+`ConstraintViolation`) to 422, the three conflicts to 409, `TimedOut` to 503 and
+`AggregateNotFound` to 404.
 """
+
+from sincpro_framework.transport.failures import FailureKind
 
 
 class DomainError(Exception):
@@ -77,3 +81,13 @@ class RelationNotResolved(ContractViolation):
     a loop over two hundred rows would be two hundred queries hidden in an attribute access;
     name the relation in the criteria's specification instead.
     """
+
+
+class AggregateNotFound(DomainError):
+    """A read named one record by its identity and there is none: never stored, archived, or
+    outside the scope the repository was narrowed to.
+
+    What `Get` answers instead of an empty record, so every wire says «not found» its own way.
+    """
+
+    failure_kind = FailureKind.NOT_FOUND

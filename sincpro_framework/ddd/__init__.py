@@ -46,12 +46,22 @@ from sincpro_framework.ddd.entity.entity_collection import (
     EntityCollection,
 )
 from sincpro_framework.ddd.entity.model_meta import FieldMeta, FieldType, Meta
+from sincpro_framework.ddd.entity.presentation import (
+    Descending,
+    Expand,
+    Match,
+    MatchMode,
+    Presentation,
+    Reference,
+)
+from sincpro_framework.ddd.entity.query_entity import NAME_SEARCH_LIMIT, detail_of, matching
 from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
 from sincpro_framework.ddd.events import (
     DeliverableEventMixin,
     DomainEvent,
 )
 from sincpro_framework.ddd.exceptions import (
+    AggregateNotFound,
     ConstraintViolation,
     ContractViolation,
     DomainError,
@@ -62,7 +72,13 @@ from sincpro_framework.ddd.exceptions import (
     TimedOut,
     TransactionConflict,
 )
-from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
+from sincpro_framework.ddd.query import (
+    Query,
+    ResponsePaginatedQuery,
+    ResponseRecord,
+    ResponseRecords,
+)
+from sincpro_framework.ddd.reads import EntityReads, Get, GetMany, LiteralSearch, Search
 from sincpro_framework.ddd.repositories import (
     AggregateRepository,
     Analyzes,
@@ -82,6 +98,15 @@ from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
+    "NAME_SEARCH_LIMIT",
+    "Descending",
+    "Expand",
+    "Match",
+    "MatchMode",
+    "Presentation",
+    "Reference",
+    "detail_of",
+    "matching",
     "AggregateRepository",
     "Analyzes",
     "MemoryNumbering",
@@ -112,6 +137,14 @@ __all__ = [
     "ConstraintViolation",
     "TransactionConflict",
     "TimedOut",
+    "AggregateNotFound",
+    "EntityReads",
+    "Get",
+    "LiteralSearch",
+    "ResponseRecord",
+    "ResponseRecords",
+    "GetMany",
+    "Search",
     "Entity",
     "EntityUpdated",
     "ChangeTrackingRepositoryMixin",

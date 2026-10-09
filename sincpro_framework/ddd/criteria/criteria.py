@@ -40,6 +40,7 @@ class Operator(StrEnum):
     IN = "in"
     NOT_IN = "not in"
     LIKE = "like"
+    STARTS_WITH = "starts with"
     GT = ">"
     GTE = ">="
     LT = "<"
