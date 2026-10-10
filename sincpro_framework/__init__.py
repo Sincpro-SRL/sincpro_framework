@@ -1,4 +1,4 @@
-from .interceptors import CallNext
+from .bus_pipeline.interceptors import CallNext
 from .sincpro_abstractions import (
     ApplicationService,
     DataTransferObject,

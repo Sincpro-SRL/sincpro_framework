@@ -89,7 +89,7 @@ Subclass `Wire[MyBinding]` (`binding`, `derive`, `name_of`, `validate`, `build`)
 
 ## Failures
 
-One classification, each wire's code: `sincpro_framework.transport.failures.refined_failure_kind(error)`
+One classification, each wire's code: `sincpro_framework.common.failures.refined_failure_kind(error)`
 — the kind the error's class declares (`failure_kind = …`), else the shared kinds below. Every wire
 (FastAPI, REST, JSON-RPC, gRPC, the queue) uses it; a project's own `Wire` calls it too.
 `failure_kind(error)`, its shared core, ignores the declared kind.

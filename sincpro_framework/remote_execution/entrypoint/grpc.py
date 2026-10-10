@@ -11,50 +11,54 @@ Open Hosts share (`entrypoint.execution.execute_hosted`); the wire is the caller
 """
 
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.common.transport.grpc import (
+    TRACE_HEADERS,
+    grpc,
+    health_handler,
+    server,
+)
 from sincpro_framework.observability import process
 from sincpro_framework.remote_execution.adapters.grpc import (
     ACCEPTED_HEADER,
     CONTEXT_HEADER,
-    DTO_HEADER,
     ERROR_DETAILS,
     ERROR_KIND,
     ERROR_MODULE,
     METHOD,
-    REQUEST_CONTEXT_HEADER,
     SERVICE,
+    chunks_of,
 )
 from sincpro_framework.remote_execution.domain.errors import error_details
-from sincpro_framework.remote_execution.domain.payload import ChunkReader
-from sincpro_framework.remote_execution.entrypoint.execution import execute_hosted
+from sincpro_framework.remote_execution.entrypoint.execution import (
+    execute_hosted,
+)
 from sincpro_framework.sincpro_logger import logger
-from sincpro_framework.transport import grpc as transport
-from sincpro_framework.transport.grpc import TRACE_HEADERS, grpc
-from sincpro_framework.use_bus import UseFramework
+
+if TYPE_CHECKING:
+    from sincpro_framework.use_bus import UseFramework
 
 
 def _header(metadata: Sequence[tuple[str, Any]], key: str) -> Any:
     return next((value for name, value in metadata if name == key), None)
 
 
-def open_host_handler(contexts: Mapping[str, UseFramework]) -> Any:
+def open_host_handler(contexts: "Mapping[str, UseFramework]") -> Any:
     """`/sincpro.Contexts/Execute` for `contexts`, keyed by their names."""
 
     def execute(requests: Iterator[bytes], call: Any) -> Iterator[bytes]:
-        from sincpro_framework.auth.transports import credentials_from_headers
+        from sincpro_framework.auth.entrypoint.transports import credentials_from_headers
 
         call.send_initial_metadata(((ACCEPTED_HEADER, "1"),))
         metadata = call.invocation_metadata()
         name = _header(metadata, CONTEXT_HEADER) or ""
-        answer: Iterator[bytes] = iter(())
+        answer = b""
         try:
             answer = execute_hosted(
                 contexts,
                 name,
-                _header(metadata, DTO_HEADER) or "",
-                ChunkReader(requests),
-                _header(metadata, REQUEST_CONTEXT_HEADER),
+                b"".join(requests),
                 {key: value for key, value in metadata if key in TRACE_HEADERS},
                 credentials_from_headers("service", metadata),
             )
@@ -71,7 +75,7 @@ def open_host_handler(contexts: Mapping[str, UseFramework]) -> Any:
                 )
             )
             call.abort(grpc.StatusCode.UNKNOWN, str(error))
-        yield from answer
+        yield from chunks_of(answer)
 
     return grpc.method_handlers_generic_handler(
         SERVICE, {METHOD: grpc.stream_stream_rpc_method_handler(execute)}
@@ -86,7 +90,7 @@ class OpenHostDoor:
     def __init__(
         self, contexts: "Sequence[UseFramework] | Mapping[str, UseFramework]"
     ) -> None:
-        self.contexts: dict[str, UseFramework] = (
+        self.contexts: "dict[str, UseFramework]" = (
             dict(contexts)
             if isinstance(contexts, Mapping)
             else {one.name: one for one in contexts}
@@ -100,7 +104,7 @@ class OpenHostDoor:
     def handlers(self, health: bool = True) -> tuple[Any, ...]:
         """`sincpro.Contexts/Execute` and, with `health`, `grpc.health.v1.Health` for it."""
         found: list[Any] = [open_host_handler(self.contexts)]
-        probe = transport.health_handler([SERVICE], self.is_ready) if health else None
+        probe = health_handler([SERVICE], self.is_ready) if health else None
         if probe is not None:
             found.append(probe)
         return tuple(found)
@@ -116,7 +120,7 @@ class OpenHostDoor:
         introspection, no reflection. Not started, no port."""
         for bus in self.contexts.values():
             bus.build_root_bus()
-        return self.mount(transport.server(max_workers), health=True)
+        return self.mount(server(max_workers), health=True)
 
 
 def open_host(

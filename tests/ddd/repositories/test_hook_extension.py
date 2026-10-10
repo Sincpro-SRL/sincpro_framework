@@ -18,7 +18,8 @@ import pytest
 from structlog.testing import capture_logs
 
 from sincpro_framework import UseFramework
-from sincpro_framework.ddd import Entity, MemoryRepository
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.exceptions import ExtensionRefused
 

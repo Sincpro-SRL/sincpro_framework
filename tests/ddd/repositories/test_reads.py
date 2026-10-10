@@ -11,9 +11,15 @@ from pathlib import Path
 from sqlalchemy import Column, Integer, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework.ddd import Criteria, Entity, MemoryRepository
+from sincpro_framework.data_layer.orm import (
+    Database,
+    Repository,
+    map_aggregates,
+    template_table,
+)
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Criteria, Entity
 from sincpro_framework.ddd.repositories.reads import aggregate_tag, noting_reads
-from sincpro_framework.orm import Database, Repository, entity_table, map_aggregates
 
 
 @dataclass
@@ -30,8 +36,12 @@ MAPPING = registry()
 map_aggregates(
     MAPPING,
     {
-        Invoice: entity_table("reads_invoice", MAPPING.metadata, Column("total", Integer)),
-        Customer: entity_table("reads_customer", MAPPING.metadata, Column("name", Text)),
+        Invoice: template_table.entity_table(
+            "reads_invoice", MAPPING.metadata, Column("total", Integer)
+        ),
+        Customer: template_table.entity_table(
+            "reads_customer", MAPPING.metadata, Column("name", Text)
+        ),
     },
 )
 

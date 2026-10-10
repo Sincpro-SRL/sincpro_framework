@@ -266,7 +266,7 @@
     },
     {
       "id": "claim_7652f43b75be4203ba65f9fb9aff830b",
-      "statement": "Tests pin this layer's contract through both hosts: `tests/entrypoint/test_entrypoints.py` covers both layers published with the layer name, own-docstring descriptions, the binary decision in both directions, `to_callables()` executing a real bus call with a Value Object roundtrip, include/exclude/wrap, field descriptions and VO titles in `json_schema`, and non-JSON response coercion; `tests/entrypoint/test_entrypoint_rpc.py` pins that a binary DTO is absent from the method index and that a per-instance `exclude` at mount time removes one DTO only.",
+      "statement": "Tests pin this layer's contract through both hosts: `tests/entrypoints/test_entrypoints.py` covers both layers published with the layer name, own-docstring descriptions, the binary decision in both directions, `to_callables()` executing a real bus call with a Value Object roundtrip, include/exclude/wrap, field descriptions and VO titles in `json_schema`, and non-JSON response coercion; `tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py` pins that a binary DTO is absent from the method index and that a per-instance `exclude` at mount time removes one DTO only.",
       "evidence": [
         {
           "resource": "repo://tests/entrypoint/test_entrypoint_rpc.py#L271-L282",

@@ -1,8 +1,6 @@
 """Observability for the framework: two doors, and what a use case says on its own span.
 
-    from sincpro_framework.observability import Observability   # one per bus
-    from sincpro_framework.observability import process         # the transport
-    from sincpro_framework.observability import traces, of      # a use case's span attributes
+            from sincpro_framework.observability import traces
 
 ``Observability`` is what a ``UseFramework`` already owns: spans per DTO, errors to
 GlitchTip, trace ids on its logs. ``process`` is for a service that also has to
@@ -20,31 +18,29 @@ from sincpro_framework.observability.domain import (
     ComponentStatus,
     ObservabilityIdentity,
     ObservabilityStatus,
-    caller_module,
-    framework_identity,
-    framework_version,
-    resolve_identity,
 )
 from sincpro_framework.observability.metrics.domain.paths import of
-from sincpro_framework.observability.registry import registry
 from sincpro_framework.observability.tracing.attributes import SpanValue, Traces, traces
-from sincpro_framework.observability.tracing.span_context import FrameworkSpanContext
+from sincpro_framework.observability.tracing.propagation import (
+    TRACE_HEADERS,
+    trace_carrier,
+    trace_id_of,
+    within_trace,
+)
 
 __all__ = [
     "ComponentStatus",
-    "FrameworkSpanContext",
     "Observability",
     "ObservabilityIdentity",
     "ObservabilityStatus",
     "ProcessObservability",
     "SpanValue",
+    "TRACE_HEADERS",
     "Traces",
-    "caller_module",
-    "framework_identity",
-    "framework_version",
     "of",
     "process",
-    "registry",
-    "resolve_identity",
+    "trace_carrier",
+    "trace_id_of",
     "traces",
+    "within_trace",
 ]

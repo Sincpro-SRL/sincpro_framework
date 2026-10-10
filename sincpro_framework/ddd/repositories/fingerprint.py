@@ -17,7 +17,7 @@ from typing import Any
 
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.criteria.criteria import All, Any_, Condition, Expression, Not
-from sincpro_framework.ddd.entity.model_meta import describe_class
+from sincpro_framework.ddd.entity.entity_meta import describe_class
 
 
 def _value(value: Any) -> Any:

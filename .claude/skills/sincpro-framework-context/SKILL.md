@@ -54,7 +54,7 @@ Look-alikes: `context[key] = v` (the scope of the call — siblings see it) ≠ 
 node — only what it runs). `bus.context(...)` **opens** a scope; `use_context()` / `self.context`
 **read** it. A store (`ContextStore`) ≠ a cache (`caching`). `inject`/`extract` (text headers) ≠
 `remote_execution` (the whole context packed, same codebase). A thread-pool slot and
-`BackgroundQueue`'s child are not `sincpro_framework.process.Process` (the program that stays
+`BackgroundQueue`'s child are not `sincpro_framework.entrypoints.entrypoint.workers.Process` (the program that stays
 up and runs loops — `sincpro-framework-operations`).
 
 ## Architecture
@@ -68,7 +68,7 @@ domain/          level.py (Level, EntrypointKind, Origin) · node.py (ContextNod
 infrastructure/  tree.py (the node in play: a ContextVar; ROOT; opened_execution; carrying)
                  threads.py · providers.py · shared.py (root shared by replicas) · thread_context_bus.py
 adapters/        stores.py (InMemoryContexts, KeyValueContexts) · codecs.py · propagation.py
-entrypoint/      facade.py (Context, use_context) · bus.py (ContextMixin, FrameworkContext) · consumer.py
+entrypoint/      facade.py (Context, use_context) · bus.py (BusContextMixin, FrameworkContext) · consumer.py
 ```
 
 `sincpro_framework.context` exports the public names lazily: importing it never imports a bus.

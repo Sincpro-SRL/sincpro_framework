@@ -184,7 +184,7 @@ resolved twice. A context on its own — a test, a service that hosts only it �
 the same call at its path; the values are the same, the object is its own.
 
 Scoping is **guidance**, never a wall: a context may import the global. The framework only offers an
-optional check (in `sincpro_framework.testing`, like `layer_violations`) that reports a context
+optional check (in `sincpro_framework.runtime.testing`, like `layer_violations`) that reports a context
 reading another context's section — for a team that wants the rule.
 
 ### Read-only — recommended, opt-in

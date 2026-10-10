@@ -28,7 +28,7 @@ use_context().at(Level.GLOBAL).set("maintenance", True)   # every service that s
 ## A store keeps what a flow *is*
 
 ```python
-from sincpro_framework.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.context import ContextStore, KeyValueContexts, TypedCodec, use_context
 
 contexts = KeyValueContexts(RedisKeyValue(redis.Redis.from_url(url)))   # [redis] extra

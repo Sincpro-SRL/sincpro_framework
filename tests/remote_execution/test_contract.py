@@ -24,11 +24,12 @@ from sincpro_framework import (
     Feature,
     UseFramework,
 )
+from sincpro_framework.common.failures import FailureKind, refined_failure_kind
 from sincpro_framework.context import requires_context
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import DomainError
-from sincpro_framework.entrypoints.catalog import Catalog
-from sincpro_framework.event_driven.services.subscriber import Subscriber
+from sincpro_framework.entrypoints.entrypoint.catalog import Catalog
+from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
 from sincpro_framework.exceptions import ContextRequired, UnknownDTOToExecute
 from sincpro_framework.introspection.operations import operations_of
 from sincpro_framework.remote_execution import (
@@ -38,7 +39,6 @@ from sincpro_framework.remote_execution import (
     DTODoesNotFit,
 )
 from sincpro_framework.sincpro_conf import settings
-from sincpro_framework.transport.failures import FailureKind, refined_failure_kind
 from tests.remote_execution.hosting import TRANSPORTS, host_over
 
 WHERE = ("local", *TRANSPORTS)
@@ -161,7 +161,11 @@ def _shop(place: str, heard: Heard, engine: Any = "an engine") -> UseFramework:
             secret = context.get("TOKEN")
             return ResponseRead(
                 types={key: type(value).__name__ for key, value in context.items()},
-                secret=secret.get_secret_value() if secret is not None else "",
+                secret=(
+                    secret.get_secret_value()
+                    if isinstance(secret, SecretStr)
+                    else str(secret)
+                ),
             )
 
     @shop.feature(CommandFail)
@@ -237,7 +241,7 @@ def remote(request: pytest.FixtureRequest) -> Iterator[Service]:
 
 
 # ---------------------------------------------------------------------------------------------
-# Rules 1 and 2 — the answer is the DTO, never a dict
+# Rules 1 and 2 — the answer is the DTO the caller declares
 # ---------------------------------------------------------------------------------------------
 
 
@@ -259,20 +263,33 @@ def test_without_a_response_the_answer_is_the_type_the_handler_declares(service)
 
 
 @pytest.mark.parametrize(
-    ("shape", "expected"),
+    ("shape", "local", "remote"),
     [
-        ("dto", Line(sku="A", quantity=1)),
-        ("list", [Line(sku="A", quantity=1), Line(sku="B", quantity=2)]),
-        ("none", None),
-        ("values", {"sku": "A", "lines": [Line(sku="A", quantity=1)]}),
+        ("dto", Line(sku="A", quantity=1), {"sku": "A", "quantity": 1}),
+        ("none", None, None),
+        (
+            "values",
+            {"sku": "A", "lines": [Line(sku="A", quantity=1)]},
+            {"sku": "A", "lines": [{"sku": "A", "quantity": 1}]},
+        ),
     ],
 )
-def test_a_handler_declaring_any_answers_dtos_as_dtos(service, shape, expected):
+def test_a_handler_declaring_any_answers_json_values_from_elsewhere(
+    service, shape, local, remote
+):
+    """Nothing names the class: the answer is what JSON holds — the caller that wants a DTO
+    names it, as `shop(command, Line)` does."""
     answer = service.shop(CommandAnything(shape=shape))
 
-    assert answer == expected
-    if isinstance(expected, Line):
-        assert type(answer) is Line
+    assert answer == (local if service.shop.hosted_at is None else remote)
+
+
+def test_a_handler_declaring_any_answers_the_dto_the_caller_names(service):
+    assert service.shop(CommandAnything(shape="dto"), Line) == Line(sku="A", quantity=1)
+    assert service.shop(CommandAnything(shape="list"), list[Line]) == [
+        Line(sku="A", quantity=1),
+        Line(sku="B", quantity=2),
+    ]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -281,8 +298,9 @@ def test_a_handler_declaring_any_answers_dtos_as_dtos(service, shape, expected):
 
 
 def _same_name_as(original: type, newer: type) -> type:
-    """`newer` registered under `original`'s name — another deployment's version of it."""
-    newer.__module__, newer.__qualname__ = original.__module__, original.__qualname__
+    """`newer` under `original`'s class name — another deployment's version of it, wherever its
+    module is."""
+    newer.__name__ = newer.__qualname__ = original.__name__
     return newer
 
 
@@ -327,7 +345,8 @@ def test_an_answer_missing_a_field_the_caller_needs_does_not_fit_and_says_which(
 
 
 def test_a_dto_the_host_does_not_answer_is_unknown_there(remote):
-    """Renaming or moving a DTO's class is the one change that breaks a caller — and it says so."""
+    """Renaming a DTO's class is the one change that breaks a caller — and it says so; moving it
+    to another module is not."""
 
     class CommandRenamed(DataTransferObject):
         sku: str
@@ -363,7 +382,7 @@ def test_a_reference_is_never_built_by_any_path(remote):
 def test_a_reference_answers_its_registrations_without_building(remote):
     names = set(remote.shop.dto_registry)
 
-    assert {f"{__name__}.CommandQuote", StockPicked.name} <= names
+    assert {"contract-shop.CommandQuote", StockPicked.name} <= names
     assert not remote.shop.was_initialized
 
 
@@ -404,11 +423,11 @@ def test_another_context_injected_with_it_calls_it_as_a_bus(service):
 
 
 # ---------------------------------------------------------------------------------------------
-# Rule 6 — the context travels as it is
+# Rule 6 — the context travels as its JSON values
 # ---------------------------------------------------------------------------------------------
 
 
-def test_the_context_travels_with_its_types_secrets_included(service):
+def test_the_context_travels_as_json_values_secrets_included(service):
     context = {
         "TOKEN": SecretStr("s3cr3t"),
         "PIN": Secret(1234),
@@ -421,13 +440,23 @@ def test_the_context_travels_with_its_types_secrets_included(service):
         answer = service.shop(CommandRead(), ResponseRead)
 
     assert answer is not None and answer.secret == "s3cr3t"
-    assert {key: answer.types[key] for key in context} == {
-        "TOKEN": "SecretStr",
-        "PIN": "Secret",
-        "currency": "Currency",
-        "limit": "Decimal",
-        "line": "Line",
-    }
+    arrived = {key: answer.types[key] for key in context}
+    if service.shop.hosted_at is None:
+        assert arrived == {
+            "TOKEN": "SecretStr",
+            "PIN": "Secret",
+            "currency": "Currency",
+            "limit": "Decimal",
+            "line": "Line",
+        }
+    else:
+        assert arrived == {
+            "TOKEN": "str",
+            "PIN": "int",
+            "currency": "str",
+            "limit": "str",
+            "line": "dict",
+        }
 
 
 # ---------------------------------------------------------------------------------------------
@@ -443,7 +472,7 @@ def test_an_error_arrives_as_itself_with_its_attributes(service):
     with pytest.raises(ContextRequired) as required:
         service.shop(CommandGated())
 
-    assert refused.value.customer == "acme" and refused.value.limit == Decimal("100")
+    assert refused.value.customer == "acme" and Decimal(refused.value.limit) == Decimal("100")
     assert required.value.missing == ["TENANT"]
 
 

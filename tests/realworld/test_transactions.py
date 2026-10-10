@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 
 import pytest
 
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .contexts import lines_of
 from .ledger import Account, Entry

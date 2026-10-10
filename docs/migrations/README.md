@@ -5,9 +5,9 @@ Postgres next to `common`, and `chat` may keep messages in MongoDB. Each store h
 of migrations. What no single tool answers is the **orchestration**: in what order the chains
 run, where the whole system stands, and how to put it back.
 
-`sincpro_framework.migrations` answers that and nothing else. It is opt-in twice: a project may
+`sincpro_framework.data_layer.migrations` answers that and nothing else. It is opt-in twice: a project may
 migrate however it likes and never import it; or use it and plug its own engine into any store.
-The core needs no database — Alembic, for SQL stores, is `sincpro_framework.orm.migrations`,
+The core needs no database — Alembic, for SQL stores, is `sincpro_framework.data_layer.orm`,
 behind the `[migrations]` extra.
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
@@ -35,9 +35,9 @@ from pathlib import Path
 
 from sqlalchemy import Column, ForeignKey, Integer, MetaData, String, Table
 
-from sincpro_framework.migrations import ContextMigrations, Migrations
-from sincpro_framework.orm import Database
-from sincpro_framework.orm.migrations import AlembicEngine
+from sincpro_framework.data_layer.migrations import ContextMigrations, Migrations
+from sincpro_framework.data_layer.orm import Database
+from sincpro_framework.data_layer.orm import AlembicEngine
 
 database = Database("sqlite:///erp.sqlite3")
 
@@ -166,7 +166,7 @@ after what it `requires`, and among the steps free to go the oldest id goes firs
 `common` {1, 2, 5} and `billing` {3, 4} on one database, the timeline is 1 … 5.
 
 ```python
-from sincpro_framework.migrations import ChainState
+from sincpro_framework.data_layer.migrations import ChainState
 
 status = migrations.status()
 
@@ -241,7 +241,7 @@ same shape a MongoDB or Cassandra engine takes, with the position kept in the st
 ```python
 import json
 
-from sincpro_framework.migrations import Chain, MigrationEngine, Position, Step
+from sincpro_framework.data_layer.migrations import Chain, MigrationEngine, Position, Step
 
 
 class JsonFileEngine(MigrationEngine):
@@ -298,7 +298,7 @@ creates what its tables declare, and every existing database is recorded on it. 
 chain's revisions are not imported; their history stays in git.
 
 ```python
-from sincpro_framework.orm import JsonText
+from sincpro_framework.data_layer.orm import JsonText
 
 catalog_tables = MetaData()
 Table(

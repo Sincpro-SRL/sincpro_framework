@@ -3,7 +3,7 @@
 The domain keeps two verbs: `publish(event)` and registering an event on a bus. Which broker carries
 it, with which partitions/retries/acknowledgements, is the broker's configuration. Sending lives in
 `sincpro_framework.event_driven.adapters.faststream`; listening is an entrypoint in
-`sincpro_framework.entrypoints.faststream`.
+`sincpro_framework.entrypoints.adapters.faststream`.
 
 ```bash
 pip install sincpro-framework[faststream] "faststream[kafka]"     # or [rabbit], [redis], [nats]
@@ -16,7 +16,7 @@ from faststream.kafka import KafkaBroker              # or RabbitBroker, RedisBr
 
 from sincpro_framework.event_driven import Publisher, Subscriber
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
-from sincpro_framework.entrypoints.faststream import subscribe
+from sincpro_framework.entrypoints.adapters.faststream import subscribe
 
 broker = KafkaBroker("kafka:9092")
 
@@ -37,7 +37,7 @@ await AsyncPublisher(FastStreamQueue(broker)).publish(InvoicePaid(amount=80))
 
 | | |
 |---|---|
-| `FastStreamQueue(broker, channel_of=by_event_name, options_of=no_options)` | a `Queue`; `start()`/`stop()` for sync code |
+| `FastStreamQueue(broker, channel_of=by_event_name, options_of=None)` | a `Queue`; `start()`/`stop()` for sync code |
 | `queue.put(event)` / `await queue.aput(event)` | publish and wait until the broker took it |
 | `keyed_by_entity` | Kafka: `entity_id` as the message key — one entity's events keep their order |
 | `subscribe(broker, subscriber, channel_of_name=by_name, options=None)` | one subscription per channel of the events the buses registered |
@@ -57,9 +57,9 @@ FastStreamQueue(broker, channel_of=lambda _event: "billing")
 ## Across replicas: the inbox
 
 ```python
-from sincpro_framework.caching import KeyValueRecords
-from sincpro_framework.caching.adapters.redis import RedisKeyValue          # [redis]
-from sincpro_framework.entrypoints.faststream import QueueOptions
+from sincpro_framework.data_layer.caching import KeyValueRecords
+from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue          # [redis]
+from sincpro_framework.entrypoints.adapters.faststream import QueueOptions
 
 subscribe(broker, Subscriber(accounting),
           options=QueueOptions(inbox=KeyValueRecords(RedisKeyValue(redis_client)), max_attempts=5))

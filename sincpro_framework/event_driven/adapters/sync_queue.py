@@ -4,11 +4,13 @@ queue = SyncQueue(Subscriber(planning, assurance))
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.event_driven.services.subscriber import Subscriber
+
+if TYPE_CHECKING:
+    from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
 
 
 class SyncQueue:
@@ -34,16 +36,14 @@ class SyncQueue:
                 f"{type(subscriber).__name__} is neither"
             )
         self._given = subscriber
-        self._built: Subscriber | None = (
-            subscriber if isinstance(subscriber, Subscriber) else None
-        )
+        self._built: "Subscriber | None" = None if callable(subscriber) else subscriber
 
     @property
-    def subscriber(self) -> Subscriber:
+    def subscriber(self) -> "Subscriber":
         """The subscriber, built on first use when a function was handed over."""
         if self._built is None:
             given = self._given
-            self._built = given if isinstance(given, Subscriber) else given()
+            self._built = given() if callable(given) else given
         return self._built
 
     def put(self, event: DomainEvent) -> list[Any]:

@@ -1,12 +1,12 @@
 ---
 name: sincpro-framework-persistence
-description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations, hooks, and the built-in reads of one aggregate (presentation, EntityReads with Get/GetMany/LiteralSearch/Search). Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, aggregate mixins, or a Feature that reads one entity (get by id, get many, a select by text, a list) in a Sincpro Python service.
+description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations, hooks, and the built-in reads of one aggregate (presentation, EntityReads with Get/GetMany/LiteralSearch/Search/DomainEvents). Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, aggregate mixins, or a Feature that reads one entity (get by id, get many, a select by text, a list, its event history) in a Sincpro Python service.
 ---
 
 # sincpro-framework-persistence
 
 `sincpro_framework.ddd` is the vocabulary (aggregates, `IRepository`, hooks, events) and needs
-nothing installed. `sincpro_framework.orm` is the SQLAlchemy adapter:
+nothing installed. `sincpro_framework.data_layer.orm` is the SQLAlchemy adapter:
 `pip install sincpro-framework[sqlalchemy]`. A Feature reads and writes through `self.repository`
 and never learns which database is behind it.
 
@@ -38,19 +38,19 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `ValueObject(base, validate_fn, name)` | Factory for a validated primitive (`Email`, `Money`) | function | `from sincpro_framework.ddd import ValueObject` |
 | `IRepository` | Aggregate reads and writes, with hooks; optional capabilities are separate | port | `from sincpro_framework.ddd import IRepository` |
 | `ReadsAggregates` / `WritesAggregates` / `Analyzes` / `WritesInBulk` / `Transacts` | Declare the operations a consumer actually requires; `StoreCapabilities` describes backend support | capability ports | `sincpro_framework.ddd` |
-| `AggregateRepository[T]` / `DatabaseAggregateRepository[T]` | Typed view bound to one aggregate; the database view additionally exposes SQL capabilities | adapter views | `sincpro_framework.ddd` / `sincpro_framework.orm` |
-| `Repository` (orm) | The SQLAlchemy implementation; adds `context()`, `narrowed()`, `retrying()`, `statement()`/`run()`, `pivot`, `export`, `explain`, `session` | adapter | `from sincpro_framework.orm import Repository` |
-| `MemoryRepository` | Same vocabulary over a dict, for tests; no unit of work, no relations | adapter (in-memory) | `from sincpro_framework.ddd import MemoryRepository` |
-| `Database` | One engine + session factory; stamps `updated_at`/`created_by`, logs and traces every statement | adapter | `from sincpro_framework.orm import Database` |
-| `entity_table` | `Table` with the four `Entity` columns prepended | function | `from sincpro_framework.orm import entity_table` |
-| `archive_columns` / `audit_columns` | The columns `ArchivableMixin` / `AuditedMixin` need | function | `from sincpro_framework.orm import archive_columns, audit_columns` |
-| `map_aggregates` | Imperative mapping class → table; switches on the version check; infers relations from FKs; idempotent | function | `from sincpro_framework.orm import map_aggregates` |
-| `Relation` (orm) | Declares what the tables cannot say: `many_to_many`, `id_list`, `foreign_key`, `bus`, `resolved_by` | registry (declared into `map_aggregates(relations=…)`) | `from sincpro_framework.orm import Relation` |
+| `AggregateRepository[T]` / `DatabaseAggregateRepository[T]` | Typed view bound to one aggregate; the database view additionally exposes SQL capabilities | adapter views | `sincpro_framework.ddd` / `sincpro_framework.data_layer.orm` |
+| `Repository` (orm) | The SQLAlchemy implementation; adds `context()`, `narrowed()`, `retrying()`, `statement()`/`run()`, `pivot`, `export`, `explain`, `session` | adapter | `from sincpro_framework.data_layer.orm import Repository` |
+| `MemoryRepository` | Same vocabulary over a dict, for tests; no unit of work, no relations | adapter (in-memory) | `from sincpro_framework.data_layer.repositories import MemoryRepository` |
+| `Database` | One engine + session factory; stamps `updated_at`/`created_by`, logs and traces every statement | adapter | `from sincpro_framework.data_layer.orm import Database` |
+| `entity_table` | `Table` with the four `Entity` columns prepended | function | `from sincpro_framework.data_layer.orm import template_table` → `template_table.entity_table` |
+| `archive_columns` / `audit_columns` | The columns `ArchivableMixin` / `AuditedMixin` need | function | `from sincpro_framework.data_layer.orm import template_table` → `template_table.archive_columns` / `template_table.audit_columns` |
+| `map_aggregates` | Imperative mapping class → table; switches on the version check; infers relations from FKs; idempotent | function | `from sincpro_framework.data_layer.orm import map_aggregates` |
+| `Relation` (orm) | Declares what the tables cannot say: `many_to_many`, `id_list`, `foreign_key`, `bus`, `resolved_by` | registry (declared into `map_aggregates(relations=…)`) | `from sincpro_framework.data_layer.orm import Relation` |
 | `Relation` (ddd) | Same declaration without the database kinds (`bus`, `resolved_by` only) | registry | `from sincpro_framework.ddd import Relation` |
 | unit of work | `with repository.context() as unit:` — one session, one transaction, lazy relations | method (orm) | — |
-| `Writes.SAVED` / `Writes.CHANGED` | Default explicit saves / opt-in session-tracked writes at commit | enum | `sincpro_framework.orm` |
+| `Writes.SAVED` / `Writes.CHANGED` | Default explicit saves / opt-in session-tracked writes at commit | enum | `sincpro_framework.data_layer.orm` |
 | `INumbering` / `MemoryNumbering` | `next_number(series, scope="")`, `take(series, count=1, scope="") -> range` | port / test double | `sincpro_framework.ddd` |
-| `DatabaseNumbering` / `numbering_table` | Number allocation participating in the database unit of work | adapter / table factory | `sincpro_framework.orm` |
+| `DatabaseNumbering` / `numbering_table` | Number allocation participating in the database unit of work | adapter / table factory | `sincpro_framework.data_layer.orm` |
 | `Hooks` | A bounded context's collection of hooks, handed to a repository | registry | `from sincpro_framework.ddd import Hooks` |
 | `Hook` | One rule class; its methods are moments (`before_save`, `after_create`…) | base class | `from sincpro_framework.ddd import Hook` |
 | `ArchivableMixin` | `archived_at`; `archive()` hides instead of deleting | dataclass mixin | `from sincpro_framework.ddd import ArchivableMixin` |
@@ -61,7 +61,8 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `DEFAULT_GET_ID` / `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_DISPLAY` / `DEFAULT_LITERAL_SEARCH` | How the entity is read: the key `Get` finds it by, what one record brings (`Specification`), the list order (`Sort`s), the field shown beside the identity, the template a typed text fills (`Criteria` with `TEXT`). `@classmethod`s `Entity` defines with defaults; override what you need; what a caller's criteria names wins | `@classmethod` on the entity | `Entity`; `TEXT` from `sincpro_framework.ddd` |
 | `Presentation` | Class attribute of an entity: form hints only (`readonly`, `required`, `readonly_when`, `required_when`, `visible_when`), fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
 | `Is` / `When` / `AllHold` / `AnyHolds` | A hint's condition as the Criteria triple: `When(Is(i.state, Operator.NE, State.DRAFT), i.partner_id)` | declaration | `sincpro_framework.ddd` |
-| `Get` / `GetMany` / `LiteralSearch` / `Search` | Generic DTO bases naming entity and response: `class QueryGetInvoice(Get[Invoice, ResponseInvoice])` | DTO bases | `sincpro_framework.ddd` |
+| `Get` / `GetMany` / `LiteralSearch` / `Search` / `DomainEvents` | Generic DTO bases naming entity and response: `class QueryGetInvoice(Get[Invoice, ResponseInvoice])`; `DomainEvents` answers the record's events from the event class its response holds | DTO bases | `sincpro_framework.ddd` |
+| `history_of(*records)` | The criteria that reads several records' events together, each by its type and identity | function | `sincpro_framework.ddd` |
 | `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `DEFAULT_*`; the caller's criteria wins part by part (`Criteria.replaced_by`); extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
 | `ResponseRecord` / `ResponseRecords` | One record / a list by key (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
 | `AggregateNotFound` | `Get` named a key with no record; `not_found` on every wire (404 REST) | exception | `from sincpro_framework.ddd import AggregateNotFound` |
@@ -79,9 +80,9 @@ framework behaviour of the store — you write hooks, not repository subclasses.
 
 **(a) Inside the framework.** `sincpro_framework/ddd/` holds the ports and vocabulary
 (`Entity`, mixins, `Criteria`, `IRepository`, capability ports, `Hooks`, `MemoryRepository` as the
-stdlib default). `sincpro_framework/orm/sqlalchemy/` is the only place SQLAlchemy is imported
+stdlib default). `sincpro_framework/data_layer/orm/sqlalchemy/` is the only place SQLAlchemy is imported
 (`Database`, the SQL `Repository`, `data_mapper.py`, `relation_resolver.py`); importing
-`sincpro_framework.orm` without the `[sqlalchemy]` extra raises an `ImportError` naming the extra.
+`sincpro_framework.data_layer.orm` without the `[sqlalchemy]` extra raises an `ImportError` naming the extra.
 
 **(b) Inside a consumer service** — one `UseFramework` bus per bounded context:
 
@@ -90,7 +91,7 @@ domains/billing/
   __init__.py                 billing = config_billing_framework("billing"); then `from . import services`
   domain/invoice.py           @dataclass Invoice(Entity) · Invoices(EntityCollection[Invoice]) — no DB import
   infrastructure/
-    tables.py                 registry() · entity_table(...) · def apply_mappings(): map_aggregates(...)
+    tables.py                 registry() · template_table.entity_table(...) · def apply_mappings(): map_aggregates(...)
     hooks.py                  billing_hooks = Hooks("<pkg>.billing.services.hooks")   # names the package it walks
     dependencies.py           DependencyContextType (repository: Repository) · register_dependencies():
                                 from .hooks import billing_hooks
@@ -128,7 +129,7 @@ bus(CommandPostInvoice) → PostInvoice.execute
 Silent ones first — the runtime gives no error for these.
 
 - **A dataclass field with no `Column` is never stored.** It saves without error and comes back
-  with its default. Every persisted field needs a column in `entity_table(...)`.
+  with its default. Every persisted field needs a column in `template_table.entity_table(...)`.
 - **A mixin without its columns does nothing.** `ArchivableMixin` without `*archive_columns()`:
   `archive()` stamps nothing durable and archived rows keep appearing (only a `Dropped("archived_at")`
   hints at it). `AuditedMixin` needs `*audit_columns()` **and** `Database(url, actor=lambda: …)`,
@@ -216,11 +217,11 @@ class Invoices(EntityCollection[Invoice]): ...
 # domains/billing/infrastructure/tables.py
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
-from sincpro_framework.orm import entity_table, map_aggregates
+from sincpro_framework.data_layer.orm import map_aggregates, template_table
 
 billing_registry = registry()
-customer_table = entity_table("customer", billing_registry.metadata, Column("name", Text, nullable=False))
-invoice_table = entity_table(
+customer_table = template_table.entity_table("customer", billing_registry.metadata, Column("name", Text, nullable=False))
+invoice_table = template_table.entity_table(
     "invoice", billing_registry.metadata,
     Column("number", Text, nullable=False, unique=True),
     Column("customer_id", Text, ForeignKey("customer.id"), nullable=False),
@@ -240,7 +241,7 @@ class RegisterCustomer(Feature):                  # the context's typed base: se
         return ResponseRegisterCustomer(customer_id=customer.id)
 ```
 
-Type `repository:` on `DependencyContextType` with `sincpro_framework.orm.Repository` when
+Type `repository:` on `DependencyContextType` with `sincpro_framework.data_layer.orm.Repository` when
 Features use `context()`, `narrowed()` or `retrying()`; with `ddd.IRepository` when they only
 use the common surface (then `MemoryRepository` substitutes in tests).
 

@@ -161,7 +161,7 @@ def test_the_fastapi_gateway_serves_the_scrape_when_prometheus_records(prometheu
     from fastapi.testclient import TestClient
 
     from sincpro_framework.entrypoints import Exposure
-    from sincpro_framework.entrypoints.fastapi import FastApiGateway
+    from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
 
     bus = _billing()
     client = TestClient(
@@ -184,7 +184,7 @@ def test_no_scrape_route_when_nothing_is_scraped():
     from fastapi.testclient import TestClient
 
     from sincpro_framework.entrypoints import Exposure
-    from sincpro_framework.entrypoints.fastapi import FastApiGateway
+    from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
 
     with metrics.using(InMemoryRecorder()):
         app = FastApiGateway([_billing()], exposure=Exposure.CATALOG, unguarded=True).app()
@@ -213,7 +213,7 @@ def test_what_the_bus_measured_reaches_the_otel_meter(otel_reader):
         {
             "service.name": "billing",
             "sincpro.context": "billing",
-            "sincpro.use_case": "CommandIssueInvoice",
+            "sincpro.use_case": "billing.CommandIssueInvoice",
             "sincpro.layer": "feature",
             "sincpro.outcome": "ok",
             "error.type": "",

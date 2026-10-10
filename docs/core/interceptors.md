@@ -342,7 +342,7 @@ assert tax(CommandComputeTax(amount=100), ResponseComputeTax).tax == 16
 ## Order, replacing, switching off
 
 Several interceptors on one Command run outermost first, in the order every extension point of
-the framework uses (`sincpro_framework.ordering`): `before=` / `after=` by reference, then
+the framework uses (`sincpro_framework.common.ordering`): `before=` / `after=` by reference, then
 `sequence=` (lower first, 10 when not said), then the order they were registered. A
 replacement runs in the place of the one it names and wraps the same Commands; one switched off
 wraps nothing. Error handlers take the same `replaces=`, `before=`, `after=` and `sequence=`.

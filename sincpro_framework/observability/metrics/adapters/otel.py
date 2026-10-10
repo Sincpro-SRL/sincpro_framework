@@ -28,9 +28,11 @@ INSTRUMENTATION = "sincpro_framework"
 
 def host_meter_provider_is_real() -> bool:
     try:
-        from opentelemetry import metrics as otel_metrics
+        import opentelemetry.metrics
 
-        return type(otel_metrics.get_meter_provider()).__name__ not in PROXY_PROVIDERS
+        return (
+            type(opentelemetry.metrics.get_meter_provider()).__name__ not in PROXY_PROVIDERS
+        )
     except Exception:
         return False
 
@@ -38,10 +40,10 @@ def host_meter_provider_is_real() -> bool:
 def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> Any:
     """A meter provider exporting to `endpoint` every 60 s, set as the global one — only when
     nobody registered one first. Answers the global provider either way."""
-    from opentelemetry import metrics as otel_metrics
+    import opentelemetry.metrics
 
     if host_meter_provider_is_real():
-        return otel_metrics.get_meter_provider()
+        return opentelemetry.metrics.get_meter_provider()
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
@@ -55,17 +57,17 @@ def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> An
         resource=Resource.create(attributes),
         metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=endpoint))],
     )
-    otel_metrics.set_meter_provider(provider)
+    opentelemetry.metrics.set_meter_provider(provider)
     return provider
 
 
 class OtelRecorder(Recorder):
     def __init__(self, meter_provider: Any | None = None) -> None:
         try:
-            from opentelemetry import metrics as otel_metrics
+            import opentelemetry.metrics
         except ImportError as error:
             raise ImportError(OTEL_MISSING) from error
-        provider = meter_provider or otel_metrics.get_meter_provider()
+        provider = meter_provider or opentelemetry.metrics.get_meter_provider()
         self._meter = provider.get_meter(INSTRUMENTATION)
         self._lock = threading.Lock()
         self._instruments: dict[str, Any] = {}

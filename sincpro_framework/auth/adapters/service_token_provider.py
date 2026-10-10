@@ -21,13 +21,9 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.auth.domain import (
-    AuthProvider,
-    Credentials,
-    Identity,
-    IdentityKind,
-    Unauthenticated,
-)
+from sincpro_framework.auth.domain.exceptions import Unauthenticated
+from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.domain.provider import AuthProvider
 
 HEADER = "x-sp-service-token"
 """Its own header, so a user's `Authorization` travels untouched beside it."""

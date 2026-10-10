@@ -74,7 +74,7 @@ sincpro_framework/auth/
 └── access_control.py        AccessControl: on · requires · any_of · authenticated · public ·
                              authenticate · allows · check · permitted · scope_of · challenges ·
                              credentials_for · requirements_of · verify · describe
-sincpro_framework/testing/
+sincpro_framework/runtime/testing/
 └── auth.py                  granting, RecordingProvider, AuthProviderContract
 ```
 

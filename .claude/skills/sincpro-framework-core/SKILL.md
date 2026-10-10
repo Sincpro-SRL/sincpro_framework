@@ -58,7 +58,7 @@ Look-alikes: `bus.context(...)` **opens** a context; `self.context` **reads** it
 ```text
 use_bus.py         UseFramework: registration, build (lazy, once, under a lock), context, error chains
 bus.py             FrameworkBus → FeatureBus / ApplicationServiceBus: dispatch by DTO class,
-                   run_through(interceptors), then the scope's error handler
+                   run_around(interceptors), then the scope's error handler
 interceptors.py    CallNext, the chain and its class contract
 error_handler.py   ErrorHandler and the chain (first registered runs first)
 ordering.py        one order for every extension point: before/after, sequence, registration
@@ -208,7 +208,7 @@ framework.add_app_service_error_handler(handler)
 
 Depth: [references/errors.md](references/errors.md).
 
-**Hearing what a call did** (`sincpro_framework.outcomes`). Every Feature and ApplicationService
+**Hearing what a call did** (`sincpro_framework.bus_pipeline.outcomes`). Every Feature and ApplicationService
 that answered emits an `ExecutionCompleted` — the DTO, the response, the execution, the flow's
 context; none when an error handler answered for it. When no handler answered and the exception
 reaches the caller, an `ExecutionFailed` goes with it — once, where it left the call, with its

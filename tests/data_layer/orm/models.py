@@ -1,0 +1,207 @@
+"""The aggregates the persistence tests are written against, and the factory that fills them.
+
+**Throwaway models rather than a project's.** The claim under test is that the layer works
+against *any* mapped class without being told anything about it — running it only against the
+aggregate it was built alongside would not be evidence of that.
+
+`Thing` is a plain dataclass with a nullable column and a list column, the two shapes the
+translator has rules for. `Note` follows the `Entity` convention, so what the convention adds
+— the version check, the stamped `updated_at`, the minted id, the translations — is tested
+beside a class that does not. `Client` adds the two conventions an aggregate opts into,
+`AuditedMixin` and `ArchivableMixin`.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+from sqlalchemy import Column, DateTime, Integer, Table, Text
+from sqlalchemy.orm import registry
+
+from sincpro_framework.data_layer.orm import map_aggregates
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import JsonText
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
+    archive_columns,
+    audit_columns,
+    entity_table,
+    event_columns,
+)
+from sincpro_framework.ddd.entity import (
+    ArchivableMixin,
+    AuditedMixin,
+    ChangeTrackingMixin,
+    Entity,
+    Translated,
+)
+from sincpro_framework.ddd.entity.entity_collection import EntityCollection
+from sincpro_framework.ddd.events import DomainEvent
+
+EPOCH = datetime(2026, 1, 1, 12, 0, 0)
+
+ROW_COUNT = 25
+
+
+@dataclass
+class Thing:
+    thing_id: str
+    name: str
+    size: int
+    tags: list[str]
+    made_at: datetime
+    owner: str | None = None
+
+
+class Things(EntityCollection[Thing]):
+    """A subclass with no methods, to pin that the store hands back the type it was given."""
+
+
+@dataclass
+class Note(Entity):
+    """The aggregate that follows the `Entity` convention, beside one that does not.
+
+    `Thing` proves the layer works for any mapped class; this one proves what the convention
+    adds — the version check, the stamped `updated_at`, the minted id, the labels.
+    """
+
+    title: str = field(metadata={"label": {"default": "Title", "es": "Título"}})
+    body: str = field(default="", metadata={"label": {"default": "Body", "es": "Cuerpo"}})
+
+    @classmethod
+    def translations(cls) -> Translated:
+        return {"default": "Note", "es": "Nota"}
+
+
+class Notes(EntityCollection[Note]):
+    pass
+
+
+@dataclass
+class Client(AuditedMixin, ArchivableMixin, Entity):
+    """The two conventions an aggregate opts into, on one class: who wrote it, and putting it
+    away instead of deleting it."""
+
+    name: str
+    city: str = ""
+
+
+class Clients(EntityCollection[Client]):
+    pass
+
+
+@dataclass
+class TrackedNote(ChangeTrackingMixin, Entity):
+    """`Note`, opted into `ChangeTrackingMixin`, with one field explicitly excluded — the
+    aggregate the tracking tests are written against."""
+
+    title: str
+    body: str = ""
+    render_cache: str = field(default="", metadata={"tracked": False})
+
+
+class TrackedNotes(EntityCollection[TrackedNote]):
+    pass
+
+
+@dataclass
+class Draft(Entity):
+    """An aggregate with a field that declares a default and a column that may be NULL.
+
+    What a row written before the field existed looks like: the column is there and empty. The
+    domain says `list[str]`, not `list[str] | None`, and the one beside it says the opposite —
+    together they pin which of the two a NULL answers.
+    """
+
+    labels: list[str] = field(default_factory=list)
+    note: str | None = None
+
+
+class Drafts(EntityCollection[Draft]):
+    pass
+
+
+@dataclass(kw_only=True)
+class RunStageReached(DomainEvent):
+    """A fact kept in a table of its own — what an event store and an outbox both are."""
+
+    name = "orm.v1.stored_event"
+    run_id: str = ""
+    stage: str = ""
+
+
+mapper_registry = registry()
+
+thing_table = Table(
+    "thing",
+    mapper_registry.metadata,
+    Column("thing_id", Text, primary_key=True),
+    Column("name", Text, nullable=False),
+    Column("size", Integer, nullable=False),
+    # Nullable on purpose: a list column written before the field existed holds NULL.
+    Column("tags", JsonText),
+    Column("made_at", DateTime, nullable=False),
+    # Nullable on purpose: this is the column the ordering refusal is tested against.
+    Column("owner", Text),
+)
+
+note_table = entity_table(
+    "note",
+    mapper_registry.metadata,
+    Column("title", Text, nullable=False),
+    Column("body", Text, nullable=False),
+)
+
+client_table = entity_table(
+    "client",
+    mapper_registry.metadata,
+    *audit_columns(),
+    *archive_columns(),
+    Column("name", Text, nullable=False),
+    Column("city", Text, nullable=False),
+)
+
+tracked_note_table = entity_table(
+    "tracked_note",
+    mapper_registry.metadata,
+    Column("title", Text, nullable=False),
+    Column("body", Text, nullable=False),
+    Column("render_cache", Text, nullable=False),
+)
+
+draft_table = entity_table(
+    "draft",
+    mapper_registry.metadata,
+    # Both nullable: the row predates the fields, which is the case this pins.
+    Column("labels", JsonText),
+    Column("note", Text),
+)
+
+stored_event_table = entity_table(
+    "stored_event",
+    mapper_registry.metadata,
+    *event_columns(),
+    Column("run_id", Text),
+    Column("stage", Text),
+)
+
+map_aggregates(
+    mapper_registry,
+    {
+        Thing: thing_table,
+        Note: note_table,
+        Client: client_table,
+        TrackedNote: tracked_note_table,
+        Draft: draft_table,
+        RunStageReached: stored_event_table,
+    },
+)
+
+
+def a_thing(number: int) -> Thing:
+    """Deliberately not unique in `size`, so the keyset has to use its tiebreaker."""
+    return Thing(
+        thing_id=f"th_{number:04d}",
+        name=f"thing {number}",
+        size=number % 5,
+        tags=["even" if number % 2 == 0 else "odd", f"n{number}"],
+        made_at=EPOCH + timedelta(minutes=number),
+        owner=None if number % 3 == 0 else f"owner-{number % 3}",
+    )

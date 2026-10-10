@@ -16,13 +16,13 @@ Postgres, to several databases, to another context's bus, without its Features n
 
 **Decision.** `sincpro_framework.ddd` is vocabulary with no database in it: `Entity`, `Criteria`,
 `Specification`, `EntityCollection`, `Meta`, `Relation`, `DomainEvent`, the exceptions.
-`sincpro_framework.orm` is the SQLAlchemy adapter, an optional extra. Nothing under `ddd/`
+`sincpro_framework.data_layer.orm` is the SQLAlchemy adapter, an optional extra. Nothing under `ddd/`
 imports SQLAlchemy.
 
 **Why.** Most services that install the framework never touch a database from it: they run a bus.
 They must not pay for a driver, and a service that only *speaks* `Criteria`, a gateway, a
-frontend adapter, must not need one either. `tests/orm/test_optional_extra.py` and
-`tests/test_backward_compat.py` block `sqlalchemy` in a fresh interpreter and prove the line
+frontend adapter, must not need one either. `tests/data_layer/orm/test_optional_extra.py` and
+`tests/core/test_backward_compat.py` block `sqlalchemy` in a fresh interpreter and prove the line
 holds, and prove that the bus a project already runs on is untouched by all of this.
 
 **Rejected.** One package with SQLAlchemy as a hard dependency. Simpler, and it would have made
@@ -79,7 +79,7 @@ definition, so the interface cannot offer what it was not given.
 **Rejected.** A separate `describe` endpoint, tried first to save a kilobyte per page. It cost more
 in surprise than it saved in bytes.
 
-`ddd/entity/model_meta.py`, `orm/sqlalchemy/services/model_introspection.py`.
+`ddd/entity/entity_meta.py`, `orm/sqlalchemy/services/model_introspection.py`.
 
 ---
 
@@ -125,7 +125,7 @@ menu. Odoo has run one namespace with a dozen types for twenty years; the team a
 **Rejected.** A separate `RelationMeta`. It existed for a day. It doubled the lookups, and the
 separation it drew, "relations are different", is already drawn by `type`.
 
-`ddd/entity/model_meta.py`.
+`ddd/entity/entity_meta.py`.
 
 ---
 
@@ -145,7 +145,7 @@ inference only when it is unambiguous, and an ambiguous or unresolvable pointer 
 `not_expandable`.
 
 `orm/sqlalchemy/services/model_introspection.py`, `orm/sqlalchemy/services/data_mapper.py`
-(`_inferred_foreign_keys`), `tests/orm/test_relation_precedence.py`.
+(`_inferred_foreign_keys`), `tests/data_layer/orm/test_relation_precedence.py`.
 
 ---
 
@@ -384,9 +384,9 @@ named after the pattern it implements and against the one it avoids, Active Reco
   imports, models in their own module, one in-memory database per test.
 - **The N+1 is pinned by counting statements**, not by shapes: every promise about cost reduces
   to a number, and a number is only a guarantee if a test asserts it.
-- **A model with every kind of field** (`tests/orm/every_kind_models.py`) and **one criteria that
+- **A model with every kind of field** (`tests/data_layer/orm/every_kind_models.py`) and **one criteria that
   asks for everything**, written before the code: the specification of the unified definition.
-- **Precedence and edges** (`tests/orm/test_relation_precedence.py`): the cases where a name could
+- **Precedence and edges** (`tests/data_layer/orm/test_relation_precedence.py`): the cases where a name could
   be read two ways, empty values, a pydantic value object deserialised from JSON.
 - **The real-world suite** (`tests/realworld`): an accounting ledger, three bounded contexts, the
   event chain, two processes on one row, the async door, at 2 000 or 25 000 entries, timed.
@@ -409,14 +409,14 @@ named after the pattern it implements and against the one it avoids, Active Reco
 ## 19. Migrations: the project writes the steps, the framework orchestrates them
 
 A bounded context may own several stores, and contexts share databases, so there are many
-chains of migrations and nothing in any one tool orders them. `sincpro_framework.migrations`
+chains of migrations and nothing in any one tool orders them. `sincpro_framework.data_layer.migrations`
 merges every chain into one timeline — each chain in its own order, `requires` first, the oldest
 UUIDv7 among the rest — reads where each store stands from the store itself, and moves the whole
 system forward or back as one. Each (context × store) is one linear chain with its own version
 table, never Alembic branches, whose downgrades across bases corrupt the version table.
 
 The core is engine-agnostic and needs no database: `MigrationEngine` is one abstract class, and
-Alembic — `sincpro_framework.orm.migrations`, behind the `[migrations]` extra — is the engine
+Alembic — `sincpro_framework.data_layer.orm`, behind the `[migrations]` extra — is the engine
 shipped for SQL stores. Migrations run with the system down, so there are no locks, and a failed
 step stops the run where it is: nothing reverts on its own, and a store without transactions is
 recorded dirty until a human resolves it. The design and its evidence: PRD_05.
@@ -683,7 +683,7 @@ which numbers the event in the entity's history (`entity_version` 1, 2, 3 …) a
 `repository.get` rebuilds it from its events, `repository.save` appends the new ones, and
 `UNIQUE (entity_type, entity_id, entity_version)` turns two writers of one version into
 `StaleAggregate`. Table definitions are templates, one file each, in
-`orm/sqlalchemy/entrypoint/templates/` (`entity`, `audit`, `archive`, `numbering`, `events`);
+`orm/sqlalchemy/entrypoint/template_table/` (`entity`, `audit`, `archive`, `numbering`, `events`);
 `data_mapper` only maps.
 
 Removed: `EventStore`, `DatabaseEventStore`, `event_store_table`, `EventStoreQueue`,

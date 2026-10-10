@@ -55,11 +55,11 @@ What it is not:
 | `IRepository` | The read/write aggregate port. `Analyzes`, `WritesInBulk` and `Transacts` are separate capabilities; the SQL adapter is `orm.Repository`. | port | `from sincpro_framework.ddd import IRepository` |
 | `AggregateRepository[T]` | Typed view of one aggregate over a repository; `get(id)`, `search(criteria)`, `save(aggregate)`. SQL-specific view: `orm.DatabaseAggregateRepository[T]`. | adapter view | `from sincpro_framework.ddd import AggregateRepository` |
 | `DomainEvent` | A fact that happened. An `Entity` subclass with correlation/causation ids, recorded on an aggregate (`record`) and drained (`pull_events`). | base class | `from sincpro_framework.ddd import DomainEvent` |
-| `DomainError` + `failure_kind` | Base of every expected refusal. A subclass declares `failure_kind = FailureKind.NOT_FOUND` (…) and every wire maps it to its code. | exception | `from sincpro_framework.ddd import DomainError`; `from sincpro_framework.transport.failures import FailureKind` |
+| `DomainError` + `failure_kind` | Base of every expected refusal. A subclass declares `failure_kind = FailureKind.NOT_FOUND` (…) and every wire maps it to its code. | exception | `from sincpro_framework.ddd import DomainError`; `from sincpro_framework.common.failures import FailureKind` |
 | Adapter | A class in `adapters/` that wraps an external system or a replaceable mechanism, registered as a dependency. | convention | — |
 | Port | A `typing.Protocol` the use cases call (a Feature, an ApplicationService or the domain), in `domain/`, when there are 2+ implementations or a test double is a real consumer. A contract only an adapter calls — the one a facade holds its implementations by — lives in that adapter's folder, not in `domain/`. | convention | `from typing import Protocol` |
 | Gateway / entrypoint | A wire that reads one or more buses and publishes their use cases (REST, JSON-RPC, gRPC, MCP, queue). Built in `entrypoints/`; never registers a use case. | class | `from sincpro_framework.entrypoints import Gateway` (base) |
-| Exposure decorators | `@rest.get(...)`, `@rpc()`, `@grpc()`, `@mcp()`, `@queue(...)`, `@internal` on the existing handler in `services/`. Import no transport library. | decorator | `from sincpro_framework.entrypoints.exposure import rest, rpc, grpc, mcp, queue, internal` |
+| Exposure decorators | `@rest.get(...)`, `@rpc()`, `@grpc()`, `@mcp()`, `@queue(...)`, `@internal` on the existing handler in `services/`. Import no transport library. | decorator | `from sincpro_framework.entrypoints import rest, rpc, grpc, mcp, queue, internal` |
 
 ## Architecture
 
@@ -77,7 +77,7 @@ What it is not:
 Dependencies point inward: `entrypoints → bus → services → domain`, with `adapters` implementing
 what `domain` declares and `infrastructure` choosing which adapter each context gets. Contexts form
 an acyclic graph; `common/` is the foundation and imports no sibling context.
-`sincpro_framework.testing.layer_violations("my_service")` checks these rules in a test.
+`sincpro_framework.runtime.testing.layer_violations("my_service")` checks these rules in a test.
 
 ### Canonical tree of a multi-context service
 

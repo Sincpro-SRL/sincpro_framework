@@ -1,6 +1,6 @@
 # Persistence: the vocabulary, the SQLAlchemy adapter, and what stays in your project
 
-`sincpro_framework.ddd` says what an aggregate is and how it is asked about. `sincpro_framework.orm`
+`sincpro_framework.ddd` says what an aggregate is and how it is asked about. `sincpro_framework.data_layer.orm`
 runs that against a database. The first needs nothing installed; the second is the optional extra
 `sincpro-framework[sqlalchemy]`, like `[opentelemetry]` and `[rpc]`.
 
@@ -18,7 +18,7 @@ catalogue before it moved here.
 | `Entity` | The four fields every aggregate carries: `id` (UUID v7, 32 hex chars), `created_at`, `updated_at`, `version` | A dataclass base; a subclass keeps declaring its own fields positionally |
 | `Criteria` | What a caller asks: `where`, `order`, `pagination`, `grouping`, `count`, `meta` | A DTO; it is what a URL, a queue or a POST body carries |
 | `EntityCollection[T]` | What comes back: the records, the `cursor`, a typed `Count`, what was `dropped`, and the model's `meta` | Frozen; every derived collection drops its page metadata |
-| `Meta` | What the model publishes: fields, types, operators, what is sortable | Reaches the client as `model_meta_data` |
+| `Meta` | What the model publishes: fields, types, operators, what is sortable | Reaches the client as `entity_meta_data` |
 | `Query` / `ResponsePaginatedQuery` | The two shapes every read inherits | Command and Response bases |
 | `IRepository` | The baseline every store answers: `ReadsAggregates` + `WritesAggregates`, and the hooks | The aggregate port; request additional capabilities explicitly |
 | `Analyzes` · `WritesInBulk` · `Transacts` | Capabilities a store adds when it can honour them: folding numbers, writing past the aggregate, a unit of work | A shared component asks for exactly the ones it calls |
@@ -80,10 +80,10 @@ across every language at once, never ordered.
 
 ---
 
-## 2. The adapter — `sincpro_framework.orm`
+## 2. The adapter — `sincpro_framework.data_layer.orm`
 
 ```python
-from sincpro_framework.orm import Database, Repository, entity_table, map_aggregates
+from sincpro_framework.data_layer.orm import Database, Repository, map_aggregates, template_table
 
 database = Database("postgresql+psycopg://…")           # one per bounded context
 repository = Repository(database)                     # injected as `self.repository`
@@ -119,10 +119,10 @@ with self.repository.context() as repository:                         # several 
 | `repository.session`, `flush`, `commit`, `savepoint` | both | Inside a unit of work only: SQLAlchemy whole, a checkpoint, a part that fails on its own |
 | `get(…, for_update=True)`, `search(…, for_update=True)` | read | Row locks held until the unit of work commits; `skip_locked` steps over what another worker holds, `nowait` fails at once |
 
-The adapter `sincpro_framework/orm/sqlalchemy/` is in the layers every framework component uses,
+The adapter `sincpro_framework/data_layer/orm/sqlalchemy/` is in the layers every framework component uses,
 one module per responsibility, each named after what it does. A layer imports only the ones
 below it, and inside `services/` the workflows orchestrate the atomic services as an
-ApplicationService orchestrates Features — `tests/orm/test_layers.py` holds it to both:
+ApplicationService orchestrates Features — `tests/data_layer/orm/test_layers.py` holds it to both:
 
 | Layer · module | What it is |
 |---|---|
@@ -148,7 +148,7 @@ ApplicationService orchestrates Features — `tests/orm/test_layers.py` holds it
 | **infrastructure/** `observability.py` | every statement to the logger, the tracer and the error tracker |
 | **infrastructure/** `change_tracking.py` · `read_tracking.py` · `cache_invalidation.py` | what every flush and every read goes through without being asked |
 
-What a project imports is what `sincpro_framework.orm` exports; the paths inside are the
+What a project imports is what `sincpro_framework.data_layer.orm` exports; the paths inside are the
 framework's own.
 
 ### Criteria is the boundary language; inside, SQLAlchemy is whole
@@ -193,7 +193,7 @@ Every gateway already maps these: `InvalidCriteria` and `ContractViolation` → 
 mapper_registry = registry()
 metadata = mapper_registry.metadata
 
-invoice_table = entity_table(
+invoice_table = template_table.entity_table(
     "invoice", metadata,
     Column("number", Text, nullable=False),
     Column("total", Numeric, nullable=False),
@@ -228,7 +228,7 @@ map_aggregates(registry, {Dataset: dataset_table},
 class Client(AuditedMixin, ArchivableMixin, Entity):
     name: str
 
-client_table = entity_table(
+client_table = template_table.entity_table(
     "client", metadata, *audit_columns(), *archive_columns(), Column("name", Text, nullable=False)
 )
 ```
@@ -240,7 +240,7 @@ client_table = entity_table(
 
 - **SQLite.** The pragmas a server wants (WAL, busy timeout, foreign keys) and the column types a
   legacy schema needs (ISO text timestamps, lists of dataclasses) are the project's: `sincpro_synthesis`
-  keeps both in its own `orm/`. `entity_table(..., datetime_type=...)` takes whatever the project uses.
+  keeps both in its own `orm/`. `template_table.entity_table(..., datetime_type=...)` takes whatever the project uses.
 - **PostgreSQL.** The translator is portable except date grains in `grouping`, which come from a
   per-dialect registry with SQLite and Postgres built in. `contains` over a JSON-as-text column is a
   `LIKE` on the cast text on both engines; a project on `jsonb` that wants `@>` writes it through the

@@ -9,7 +9,7 @@ this is what you use when a broker is also a door into your Commands. Full depth
 ```python
 from faststream import FastStream
 from faststream.kafka import KafkaBroker
-from sincpro_framework.entrypoints.faststream import QueueGateway
+from sincpro_framework.entrypoints.adapters.faststream import QueueGateway
 
 broker = KafkaBroker("kafka:9092")
 gateway = QueueGateway(broker, [billing, accounting])
@@ -25,7 +25,7 @@ app = FastStream(broker)                 # `faststream run app:app`
 | a Command | `@queue.consumes(channel, producers=, max_attempts=, concurrency=)` | point-to-point: exactly one handler per channel; no answer — its outcome is a verdict |
 
 ```python
-from sincpro_framework.entrypoints.exposure import queue
+from sincpro_framework.entrypoints.entrypoint.decorators import queue
 
 @accounting.feature(InvoiceIssued)              # heard — nothing to declare
 class Book(Feature): ...
@@ -76,7 +76,7 @@ Binary-mode CloudEvents 1.0: `ce_id`, `ce_source`, `ce_type`, `ce_subject`, `ce_
 `ce_correlationid`, `ce_causationid`, plus `traceparent`. A producer stamps them:
 
 ```python
-from sincpro_framework.entrypoints.faststream import cloud_event_headers
+from sincpro_framework.entrypoints.adapters.faststream import cloud_event_headers
 headers = cloud_event_headers(command, source="urn:svc:sales", id=request_id)
 await broker.publish(command.model_dump_json().encode(), "billing.invoices.issue", headers=headers)
 ```

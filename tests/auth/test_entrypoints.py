@@ -43,17 +43,27 @@ from sincpro_framework.auth import (
     current_identity,
 )
 from sincpro_framework.auth.adapters.service_token_provider import HEADER
-from sincpro_framework.auth.transports import identity_headers
-from sincpro_framework.entrypoints.exposure import Exposure, GrpcBinding, RpcBinding
-from sincpro_framework.entrypoints.grpc import GrpcGateway
-from sincpro_framework.entrypoints.grpc.wire import scalar_to_struct, struct_to_scalar
-from sincpro_framework.entrypoints.mcp import auth as mcp_auth
-from sincpro_framework.entrypoints.mcp.mcp import fastmcp_callable
-from sincpro_framework.entrypoints.rpc import RpcGateway
-from sincpro_framework.entrypoints.rpc.jrpc import PERMISSION_DENIED, UNAUTHENTICATED
-from sincpro_framework.remote_execution.domain.payload import ChunkReader, packed, unpacked
-from sincpro_framework.remote_execution.entrypoint.execution import execute_hosted
-from sincpro_framework.testing import AuthProviderContract
+from sincpro_framework.auth.entrypoint.transports import identity_headers
+from sincpro_framework.common.serialization import rebuilt
+from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints.adapters.grpc.wire import (
+    scalar_to_struct,
+    struct_to_scalar,
+)
+from sincpro_framework.entrypoints.adapters.mcp import auth as mcp_auth
+from sincpro_framework.entrypoints.adapters.mcp.mcp import fastmcp_callable
+from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints.adapters.rpc.errors import (
+    PERMISSION_DENIED,
+    UNAUTHENTICATED,
+)
+from sincpro_framework.entrypoints.domain.bindings import GrpcBinding, RpcBinding
+from sincpro_framework.entrypoints.domain.surface import Exposure
+from sincpro_framework.remote_execution.domain.payload import Payload
+from sincpro_framework.remote_execution.entrypoint.execution import (
+    execute_hosted,
+)
+from sincpro_framework.runtime.testing import AuthProviderContract
 
 
 class Perm(Permission):
@@ -240,7 +250,7 @@ def _as_mcp_http_call(monkeypatch: pytest.MonkeyPatch, headers: Mapping[str, str
 
 
 def _mcp_issue(billing: UseFramework) -> Any:
-    from sincpro_framework.entrypoints.catalog import Catalog
+    from sincpro_framework.entrypoints.entrypoint.catalog import Catalog
 
     operation = next(
         one for one in Catalog(billing).get_scalar_use_cases() if one.name == "CommandIssue"
@@ -324,12 +334,9 @@ def test_the_identity_crosses_to_another_service_signed_and_nothing_else_does() 
 
     def hosted(headers: Mapping[str, str]) -> Issued:
         credentials = Credentials(transport="service", headers=headers)
-        name = next(one for one in host.dto_registry if one.endswith(".CommandIssue"))
-        body = ChunkReader(iter(packed(CommandIssue())))
-        answer = execute_hosted(
-            {host.name: host}, host.name, name, body, None, {}, credentials
-        )
-        return unpacked(ChunkReader(answer), Issued)
+        body = Payload.of("hosted-billing.CommandIssue", CommandIssue()).as_json()
+        answer = execute_hosted({host.name: host}, host.name, body, {}, credentials)
+        return rebuilt(Payload.from_json(answer).data, Issued)
 
     with as_identity(
         caller_auth.authenticate(Credentials(transport="http", headers=_bearer("t-issuer")))

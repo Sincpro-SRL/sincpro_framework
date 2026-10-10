@@ -226,7 +226,7 @@ its stdin closes. Its logs come out on this process's stdout.
 | | gRPC — `grpc://` | HTTP — `http://`, `https://` |
 |---|---|---|
 | host | `serve(...)` — its own port | `open_host_routes(...)` on the REST API's app |
-| wire | `/sincpro.Contexts/Execute`, client and server streaming of 1 MiB chunks | `POST /sincpro/contexts/execute`, chunked request, streamed response |
+| wire | `/sincpro.Contexts/Execute`, the message streamed in 1 MiB chunks both ways | `POST /sincpro/contexts/execute`, the message as the body and as the answer |
 | caller's client | `grpcio` (the `[grpc]` extra) | the standard library — no extra |
 | deadline | the whole call | each read and write |
 | choose it when | the context has its own port, or the fastest path matters | the context already sits behind a REST API, ingress, TLS or a gateway |
@@ -236,25 +236,21 @@ Measured on one machine: 64 MiB round trip in 0.8 s, 256 MiB in 4.2 s over gRPC.
 ## How a call travels
 
 1. `billing(dto, Response)` finds `billing` in the context map.
-2. Each DTO, dataclass or pydantic `Secret` is written as its values — dumped in pydantic's python
-   mode, `bytes` included — and the name of its class, and `pickle`d into 1 MiB chunks; a large
-   `bytes` value is handed over as itself and cut, never copied whole. The context's name, the DTO's
-   registered name, the request context (each value packed the same way) and the trace
-   (`traceparent`) ride as metadata or headers.
-3. On the host the payload is read as it arrives, through an **allow-list** — builtin containers
-   and scalars, `bytes`, `datetime`/`date`/`time`/`timedelta`, `Decimal`, `UUID`, enum members, and
-   DTOs and secrets by the name of their class — and rebuilt by the DTO's own class, which fits the
-   values: unknown fields ignored, defaults filled. It is executed inside the caller's request
-   context and trace.
-4. The answer is finished before its first chunk leaves, so a failure is answered as one — never as
-   a cut stream — and it travels back the same way; the caller rebuilds it as the response class it
-   asked for, else the one its handler declares, else each DTO as the class the host named — when
-   the caller imported it; its values when not.
+2. The call is one JSON payload (`remote_execution.domain.payload`): `{"type": "billing.CommandIssueInvoice",
+   "data": {...}, "correlation_id", "causation_id", "context": {...}}`. `type` is the DTO's
+   identity — an event's `name`, any other DTO's `context.Class` — so moving a class to another
+   module changes nothing; `data` holds its values as its class dumps them, `bytes` as
+   `{"$bytes": "<base64>"}`. The context's name and the trace (`traceparent`) ride as metadata or
+   headers.
+3. The host finds the DTO by its identity in that context and rebuilds it with its own class:
+   fields by name, an unknown one ignored, a missing one defaulted, a missing required one
+   `DTODoesNotFit` naming it. It is executed inside the caller's request context and trace.
+4. The answer travels back as a message, finished before it leaves, so a failure is answered as one.
+   The caller rebuilds it as the response class it asked for, else the one its handler declares,
+   else the class it registers under the answer's `type`; its JSON values when none says.
 
-**Why not JSON:** pydantic writes `bytes` as UTF-8, so a PDF fails, and a base64 string cannot be
-told from a text one on the way back. **Why `pickle` is safe here:** only values are packed — never
-objects of the project — and the receiver refuses, while reading and before anything is built, any
-class outside the allow-list; no code runs on receipt.
+The context travels as JSON values too: a `Decimal` arrives as text, a DTO as a dict, a `Secret`
+as what it holds. A handler that reads a typed value declares it — `TypedCodec`, a DTO field.
 
 ## Errors
 
@@ -268,8 +264,10 @@ class outside the allow-list; no code runs on receipt.
 | the host took the call and the connection was lost | `ContextOutcomeUnknown` — it may have run | `unknown_outcome` |
 | the deadline passes | `ContextTimeout` (an `ContextOutcomeUnknown`) | `unknown_outcome` |
 
+An error is the one thing still found by `module.qualname` — it is no message and has no identity.
 The caller never imports a module because the host named it: the class is looked up among what the
-caller already imported, and rebuilt without calling its constructor. Dunder attributes
+caller already imported, and rebuilt without calling its constructor, its `args` and attributes as
+JSON values. Dunder attributes
 (`__notes__`, the framework's marks) stay on the host, as does an attribute that cannot be written;
 details past 4 KiB travel as the message alone. The host still logs and reports its own failure.
 
@@ -280,18 +278,16 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 ## What to know before relying on it
 
 - **The same package on both ends, at whatever version each deployment has.** A DTO is found by its
-  registered name — `module.qualname`, an event by its `name` — and rebuilt by the receiver's class.
-  A field added with a default keeps every caller working; renaming or moving a class is the one
-  change that breaks one, and it says so.
+  identity — `context.Class`, an event by its `name` — and rebuilt by the receiver's class. A field
+  added with a default keeps every caller working; renaming a class is the one change that breaks
+  one, and it says so.
 - **Python on both ends.** `/sincpro.Contexts/Execute` and `/sincpro/contexts/execute` carry Python's
   values; another language uses the gateway's `Struct` methods and its `.proto` export.
-- **Values only.** Anything outside the allow-list raises `CannotTravel` on the receiving side; a
-  context value that cannot be written (a lock, a connection) stays behind with a warning, and the
-  call goes on.
-- **Memory, not the wire, is the limit.** A payload is held once on each end; one larger than memory
-  belongs in storage, with a reference in the DTO — the claim check pattern.
-- **Opaque to generic tools.** The bodies are bytes: `grpcurl` and reflection see the method, not
-  the fields.
+- **Values only.** What JSON cannot write fails on the sending side; a context value that cannot be
+  written (a lock, a connection) stays behind with a warning, and the call goes on.
+- **Memory, not the wire, is the limit.** A message is held whole on each end, `bytes` a third
+  larger as base64; one larger than memory belongs in storage, with a reference in the DTO — the
+  claim check pattern.
 
 ## What it does not do
 
@@ -311,9 +307,11 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 | `bus.run_here()` | run here whatever the map says — what serving a context does |
 | `bus.is_reference`, `bus.is_ready` | a reference to a context hosted elsewhere; ready to answer — built, or a reference |
 | `bus.serve(address, attach)`, `serve_contexts([...], address, attach)`, `Attach`, `OpenHost` | the Open Host Service over gRPC |
-| `open_host_routes([...])` | `sincpro_framework.remote_execution.entrypoint.http` — the Open Host Service on an ASGI app |
-| `ContextFailed`, `ContextUnavailable`, `ContextOutcomeUnknown`, `ContextTimeout`, `DTODoesNotFit`, `CannotTravel` | `sincpro_framework.remote_execution` |
-| `Wire`, `HostedAt`, `HostedContext`, `InvalidAddress` | `sincpro_framework.remote_execution` (from `transport.addresses`) |
+| `open_host_routes([...])` | `sincpro_framework.remote_execution` — the Open Host Service on an ASGI app (needs `[rpc]`) |
+| `ContextFailed`, `ContextUnavailable`, `ContextOutcomeUnknown`, `ContextTimeout`, `DTODoesNotFit` | `sincpro_framework.remote_execution` |
+| `Payload` · `pack` / `unpack` | `sincpro_framework.remote_execution.domain.payload` · `sincpro_framework.common.serialization` — what a call and its answer travel as |
+| `registered_name` | `sincpro_framework.common.naming` — what a DTO is known by: an event's `name`, any other `context.Class` |
+| `Wire`, `HostedAt`, `HostedContext`, `InvalidAddress` | `sincpro_framework.remote_execution` (from `common.transport.addresses`) |
 | `open_host([...])` → `.server()` / `.mount(server)` | the gRPC open host as a server of its own (what `bus.serve` runs: the door and its health, never the contexts' public catalog), or mounted on a server of the caller's — beside a public `GrpcGateway` on one port, on purpose |
 
 ## Module map
@@ -322,8 +320,7 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 
 | Module | What it holds |
 |---|---|
-| `sincpro_framework.transport.addresses` | `Wire`, `HostedAt`, `HostedContext`, `InvalidAddress` — where a context is reached; the settings declare it too, so it imports neither |
-| `domain/payload.py` | the published language: `pack` / `packed`, `unpack` / `unpacked`, `pack_context` / `unpack_context`, the allow-list, `ChunkReader` |
+| `sincpro_framework.common.transport.addresses` | `Wire`, `HostedAt`, `HostedContext`, `InvalidAddress` — where a context is reached; the settings declare it too, so it imports neither |
 | `domain/errors.py` | what a failed call raises, an error's details, and raising a remote exception as itself |
 | `adapters/transport.py` | `Transport`, the contract `transport_for` holds the transports by (only the adapters call it) |
 | `adapters/http.py` | the caller's side over HTTP — the standard library, no extra |
@@ -338,4 +335,4 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 
 The core imports `remote_execution` and runs a local bus with every extra missing; an `http://`
 address needs nothing but the standard library, a `grpc://` one raises the `[grpc]` `ImportError`
-at the call (`tests/test_core_without_extras.py`).
+at the call (`tests/core/test_core_without_extras.py`).

@@ -12,7 +12,7 @@ issuer, an API key table, Odoo, a policy engine, a relationship store.
 Context: one method is required, `authenticate`; every other has a default that holds for the
 common case and is overridden only when the protocol needs it. An abstract class, like
 `KeyValueStore`: a provider of the project's proves itself with
-`sincpro_framework.testing.AuthProviderContract`. Synchronous, like the bus — an entrypoint runs
+`sincpro_framework.runtime.testing.AuthProviderContract`. Synchronous, like the bus — an entrypoint runs
 the bus on a worker thread, so a provider that calls the network blocks that thread only.
 """
 

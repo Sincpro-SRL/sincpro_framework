@@ -12,6 +12,7 @@ no members be extended.
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
 
 class Permission(StrEnum):
@@ -39,3 +40,19 @@ class AnyOf:
 
 
 type Requirement = Permission | AnyOf
+
+
+@dataclass(frozen=True)
+class Declaration:
+    """What a use case or a hook declared: `public`, `authenticated`, or the requirements it
+    needs, and what it does when they are missing."""
+
+    kind: Literal["public", "authenticated", "requires"]
+    requirements: tuple[Requirement, ...] = ()
+    when_denied: WhenDenied = WhenDenied.RAISE
+
+    def __str__(self) -> str:
+        if self.kind != "requires":
+            return self.kind
+        needed = " and ".join(str(one) for one in self.requirements)
+        return needed if self.when_denied == WhenDenied.RAISE else f"{needed} (else skipped)"

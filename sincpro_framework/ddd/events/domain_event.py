@@ -47,15 +47,17 @@ field instead of the wire name, which is refused at class-declaration time, loud
 """
 
 import dataclasses
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from sincpro_framework.annotations import own_annotations
+from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context.domain.execution import chained
 from sincpro_framework.ddd.entity import Entity, utc_now
+from sincpro_framework.ddd.entity.entity import json_serializer
+from sincpro_framework.ddd.entity.utils.annotations import own_annotations
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ids import new_entity_id
 
 NAME = "name"
 
@@ -104,6 +106,39 @@ class DomainEvent(Entity):
             )
         if NAME not in cls.__dict__:
             cls.name = cls.__name__
+        if not isinstance(cls.name, str) or not cls.name.strip():
+            raise ContractViolation(
+                f"{cls.__name__} is named {cls.name!r}: a name is what the event is known by on "
+                "the wire and in its table, so it cannot be blank"
+            )
+
+    def execution_cause(self) -> tuple[str, str | None]:
+        """What an execution of this event is caused by: this event, in its flow — read by the
+        context without knowing what an event is."""
+        return self.id, self.correlation_id
+
+    @classmethod
+    def identity_in(cls, context: str) -> str:
+        """An event is known by its `name` in every context: the name is what crosses contexts."""
+        return cls.name
+
+    def as_json(self) -> str:
+        """The event as JSON text, its `name` included: a body read alone — in a dead-letter
+        queue, a log line, another service — says which event it is.
+
+            >>> Posted(amount=5).as_json()
+            '{"name":"Posted","id":"…","created_at":"…",…,"amount":5}'
+        """
+        written = json_serializer(type(self)).dump_python(self, mode="json")
+        return json.dumps({NAME: self.name, **written}, separators=(",", ":"))
+
+    @classmethod
+    def from_json(cls, data: "str | dict[str, Any]") -> Any:
+        """Rebuilds the event from JSON text or a dict; the `name` it carries says which event
+        it was, and the class rebuilding it is already that event."""
+        written = json.loads(data) if isinstance(data, str) else dict(data)
+        written.pop(NAME, None)
+        return json_serializer(cls).validate_python(written)
 
     def caused_by(self, cause: "DomainEvent") -> "DomainEvent":
         """This event's place in the chain the other one started.

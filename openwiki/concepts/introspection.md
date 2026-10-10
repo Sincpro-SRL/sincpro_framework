@@ -84,7 +84,7 @@ Three consequences are worth holding onto:
 - **Both halves of the guard are load-bearing.** `build_root_bus()` flips `was_initialized = True`
   *before* the facade exists (`sincpro_framework/use_bus.py:127`, `:130`), so a build that raised
   leaves `was_initialized` true with `bus is None` — a state the second half of the condition catches.
-  `tests/test_introspection.py:76-80` pins the plain case: a fresh `UseFramework` raises on
+  `tests/introspection/test_introspection.py:76-80` pins the plain case: a fresh `UseFramework` raises on
   `features(framework)`.
 
 `built_bus()` is exported (`sincpro_framework/introspection/__init__.py:12`, `:22`) for a consumer that
@@ -147,14 +147,14 @@ Two implementation details make the ladder behave the way it does:
   docstrings anywhere is still described — as `"Ping"`, not as an empty string.
 
 The effect in practice: a handler with no class docstring but a documented `execute` gets the
-`execute` text. `tests/test_introspection.py` pins exactly that — `PingFeature` declares only
+`execute` text. `tests/introspection/test_introspection.py` pins exactly that — `PingFeature` declares only
 `execute` with `"""Say hi back."""` and the metadata's description is `"Say hi back."` (`:27-30`,
 `:59`) — while `OrchestrateService`, which declares a class docstring, keeps it (`:33-37`, `:64`).
 
 `dtos()` uses a different rule on purpose: `_own_docstring(dto_type)` only, with no ladder
 (`sincpro_framework/introspection/inspector.py:116`). A DTO is a schema, not a handler, so there is no
 `execute` to fall back to and the class name is not a substitute for a description — hence the
-`str | None` type. `tests/test_introspection.py:67-73` pins both ends: `"Ping a name."` for a
+`str | None` type. `tests/introspection/test_introspection.py:67-73` pins both ends: `"Ping a name."` for a
 documented DTO and `None` for an undocumented one.
 
 ## The skip that the `register_*` bus methods leave behind
@@ -206,7 +206,7 @@ resolution rules above are user-visible:
 - The JSON-RPC host puts it in the OpenRPC document as both `summary` (first line) and `description`
   (`sincpro_framework/entrypoints/rpc/jrpc.py:190-191`).
 
-`tests/entrypoint/test_entrypoints.py:157-162` is the end-to-end proof that the ladder survives the
+`tests/entrypoints/test_entrypoints.py:157-162` is the end-to-end proof that the ladder survives the
 whole path: the published `ValidateCard` description contains "atomic", while the orchestration tool's
 description is *not* the `ApplicationService` base docstring. The projection step itself — layer
 vocabulary, `include`/`exclude`/`wrap`, the JSON filter — belongs to
@@ -232,14 +232,14 @@ vocabulary, `include`/`exclude`/`wrap`, the JSON filter — belongs to
 
 ## Evidence
 
-- `tests/test_introspection.py:43-48` — registration is reflected: `features()` is keyed by `"Ping"`,
+- `tests/introspection/test_introspection.py:43-48` — registration is reflected: `features()` is keyed by `"Ping"`,
   `app_services()` by `"Orchestrate"`, and `dtos()` covers both.
-- `tests/test_introspection.py:51-64` — described metadata rather than a bare instance: `type`,
+- `tests/introspection/test_introspection.py:51-64` — described metadata rather than a bare instance: `type`,
   `instance`, `dto` are the real objects, and the description follows the ladder in both directions.
-- `tests/test_introspection.py:67-73` — `dtos()` carries the DTO's own docstring only, `None`
+- `tests/introspection/test_introspection.py:67-73` — `dtos()` carries the DTO's own docstring only, `None`
   otherwise.
-- `tests/test_introspection.py:76-80` — an unbuilt framework raises `ValueError`.
-- `tests/entrypoint/test_entrypoints.py:157-162` — the resolved description is what the MCP tool
+- `tests/introspection/test_introspection.py:76-80` — an unbuilt framework raises `ValueError`.
+- `tests/entrypoints/test_entrypoints.py:157-162` — the resolved description is what the MCP tool
   advertises, base docstrings excluded.
 
 Hand-written design context lives in `docs/architecture/ARCHITECTURE.md:57` (the component-matrix row

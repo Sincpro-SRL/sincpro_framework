@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     DeliverableEventMixin,
     DomainEvent,
@@ -13,7 +14,6 @@ from sincpro_framework.ddd import (
     EventSourcedMixin,
 )
 from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
-from sincpro_framework.ddd.repositories import MemoryRepository
 from sincpro_framework.event_driven import (
     EventRelay,
     FixedBackoff,
@@ -130,6 +130,116 @@ def test_a_retry_later_lets_other_entities_go_and_keeps_its_own_order(repository
         "dhl",
         "ups",
     ]
+
+
+# --- the order holds across passes ------------------------------------------------------------
+
+
+def test_a_retry_later_holds_its_entity_in_the_passes_before_its_retry(repository):
+    """The first event of O-1 waits ten seconds for its retry; a pass in between, with the
+    broker back, still keeps the second one of O-1 behind it."""
+    repository.save([shipped("O-1", "dhl"), shipped("O-1", "ups")])
+    broker = Broker()
+    broker.failing = {"O-1"}
+    clock = Clock()
+    policy = RetryLater(attempts=3, backoff=FixedBackoff(timedelta(seconds=10)))
+    relay = EventRelay(repository, ShopEvent, broker, policy, clock=clock)
+
+    relay.run_once()
+    broker.failing = set()
+    clock.now += timedelta(seconds=5)
+    between = relay.run_once()
+    assert (between.read, between.held, broker.sent) == (1, 1, [])
+
+    clock.now += timedelta(seconds=5)
+    relay.run_once()
+    assert [getattr(one, "carrier") for one in broker.sent] == ["dhl", "ups"]
+
+
+def test_a_retry_in_place_holds_every_later_event_until_its_retry(repository):
+    repository.save([shipped("O-1"), shipped("O-2")])
+    broker = Broker()
+    broker.failing = {"O-1"}
+    clock = Clock()
+    policy = RetryInPlace(attempts=3, backoff=FixedBackoff(timedelta(seconds=10)))
+    relay = EventRelay(repository, ShopEvent, broker, policy, clock=clock)
+
+    relay.run_once()
+    broker.failing = set()
+    clock.now += timedelta(seconds=5)
+    between = relay.run_once()
+    assert (between.held, broker.sent) == (1, [])  # O-2 waits behind O-1
+
+    clock.now += timedelta(seconds=5)
+    assert relay.run_once().delivered == 2
+    assert [one.entity_id for one in broker.sent] == ["O-1", "O-2"]
+
+
+def test_a_parked_event_lets_the_later_events_of_its_entity_go(repository):
+    """Parked is a dead letter: what came after it on the same entity is not held behind it."""
+    repository.save([shipped("O-1", "dhl"), shipped("O-1", "ups")])
+    broker = ByCarrier()
+    broker.failing = {"dhl"}
+    relay = EventRelay(repository, ShopEvent, broker, RetryLater(attempts=1), clock=Clock())
+
+    first = relay.run_once()
+    assert (first.parked, first.held, first.delivered) == (1, 0, 1)
+    assert [getattr(one, "carrier") for one in broker.sent] == ["ups"]
+
+
+# --- what is retried, and when ----------------------------------------------------------------
+
+
+class ByCarrier(Broker):
+    def publish(self, event: DomainEvent) -> None:
+        if getattr(event, "carrier") in self.failing:
+            raise ConnectionError("the carrier is down")
+        self.sent.append(event)
+
+
+class DoesNotFit(ValueError):
+    failure_kind = "invalid"
+
+
+class RateLimited(ConnectionError):
+    failure_kind = "exhausted"
+    retry_after = 60
+
+
+class ClassifyingBroker(Broker):
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self.error = error
+
+    def publish(self, event: DomainEvent) -> None:
+        raise self.error
+
+
+def test_an_error_that_fails_the_same_way_every_time_is_parked_at_once(repository):
+    """The kinds a queue consumer dead-letters — here `invalid` — are never tried again."""
+    repository.save([shipped("O-1")])
+    relay = EventRelay(
+        repository, ShopEvent, ClassifyingBroker(DoesNotFit("no")), RetryInPlace(attempts=5)
+    )
+
+    assert relay.run_once().parked == 1
+
+
+def test_an_error_that_says_how_long_to_wait_is_not_tried_before_that(repository):
+    repository.save([shipped("O-1")])
+    clock = Clock()
+    policy = RetryInPlace(attempts=5, backoff=FixedBackoff(timedelta(seconds=1)))
+    relay = EventRelay(
+        repository,
+        ShopEvent,
+        ClassifyingBroker(RateLimited("slow down")),
+        policy,
+        clock=clock,
+    )
+
+    relay.run_once()
+    [waiting] = repository.fetch_all(OrderShipped).items
+    assert waiting.next_delivery_at == clock.now + timedelta(seconds=60)
 
 
 def test_a_parked_event_replayed_goes_out(repository):

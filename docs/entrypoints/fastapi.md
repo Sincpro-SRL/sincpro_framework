@@ -57,8 +57,8 @@ from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.ddd.query import Query
-from sincpro_framework.entrypoints.exposure import rest
-from sincpro_framework.entrypoints.fastapi import (
+from sincpro_framework.entrypoints.entrypoint.decorators import rest
+from sincpro_framework.entrypoints.adapters.fastapi import (
     BusCall,
     FastApiGateway,
     bus_call,
@@ -66,7 +66,7 @@ from sincpro_framework.entrypoints.fastapi import (
     operation_extra,
     problem_responses,
 )
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework.common.failures import FailureKind
 
 
 class BillingPermission(Permission):

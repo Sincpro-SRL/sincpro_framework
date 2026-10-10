@@ -75,7 +75,7 @@ Do **not** put this in `domain/` or on Feature classes.
 
 ```python
 # sincpro_siat_soap/entrypoint_mcp.py
-from sincpro_framework.entrypoints.mcp import Entrypoint
+from sincpro_framework.entrypoints.adapters.mcp import Entrypoint
 from sincpro_siat_soap import siat_soap_sdk
 from sincpro_siat_soap.services.auth_permissions.extract_p12_credentials import (
     CommandExtractP12Credentials,

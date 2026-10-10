@@ -42,7 +42,7 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `EntityCollection[T]` | What `search` answers: `items`, `count`, `cursor`, `dropped`, `meta` | dataclass (frozen) | `from sincpro_framework.ddd import EntityCollection` |
 | `Count` / `Dropped` | `value` + `exact` / `field` + `reason` (`unknown_field`, `unsupported_operator`, `bad_value`, `not_expandable`) | DTO | `from sincpro_framework.ddd import Count, Dropped` |
 | `Meta` | What the model publishes: fields, types, operators, sortable, relations, labels | DTO | `from sincpro_framework.ddd import Meta` |
-| `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `model_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
+| `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `entity_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
 | `Bucket` / `Pivot` | A group with its count, measures and the `criteria` that opens it / a cross table with margins | DTO | `from sincpro_framework.ddd import Bucket, Pivot` |
 | `matches` | Evaluates a filter in memory, the same semantics as the SQL translator | function | `from sincpro_framework.ddd import matches` |
 | `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_LITERAL_SEARCH` | What an entity answers once, as criteria: what a record brings (`Specification`), the list order (`Sort`s), the template a typed text fills (`Criteria` whose `where` holds `TEXT`) — with `DEFAULT_GET_ID` and `DEFAULT_DISPLAY`. `@classmethod`s on `Entity`; a caller's criteria wins for each part it names (`Criteria.replaced_by`) | `@classmethod` | `Entity`; `TEXT` from `sincpro_framework.ddd` |
@@ -58,10 +58,10 @@ Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `wher
 
 **(a) Inside the framework.** The language is stdlib + pydantic in `sincpro_framework/ddd/criteria/`
 (`criteria.py`, `pagination.py`, `evaluate.py` for in-memory `matches`); `Meta` is
-`ddd/entity/model_meta.py`; `Query`/`ResponsePaginatedQuery` are `ddd/query.py`. Two stores answer
+`ddd/entity/entity_meta.py`; `Query`/`ResponsePaginatedQuery` are `ddd/query.py`. Two stores answer
 it: `MemoryRepository` (in memory, no extra) and the SQLAlchemy `Repository`, whose
 `orm/sqlalchemy/services/sql_translator.py` turns a Criteria into a `Select` (extra `[sqlalchemy]`).
-DataFrames over a Criteria are `sincpro_framework.data_analysis` (extra `[data-analysis]`).
+DataFrames over a Criteria are `sincpro_framework.data_layer.data_analysis` (extra `[data-analysis]`).
 
 **(b) Inside a consumer service** — one `UseFramework` bus per bounded context, built in
 `infrastructure/framework.py` and created before `services/` is imported:
@@ -87,7 +87,7 @@ client JSON {"criteria": {...}} → CommandListInvoices(criteria=Criteria)
       +1 capped count           free when the first page came back short
       +1 per named relation     for the whole page, never per row
     return ResponseListInvoices.of(page, dto.criteria)
-  → wire: records cut by the specification, cursor, count, dropped, model_meta_data
+  → wire: records cut by the specification, cursor, count, dropped, entity_meta_data
 ```
 
 ## Mistakes an agent makes
@@ -111,7 +111,7 @@ Silent ones first — the runtime gives no error for these.
 - **`repository.stream(...)` yields pages (`EntityCollection`), not records.** Iterate
   `for page in …: for record in page: …`.
 - **A hand-built response loses the contract.** Returning `items=list(page.items)` drops the
-  cursor, count, `dropped`, `model_meta_data` and the specification mask on the wire. Use
+  cursor, count, `dropped`, `entity_meta_data` and the specification mask on the wire. Use
   `ResponsePaginatedQuery.of(page, criteria)`.
 - **`specification: {}` is not `None`.** `None` brings every scalar and no relation; `{}` brings
   the identity and, when the entity names one, its display field.

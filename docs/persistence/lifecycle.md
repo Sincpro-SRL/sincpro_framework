@@ -84,7 +84,7 @@ says **when to look**, and the two stores cannot do it the same way:
   there, and records on SQLAlchemy, because the row changed.
 
 Everything else about the two stores is proved identical in
-`tests/orm/test_lifecycle_parity.py`, which runs one script against both and compares.
+`tests/data_layer/orm/test_lifecycle_parity.py`, which runs one script against both and compares.
 
 ## Taking the session moments yourself
 

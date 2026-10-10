@@ -56,14 +56,14 @@ is the parts.
 |---|---|---|
 | `DomainEvent` | `ddd/events/domain_event.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `entity_version`, `correlation_id`, `causation_id`, `label` |
 | `Entity.record` / `pull_events` | `ddd/entity/entity.py` | Records with the aggregate's type and id; pulling hands them back and forgets them |
-| `ChangeTrackingMixin` | `ddd/entity/mixins/tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
-| `DeliverableEventMixin` | `ddd/events/mixins.py` | Marks an event delivered beyond the context, and keeps its delivery: `delivered_at`, `next_delivery_at`, `delivery` |
+| `ChangeTrackingMixin` | `ddd/entity/mixins/change_tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
+| `DeliverableEventMixin` | `ddd/events/mixins/deliverable.py` | Marks an event delivered beyond the context, and keeps its delivery: `delivered_at`, `next_delivery_at`, `delivery` |
 | `EventSourcedMixin` | `ddd/entity/mixins/event_sourced.py` | An entity whose state is its events: `happened`, `apply`, rebuilt by `get`, appended by `save` |
-| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/templates/events.py`, `orm/sqlalchemy/services/event_mapping.py` | The context's one event table, and its base class mapped to it — every subclass with it |
+| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/template_table/events.py`, `orm/sqlalchemy/services/event_mapping.py` | The context's one event table, and its base class mapped to it — every subclass with it |
 | `EventRelay` | `event_driven/entrypoint/relay.py` | Delivers the deliverable events not delivered and due, over any repository; `run_once()` → `RelayPass` |
 | `DeliveryFailurePolicy` | `event_driven/domain/failure.py` | `RetryInPlace` · `RetryLater` · `ParkAndContinue` · `SkipAndContinue`; `ExponentialBackoff`, `FixedBackoff` |
 | `Publisher` | `event_driven/entrypoint/publisher.py` | Emits to a queue, with the signature of a bus |
-| `Subscriber` | `event_driven/services/subscriber.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event |
+| `Subscriber` | `event_driven/entrypoint/subscriber.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event — every one, whatever another raised |
 | `Queue` | `event_driven/domain/queue.py` | The protocol: `put` and `aput` |
 | `SyncQueue` | `event_driven/adapters/sync_queue.py` | Same process; `publish` runs the subscriber and returns |
 | `BackgroundQueue` | `event_driven/adapters/background_queue.py` | Another process consumes; `start()` / `stop()`; not durable |
@@ -110,7 +110,7 @@ reason: there, the function runs in the worker because a bus cannot cross a proc
 **Publishing runs the subscriber in the call**, so a subscriber that publishes re-enters the
 queue depth-first — a listener registered after it hears the *inner* fact first. Where the order
 of facts matters, write the fact down in the context it happened in, or send it through an
-outbox whose relay delivers in order.
+outbox whose relay keeps them in order (a waiting retry holds back what comes after it).
 
 **`BackgroundQueue(build_subscriber)`** — the smallest «do it in the background»:
 
@@ -128,6 +128,33 @@ a process, so it builds its own — and then waits on the queue: one event, one 
 The event crosses as its **wire name** and JSON, and is rebuilt as the class the subscriber
 knows. `stop()` sends the stop signal and waits for the worker. A queue that was never started
 refuses a publish rather than accepting the event and dropping it.
+
+## Reading the log
+
+A `DomainEvent` is an entity, so its context's event class is read like any entity:
+`EntityReads[ProjectEvent]` answers `Get`, `GetMany` and `Search`, and a record's history is
+`DomainEvents[Issue, R]` on the record's own reads ([entity-reads](../persistence/entity-reads.md)).
+The envelope is columns, so every question about the log is a criteria:
+
+| Question | Criteria |
+|---|---|
+| one record's events | `DomainEvents[Issue, R]` (`names=[...]` for some types), or `history_of(issue)` |
+| several records together | `history_of(issue, *runs)` — each by its type and identity |
+| events of some types | `name in ["project.issue.v1.opened", "project.issue.v1.closed"]` |
+| events of one kind of record | `entity_type = "Issue"` |
+| events about no record | `entity_type = ""` |
+| a time range | `created_at between [start, end]` |
+| everything one request caused | `correlation_id = …` |
+
+`name` is the wire name — a class attribute, filtered like a column in every store. What a
+class adds lives in `payload` and is not filtered; an event that must be found by its own
+fields is mapped to a table of its own (`event_columns()`), or read through a model built for it.
+
+**Application events.** An event about no record is first-class — same table, same reads.
+Before storing one with an empty `entity_type`, give it a subject when it has one: a closing
+day, an import, an execution — `ExecutionCompleted` and `ExecutionFailed` already name
+`entity_type="Execution"` — so its history can be asked for like a record's. An empty subject
+stays for what truly has none, read with `entity_type = ""`.
 
 ## An event has two identities, and only one of them travels
 

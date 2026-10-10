@@ -5,7 +5,9 @@ Deeper, in the framework repo: `docs/caching/README.md`.
 ```python
 from datetime import timedelta
 
-from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
+from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
+
+from sincpro_framework.common.store import InMemoryKeyValue
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
 caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
@@ -31,7 +33,7 @@ varies by — **context keys only**. The authenticated identity is not in the co
 puts it there, so a cache that must not cross tenants gets the key from a context provider:
 
 ```python
-from sincpro_framework.auth.security_context import current_identity
+from sincpro_framework.auth.infrastructure.security_context import current_identity
 
 @billing.context_provider(gives=["tenant_id"])
 def tenant_of_the_caller(context):
@@ -60,7 +62,7 @@ their domain events: `caching.invalidated_by({InvoiceIssued: [Invoice]})` is a b
 `Subscriber` beside the others.
 
 An answer that read nothing a repository noted, and declares no `depends_on`, is answered and never
-kept — there would be nothing to let it go by (a warning on the `sincpro_framework.caching`
+kept — there would be nothing to let it go by (a warning on the `sincpro_framework.data_layer.caching`
 logger on every such call). A Query that reads through an HTTP adapter or a raw connection declares what it depends on:
 
 ```python

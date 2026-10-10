@@ -8,8 +8,8 @@ may be exported under a bus's name.
 
 import pytest
 
-from sincpro_framework.observability import process, registry
-from sincpro_framework.observability.registry import PROCESS
+from sincpro_framework.observability import process
+from sincpro_framework.observability.registry import PROCESS, registry
 from sincpro_framework.sincpro_conf import settings
 
 pytest.importorskip("opentelemetry.sdk.trace")
@@ -215,9 +215,9 @@ def test_status_says_installed_when_the_framework_owns_the_global(monkeypatch):
 
 def test_status_says_host_when_someone_got_there_first(monkeypatch):
     """Inside Odoo the transport is already instrumented by the host."""
-    from sincpro_framework.observability.tracing import setup as setup_module
+    from sincpro_framework.observability.tracing import setup
 
-    monkeypatch.setattr(setup_module, "host_provider_is_real", lambda: True)
+    monkeypatch.setattr(setup, "host_provider_is_real", lambda: True)
     monkeypatch.setattr(
         "sincpro_framework.observability.api.host_provider_is_real", lambda: True
     )
@@ -243,7 +243,7 @@ def install_fake_sentry(monkeypatch) -> dict:
     """Capture what would reach GlitchTip, without a network or a real client."""
     import sys
 
-    from sincpro_framework.observability.errors import setup as errors_setup
+    from sincpro_framework.observability.errors import setup
 
     captured: dict = {"errors": [], "tags": {}, "releases": []}
 
@@ -275,8 +275,8 @@ def install_fake_sentry(monkeypatch) -> dict:
         def capture_exception(error):
             captured["errors"].append(error)
 
-    monkeypatch.setattr(errors_setup, "SDK_AVAILABLE", True)
-    monkeypatch.setattr(errors_setup.settings, "sentry_dsn", "https://key@glitchtip/1")
+    monkeypatch.setattr(setup, "SDK_AVAILABLE", True)
+    monkeypatch.setattr(setup.settings, "sentry_dsn", "https://key@glitchtip/1")
     monkeypatch.setitem(sys.modules, "sentry_sdk", FakeSentry)
     return captured
 

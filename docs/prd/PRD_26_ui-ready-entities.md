@@ -23,12 +23,12 @@
 | Piece | Where |
 |---|---|
 | `Presentation[T]` on the entity: `display`, `search` (`Match.equal/prefix/contains`), `order`, `detail` (`Expand`, `Reference`) | `ddd/entity/presentation.py`, `docs/persistence/specification.md` |
-| `Meta` publishes `display`, `search`, `default_order`, `detail`; `{}` = identity + display | `ddd/entity/model_meta.py` |
+| `Meta` publishes `display`, `search`, `default_order`, `detail`; `{}` = identity + display | `ddd/entity/entity_meta.py` |
 | `matching(Model, text)`, `detail_of(Model)`, `get(..., detail=)` | `ddd/entity/query_entity.py`, repositories |
 | `Operator.STARTS_WITH`; `%` and `_` are literals in SQL | criteria, `sql_translator.py` |
 | `Get` / `GetMany` / `LiteralSearch` / `Search` + `EntityReads[T]` | `ddd/reads.py`, `docs/persistence/entity-reads.md` |
 | `ResponseRecord`, `ResponseRecords`, `AggregateNotFound` | `ddd/query.py`, `ddd/exceptions.py` |
-| The parity cases run on SQL too; `NOT` is the complement (rows with a NULL included) | `tests/orm/test_criteria_parity_sql.py` |
+| The parity cases run on SQL too; `NOT` is the complement (rows with a NULL included) | `tests/data_layer/orm/test_criteria_parity_sql.py` |
 
 ## 1. Evaluation of what exists
 
@@ -90,10 +90,10 @@ class Invoice(Entity):
 | Piece | Where |
 |---|---|
 | `Is`, `When`, `AllHold`, `AnyHolds`; the five hint parts on `Presentation` | `ddd/entity/presentation.py` |
-| `FieldMeta.readonly/required/default/readonly_when/required_when/visible_when`; structure-derived defaults (framework fields read-only, no default → required, dataclass default) | `ddd/entity/model_meta.py` (`hinted`, `presentation_of`, `defaults_of`, `framework_fields`) |
+| `FieldMeta.readonly/required/default/readonly_when/required_when/visible_when`; structure-derived defaults (framework fields read-only, no default → required, dataclass default) | `ddd/entity/entity_meta.py` (`hinted`, `presentation_of`, `defaults_of`, `framework_fields`) |
 | The same hints from a mapped class | `orm/.../model_introspection.py` |
 | Spec and recipe | `docs/persistence/specification.md`, skill `references/form-hints.md` |
-| Proof: a form simulated from the JSON a client receives, client verdict = server verdict on every state × payment, hints refuse no write, the hook recipe, SQL and bus end to end | `tests/ddd/entity/test_presentation_hints.py`, `tests/orm/test_presentation_hints_sql.py` |
+| Proof: a form simulated from the JSON a client receives, client verdict = server verdict on every state × payment, hints refuse no write, the hook recipe, SQL and bus end to end | `tests/ddd/entity/test_presentation_hints.py`, `tests/data_layer/orm/test_presentation_hints_sql.py` |
 
 Observed while proving it: a decimal condition value travels as text (`"0"`), so a client reads
 each value as its field's type (`FieldMeta.type`, `exact`), as the server does with `Meta.accept`.
@@ -158,7 +158,7 @@ class Invoice(Entity):
 - Declared once on the entity, fields named by lambda like `presentation`. `by` is a plain
   method of the entity: the computation is the domain's, the framework only orders it.
 - Read when the class is described: the dependency graph is ordered (Kahn, beside
-  `presentation_of` in `model_meta`; `ordering.py` orders extensions and refuses with
+  `presentation_of` in `entity_meta`; `ordering.py` orders extensions and refuses with
   `ExtensionRefused`, a field graph refuses with `ContractViolation`), and a cycle, a field
   computed twice, a self-dependency or an unknown field is refused there, naming it.
 - `recompute(record, changed)` runs, in order, every derivation reachable from `changed`

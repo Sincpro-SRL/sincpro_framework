@@ -14,7 +14,7 @@ from faststream.rabbit import RabbitBroker, TestRabbitBroker
 
 from sincpro_framework import DataTransferObject, Feature
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.entrypoints.faststream import subscribe
+from sincpro_framework.entrypoints.adapters.faststream import subscribe
 from sincpro_framework.event_driven import (
     AsyncPublisher,
     Publisher,
@@ -109,7 +109,7 @@ def test_several_events_can_share_one_channel_and_still_reach_their_buses(heard)
 def test_a_command_is_never_consumed_by_subscribe_whatever_it_declares(heard):
     """`subscribe` hears events. A Command on a queue is what an outsider makes this process do:
     it is `QueueGateway`'s, where who may send it is checked."""
-    from sincpro_framework.entrypoints.exposure import queue
+    from sincpro_framework.entrypoints.entrypoint.decorators import queue
 
     bus = notifying_bus(heard["support"])
 
@@ -143,7 +143,7 @@ def test_only_the_events_the_buses_registered_get_a_subscription(heard):
 from faststream import AckPolicy, BaseMiddleware  # noqa: E402
 from faststream.message import AckStatus  # noqa: E402
 
-from sincpro_framework.entrypoints.faststream import QueueOptions  # noqa: E402
+from sincpro_framework.entrypoints.adapters.faststream import QueueOptions  # noqa: E402
 
 from .models import failing_bus  # noqa: E402
 

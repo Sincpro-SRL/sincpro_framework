@@ -8,14 +8,14 @@ or the one record a read named is not there.
 A stale version and a lost transaction are the ones worth running again.
 
 They inherit from `Exception` and nothing else. Every wire answers them through one
-classification (`transport.failures.refined_failure_kind`): `StaleAggregate` and
+classification (`common.failures.refined_failure_kind`): `StaleAggregate` and
 `DuplicateAggregate` are a conflict (409 over HTTP), `AggregateNotFound` declares not found
 (404), and the rest — `InvalidCriteria` and `ContractViolation` included — is the domain
 refusing the request (422). An error of a project's own declares another kind with
 `failure_kind = FailureKind...` on its class.
 """
 
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework.common.failures import FailureKind
 
 
 class DomainError(Exception):

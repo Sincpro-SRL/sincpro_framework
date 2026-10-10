@@ -1,6 +1,6 @@
 # PRD_24: The shared context — the same tree, its nodes kept in a store when a bus says so
 
-- **Status**: built, 2026-10-03 — not committed; proved by `tests/context_component/test_shared_context.py`
+- **Status**: built, 2026-10-03 — not committed; proved by `tests/context/test_shared_context.py`
 - **Depends on**: the context (PRD_22 — the tree, the levels, `ContextStore`, `KeyValueContexts`,
   `inject`/`extract`), the execution identity (PRD_21 — `execution_id`, `causation_id`,
   `correlation_id`, UUIDv7), the remote bus (PRD_23), `caching` (`KeyValueStore`, `RedisKeyValue`).
@@ -126,7 +126,7 @@ seen, and a header never grows with the context.
 
 ## 8. Tests
 
-`tests/context_component/test_shared_context.py`:
+`tests/context/test_shared_context.py`:
 
 - nothing set → nothing kept, no `Level.GLOBAL`;
 - concurrent executions do not collide — each chain its own ids;

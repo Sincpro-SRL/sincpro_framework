@@ -279,7 +279,7 @@ Exported: `bus_call`, `acting_credentials` (an async dependency, no I/O), `reque
 generated and the hand-written ones together. A FastAPI dependency is never authorization:
 `AccessControl` inside the bus stays the only guard.
 
-**Status — REST on FastAPI, phase 1: built** (`sincpro_framework.entrypoints.fastapi`,
+**Status — REST on FastAPI, phase 1: built** (`sincpro_framework.entrypoints.adapters.fastapi`,
 `[fastapi]` extra; `docs/entrypoints/fastapi.md`). `FastApiGateway` (`wire = "rest"`, its port
 `FastApiWire`): profiles `resource` (DECLARED, default) and `rpc` (CATALOG, today's paths, a
 `Query` also on `POST` `_by_body`); derivation (Query→GET, else POST; 204 for a `None` response;
@@ -404,7 +404,7 @@ surface through its `JsonRpcWire` port (DECLARED by default, CATALOG on request,
 The OpenRPC document is tagged per context and carries `x-sincpro-requires`, `x-idempotent`,
 `deprecated`/`x-sunset`. `dispatch(surface, payload, credentials=, headers=)` and
 `http_status(surface, reply)` are the path the gateway's own route runs, proven by a parity test
-(`tests/entrypoint/test_jsonrpc_naming.py`), including "a name is unchanged when a Feature
+(`tests/entrypoints/adapters/rpc/test_jsonrpc_naming.py`), including "a name is unchanged when a Feature
 becomes an ApplicationService". Not built: `RpcBinding.notification` is recorded, not served
 (PRD_14 phase 3); `_meta`, `Idempotency-Key`, examples (phase 2).
 
@@ -501,7 +501,7 @@ async def legacy(message: StreamMessage) -> None:
     await gateway.consume(message, as_=CommandIssueInvoice, decode=legacy_decoder)
 ```
 
-**Status — queues on FastStream, phase 1: built** (`sincpro_framework.entrypoints.faststream`,
+**Status — queues on FastStream, phase 1: built** (`sincpro_framework.entrypoints.adapters.faststream`,
 `[faststream]` extra; `docs/entrypoints/queue.md`). `QueueGateway` (`wire = "queue"`, its port
 `QueueWire`; `exposure=`, `unguarded=`, `port=` forwarded to the core): every registered
 DomainEvent is heard (the core's `_published_by_default`), `@queue.hears` only moving its group or
@@ -547,7 +547,7 @@ Found while researching; each **MUST** be fixed with a regression test, whatever
 | # | Issue | Fix |
 |---|---|---|
 | 1 | **Queues lose messages**: FastStream's default ack is `ACK_FIRST` on Kafka (the offset is committed before the handler runs) and `REJECT_ON_ERROR` on Rabbit/Redis (a failed message is discarded) — at-most-once, while `brokers.md` promises at-least-once | **fixed**: `subscribe()` settles manually — ack when handled, nack when a bus raised, reject (logged) when the payload cannot be rebuilt, ack when no bus here registered the event. Proven on the test brokers and on real RabbitMQ and Kafka: before, a failed event was delivered once and lost; now it is redelivered. `brokers.md` corrected. Redis Pub/Sub and core NATS stay at most once (they have no acknowledgement) — documented |
-| 2 | The two doors are coupled both ways: `GrpcGateway` always mounts remote execution's `/sincpro.Contexts/Execute` on the public server, and `bus.serve()` builds its host **from** a `GrpcGateway`, so hosting a context internally also publishes its whole catalog as public `Struct` methods with reflection; `remote_execution` imports `entrypoints.grpc.wire` | **fixed**: the `transport` core (`transport.grpc`, `transport.failures`); `bus.serve()` builds a server of its own with the open host and its health only — the catalog's methods, introspection and reflection are not there; `GrpcGateway` serves its surface only; `open_host([...]).mount(server)` puts both on one port on purpose; `tests/test_package_layers.py` fails if either door imports the other, lazily included; `tests/remote_execution/test_two_doors.py` proves each door. Breaking: a context map pointing `grpc://` at a `GrpcGateway` port now needs that port to mount the door |
+| 2 | The two doors are coupled both ways: `GrpcGateway` always mounts remote execution's `/sincpro.Contexts/Execute` on the public server, and `bus.serve()` builds its host **from** a `GrpcGateway`, so hosting a context internally also publishes its whole catalog as public `Struct` methods with reflection; `remote_execution` imports `entrypoints.grpc.wire` | **fixed**: the `transport` core (`transport.grpc`, `transport.failures`); `bus.serve()` builds a server of its own with the open host and its health only — the catalog's methods, introspection and reflection are not there; `GrpcGateway` serves its surface only; `open_host([...]).mount(server)` puts both on one port on purpose; `tests/core/test_package_layers.py` fails if either door imports the other, lazily included; `tests/remote_execution/test_two_doors.py` proves each door. Breaking: a context map pointing `grpc://` at a `GrpcGateway` port now needs that port to mount the door |
 | 3 | gRPC ignores deadlines — a call whose caller gave up still runs | the deadline pre-check (§3.3) |
 | 4 | gRPC has no backpressure — calls queue silently behind the worker pool | `maximum_concurrent_rpcs` (§3.3) |
 | 5 | gRPC reflection is v1alpha only; errors travel as text | reflection v1 + v1alpha; `google.rpc.Status` details (§3.3) |

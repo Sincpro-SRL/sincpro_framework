@@ -24,7 +24,7 @@ The other pages explain *why* each piece is the way it is. This one is *how*.
 | Extend an aggregate with fields of its own | [14. Extending an aggregate](#14-extending-an-aggregate) |
 
 Install the adapter with `pip install sincpro-framework[sqlalchemy]`. The vocabulary —
-`sincpro_framework.ddd` — needs nothing installed; `sincpro_framework.orm` is the SQLAlchemy
+`sincpro_framework.ddd` — needs nothing installed; `sincpro_framework.data_layer.orm` is the SQLAlchemy
 adapter.
 
 ---
@@ -86,24 +86,17 @@ The table is declared once, in infrastructure. `entity_table` adds the four `Ent
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework.orm import (
-    Database,
-    Relation,
-    Repository,
-    archive_columns,
-    entity_table,
-    map_aggregates,
-)
+from sincpro_framework.data_layer.orm import Database, Relation, Repository, map_aggregates, template_table
 
 billing = registry()
-customer_table = entity_table(
+customer_table = template_table.entity_table(
     "customer",
     billing.metadata,
     Column("name", Text, nullable=False),
     Column("email", Text),
-    *archive_columns(),
+    *template_table.archive_columns(),
 )
-invoice_table = entity_table(
+invoice_table = template_table.entity_table(
     "invoice",
     billing.metadata,
     Column("number", Text, nullable=False, unique=True),
@@ -347,7 +340,7 @@ over the same repository, with the aggregate already given:
 
 ```python
 from sincpro_framework.ddd import EntityCollection
-from sincpro_framework.orm import DatabaseAggregateRepository
+from sincpro_framework.data_layer.orm import DatabaseAggregateRepository
 
 
 class InvoiceBook(DatabaseAggregateRepository[Invoice]):
@@ -569,7 +562,7 @@ class Payment(ChangeTrackingMixin, Entity):
     receipt_cache: str = field(default="", metadata={"tracked": False})
 
 
-payment_table = entity_table(
+payment_table = template_table.entity_table(
     "payment",
     billing.metadata,
     Column("amount", Integer),
@@ -601,9 +594,9 @@ tells the rows apart — and what a subclass adds is kept in a `payload` column:
 
 ```python
 from sincpro_framework.ddd.criteria import combined, parse_order
-from sincpro_framework.orm import event_table, map_events
+from sincpro_framework.data_layer.orm import map_events, template_table
 
-billing_events = event_table("billing_events", billing.metadata)
+billing_events = template_table.event_table("billing_events", billing.metadata)
 map_events(billing, BillingEvent, billing_events)       # BillingEvent and every subclass
 billing.metadata.create_all(database.engine)
 
@@ -800,27 +793,29 @@ What one pass does:
 
 | Step | What happens |
 |---|---|
-| claim | the deliverable events of `source` not delivered and due, oldest first, at most `batch` — inside a unit of work, `FOR UPDATE SKIP LOCKED` where the database has it, so replicas never take the same event |
+| claim | the deliverable events of `source` not delivered and due, oldest first, at most `batch`, in one query — inside a unit of work, `FOR UPDATE SKIP LOCKED` where the database has it, so replicas never take the same event |
+| hold | what an event waiting for its retry holds back: everything after it (`RetryInPlace`) or the later events of its entity (`RetryLater`) — counted as `held` |
 | hand on | each one to the publisher, in order; a failure is the policy's to decide |
 | mark | `delivered_at`, or the retry, park or skip — saved in the same transaction |
 
 **What a failure does is a strategy.** The default, `RetryInPlace(attempts=5)`, tries the event
-again with exponential backoff and stops the current pass, then parks it after the cap:
+again with exponential backoff, holding everything after it — in this pass and in the ones
+before its retry is due — then parks it after the cap:
 
 | Policy | An event that fails |
 |---|---|
-| `RetryInPlace(attempts, backoff, then=…, never_retry=…)` | schedules a retry and stops the current pass |
-| `RetryLater(attempts, backoff, then=…, holds_stream=True)` | schedules a retry; later events of its entity wait within the current pass |
+| `RetryInPlace(attempts, backoff, then=…, never_retry=…)` | schedules a retry; nothing after it goes out until it did, or was parked |
+| `RetryLater(attempts, backoff, then=…, holds_stream=True)` | schedules a retry; later events of its entity wait until it went out, or was parked; other entities go on |
 | `ParkAndContinue()` | kept aside with its reason; `event.replayed()` and a save put it back |
 | `SkipAndContinue()` | marked delivered with a log line and the reason in `delivery` |
 
-`ExponentialBackoff` and `FixedBackoff` space the attempts; `never_retry=(ValueError, …)` parks
-at once an error that no retry will fix.
+`ExponentialBackoff` and `FixedBackoff` space the attempts. An error that fails the same way every
+time — the kinds a queue consumer dead-letters (`common.failures.PERMANENT`: invalid, a domain
+refusal, not found…) — is parked at once, and so is any error in `never_retry=(ValueError, …)`.
+An error that says how long to wait (`retry_after`) is not tried before that.
 
-**Current ordering limit:** the held-entity set is local to one pass. A failed event whose
-retry is not yet due is excluded from the next pass, so later events can overtake it. Row
-locks exclude competing claims of a row, not an entire entity stream. Do not rely on strict
-ordering across backoff intervals or replicas without an additional verified mechanism.
+**A parked event holds nothing.** Like a dead-letter queue, its entity's later events go on
+without it; replayed, it goes out after them. Row locks keep two replicas from taking the same event, not an entity's whole stream: two replicas can each take a different event of one entity in the same instant. Where that matters, run one relay per context, or key the broker by entity (`keyed_by_entity`).
 
 **At least once, never lost.** A relay that dies after handing an event on and before the commit
 leaves it unmarked, and the next pass sends it again — a consumer is idempotent (the
@@ -830,7 +825,7 @@ leaves it unmarked, and the next pass sends it again — a consumer is idempoten
 ```python
 from datetime import timedelta
 
-from sincpro_framework.cron import Crons
+from sincpro_framework.entrypoints.adapters.cron import Crons
 
 delivery = Crons("delivery")
 delivery.run_relay(relay, every=timedelta(seconds=5))
@@ -848,8 +843,8 @@ same vocabulary — `save`, `get`, `search` with a `Criteria`, hooks — with no
 `override_dependencies` swaps it in for the length of the test:
 
 ```python
-from sincpro_framework.ddd import MemoryRepository
-from sincpro_framework.testing import override_dependencies
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.runtime.testing import override_dependencies
 
 
 def test_registering_a_customer_stores_it():
@@ -880,7 +875,7 @@ which references the parent's key:
 from sqlalchemy import Table
 
 credit = registry()
-credit_invoice_table = entity_table(
+credit_invoice_table = template_table.entity_table(
     "credit_note",
     credit.metadata,
     Column("number", Text, nullable=False),

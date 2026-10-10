@@ -15,8 +15,7 @@ import pytest
 from structlog.testing import capture_logs
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.observability import resolve_identity
-from sincpro_framework.observability.domain import installed_version
+from sincpro_framework.observability.domain import installed_version, resolve_identity
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics
 from sincpro_framework.sincpro_conf import settings
 
@@ -83,7 +82,7 @@ def test_one_failure_carries_the_same_keys_on_every_signal(monkeypatch, otel_set
         span.attributes["sincpro.use_case"],
         labels["sincpro.use_case"],
         tags["sincpro.use_case"],
-    ) == ("CommandCharge",) * 4
+    ) == ("billing.CommandCharge",) * 4
     assert (
         line["sincpro_outcome"],
         span.attributes["sincpro.outcome"],
@@ -124,7 +123,7 @@ def test_a_successful_run_is_ok_on_its_span_and_its_lines_name_where_they_ran(
     executing = next(entry for entry in logs if "Executing feature" in entry["event"])
     assert span.attributes["sincpro.outcome"] == "ok"
     assert executing["sincpro_context"] == "billing"
-    assert executing["sincpro_use_case"] == "CommandCharge"
+    assert executing["sincpro_use_case"] == "billing.CommandCharge"
     assert executing["service_name"] == "billing-svc"
     assert executing["trace_id"] == format(span.get_span_context().trace_id, "032x")
 

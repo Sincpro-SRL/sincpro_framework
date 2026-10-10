@@ -8,8 +8,9 @@ with `state=DRAFT` instead — nothing from this recipe is needed for that.
 
 ```python
 from datetime import timedelta
-from sincpro_framework.caching.adapters.redis import RedisKeyValue
-from sincpro_framework.ddd.drafts import InMemoryDrafts, KeyValueDrafts
+from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.ddd.editing.drafts import InMemoryDrafts
+from sincpro_framework.ddd import KeyValueDrafts
 
 billing.add_dependency("drafts", KeyValueDrafts(RedisKeyValue(redis), ttl=timedelta(days=7)))
 # tests: InMemoryDrafts(ttl=timedelta(hours=1), now=clock.now)

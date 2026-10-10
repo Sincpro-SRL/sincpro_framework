@@ -190,7 +190,7 @@
     },
     {
       "id": "claim_c1111c8bf4144a26999865581abc599d",
-      "statement": "Formatting is layered: `autoflake` (in place, removing unused variables/imports, preserving `__init__.py` imports), then `isort`, then `black`, with `line-length = 94` in `[tool.black]`; `format-python` recurses into `format-yaml`, which makes prettier rewrite every `*.yml`/`*.yaml` while yamllint lints only `sincpro_framework/conf/*.yml` and `tests/config/resources/*.yml`.",
+      "statement": "Formatting is layered: `autoflake` (in place, removing unused variables/imports, preserving `__init__.py` imports), then `isort`, then `black`, with `line-length = 94` in `[tool.black]`; `format-python` recurses into `format-yaml`, which makes prettier rewrite every `*.yml`/`*.yaml` while yamllint lints only `sincpro_framework/conf/*.yml` and `tests/core/config/resources/*.yml`.",
       "evidence": [
         {
           "resource": "repo://Makefile#L69-L81",

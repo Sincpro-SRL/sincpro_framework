@@ -15,13 +15,13 @@ from typing import Any
 import pytest
 
 from sincpro_framework import UseFramework
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     AllHold,
     AnyHolds,
     EntityReads,
     Get,
     Is,
-    MemoryRepository,
     Presentation,
     ResponseRecord,
     When,
@@ -30,7 +30,7 @@ from sincpro_framework.ddd import (
 from sincpro_framework.ddd.criteria import Operator, expression_from
 from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.model_meta import Meta, describe_class
+from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
 from sincpro_framework.ddd.exceptions import ConstraintViolation, ContractViolation
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
@@ -391,7 +391,7 @@ def test_the_screen_gets_the_record_and_its_hints_in_one_answer():
         pass
 
     answer = bus(QueryGetInvoice(id=confirmed.id), ResponseInvoice).model_dump(mode="json")
-    fields = answer["model_meta_data"]["fields"]
+    fields = answer["entity_meta_data"]["fields"]
 
     assert answer["invoice"]["state"] == "confirmed"
     assert fields["number"]["readonly"] is True

@@ -14,13 +14,13 @@ import dataclasses
 from decimal import Decimal
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.criteria import All, Condition, Criteria
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
 from sincpro_framework.event_driven import (
     Publisher,
 )
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .ledger import ZERO, Account, BalanceUpdated, Entry, EntryPosted, Line, Lines
 

@@ -49,8 +49,8 @@ The same shape as a bus: the bounded context declares its dependencies once, in 
 `CronDependencyContextType`, and a base `Cron` of its own gives them to every cron — typed.
 
 ```python
-from sincpro_framework.cron import Cron as _Cron
-from sincpro_framework.cron import Crons, Missed, Overlap, Tick
+from sincpro_framework.entrypoints.adapters.cron import Cron as _Cron
+from sincpro_framework.entrypoints.adapters.cron import Crons, Missed, Overlap, Tick
 
 
 class CronDependencyContextType:                             # dependencies.py
@@ -100,7 +100,7 @@ class ReconcileTransactions(Cron):
 **Beside a service, in a process of their own** — the default:
 
 ```python
-from sincpro_framework.cron import CronGateway, CronProcess
+from sincpro_framework.entrypoints.adapters.cron import CronGateway, CronProcess
 
 
 def build_crons() -> CronGateway:        # a module-level function: it runs in the child
@@ -144,8 +144,8 @@ service process ── CronProcess ──▶ child process
 Here the clock is a `ManualClock`, so time moves when the example says so:
 
 ```python
-from sincpro_framework.cron import InMemoryRuns, RunOutcome
-from sincpro_framework.testing import ManualClock
+from sincpro_framework.entrypoints.adapters.cron import InMemoryRuns, RunOutcome
+from sincpro_framework.runtime.testing import ManualClock
 
 clock = ManualClock(datetime(2026, 9, 26, 5, 59, tzinfo=UTC))       # 01:59 in La Paz
 gateway = CronGateway([cron_payments], clock=clock, runs=InMemoryRuns())
@@ -174,7 +174,7 @@ keeps is which ticks ran, and the default, `InMemoryRuns`, keeps it in the proce
 - **Several replicas run the crons**: each would run every tick. They need a record they share —
   the project implements `CronRuns` (an abstract class: `claim`, `finish`, `running`, `last`,
   `last_success`) on the storage those replicas already have, and passes it as `runs=`. The
-  behaviours it owes are the ones `tests/cron/test_runs.py` checks on `InMemoryRuns`. A gateway
+  behaviours it owes are the ones `tests/entrypoints/adapters/cron/test_runs.py` checks on `InMemoryRuns`. A gateway
   on shared runs also starts from where each cron last ran, so `missed` sees the ticks that
   passed while it was down.
 

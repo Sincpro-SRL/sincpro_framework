@@ -1,7 +1,7 @@
 # PRD_07: Bus generations — reload without stopping
 
 - **Status**: implemented for runtime use cases as `BusRegistry` in
-  `sincpro_framework.runtime_use_cases`: a generation is `bus.fresh()` — every registration of the
+  `sincpro_framework.runtime.runtime_use_cases`: a generation is `bus.fresh()` — every registration of the
   declared bus, replayed — plus the stored use cases,
   built beside the one answering, checked by building it, swapped with one assignment; a request
   reads `current` once; a refused generation leaves the bus and its modules as they were;

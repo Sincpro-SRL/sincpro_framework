@@ -221,7 +221,7 @@ half-migration: the aggregates do not change, a table and a relay appear.
 
 Each of these was written somewhere else first — a hand-rolled `sqlite3` store, a custom column
 type, a refusal enforced by hand — because it did not look like the layer could do it. Each one
-can. `tests/orm/test_recipes.py` runs all four.
+can. `tests/data_layer/orm/test_recipes.py` runs all four.
 
 ### An aggregate identified by two columns
 

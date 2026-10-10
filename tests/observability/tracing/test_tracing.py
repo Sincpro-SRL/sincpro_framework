@@ -218,7 +218,7 @@ def test_otel_span_has_layer_attribute(otel_setup):
     feature_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "LayerDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".LayerDTO")
     ]
     assert len(feature_spans) == 1
     assert feature_spans[0].attributes.get("sincpro.layer") == "feature"
@@ -252,10 +252,14 @@ def test_otel_app_service_child_spans(otel_setup):
 
     spans = otel_setup.get_finished_spans()
     app_spans = [
-        s for s in spans if s.attributes.get("sincpro.use_case") == "ParentAppServiceDTO"
+        s
+        for s in spans
+        if str(s.attributes.get("sincpro.use_case")).endswith(".ParentAppServiceDTO")
     ]
     feature_spans = [
-        s for s in spans if s.attributes.get("sincpro.use_case") == "ChildFeatureDTO"
+        s
+        for s in spans
+        if str(s.attributes.get("sincpro.use_case")).endswith(".ChildFeatureDTO")
     ]
 
     assert len(app_spans) == 1
@@ -281,7 +285,9 @@ def test_otel_root_span_is_container(otel_setup):
 
     spans = otel_setup.get_finished_spans()
     root_spans = [s for s in spans if s.name == "my-bounded-context"]
-    feature_spans = [s for s in spans if s.attributes.get("sincpro.use_case") == "RootDTO"]
+    feature_spans = [
+        s for s in spans if str(s.attributes.get("sincpro.use_case")).endswith(".RootDTO")
+    ]
 
     assert len(root_spans) == 1
     assert len(feature_spans) == 1
@@ -315,7 +321,7 @@ def test_otel_adopts_outer_active_span(otel_setup):
     feature_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "PropagationDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".PropagationDTO")
     ]
     assert len(feature_spans) == 1
     assert feature_spans[0].context.trace_id == outer_trace_id
@@ -345,7 +351,7 @@ def test_otel_error_recorded_in_span(otel_setup):
     error_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "OtelErrorDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".OtelErrorDTO")
     ]
     assert len(error_spans) == 1
     assert error_spans[0].status.status_code == StatusCode.ERROR
@@ -414,7 +420,7 @@ def test_direct_call_inherits_outer_otel_span(otel_setup):
     feature_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "DirectDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".DirectDTO")
     ]
     assert len(feature_spans) == 1
     assert format(feature_spans[0].context.trace_id, "032x") == outer_trace_id
@@ -443,7 +449,7 @@ def test_direct_call_creates_own_span_when_no_outer_trace(otel_setup):
     feature_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "NoOuterDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".NoOuterDTO")
     ]
     assert len(feature_spans) == 1
     assert format(feature_spans[0].context.trace_id, "032x") == captured["trace_id"]
@@ -491,7 +497,7 @@ def test_otel_span_has_instance_attribute(otel_setup):
     feature_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "BillingDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".BillingDTO")
     ]
     assert len(feature_spans) == 1
     assert feature_spans[0].attributes.get("sincpro.instance") == "my-billing-context"
@@ -526,12 +532,12 @@ def test_otel_instance_attribute_differs_per_framework(otel_setup):
     alpha_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "AlphaDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".AlphaDTO")
     ]
     beta_spans = [
         s
         for s in otel_setup.get_finished_spans()
-        if s.attributes.get("sincpro.use_case") == "BetaDTO"
+        if str(s.attributes.get("sincpro.use_case")).endswith(".BetaDTO")
     ]
     assert alpha_spans[0].attributes.get("sincpro.instance") == "context-alpha"
     assert beta_spans[0].attributes.get("sincpro.instance") == "context-beta"
@@ -601,7 +607,11 @@ def test_with_parent_trace_dto_is_direct_child_no_root_span(otel_setup):
             traced(DirectChildDTO())
 
     spans = otel_setup.get_finished_spans()
-    dto_spans = [s for s in spans if s.attributes.get("sincpro.use_case") == "DirectChildDTO"]
+    dto_spans = [
+        s
+        for s in spans
+        if str(s.attributes.get("sincpro.use_case")).endswith(".DirectChildDTO")
+    ]
     root_spans = [s for s in spans if s.name == "parent-trace-direct-child"]
 
     assert len(dto_spans) == 1
@@ -726,13 +736,13 @@ def test_logger_getter_not_registered_when_there_are_no_spans_to_read(monkeypatc
     from sincpro_log.logger import create_logger
 
     from sincpro_framework.observability import ObservabilityIdentity
-    from sincpro_framework.observability.tracing import setup as setup_module
+    from sincpro_framework.observability.tracing import setup
 
-    monkeypatch.setattr(setup_module, "host_provider_is_real", lambda: False)
+    monkeypatch.setattr(setup, "host_provider_is_real", lambda: False)
     logger = create_logger("no-endpoint-test")
     assert logger._context_sources == []
 
-    setup_module.setup(ObservabilityIdentity(bus="no-endpoint-test"), logger)
+    setup.setup_tracing(ObservabilityIdentity(bus="no-endpoint-test"), logger)
 
     assert logger._context_sources == []
 
@@ -746,16 +756,16 @@ def test_logger_getter_is_registered_when_riding_the_host_provider(monkeypatch):
     from sincpro_log.logger import create_logger
 
     from sincpro_framework.observability import ObservabilityIdentity
-    from sincpro_framework.observability.tracing import setup as setup_module
+    from sincpro_framework.observability.tracing import setup
 
-    monkeypatch.setattr(setup_module.settings, "otlp_endpoint", None)
-    monkeypatch.setattr(setup_module, "host_provider_is_real", lambda: True)
+    monkeypatch.setattr(setup.settings, "otlp_endpoint", None)
+    monkeypatch.setattr(setup, "host_provider_is_real", lambda: True)
     logger = create_logger("host-provider-test")
 
-    status = setup_module.setup(ObservabilityIdentity(bus="host-provider-test"), logger)
+    status = setup.setup_tracing(ObservabilityIdentity(bus="host-provider-test"), logger)
 
     assert status.reason == "host"
-    assert setup_module.current_otel_context in logger._context_sources
+    assert setup.current_otel_context in logger._context_sources
 
 
 def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):
@@ -768,12 +778,12 @@ def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):
 
     from unittest.mock import MagicMock
 
-    import sincpro_framework.observability.tracing.setup as otel_module
+    from sincpro_framework.observability.tracing import setup
     from sincpro_framework.sincpro_conf import settings
 
     seen: dict = {}
 
-    def fake_exporter(*, endpoint=None, **kwargs):
+    def fake_exporter(endpoint=None, **kwargs):
         seen["endpoint"] = endpoint
         return MagicMock(name="exporter")
 
@@ -791,11 +801,12 @@ def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):
         fake_processor,
     )
 
-    from sincpro_framework.observability import ObservabilityIdentity, registry
+    from sincpro_framework.observability import ObservabilityIdentity
+    from sincpro_framework.observability.registry import registry
 
     registry.reset()
     try:
-        status = otel_module.setup(ObservabilityIdentity(bus="test-svc"))
+        status = setup.setup_tracing(ObservabilityIdentity(bus="test-svc"))
         assert status.model_dump() == {"active": True, "state": "on", "reason": "init"}
         assert seen["endpoint"] == "http://collector:4317"
     finally:

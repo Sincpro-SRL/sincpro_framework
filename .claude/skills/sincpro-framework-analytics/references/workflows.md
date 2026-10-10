@@ -6,7 +6,7 @@ test). This page stands alone. **Experimental:** the vocabulary may change.
 A workflow composes the Commands a bus already answers, as JSON: which runs, with what, in which
 order, under which condition. It is validated against the live bus, runs with a trace of every step,
 and draws itself as a graph — what an editor previews or an agent tries. Use cases themselves stay
-code, or are loaded with `sincpro_framework.runtime_use_cases`.
+code, or are loaded with `sincpro_framework.runtime.runtime_use_cases`.
 
 ## A workflow is JSON
 
@@ -42,7 +42,7 @@ reference is checked against the schemas before anything runs. A `when` is one c
 ## Put them in force and run one
 
 ```python
-from sincpro_framework.workflows import FileWorkflows, StepStatus, Workflows
+from sincpro_framework.runtime.workflows import FileWorkflows, StepStatus, Workflows
 
 workflows = Workflows(billing, FileWorkflows(Path("workflows")))
 workflows.expose()                                   # CommandRunWorkflow on the bus, before it is built

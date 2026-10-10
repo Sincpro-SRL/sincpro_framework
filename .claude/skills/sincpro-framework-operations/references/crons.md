@@ -12,7 +12,7 @@ context, the buses it orchestrates injected by their own names.
 from datetime import timedelta
 
 from sincpro_framework import UseFramework
-from sincpro_framework.cron import Cron as _Cron, Crons, Missed, Overlap, Tick
+from sincpro_framework.entrypoints.adapters.cron import Cron as _Cron, Crons, Missed, Overlap, Tick
 
 
 class CronDependencyContextType:                 # infrastructure/dependencies.py
@@ -65,7 +65,7 @@ class ReconcileTransactions(Cron):
 **Beside a service, in a process of their own (default):**
 
 ```python
-from sincpro_framework.cron import CronGateway, CronProcess
+from sincpro_framework.entrypoints.adapters.cron import CronGateway, CronProcess
 
 
 def build_crons() -> CronGateway:      # module level: the spawned child imports and calls it
@@ -87,10 +87,10 @@ CronGateway([cron_payments, cron_billing], runs=shared_runs).run()   # blocks on
 ```
 
 The same gateway is a loop. A deployment that also polls a table or a relay hosts it in
-`Process` (`sincpro_framework.process`, `docs/process/README.md`), not under `entrypoints/`:
+`Process` (`sincpro_framework.entrypoints.entrypoint.workers`, `docs/process/README.md`):
 
 ```python
-from sincpro_framework.process import Poll, Process
+from sincpro_framework.entrypoints.entrypoint.workers import Poll, Process
 
 Process(gateway, Poll(timedelta(seconds=5), tick)).run()
 ```
@@ -116,8 +116,8 @@ every other caller does nothing. That claim is the whole mechanism — no lock, 
 ```python
 import redis
 
-from sincpro_framework.caching.adapters.redis import RedisKeyValue   # extra [redis]
-from sincpro_framework.cron import KeyValueRuns
+from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue   # extra [redis]
+from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns
 
 shared_runs = KeyValueRuns(RedisKeyValue(redis.Redis.from_url(url)))   # retention=30 days, prefix="cron"
 ```
@@ -177,8 +177,8 @@ and replicas is not currently guaranteed by `EventRelay`.
 ```python
 from datetime import UTC, datetime
 
-from sincpro_framework.cron import CronGateway, InMemoryRuns, RunOutcome
-from sincpro_framework.testing import ManualClock
+from sincpro_framework.entrypoints.adapters.cron import CronGateway, InMemoryRuns, RunOutcome
+from sincpro_framework.runtime.testing import ManualClock
 
 clock = ManualClock(datetime(2026, 9, 26, 5, 59, tzinfo=UTC))      # 01:59 in La Paz
 gateway = CronGateway([cron_payments], clock=clock, runs=InMemoryRuns())

@@ -1,82 +1,67 @@
 """Remote execution: a bounded context executed by another service that runs the same code.
 
-    # the caller — the conf file's `context_map`, or the environment
-    SINCPRO_CONTEXT_MAP="billing=grpc://billing-service:50051?timeout=5"
-    billing(CommandIssueInvoice(...), ResponseIssueInvoice)        # answered by that service
+    billing.hosted_at("grpc://billing:50051")      the caller: this bus sends billing's DTOs there
+    serve_contexts([billing])                       the host: billing answers other services
 
-    # the host — its own deployment, beside a REST API, or in a subprocess
-    billing.serve("0.0.0.0:50051", Attach.THREAD)
-
-Context: in DDD the context map says where each bounded context lives and how the others reach
-it; a context another service consumes is an Open Host Service. Where a context runs is
-configuration, never code — the caller's `bus(dto, Response)` does not change. On the caller the
-bus is a reference: a client with the face of the bus, never built, that forwards every call.
-
-    domain/          the vocabulary and the port: address, payload, errors, transport
-    adapters/        the transports, the caller's side: http (stdlib), grpc ([grpc] extra)
-    configuration    the context map, read from the conf file and SINCPRO_CONTEXT_MAP
-    entrypoint/      the Open Hosts: hosts (serve), http routes ([rpc]), grpc handler ([grpc])
-
-See `docs/entrypoints/bounded-contexts-across-services.md`.
+The caller's transports (`adapters/`), the Open Host that answers them (`entrypoint/`), what a
+call travels as and what a failed one raises (`domain/`). gRPC is the `[grpc]` extra and HTTP the
+`[rpc]` one: `open_host` and `open_host_routes` load them only when asked.
 """
 
-from sincpro_framework.remote_execution.adapters import Transport, transport_for
-from sincpro_framework.remote_execution.configuration import configured_host
-from sincpro_framework.remote_execution.domain import (
-    CHUNK_SIZE,
-    CannotTravel,
-    ChunkReader,
-    ContextFailed,
-    ContextOutcomeUnknown,
-    ContextTimeout,
-    ContextUnavailable,
-    DTODoesNotFit,
-    pack,
-    pack_context,
-    packed,
-    unpack,
-    unpack_context,
-    unpacked,
-)
-from sincpro_framework.remote_execution.entrypoint import (
-    Attach,
-    OpenHost,
-    open_host,
-    serve_contexts,
-)
-from sincpro_framework.transport.addresses import (
-    DEFAULT_TIMEOUT,
+from typing import TYPE_CHECKING, Any
+
+from sincpro_framework.common.transport.addresses import (
     HostedAt,
     HostedContext,
     InvalidAddress,
     Wire,
 )
+from sincpro_framework.remote_execution.domain.errors import (
+    ContextFailed,
+    ContextOutcomeUnknown,
+    ContextTimeout,
+    ContextUnavailable,
+    DTODoesNotFit,
+)
+from sincpro_framework.remote_execution.entrypoint.hosts import (
+    Attach,
+    OpenHost,
+    serve_contexts,
+)
+
+if TYPE_CHECKING:
+    from sincpro_framework.remote_execution.entrypoint.grpc import open_host
+    from sincpro_framework.remote_execution.entrypoint.http import open_host_routes
 
 __all__ = [
-    "open_host",
     "Attach",
-    "CHUNK_SIZE",
-    "CannotTravel",
-    "ChunkReader",
     "ContextFailed",
     "ContextOutcomeUnknown",
     "ContextTimeout",
     "ContextUnavailable",
-    "DEFAULT_TIMEOUT",
     "DTODoesNotFit",
     "HostedAt",
     "HostedContext",
     "InvalidAddress",
     "OpenHost",
-    "Transport",
     "Wire",
-    "configured_host",
-    "pack",
-    "pack_context",
-    "packed",
+    "open_host",
+    "open_host_routes",
     "serve_contexts",
-    "transport_for",
-    "unpack",
-    "unpack_context",
-    "unpacked",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Each door loads its wire only when asked: `open_host` needs the `[grpc]` extra,
+    `open_host_routes` the `[rpc]` one."""
+    if name == "open_host":
+        from sincpro_framework.remote_execution.entrypoint import grpc
+
+        return grpc.open_host
+    if name == "open_host_routes":
+        from sincpro_framework.remote_execution.entrypoint import http
+
+        return http.open_host_routes
+    raise AttributeError(
+        f"module 'sincpro_framework.remote_execution' has no attribute {name!r}"
+    )

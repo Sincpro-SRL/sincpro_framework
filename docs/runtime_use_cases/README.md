@@ -1,6 +1,6 @@
 # Runtime use cases — use cases stored as source, loaded while the service runs
 
-`sincpro_framework.runtime_use_cases` keeps Commands, Responses and the Feature or
+`sincpro_framework.runtime.runtime_use_cases` keeps Commands, Responses and the Feature or
 ApplicationService that answers them as data — the Python source of a module, in a table of
 yours or in memory — and loads them onto the bus of a bounded context without a deploy. The source
 is the only truth about a stored use case: it is written, reviewed and tested as any Python
@@ -49,11 +49,11 @@ which never sees a stored use case.
 
 A `RuntimeUseCase` is a name and the source of a module with one Feature or ApplicationService;
 the Command it answers is the one its `execute` declares. Its module is
-`sincpro_runtime.<context>.<name>`, so its Commands are routed by that name — by MCP, RPC, a
-queue, or `registry.execute`:
+`sincpro_runtime.<context>.<name>`; its Commands are routed by their identity, `<context>.<Class>`
+as the ones in code are — by MCP, RPC, a queue, or `registry.execute`:
 
 ```python
-from sincpro_framework.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
+from sincpro_framework.runtime.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
 
 QUOTE = '''
 from decimal import Decimal
@@ -78,7 +78,7 @@ store = InMemoryUseCases()
 store.save(RuntimeUseCase(name="quote", source=QUOTE))
 registry = BusRegistry(billing, store)
 
-quoted = registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100})
+quoted = registry.execute("billing.CommandQuote", {"amount": 100})
 assert quoted.total == Decimal("113.00")
 assert registry.current(CommandComputeTax(amount=Decimal("100")), ResponseComputeTax).tax == Decimal("13.00")
 ```
@@ -90,7 +90,7 @@ have not created yet. After that, `current` is read with no lock.
 What decides a new generation is the content: a changed source, `active` or `replaces`. `version`
 names the source in refusals and tracebacks, so a line points at the text that holds it.
 The names a generation routes are its `current.dto_registry` keys; a stored Command goes by its
-module and class, never by its class alone.
+identity, `billing.CommandQuote`.
 
 `registry.execute` builds the Command and executes it on one generation. A stored Command is a
 new class in each generation, and a bus answers a class, so a Command built against one
@@ -103,7 +103,7 @@ swaps in a generation with what the store holds, and answers `False`, with no bu
 nothing changed:
 
 ```python
-from sincpro_framework.runtime_use_cases import UseCaseRefused
+from sincpro_framework.runtime.runtime_use_cases import UseCaseRefused
 
 draft = RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.16"), version=2)
 registry.check(draft)
@@ -112,7 +112,7 @@ store.save(draft)
 before = registry.current
 assert registry.reload()
 assert registry.generation == 2
-assert registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100}).total == Decimal("116.00")
+assert registry.execute("billing.CommandQuote", {"amount": 100}).total == Decimal("116.00")
 assert not registry.reload()
 answering = registry.current
 
@@ -137,7 +137,7 @@ and every later `reload` keeps working:
 
 ```python
 registry.put(RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.15"), version=4))
-assert registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100}).total == Decimal("115.00")
+assert registry.execute("billing.CommandQuote", {"amount": 100}).total == Decimal("115.00")
 
 try:
     registry.put(RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=5))
@@ -208,7 +208,7 @@ store.save(RuntimeUseCase(name="checkout", source=CHECKOUT))
 store.save(RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION, replaces=f"{__name__}.ComputeTax"))
 registry.reload()
 
-small = registry.execute("sincpro_runtime.billing.checkout.CommandCheckout", {"amount": 50})
+small = registry.execute("billing.CommandCheckout", {"amount": 50})
 assert small.total == Decimal("50")
 ```
 
@@ -217,7 +217,7 @@ Retiring a use case is saving it inactive; the next generation is built without 
 ```python
 store.save(RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION, version=2, active=False, replaces=f"{__name__}.ComputeTax"))
 registry.reload()
-assert registry.execute("sincpro_runtime.billing.checkout.CommandCheckout", {"amount": 50}).total == Decimal("56.50")
+assert registry.execute("billing.CommandCheckout", {"amount": 50}).total == Decimal("56.50")
 ```
 
 ## Where use cases are kept
@@ -232,11 +232,11 @@ migrations create and change it like any other of its tables:
 ```python
 from sqlalchemy import MetaData
 
-from sincpro_framework.orm import Database
-from sincpro_framework.orm.runtime_use_cases import SqlUseCases, use_case_table
+from sincpro_framework.data_layer.orm import Database
+from sincpro_framework.data_layer.orm import SqlUseCases, template_table
 
 metadata = MetaData()                                   # the context's tables
-use_cases = use_case_table(metadata)                    # "runtime_use_case"; name it per context
+use_cases = template_table.use_case_table(metadata)                    # "runtime_use_case"; name it per context
 database = Database("sqlite:///billing.sqlite3")
 metadata.create_all(database.engine)                    # a migration, in a service
 
@@ -245,13 +245,13 @@ other_replica = BusRegistry(billing, SqlUseCases(database, use_cases))
 
 one_replica.store.save(RuntimeUseCase(name="quote", source=QUOTE))
 other_replica.reload()
-assert other_replica.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100}).total == Decimal("113.00")
+assert other_replica.execute("billing.CommandQuote", {"amount": 100}).total == Decimal("113.00")
 ```
 
 Any other storage implements the two methods:
 
 ```python
-from sincpro_framework.runtime_use_cases import UseCaseStore
+from sincpro_framework.runtime.runtime_use_cases import UseCaseStore
 
 
 class DictUseCases(UseCaseStore):
@@ -266,7 +266,7 @@ class DictUseCases(UseCaseStore):
 
 
 listed = BusRegistry(billing, DictUseCases(RuntimeUseCase(name="quote", source=QUOTE)))
-assert listed.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 10}).total == Decimal("11.30")
+assert listed.execute("billing.CommandQuote", {"amount": 10}).total == Decimal("11.30")
 ```
 
 Stored source runs with the service's permissions: whoever can save a use case can run code in
@@ -286,7 +286,7 @@ what should not run.
 | `registry.check_all()` | every active stored use case loaded against the code now; the refusals, `[]` when none |
 | `registry.execute(dto_name, payload)` | a Command built and executed on one generation |
 | `UseCaseStore` / `InMemoryUseCases` | where use cases are kept / in memory |
-| `SqlUseCases(database, table)` / `use_case_table(metadata, name)` | in a table of the context's database (`[sqlalchemy]`) |
+| `SqlUseCases(database, table)` / `template_table.use_case_table(metadata, name)` | in a table of the context's database (`[sqlalchemy]`) |
 | `UseCaseRefused` | a use case that cannot be loaded, named with its version |
 | `UseFramework.fresh()` | a new bus of the context, not built, with everything registered on this one |
 | `UseFramework.handler_of(dto)` | the handler registered now for a Command |

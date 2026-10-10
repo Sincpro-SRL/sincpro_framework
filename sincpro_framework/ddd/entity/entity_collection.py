@@ -14,7 +14,7 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Expression, Specification
-    from sincpro_framework.ddd.entity.model_meta import Meta
+    from sincpro_framework.ddd.entity.entity_meta import Meta
 
 
 class Count(DataTransferObject):

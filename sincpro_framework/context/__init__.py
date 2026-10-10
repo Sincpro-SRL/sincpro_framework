@@ -17,9 +17,10 @@ copy-on-write, so threads never tear them.
 
     domain/          Level, EntrypointKind, Origin, ContextNode, Execution, the standard keys,
                      the ports — ContextStore, ContextCodec
-    infrastructure/  the node in play, executions, providers, threads and pools
+    infrastructure/  the node in play, executions, what scopes say, the shared store
     adapters/        InMemoryContexts, KeyValueContexts (Redis, Valkey, Memcached), the codecs
-    entrypoint/      Context and use_context(), what a bus holds (bus.context, self.context)
+    entrypoint/      Context, use_context() and carrying(), requires_context and the providers,
+                     the threads and pools, what a bus holds (bus.context, self.context)
 
 Every name below is loaded when first asked for: the bus's own modules import this package, and it
 never imports a bus at import time.
@@ -34,35 +35,24 @@ if TYPE_CHECKING:
     from sincpro_framework.context.domain.codec import ContextCodec
     from sincpro_framework.context.domain.execution import (
         CAUSATION_ID,
-        CHAIN_KEYS,
         CORRELATION_ID,
         EXECUTION_ID,
-        IDENTITY_HEADERS,
         Execution,
         chained,
     )
     from sincpro_framework.context.domain.keys import (
         TENANT_ID,
-        TENANT_IDS,
         USER_ID,
-        standardized,
         travelling,
     )
     from sincpro_framework.context.domain.level import EntrypointKind, Level, Origin
     from sincpro_framework.context.domain.store import ContextStore
-    from sincpro_framework.context.entrypoint.facade import Context, use_context
-    from sincpro_framework.context.infrastructure.providers import requires_context
-    from sincpro_framework.context.infrastructure.threads import (
+    from sincpro_framework.context.entrypoint.facade import Context, carrying, use_context
+    from sincpro_framework.context.entrypoint.providers import requires_context
+    from sincpro_framework.context.entrypoint.threads import (
         ContextExecutor,
         ContextThread,
         in_context,
-    )
-    from sincpro_framework.context.infrastructure.tree import (
-        carrying,
-        chain_for,
-        current_execution,
-        executing_context,
-        handed_on,
     )
 
 _WHERE = {
@@ -73,16 +63,12 @@ _WHERE = {
     "KeyValueContexts": "adapters.stores",
     "ContextCodec": "domain.codec",
     "CAUSATION_ID": "domain.execution",
-    "CHAIN_KEYS": "domain.execution",
     "CORRELATION_ID": "domain.execution",
     "EXECUTION_ID": "domain.execution",
-    "IDENTITY_HEADERS": "domain.execution",
     "Execution": "domain.execution",
     "chained": "domain.execution",
     "TENANT_ID": "domain.keys",
-    "TENANT_IDS": "domain.keys",
     "USER_ID": "domain.keys",
-    "standardized": "domain.keys",
     "travelling": "domain.keys",
     "EntrypointKind": "domain.level",
     "Level": "domain.level",
@@ -90,18 +76,40 @@ _WHERE = {
     "ContextStore": "domain.store",
     "Context": "entrypoint.facade",
     "use_context": "entrypoint.facade",
-    "requires_context": "infrastructure.providers",
-    "ContextExecutor": "infrastructure.threads",
-    "ContextThread": "infrastructure.threads",
-    "in_context": "infrastructure.threads",
-    "carrying": "infrastructure.tree",
-    "chain_for": "infrastructure.tree",
-    "current_execution": "infrastructure.tree",
-    "executing_context": "infrastructure.tree",
-    "handed_on": "infrastructure.tree",
+    "requires_context": "entrypoint.providers",
+    "ContextExecutor": "entrypoint.threads",
+    "ContextThread": "entrypoint.threads",
+    "in_context": "entrypoint.threads",
+    "carrying": "entrypoint.facade",
 }
 
-__all__ = sorted(_WHERE)
+__all__ = [
+    "CAUSATION_ID",
+    "CORRELATION_ID",
+    "Context",
+    "ContextCodec",
+    "ContextExecutor",
+    "ContextStore",
+    "ContextThread",
+    "EXECUTION_ID",
+    "EntrypointKind",
+    "Execution",
+    "InMemoryContexts",
+    "KeyValueContexts",
+    "Level",
+    "Origin",
+    "PickleCodec",
+    "PlainCodec",
+    "TENANT_ID",
+    "TypedCodec",
+    "USER_ID",
+    "carrying",
+    "chained",
+    "in_context",
+    "requires_context",
+    "travelling",
+    "use_context",
+]
 
 
 def __getattr__(name: str) -> Any:

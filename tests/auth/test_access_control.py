@@ -30,10 +30,15 @@ from sincpro_framework.auth import (
     as_system,
     current_identity,
 )
-from sincpro_framework.ddd import Condition, Criteria, Entity, MemoryRepository
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Condition, Criteria, Entity
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.exceptions import ExtensionRefused
-from sincpro_framework.testing import AuthProviderContract, RecordingProvider, granting
+from sincpro_framework.runtime.testing import (
+    AuthProviderContract,
+    RecordingProvider,
+    granting,
+)
 
 
 class BillingPermission(Permission):

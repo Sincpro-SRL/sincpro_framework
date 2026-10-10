@@ -306,7 +306,7 @@ See `docs/prd/PRD_24_shared-context.md`.
 ```python
 from datetime import timedelta
 
-from sincpro_framework.caching import InMemoryKeyValue
+from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.context import ContextStore, KeyValueContexts
 
 contexts = KeyValueContexts(InMemoryKeyValue())         # RedisKeyValue(redis) in production

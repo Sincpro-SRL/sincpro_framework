@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd import DomainEvent, Entity, EventSourcedMixin
-from sincpro_framework.orm import event_table, map_events
+from sincpro_framework.data_layer.orm import map_events, template_table
 
 
 @dataclass(kw_only=True)
@@ -43,7 +43,7 @@ class Account(EventSourcedMixin, Entity):
 
 
 banking = registry()
-events = event_table("banking_events", banking.metadata)
+events = template_table.event_table("banking_events", banking.metadata)
 map_events(banking, BankingEvent, events)
 ```
 
@@ -98,4 +98,4 @@ rows unless their completeness and ordering have been established.
     events a relay must send; see [outbox.md](outbox.md).
 
 Framework evidence: `docs/persistence/guide.md` sections 10-12,
-`tests/orm/test_events_table.py`, `tests/event_driven/test_relay.py`.
+`tests/data_layer/orm/test_events_table.py`, `tests/event_driven/test_relay.py`.

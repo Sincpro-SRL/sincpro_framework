@@ -9,11 +9,11 @@ from dataclasses import dataclass, field, fields
 
 import pytest
 
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     NAME_SEARCH_LIMIT,
     TEXT,
     Entity,
-    MemoryRepository,
     Presentation,
     detail_of,
     matching,
@@ -26,7 +26,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.entity.model_meta import describe_class, presentation_of
+from sincpro_framework.ddd.entity.entity_meta import describe_class, presentation_of
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 from sincpro_framework.ddd.repositories import AggregateRepository
@@ -246,7 +246,7 @@ def test_a_select_carries_the_identity_and_the_display_on_the_wire(accounts):
     answer = ResponseListAccounts.of(accounts.search(asked), asked).model_dump()
 
     assert all(set(record) == {"id", "name"} for record in answer["accounts"])
-    assert list(answer["model_meta_data"]["fields"]) == ["id", "name"]
+    assert list(answer["entity_meta_data"]["fields"]) == ["id", "name"]
 
 
 def test_get_without_a_detail_is_the_stored_record(accounts):

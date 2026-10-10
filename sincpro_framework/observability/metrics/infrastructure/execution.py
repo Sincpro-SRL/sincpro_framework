@@ -15,6 +15,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
+from sincpro_framework.common.naming import registered_name
 from sincpro_framework.observability.domain import EXPECTED, OK, OUTCOME
 from sincpro_framework.observability.metrics.domain.declarations import Declaration, Measure
 from sincpro_framework.observability.metrics.domain.instruments import (
@@ -74,7 +75,7 @@ def outcome_of(error: BaseException | None, expected: bool = False) -> dict[str,
         return {OUTCOME: OK, ERROR_TYPE: ""}
     if expected:
         return {OUTCOME: EXPECTED, ERROR_TYPE: type(error).__name__}
-    from sincpro_framework.transport.failures import refined_failure_kind
+    from sincpro_framework.common.failures import refined_failure_kind
 
     try:
         kind = (
@@ -207,7 +208,7 @@ def _finish(
     labels: Mapping[str, str] = {
         SERVICE_NAME: identity.service_name if identity is not None else "",
         "sincpro.context": context,
-        "sincpro.use_case": type(dto).__name__,
+        "sincpro.use_case": registered_name(type(dto), context),
         "sincpro.layer": layer,
         **outcome_of(execution.error, expects(who, execution.error)),
     }

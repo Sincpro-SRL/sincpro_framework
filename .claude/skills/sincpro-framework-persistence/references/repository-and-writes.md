@@ -10,16 +10,16 @@ from the foreign keys. Calling it twice changes nothing.
 ```python
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
-from sincpro_framework.orm import Database, Repository, archive_columns, entity_table, map_aggregates
+from sincpro_framework.data_layer.orm import Database, Repository, map_aggregates, template_table
 
 billing = registry()
-customer_table = entity_table(
+customer_table = template_table.entity_table(
     "customer", billing.metadata,
     Column("name", Text, nullable=False),
     Column("email", Text),
-    *archive_columns(),                       # for ArchivableMixin
+    *template_table.archive_columns(),                       # for ArchivableMixin
 )
-invoice_table = entity_table(
+invoice_table = template_table.entity_table(
     "invoice", billing.metadata,
     Column("number", Text, nullable=False, unique=True),
     Column("customer_id", Text, ForeignKey("customer.id"), nullable=False),
@@ -267,7 +267,7 @@ anas_books.count(Invoice).value
 
 `sincpro_framework.ddd.IRepository` is the aggregate read/write port. `Analyzes`, `WritesInBulk`
 and `Transacts` are separate capabilities; accepting the base port does not promise them.
-`sincpro_framework.orm.Repository` implements the SQL capabilities and adds `context`,
+`sincpro_framework.data_layer.orm.Repository` implements the SQL capabilities and adds `context`,
 `narrowed`, `retrying`, `statement`/`run`, `pivot`, `export`, `explain`.
 
 `AggregateRepository[T](repository, T)` binds one model: `get(id)`, `search(criteria)`,
@@ -281,8 +281,8 @@ version check, `updated_at`/actor stamping, archived rows left out, hooks. It ha
 (`MemoryRepository(hooks=billing_hooks)`); passing them positionally is refused.
 
 ```python
-from sincpro_framework.ddd import MemoryRepository
-from sincpro_framework.testing import override_dependencies
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.runtime.testing import override_dependencies
 
 
 def test_registering_a_customer_stores_it():

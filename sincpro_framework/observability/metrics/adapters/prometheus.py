@@ -30,7 +30,7 @@ PROMETHEUS_MISSING = "prometheus_client is not installed. Install with: pip inst
 
 try:
     import prometheus_client  # pyright: ignore[reportMissingImports]
-except ImportError as error:  # pragma: no cover - tests/test_core_without_extras.py
+except ImportError as error:  # pragma: no cover - tests/core/test_core_without_extras.py
     raise ImportError(PROMETHEUS_MISSING) from error
 
 MULTIPROCESS_DIR = "PROMETHEUS_MULTIPROC_DIR"

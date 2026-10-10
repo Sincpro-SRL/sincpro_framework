@@ -104,7 +104,7 @@ def test_every_use_case_is_timed_with_its_context_and_outcome(recorder):
     assert labels == {
         "service.name": "crm",
         "sincpro.context": "crm",
-        "sincpro.use_case": "CommandIssueInvoice",
+        "sincpro.use_case": "crm.CommandIssueInvoice",
         "sincpro.layer": "feature",
         "sincpro.outcome": "ok",
         "error.type": "",
@@ -164,8 +164,8 @@ def test_an_application_service_and_each_feature_it_runs_are_timed_apart(recorde
         for labels, values in recorder.observations(USE_CASE_DURATION)
     }
     assert timed == {
-        ("CommandIssueTwice", "application_service"): 1,
-        ("CommandIssueInvoice", "feature"): 2,
+        ("billing.CommandIssueTwice", "application_service"): 1,
+        ("billing.CommandIssueInvoice", "feature"): 2,
     }
 
 
@@ -421,7 +421,7 @@ def _outcome_of_a_run(bus: UseFramework, recorder: InMemoryRecorder) -> dict[str
 def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
     """`failure_kind = NOT_FOUND` on an error is what its callers already read on every wire:
     a dashboard that says `domain` for it hides the one kind it is looking for."""
-    from sincpro_framework.transport.failures import FailureKind
+    from sincpro_framework.common.failures import FailureKind
 
     class InvoiceNotFound(DomainError):
         failure_kind = FailureKind.NOT_FOUND
@@ -432,7 +432,7 @@ def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
 
 
 def test_a_duplicate_that_did_not_wait_is_in_progress_not_internal(recorder):
-    from sincpro_framework.caching import AlreadyInProgress
+    from sincpro_framework.data_layer.caching import AlreadyInProgress
 
     outcome = _outcome_of_a_run(_failing(AlreadyInProgress("still running")), recorder)
 

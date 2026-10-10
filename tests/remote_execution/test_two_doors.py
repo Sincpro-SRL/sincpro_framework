@@ -12,8 +12,8 @@ import grpc
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.entrypoints.exposure import Exposure
-from sincpro_framework.entrypoints.grpc import GrpcGateway
+from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.remote_execution import Attach
 from sincpro_framework.remote_execution.adapters.grpc import PATH
 

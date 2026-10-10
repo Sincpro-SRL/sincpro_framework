@@ -37,19 +37,19 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `EntityUpdated` | The event `ChangeTrackingMixin` records (`changes`, `field_labels`); subclass it for your own name | dataclass (`DomainEvent`) | `sincpro_framework.ddd` |
 | `DeliverableEventMixin` | Marks a fact for relay delivery; `delivered_at`, `next_delivery_at`, `delivery` are stored but excluded from its wire JSON | dataclass mixin | `sincpro_framework.ddd` |
 | `EventSourcedMixin` | No aggregate row: `happened` records/applies/numbers a fact; `get` rebuilds and `save` appends | mixin | `sincpro_framework.ddd` |
-| `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(event)` or `publish(event, Response)`, into a `Queue` | function | `sincpro_framework.event_driven` |
+| `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(event)` or `publish(event, Response)`, into a `Queue` | class | `sincpro_framework.event_driven` |
 | `Queue` | Protocol: `put(event)` / `aput(event)` | port (abstract) | `sincpro_framework.event_driven` |
 | `SyncQueue` | Runs the subscriber inside the `publish` call, same process | adapter | `sincpro_framework.event_driven` |
-| `BackgroundQueue` | A spawned child consumes from a `multiprocessing.Queue`; `start()`/`stop()`. That child is this queue's, not `sincpro_framework.process.Process` | adapter | `sincpro_framework.event_driven` |
+| `BackgroundQueue` | A spawned child consumes from a `multiprocessing.Queue`; `start()`/`stop()`. That child is this queue's, not `sincpro_framework.entrypoints.entrypoint.workers.Process` | adapter | `sincpro_framework.event_driven` |
 | `Subscriber` / `AsyncSubscriber` | The buses that hear events; executes every bus whose registry knows `event.name` | registry | `sincpro_framework.event_driven` |
 | `@bus.feature(SomeEvent)` | The subscription itself: an ordinary Feature registered for the event class | decorator | (`UseFramework`) |
-| `RecordingQueue` | Test queue that keeps what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.testing` |
+| `RecordingQueue` | Test queue that keeps what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.runtime.testing` |
 | `FastStreamQueue` | A `Queue` that sends to Kafka/RabbitMQ/Redis/NATS — extra `[faststream]` | adapter | `sincpro_framework.event_driven.adapters.faststream` |
-| `subscribe(broker, subscriber)` | Consumer side: one subscription per channel of the events the buses registered, acknowledged manually | function | `sincpro_framework.entrypoints.faststream` |
+| `subscribe(broker, subscriber)` | Consumer side: one subscription per channel of the events the buses registered, acknowledged manually | function | `sincpro_framework.entrypoints.adapters.faststream` |
 | `keyed_by_entity` / `by_event_name` | Kafka message key = `entity_id` / channel = event name | function | `sincpro_framework.event_driven.adapters.faststream` |
-| `QueueOptions` | Consumer settlement: `inbox`, `max_attempts`, dead-letter suffix, `subscription_of` | setting | `sincpro_framework.entrypoints.faststream` |
-| `event_table(name, metadata)` / `map_events(registry, base, table)` | One event table per context; subclasses selected by wire name, extra fields in JSON payload | function | `sincpro_framework.orm` |
-| `event_columns()` | Low-level envelope columns; prefer the complete `event_table` for context event storage | function | `sincpro_framework.orm` |
+| `QueueOptions` | Consumer settlement: `inbox`, `max_attempts`, dead-letter suffix, `subscription_of` | setting | `sincpro_framework.entrypoints.adapters.faststream` |
+| `event_table(name, metadata)` / `map_events(registry, base, table)` | One event table per context; subclasses selected by wire name, extra fields in JSON payload | function | `sincpro_framework.data_layer.orm` |
+| `event_columns()` | Low-level envelope columns; prefer the complete `event_table` for context event storage | function | `sincpro_framework.data_layer.orm` |
 | `RepositoryQueue` | Stores a published event through the repository for later relay delivery | adapter | `sincpro_framework.event_driven` |
 | `EventRelay` / `RelayPass` | `run_once()` selects due deliverable events, publishes and saves outcomes; returns counts | entrypoint / DTO | `sincpro_framework.event_driven` |
 | `DeliveryFailurePolicy` | `RetryInPlace`, `RetryLater`, `ParkAndContinue`, `SkipAndContinue`; fixed/exponential backoff | strategy | `sincpro_framework.event_driven` |
@@ -66,7 +66,7 @@ delivery*). Event log (state + history) ≠ event sourcing (history *is* the sta
 (`SyncQueue`, `BackgroundQueue`). Optional extras, never core dependencies:
 `event_driven/adapters/faststream/` sends; `entrypoints/faststream/` subscribes (`[faststream]`
 plus the broker driver, e.g. `faststream[kafka]`), the event
-tables in `orm/` (`[sqlalchemy]`), and a Redis inbox through `caching.adapters.redis` (`[redis]`).
+tables in `orm/` (`[sqlalchemy]`), and a Redis inbox through `data_layer.caching.adapters.redis` (`[redis]`).
 
 **Inside a consumer service** (one `UseFramework` per bounded context, created in
 `infrastructure/framework.py` before `services/` is imported):
@@ -122,12 +122,21 @@ outbox: one unit of work saves state + mapped facts → EventRelay reads due eve
   silently. When the fact leaves the process, use the outbox.
 - **No explicit `name`.** The wire name defaults to the class name: renaming the class silently
   stops routing to consumers and stored rows. Set `name = "<context>.<aggregate>.v1.<verb>"`.
+- **A second base event class in a context.** One base event class and one `map_events` per
+  bounded context; a second base in a context is a mistake: it makes a second table. An
+  aggregate's events subclass the context's base (or an intermediate class under it).
+- **A hand-written "list X events" Feature per aggregate.** A record's history is
+  `DomainEvents[Issue, R]` on the record's own `EntityReads`; the context's log is `Search` on
+  `EntityReads[<context event>]`; several records at once is `history_of(...)`.
+- **Filtering a history by `entity_id` alone.** Two kinds of record may share an id; the type and
+  the id go together (`DomainEvents` and `history_of` do it).
 - **Copying the old event-entry/status model.** Use the context base event, `event_table` and
   `map_events`; delivery is metadata on that event. There is no separate outbox row to maintain.
 - **Direct publication plus a relay for the same fact.** Saving keeps the event without draining
   it; choose one delivery owner or subscribers receive both sends.
-- **Assuming strict stream ordering from the relay.** Holding later events currently lasts only
-  for the current pass, not across backoff intervals or replicas; see `references/outbox.md`.
+- **Assuming strict stream ordering across relay replicas.** A waiting retry holds its entity
+  (or everything) pass after pass, but two replicas can take two events of one entity at once;
+  see `references/outbox.md`.
 - **Channel mismatch.** A producer using `channel_of=` and a consumer calling `subscribe` without
   the matching `channel_of_name=` never meet.
 - **Two services on one event over RabbitMQ.** Both consume the queue named after the channel and
@@ -198,6 +207,12 @@ class EmailTheCustomer(Feature):
   with `event_table` / `map_events`. Save the row-backed aggregate normally; query the base
   for the context's history or a subclass for one event type. Use `EventSourcedMixin` only
   when the facts themselves are the aggregate's state. Never add a parallel `...EventEntry`.
+- **Reading the log is reading entities.** `EntityReads[<context event>]` answers `Get`,
+  `GetMany`, `Search` with a criteria on the envelope (`name in [...]`, `entity_type`,
+  `created_at`, `correlation_id`); `DomainEvents[Issue, R]` answers one record's events, oldest first, `names=[...]` keeping some wire names.
+  The payload is not filtered. An application event gives itself a subject when it has one (a
+  closing day, an import — `ExecutionCompleted` names `"Execution"`); `entity_type=""` is for
+  what truly has none.
 
 ## The published language: what other processes depend on
 

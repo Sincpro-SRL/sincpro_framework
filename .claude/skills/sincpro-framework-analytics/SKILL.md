@@ -28,25 +28,25 @@ skill stands alone; the deep docs it names live in the framework repository, not
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `QueryCache` | Reads held by the repository's fingerprint of a `Criteria`; `fetch`, `fetch_all`, `get`, `invalidate`; LRU past `max_rows` | registry | `from sincpro_framework.data_analysis import QueryCache` |
-| `DataFrame` | Columnar rows: `columns`, `types`, `complete`, `cursor`; `narrow`, `sort`, `select`, `to_arrow`/`to_parquet`/`to_ipc`/`to_json`, `from_arrow` | DTO (frozen dataclass) | `from sincpro_framework.data_analysis import DataFrame` |
+| `QueryCache` | Reads held by the repository's fingerprint of a `Criteria`; `fetch`, `fetch_all`, `get`, `invalidate`; LRU past `max_rows` | registry | `from sincpro_framework.data_layer.data_analysis import QueryCache` |
+| `DataFrame` | Columnar rows: `columns`, `types`, `complete`, `cursor`; `narrow`, `sort`, `select`, `to_arrow`/`to_parquet`/`to_ipc`/`to_json`, `from_arrow` | DTO (frozen dataclass) | `from sincpro_framework.data_layer.data_analysis import DataFrame` |
 | Fingerprint | The key of a read: filter, order, mask, scope — never the page | function | `repository.fingerprint(target, criteria)` |
-| `invalidate_on_commit` | Lets a cache go of an aggregate's reads when a write of it commits | function | `from sincpro_framework.orm import invalidate_on_commit` |
-| `RuntimeUseCase` | A use case as data: `name`, `source`, `version`, `active`, `replaces` | DTO | `from sincpro_framework.runtime_use_cases import RuntimeUseCase` |
-| `UseCaseStore` | Where use cases are kept: `active()`, `save(use_case)` | port (abstract) | `from sincpro_framework.runtime_use_cases import UseCaseStore` |
-| `InMemoryUseCases` | Store in the process | adapter | `from sincpro_framework.runtime_use_cases import InMemoryUseCases` |
-| `SqlUseCases` / `use_case_table` | Store in a table of the context's database / that table on its `MetaData` | adapter / function | `from sincpro_framework.orm.runtime_use_cases import SqlUseCases, use_case_table` (extra `[sqlalchemy]`) |
-| `BusRegistry` | The code's bus plus the stored use cases, as generations: `current`, `generation`, `in_force`, `execute`, `reload`, `check`, `put`, `check_all` | registry | `from sincpro_framework.runtime_use_cases import BusRegistry` |
+| `invalidate_on_commit` | Lets a cache go of an aggregate's reads when a write of it commits | function | `from sincpro_framework.data_layer.orm import invalidate_on_commit` |
+| `RuntimeUseCase` | A use case as data: `name`, `source`, `version`, `active`, `replaces` | DTO | `from sincpro_framework.runtime.runtime_use_cases import RuntimeUseCase` |
+| `UseCaseStore` | Where use cases are kept: `active()`, `save(use_case)` | port (abstract) | `from sincpro_framework.runtime.runtime_use_cases import UseCaseStore` |
+| `InMemoryUseCases` | Store in the process | adapter | `from sincpro_framework.runtime.runtime_use_cases import InMemoryUseCases` |
+| `SqlUseCases` / `use_case_table` | Store in a table of the context's database / that table on its `MetaData` | adapter / function | `from sincpro_framework.data_layer.orm import SqlUseCases, template_table` → `template_table.use_case_table` (extra `[sqlalchemy]`) |
+| `BusRegistry` | The code's bus plus the stored use cases, as generations: `current`, `generation`, `in_force`, `execute`, `reload`, `check`, `put`, `check_all` | registry | `from sincpro_framework.runtime.runtime_use_cases import BusRegistry` |
 | Generation | `bus.fresh()` (every code registration replayed) + stored sources, built, swapped in whole | function | `UseFramework.fresh()` |
-| `Workflows` | The workflows of one bus: `run`, `reload`, `refresh`, `validate`, `dry_run`, `catalog`, `schema`, `draw`, `expose` | registry | `from sincpro_framework.workflows import Workflows` |
-| `Workflow` / `Step` | A definition / one step (`execute`, `code`, `for_each`, `fail`, `when`) | DTO | `from sincpro_framework.workflows import Workflow, Step` |
-| `WorkflowSource` | Where definitions come from: `load()`, `version()` | port (abstract) | `from sincpro_framework.workflows import WorkflowSource` |
-| `FileWorkflows` / `InMemoryWorkflows` | One `<name>.json` per workflow in a folder / a list | adapter | `from sincpro_framework.workflows import FileWorkflows, InMemoryWorkflows` |
-| `SnippetEngine` / `PythonSnippets` | What runs a `code` step / Python in this process (default) | port / adapter | `from sincpro_framework.workflows import SnippetEngine, PythonSnippets` |
-| `Limits` | `max_steps=1000`, `max_items=1000`, `max_depth=5` | setting | `from sincpro_framework.workflows import Limits` |
-| `WorkflowRun` / `StepRun` / `StepStatus` / `RunStatus` | The trace of a run / of a step / `RAN`, `SKIPPED`, `FAILED` / `SUCCEEDED`, `FAILED` | DTO | `from sincpro_framework.workflows import ...` |
-| `CommandRunWorkflow` / `ResponseRunWorkflow` | The Command `expose()` registers on the bus; a gateway serves it once bound (`gateway.bind(CommandRunWorkflow, McpBinding())`) | DTO | `from sincpro_framework.workflows import ...` |
-| `Issue` | One validation problem: `workflow`, `step`, `path`, `message` | DTO (frozen dataclass) | `from sincpro_framework.workflows import Issue` |
+| `Workflows` | The workflows of one bus: `run`, `reload`, `refresh`, `validate`, `dry_run`, `catalog`, `schema`, `draw`, `expose` | registry | `from sincpro_framework.runtime.workflows import Workflows` |
+| `Workflow` / `Step` | A definition / one step (`execute`, `code`, `for_each`, `fail`, `when`) | DTO | `from sincpro_framework.runtime.workflows import Workflow, Step` |
+| `WorkflowSource` | Where definitions come from: `load()`, `version()` | port (abstract) | `from sincpro_framework.runtime.workflows import WorkflowSource` |
+| `FileWorkflows` / `InMemoryWorkflows` | One `<name>.json` per workflow in a folder / a list | adapter | `from sincpro_framework.runtime.workflows import FileWorkflows, InMemoryWorkflows` |
+| `SnippetEngine` / `PythonSnippets` | What runs a `code` step / Python in this process (default) | port / adapter | `from sincpro_framework.runtime.workflows import SnippetEngine, PythonSnippets` |
+| `Limits` | `max_steps=1000`, `max_items=1000`, `max_depth=5` | setting | `from sincpro_framework.runtime.workflows import Limits` |
+| `WorkflowRun` / `StepRun` / `StepStatus` / `RunStatus` | The trace of a run / of a step / `RAN`, `SKIPPED`, `FAILED` / `SUCCEEDED`, `FAILED` | DTO | `from sincpro_framework.runtime.workflows import ...` |
+| `CommandRunWorkflow` / `ResponseRunWorkflow` | The Command `expose()` registers on the bus; a gateway serves it once bound (`gateway.bind(CommandRunWorkflow, McpBinding())`) | DTO | `from sincpro_framework.runtime.workflows import ...` |
+| `Issue` | One validation problem: `workflow`, `step`, `path`, `message` | DTO (frozen dataclass) | `from sincpro_framework.runtime.workflows import Issue` |
 
 Exceptions: `NotComplete` (narrowing a frame that stopped at a page), `SchemaMismatch`
 (`data_analysis`); `UseCaseRefused` (a stored use case that does not load — the bus stays as it
@@ -54,19 +54,19 @@ was); `WorkflowFailed` (a run stopped; `error.run` is the trace), `WorkflowsInva
 load found issues).
 
 Look-alikes: `QueryCache` (in-process frames for analysis) vs `QueryCaching` in
-`sincpro_framework.caching` (a bus Query's answer, shared by replicas). `workflows.Step` (a
+`sincpro_framework.data_layer.caching` (a bus Query's answer, shared by replicas). `workflows.Step` (a
 workflow step) vs `migrations.Step` (a migration). A **runtime use case** *is* a use case on the
 bus; a **workflow** only *calls* use cases. `registry.current` (the generation answering) vs the
 context's bus `billing` (the code only, never sees a stored use case).
 
 ## Architecture
 
-**In the framework.** `sincpro_framework.data_analysis` (`cache` QueryCache, `frame` DataFrame,
+**In the framework.** `sincpro_framework.data_layer.data_analysis` (`cache` QueryCache, `frame` DataFrame,
 `arrow` the hand-off) needs only the core; Arrow/Parquet need pyarrow, extra `[data-analysis]`,
 imported only when asked for. polars, pandas and DuckDB are the project's own dependencies — they
-take a frame through the Arrow PyCapsule interface. `sincpro_framework.runtime_use_cases` (`domain`
+take a frame through the Arrow PyCapsule interface. `sincpro_framework.runtime.runtime_use_cases` (`domain`
 RuntimeUseCase + `UseCaseStore` port, `in_memory`, `loading`, `registry` BusRegistry) is stdlib; the
-SQL store is `sincpro_framework.orm.runtime_use_cases` (`[sqlalchemy]`). `sincpro_framework.workflows`
+SQL store is `sincpro_framework.data_layer.orm` (`[sqlalchemy]`). `sincpro_framework.runtime.workflows`
 (`domain/` vocabulary + `WorkflowSource`/`SnippetEngine` ports, `adapters/` files, memory, Python
 snippets, `validation`, `runner`, `registry` Workflows) needs nothing beyond the bus.
 
@@ -106,7 +106,7 @@ registry.put(use_case)   |   store.save(...) then registry.reload()
   → billing.fresh() + each active source compiled as sincpro_runtime.<context>.<name>
   → build_root_bus()  ── fails → UseCaseRefused, current and store untouched (put)
   → one assignment: current = new bus, generation += 1   (requests in flight finish on theirs)
-request → registry.execute("sincpro_runtime.billing.quote.CommandQuote", payload)
+request → registry.execute("billing.CommandQuote", payload)
 ```
 
 **One workflow run:**
@@ -150,7 +150,7 @@ workflows.run(name, input) → the set in force (validated as a whole against th
 ## Data analysis — how
 
 ```python
-from sincpro_framework.data_analysis import QueryCache
+from sincpro_framework.data_layer.data_analysis import QueryCache
 
 cache = QueryCache(max_rows=2_000_000)
 first = cache.fetch(repository, InvoiceLine, posted)               # one page
@@ -167,12 +167,12 @@ by_journal = polars.DataFrame(sales).group_by("journal").agg(polars.col("amount"
 ## Runtime use cases — how
 
 ```python
-from sincpro_framework.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
+from sincpro_framework.runtime.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
 
 store = InMemoryUseCases()
 store.save(RuntimeUseCase(name="quote", source=QUOTE))     # QUOTE: Command, Response, one Feature
 registry = BusRegistry(billing, store)                     # nothing read or built yet
-registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100})
+registry.execute("billing.CommandQuote", {"amount": 100})
 ```
 
 `check(draft)` before saving; `put(use_case)` = check + save + swap, atomically; `check_all()` in
@@ -186,7 +186,7 @@ repo: `docs/runtime_use_cases/README.md`, PRD_06 and PRD_07.
 ```python
 from pathlib import Path
 
-from sincpro_framework.workflows import FileWorkflows, Workflows
+from sincpro_framework.runtime.workflows import FileWorkflows, Workflows
 
 workflows = Workflows(billing, FileWorkflows(Path(__file__).parent / "workflows"))
 workflows.expose()                                    # CommandRunWorkflow on the bus, before it is built

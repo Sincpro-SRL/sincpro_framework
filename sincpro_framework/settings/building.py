@@ -33,7 +33,7 @@ def _hand_to_the_framework(built: FrameworkSettings) -> None:
     """
     from sincpro_log import configure_global_logging
 
-    from sincpro_framework.sincpro_conf import settings as framework_settings
+    from sincpro_framework.sincpro_conf import settings
 
     sources = built._sources
     handed = [
@@ -42,12 +42,12 @@ def _hand_to_the_framework(built: FrameworkSettings) -> None:
         if not sources.get(name, "default").startswith("default")
     ]
     for name in handed:
-        setattr(framework_settings, name, getattr(built, name))
+        setattr(settings, name, getattr(built, name))
     if any(name.startswith("sincpro_framework_log") for name in handed):
         configure_global_logging(
-            framework_settings.sincpro_framework_log_level,
-            backend=framework_settings.sincpro_framework_log_backend,
-            file_path=framework_settings.sincpro_framework_log_file_path,
+            settings.sincpro_framework_log_level,
+            backend=settings.sincpro_framework_log_backend,
+            file_path=settings.sincpro_framework_log_file_path,
         )
 
 

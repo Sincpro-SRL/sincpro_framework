@@ -169,7 +169,7 @@ def _turned_off() -> str:
     return ""
 
 
-def setup(
+def setup_tracing(
     identity: ObservabilityIdentity, logger: LoggerProxy | None = None
 ) -> ComponentStatus:
     """Install this bus's TracerProvider and bind trace ids to its logger."""

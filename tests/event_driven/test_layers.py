@@ -1,14 +1,15 @@
 """The events module's layers point one way: a layer imports only the ones below it, so the tree
 keeps saying what each piece is.
 
-    entrypoint      →  services, adapters, infrastructure, domain     what a project holds
-    adapters        →  services, infrastructure, domain               queues, in-memory stores
-    services        →  services, infrastructure, domain               the subscriber, a pass
-    infrastructure  →  infrastructure, domain                         the trace
-    domain          →  domain                                         the vocabulary and ports
+    entrypoint      →  entrypoint, adapters, domain     what a project holds: publisher, subscriber, relay
+    adapters        →  adapters, domain                 the queues
+    domain          →  domain                           the port and the failure policies
+
+An import under `if TYPE_CHECKING:` only names a type, so it is not a dependency: the queues
+annotate the `Subscriber` that builds them without importing the entrypoint at runtime.
 
 Nothing lives at the root but `__init__.py`: an optional extra is an adapter like any other
-(`adapters/faststream/`, guarded at import), the way `caching.adapters.redis` is.
+(`adapters/faststream/`, guarded at import), the way `data_layer.caching.adapters.redis` is.
 """
 
 import ast
@@ -19,17 +20,24 @@ import pytest
 MODULE = Path(__file__).parents[2] / "sincpro_framework" / "event_driven"
 PACKAGE = "sincpro_framework.event_driven"
 ALLOWED = {
-    "entrypoint": {"entrypoint", "services", "adapters", "infrastructure", "domain"},
-    "adapters": {"adapters", "services", "infrastructure", "domain"},
-    "services": {"services", "infrastructure", "domain"},
-    "infrastructure": {"infrastructure", "domain"},
+    "entrypoint": {"entrypoint", "adapters", "domain"},
+    "adapters": {"adapters", "domain"},
     "domain": {"domain"},
 }
 
 
 def _layers_imported(module: Path) -> set[str]:
     imported: set[str] = set()
-    for node in ast.walk(ast.parse(module.read_text())):
+    tree = ast.parse(module.read_text())
+    only_typed = {
+        id(inner)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.If) and ast.unparse(node.test) == "TYPE_CHECKING"
+        for inner in ast.walk(node)
+    }
+    for node in ast.walk(tree):
+        if id(node) in only_typed:
+            continue
         names: list[str] = []
         if isinstance(node, ast.ImportFrom) and node.module:
             names = [node.module]
@@ -52,8 +60,19 @@ def test_a_layer_imports_only_the_layers_below_it(layer):
     assert {name: layers for name, layers in wrong.items() if layers} == {}
 
 
-def test_every_module_lives_in_a_layer():
-    loose = sorted(one.name for one in MODULE.glob("*.py") if one.name != "__init__.py")
+def test_every_module_lives_in_a_layer_or_is_a_facade():
+    """A file at the module's root is a facade: it only gathers, by context, what the layers
+    expose — never code of its own."""
+    loose = sorted(
+        one.name
+        for one in MODULE.glob("*.py")
+        if one.name != "__init__.py"
+        and not all(
+            isinstance(node, (ast.Import, ast.ImportFrom))
+            or (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))
+            for node in ast.parse(one.read_text()).body
+        )
+    )
     packages = sorted(
         one.name
         for one in MODULE.iterdir()

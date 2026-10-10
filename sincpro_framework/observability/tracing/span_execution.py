@@ -63,17 +63,20 @@ def _shielded(cm: Any) -> Generator[Any, None, None]:
             pass
 
 
-def _span_for(dto_name: str, layer: str, bus: str, attributes: Mapping[str, str]) -> Any:
+def _span_for(
+    dto_name: str, layer: str, bus: str, attributes: Mapping[str, str], use_case: str
+) -> Any:
     """Context: named ``context/DTO`` — the service is the artifact, so the bounded context
-    shows in the name as an RPC span shows ``service/method``; ``sincpro.context`` and
-    ``sincpro.use_case`` carry the two halves for filtering."""
+    shows in the name as an RPC span shows ``service/method``; ``sincpro.context`` carries the
+    context and ``sincpro.use_case`` the use case's identity (``context.Class``) for
+    filtering."""
     if not OTEL_AVAILABLE:
         return nullcontext()
     try:
         tracer = tracer_for(bus)
         if tracer is None:
             return nullcontext()
-        on_span = {"sincpro.layer": layer, "sincpro.use_case": dto_name, **attributes}
+        on_span = {"sincpro.layer": layer, "sincpro.use_case": use_case, **attributes}
         if bus:
             on_span["sincpro.instance"] = bus
             on_span["sincpro.context"] = bus
@@ -110,10 +113,15 @@ def span_execution(
     bus: str,
     logger: Any,
     attributes: Mapping[str, str] | None = None,
+    use_case: str = "",
 ) -> Generator[Any, None, None]:
-    coordinates = {"sincpro_use_case": dto_name, "sincpro_layer": layer}
+    """`use_case` is the identity the span and the log lines carry — `dto_name` when none is
+    given (a cron names itself)."""
+    use_case = use_case or dto_name
+    coordinates = {"sincpro_use_case": use_case, "sincpro_layer": layer}
     if bus:
         coordinates["sincpro_context"] = bus
-    with _shielded(_span_for(dto_name, layer, bus, attributes or {})) as span, _running(span):
+    opened = _span_for(dto_name, layer, bus, attributes or {}, use_case)
+    with _shielded(opened) as span, _running(span):
         with _shielded(_log_fields_of(span, logger, coordinates)):
             yield span

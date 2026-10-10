@@ -568,7 +568,7 @@
     },
     {
       "id": "claim_92e55cc51f724908954a806fa546f66b",
-      "statement": "The FrameworkBus construction-time collision check is what tests/bus/test_framework_bus.py pins for the same-name-in-both-registries case: registering one DTO name in both sub-buses then constructing FrameworkBus raises DTOAlreadyRegistered before any execution, so that test does not exercise the per-call re-check in FrameworkBus.execute.",
+      "statement": "The FrameworkBus construction-time collision check is what tests/core/bus/test_framework_bus.py pins for the same-name-in-both-registries case: registering one DTO name in both sub-buses then constructing FrameworkBus raises DTOAlreadyRegistered before any execution, so that test does not exercise the per-call re-check in FrameworkBus.execute.",
       "evidence": [
         {
           "resource": "repo://sincpro_framework/bus.py#L150-L162",

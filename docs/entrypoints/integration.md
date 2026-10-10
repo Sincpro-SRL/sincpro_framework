@@ -37,12 +37,12 @@ warned about, since in `exclude` it would leave exposed what it meant to hide.
 ## Declared: the use case says on which wire, and how (PRD_14)
 
 The catalog above publishes by forgetting: a new use case is public the moment it is registered.
-A public API declares instead. The decorators live in `sincpro_framework.entrypoints.exposure`
+A public API declares instead. The decorators live in `sincpro_framework.entrypoints`
 and import no transport library, so a `services/` module stays free of Starlette, grpc and
 FastMCP:
 
 ```python
-from sincpro_framework.entrypoints.exposure import grpc, mcp, queue, rest, rpc
+from sincpro_framework.entrypoints.entrypoint.decorators import grpc, mcp, queue, rest, rpc
 
 @billing.feature(CommandIssueInvoice)
 @auth.requires(BillingPermission.ISSUE)
@@ -246,7 +246,7 @@ middleware, interceptors and plugins:
 | `unavailable` | an error declaring `FailureKind.UNAVAILABLE` | 503 | `-32000` | `UNAVAILABLE` | retry later |
 | `internal` | anything else | 500 | `-32603` | `INTERNAL` | nothing — it stays in the log |
 
-`transport.failures.refined_failure_kind(error)` is the one classification — the wires and the
+`common.failures.refined_failure_kind(error)` is the one classification — the wires and the
 `ExecutionFailed` event share it; a wire only chooses its code.
 
 ## What every wire does the same

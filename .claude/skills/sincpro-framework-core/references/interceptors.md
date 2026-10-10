@@ -1,6 +1,6 @@
 # Interceptors and replacements
 
-Source of truth: `sincpro_framework/interceptors.py`, `UseFramework.interceptor` in `use_bus.py`
+Source of truth: `sincpro_framework/bus_pipeline/interceptors.py`, `UseFramework.interceptor` in `use_bus.py`
 and `sincpro_framework/ordering.py`. The framework repository has the long-form guide
 (`docs/core/interceptors.md`, every block runs as a test) and the design (PRD_04).
 
@@ -69,7 +69,7 @@ def retry_stale(dto, call_next: CallNext[ResponsePostInvoice]) -> ResponsePostIn
 
 ## Ordering, replacing, switching off
 
-Extension points share one ordering (`sincpro_framework.ordering`): `before=` / `after=` by
+Extension points share one ordering (`sincpro_framework.common.ordering`): `before=` / `after=` by
 reference, then `sequence=` (lower first, 10 when not said), then registration order. A cycle of
 `before`/`after` raises `ExtensionRefused`; a constraint on something not registered is ignored.
 

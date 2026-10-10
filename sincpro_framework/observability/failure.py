@@ -12,6 +12,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Generator, Iterator
 
+from sincpro_framework.common.naming import registered_name
+
 FRAMEWORK_PACKAGE = "sincpro_framework"
 NOTE_PREFIX = "[sincpro] "
 
@@ -63,7 +65,7 @@ class Failure:
             "chain": " → ".join(self.chain),
             # Where it failed, under the keys every signal shares (the metric labels' names).
             "sincpro_context": self.bus,
-            "sincpro_use_case": type(self.dto).__name__,
+            "sincpro_use_case": registered_name(type(self.dto), self.bus),
             "sincpro_layer": self.layer,
         }
         if self.error_at:

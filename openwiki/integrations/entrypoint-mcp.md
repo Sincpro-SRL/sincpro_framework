@@ -68,7 +68,7 @@ FastMCP is not installed. Install with: pip install sincpro-framework[mcp]
 So a missing extra is a named `ImportError` raised at the moment a host is actually built — by
 `server()`, `run()` or `build_mcp_server()` — chained from the original import error rather than
 swallowed into an empty tool list. A host that catches `ImportError` can match on the extra name
-`README.md`/the design document advertise. `tests/entrypoint/test_entrypoints.py:253-258` exercises
+`README.md`/the design document advertise. `tests/entrypoints/test_entrypoints.py:253-258` exercises
 exactly that contract: either a server object comes back, or the message contains
 `sincpro-framework[mcp]`.
 
@@ -139,7 +139,7 @@ Two details worth knowing before you rely on either entry point:
 Note what is *not* passed to `mcp.tool`: the `json_schema` field the packed entry carries
 (`sincpro_framework/entrypoints/catalog.py:97`). The advertised input schema is the one FastMCP
 derives from the stamped function signature, and the precomputed schema is what the catalog's binary
-filter inspects. `tests/entrypoint/test_entrypoints.py:239-250` states that expectation directly
+filter inspects. `tests/entrypoints/test_entrypoints.py:239-250` states that expectation directly
 ("FastMCP 3 builds JSON Schema from the function signature, not from `Tool.json_schema`").
 
 `build_mcp_server(instance, name=None)` is the whole composition root — no policy, no transport
@@ -182,11 +182,11 @@ The interesting half is the signature it stamps from `operation.dto.model_fields
   the parameter's own default stays empty. That is what keeps `uuid4().hex` or `datetime.now()`
   from being frozen at import time into a single value shared by every later call: the factory stays
   a callable that runs per request, while the field is still not required in the published schema.
-  `tests/entrypoint/test_entrypoints.py:272-282` pins the runtime half (two calls to a `ScheduleTask`
+  `tests/entrypoints/test_entrypoints.py:272-282` pins the runtime half (two calls to a `ScheduleTask`
   tool return different `token`s, with `tags == []` and `retries == 3` from the DTO defaults) and
   `:284-307` pins the schema half (`required == ["name"]`, all four properties present).
 - Any other optional field keeps the pydantic default *value* (`:39-40`), which is safe precisely
-  because it is immutable: `tests/entrypoint/test_entrypoints.py:289` asserts
+  because it is immutable: `tests/entrypoints/test_entrypoints.py:289` asserts
   `parameters["retries"].default == 3`.
 - Finally the function's identity is set from the packed entry: `__name__` from `operation.name` and
   `__doc__` from `operation.description` (`:50-51`), so FastMCP's own inference of tool name and
@@ -195,7 +195,7 @@ The interesting half is the signature it stamps from `operation.dto.model_fields
   in that DTO rather than in raw metadata.
 
 Nothing here reads FastMCP: `fastmcp_callable` is testable and reusable on its own — the entrypoint
-test imports it directly (`tests/entrypoint/test_entrypoints.py:14`) and asserts the resulting
+test imports it directly (`tests/entrypoints/test_entrypoints.py:14`) and asserts the resulting
 signature without a server.
 
 ## What one `tools/call` does

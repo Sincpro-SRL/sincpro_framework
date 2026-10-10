@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from sincpro_framework.observability import ObservabilityIdentity, resolve_identity
-from sincpro_framework.observability.domain import installed_version
+from sincpro_framework.observability import ObservabilityIdentity
+from sincpro_framework.observability.domain import installed_version, resolve_identity
 from sincpro_framework.sincpro_conf import settings
 
 A_LIBRARY = "sincpro_log"  # an installed distribution: sincpro-log

@@ -11,9 +11,16 @@ retry topics). Second, what to do once the retries are spent: park the event whe
 it and go on (a dead-letter queue — Spring's `DeadLetterPublishingRecoverer`, NServiceBus's
 error queue), or skip it with a log line (Kafka Connect's `errors.tolerance=all`).
 
-**An error that cannot succeed is not retried.** `never_retry` names them — a payload that does
-not validate fails the same way every time — and they go to `then` on the first failure
-(Spring's not-retryable exceptions, NServiceBus's unrecoverable exceptions).
+**An error that cannot succeed is not retried.** What fails the same way every time — a payload
+that does not validate, a domain refusal (`common.failures.PERMANENT`, the kinds a queue consumer
+dead-letters) — goes to `then` on the first failure, and so does any error `never_retry` names
+(Spring's not-retryable exceptions, NServiceBus's unrecoverable exceptions). An error that says
+how long to wait (`retry_after`: a quota, a service down for now) is not tried before that.
+
+**What a waiting retry holds.** Across passes, an event waiting for its retry keeps what it held
+when it failed (`holds`): everything after it (`RetryInPlace`), the later events of its entity
+(`RetryLater`, as it comes), or nothing (`RetryLater(holds_stream=False)`). A parked or skipped
+event holds nothing — like a dead-letter queue, it lets its entity's later events go.
 
 A policy decides; it never reads, publishes or writes. The relay carries the decision out.
 """
@@ -23,8 +30,20 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
+from sincpro_framework.common.failures import PERMANENT, refined_failure_kind, retry_after
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation
+
+
+class Holds(StrEnum):
+    """What an event waiting for its retry holds back, pass after pass."""
+
+    EVERYTHING = "everything"
+    """Every event after it waits — the order of all of them holds."""
+    ENTITY = "entity"
+    """The later events of its entity wait — one entity's events arrive in order."""
+    NOTHING = "nothing"
+    """Every other event goes on."""
 
 
 class FailureOutcome(StrEnum):
@@ -56,10 +75,6 @@ class FailureDecision:
     retry_at: datetime | None = None
     holds_stream: bool = False
     """For `RETRY_LATER`: the later events of its entity wait behind it."""
-
-
-def described(failure: HandlingFailure) -> str:
-    return f"{type(failure.error).__name__}: {failure.error}"
 
 
 # --- how long to wait ------------------------------------------------------------------------
@@ -108,6 +123,9 @@ class ExponentialBackoff(BackoffStrategy):
 class DeliveryFailurePolicy(ABC):
     """Decides what the relay does with an event it failed to deliver."""
 
+    holds: Holds = Holds.NOTHING
+    """What an event this policy sent back to wait for its retry holds, in the passes after."""
+
     @abstractmethod
     def decide(self, failure: HandlingFailure) -> FailureDecision: ...
 
@@ -145,27 +163,35 @@ class _Retrying(DeliveryFailurePolicy):
         self.then = then or ParkAndContinue()
         self.never_retry = never_retry
 
-    def _spent(self, failure: HandlingFailure) -> bool:
-        return failure.attempts >= self.attempts or isinstance(
-            failure.error, self.never_retry
+    def decided(self, failure: HandlingFailure, holds_stream: bool) -> FailureDecision:
+        """1. Spent — the last attempt, an error `never_retry` names, or one of a kind that
+           fails the same way every time (`PERMANENT`): `then` decides.
+        2. Final: tried again after the backoff, or after what the error asks to wait
+           (`retry_after`), whichever is longer."""
+        kind = refined_failure_kind(failure.error)
+        if (
+            failure.attempts >= self.attempts
+            or isinstance(failure.error, self.never_retry)
+            or kind in PERMANENT
+        ):
+            return self.then.decide(failure)
+        wait = max(
+            self.backoff.delay(failure.attempts),
+            retry_after(failure.error, kind) or timedelta(0),
         )
-
-    def _again(self, failure: HandlingFailure, holds_stream: bool) -> FailureDecision:
-        return FailureDecision(
-            self.outcome, failure.now + self.backoff.delay(failure.attempts), holds_stream
-        )
+        return FailureDecision(self.outcome, failure.now + wait, holds_stream)
 
 
 class RetryInPlace(_Retrying):
-    """Tries the event again where it is, holding everything behind it, then hands it to `then`
-    — the order of the events is never broken. The default."""
+    """Tries the event again where it is, holding everything behind it — in this pass and in the
+    ones after, until it went out or `then` decided — so no event overtakes it. The default.
+    """
 
     outcome = FailureOutcome.RETRY_IN_PLACE
+    holds = Holds.EVERYTHING
 
     def decide(self, failure: HandlingFailure) -> FailureDecision:
-        if self._spent(failure):
-            return self.then.decide(failure)
-        return self._again(failure, holds_stream=False)
+        return self.decided(failure, holds_stream=False)
 
 
 class RetryLater(_Retrying):
@@ -185,11 +211,10 @@ class RetryLater(_Retrying):
     ) -> None:
         super().__init__(attempts, backoff, then, never_retry)
         self.holds_stream = holds_stream
+        self.holds = Holds.ENTITY if holds_stream else Holds.NOTHING
 
     def decide(self, failure: HandlingFailure) -> FailureDecision:
-        if self._spent(failure):
-            return self.then.decide(failure)
-        return self._again(failure, self.holds_stream)
+        return self.decided(failure, self.holds_stream)
 
 
 DEFAULT_FAILURE_POLICY: DeliveryFailurePolicy = RetryInPlace(attempts=5)

@@ -438,7 +438,7 @@
     },
     {
       "id": "claim_bf8acf2367f44b58ada90b23ce594ec5",
-      "statement": "The cross-layer collision only becomes detectable at build time because each layer's registration-time check looks solely at its own registry; `tests/bus/test_framework_bus.py` builds that situation through the bus API and asserts `DTOAlreadyRegistered`, and asserts `UnknownDTOToExecute` for a never-registered DTO.",
+      "statement": "The cross-layer collision only becomes detectable at build time because each layer's registration-time check looks solely at its own registry; `tests/core/bus/test_framework_bus.py` builds that situation through the bus API and asserts `DTOAlreadyRegistered`, and asserts `UnknownDTOToExecute` for a never-registered DTO.",
       "evidence": [
         {
           "resource": "repo://sincpro_framework/bus.py#L150-L162",

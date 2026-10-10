@@ -110,7 +110,7 @@ The axis rule for building a filter from query parameters: `?origin=a&origin=b&r
 ## Query and ResponsePaginatedQuery
 
 `Query` is the Command base: one field, `criteria: Criteria = Criteria()`.
-`ResponsePaginatedQuery` is the answer base: `cursor`, `count`, `model_meta_data`, `dropped`, plus
+`ResponsePaginatedQuery` is the answer base: `cursor`, `count`, `entity_meta_data`, `dropped`, plus
 **exactly one** field of the subclass's own holding the records (two raise `ContractViolation`).
 `ResponseX.of(page, criteria)` fills it and applies the specification on the wire: each record shows
 the named fields plus its identity, a to-one as an object or `null`, a to-many as

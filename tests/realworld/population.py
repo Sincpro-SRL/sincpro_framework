@@ -12,8 +12,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from random import Random
 
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.criteria import Condition, Operator
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .ledger import ZERO, Account, Entry, Journal, Line, Partner
 

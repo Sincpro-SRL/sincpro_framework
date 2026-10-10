@@ -99,12 +99,12 @@ merging a tenant condition into a client's criteria, where a typo would be dropp
 
 ## Reading a query once — `data_analysis`
 
-`sincpro_framework.data_analysis` holds what a `Criteria` answered as a `DataFrame` (Arrow), so
+`sincpro_framework.data_layer.data_analysis` holds what a `Criteria` answered as a `DataFrame` (Arrow), so
 the same question is not sent twice. Extra: `pip install sincpro-framework[data-analysis]`.
 Full usage is `sincpro-framework-analytics`.
 
 ```python
-from sincpro_framework.data_analysis import QueryCache
+from sincpro_framework.data_layer.data_analysis import QueryCache
 
 cache = QueryCache(max_rows=2_000_000)
 first = cache.fetch(repository, InvoiceLine, posted)          # one page
@@ -119,7 +119,7 @@ september = whole.narrow({"field": "posted_at", "operator": ">=", "value": "2026
   frame; a frame that stopped at a page raises `NotComplete`.
 - Hand-off: `frame.to_arrow()` / `to_parquet()` / `to_ipc()` / `to_json()`, or straight into
   polars, pandas, DuckDB. `DataFrame.from_arrow(table)` comes back.
-- `invalidate_on_commit(database, cache, *aggregates)` (from `sincpro_framework.orm`) lets go of an
+- `invalidate_on_commit(database, cache, *aggregates)` (from `sincpro_framework.data_layer.orm`) lets go of an
   aggregate's reads when a write of it commits (not at the flush, not on rollback).
 
 The cache of a bus Query's answer is `QueryCaching` (`sincpro-framework-caching`), a different thing.

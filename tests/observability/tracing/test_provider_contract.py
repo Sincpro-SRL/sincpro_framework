@@ -15,8 +15,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import sincpro_framework.observability.tracing.setup as provider_module
-from sincpro_framework.observability import ObservabilityIdentity, registry
+from sincpro_framework.observability import ObservabilityIdentity
+from sincpro_framework.observability.registry import registry
+from sincpro_framework.observability.tracing import setup
 from sincpro_framework.sincpro_conf import settings
 
 pytest.importorskip("opentelemetry.sdk.trace")
@@ -40,7 +41,7 @@ def identity_for(bus, artifact="sincpro-payments-sdk", version="5.1.0"):
 
 def setup_for(bus, logger=None, **identity_fields) -> dict:
     """Run setup for one bus and return its status as a plain dict to assert on."""
-    return provider_module.setup(identity_for(bus, **identity_fields), logger).model_dump()
+    return setup.setup_tracing(identity_for(bus, **identity_fields), logger).model_dump()
 
 
 def provider_of(bus: str):
@@ -367,12 +368,12 @@ def test_tracer_comes_from_the_bus_provider_when_configured(monkeypatch):
     provider = MagicMock(name="provider")
     registry.register_tracer_provider("payment", provider)
 
-    assert provider_module.tracer_for("payment") is provider.get_tracer.return_value
+    assert setup.tracer_for("payment") is provider.get_tracer.return_value
 
 
 def test_tracer_falls_back_to_the_host_provider():
     """Without our own setup, piggyback on whatever provider the host installed."""
-    assert provider_module.tracer_for("never-set-up") is not None
+    assert setup.tracer_for("never-set-up") is not None
 
 
 def test_a_bus_never_borrows_another_bus_provider(monkeypatch):
@@ -381,7 +382,7 @@ def test_a_bus_never_borrows_another_bus_provider(monkeypatch):
     registry.register_tracer_provider("payment-qr", other)
     stub_host_provider(monkeypatch, other)
 
-    assert provider_module.tracer_for("bank-account") is None
+    assert setup.tracer_for("bank-account") is None
 
 
 def test_tracer_is_none_instead_of_raising():
@@ -390,7 +391,7 @@ def test_tracer_is_none_instead_of_raising():
     broken.get_tracer.side_effect = RuntimeError("no tracer for you")
     registry.register_tracer_provider("payment", broken)
 
-    assert provider_module.tracer_for("payment") is None
+    assert setup.tracer_for("payment") is None
 
 
 def test_logger_starts_emitting_trace_ids_once_otlp_is_on(monkeypatch):
@@ -408,7 +409,7 @@ def test_logger_starts_emitting_trace_ids_once_otlp_is_on(monkeypatch):
 
     setup_for("payment", logger=logger)
 
-    assert provider_module.current_otel_context in logger._context_sources
+    assert setup.current_otel_context in logger._context_sources
 
 
 # ---------------------------------------------------------------------------

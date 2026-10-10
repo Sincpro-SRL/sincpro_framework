@@ -112,7 +112,7 @@ broker adapter or an assertion that the framework has no general idempotency pri
 
 ### [side-effect] Partial fan-out repeats successful consumers
 
-Evidence: `event_driven/services/subscriber.py`, `Subscriber.handle`, calls buses in order;
+Evidence: `event_driven/entrypoint/subscriber.py`, `Subscriber.handle`, calls buses in order;
 `entrypoint/relay.py`, `EventRelay._delivered`, records one delivery outcome for the event.
 If consumer A succeeds and B raises, the next attempt invokes A again; later consumers were not run.
 

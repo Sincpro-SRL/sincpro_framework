@@ -8,20 +8,3 @@
 Context: `hosts` needs no extra until it serves; `http` needs `[rpc]`, `grpc` needs `[grpc]` — each
 is imported where it is used.
 """
-
-from sincpro_framework.remote_execution.entrypoint.hosts import (
-    Attach,
-    OpenHost,
-    serve_contexts,
-)
-
-
-def open_host(contexts):  # type: ignore[no-untyped-def]
-    """The internal door for `contexts` (`entrypoint.grpc.open_host`), imported when used —
-    it needs the `[grpc]` extra."""
-    from sincpro_framework.remote_execution.entrypoint.grpc import open_host as door
-
-    return door(contexts)
-
-
-__all__ = ["Attach", "OpenHost", "open_host", "serve_contexts"]

@@ -7,7 +7,7 @@ says which Queries keep their answers, for how long, per what, and on which stor
 - **`KeyValueStore`** is the specification: the operations every provider has. The core ships
   `InMemoryKeyValue` (standard library only); `RedisKeyValue` (Redis and Valkey) and
   `MemcachedKeyValue` take the client you build, behind the `[redis]` and `[memcached]` extras.
-  A store of yours proves itself with `sincpro_framework.testing.KeyValueStoreContract`.
+  A store of yours proves itself with `sincpro_framework.runtime.testing.KeyValueStoreContract`.
 - **`QueryCaching`** keeps a Query's answer and lets go of it when an aggregate it read is
   written — the repository notes the reads, nobody declares them.
 - **`Cache`** keeps any value by its parameters — what another system answered, a computation —
@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from sincpro_framework import ApplicationService, DataTransferObject, UseFramework
-from sincpro_framework.ddd import Criteria, Entity, MemoryRepository
+from sincpro_framework.ddd import Criteria, Entity
+from sincpro_framework.data_layer.repositories import MemoryRepository
 
 
 @dataclass
@@ -72,7 +73,8 @@ class Balance(ApplicationService):
 ## Where the context is composed: which Queries keep their answers
 
 ```python
-from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
+from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
+from sincpro_framework.common.store import InMemoryKeyValue
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
 caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
@@ -162,7 +164,7 @@ a **validation** (whether it is still right) and a **failure policy** (what is a
 source fails).
 
 ```python
-from sincpro_framework.caching import Cache, ExternalVersion, JsonCodec, KeepPolicy
+from sincpro_framework.data_layer.caching import Cache, ExternalVersion, JsonCodec, KeepPolicy
 
 
 class Tenant(DataTransferObject):
@@ -216,7 +218,7 @@ answer.
 On a store replicas share, values are bytes, so the call names its `Codec`:
 
 ```python
-from sincpro_framework.caching import TimeToLive
+from sincpro_framework.data_layer.caching import TimeToLive
 
 catalogs = Cache(InMemoryKeyValue(), namespace="catalog")   # RedisKeyValue(...) on replicas
 five_minutes = KeepPolicy[Tenant](
@@ -245,8 +247,8 @@ value is not a write per read.
 ```python
 from datetime import UTC, datetime
 
-from sincpro_framework.caching import CacheOutcome, CountingObserver, FailSafe, Sliding
-from sincpro_framework.testing import ManualClock
+from sincpro_framework.data_layer.caching import CacheOutcome, CountingObserver, FailSafe, Sliding
+from sincpro_framework.runtime.testing import ManualClock
 
 clock = ManualClock(datetime(2026, 9, 29, 12, 0, tzinfo=UTC))
 observed = CountingObserver()
@@ -328,7 +330,7 @@ default, `Unbounded()` for a tier whose keys are known and few, or yours behind 
 port.
 
 ```python
-from sincpro_framework.caching import Lru
+from sincpro_framework.data_layer.caching import Lru
 
 bounded = Cache(eviction=Lru(max_entries=2))
 for customer in ("c1", "c2", "c3"):
@@ -347,7 +349,7 @@ claim so the retry runs.
 
 ```python
 from sincpro_framework import Feature, UseFramework
-from sincpro_framework.caching import (
+from sincpro_framework.data_layer.caching import (
     AlreadyInProgress,
     Idempotency,
     IdempotencyPolicy,
@@ -428,8 +430,8 @@ held for analysis in one process are `QueryCache`, in [data analysis](../data_an
 
 
 ```python
-from sincpro_framework.testing import KeyValueStoreContract
-from sincpro_framework.caching import KeyValueStore
+from sincpro_framework.runtime.testing import KeyValueStoreContract
+from sincpro_framework.common.store import KeyValueStore
 
 
 class DictStore(InMemoryKeyValue):
@@ -450,8 +452,8 @@ A codec, a freshness or an eviction of yours proves itself the same way, with th
 built-ins pass:
 
 ```python
-from sincpro_framework.caching import Eviction, Freshness, Unbounded
-from sincpro_framework.caching.testing import CodecContract, EvictionContract, FreshnessContract
+from sincpro_framework.data_layer.caching import Eviction, Freshness, Unbounded
+from sincpro_framework.runtime.testing import CodecContract, EvictionContract, FreshnessContract
 
 
 class TestTenantCodec(CodecContract):
@@ -484,7 +486,7 @@ The same operations carry crons across replicas:
 ```python
 from datetime import UTC, datetime
 
-from sincpro_framework.cron import KeyValueRuns
+from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns
 
 shared = InMemoryKeyValue()                   # RedisKeyValue(...) on real replicas
 one, other = KeyValueRuns(shared), KeyValueRuns(shared)
@@ -510,4 +512,4 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 | `invalidate_on_commit(database, caching)` | every aggregate a commit wrote |
 | `KeyValueRuns(store)` | crons on several replicas |
 | `KeyValueStoreContract` | the tests a store of yours inherits |
-| `CodecContract` / `FreshnessContract` / `EvictionContract` (`sincpro_framework.caching.testing`) | the tests a codec, a freshness or an eviction of yours inherits |
+| `CodecContract` / `FreshnessContract` / `EvictionContract` (`sincpro_framework.runtime.testing`) | the tests a codec, a freshness or an eviction of yours inherits |

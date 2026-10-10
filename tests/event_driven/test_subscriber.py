@@ -42,9 +42,7 @@ def test_several_framework_instances_each_obey_the_event_their_decorator_names(
     assert answers == [ResponseNotify(sent="fixed"), ResponseAudit(logged="audited fixed")]
     assert heard == {"support": ["fixed"], "audit": ["audited fixed"]}
     assert subscriber.listeners("TicketClosed") == [feature_bus, app_service_bus]
-    assert subscriber.listeners(f"{CommandAudit.__module__}.{CommandAudit.__qualname__}") == [
-        app_service_bus
-    ]
+    assert subscriber.listeners("audit.CommandAudit") == [app_service_bus]
     assert subscriber.listeners("NobodyListens") == []
     assert (
         app_service_bus(CommandAudit(text="by command"), ResponseAudit).logged == "by command"
@@ -154,3 +152,53 @@ def test_a_bus_that_does_not_know_the_name_leaves_the_event_alone():
 
     assert Subscriber(stranger).as_known_by(stranger, published) is published
     assert Subscriber(stranger).handle(published) == []
+
+
+# --- one bus failing never keeps the event from the others ------------------------------------
+
+
+def test_a_failing_bus_does_not_keep_the_event_from_the_buses_after_it(feature_bus, heard):
+    """The failing bus comes first; the one after it still hears the event, and the failure
+    comes out as itself once both ran."""
+    from .models import failing_bus
+
+    subscriber = Subscriber(failing_bus("first"), feature_bus)
+
+    try:
+        subscriber.handle(TicketClosed(reason="partial"))
+    except RuntimeError as error:
+        assert str(error) == "down"
+    else:
+        raise AssertionError("the failure of the first bus was swallowed")
+    assert heard["support"] == ["partial"]
+
+
+def test_several_failing_buses_come_out_together_after_every_bus_ran(feature_bus, heard):
+    from .models import failing_bus
+
+    subscriber = Subscriber(failing_bus("one"), feature_bus, failing_bus("two"))
+
+    try:
+        subscriber.handle(TicketClosed(reason="twice"))
+    except ExceptionGroup as group:
+        assert [str(one) for one in group.exceptions] == ["down", "down"]
+    else:
+        raise AssertionError("two failures came out as none")
+    assert heard["support"] == ["twice"]
+
+
+def test_the_async_subscriber_isolates_the_buses_the_same_way(feature_bus, heard):
+    from .models import failing_bus
+
+    subscriber = Subscriber(failing_bus("one"), feature_bus, failing_bus("two"))
+
+    async def handled() -> None:
+        await subscriber.get_async_subscriber().handle(TicketClosed(reason="async"))
+
+    try:
+        asyncio.run(handled())
+    except ExceptionGroup as group:
+        assert len(group.exceptions) == 2
+    else:
+        raise AssertionError("two failures came out as none")
+    assert heard["support"] == ["async"]

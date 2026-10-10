@@ -9,8 +9,12 @@ new version of a stored use case inheriting — or refused for — what the prev
 import pytest
 
 from sincpro_framework.auth import PermissionDenied, Unauthenticated, as_system
-from sincpro_framework.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
-from sincpro_framework.testing import granting
+from sincpro_framework.runtime.runtime_use_cases import (
+    BusRegistry,
+    InMemoryUseCases,
+    RuntimeUseCase,
+)
+from sincpro_framework.runtime.testing import granting
 from tests.auth.guarded_billing import (
     PUBLIC_TAX,
     BillingPermission,
@@ -21,7 +25,7 @@ from tests.auth.guarded_billing import (
     quote,
 )
 
-QUOTE = "sincpro_runtime.guarded-billing.quote.CommandQuote"
+QUOTE = "guarded-billing.CommandQuote"
 
 
 def _registry(*use_cases: RuntimeUseCase) -> BusRegistry:

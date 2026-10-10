@@ -170,10 +170,10 @@ makes the invariant hold at the moment it matters: immediately before the routin
 defined in `sincpro_framework/exceptions.py:1-14` and are **not** re-exported by the package root
 (`sincpro_framework/__init__.py:12-21`) — catching them means importing
 `sincpro_framework.exceptions`, which is what the bus tests do
-(`tests/bus/test_framework_bus.py:6`). Both are reported to observability with `kind="framework"`
+(`tests/core/bus/test_framework_bus.py:6`). Both are reported to observability with `kind="framework"`
 when they reach the facade's `except` clause (`sincpro_framework/bus.py:196-205`).
 
-`tests/bus/test_framework_bus.py:50-63` registers one DTO in both fixtures' buses and asserts the
+`tests/core/bus/test_framework_bus.py:50-63` registers one DTO in both fixtures' buses and asserts the
 construction-time `DTOAlreadyRegistered` — so the test pins the build-time half of the check; the
 per-call half is the same comparison repeated on the facade.
 
@@ -210,7 +210,7 @@ own base classes, not from the framework**: a bare `Feature` types `self.any_ada
 documented convention is to declare the dependency types once on a non-instantiated class and mix it
 into the bounded context's local `Feature` / `ApplicationService` bases, which is what gives both
 halves of the code the same names and the same types
-(`README.md:410-470`; `tests/use_container/test_use_framework.py:28-45` is the checked shape). The
+(`README.md:410-470`; `tests/core/use_bus/test_use_framework.py:28-45` is the checked shape). The
 typed-deps case asserts the root side of the same convention
 (`tests/typing_and_linter/typing_cases/typed_deps_case.py:11-22`), and pyright is run over that whole
 folder as a test (`tests/typing_and_linter/test_typing_and_linter.py:31-41`).

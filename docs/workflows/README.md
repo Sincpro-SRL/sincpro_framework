@@ -4,9 +4,9 @@ A workflow composes the Commands a bus already answers, as JSON: which runs, wit
 order, under which condition. It is validated against the live bus, runs with a trace of every
 step, and draws itself as a graph of nodes — what an editor needs to preview a composition, and
 what an agent needs to try one. Use cases themselves stay code, or are loaded at runtime with
-`sincpro_framework.runtime_use_cases`; a workflow orchestrates either.
+`sincpro_framework.runtime.runtime_use_cases`; a workflow orchestrates either.
 
-**Experimental:** the vocabulary may change. `sincpro_framework.workflows` is opt-in and needs
+**Experimental:** the vocabulary may change. `sincpro_framework.runtime.workflows` is opt-in and needs
 nothing beyond the bus. Every block on this page runs, in order, in
 `tests/docs/test_persistence_guide.py`.
 
@@ -130,7 +130,7 @@ id — `steps["lines"]["items"][0]["reserve"]["reserved"]` in a later snippet, o
 ## Put them in force and run one
 
 ```python
-from sincpro_framework.workflows import FileWorkflows, StepStatus, Workflows
+from sincpro_framework.runtime.workflows import FileWorkflows, StepStatus, Workflows
 
 workflows = Workflows(billing, FileWorkflows(Path("workflows")))
 workflows.expose()                                   # CommandRunWorkflow on the bus, before it is built
@@ -155,7 +155,7 @@ success.
 JSON-RPC, gRPC — runs workflows too:
 
 ```python
-from sincpro_framework.workflows import CommandRunWorkflow, ResponseRunWorkflow
+from sincpro_framework.runtime.workflows import CommandRunWorkflow, ResponseRunWorkflow
 
 answer = billing(CommandRunWorkflow(workflow="bill_order", input={"order_id": 2}), ResponseRunWorkflow)
 assert answer is not None and answer.output == {"invoice_id": "F-2"}
@@ -183,7 +183,7 @@ assert workflows.refresh() is False                  # the source is back to the
 ```python
 from datetime import timedelta
 
-from sincpro_framework.cron import Cron, Crons, Tick
+from sincpro_framework.entrypoints.adapters.cron import Cron, Crons, Tick
 
 cron_workflows = Crons("cron-workflows")
 cron_workflows.add_dependency("workflows", workflows)

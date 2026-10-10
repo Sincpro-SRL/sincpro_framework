@@ -42,13 +42,13 @@ from contextvars import ContextVar
 from typing import Any
 
 from sincpro_framework.context.infrastructure.tree import chain_for
-from sincpro_framework.ddd.entity.editing import recompute_whole
+from sincpro_framework.ddd.editing.editing import recompute_whole
+from sincpro_framework.ddd.editing.preview import is_previewing
 from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import ContractViolation, WriteInPreview
-from sincpro_framework.ddd.preview import is_previewing
 from sincpro_framework.ddd.repositories.capabilities import (
     ReadsAggregates,
     StoreCapabilities,

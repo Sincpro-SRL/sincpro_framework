@@ -9,6 +9,6 @@ is `sincpro_framework.event_driven`.
 """
 
 from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
-from sincpro_framework.ddd.events.mixins import DeliverableEventMixin
+from sincpro_framework.ddd.events.mixins.deliverable import DeliverableEventMixin
 
 __all__ = ["NAME", "DomainEvent", "DeliverableEventMixin"]

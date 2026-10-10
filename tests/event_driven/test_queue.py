@@ -1,6 +1,7 @@
 """The two queues the framework ships against one surface: the sync one answers in the call,
 the background one crosses to a worker that built its own subscriber."""
 
+import json
 import multiprocessing
 
 import pytest
@@ -90,7 +91,7 @@ def test_the_trace_rides_beside_the_event_across_the_process_boundary():
     from opentelemetry import trace
     from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
-    from sincpro_framework.event_driven.infrastructure.trace import (
+    from sincpro_framework.observability.tracing.propagation import (
         trace_carrier,
         within_trace,
     )
@@ -123,7 +124,7 @@ def test_the_trace_rides_beside_the_event_across_the_process_boundary():
 
 
 def test_without_a_trace_or_a_carrier_nothing_breaks():
-    from sincpro_framework.event_driven.infrastructure.trace import (
+    from sincpro_framework.observability.tracing.propagation import (
         trace_carrier,
         within_trace,
     )
@@ -135,7 +136,7 @@ def test_without_a_trace_or_a_carrier_nothing_breaks():
 
 
 def test_put_is_what_actually_sends_the_trace(background_queue):
-    """The envelope `put` builds, read straight off the inbox: three parts, and the third is
+    """What `put` hands over, read straight off the inbox: two parts, and the second is
     the trace. Asserting on the helpers alone would not catch a `put` that stopped calling
     them."""
     from opentelemetry import context as otel_context
@@ -159,9 +160,10 @@ def test_put_is_what_actually_sends_the_trace(background_queue):
     finally:
         otel_context.detach(token)
 
-    name, payload, carrier = background_queue.inbox.get(timeout=30)
+    raw, carrier = background_queue.inbox.get(timeout=30)
+    written = json.loads(raw)
 
-    assert name == "TicketClosed" and payload["reason"] == "traced"
+    assert written["name"] == "TicketClosed" and written["reason"] == "traced"
     assert carrier["traceparent"].startswith("00-4bf92f3577b34da6a3ce929d0e0e4736-")
 
 
@@ -220,3 +222,18 @@ def test_the_sync_queue_takes_a_function_and_builds_it_on_the_first_publish(hear
 
     Publisher(queue).publish(TicketClosed(reason="again"))
     assert built == [1]  # and kept
+
+
+def test_a_background_queue_starts_once(background_queue):
+    with pytest.raises(ContractViolation, match="already started"):
+        background_queue.start()
+
+
+def test_a_background_queue_whose_worker_died_refuses_what_is_published(background_queue):
+    """The inbox would take the event and nobody would ever read it: the refusal says so where
+    the event was published."""
+    background_queue.process.terminate()
+    background_queue.process.join(5)
+
+    with pytest.raises(ContractViolation, match="no longer running"):
+        Publisher(background_queue).publish(TicketClosed(reason="lost"))

@@ -8,20 +8,20 @@
     ContextFailed          the host raised a class this process never imported
 
 Context: everything else the hosting service raises arrives as itself — its class, its `args`
-and its attributes (`ContextRequired.missing`, a `DomainError`'s fields), rebuilt here without
-calling its `__init__`, so a class whose constructor takes more than a message travels too.
+and its attributes (`ContextRequired.missing`, a `DomainError`'s fields) as JSON values, rebuilt
+here without calling its `__init__`, so a class whose constructor takes more than a message
+travels too. An error is the one thing still found by `module.qualname`: it is no message, has
+no identity, and is raised only when this process already imported its class.
 """
 
+import json
+import sys
 from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.remote_execution.domain.payload import (
-    imported_class,
-    pack,
-    unpack,
-)
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework.common.failures import FailureKind
+from sincpro_framework.common.serialization import read_values, values_of
 
 
 class ContextFailed(Exception):
@@ -71,16 +71,16 @@ DETAILS_LIMIT = 4096
 wire caps; past it the error travels by its message alone."""
 
 
-def _writable(value: Any) -> bool:
+def _values(value: Any) -> Any:
+    """`value` as JSON values — `None` when it cannot be written, and it stays here."""
     try:
-        pack(value)
+        return values_of(value)
     except Exception:
-        return False
-    return True
+        return None
 
 
 def error_details(error: BaseException) -> bytes:
-    """What `error` carries beyond its class — its `args` and its own attributes, packed; an
+    """What `error` carries beyond its class — its `args` and its own attributes, as JSON; an
     attribute that cannot be written is left behind, and nothing travels when the rest does not
     fit in a header.
 
@@ -88,24 +88,35 @@ def error_details(error: BaseException) -> bytes:
     this process's handling of the error, not the error — they stay here.
     """
     attributes = {
-        name: value
+        name: written
         for name, value in getattr(error, "__dict__", {}).items()
-        if not name.startswith("__") and _writable(value)
+        if not name.startswith("__") and (written := _values(value)) is not None
     }
-    args = error.args if _writable(error.args) else tuple(str(one) for one in error.args)
-    details = pack((args, attributes))
+    args = _values(error.args)
+    if args is None:
+        args = [str(one) for one in error.args]
+    details = json.dumps({"args": args, "attributes": attributes}).encode()
     return details if len(details) <= DETAILS_LIMIT else b""
+
+
+def imported_class(module: str | None, qualname: str | None) -> Any:
+    """The class `module.qualname` names, when this process already imported it — never an
+    import a remote service asked for."""
+    found: Any = sys.modules.get(module or "")
+    for part in (qualname or "").split("."):
+        found = getattr(found, part, None)
+    return found if isinstance(found, type) else None
 
 
 def _rebuilt(raised: type[Exception], details: bytes) -> Exception | None:
     """`raised` with the `args` and attributes it was sent with, never calling its `__init__` —
     `None` when they did not travel."""
     try:
-        args, attributes = unpack(details, None)
+        read = read_values(details)
         error = raised.__new__(raised)
-        error.args = tuple(args)
+        error.args = tuple(read["args"])
         if hasattr(error, "__dict__"):
-            error.__dict__.update(attributes)
+            error.__dict__.update(read["attributes"])
         return error
     except Exception:
         return None

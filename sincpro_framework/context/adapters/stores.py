@@ -5,7 +5,7 @@
     KeyValueContexts(store, TypedCodec(SIATContext))    the types back, the same codebase
 
 `KeyValueContexts` stands on `KeyValueStore`, so Redis, Valkey and Memcached are the adapters
-`sincpro_framework.caching` already has — behind their extras, nothing new to install. A key is
+`sincpro_framework.data_layer.caching` already has — behind their extras, nothing new to install. A key is
 written in one `SET`; its version is an atomic `INCR` beside it.
 """
 
@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sincpro_framework.caching.domain.store import KeyValueStore
+from sincpro_framework.common.store import KeyValueStore
 from sincpro_framework.context.adapters.codecs import PlainCodec
 from sincpro_framework.context.domain.codec import ContextCodec
 from sincpro_framework.context.domain.store import ContextStore

@@ -14,7 +14,7 @@ explicitly propagated — this module is that propagation mechanism.
 # This module still must stay: most users run a GIL build, and code written
 # against it must not silently depend on a free-threaded-only propagation
 # behavior that isn't guaranteed long-term. Side effect worth knowing:
-# `tests/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread`
+# `tests/context/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread`
 # and `::test_fan_out_without_thread_context_loses_context_for_every_worker`
 # encode the GIL-build assumption and will legitimately fail if ever run on a
 # free-threaded interpreter — that would mean the assumption stopped holding
@@ -55,7 +55,7 @@ class ThreadContextBus:
             # `Bus` is only known here via a TYPE_CHECKING import (to avoid a
             # circular import with sincpro_abstractions), which pyright can't
             # fully reconcile with `execute`'s per-call generic signature.
-            # Verified correct at runtime — see tests/test_thread_context_bus.py.
+            # Verified correct at runtime — see tests/context/test_thread_context_bus.py.
             return self._bus.execute(dto, return_type)  # pyright: ignore[reportArgumentType]
 
         try:

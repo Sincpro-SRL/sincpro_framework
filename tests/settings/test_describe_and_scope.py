@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from sincpro_framework.runtime.testing import settings_scope_violations
 from sincpro_framework.sincpro_conf import build_config_obj, describe_settings
-from sincpro_framework.testing import settings_scope_violations
 from tests.settings.test_resolution import DOCUMENT, FlatConfig, PaymentsSettings
 
 

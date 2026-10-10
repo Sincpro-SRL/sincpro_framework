@@ -50,7 +50,7 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
 | `credentials_from_asgi` / `credentials_from_headers` / `authenticated_as` | what an entrypoint does | function | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
-| `granting` / `RecordingProvider` / `AuthProviderContract` | test helpers | function / adapter / port | `sincpro_framework.testing` |
+| `granting` / `RecordingProvider` / `AuthProviderContract` | test helpers | function / adapter / port | `sincpro_framework.runtime.testing` |
 
 Look-alikes: `auth.Identity` is **who calls**; `observability.ObservabilityIdentity` is **who the
 service is** (release, version). `PermissionDenied` is not Python's `PermissionError` (an `OSError`).

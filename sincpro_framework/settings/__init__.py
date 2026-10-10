@@ -19,10 +19,10 @@ from. `sincpro_framework.sincpro_conf` is the entry point projects import, as al
 `docs/core/settings.md`.
 """
 
-from sincpro_framework.settings.adapters import load_yaml_file
+from sincpro_framework.settings.adapters.yaml_file import load_yaml_file
 from sincpro_framework.settings.building import build_config_obj
 from sincpro_framework.settings.describe import SettingDescription, describe_settings
-from sincpro_framework.settings.domain import (
+from sincpro_framework.settings.domain.config import (
     DefaultFrameworkConfig,
     FrameworkSettings,
     Secret,

@@ -226,7 +226,7 @@ Two sources feed it, and the body wins:
 `merge_http_context(headers)` (`entrypoint.py:34-48`) builds the inherited half: `x-correlation-id`
 becomes `correlation_id`, `traceparent` becomes `{"carrier": {"traceparent": ...}}`, and neither is
 copied into the DTO params. With no relevant header it returns `{}`, so a caller without headers does
-not get a fabricated context (`tests/entrypoint/test_entrypoint_rpc.py:394-397`). The helper is a pure
+not get a fabricated context (`tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py:394-397`). The helper is a pure
 function over a `Mapping[str, str]` and looks up lowercase keys, so the HTTP endpoint hands it
 Starlette's request headers and any other transport can hand it an equivalent mapping.
 
@@ -339,7 +339,7 @@ uvicorn's own, and that is the only place the bind address is chosen.
 `handle(payload, context=None)` is the escape hatch that makes all of this testable and reusable
 without an HTTP server: it is the same dispatch core with an inherited context injected by the caller
 (`entrypoint.py:110-114`), which is how the header-folding behaviour is exercised
-(`tests/entrypoint/test_entrypoint_rpc.py:206-220`, `:344-392`).
+(`tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py:206-220`, `:344-392`).
 
 ## Related
 

@@ -28,7 +28,7 @@ from starlette.testclient import TestClient
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints import internal
-from sincpro_framework.entrypoints.rest import RestGateway
+from sincpro_framework.entrypoints.adapters.rest import RestGateway
 
 
 class CommandIssueInvoice(DataTransferObject):

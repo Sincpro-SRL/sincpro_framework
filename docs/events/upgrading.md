@@ -41,7 +41,7 @@ from sincpro_framework.ddd import (
     AggregateRepository, DeliverableEventMixin, EventSourcedMixin, IRepository,
 )
 from sincpro_framework.event_driven import EventRelay, Publisher, RepositoryQueue
-from sincpro_framework.orm import DatabaseAggregateRepository, event_table, map_events
+from sincpro_framework.data_layer.orm import DatabaseAggregateRepository, map_events, template_table
 ```
 
 Bus-only consumers do not need to install the SQL extra just to run this SQL-specific check.
@@ -57,7 +57,7 @@ Repositories using the **same Database instance** join the active transaction, i
 Features called through the bus. Separate Database objects, even with the same URL, do not
 provide that shared unit of work. `separate=True` deliberately starts another transaction.
 
-With `map_events(registry, ContextEvent, event_table(...))`, `save(aggregate)` keeps its mapped
+With `map_events(registry, ContextEvent, template_table.event_table(...))`, `save(aggregate)` keeps its mapped
 recorded events in that same transaction, including mapped change-tracking events. It does
 not drain `recorded_events()`. Do not pull before saving or keep a second manual history row.
 Standalone facts can be saved directly or through `Publisher(RepositoryQueue(repository))`.
@@ -114,9 +114,6 @@ migration and needs a separate baseline update. No consumer files were edited he
 
 These are reported for correction, not fixed by this documentation update:
 
-- **Relay ordering across passes:** fail the first of two events of the same entity with a
-  ten-second backoff, then run another pass without advancing time. The second event is
-  delivered while the first waits. Holding is local to a pass, not a durable stream lock.
 - **Event-name filtering:** on SQLite, a `Criteria` equality filter on `name` is dropped as
   `unsupported_operator`; a base-event query returns other types too. Inspect `dropped` and
   query the event subclass directly until the name-filter contract is corrected.
@@ -131,7 +128,7 @@ Further limits: delivery is at least once, not exactly once; multi-replica exclu
 backend with appropriate locks; stored event classes cannot simply be deleted; replay has
 no automatic snapshots. An in-memory queue is still nondurable even behind a persisted relay.
 
-Verification evidence: existing `tests/event_driven`, `tests/orm/test_events_table.py`,
+Verification evidence: existing `tests/event_driven`, `tests/data_layer/orm/test_events_table.py`,
 `test_unit_in_play.py`, `test_aggregate_repository.py`, `test_numbering.py`, and the executable
 documentation suite. The limitations above were reproduced using existing test models with
 MemoryRepository and temporary SQLite. PostgreSQL concurrency, real brokers, consumer suites

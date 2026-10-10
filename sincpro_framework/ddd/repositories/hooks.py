@@ -24,10 +24,16 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Generic, cast
 
+from sincpro_framework.common.ordering import (
+    DEFAULT_SEQUENCE,
+    Ordered,
+    Placement,
+    name_of,
+    ordered,
+)
 from sincpro_framework.context.domain.level import Level
 from sincpro_framework.context.infrastructure.tree import child, entered
 from sincpro_framework.exceptions import DependencyNotRegistered, ExtensionRefused
-from sincpro_framework.ordering import DEFAULT_SEQUENCE, Ordered, Placement, name_of, ordered
 from sincpro_framework.sincpro_abstractions import ContextT
 from sincpro_framework.sincpro_logger import logger
 
@@ -357,7 +363,7 @@ class Hooks:
         self._read = True
 
     def _ordered(self) -> Ordered:
-        """The order the hooks run in (see `sincpro_framework.ordering`), worked out once — the
+        """The order the hooks run in (see `sincpro_framework.common.ordering`), worked out once — the
         collection is closed by then — with what was asked and could not be done as said
         logged once, not refused.
 

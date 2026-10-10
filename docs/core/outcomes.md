@@ -12,7 +12,8 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.outcomes import ExecutionFailed, failures
+from sincpro_framework.bus_pipeline.outcomes.events import ExecutionFailed
+from sincpro_framework.bus_pipeline.outcomes.listeners import failures
 
 
 class CommandIssueInvoice(DataTransferObject):
@@ -43,7 +44,10 @@ with billing.context({"tenant_id": "acme"}):
         billing(CommandIssueInvoice(order_id="O-7"))
 
 [failure] = heard
-assert (failure.use_case, failure.error_type) == ("CommandIssueInvoice", "SiatUnavailable")
+assert (failure.use_case, failure.error_type) == (
+    "billing-failures.CommandIssueInvoice",
+    "SiatUnavailable",
+)
 assert failure.dto == {"order_id": "O-7"} and failure.context["tenant_id"] == "acme"
 assert (failure.kind, failure.retry_after) == ("internal", None)   # what every wire answers
 assert raised.value.failure_id == failure.id          # the exception names the event
@@ -62,11 +66,11 @@ assert raised.value.failure_id == failure.id          # the exception names the 
 
 | Field | Meaning |
 |---|---|
-| `use_case`, `bus`, `level` | the use case that raised, its bounded context, `feature` or `application_service` |
+| `use_case`, `bus`, `level` | the use case that raised by its identity (`context.Class`), its bounded context, `feature` or `application_service` |
 | `escaped_from` | the bus whose caller received the exception |
 | `dto` | the DTO as it was handed, as JSON values |
 | `error_type`, `error` | the exception's class and message |
-| `kind` | the `FailureKind` every wire answers it with (`transport.failures`): `domain`, `conflict`, `unavailable`, `internal`… |
+| `kind` | the `FailureKind` every wire answers it with (`common.failures`): `domain`, `conflict`, `unavailable`, `internal`… |
 | `retry_after` | seconds to wait before sending the same call again — `None` when sending it again will not help |
 | `execution_id` · `causation_id` · `correlation_id` | the execution that failed, and its flow — what its log line, span and error report carry |
 | `context` | what the flow carried — the keys that travel, a `Secret` as its value |
@@ -78,7 +82,7 @@ A listener that retries or compensates decides with what the caller was told. An
 own kind:
 
 ```python
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework.common.failures import FailureKind
 
 
 class CommandSendInvoice(DataTransferObject):
@@ -145,7 +149,8 @@ listener. With nobody listening, nothing is built.
 ## Every use case that answered
 
 ```python
-from sincpro_framework.outcomes import ExecutionCompleted, completions
+from sincpro_framework.bus_pipeline.outcomes.events import ExecutionCompleted
+from sincpro_framework.bus_pipeline.outcomes.listeners import completions
 
 
 class CommandReserveStock(DataTransferObject):
@@ -175,7 +180,8 @@ with warehouse.context({"tenant_id": "acme"}):
     warehouse(CommandReserveStock(order_id="O-7"))
 
 [completed] = done
-assert completed.use_case == "CommandReserveStock" and completed.dto == {"order_id": "O-7"}
+assert completed.use_case == "warehouse-outcomes.CommandReserveStock"
+assert completed.dto == {"order_id": "O-7"}
 assert completed.response == {"reservation_id": "R-O-7"}
 assert completed.response_type == "ResponseReserveStock" and completed.context["tenant_id"] == "acme"
 ```
@@ -188,7 +194,7 @@ assert completed.response_type == "ResponseReserveStock" and completed.context["
 
 | Field | Meaning |
 |---|---|
-| `use_case`, `bus`, `level` | the use case, its bounded context, `feature` or `application_service` |
+| `use_case`, `bus`, `level` | the use case by its identity (`context.Class`), its bounded context, `feature` or `application_service` |
 | `dto` · `response` · `response_type` | what it was handed and what it returned, as JSON values (`None` when it returned nothing) |
 | `execution_id` · `causation_id` · `correlation_id` | the execution, and its flow |
 | `context` | what the flow carried — the keys that travel |
@@ -205,13 +211,13 @@ kept: list[str] = []
 @audit.feature(ExecutionCompleted)                     # another bus, as any event
 class KeepTrail(Feature):
     def execute(self, dto: ExecutionCompleted) -> None:
-        kept.append(f"{dto.bus}:{dto.use_case}")
+        kept.append(dto.use_case)
 
 
 warehouse.publish_completions(to=Publisher(SyncQueue(Subscriber(audit))))
 warehouse(CommandReserveStock(order_id="O-8"))
 
-assert kept == ["warehouse-outcomes:CommandReserveStock"]   # audit's own run is not announced
+assert kept == ["warehouse-outcomes.CommandReserveStock"]   # audit's own run is not announced
 completions.clear()
 ```
 

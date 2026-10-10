@@ -22,28 +22,28 @@ adapter** of the hexagon: it turns a request into the DTO, calls the bus, and tu
 the failure into the protocol's shape. It holds no business logic and no use cases of its own.
 It is not where a use case is defined, composed or adapted. That happens in `services/`.
 The wires of this package are the transports above. A program that stays up and runs loops
-(`CronGateway`, a poll of a table the project owns) is `sincpro-framework-operations`
-(`sincpro_framework.process`), not a wire here.
+(`CronGateway`, a poll of a table the project owns) lives in this package
+(`sincpro_framework.entrypoints.entrypoint.workers`) but is not a wire: see `sincpro-framework-operations`.
 
 ## Abstractions
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
 | **wire** | One protocol: `rest`, `rpc`, `grpc`, `mcp`, `queue` | name | — |
-| **binding** | What a use case declares for one wire: path, verb, status, tool name… One per wire per class | DTO (`RestBinding`, `McpBinding`…) | `sincpro_framework.entrypoints.exposure` |
-| `@rest.post(...)`, `@mcp()`, `@rpc()`, `@grpc()`, `@queue.consumes(...)` | Record a binding for the handler they decorate. They import no web library | decorator | `sincpro_framework.entrypoints.exposure` |
+| **binding** | What a use case declares for one wire: path, verb, status, tool name… One per wire per class | DTO (`RestBinding`, `McpBinding`…) | `sincpro_framework.entrypoints` |
+| `@rest.post(...)`, `@mcp()`, `@rpc()`, `@grpc()`, `@queue.consumes(...)` | Record a binding for the handler they decorate. They import no web library | decorator | `sincpro_framework.entrypoints` |
 | `@internal` | Never on any wire, whatever else is declared | decorator | `sincpro_framework.entrypoints` |
 | **gateway** | Reads N buses, resolves what is published on its wire, builds what is served | class (`FastApiGateway`, `RpcGateway`, `GrpcGateway`, `McpGateway`, `QueueGateway`) | `sincpro_framework.entrypoints.<wire>` |
-| **mode** (`Exposure`) | What a gateway publishes: `DECLARED` = only use cases with a binding for its wire; `CATALOG` = every use case | enum | `sincpro_framework.entrypoints.exposure` |
-| **catalog** | Every use case of one bus, narrowed by `include` / `exclude` / `layers` / `@internal`. The raw material | class `Catalog` | `sincpro_framework.entrypoints.catalog` |
-| **group** | One bounded context's conventions on a wire: prefix, version, tags, namespace, package | DTO `Group`, set with `gateway.group(bus, ...)` | `sincpro_framework.entrypoints.exposure` |
-| **operation** | One published use case as facts: alias, Command, handler, schemas, Query or not, access | DTO `Operation` | `sincpro_framework.entrypoints.exposure` |
-| **resolved** | An operation with its final binding (precedence applied) and its group | DTO `Resolved` | `sincpro_framework.entrypoints.exposure` |
+| **mode** (`Exposure`) | What a gateway publishes: `DECLARED` = only use cases with a binding for its wire; `CATALOG` = every use case | enum | `sincpro_framework.entrypoints` |
+| **catalog** | Every use case of one bus, narrowed by `include` / `exclude` / `layers` / `@internal`. The raw material | class `Catalog` | `sincpro_framework.entrypoints.entrypoint.catalog` |
+| **group** | One bounded context's conventions on a wire: prefix, version, tags, namespace, package | DTO `Group`, set with `gateway.group(bus, ...)` | `sincpro_framework.entrypoints` |
+| **operation** | One published use case as facts: alias, Command, handler, schemas, Query or not, access | DTO `Operation` | `sincpro_framework.entrypoints` |
+| **resolved** | An operation with its final binding (precedence applied) and its group | DTO `Resolved` | `sincpro_framework.entrypoints` |
 | **surface** | The list of resolved operations: what the gateway actually publishes. Validated, or `ExposureRefused` | `gateway.surface()` | — |
 | **manifest** | The surface as frozen, JSON-safe rows, for a snapshot test | `gateway.manifest()` → `ManifestEntry` | — |
-| **port** (`Wire`) | The interface a project implements for a transport of its own | abstract class | `sincpro_framework.entrypoints.exposure` |
-| `bus_call(bus)` | FastAPI dependency: run a DTO on the bus from a hand-written route, the generated routes' way | function | `sincpro_framework.entrypoints.fastapi` |
-| `failure_kind` | The class attribute that classifies an error for every wire | attribute + `FailureKind` enum | `sincpro_framework.transport.failures` |
+| **port** (`Wire`) | The interface a project implements for a transport of its own | abstract class | `sincpro_framework.entrypoints` |
+| `bus_call(bus)` | FastAPI dependency: run a DTO on the bus from a hand-written route, the generated routes' way | function | `sincpro_framework.entrypoints.adapters.fastapi` |
+| `failure_kind` | The class attribute that classifies an error for every wire | attribute + `FailureKind` enum | `sincpro_framework.common.failures` |
 
 "Exposure" is both the package of the decorators (`entrypoints.exposure`) and the mode enum
 (`Exposure`). When this skill says *mode*, it means the enum.
@@ -96,7 +96,7 @@ Two edits, nothing else:
 
 ```python
 # 1. domains/billing/services/issue_invoice.py — on the handler that already exists
-from sincpro_framework.entrypoints.exposure import rest
+from sincpro_framework.entrypoints.entrypoint.decorators import rest
 
 @billing.feature(CommandIssueInvoice)
 @rest.post("/invoices", status=201)
@@ -107,7 +107,7 @@ class IssueInvoice(Feature): ...
 class GetInvoice(Feature): ...
 
 # 2. entrypoints/http/app.py — the only new file
-from sincpro_framework.entrypoints.fastapi import FastApiGateway
+from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
 
 api = FastApiGateway({"billing": billing}, title="Billing API", unguarded=True)
 api.group(billing, version="v1")         # /v1/billing/invoices
@@ -157,7 +157,7 @@ Sentry):
 
 ```python
 from fastapi import APIRouter, Depends
-from sincpro_framework.entrypoints.fastapi import BusCall, bus_call, problem_responses
+from sincpro_framework.entrypoints.adapters.fastapi import BusCall, bus_call, problem_responses
 
 uploads = APIRouter(prefix="/v1/documents", tags=["documents"])
 
@@ -182,7 +182,7 @@ its own code (REST status, JSON-RPC code, gRPC status):
 
 ```python
 from sincpro_framework.ddd.exceptions import DomainError
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework.common.failures import FailureKind
 
 class ExtractionError(DomainError):
     failure_kind = FailureKind.INVALID       # REST 422, message in `detail`
@@ -197,10 +197,10 @@ the status but no `detail`; one without it is a 500 that says nothing.
 ## Every wire, one base
 
 ```python
-from sincpro_framework.entrypoints.fastapi import FastApiGateway
-from sincpro_framework.entrypoints.rpc import RpcGateway
-from sincpro_framework.entrypoints.grpc import GrpcGateway
-from sincpro_framework.entrypoints.mcp import McpGateway
+from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
+from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints.adapters.mcp import McpGateway
 
 FastApiGateway({"billing": billing}).app()
 RpcGateway({"billing": billing}).run()
@@ -235,7 +235,7 @@ ignored by this one.
 The decorators import no transport library, so `services/` stays clean:
 
 ```python
-from sincpro_framework.entrypoints.exposure import grpc, mcp, queue, rest, rpc
+from sincpro_framework.entrypoints.entrypoint.decorators import grpc, mcp, queue, rest, rpc
 
 @billing.feature(CommandIssueInvoice)
 @auth.requires(BillingPermission.ISSUE)
@@ -268,7 +268,7 @@ handler inherits, wire by wire, the binding of the one it replaces.
   the project add middleware, interceptors, plugins. `.run(...)` is the one-liner.
 - **Snapshot the surface in CI.** `gateway.manifest()` is frozen, JSON-safe and sorted; assert it
   against a snapshot so the public API only moves on purpose.
-- **One failure classification, each wire's code.** `transport.failures.refined_failure_kind(error)`
+- **One failure classification, each wire's code.** `common.failures.refined_failure_kind(error)`
   decides the kind — the one the error's class declares (`failure_kind = …`), else `invalid` /
   `unauthenticated` / `permission_denied` / `conflict` / `domain` / `internal`; every wire maps it
   (REST status, JSON-RPC code, gRPC status). A project's own `Wire` calls the same function. A `DomainError`'s message reaches the caller;

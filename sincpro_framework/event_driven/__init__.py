@@ -16,25 +16,19 @@ Nothing is wired by default. A project builds the queue it wants with the buses 
 publishes when a Feature decides to — directly, or through its repository (`RepositoryQueue`),
 to be delivered by the relay once the transaction committed.
 
-    domain/          the ports and policies: Queue, the delivery failure policies
-    services/        what runs on them: the subscriber
+    domain/          the port and the policies: Queue, the delivery failure policies
     adapters/        the queues; `adapters.faststream` behind its extra
-    infrastructure/  the trace that travels beside an event
-    entrypoint/      what a project holds: Publisher, EventRelay
+    entrypoint/      what a project holds: Publisher, Subscriber, EventRelay
 """
 
 from sincpro_framework.event_driven.adapters.background_queue import BackgroundQueue
 from sincpro_framework.event_driven.adapters.repository_queue import RepositoryQueue
 from sincpro_framework.event_driven.adapters.sync_queue import SyncQueue
 from sincpro_framework.event_driven.domain.failure import (
-    DEFAULT_FAILURE_POLICY,
-    BackoffStrategy,
     DeliveryFailurePolicy,
     ExponentialBackoff,
     FailureDecision,
-    FailureOutcome,
     FixedBackoff,
-    HandlingFailure,
     ParkAndContinue,
     RetryInPlace,
     RetryLater,
@@ -43,21 +37,17 @@ from sincpro_framework.event_driven.domain.failure import (
 from sincpro_framework.event_driven.domain.queue import Queue
 from sincpro_framework.event_driven.entrypoint.publisher import AsyncPublisher, Publisher
 from sincpro_framework.event_driven.entrypoint.relay import EventRelay, RelayPass
-from sincpro_framework.event_driven.services.subscriber import AsyncSubscriber, Subscriber
+from sincpro_framework.event_driven.entrypoint.subscriber import AsyncSubscriber, Subscriber
 
 __all__ = [
     "AsyncPublisher",
     "AsyncSubscriber",
     "BackgroundQueue",
-    "BackoffStrategy",
-    "DEFAULT_FAILURE_POLICY",
     "DeliveryFailurePolicy",
     "EventRelay",
     "ExponentialBackoff",
     "FailureDecision",
-    "FailureOutcome",
     "FixedBackoff",
-    "HandlingFailure",
     "ParkAndContinue",
     "Publisher",
     "Queue",
@@ -66,6 +56,6 @@ __all__ = [
     "RetryInPlace",
     "RetryLater",
     "SkipAndContinue",
-    "SyncQueue",
     "Subscriber",
+    "SyncQueue",
 ]

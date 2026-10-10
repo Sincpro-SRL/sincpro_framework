@@ -15,133 +15,19 @@ the same bus, or one inside its `bus.context(...)`, joins the scope already open
 running ones included — and the block's end puts back what was there.
 """
 
-from collections.abc import Generator, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import TypeAdapter
-
-from sincpro_framework.context.domain.execution import CONTEXT_NODE
 from sincpro_framework.context.domain.keys import standardized
-from sincpro_framework.context.domain.level import SCOPES, EntrypointKind, Level
-from sincpro_framework.context.domain.node import ContextNode, Values
+from sincpro_framework.context.domain.level import EntrypointKind
+from sincpro_framework.context.domain.node import ContextNode
 from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.entrypoint.facade import Context
-from sincpro_framework.context.infrastructure.distributed import SharedContext
-from sincpro_framework.context.infrastructure.providers import ContextProvider
-from sincpro_framework.context.infrastructure.tree import current, entered
-from sincpro_framework.ids import new_entity_id
-from sincpro_framework.observability.correlation import remember
+from sincpro_framework.context.infrastructure.said import remember
 
 if TYPE_CHECKING:
-    from sincpro_framework.bus import FrameworkBus
     from sincpro_framework.use_bus import UseFramework
-
-
-class ContextMixin:
-    """What a `UseFramework` adds to hold the context: its published node, its schema, its
-    providers."""
-
-    bus: "FrameworkBus | None"
-
-    def _init_context_storage(self) -> None:
-        self._published = Values()
-        """What this bus publishes for every execution of its own — its `Level.BUS` node's values."""
-        self._context_schema: TypeAdapter[Any] | None = None
-        self._context_providers: list[ContextProvider] = []
-        self._shared_context: SharedContext | None = None
-        """The store this bus shares its context through — `bus.context_store(store)`."""
-
-    @property
-    def _context_label(self) -> str:
-        return getattr(self, "_logger_name", "")
-
-    def _entered_here(self) -> bool:
-        """Whether the node in play stands in a scope of this bus already."""
-        return any(node.owner is self and node.level in SCOPES for node in current().chain())
-
-    def _bus_node(self, parent: ContextNode) -> ContextNode:
-        return ContextNode(
-            Level.BUS, parent, self._published, self._context_label, owner=self
-        )
-
-    @contextmanager
-    def _scope(
-        self, values: Mapping[Any, Any], kind: EntrypointKind | None = None
-    ) -> Generator[ContextNode, None, None]:
-        """A scope of this bus under the node in play — under its own node the first time.
-
-        1. The bus's node above it, the first time a call reaches this bus.
-        2. An entrance of a bus that shares its context opens under the chain the sender handed
-           on (`sincpro.context_node`), read back from the store.
-        3. Final: the node, kept in the store when this bus shares its context.
-        """
-        parent = current()
-        if not self._entered_here():
-            parent = self._bus_node(parent)
-        level = Level.SCOPE if parent.nearest(Level.ENTRYPOINT) else Level.ENTRYPOINT
-        handed = None
-        if CONTEXT_NODE in values:
-            handed = values[CONTEXT_NODE]
-            values = {key: value for key, value in values.items() if key != CONTEXT_NODE}
-        sharing = self._shared_context
-        if level is Level.ENTRYPOINT:
-            kind = kind or EntrypointKind.DIRECT
-            if sharing is not None:
-                parent, values = sharing.entrance(values, handed, parent)
-        node = ContextNode(level, parent, values, self._context_label, owner=self, kind=kind)
-        if sharing is not None:
-            sharing.kept(node, new_entity_id())
-        with entered(node):
-            yield node
-
-    def _get_context(self) -> Context:
-        """The context as this bus sees it from where it is read."""
-        node = current()
-        if not self._entered_here():
-            node = self._bus_node(node)
-        return Context(node, owner=self)
-
-    def current_context(self) -> Context:
-        """The context in play, as this bus sees it — the object `self.context` is in a handler,
-        read-only, from anywhere:
-
-            Database(url, actor=lambda: bus.current_context().get("user_id"))
-
-        A callable stored once at wiring time answers for every later request: it is read when
-        it is asked. Writing is `bus.context(...)`'s, `self.context`'s and `use_context()`'s.
-        """
-        context = self._get_context()
-        return Context(context._node, self, writable=False)
-
-    def _inherited_context(self) -> dict[str, Any]:
-        """What the execution in progress — on this bus or the one that called it — sees."""
-        return {
-            key: value for key, value in current().flattened().items() if isinstance(key, str)
-        }
-
-    def _set_context(self, context: Mapping[Any, Any]) -> None:
-        self._get_context().replace(context)
-
-    def _clean_context(self) -> None:
-        self._set_context({})
-
-    def _coerced(self, values: Mapping[Any, Any]) -> dict[Any, Any]:
-        """`values` with the keys the bus's schema names validated and typed; the rest as given."""
-        if self._context_schema is None:
-            return dict(values)
-        named = {key: value for key, value in values.items() if isinstance(key, str)}
-        typed = self._context_schema.validate_python(named)
-        return {**values, **(typed if isinstance(typed, Mapping) else typed.__dict__)}
-
-    def _bind_context_to_handlers(self) -> None:
-        if self.bus is None:
-            return
-        for feature in self.bus.feature_bus.feature_registry.values():
-            feature.bind_to_framework(self)
-        for app_service in self.bus.app_service_bus.app_service_registry.values():
-            app_service.bind_to_framework(self)
 
 
 class FrameworkContext:

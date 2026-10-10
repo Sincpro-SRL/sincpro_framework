@@ -214,7 +214,7 @@ def serve_contexts(
         )
     served = [_imported(one) if isinstance(one, str) else one for one in contexts]
     if attach == Attach.FOREGROUND:
-        from sincpro_framework.transport.grpc import serve_until_terminated
+        from sincpro_framework.common.transport.grpc import serve_until_terminated
 
         server = _internal_server(served)
         server.add_insecure_port(address)

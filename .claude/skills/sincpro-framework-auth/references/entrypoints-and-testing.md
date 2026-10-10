@@ -34,7 +34,7 @@ identity is what the host opened.
 | Need | How |
 |---|---|
 | to be someone, no provider, no bus | `with as_identity(Identity.user("user:1", permissions={...})):` |
-| only some permissions, one line | `with granting(BillingPermission.ISSUE_INVOICE):` (`sincpro_framework.testing`) |
+| only some permissions, one line | `with granting(BillingPermission.ISSUE_INVOICE):` (`sincpro_framework.runtime.testing`) |
 | an entrypoint with fake tokens | `StaticProvider({"token-a": identity_a})` |
 | no access control at all | `AccessControl(enabled=False)`, or no `auth.on(bus)` |
 | what the provider was asked | `RecordingProvider(real_or_none)` → `.asked` |

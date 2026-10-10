@@ -9,7 +9,7 @@ and the drift shows up as a number that is quietly different, not as a failure.
 So the cases live in a file instead of in one suite: this module writes
 `tests/ddd/criteria/criteria-parity.json`, right beside the tests for `evaluate.py` since that is the
 module it is holding to a promise, checks that the in-memory evaluator answers every one of
-them, `tests/orm/test_criteria_parity_sql.py` runs the same file through the SQL translator,
+them, `tests/data_layer/orm/test_criteria_parity_sql.py` runs the same file through the SQL translator,
 and the client repository copies it into its own suite and runs it through its own engine. A case is added here once and both sides are held to it.
 
 Regenerating is `make criteria-parity`, and the file is committed: a file generated at test

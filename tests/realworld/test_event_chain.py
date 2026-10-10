@@ -7,13 +7,13 @@ that caused each next one named by `causation_id`.
 import pytest
 
 from sincpro_framework import UseFramework
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.event_driven import (
     Publisher,
     Subscriber,
     SyncQueue,
 )
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .contexts import (
     CommandPostEntry,

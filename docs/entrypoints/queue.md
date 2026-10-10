@@ -12,7 +12,7 @@ gateway is what you use when a broker is also a door into your Commands.
 
 ```text
 from faststream.kafka import KafkaBroker
-from sincpro_framework.entrypoints.faststream import QueueGateway
+from sincpro_framework.entrypoints.adapters.faststream import QueueGateway
 
 broker = KafkaBroker("kafka:9092")
 gateway = QueueGateway(broker, [billing, accounting])
@@ -26,7 +26,7 @@ An event needs nothing: registering a Feature for it is already saying the conte
 Command says it is on the queue, and who may send it:
 
 ```text
-from sincpro_framework.entrypoints.exposure import queue
+from sincpro_framework.entrypoints.entrypoint.decorators import queue
 
 @accounting.feature(InvoiceIssued)                 # heard — nothing to declare
 class Book(Feature): ...
@@ -74,7 +74,7 @@ The build refuses the surface, giving every reason at once, when:
 
 Every subscription uses `AckPolicy.MANUAL`. FastStream's per-broker defaults (`ACK_FIRST` on
 Kafka, `REJECT_ON_ERROR` elsewhere) are at most once and are never used. Each delivery gets a
-verdict, from the failure classification every wire shares (`transport.failures`):
+verdict, from the failure classification every wire shares (`common.failures`):
 
 | What happened | Verdict | Settled |
 |---|---|---|
@@ -137,8 +137,8 @@ Before the bus runs, the delivery is claimed as `inbox:{context.Command}:{source
   then waits for the claim to expire.
 
 ```text
-from sincpro_framework.caching import KeyValueRecords
-from sincpro_framework.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.data_layer.caching import KeyValueRecords
+from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 QueueOptions(inbox=KeyValueRecords(RedisKeyValue(...)))   # shared across replicas
 QueueOptions(inbox=None)                                  # off
 ```
@@ -172,7 +172,7 @@ the prefixes `ce_` (Kafka binding), `ce-` (HTTP) and `cloudEvents:` / `cloudEven
 producer stamps them with:
 
 ```text
-from sincpro_framework.entrypoints.faststream import cloud_event_headers
+from sincpro_framework.entrypoints.adapters.faststream import cloud_event_headers
 headers = cloud_event_headers(command, source="urn:svc:sales", id=request_id)
 await broker.publish(command.model_dump_json().encode(), "billing.invoices.issue", headers=headers)
 ```

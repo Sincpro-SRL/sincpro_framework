@@ -144,7 +144,7 @@ project writes its own exception handler:
 
 ```python
 from sincpro_framework.ddd import DomainError
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework.common.failures import FailureKind
 
 
 class InvoiceNotFound(DomainError):

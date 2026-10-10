@@ -4,7 +4,7 @@ An aggregate reaches another by naming it in a `Criteria` `specification`. Resol
 **one call per relation per page**, never per row — and a relation you did not ask for raises rather
 than lazily loading.
 
-In the framework repo, `docs/persistence/relations.md` and `tests/orm/every_kind_models.py` (every
+In the framework repo, `docs/persistence/relations.md` and `tests/data_layer/orm/every_kind_models.py` (every
 kind at once) go deeper; this page is enough to use them.
 
 ## The kinds
@@ -41,7 +41,7 @@ another aggregate, never written nor removed by the root.
 ## Declaring what the tables cannot say
 
 ```python
-from sincpro_framework.orm import Relation
+from sincpro_framework.data_layer.orm import Relation
 
 map_aggregates(registry, {Author: author_table, Tag: tag_table, Work: work_table},
     relations={Work: {

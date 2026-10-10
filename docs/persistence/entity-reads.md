@@ -89,7 +89,7 @@ and nothing is declared twice. The DTOs and the responses keep the names the pro
 nothing requires a prefix, and the records keep their own name (`account`, `accounts`), never
 `items`.
 
-## The four reads
+## The reads
 
 | DTO | Carries | Answers | When nothing is there |
 |---|---|---|---|
@@ -97,6 +97,7 @@ nothing requires a prefix, and the records keep their own name (`account`, `acco
 | `GetMany[T, R]` | `ids`, `criteria` | `R(ResponseRecords)`: a list in the order of `ids`, each as `DEFAULT_READING` brings it | the absent ids in `missing` |
 | `LiteralSearch[T, R]` | `text`, `criteria` | `R(ResponsePaginatedQuery)`: `DEFAULT_LITERAL_SEARCH` filled, a page of 8, identity and display | an empty page |
 | `Search[T, R]` | `criteria` | `R(ResponsePaginatedQuery)`: the page asked, as `DEFAULT_READING` brings it, in `DEFAULT_ORDER` | an empty page |
+| `DomainEvents[T, R]` | `id`, `names`, `criteria` | `R(ResponsePaginatedQuery)`: the record's events, oldest first, from the event class `R` holds | an empty page; `AggregateNotFound` when a key other than the identity finds no record |
 
 ### What the caller sends wins, part by part
 
@@ -138,10 +139,50 @@ class ListAccounts(EntityReads[Account]):
   deep lists: a caller that wants a light one names a specification.
 
 `Get` and `GetMany` read as a page filtered by the key, not through `repository.get`. That
-way the definition (`model_meta_data`) and the relations come back the same from every store,
+way the definition (`entity_meta_data`) and the relations come back the same from every store,
 and the answer is cut by the same specification a page is. A Feature that is about to change
 the record reads it with `repository.get(id, detail=detail_of(Account))`, which hands back the
 live aggregate.
+
+### DomainEvents: a record's events
+
+```python
+class ResponseIssueEvents(ResponsePaginatedQuery):
+    events: list[ProjectEvent]                  # the context's event class: where to read
+
+class QueryIssueEvents(DomainEvents[Issue, ResponseIssueEvents]):
+    pass
+
+@project.feature([QueryGetIssue, QueryListIssues, QueryIssueEvents])
+class IssueReads(EntityReads[Issue]):
+    pass
+
+project(QueryIssueEvents(id=issue_id))                             # every event, oldest first
+project(QueryIssueEvents(id=issue_id, names=["project.issue.v1.closed"]))   # only those wire names
+project(QueryIssueEvents(id=issue_id, criteria=Criteria(
+    where=Condition(field="created_at", operator=Operator.GTE, value=start),
+)))                                                                 # since a moment
+```
+
+- **On the record's own reads**, beside `Get`, `GetMany`, `LiteralSearch` and `Search`; whatever
+  guards the entity's reads guards its history.
+- **The type is the class the DTO names**, never what a caller sends: the events are filtered by
+  `entity_type = "Issue"` and `entity_id = <identity>` together, so a `Sandbox` and a `Workspace`
+  that share the id `dev-1` never mix.
+- **`id` is the record's key**, as `Get` reads it. When `DEFAULT_GET_ID` names another field,
+  the record is read first and its identity is what the events name. A blank `id` is refused
+  (422): it would read every event about no record.
+- **Where the events live** is the class the response holds: the context's base event, or a
+  narrower class (`events: list[IssueClosed]`) to read only those. A response that does not hold
+  a `DomainEvent` is refused, naming it.
+- **`names`** keeps the events whose wire name is one of them (`name in names`); a single
+  name works as a one-item list. A name no class records answers no rows — it is not checked
+  against the classes imported, which may not be yet.
+- **Oldest first** (`id`, a UUIDv7); the caller's criteria lays over it — its `where` adds, its
+  `order` and `pagination` replace (`order=parse_order("-id")` for newest first).
+- **Several records at once** — an issue with its runs — is `history_of(issue, *runs)`: the
+  criteria a `Search` on the context's event class reads them with, each by its type and
+  identity.
 
 ## Extending
 

@@ -345,14 +345,14 @@ only costs time, so it warns.
 
 ## Phases
 
-1. **Owned relations** (§2) — built: `cascade.py`, `Held`, `tests/orm/test_cascade.py`.
+1. **Owned relations** (§2) — built: `cascade.py`, `Held`, `tests/data_layer/orm/test_cascade.py`.
 2. **Transactions** (§3, §4, §5) — built: `context(...)`, `nowait`, `engine_errors.py`,
-   `tests/orm/test_transactions.py`.
+   `tests/data_layer/orm/test_transactions.py`.
 3. **Bulk and hooks** (§6, §7, §8) — built: `upsert`, `update_all`/`remove_all`,
-   `transaction_hooks.py`, `tests/orm/test_bulk_writes.py`; the event log of #131 builds on §8.
+   `transaction_hooks.py`, `tests/data_layer/orm/test_bulk_writes.py`; the event log of #131 builds on §8.
 
 Every engine-sensitive test runs on SQLite and, with `SINCPRO_POSTGRES_URL` set, on Postgres
-(`tests/orm/engines.py`).
+(`tests/data_layer/orm/engines.py`).
 
 ## Open questions
 

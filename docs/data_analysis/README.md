@@ -1,6 +1,6 @@
 # Data analysis — read a query once
 
-`sincpro_framework.data_analysis` holds what a `Criteria` answered as a `DataFrame`, so the same
+`sincpro_framework.data_layer.data_analysis` holds what a `Criteria` answered as a `DataFrame`, so the same
 question is never sent to the database twice: the next page continues what is held, a narrower
 filter is answered from a complete read, and the rows go on — as Parquet or an Arrow stream to a
 client, or straight into pandas, polars or DuckDB for the computing. It is a utility, not an
@@ -24,7 +24,9 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sincpro_framework.ddd import Criteria, Entity, MemoryRepository
+from sincpro_framework.ddd import Criteria, Entity
+
+from sincpro_framework.data_layer.repositories import MemoryRepository
 
 
 @dataclass
@@ -74,7 +76,7 @@ reads only the pages not held — `pages` is how many the frame holds after the 
 more to read; asking again reads nothing:
 
 ```python
-from sincpro_framework.data_analysis import QueryCache
+from sincpro_framework.data_layer.data_analysis import QueryCache
 
 cache = QueryCache(max_rows=2_000_000)
 
@@ -100,7 +102,7 @@ frame answers the filter it holds and one more condition by itself — values wr
 read as each column's type:
 
 ```python
-from sincpro_framework.data_analysis import NotComplete
+from sincpro_framework.data_layer.data_analysis import NotComplete
 
 sales = cache.fetch_all(repository, InvoiceLine, posted)
 assert (len(sales), sales.complete, repository.reads) == (1_875, True, 4)
@@ -157,7 +159,19 @@ nothing. A cache is per process: an aggregate another process writes is not one 
 from sqlalchemy import Column, Integer
 from sqlalchemy.orm import registry
 
-from sincpro_framework.orm import Database, Repository, entity_table, invalidate_on_commit, map_aggregates
+from sincpro_framework.data_layer.orm import (
+
+    Database,
+
+    Repository,
+
+    invalidate_on_commit,
+
+    map_aggregates,
+
+    template_table,
+
+)
 
 
 @dataclass
@@ -166,7 +180,7 @@ class Payment(Entity):
 
 
 mapping = registry()
-map_aggregates(mapping, {Payment: entity_table("payment", mapping.metadata, Column("cents", Integer))})
+map_aggregates(mapping, {Payment: template_table.entity_table("payment", mapping.metadata, Column("cents", Integer))})
 database = Database("sqlite:///payments.sqlite3")
 mapping.metadata.create_all(database.engine)
 payments = Repository(database)
@@ -211,7 +225,7 @@ What DuckDB or polars answer as Arrow comes back as a frame with `DataFrame.from
 read from the schema — so an answer with no rows keeps its columns:
 
 ```python
-from sincpro_framework.data_analysis import DataFrame
+from sincpro_framework.data_layer.data_analysis import DataFrame
 
 journals = DataFrame.from_arrow(
     duckdb.from_arrow(sales.to_arrow()).aggregate("journal, sum(amount) AS total").arrow().read_all()
@@ -261,5 +275,5 @@ kept by `QueryCaching`, in [caching](../caching/README.md).
 | `frame.sort(keys)` / `frame.select(columns)` | ordered, `null` last / some columns |
 | `frame.to_arrow()` / `to_parquet()` / `to_ipc()` / `to_json()` | handed on |
 | `DataFrame.from_arrow(table, key="id")` | a `pyarrow.Table` as a frame, typed by its schema |
-| `invalidate_on_commit(database, cache, *aggregates)` | `sincpro_framework.orm`: the reads of an aggregate let go when a write of it commits |
+| `invalidate_on_commit(database, cache, *aggregates)` | `sincpro_framework.data_layer.orm`: the reads of an aggregate let go when a write of it commits |
 | `repository.fingerprint(target, criteria)` | the key of a read — pagination left out, scope put in |

@@ -79,7 +79,7 @@ with metrics.using(recorder):
 assert labels == {
     "service.name": "shop",  # the library or service; the bus stands in when none resolves
     "sincpro.context": "shop",
-    "sincpro.use_case": "CommandPing",
+    "sincpro.use_case": "shop.CommandPing",
     "sincpro.layer": "feature",
     "sincpro.outcome": "ok",
     "error.type": "",

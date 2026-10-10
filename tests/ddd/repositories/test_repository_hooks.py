@@ -11,9 +11,10 @@ from dataclasses import dataclass
 import pytest
 
 from sincpro_framework import UseFramework
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ddd.repositories import Hook, Hooks, MemoryRepository
+from sincpro_framework.ddd.repositories import Hook, Hooks
 from sincpro_framework.exceptions import DependencyNotRegistered, ExtensionRefused
 
 NOTHING_TO_WALK = "sincpro_framework.ddd.value_object"
@@ -209,7 +210,7 @@ def test_a_hook_that_writes_is_refused_instead_of_recursing():
 
 def test_a_batch_is_refused_whole_the_way_the_engine_refuses_it():
     """Every `before_save`, then the write. Refused halfway, nothing is written and no
-    `after_save` ran — pinned against the engine too, in `tests/orm/test_lifecycle_parity.py`.
+    `after_save` ran — pinned against the engine too, in `tests/data_layer/orm/test_lifecycle_parity.py`.
     """
     hooks, bus = given()
 

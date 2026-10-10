@@ -14,7 +14,7 @@ The columns:
 | Column | Meaning |
 |---|---|
 | **Vocabulary** | `sincpro_framework.ddd` — the abstract port and its types; what any store answers |
-| **Framework · SQLAlchemy** | `sincpro_framework.orm` — what the adapter orchestrates |
+| **Framework · SQLAlchemy** | `sincpro_framework.data_layer.orm` — what the adapter orchestrates |
 | **SQLAlchemy directly** | the door underneath: `unit.session`, `statement()` → `run()`, the mapped model |
 | **Status** | ✅ built · 🟡 partial · ⬜ gap — gaps are ranked at the end |
 

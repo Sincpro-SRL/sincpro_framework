@@ -334,9 +334,9 @@ phase 3.*
 ### 12. Conformance
 
 A store, records, a codec or a strategy of a project's conforms when it passes its contract suite
-from `sincpro_framework.testing`: `KeyValueStoreContract` and `IdempotencyRecordsContract`
+from `sincpro_framework.runtime.testing`: `KeyValueStoreContract` and `IdempotencyRecordsContract`
 (built); `CodecContract`, `FreshnessContract`, `EvictionContract` (built, in
-`sincpro_framework.caching.testing` — not yet re-exported from `sincpro_framework.testing`);
+`sincpro_framework.runtime.testing` — not yet re-exported from `sincpro_framework.runtime.testing`);
 `BackplaneContract` (phase 3). Every built-in passes the same suite a project's does.
 
 ### 13. Maturity — capability by capability

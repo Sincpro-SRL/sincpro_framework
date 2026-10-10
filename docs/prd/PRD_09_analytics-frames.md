@@ -1,6 +1,6 @@
 # PRD_09: Analytics — declared frames, snapshots, one answer per view
 
-- **Status**: replaced by a utility, `sincpro_framework.data_analysis` — see
+- **Status**: replaced by a utility, `sincpro_framework.data_layer.data_analysis` — see
   `docs/data_analysis/`. Not an engine: a `QueryCache` holds what a `Criteria` answered as a
   `DataFrame` under the repository's fingerprint of the read (filter, order, mask, scope — never
   the page), continues it page by page through the keyset cursor, narrows a complete frame with

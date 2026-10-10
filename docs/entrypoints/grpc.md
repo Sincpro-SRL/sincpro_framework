@@ -22,7 +22,7 @@ server reflection, grpc.health.v1                                         ValueO
 Python remains: billing(dto)
 ```
 
-Package: `sincpro_framework.entrypoints.grpc` (`GrpcGateway`, `GrpcWire`, `bus_call`,
+Package: `sincpro_framework.entrypoints.adapters.grpc` (`GrpcGateway`, `GrpcWire`, `bus_call`,
 `framework_interceptors`, `build_grpc_server`). Feature name: **`entrypoint_grpc`**.
 
 What is exposed is decided once for every wire by the declared-exposure core
@@ -39,7 +39,9 @@ pip install sincpro-framework[grpc]
 ## What is published — declared by default
 
 ```python
-from sincpro_framework.entrypoints.exposure import Exposure, GrpcBinding, grpc
+from sincpro_framework.entrypoints.domain.bindings import GrpcBinding
+from sincpro_framework.entrypoints.entrypoint.decorators import grpc
+from sincpro_framework.entrypoints.domain.surface import Exposure
 
 @billing.feature(CommandIssueInvoice)
 @auth.requires(BillingPermission.ISSUE)
@@ -213,7 +215,7 @@ held by a slow interceptor, a token introspection, a cold connection — answers
 charge nobody sees. (grpcio itself drops a call that expires while still queued for a worker.)
 
 ```python
-from sincpro_framework.entrypoints.grpc.client import GrpcClient
+from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 
 with GrpcClient("localhost:50051") as client:
     client.call(
@@ -232,7 +234,7 @@ Interceptors, error handlers and bus tracing are unchanged.
 A failure is answered with `context.abort_with_status(...)`: the status code, a message, and a
 [`google.rpc.Status`](https://google.aip.dev/193) in `grpc-status-details-bin` that every
 generated client (Go, Java, TypeScript, `grpcio-status` in Python) decodes. Its kind is the one
-classification every wire shares ([`transport/failures.py`](../../sincpro_framework/transport/failures.py),
+classification every wire shares ([`transport/failures.py`](../../sincpro_framework/common/failures/classification.py),
 PRD_15 §1.3); the code is gRPC's own:
 
 | Kind | Raised by | gRPC status | Details besides `ErrorInfo` |
@@ -318,8 +320,8 @@ service BillingService {
 One file per package, laid out as buf expects (`billing/v1/billing.proto`), plus `sincpro.proto`
 for the introspection service. A binding declared `deprecated` renders
 `{ option deprecated = true; }` and is marked deprecated in reflection too. The rendering lives in
-[`grpc/proto.py`](../../sincpro_framework/entrypoints/grpc/proto.py) and the names in
-[`grpc/naming.py`](../../sincpro_framework/entrypoints/grpc/naming.py) — neither imports `grpc`
+[`grpc/proto.py`](../../sincpro_framework/entrypoints/adapters/grpc/proto.py) and the names in
+[`grpc/naming.py`](../../sincpro_framework/entrypoints/adapters/grpc/naming.py) — neither imports `grpc`
 nor `protobuf`, so a build step can export the contract without the `[grpc]` extra.
 
 ---
@@ -388,7 +390,7 @@ GrpcGateway({"qr": qr}).run(max_workers=16)                           # 32 admit
 GrpcGateway({"qr": qr}).server(max_workers=16, maximum_concurrent_rpcs=64)
 ```
 
-The limit lives in `transport.grpc.server(...)`, so remote execution's host (`bus.serve(...)`)
+The limit lives in `common.transport.grpc.server(...)`, so remote execution's host (`bus.serve(...)`)
 has the same default.
 
 ---
@@ -411,7 +413,7 @@ services in `reflection_extra`, to a server you built.
 ### A hand-written servicer
 
 ```python
-from sincpro_framework.entrypoints.grpc import GrpcGateway, bus_call, framework_interceptors
+from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway, bus_call, framework_interceptors
 
 class BillingServicer(billing_pb2_grpc.BillingServiceServicer):
     def IssueInvoice(self, request, context):
@@ -514,7 +516,7 @@ certificate.
 ```
 sincpro_framework/
 ├── introspection/         # shared: bus → FeatureOrAppServiceMetadata/DtoMetadata
-├── transport/             # shared with remote execution, exposing nothing
+├── common/transport/      # shared with remote execution, exposing nothing
 │   ├── failures.py        # the kinds, the stable reason, retry delay, what a caller may read
 │   └── grpc.py            # server (pool, backpressure), health, metadata ↔ context, deadline
 └── entrypoints/

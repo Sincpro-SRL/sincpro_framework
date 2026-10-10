@@ -5,7 +5,7 @@ Where a module goes and which imports are allowed. Folder names and bootstrap ar
 
 ## The rules the framework checks
 
-`sincpro_framework.testing.layer_violations("my_service")` reads the source (without importing it)
+`sincpro_framework.runtime.testing.layer_violations("my_service")` reads the source (without importing it)
 and reports every import that breaks one of these rules. Keep it at `[]` in the suite; a project
 that does not follow a rule passes its name in `ignore=`.
 

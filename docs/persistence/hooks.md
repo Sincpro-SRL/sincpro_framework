@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 from sincpro_framework import UseFramework
-from sincpro_framework.ddd import ContractViolation, Entity, Hook, Hooks, MemoryRepository
+from sincpro_framework.ddd import ContractViolation, Entity, Hook, Hooks
+from sincpro_framework.data_layer.repositories import MemoryRepository
 
 
 @dataclass
@@ -106,7 +107,7 @@ be **one way to write a hook**, or every extension multiplies what a reader has 
 6. **Open by default.** Only what cannot work is refused, where it is declared: a circle, an
    `extends=` without a subclass, a hook with no moment, a hook registered too late. Anything
    that works, only not as said, is a warning in the log, and it runs.
-7. **Both stores fire the same moments**, which `tests/orm/test_lifecycle_parity.py` proves by
+7. **Both stores fire the same moments**, which `tests/data_layer/orm/test_lifecycle_parity.py` proves by
    running one script against each.
 8. **The one loop is refused**: a write back through the repository that fired the hook —
    directly or through a Command it executes — would fire the hook again, forever.
@@ -247,7 +248,7 @@ with sales.context({"user_id": "ana"}):
 ## The order several hooks run in
 
 One algorithm for every extension point of the framework — hooks, interceptors, error
-handlers — in `sincpro_framework.ordering`:
+handlers — in `sincpro_framework.common.ordering`:
 
 1. **`before=` and `after=`** are hard constraints, by reference.
 2. **`sequence=`**, lower first — like an Odoo `sequence` — 10 when not said. What must run
@@ -458,7 +459,7 @@ MemoryRepository(hooks=billing_hooks)        memory: keyword — its positional 
 | **systemd** `Before=` / `After=` | ordering constraints that name units; one on a unit that is absent is ignored | taken: `before=` / `after=`, and an absent target is no constraint, so an extension survives its neighbour being switched off |
 | **Gradle** `mustRunAfter`, **WordPress** priorities | hard constraints over soft priorities | taken: constraints first, then `sequence`, then registration |
 | **Kahn's algorithm** (1962) | a stable topological sort that reports a cycle | taken: the sort, with a heap on (sequence, registration), and priority inheritance so a constraint never delays an early item |
-| **Spring** `@Order`, **NestJS** interceptors | one ordering rule for every extension point | taken: hooks, interceptors and error handlers share `sincpro_framework.ordering` |
+| **Spring** `@Order`, **NestJS** interceptors | one ordering rule for every extension point | taken: hooks, interceptors and error handlers share `sincpro_framework.common.ordering` |
 | **Django signals** | receivers as functions, registered by name or by sender, order by connection | not taken: two forms (function and class) doubled what a reader must know, and signals have no replace or extend |
 | **Rails callbacks** | `before_save :method_name` — names as symbols | not taken: a name written as text fails silently on a typo; everything here is by reference |
 | a global registry | hooks discovered wherever they are | not taken: a collection is an object somebody made and passes, so two contexts never reach each other's hooks |

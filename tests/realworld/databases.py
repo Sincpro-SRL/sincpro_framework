@@ -8,8 +8,8 @@ Nothing here touches Postgres: a URL that is not SQLite is opened as it comes.
 
 from sqlalchemy import event
 
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 
 
 def tune(database: Database) -> Database:

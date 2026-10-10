@@ -11,7 +11,7 @@ because a ledger is only the case where breaking one is noticed first.
 ## I. The port and the type
 
 **1. The concrete repository is what a Feature types.** A Feature declares
-`repository: Repository` from `sincpro_framework.orm` and gets the full surface in its editor —
+`repository: Repository` from `sincpro_framework.data_layer.orm` and gets the full surface in its editor —
 `context()`, its options, `savepoint`, the passthrough. Nobody downcasts, nobody types against a
 narrower class to look portable.
 

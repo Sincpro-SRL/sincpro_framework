@@ -1,15 +1,14 @@
 """The HTTP transport of hosted contexts — the standard library's client, no extra.
 
-    POST /sincpro/contexts/execute        body: the DTO's values (`domain.payload`), chunked
+    POST /sincpro/contexts/execute        body: the message (`sincpro_framework.remote_execution.domain.payload`) —
+                                          the DTO's identity, its values, the request context
     x-sp-bounded-context: billing         which context
-    x-sp-dto: my_erp.billing.CommandX     which DTO, by its registered name
-    x-sp-request-context: <base64>        the caller's request context, packed
     traceparent: 00-…                     the caller's trace
 
-Context: the body goes out as chunks, and the answer is read from the socket straight into the
-unpickler — no payload is ever one buffer, so several GiB travel as long as they fit in memory on
-both ends. One connection per thread and address, kept between calls — `http.client` connections
-are not shared across threads. A connection left idle longer than `IDLE_REUSE` is replaced before
+Context: the answer is a message too, rebuilt by the bus that called. Both
+are held whole on each end, so a payload travels as long as it fits in memory there. One
+connection per thread and address, kept between calls — `http.client` connections are not shared
+across threads. A connection left idle longer than `IDLE_REUSE` is replaced before
 it is used, rather than risking one the server already closed: a call is never retried, because
 a Command that already wrote would write twice.
 """
@@ -21,23 +20,18 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import ValidationError
-
-from sincpro_framework.ioc import registered_name
+from sincpro_framework.common.naming import registered_name
+from sincpro_framework.common.transport.addresses import HostedAt, Wire
 from sincpro_framework.remote_execution.domain.errors import (
     ContextOutcomeUnknown,
     ContextTimeout,
     ContextUnavailable,
-    DTODoesNotFit,
     raised_as_itself,
 )
-from sincpro_framework.remote_execution.domain.payload import pack_context, packed, unpacked
-from sincpro_framework.transport.addresses import HostedAt, Wire
+from sincpro_framework.remote_execution.domain.payload import Payload
 
 PATH = "/sincpro/contexts/execute"
 CONTEXT_HEADER = "x-sp-bounded-context"
-DTO_HEADER = "x-sp-dto"
-REQUEST_CONTEXT_HEADER = "x-sp-request-context"
 ERROR_MODULE_HEADER = "x-sp-error-module"
 ERROR_KIND_HEADER = "x-sp-error-kind"
 ERROR_DETAILS_HEADER = "x-sp-error-details"
@@ -78,15 +72,13 @@ class HttpTransport:
         self._kept.connection = None
 
     def _sent(
-        self, dto: Any, headers: Mapping[str, str], where: str
+        self, body: bytes, headers: Mapping[str, str], where: str
     ) -> http.client.HTTPConnection:
         """The request written whole on a connection — a host never runs a DTO it did not read
         to the end, so a failure here is `ContextUnavailable`: it did not run."""
         try:
             connection = self._connection()
-            connection.request(
-                "POST", PATH, body=packed(dto), headers=dict(headers), encode_chunked=True
-            )
+            connection.request("POST", PATH, body=body, headers=dict(headers))
             return connection
         except (OSError, http.client.HTTPException) as error:
             self._forget()
@@ -95,25 +87,20 @@ class HttpTransport:
             self._forget()
             raise
 
-    def _answered(
-        self, connection: http.client.HTTPConnection, response: Any, where: str
-    ) -> Any:
+    def _answered(self, connection: http.client.HTTPConnection, where: str) -> Payload:
         """The answer, once the request was sent — a failure from here on may follow a run:
         `ContextTimeout` past the deadline, `ContextOutcomeUnknown` when the connection is lost.
 
-        1. 200: the values rebuilt as `response` as they are read.
+        1. 200: the answer's message.
         2. 404: the service there does not host the context.
         3. Final: the error the host raised, as itself.
         """
         try:
             answer = connection.getresponse()
-            if answer.status == 200:
-                rebuilt = unpacked(answer, response)
-                answer.read()
-                self._kept.last_used = time.monotonic()
-                return rebuilt
             body = answer.read()
             self._kept.last_used = time.monotonic()
+            if answer.status == 200:
+                return Payload.from_json(body)
         except TimeoutError:
             self._forget()
             raise ContextTimeout(
@@ -124,9 +111,6 @@ class HttpTransport:
             raise ContextOutcomeUnknown(
                 f"{where} took the call and was lost: {error}"
             ) from None
-        except ValidationError as error:
-            self._forget()
-            raise DTODoesNotFit(f"the answer of {where}", error) from None
         except BaseException:
             self._forget()
             raise
@@ -141,25 +125,21 @@ class HttpTransport:
             base64.b64decode(details) if details else None,
         )
 
-    def execute(
-        self, context: str, dto: Any, response: Any, request: Mapping[str, Any]
-    ) -> Any:
-        """1. The DTO's values as a chunked body; the context, the DTO's name, the request
-           context, the trace and who the call acts for as headers.
+    def execute(self, context: str, dto: Any, request: Mapping[str, Any]) -> Payload:
+        """1. The message as the body — the DTO by its identity, its values, the request
+           context; the context, the trace and who the call acts for as headers.
         2. One POST, each read and write within the address's deadline.
-        3. Final: the answer rebuilt as `response` — as the host sent it when `None` — or the
-           failure raised as itself.
+        3. Final: the answer's message, or the failure raised as itself.
         """
-        from sincpro_framework.auth.transports import identity_headers
-        from sincpro_framework.event_driven.infrastructure.trace import trace_carrier
+        from sincpro_framework.auth.entrypoint.transports import identity_headers
+        from sincpro_framework.observability.tracing.propagation import trace_carrier
 
         headers = {
-            "content-type": "application/octet-stream",
+            "content-type": "application/json",
             CONTEXT_HEADER: context,
-            DTO_HEADER: registered_name(type(dto)),
-            REQUEST_CONTEXT_HEADER: base64.b64encode(pack_context(request)).decode(),
             **trace_carrier(),
             **identity_headers(context),
         }
+        body = Payload.of(registered_name(type(dto), context), dto, request).as_json()
         where = f"{context} at {self.hosted_at.address}"
-        return self._answered(self._sent(dto, headers, where), response, where)
+        return self._answered(self._sent(body, headers, where), where)

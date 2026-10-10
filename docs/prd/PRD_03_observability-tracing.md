@@ -40,7 +40,7 @@ it keeps no history.
 6. **Nothing is named by a string the code can drift from.** Spans are the DTO's name; declared
    metrics are the context, the use case and a field or attribute; labels are field references.
 7. **The core imports no backend.** `opentelemetry`, `sentry_sdk` and `prometheus_client` are
-   imported only inside their adapters; `tests/test_core_without_extras.py` blocks every one of
+   imported only inside their adapters; `tests/core/test_core_without_extras.py` blocks every one of
    them and runs the whole core.
 
 ## 2. Identity and status
@@ -637,7 +637,7 @@ scraped stays the choice for a host with no collector.
 | Area | Tests |
 |---|---|
 | traces | `tests/observability/`: spans per DTO and their parentage, adoption of an outer span, W3C carriers, a failure recorded once, the host's provider respected |
-| span attributes | `tests/observability/tracing/test_span_attributes.py`: declared (Command and Response) and by hand on the `context/Command` span; a failed run keeps the Command's; an ApplicationService, its Feature and an adapter's child span each keep their own; a value a span cannot hold is dropped by hand and the use case runs; no key refused for its name; outside a use case nothing; every refusal at import. `tests/test_core_without_extras.py`: both doors with OTel blocked |
+| span attributes | `tests/observability/tracing/test_span_attributes.py`: declared (Command and Response) and by hand on the `context/Command` span; a failed run keeps the Command's; an ApplicationService, its Feature and an adapter's child span each keep their own; a value a span cannot hold is dropped by hand and the use case runs; no key refused for its name; outside a use case nothing; every refusal at import. `tests/core/test_core_without_extras.py`: both doors with OTel blocked |
 | automatic metrics | every run timed with its context and outcome; a failure as its kind, the declared kind (`not_found`) and the idempotency refusals included; what the bus expects as `expected`, in a use case and in a timed block; an answered failure still a failure (global and Feature handlers); an ApplicationService and its Features apart; cache, idempotency and queue outcomes counted |
 | declared metrics | counts/sums/measures per label; only successes; the refusals (unknown field, non-number, foreign DTO, value for a reference); an unbounded label warned and accepted; a counter never goes down |
 | correlation (§4.10) | `tests/observability/test_execution_correlation.py`: the four keys on the four signals; the tenant per execution, from the context, the identity or the deployment; every context key on the span and the event; `hide_in_logs` on all four; a key set midway; declared metric labels; `of(ContextType)["key"]`; the queue's correlation |

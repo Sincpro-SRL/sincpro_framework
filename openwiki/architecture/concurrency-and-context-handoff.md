@@ -40,7 +40,7 @@ itself, see [context propagation](/openwiki/concepts/context-propagation.md).
 - The loss is total rather than intermittent, which is what made the original bug hard to read as
   a bug: every worker lost the context
   (`sincpro_framework/context/thread_context_bus.py:1-6`,
-  `tests/test_thread_context_bus.py:165-175`).
+  `tests/context/test_thread_context_bus.py:165-175`).
 
 The fix in both cases is the same shape: capture or re-establish the context **in the thread that
 still has it active**, and hand the *handle* — not the raw bus — to the new thread.
@@ -156,7 +156,7 @@ message tells the developer to call `bus.thread_context()` again inside the loop
 `executor.submit`, instead of reusing one instance across the whole batch
 (`sincpro_framework/context/thread_context_bus.py:61-70`). It is a `raise ... from error`, so the
 original stdlib error is preserved as `__cause__`. The guidance contract is pinned by
-`tests/test_thread_context_bus.py:221-261`
+`tests/context/test_thread_context_bus.py:221-261`
 (`test_reusing_same_thread_context_bus_concurrently_raises_clear_error`, which asserts
 `"thread_context()" in str(raised)` while the first worker's own call still returns the captured
 context).
@@ -168,7 +168,7 @@ concurrent-reuse error instead of propagating as-is. The code says so explicitly
 exception in the async test suite is deliberately *not* a `RuntimeError` subclass, with the comment
 that `ThreadContextBus.execute()` "catches RuntimeError to detect concurrent reuse of one captured
 snapshot, so a RuntimeError from the Feature's own business logic would be misreported as that
-error instead of propagating as-is" (`tests/test_async_bus.py:40-45`). `AsyncBus`'s module
+error instead of propagating as-is" (`tests/aio/test_async_bus.py:40-45`). `AsyncBus`'s module
 docstring states the same fact from the other side — calling `self._bus.execute` directly means
 "no risk of tripping its single-use-snapshot `RuntimeError` guard on a business exception that
 happens to subclass `RuntimeError`" (`sincpro_framework/aio/bus.py:14-16`). Practical consequence:
@@ -201,7 +201,7 @@ handle is reusable across concurrent calls — call it once, then `await`/`gathe
 `UseFramework.get_async_bus()` builds the root bus lazily if it was never built, the same lazy
 behaviour as `__call__` (`sincpro_framework/use_bus.py:359-371`); the snapshot independence of two
 concurrent calls issued from two different `context()` scopes is pinned by
-`tests/test_async_bus.py:143-162`.
+`tests/aio/test_async_bus.py:143-162`.
 
 **Cancellation does not stop in-flight work.** If the awaiting coroutine is cancelled — e.g.
 `asyncio.wait_for(async_bus(dto), timeout=...)` expiring — the `Feature`/`ApplicationService`
@@ -308,7 +308,7 @@ free-threaded-only propagation behaviour "that isn't guaranteed long-term"
 The recorded side effect is that two named tests encode the GIL-build assumption and would
 legitimately fail on a free-threaded interpreter — which would mean the assumption stopped holding
 for that build, **not** that `ThreadContextBus` regressed:
-`tests/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread` and
+`tests/context/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread` and
 `::test_fan_out_without_thread_context_loses_context_for_every_worker`
 (`sincpro_framework/context/thread_context_bus.py:16-21`, `README.md:1314-1317`).
 
@@ -354,7 +354,7 @@ experimental phase for `asyncio` there)
   `executor.submit` (`sincpro_framework/sincpro_abstractions.py:55-65`). One per *batch* is the
   mistake the guard exists to catch, and the wrong pattern for a *single* worker that finishes
   before the next one starts is not detectably wrong — the guard only fires when two threads
-  actually overlap (`tests/test_thread_context_bus.py:221-241`).
+  actually overlap (`tests/context/test_thread_context_bus.py:221-241`).
 - **One `AsyncBus` for everything.** Creating a new one per call is harmless but pointless; the
   snapshot is per call, not per handle (`sincpro_framework/aio/bus.py:30-35`).
 - **The handles cover the two documented handoff shapes only.** A `Feature` that starts its own
@@ -362,7 +362,7 @@ experimental phase for `asyncio` there)
   interception point for thread creation inside a handler.
 - **Never let a `RuntimeError` subclass escape a `Feature` you dispatch through
   `ThreadContextBus`** if you want it reported as itself; the guard will relabel it
-  (`sincpro_framework/context/thread_context_bus.py:61-70`, `tests/test_async_bus.py:40-45`).
+  (`sincpro_framework/context/thread_context_bus.py:61-70`, `tests/aio/test_async_bus.py:40-45`).
 - **Do not assume cancellation aborted the work** on the async path
   (`sincpro_framework/aio/bus.py:43-48`).
 - **Mutating registries or dependencies concurrently with executions is out of contract**, and on a
@@ -373,20 +373,20 @@ experimental phase for `asyncio` there)
 
 | Behaviour | Pinned by |
 | --- | --- |
-| `thread_context()` returns a `ThreadContextBus` | `tests/test_thread_context_bus.py:100-105` |
-| Context preserved through `thread_context().execute` in a new thread | `tests/test_thread_context_bus.py:107-120` |
-| Every worker in a fan-out sees the captured context | `tests/test_thread_context_bus.py:146-163` |
-| Bare `submit` loses context on GIL builds (the bug being fixed) | `tests/test_thread_context_bus.py:122-144` |
-| Fan-out without `thread_context()` loses context for every worker | `tests/test_thread_context_bus.py:165-188` |
-| Snapshots are independent per capture | `tests/test_thread_context_bus.py:190-219` |
-| Concurrent reuse of one captured snapshot raises the guided `RuntimeError` | `tests/test_thread_context_bus.py:221-261` |
-| `AsyncBus` type, lazy build and await/`__call__` sugar | `tests/test_async_bus.py:68-102` |
-| Context preserved in the `asyncio.to_thread` worker | `tests/test_async_bus.py:104-119` |
-| One `AsyncBus` reusable across concurrent calls, snapshots independent | `tests/test_async_bus.py:121-162` |
-| A business exception propagates through `AsyncBus` as itself | `tests/test_async_bus.py:164-174` |
+| `thread_context()` returns a `ThreadContextBus` | `tests/context/test_thread_context_bus.py:100-105` |
+| Context preserved through `thread_context().execute` in a new thread | `tests/context/test_thread_context_bus.py:107-120` |
+| Every worker in a fan-out sees the captured context | `tests/context/test_thread_context_bus.py:146-163` |
+| Bare `submit` loses context on GIL builds (the bug being fixed) | `tests/context/test_thread_context_bus.py:122-144` |
+| Fan-out without `thread_context()` loses context for every worker | `tests/context/test_thread_context_bus.py:165-188` |
+| Snapshots are independent per capture | `tests/context/test_thread_context_bus.py:190-219` |
+| Concurrent reuse of one captured snapshot raises the guided `RuntimeError` | `tests/context/test_thread_context_bus.py:221-261` |
+| `AsyncBus` type, lazy build and await/`__call__` sugar | `tests/aio/test_async_bus.py:68-102` |
+| Context preserved in the `asyncio.to_thread` worker | `tests/aio/test_async_bus.py:104-119` |
+| One `AsyncBus` reusable across concurrent calls, snapshots independent | `tests/aio/test_async_bus.py:121-162` |
+| A business exception propagates through `AsyncBus` as itself | `tests/aio/test_async_bus.py:164-174` |
 
-Run a single file with `make test_one t=tests/test_thread_context_bus.py` or
-`make test_one t=tests/test_async_bus.py` (`README.md:1268-1274`, `Makefile:152-153`); the wider
+Run a single file with `make test_one t=tests/context/test_thread_context_bus.py` or
+`make test_one t=tests/aio/test_async_bus.py` (`README.md:1268-1274`, `Makefile:152-153`); the wider
 build, coverage and release flow is on [build and release](/openwiki/operations/build-and-release.md).
 
 ## Related pages

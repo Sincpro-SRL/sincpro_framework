@@ -1,10 +1,11 @@
 """`ChangeTrackingMixin` consolidates whatever a Feature touched into one `Updated` event,
 instead of one per field it set — proved here against `MemoryRepository`, and against the
-SQLAlchemy `Repository` in `tests/orm/test_tracking.py`.
+SQLAlchemy `Repository` in `tests/data_layer/orm/test_tracking.py`.
 """
 
 from dataclasses import dataclass, field
 
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd.entity import (
     ArchivableMixin,
     AuditedMixin,
@@ -12,7 +13,6 @@ from sincpro_framework.ddd.entity import (
     Entity,
     EntityUpdated,
 )
-from sincpro_framework.ddd.repositories.memory_repository import MemoryRepository
 
 
 @dataclass

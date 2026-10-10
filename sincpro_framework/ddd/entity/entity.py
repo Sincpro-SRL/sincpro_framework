@@ -22,7 +22,7 @@ first insert and raises it on every write, refusing a save that carries an older
 the row holds — two callers that both loaded version 3 cannot both write version 4. That is
 the conditional update a worker needs, and it is the ORM's own machinery doing it.
 
-`uuid7()` and `new_entity_id()` live in `sincpro_framework.ids` — the same ids an event and an
+`uuid7()` and `new_entity_id()` live in `sincpro_framework.common.ids` — the same ids an event and an
 execution get — and are named here as they always were.
 
 **`AuditedMixin`, `ArchivableMixin` and `ChangeTrackingMixin` live in `entity/mixins/`** — an
@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import TypeAdapter
 
-from sincpro_framework.annotations import is_class_var, own_annotations
+from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.criteria import (
     TEXT,
@@ -49,8 +49,8 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity.derivations import Derivations
 from sincpro_framework.ddd.entity.presentation import Presentation
+from sincpro_framework.ddd.entity.utils.annotations import is_class_var, own_annotations
 from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ids import new_entity_id
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.events import DomainEvent
@@ -264,8 +264,8 @@ class Entity:
         fills it the same way. Containment on a text display unless overridden; `None` when
         there is nothing to search.
         """
-        # Imported here: model_meta reads this module to describe a class.
-        from sincpro_framework.ddd.entity.model_meta import (
+        # Imported here: entity_meta reads this module to describe a class.
+        from sincpro_framework.ddd.entity.entity_meta import (
             TEXT_TYPES,
             annotations_of,
             logical_type,

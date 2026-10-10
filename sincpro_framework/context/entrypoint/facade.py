@@ -39,6 +39,7 @@ from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.infrastructure.shared import SharedValues
 from sincpro_framework.context.infrastructure.tree import (
     ROOT,
+    child,
     current,
     current_execution,
     entered,
@@ -361,3 +362,13 @@ def use_context(level: Level | None = None) -> Context | None:
     `use_context(Level.ENTRYPOINT)`; `None` when the node in play stands under none."""
     context = Context(current())
     return context if level is None else context.at(level)
+
+
+@contextmanager
+def carrying(
+    context: Mapping[str, Any], kind: EntrypointKind = EntrypointKind.DIRECT
+) -> Generator[None, None, None]:
+    """Every bus executed inside the block starts from `context` — what a caller that is not a bus,
+    a cron or a worker, hands the buses it calls."""
+    with entered(child(Level.SCOPE, standardized(context), kind=kind)):
+        yield

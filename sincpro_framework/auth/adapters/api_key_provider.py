@@ -18,13 +18,9 @@ from typing import Any
 
 from pydantic import ConfigDict
 
-from sincpro_framework.auth.domain import (
-    AuthProvider,
-    Credentials,
-    Identity,
-    IdentityKind,
-    Unauthenticated,
-)
+from sincpro_framework.auth.domain.exceptions import Unauthenticated
+from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
