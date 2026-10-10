@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, Generic, Type
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypeVar
 
-from .aio import AsyncBus as AsyncBus
+from .aio import AsyncBus
 from .context.entrypoint.consumer import ContextConsumer
-from .context.infrastructure.thread_context_bus import ThreadContextBus as ThreadContextBus
+from .context.infrastructure.thread_context_bus import ThreadContextBus
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -69,7 +69,7 @@ class Bus(ABC):
         # `Self@Bus` vs. `Bus` here is a known pyright edge case when the base
         # class is only resolvable across modules via a TYPE_CHECKING import
         # (see context/infrastructure/thread_context_bus.py) — correct at runtime and covered
-        # by tests/test_thread_context_bus.py.
+        # by tests/context/test_thread_context_bus.py.
         return ThreadContextBus(self, copy_context())  # pyright: ignore[reportArgumentType]
 
     def get_async_bus(self) -> "AsyncBus":
@@ -82,7 +82,7 @@ class Bus(ABC):
         ``async def`` and wants to fan out several DTOs concurrently without
         blocking its event loop.
         """
-        return AsyncBus(self)  # pyright: ignore[reportArgumentType]
+        return AsyncBus(self.execute)
 
 
 class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT]):

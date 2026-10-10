@@ -8,7 +8,8 @@ anything, because every bus builds one whether it will trace or not.
 import pytest
 from opentelemetry import trace
 
-from sincpro_framework.observability import Observability, registry
+from sincpro_framework.observability import Observability
+from sincpro_framework.observability.registry import registry
 from sincpro_framework.sincpro_conf import settings
 
 

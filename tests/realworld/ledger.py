@@ -17,12 +17,12 @@ from decimal import Decimal
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Numeric, Text
 from sqlalchemy.orm import registry
 
+from sincpro_framework import ProgrammingError
+from sincpro_framework.data_layer.orm import map_aggregates
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd.entity import Entity, Translated
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 ZERO = Decimal("0.00")
 
@@ -111,11 +111,11 @@ class Entry(Entity):
            it touched.
         """
         if self.state == "posted":
-            raise ContractViolation(f"entry {self.reference} is already posted")
+            raise ProgrammingError(f"entry {self.reference} is already posted")
         if not self.lines:
-            raise ContractViolation(f"entry {self.reference} has no lines")
+            raise ProgrammingError(f"entry {self.reference} has no lines")
         if not self.is_balanced:
-            raise ContractViolation(f"entry {self.reference} does not balance")
+            raise ProgrammingError(f"entry {self.reference} does not balance")
         self.state = "posted"
         for line in self.lines:
             line.entry_state = "posted"

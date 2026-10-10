@@ -60,7 +60,7 @@ the same name.
 
 ## Proven
 
-- `tests/entrypoint/test_entrypoint_rest.py`:
+- `tests/entrypoints/adapters/rest/test_entrypoint_rest.py`:
   - automatic mode, GET with criteria, POST fallback, path routes, the layer kept out of the URL;
   - each failure's status with nothing of the inside;
   - auth and its documentation;

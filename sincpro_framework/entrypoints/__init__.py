@@ -1,55 +1,71 @@
-"""Driving adapters: the buses' use cases on a wire. Shared: `catalog` (one bus as a filtered list
-of use cases), `gateway` (N buses, automatic or declared — what every wire extends), `exposure`
-(the declared exposure of PRD_14: bindings, their decorators, `internal`, the `Wire` port).
-Wires: `rpc` (JSON-RPC 2.0), `grpc`, `mcp`, `rest` (OpenAPI 3.1).
+"""Entrypoints: everything that starts the application layer from outside — a wire (REST,
+JSON-RPC, gRPC, MCP, FastAPI, a FastStream broker), the clock (`cron`) or workers that keep loops
+running — and the exposure a project declares on its use cases.
 
-The exposure decorators (`rest`, `rpc`, `grpc`, `mcp`, `queue`) are imported from
-`sincpro_framework.entrypoints.exposure`, never from here: their names are this package's wires.
+Importing this package loads no extra: each wire lives in `adapters/` and is imported by whoever
+serves it.
 """
 
-from sincpro_framework.entrypoints.catalog import Catalog, PackedFeatureOrAppService
-from sincpro_framework.entrypoints.exposure import (
+from sincpro_framework.entrypoints.domain.bindings import (
     Binding,
     Deprecation,
-    Exposure,
-    ExposureRefused,
-    Group,
     GrpcBinding,
-    ManifestEntry,
     McpBinding,
-    Operation,
     QueueBinding,
-    Resolved,
     RestBinding,
     RpcBinding,
-    Wire,
-    declare,
-    internal,
-    is_internal,
 )
-from sincpro_framework.entrypoints.gateway import DEFAULT_LAYERS, Buses, Gateway
+from sincpro_framework.entrypoints.domain.surface import (
+    Exposure,
+    Group,
+    ManifestEntry,
+    Operation,
+    Resolved,
+    Wire,
+)
+from sincpro_framework.entrypoints.entrypoint.catalog import (
+    Catalog,
+    PackedFeatureOrAppService,
+)
+from sincpro_framework.entrypoints.entrypoint.decorators import (
+    declare,
+    grpc,
+    mcp,
+    queue,
+    rest,
+    rpc,
+)
+from sincpro_framework.entrypoints.entrypoint.gateway import Buses, Gateway
+from sincpro_framework.entrypoints.entrypoint.internal import internal, is_internal
+from sincpro_framework.entrypoints.entrypoint.workers import Loop, Poll, Process
 
 __all__ = [
     "Binding",
     "Buses",
     "Catalog",
-    "DEFAULT_LAYERS",
     "Deprecation",
     "Exposure",
-    "ExposureRefused",
     "Gateway",
     "Group",
     "GrpcBinding",
+    "Loop",
     "ManifestEntry",
     "McpBinding",
     "Operation",
     "PackedFeatureOrAppService",
+    "Poll",
+    "Process",
     "QueueBinding",
     "Resolved",
     "RestBinding",
     "RpcBinding",
     "Wire",
     "declare",
+    "grpc",
     "internal",
     "is_internal",
+    "mcp",
+    "queue",
+    "rest",
+    "rpc",
 ]

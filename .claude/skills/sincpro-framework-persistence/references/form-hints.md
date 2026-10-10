@@ -42,7 +42,7 @@ required, and each plain dataclass default is the `default`.
 
 ## 2. What a client receives
 
-`Meta.fields["partner_id"]` (in every `model_meta_data`, e.g. from `EntityReads`):
+`Meta.fields["partner_id"]` (in every `entity_meta_data`, e.g. from `EntityReads`):
 
 ```json
 {"readonly": false, "required": true, "default": null,

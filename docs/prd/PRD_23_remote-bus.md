@@ -3,7 +3,7 @@
 - **Status**: built, 2026-10-02 — R1–R4 (§6), proved by the contract suite
   (`tests/remote_execution/test_contract.py`) on local, gRPC and HTTP. Not committed.
 - **Depends on**: `remote_execution` (transports, payload, Open Hosts), the context (PRD_22), the
-  execution identity (PRD_21), the outcomes (`sincpro_framework.outcomes`), `transport.failures`.
+  execution identity (PRD_21), the outcomes (`sincpro_framework.bus_pipeline.outcomes`), `transport.failures`.
 - **Enables**: PRD_20 (distributed transactions by signals) and the release that unblocks the
   products built on several services.
 - **Philosophy**: a bus receives commands and returns answers — nothing else. Whether it runs here
@@ -83,7 +83,7 @@ billing.build_root_bus()          # RuntimeError: DB_URL not configured here
 | Path | Where | Reached by |
 |---|---|---|
 | `get_async_bus()` | `use_bus.py` `_built_bus()` | every async call |
-| `Subscriber` | `event_driven/services/subscriber.py` (`bus.get_async_bus()`) | every event a reference listens to |
+| `Subscriber` | `event_driven/entrypoint/subscriber.py` (`bus.get_async_bus()`) | every event a reference listens to |
 | `dto_registry`, `map_to_dto_or_event` | `use_bus.py` | queue consumers, the host itself |
 | `with_trace()`, `with_parent_trace()` | `use_bus.py` | tracing a call |
 | catalog, introspection, runtime use cases, testing | `entrypoints/catalog.py`, `introspection/operations.py`, `runtime_use_cases/registry.py`, `testing/dependencies.py` | exposing or listing a context; `fresh()` |
@@ -214,7 +214,7 @@ client's `url` and timeouts into typed properties that fail at startup:
 - `HostedAt(wire, address, timeout)` — `HostedAt.parse(url)` or built in code; checked either way.
 - `HostedContext(context, at)` — one `context_map:` entry; `extra="forbid"`, so a misspelt key is
   an error, not an entry silently ignored.
-- They live in `sincpro_framework.transport.addresses`: the settings declare them and remote
+- They live in `sincpro_framework.common.transport.addresses`: the settings declare them and remote
   execution reaches them, so the module imports neither.
 - The conf file is validated when it is loaded, each error at its path (`context_map.0.at`); the
   environment when the first bus is created, naming `SINCPRO_CONTEXT_MAP`. Every `InvalidAddress`

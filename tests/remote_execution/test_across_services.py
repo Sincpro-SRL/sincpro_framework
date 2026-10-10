@@ -21,8 +21,8 @@ from sincpro_framework.remote_execution import (
     ContextUnavailable,
     HostedAt,
     Wire,
-    transport_for,
 )
+from sincpro_framework.remote_execution.adapters.transport import transport_for
 from tests.remote_execution.hosting import TRANSPORTS, host_over
 
 

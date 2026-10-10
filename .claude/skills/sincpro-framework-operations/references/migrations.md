@@ -3,7 +3,7 @@
 Deep doc in the framework repo: `docs/migrations/README.md`, PRD_05 (every block there runs as a
 test). This page stands alone.
 
-`sincpro_framework.migrations` orchestrates the chains of every context and store into one timeline.
+`sincpro_framework.data_layer.migrations` orchestrates the chains of every context and store into one timeline.
 It is opt-in twice: a project may migrate however it likes and never import it, or use it and plug
 its own engine into any store. The core needs no database; Alembic for SQL is `[migrations]`.
 
@@ -24,14 +24,14 @@ entrypoints/migrations.py  # the composition root: every context, and the comman
 # domains/billing/entrypoints/migrations/__init__.py
 from pathlib import Path
 
-from sincpro_framework.migrations import ContextMigrations
-from sincpro_framework.orm.migrations import AlembicEngine
+from sincpro_framework.data_layer.migrations import ContextMigrations
+from sincpro_framework.data_layer.orm import AlembicEngine
 
 billing_migrations = ContextMigrations("billing", Path(__file__).parent)
 billing_migrations.store("main", AlembicEngine(billing_tables, database))   # MetaData, Database
 
 # entrypoints/migrations.py
-from sincpro_framework.migrations import Migrations, command_line
+from sincpro_framework.data_layer.migrations import Migrations, command_line
 
 migrations = Migrations([common_migrations, billing_migrations])
 if __name__ == "__main__":

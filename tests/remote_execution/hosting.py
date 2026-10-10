@@ -10,8 +10,10 @@ import uvicorn
 from starlette.applications import Starlette
 
 from sincpro_framework import UseFramework
-from sincpro_framework.remote_execution import Attach
-from sincpro_framework.remote_execution.entrypoint.http import open_host_routes
+from sincpro_framework.remote_execution import Attach, serve_contexts
+from sincpro_framework.remote_execution.entrypoint.http import (
+    open_host_routes,
+)
 
 TRANSPORTS = ("grpc", "http")
 
@@ -25,7 +27,7 @@ def _free_port() -> int:
 def host_over(transport: str, contexts: list[UseFramework]) -> Iterator[str]:
     """Host `contexts` over `transport` in this process; the base address a caller dials."""
     if transport == "grpc":
-        host = contexts[0].serve("127.0.0.1:0", Attach.THREAD)
+        host = serve_contexts(contexts, "127.0.0.1:0", Attach.THREAD)
         try:
             yield f"grpc://{host.address}"
         finally:

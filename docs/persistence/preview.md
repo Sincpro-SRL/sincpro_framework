@@ -161,7 +161,7 @@ with no Criteria evaluator (a native app, an agent) shows.
 
 ```python
 with previewing() as advice:
-    repository.save(invoice)        # WriteInPreview: save inside a preview
+    repository.save(invoice)        # ProgrammingError: save inside a preview
 ```
 
 Everything above runs inside `previewing()`. While it runs, every write door of every store —
@@ -169,7 +169,7 @@ Everything above runs inside `previewing()`. While it runs, every write door of 
 every flush or writing statement of a database session — `record_changes`, a unit of work
 committing what it tracks (`Writes.CHANGED`), a record added to `repository.session` by hand, a
 `text(...)` statement that is not a single read — and every read that locks rows
-(`for_update`, `FOR UPDATE`/`FOR SHARE` in text) raise `WriteInPreview`, naming the call. A
+(`for_update`, `FOR UPDATE`/`FOR SHARE` in text) raise `ProgrammingError`, naming the call. A
 text statement passes only when it is one statement starting with `SELECT`, or with `WITH` and
 no `INSERT`/`UPDATE`/`DELETE`/`MERGE` anywhere in it, comments and opening parentheses aside:
 conservative on purpose, so a rare read that trips it is refused inside a preview, never a write

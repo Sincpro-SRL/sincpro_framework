@@ -21,8 +21,8 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 from ..shop import billing, inventory, notifications, orders
 from ..shop.contracts import InvoiceIssued, OrderPlaced, StockRejected, StockReserved
@@ -207,7 +207,7 @@ def test_an_aggregate_that_refuses_leaves_nothing_behind(one_database: Shop):
     order.refused("first time")
     store.save(order)
 
-    with pytest.raises(ContractViolation, match="cannot be refused"):
+    with pytest.raises(ProgrammingError, match="cannot be refused"):
         order.refused("again")
 
 

@@ -5,7 +5,7 @@ names itself for a screen. `Criteria` says what to read, `EntityCollection` what
 what a model publishes about itself, `IRepository` the least a store answers, and
 `DomainEvent` what happened.
 
-Nothing here imports an ORM. Running a criteria against a database is `sincpro_framework.orm`,
+Nothing here imports an ORM. Running a criteria against a database is `sincpro_framework.data_layer.orm`,
 an optional extra; carrying events is `sincpro_framework.event_driven`.
 """
 
@@ -29,7 +29,7 @@ from sincpro_framework.ddd.criteria import (
     holds,
     matches,
 )
-from sincpro_framework.ddd.drafts import (
+from sincpro_framework.ddd.editing.drafts import (
     Draft,
     DraftConflict,
     Drafts,
@@ -37,6 +37,8 @@ from sincpro_framework.ddd.drafts import (
     KeyValueDrafts,
     refuse_stale,
 )
+from sincpro_framework.ddd.editing.editing import assign, recompute, recompute_whole
+from sincpro_framework.ddd.editing.preview import Advice, advise, is_previewing, previewing
 from sincpro_framework.ddd.entity import (
     ArchivableMixin,
     AuditedMixin,
@@ -49,14 +51,13 @@ from sincpro_framework.ddd.entity import (
     utc_now,
 )
 from sincpro_framework.ddd.entity.derivations import Derivations, Derive
-from sincpro_framework.ddd.entity.editing import assign, recompute, recompute_whole
 from sincpro_framework.ddd.entity.entity_collection import (
     Changes,
     Count,
     Dropped,
     EntityCollection,
 )
-from sincpro_framework.ddd.entity.model_meta import (
+from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
     FieldType,
     Meta,
@@ -69,7 +70,6 @@ from sincpro_framework.ddd.entity.presentation import (
     Presentation,
     When,
 )
-from sincpro_framework.ddd.entity.query_entity import NAME_SEARCH_LIMIT, detail_of, matching
 from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
 from sincpro_framework.ddd.events import (
     DeliverableEventMixin,
@@ -78,7 +78,6 @@ from sincpro_framework.ddd.events import (
 from sincpro_framework.ddd.exceptions import (
     AggregateNotFound,
     ConstraintViolation,
-    ContractViolation,
     DomainError,
     DuplicateAggregate,
     InvalidCriteria,
@@ -86,16 +85,16 @@ from sincpro_framework.ddd.exceptions import (
     StaleAggregate,
     TimedOut,
     TransactionConflict,
-    WriteInPreview,
 )
-from sincpro_framework.ddd.preview import Advice, advise, is_previewing, previewing
 from sincpro_framework.ddd.query import (
     Query,
     ResponsePaginatedQuery,
     ResponseRecord,
     ResponseRecords,
 )
-from sincpro_framework.ddd.reads import (
+from sincpro_framework.ddd.reads.defaults import NAME_SEARCH_LIMIT, detail_of, matching
+from sincpro_framework.ddd.reads.reads import (
+    DomainEvents,
     EntityReads,
     FieldState,
     Get,
@@ -104,6 +103,7 @@ from sincpro_framework.ddd.reads import (
     Preview,
     ResponsePreview,
     Search,
+    history_of,
 )
 from sincpro_framework.ddd.repositories import (
     AggregateRepository,
@@ -111,8 +111,6 @@ from sincpro_framework.ddd.repositories import (
     ChangeTrackingRepositoryMixin,
     INumbering,
     IRepository,
-    MemoryNumbering,
-    MemoryRepository,
     ReadsAggregates,
     StoreCapabilities,
     Transacts,
@@ -141,7 +139,6 @@ __all__ = [
     "matching",
     "AggregateRepository",
     "Analyzes",
-    "MemoryNumbering",
     "INumbering",
     "ReadsAggregates",
     "StoreCapabilities",
@@ -172,6 +169,8 @@ __all__ = [
     "AggregateNotFound",
     "EntityReads",
     "Get",
+    "DomainEvents",
+    "history_of",
     "LiteralSearch",
     "ResponseRecord",
     "ResponseRecords",
@@ -183,7 +182,6 @@ __all__ = [
     "FieldState",
     "Preview",
     "ResponsePreview",
-    "WriteInPreview",
     "advise",
     "assign",
     "previewing",
@@ -199,13 +197,11 @@ __all__ = [
     "FieldMeta",
     "FieldType",
     "InvalidCriteria",
-    "MemoryRepository",
     "Meta",
     "Not",
     "Offset",
     "Operator",
     "DomainError",
-    "ContractViolation",
     "Pagination",
     "Pivot",
     "PivotCell",

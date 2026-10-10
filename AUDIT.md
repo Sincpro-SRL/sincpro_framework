@@ -23,7 +23,7 @@ were updated; the following runtime findings are **reported, not fixed**.
   alone does not establish a per-entity stream lock.
 
 2. **P2 [type-error] Event `name` equality filters are dropped, widening the query.**
-  [map_events](sincpro_framework/orm/sqlalchemy/services/event_mapping.py#L100) maps the column
+  [map_events](sincpro_framework/data_layer/orm/sqlalchemy/services/event_mapping.py#L100) maps the column
   under `wire_name`, while the event's `name` remains its class-level wire identity. With
   `Paid` and `DayClosed` stored in temporary SQLite, querying `LedgerEvent` with
   `Condition(field="name", value=Paid.name)` returned **both** types and
@@ -43,7 +43,7 @@ were updated; the following runtime findings are **reported, not fixed**.
   mutating storage; keep a parity case against SQL.
 
 4. **P2 [side-effect] Event-sourced reads bypass locking-option validation.**
-  [Reading.get](sincpro_framework/orm/sqlalchemy/services/workflows/reading.py#L760) returns
+  [Reading.get](sincpro_framework/data_layer/orm/sqlalchemy/services/workflows/reading.py#L760) returns
   through replay before the usual locking path. On a persisted SQLite wallet,
   `get(Wallet, "W-1", skip_locked=True)` succeeded outside a unit of work without
   `for_update=True`. The caller's locking request is silently ignored.
@@ -141,10 +141,10 @@ bring this review to **11 reproduced runtime defects**. None was fixed in this t
   request-specific data even after this defect is corrected.
 
 5. **P2 [side-effect] A remote handler's LookupError becomes a missing-context response.**
-  [HTTP host](sincpro_framework/remote_execution/entrypoint/http.py#L89) catches any
+  [HTTP host](sincpro_framework/bus_communication/remote_execution/entrypoint/http.py#L89) catches any
   `LookupError` around both destination resolution and handler execution. A registered
   Feature raising `KeyError` returned HTTP **404** through the real ASGI route in TestClient.
-  The [HTTP adapter](sincpro_framework/remote_execution/adapters/http.py#L120) maps that status
+  The [HTTP adapter](sincpro_framework/bus_communication/remote_execution/adapters/http.py#L120) maps that status
   to `ContextUnavailable`, losing the intended classification of the business failure.
   **Fix direction:** distinguish destination lookup errors from handler exceptions. The
   analogous gRPC catch needs the same regression case; only HTTP was reproduced here.

@@ -4,11 +4,13 @@ A hook runs **inside the write**, on one aggregate: it validates, computes or re
 class, registered for its aggregate the way a Feature is registered for its Command.
 
 ```python
+from sincpro_framework.ddd import DomainError
 from dataclasses import dataclass
 from typing import TypedDict
 
 from sincpro_framework import UseFramework
-from sincpro_framework.ddd import ContractViolation, Entity, Hook, Hooks, MemoryRepository
+from sincpro_framework.ddd import Entity, Hook, Hooks
+from sincpro_framework.data_layer.repositories import MemoryRepository
 
 
 @dataclass
@@ -51,7 +53,7 @@ billing_hooks = Hooks(None).inject(billing)
 class InvoiceMustBalance(BillingHook):
     def before_save(self, invoice: Invoice) -> None:
         if not self.billing.allows(invoice.total):
-            raise ContractViolation(f"billing refused {invoice.total}")
+            raise DomainError(f"billing refused {invoice.total}")
         self.trail.append("balances")
 
 
@@ -106,7 +108,7 @@ be **one way to write a hook**, or every extension multiplies what a reader has 
 6. **Open by default.** Only what cannot work is refused, where it is declared: a circle, an
    `extends=` without a subclass, a hook with no moment, a hook registered too late. Anything
    that works, only not as said, is a warning in the log, and it runs.
-7. **Both stores fire the same moments**, which `tests/orm/test_lifecycle_parity.py` proves by
+7. **Both stores fire the same moments**, which `tests/data_layer/orm/test_lifecycle_parity.py` proves by
    running one script against each.
 8. **The one loop is refused**: a write back through the repository that fired the hook —
    directly or through a Command it executes — would fire the hook again, forever.
@@ -231,7 +233,7 @@ class RespectsTheCreditLimit(SalesHook):
         customer = self.customers.get(Customer, order.customer_id)  # another repository
         rate = self.bus(QueryExchangeRate(currency=order.currency), ResponseExchangeRate).rate
         if customer is None or order.total * rate > customer.credit_limit:
-            raise ContractViolation(f"over the credit limit, asked by {self.context.get('user_id')}")
+            raise DomainError(f"over the credit limit, asked by {self.context.get('user_id')}")
 
 
 orders = MemoryRepository(hooks=sales_hooks)
@@ -240,14 +242,14 @@ with sales.context({"user_id": "ana"}):
     try:
         orders.save(SalesOrder(customer_id="c1", total=200, currency="USD"))  # 1 400 BOB
         raise AssertionError("over the limit")
-    except ContractViolation as refused:
+    except DomainError as refused:
         assert "asked by ana" in str(refused)
 ```
 
 ## The order several hooks run in
 
 One algorithm for every extension point of the framework — hooks, interceptors, error
-handlers — in `sincpro_framework.ordering`:
+handlers — in `sincpro_framework.common.ordering`:
 
 1. **`before=` and `after=`** are hard constraints, by reference.
 2. **`sequence=`**, lower first — like an Odoo `sequence` — 10 when not said. What must run
@@ -404,18 +406,18 @@ A unit of work and a narrowing run the chain of the repository they came from.
 
 ## What is refused, and what is only said
 
-Refused only what cannot work — a wiring mistake is `ExtensionRefused`, raised where it is
-declared; a hook's own refusal of a record is the domain's `ContractViolation`:
+Refused only what cannot work — a wiring mistake is `ProgrammingError`, raised where it is
+declared; a hook's own refusal of a record is a `DomainError`:
 
 | Cannot work | Refused |
 |---|---|
-| hooks that must run before one another in a circle — no order exists | `ExtensionRefused`, at the first read or write |
-| `extends=X` on a class that is not a subclass of `X` — `super()` would fail | `ExtensionRefused`, at `on(...)` |
-| a hook that implements none of the moments — it would never run | `ExtensionRefused`, at `on(...)` |
-| a hook registered after a repository used the collection — it would never run | `ExtensionRefused`, at `on(...)` |
-| a collection or a hook passed where the memory store's records go — nothing would run | `ContractViolation`, when the repository is built |
+| hooks that must run before one another in a circle — no order exists | `ProgrammingError`, at the first read or write |
+| `extends=X` on a class that is not a subclass of `X` — `super()` would fail | `ProgrammingError`, at `on(...)` |
+| a hook that implements none of the moments — it would never run | `ProgrammingError`, at `on(...)` |
+| a hook registered after a repository used the collection — it would never run | `ProgrammingError`, at `on(...)` |
+| a collection or a hook passed where the memory store's records go — nothing would run | `ProgrammingError`, when the repository is built |
 | `self.<name>` or `self.bus` with no bus given | `DependencyNotRegistered`, when the hook reads it |
-| a write back through the repository that fired the hook, even via `context()`, `narrowed()` or a Command | `ContractViolation`, when it fires |
+| a write back through the repository that fired the hook, even via `context()`, `narrowed()` or a Command | `ProgrammingError`, when it fires |
 
 Everything else works, and is said in the log as a warning:
 
@@ -429,7 +431,7 @@ Everything else works, and is said in the log as a warning:
 | a replacement that covers other aggregates than what it replaces | it covers its own |
 
 ```python
-from sincpro_framework.exceptions import ExtensionRefused
+from sincpro_framework import ProgrammingError
 
 refusals = Hooks(None)
 try:
@@ -439,7 +441,7 @@ try:
         def before_save(self, invoice: Invoice) -> None: ...
 
     raise AssertionError("extends needs a subclass")
-except ExtensionRefused as refused:
+except ProgrammingError as refused:
     assert "has to be a subclass" in str(refused)
 ```
 
@@ -458,7 +460,7 @@ MemoryRepository(hooks=billing_hooks)        memory: keyword — its positional 
 | **systemd** `Before=` / `After=` | ordering constraints that name units; one on a unit that is absent is ignored | taken: `before=` / `after=`, and an absent target is no constraint, so an extension survives its neighbour being switched off |
 | **Gradle** `mustRunAfter`, **WordPress** priorities | hard constraints over soft priorities | taken: constraints first, then `sequence`, then registration |
 | **Kahn's algorithm** (1962) | a stable topological sort that reports a cycle | taken: the sort, with a heap on (sequence, registration), and priority inheritance so a constraint never delays an early item |
-| **Spring** `@Order`, **NestJS** interceptors | one ordering rule for every extension point | taken: hooks, interceptors and error handlers share `sincpro_framework.ordering` |
+| **Spring** `@Order`, **NestJS** interceptors | one ordering rule for every extension point | taken: hooks, interceptors and error handlers share `sincpro_framework.common.ordering` |
 | **Django signals** | receivers as functions, registered by name or by sender, order by connection | not taken: two forms (function and class) doubled what a reader must know, and signals have no replace or extend |
 | **Rails callbacks** | `before_save :method_name` — names as symbols | not taken: a name written as text fails silently on a typo; everything here is by reference |
 | a global registry | hooks discovered wherever they are | not taken: a collection is an object somebody made and passes, so two contexts never reach each other's hooks |

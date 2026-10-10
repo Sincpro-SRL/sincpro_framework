@@ -2,20 +2,18 @@ from typing import Any, Callable, Dict, Optional, Tuple, Type, overload
 
 from sincpro_log.logger import LoggerProxy
 
-from .context.infrastructure.providers import ContextProvider
-from .exceptions import DTOAlreadyRegistered as DTOAlreadyRegistered
-from .exceptions import UnknownDTOToExecute as UnknownDTOToExecute
-from .interceptors import Interceptor
+from .bus_pipeline.interceptors.interceptor import Interceptor
+from .context.entrypoint.providers import ContextProvider
+from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 from .observability import Observability
-from .sincpro_abstractions import ApplicationService as ApplicationService
-from .sincpro_abstractions import Bus as Bus
-from .sincpro_abstractions import DataTransferObject as DataTransferObject
-from .sincpro_abstractions import Feature as Feature
-from .sincpro_abstractions import TypeDTO as TypeDTO
-from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
-
-FAILED_EXECUTION: str
-"""Where a bus leaves, on an exception, the execution it failed in (`failures`)."""
+from .sincpro_abstractions import (
+    ApplicationService,
+    Bus,
+    DataTransferObject,
+    Feature,
+    TypeDTO,
+    TypeDTOResponse,
+)
 
 class FeatureBus(Bus):
     """

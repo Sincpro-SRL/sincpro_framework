@@ -97,7 +97,7 @@ away the same record before a save leaves no intention.
 `record.parent = other` MUST set the field the relation reads (`parent_field` of PRD's `key_pair`,
 `workspace_id` by identity or `workspace_code` by a business key) to `other`'s key, on assignment,
 so it is written by the next `save` with the record's own columns. `record.parent = None` sets it
-to NULL, refused as a `ContractViolation` when the column is `NOT NULL`. Assigning a record whose
+to NULL, refused as a `ProgrammingError` when the column is `NOT NULL`. Assigning a record whose
 key is not set yet — a new parent — sets the field once the parent is written in the same `save`.
 
 Nothing of `other` is written: a child does not own its parent.
@@ -137,7 +137,7 @@ are never written.
 ### 8. A relation another context answers is read-only
 
 A relation declared with `Relation.resolved_by(...)` or `Relation.bus(...)` lives somewhere this
-repository cannot write. `+=`, `-=` and `=` on it MUST raise `ContractViolation` naming the
+repository cannot write. `+=`, `-=` and `=` on it MUST raise `ProgrammingError` naming the
 relation, instead of keeping a change no store will ever see.
 
 ### 9. How it meets `save`

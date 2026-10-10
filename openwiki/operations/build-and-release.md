@@ -144,7 +144,7 @@ English-facing build path (`.yamllint`'s rule comments are also Spanish, `.yamll
 operator grepping for the English wording will not find it.
 
 `format-yaml` is asymmetric on purpose: prettier rewrites **every** `*.yml`/`*.yaml` in the repository,
-while yamllint lints only `sincpro_framework/conf/*.yml tests/config/resources/*.yml`
+while yamllint lints only `sincpro_framework/conf/*.yml tests/core/config/resources/*.yml`
 (`Makefile:69-81`). `.prettierignore` keeps the generated documentation out of the rewrite
 (`openwiki/`, `AGENTS.md`, `CLAUDE.md`, `.github/workflows/openwiki-update.yml`,
 `.prettierignore:1-13`), so a format run never dirties agent-owned files. `.yamllint` extends the
@@ -188,7 +188,7 @@ contract they exercise.
 ```bash
 make test                          # pytest + coverage; fails under COVERAGE_MIN
 make test COVERAGE_MIN=80          # one-off, higher floor
-make test_one t=tests/test_async_bus.py
+make test_one t=tests/aio/test_async_bus.py
 make test-coverage                 # + htmlcov/index.html
 make clean-coverage
 ```

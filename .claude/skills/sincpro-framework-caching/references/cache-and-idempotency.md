@@ -11,9 +11,23 @@ it gives a **version**. `Cache` keeps a value by its parameters and judges it by
 ```python
 from datetime import timedelta
 
-from sincpro_framework.caching import (
-    Cache, ExternalVersion, FailSafe, InMemoryKeyValue, JsonCodec, KeepPolicy, TimeToLive,
+from sincpro_framework.data_layer.caching import (
+
+    Cache,
+
+    ExternalVersion,
+
+    FailSafe,
+
+    JsonCodec,
+
+    KeepPolicy,
+
+    TimeToLive,
+
 )
+
+from sincpro_framework.common.store import InMemoryKeyValue
 
 tenants = Cache(InMemoryKeyValue(), namespace="catalog")
 policy = KeepPolicy[Tenant](
@@ -61,7 +75,8 @@ call. `forget` is the exception: an invalidation that reached no replica raises.
 
 ```python
 from sincpro_framework import DataTransferObject
-from sincpro_framework.caching import AlreadyInProgress, Idempotency, InMemoryKeyValue, KeyReused
+from sincpro_framework.data_layer.caching import AlreadyInProgress, Idempotency, KeyReused
+from sincpro_framework.common.store import InMemoryKeyValue
 
 class CommandIssueReceipt(DataTransferObject):
     request_id: str

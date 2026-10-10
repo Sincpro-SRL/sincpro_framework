@@ -71,7 +71,7 @@ counted.value, counted.exact
 
 ```python
 c = repository.search(Invoices, criteria)   # 20 of 8,412
-c.sum_by(lambda i: i.total)                 # raises ContractViolation, naming repository.measures(...)
+c.sum_by(lambda i: i.total)                 # raises ProgrammingError, naming repository.measures(...)
 ```
 
 Only `sum_by`, `average_by`, `min_by` and `max_by` called **directly on a page** (a cursor, a

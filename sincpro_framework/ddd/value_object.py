@@ -23,12 +23,12 @@ def _build_value_object_type(
 
         @classmethod
         def __get_pydantic_core_schema__(cls, source_type: Any, handler: Any) -> Any:
-            from pydantic_core import core_schema as cs
+            from pydantic_core import core_schema
 
-            return cs.chain_schema(
+            return core_schema.chain_schema(
                 [
                     handler.generate_schema(base),
-                    cs.no_info_plain_validator_function(cls),
+                    core_schema.no_info_plain_validator_function(cls),
                 ]
             )
 

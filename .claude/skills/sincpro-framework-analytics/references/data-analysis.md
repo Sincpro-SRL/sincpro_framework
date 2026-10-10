@@ -5,7 +5,7 @@ a test). This page stands alone. `pip install sincpro-framework[data-analysis]` 
 Arrow/Parquet; the core needs nothing. polars, pandas and DuckDB are the project's own
 dependencies.
 
-`sincpro_framework.data_analysis` holds what a `Criteria` answered as a `DataFrame`, so the same
+`sincpro_framework.data_layer.data_analysis` holds what a `Criteria` answered as a `DataFrame`, so the same
 question is not sent to the database twice.
 
 ## The rows and the cache
@@ -15,7 +15,7 @@ the filter, the order, the mask and the scope a repository reads under, never th
 question with more pages reads only the pages not held; asking again reads nothing.
 
 ```python
-from sincpro_framework.data_analysis import QueryCache
+from sincpro_framework.data_layer.data_analysis import QueryCache
 
 cache = QueryCache(max_rows=2_000_000)
 
@@ -38,7 +38,6 @@ merged by `id`, so a row that moved between two pages is held once.
 frame answers the filter it holds and one more condition by itself:
 
 ```python
-from sincpro_framework.data_analysis import NotComplete
 
 sales = cache.fetch_all(repository, InvoiceLine, posted)
 september = sales.narrow({"field": "posted_at", "operator": ">=", "value": "2026-09-01"})
@@ -47,7 +46,7 @@ sal = september.narrow({"field": "journal", "operator": "=", "value": "SAL"})
 
 `where` is written as in a `Criteria` (a condition, or `{"all": …}`, `{"any": …}`, `{"negate": …}`).
 A field the frame has no column for is refused, and so is a value not of the column's type. A frame
-that stopped at a page refuses (`NotComplete`) — from it there is no telling which rows are missing;
+that stopped at a page refuses (`ProgrammingError`) — from it there is no telling which rows are missing;
 read the narrower filter as its own query instead.
 
 ## Not refreshed on its own
@@ -57,7 +56,7 @@ cache.invalidate(InvoiceLine)          # what a commit does for you:
 frames = invalidate_on_commit(database, QueryCache(), Payment)
 ```
 
-`invalidate_on_commit` (from `sincpro_framework.orm`) notes what a flush writes and lets go of each
+`invalidate_on_commit` (from `sincpro_framework.data_layer.orm`) notes what a flush writes and lets go of each
 aggregate's reads when that write **commits** — not at the flush, not on a rollback. A cache is per
 process; an aggregate another process writes is not one to hold here.
 
@@ -97,7 +96,7 @@ To a client, a frame travels as Parquet or as an Arrow IPC stream
 | `frame.narrow(where)` / `append(page)` / `sort(keys)` / `select(columns)` | in-process operations |
 | `frame.to_arrow()` / `to_parquet()` / `to_ipc()` / `to_json()` | hand off |
 | `DataFrame.from_arrow(table, key="id")` | a `pyarrow.Table` back as a frame |
-| `invalidate_on_commit(database, cache, *aggregates)` | `sincpro_framework.orm` |
+| `invalidate_on_commit(database, cache, *aggregates)` | `sincpro_framework.data_layer.orm` |
 | `repository.fingerprint(target, criteria)` | the key of a read |
 
 `QueryCaching` (`docs/caching/README.md`) is a different thing: it keeps a **bus Query's answer**

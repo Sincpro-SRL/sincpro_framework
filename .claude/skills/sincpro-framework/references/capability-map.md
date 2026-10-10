@@ -13,7 +13,7 @@ so read it only when the framework repo is at hand.
 | A process and the loops it runs | `process.py` | `sincpro-framework-operations` | `docs/process/README.md` |
 | Dependency injection + typing | `use_bus.py` (`add_dependency`, `deps`), `ioc.py` | [bootstrap.md](bootstrap.md) | README "Recommended Infrastructure Structure" |
 | Folder layout, repo variants | — | [module-structure.md](module-structure.md) | `docs/architecture/ARCHITECTURE.md` |
-| Boundaries, `common/`, domain vs adapters | `testing/architecture.py` (the checks) | [context-boundaries.md](context-boundaries.md) | `docs/architecture/ARCHITECTURE.md` |
+| Boundaries, `common/`, domain vs adapters | `testing/analysis/architecture.py` (the checks) | [context-boundaries.md](context-boundaries.md) | `docs/architecture/ARCHITECTURE.md` |
 | The context: `use_context()`, the tree of levels, threads, providers, stores, propagation, execution identity | `context/` | `sincpro-framework-context` | `docs/core/context-manager.md` |
 | Interceptors + `replaces=` | `interceptors.py` | `sincpro-framework-core` | `docs/core/interceptors.md` |
 | Error handlers | `error_handler.py` | `sincpro-framework-core` | README "Error Handling" |

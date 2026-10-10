@@ -95,12 +95,12 @@ whole bounded context behind the context map, specified apart (PRD_15 §0).
 
 ### 4. Bindings and their decorators
 
-The decorators live in `sincpro_framework.entrypoints.exposure` and import no transport library —
+The decorators live in `sincpro_framework.entrypoints` and import no transport library —
 a `services/` module stays free of Starlette, grpc and FastMCP. Each records a binding and returns
 the class unchanged, so their order does not matter.
 
 ```python
-from sincpro_framework.entrypoints.exposure import grpc, mcp, rest, rpc
+from sincpro_framework.entrypoints.entrypoint.decorators import grpc, mcp, rest, rpc
 
 @billing.feature(CommandIssueInvoice)
 @auth.requires(BillingPermission.ISSUE)
@@ -294,7 +294,7 @@ wire (REST · JSON-RPC · gRPC · MCP)
 | groups, precedence, `override` / `bind`, build validation, the fallback access rule | **built** — `group`, `override`, `bind`, `verify`, `surface`, `build`; every §7 check that is wire-independent |
 | name clashes per wire (one `operationId`, RPC method, gRPC method, tool twice) | the wire's `validate` — **built** for a project's `Wire` port; each shipped wire when it opts in |
 | derived MCP hints and REST methods from facts | the facts are **built** (`Operation.is_query`, `idempotent`, `access`, response); deriving each wire's defaults from them is the wire's `derive`, when it opts in |
-| the MCP wire | **built** — `McpGateway` sets `wire = "mcp"`, DECLARED by default, CATALOG on request; `McpWire` derives the tool name (`issue_invoice`: the DTO's name without `Command`/`Query`, snake_case — JSON-RPC's rule), `read_only` from a `Query`, `destructive` true on a write unless declared; prefixes a derived name by its group (`prefix`, else the alias) only when two operations answer it, never a declared one; refuses a name twice, a name outside `[A-Za-z0-9_-]{1,64}` (what the model APIs behind MCP clients accept), a Query declared destructive; publishes `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint` (`@idempotency.once`), `openWorldHint` and a `DEPRECATED …` description prefix on `tools/list`. `build_mcp_server(bus)` / `Entrypoint(bus)` stay PRD_12's catalog with DTO class names (hints added); `build_mcp_server([buses])` is `McpGateway` in CATALOG. Tests: `tests/entrypoint/test_entrypoint_mcp.py` |
+| the MCP wire | **built** — `McpGateway` sets `wire = "mcp"`, DECLARED by default, CATALOG on request; `McpWire` derives the tool name (`issue_invoice`: the DTO's name without `Command`/`Query`, snake_case — JSON-RPC's rule), `read_only` from a `Query`, `destructive` true on a write unless declared; prefixes a derived name by its group (`prefix`, else the alias) only when two operations answer it, never a declared one; refuses a name twice, a name outside `[A-Za-z0-9_-]{1,64}` (what the model APIs behind MCP clients accept), a Query declared destructive; publishes `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint` (`@idempotency.once`), `openWorldHint` and a `DEPRECATED …` description prefix on `tools/list`. `build_mcp_server(bus)` / `Entrypoint(bus)` stay PRD_12's catalog with DTO class names (hints added); `build_mcp_server([buses])` is `McpGateway` in CATALOG. Tests: `tests/entrypoints/adapters/mcp/test_entrypoint_mcp.py` |
 | `manifest()` | **built** — sorted, frozen, JSON-safe; CATALOG logs it at build |
 | strict orphans (a binding for a wire no gateway of the process builds) | not built |
 | `Deprecation` | the binding field and the sunset check are **built**; RFC 9745 / 8594 headers on each wire are not |

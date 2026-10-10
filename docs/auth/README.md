@@ -115,7 +115,7 @@ auth = AccessControl[BillingPermission](providers=[keys])
 A JWT issuer (Keycloak, Entra, Google) needs only `authenticate` — verify the token, put its
 permissions or roles in the `Identity` — and the default answers the rest. `RolePermissions`
 turns roles into permissions, a role granting what the roles it implies grant. A provider of
-yours proves itself with `sincpro_framework.testing.AuthProviderContract`.
+yours proves itself with `sincpro_framework.runtime.testing.AuthProviderContract`.
 
 `Credentials` carries every field a protocol needs, normalized by the entrypoint: `headers`
 (lower-case; gRPC metadata and a message's headers too), `cookies`, `method` and `uri` (DPoP,
@@ -264,7 +264,9 @@ unchecked = AccessControl[BillingPermission](enabled=False)
 ```python
 from dataclasses import dataclass
 
-from sincpro_framework.ddd import Entity, MemoryRepository
+from sincpro_framework.ddd import Entity
+
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 
 
@@ -305,7 +307,7 @@ what it replaces required.
 ## Testing
 
 ```python
-from sincpro_framework.testing import AuthProviderContract, RecordingProvider, granting
+from sincpro_framework.runtime.testing import AuthProviderContract, RecordingProvider, granting
 
 with granting(BillingPermission.ISSUE_INVOICE):
     billing(CommandIssueInvoice(total=1))
@@ -358,8 +360,8 @@ the bus's `AccessControl` authenticates them, and the use case runs as that iden
 
 ```python
 from sincpro_framework.auth import ApiKey, ApiKeyProvider, InMemoryApiKeys, ServiceTokenProvider
-from sincpro_framework.entrypoints.exposure import Exposure
-from sincpro_framework.entrypoints.rpc import RpcGateway
+from sincpro_framework.entrypoints.domain.surface import Exposure
+from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 
 api_keys = InMemoryApiKeys()
 bot_key = api_keys.issue(

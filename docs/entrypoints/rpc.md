@@ -15,10 +15,10 @@ rpc.discover                      registries                  DataTransferObject
 Python remains: framework(dto)                                ValueObject
 ```
 
-Package: `sincpro_framework.entrypoints.rpc` (`RpcGateway`, `build_rpc_app`, `JsonRpcWire`,
+Package: `sincpro_framework.entrypoints.adapters.rpc` (`RpcGateway`, `build_rpc_app`, `JsonRpcWire`,
 `RpcSurface`, `dispatch`, `http_status`, `operation_name`). Feature name: **`entrypoint_rpc`**.
 
-The bus projection is shared: `sincpro_framework.introspection` describes what exists (`FeatureOrAppServiceMetadata`/`DtoMetadata`), `Catalog` / `PackedFeatureOrAppService` in [`catalog.py`](../../sincpro_framework/entrypoints/catalog.py) packages it for JSON. MCP and JSON-RPC only add a wire. REST/CLI should do the same — reuse `Catalog`, do not reimplement it.
+The bus projection is shared: `sincpro_framework.introspection` describes what exists (`FeatureOrAppServiceMetadata`/`DtoMetadata`), `Catalog` / `PackedFeatureOrAppService` in [`catalog.py`](../../sincpro_framework/entrypoints/entrypoint/catalog.py) packages it for JSON. MCP and JSON-RPC only add a wire. REST/CLI should do the same — reuse `Catalog`, do not reimplement it.
 
 MCP stays `entrypoint_mcp`. Do not share a port with FastMCP — MCP already uses JSON-RPC methods `tools/list` / `tools/call`.
 
@@ -40,7 +40,7 @@ The gateway resolves a **surface** (PRD_14): in `Exposure.DECLARED`, **the defau
 cases bound for JSON-RPC are methods; everything else is not reachable, nor in the document.
 
 ```python
-from sincpro_framework.entrypoints.exposure import rpc
+from sincpro_framework.entrypoints.entrypoint.decorators import rpc
 
 @billing.feature(CommandIssueInvoice)
 @auth.requires(BillingPermission.ISSUE)
@@ -91,7 +91,7 @@ together, before anything is served.
 change and renames nothing a client calls (tested). `layers=` still narrows what CATALOG mode
 publishes; it never appears in a name, a tag or the document.
 
-The build refuses (`ExposureRefused`, every reason at once):
+The build refuses (`ProgrammingError`, every reason at once):
 
 - a name that is not dotted snake_case with at least two segments (`issue`, `Billing.Issue`,
   `billing.issue-invoice`);
@@ -181,8 +181,8 @@ carries three members** — what a client switches on, rather than the number (t
 
 | `data` member | What it is |
 |---|---|
-| `kind` | The failure's kind, the same on every wire (`transport.failures`): `invalid`, `unauthenticated`, `permission_denied`, `not_found`, `conflict`, `in_progress`, `key_reused`, `domain`, `exhausted`, `unavailable`, `internal` |
-| `reason` | UPPER_SNAKE of the error's class — `CONTRACT_VIOLATION`, `STALE_AGGREGATE`, `VALIDATION_ERROR` — or of the protocol refusal (`BATCH_TOO_LARGE`, `PARAMS_BY_POSITION`). An internal failure is always `INTERNAL_ERROR`: its class is the inside of the process |
+| `kind` | The failure's kind, the same on every wire (`common.failures`): `invalid`, `unauthenticated`, `permission_denied`, `not_found`, `conflict`, `in_progress`, `key_reused`, `domain`, `exhausted`, `unavailable`, `internal` |
+| `reason` | The same reason every wire gives (`common.failures.failure_reason`): UPPER_SNAKE of the error's class when the caller may read it (a `DomainError` — `CONTRACT_VIOLATION`, `STALE_AGGREGATE`), `VALIDATION_ERROR` for a DTO that did not validate, the kind otherwise (an `HsmDown` with `failure_kind = UNAVAILABLE` answers `UNAVAILABLE`, never `HSM_DOWN`), or the protocol refusal (`BATCH_TOO_LARGE`, `PARAMS_BY_POSITION`). An internal failure is always `INTERNAL_ERROR`: its class is the inside of the process |
 | `retryable` | Whether the same request may succeed if sent again |
 
 Whatever else a client read before is still there, under a named member: `message` (a
@@ -230,9 +230,9 @@ Each method object carries, besides its params and result:
 
 A nested DTO's definitions are published in `components.schemas` and referenced from there, so
 every `$ref` of the document resolves. The document validates against the OpenRPC 1.4
-meta-schema (`tests/entrypoint/test_jsonrpc_errors.py`).
+meta-schema (`tests/entrypoints/adapters/rpc/test_jsonrpc_errors.py`).
 
-JSON-RPC params are JSON (`carries_bytes = False` on its wire): binary DTOs (`bytes`) are skipped, same as MCP. Declaring `@rpc()` on one is refused: `verify()` names it and the build raises `ExposureRefused`.
+JSON-RPC params are JSON (`carries_bytes = False` on its wire): binary DTOs (`bytes`) are skipped, same as MCP. Declaring `@rpc()` on one is refused: `verify()` names it and the build raises `ProgrammingError`.
 
 ---
 
@@ -255,7 +255,7 @@ whose members are the DTO's fields (or omitted). An array is answered `-32602 In
 (`"params": [42, 23]`) are refused, and their by-name form answers as the specification does.
 A `result` is always the declared response rendered as an object — a Feature returning `19`
 answers `{"result": 19}`. Every example of the specification's §7 is a golden test
-(`tests/entrypoint/test_jsonrpc_conformance.py`).
+(`tests/entrypoints/adapters/rpc/test_jsonrpc_conformance.py`).
 
 **`rpc.` is the protocol's.** Method names beginning `rpc.` are reserved by JSON-RPC 2.0; the
 only one served is `rpc.discover`. A bus aliased `rpc` (which would publish `rpc.issue_invoice`)
@@ -299,7 +299,7 @@ the gateway's own route calls `dispatch` too (PRD_15 §1.2; a parity test compar
 
 ```python
 from sincpro_framework.auth import credentials_from_asgi
-from sincpro_framework.entrypoints.rpc import RpcGateway, dispatch, http_status
+from sincpro_framework.entrypoints.adapters.rpc import RpcGateway, dispatch, http_status
 
 surface = RpcGateway({"billing": billing}).build()     # validated once, at startup
 

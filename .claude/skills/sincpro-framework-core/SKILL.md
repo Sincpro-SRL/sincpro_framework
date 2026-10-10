@@ -43,7 +43,7 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `ErrorHandler` | `(error) -> answer`, or re-raise to delegate | function | `from sincpro_framework.error_handler import ErrorHandler` |
 | `add_global_error_handler` / `add_feature_error_handler` / `add_app_service_error_handler` | Append a handler to one of three chains | registry | methods of `UseFramework` |
 | `ignore_sentry_exceptions(*types)` | Marks error types as expected traffic: not sent to Sentry, outcome `expected` | setting | method of `UseFramework` |
-| `InterceptorContractViolation` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework.exceptions import InterceptorContractViolation` |
+| `ProgrammingError` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework.exceptions import ProgrammingError` |
 | `BusAlreadyBuilt` | Raised when registering an interceptor/handler/dependency after the bus built | DTO | `from sincpro_framework.exceptions import BusAlreadyBuilt` |
 | `describe` / `features` | What answers a Command and which interceptors wrap it | function | `from sincpro_framework.introspection import describe, features` |
 
@@ -58,7 +58,7 @@ Look-alikes: `bus.context(...)` **opens** a context; `self.context` **reads** it
 ```text
 use_bus.py         UseFramework: registration, build (lazy, once, under a lock), context, error chains
 bus.py             FrameworkBus → FeatureBus / ApplicationServiceBus: dispatch by DTO class,
-                   run_through(interceptors), then the scope's error handler
+                   run_around(interceptors), then the scope's error handler
 interceptors.py    CallNext, the chain and its class contract
 error_handler.py   ErrorHandler and the chain (first registered runs first)
 ordering.py        one order for every extension point: before/after, sequence, registration
@@ -155,20 +155,20 @@ or answer by itself, and never changes either's class. They run outermost first,
 Command is executed** (`bus(dto)`, `self.feature_bus(dto)`, a workflow step, a cron tick).
 
 ```python
+from sincpro_framework.ddd import DomainError
 from sincpro_framework import CallNext
-from sincpro_framework.ddd import ContractViolation
 
 
 @billing.interceptor(CommandCreateInvoice)
 def credit_check(dto, call_next: CallNext[ResponseCreateInvoice]) -> ResponseCreateInvoice:
     if dto.customer_id in blocked:
-        raise ContractViolation(f"{dto.customer_id} has no credit")
+        raise DomainError(f"{dto.customer_id} has no credit")
     return call_next(dto)
 ```
 
 - Adjust the input with `dto.model_copy(update=...)`; what reaches `call_next` must be the same
   Command class, and what comes back the class the handler answered, else
-  `InterceptorContractViolation`.
+  `ProgrammingError`.
 - Fixed when the bus is built: registering after raises `BusAlreadyBuilt`; naming a Command nobody
   answers raises `UnknownDTOToExecute` at build.
 - Ordering: `before=[fn]`, `after=[fn]`, `sequence=` (lower first, 10 default), then registration
@@ -208,7 +208,7 @@ framework.add_app_service_error_handler(handler)
 
 Depth: [references/errors.md](references/errors.md).
 
-**Hearing what a call did** (`sincpro_framework.outcomes`). Every Feature and ApplicationService
+**Hearing what a call did** (`sincpro_framework.bus_pipeline.outcomes`). Every Feature and ApplicationService
 that answered emits an `ExecutionCompleted` — the DTO, the response, the execution, the flow's
 context; none when an error handler answered for it. When no handler answered and the exception
 reaches the caller, an `ExecutionFailed` goes with it — once, where it left the call, with its

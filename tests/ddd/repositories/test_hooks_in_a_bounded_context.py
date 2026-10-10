@@ -31,7 +31,7 @@ DEPENDENCIES = """
 from typing import TypedDict
 
 from sincpro_framework import UseFramework
-from sincpro_framework.ddd import MemoryRepository
+from sincpro_framework.data_layer.repositories import MemoryRepository
 
 from {name}.services.hooks import billing_hooks
 

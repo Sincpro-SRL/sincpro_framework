@@ -1,7 +1,7 @@
 # PRD_20: Distributed transactions — rollbacks as an entrypoint, coordinated by signals
 
 - **Status**: proposal, 2026-10-03 — the recipe agreed in conversation; nothing of §3–§6 built. Built
-  and kept: the outcomes (`sincpro_framework.outcomes`: `ExecutionCompleted`, `ExecutionFailed` with
+  and kept: the outcomes (`sincpro_framework.bus_pipeline.outcomes`: `ExecutionCompleted`, `ExecutionFailed` with
   `kind` and `retry_after`), the context on every wire (PRD_22), the execution identity (PRD_21).
 - **Replaces**: two earlier shapes, both dropped — a `Saga` entity with `@starts` / `@handles`, and
   durable workflows in Temporal's style (`@workflow`, `@task`, a `run()` replayed from a journal).

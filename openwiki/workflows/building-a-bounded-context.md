@@ -16,7 +16,7 @@ attributes bound to that container, the dependency registry behind `framework.de
 chains, the middleware pipeline and the context storage
 (`sincpro_framework/use_bus.py:60-88`). Registrations never cross instances — the container's
 `feature_bus` / `app_service_bus` are per-container `Singleton`s
-(`sincpro_framework/ioc.py:49-57`), and `tests/use_container/test_multiple_instances.py:30-41` pins that two
+(`sincpro_framework/ioc.py:49-57`), and `tests/core/use_bus/test_multiple_instances.py:30-41` pins that two
 instances in one process keep different `feature_registry` key sets. That is why the design rule is
 "one framework per bounded context" (`docs/architecture/ARCHITECTURE.md:866`, `:881`).
 
@@ -286,7 +286,7 @@ result = my_framework(
   ApplicationService keep `self.<name>`; from SDK callers, tests and entrypoints use
   `my_framework.deps.token_adapter` (`README.md:472-474`, `README.md:258-261`). The locator is
   read-only and works before any build (`sincpro_framework/deps.py:12-66`,
-  `tests/use_container/test_deps.py:16-22`).
+  `tests/core/use_bus/test_deps.py:16-22`).
 - **Handlers are hosts for the instance, not the other way around.** `build_mcp_server(instance)` and
   `RpcGateway({...})` take the same object (`sincpro_framework/entrypoints/mcp/entrypoint.py:74-75`,
   `sincpro_framework/entrypoints/rpc/__init__.py:1-3`); the context's own module layout does not change
@@ -343,7 +343,7 @@ rule positively: "Import services AFTER creating the instance so decorators regi
 The same ordering is visible in the single-module example, where the instance, its dependencies and
 the decorators live in one file — the constraint is satisfied simply because the decorators appear
 after the constructor call (`examples/context_manager_demo.py:101-114`). The end-to-end shape the test
-suite exercises is `tests/use_container/test_use_framework.py`: dependency registered at `:36-37`, the
+suite exercises is `tests/core/use_bus/test_use_framework.py`: dependency registered at `:36-37`, the
 local bases mixing in `DependencyContextType` at `:28-45`, decoration at `:64-65` and `:84-85`,
 execution at `:99-102`.
 
@@ -402,7 +402,7 @@ def test_declared_deps_are_registered():
 
 This uses the locator's `__contains__` (`sincpro_framework/deps.py:38-39`) and needs no build: `deps`
 does not touch `self.bus` (`sincpro_framework/use_bus.py:172-181`, pinned by
-`tests/use_container/test_deps.py:16-22`). It is the only check that catches the mismatch the framework
+`tests/core/use_bus/test_deps.py:16-22`). It is the only check that catches the mismatch the framework
 itself cannot — a name declared for the checker and never passed to `add_dependency`.
 
 For the registrations themselves, the supported reader is introspection, and it requires a built
@@ -410,7 +410,7 @@ instance: `features(framework)`, `app_services(framework)` and `dtos(framework)`
 `ValueError("Framework must be built before introspection")` otherwise
 (`sincpro_framework/introspection/inspector.py:21`, `:72-75`). So a smoke test calls
 `framework.build_root_bus()` (or performs one `framework(dto)` call) first, then asserts the key set,
-as `tests/test_introspection.py:43-48` does — that file also shows the whole bootstrap in miniature,
+as `tests/introspection/test_introspection.py:43-48` does — that file also shows the whole bootstrap in miniature,
 with the instance created, decorated and built in one module (`:23-40`).
 
 Handlers wired through the bus-level `register_feature` / `register_app_service` API appear in neither

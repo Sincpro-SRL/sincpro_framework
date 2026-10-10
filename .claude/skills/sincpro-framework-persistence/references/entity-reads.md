@@ -122,6 +122,22 @@ def search(self, dto: QueryListInvoices) -> ResponseListInvoices:
 - Repository named otherwise: override `reads_from(self) -> Repository` and return it.
 - Around every use case: a bus interceptor. Replace it entirely: `replaces=InvoiceReads`.
 
+## 6. A record's history
+
+```python
+class ResponseIssueEvents(ResponsePaginatedQuery):
+    events: list[ProjectEvent]              # the context's event class
+
+class QueryIssueEvents(DomainEvents[Issue, ResponseIssueEvents]):
+    pass                                    # register it on IssueReads with the other reads
+```
+
+`QueryIssueEvents(id=...)` answers the issue's events, oldest first, filtered by
+`entity_type="Issue"` and the issue's identity together; `names=[...]` (or one name) keeps only
+those wire names, an unknown one answering no rows; the caller's criteria adds a filter or
+replaces the order. Several records at once: `repository.search(ProjectEvent,
+history_of(issue, *runs))`. Never one hand-written "list X events" Feature per aggregate.
+
 ## Mistakes to avoid
 
 - **A `DEFAULT_*` as a value, a `@staticmethod` or a field.** Always `@classmethod`; anything

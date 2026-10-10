@@ -11,13 +11,16 @@ from sqlalchemy import Column, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework.data_layer.orm import map_aggregates
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
+    entity_table,
+    event_columns,
+)
 from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table, event_columns
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 from .contracts import OrderPlaced, StockRejected, StockReserved
 

@@ -12,7 +12,7 @@ answer from another process, and two buses have no one answer, so both are refus
 guessed.
 
 An event published inside an execution goes out caused by it and in its flow (`causation_id`,
-`correlation_id`), unless it already says otherwise.
+`correlation_id`), unless it already says otherwise — as a copy; the one handed in is untouched.
 """
 
 import dataclasses
@@ -20,8 +20,8 @@ from typing import Any, TypeVar, overload
 
 from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.event_driven.domain.queue import Queue
+from sincpro_framework.exceptions import ProgrammingError
 
 Response = TypeVar("Response")
 
@@ -29,12 +29,12 @@ Response = TypeVar("Response")
 def _one_answer(queue: Queue, event: DomainEvent, answers: Any) -> Any:
     """The single answer a typed publish promised, or the reason there is none."""
     if not isinstance(answers, list):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{type(queue).__name__} cannot answer in the same call; "
             "publish(event) without a return type"
         )
     if len(answers) != 1:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{event.name} was answered by {len(answers)} subscribers; a typed publish "
             "needs exactly one"
         )
@@ -49,18 +49,11 @@ def refuse_orders(event: Any) -> None:
     command has no business being published.
     """
     if not isinstance(event, DomainEvent):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{type(event).__name__} is not a DomainEvent, and a queue carries facts rather "
             "than orders: a command is asked of one bus directly, `bus(command)`. If this is "
             "meant to be a fact, make it a DomainEvent and give it a wire name"
         )
-
-
-def in_its_chain(event: DomainEvent) -> DomainEvent:
-    """The event as it goes out: caused by the execution publishing it and in its flow, unless it
-    already says so — a copy; the one handed in is untouched."""
-    missing = chain_for(event)
-    return dataclasses.replace(event, **missing) if missing else event
 
 
 class AsyncPublisher:
@@ -76,7 +69,7 @@ class AsyncPublisher:
 
     async def publish(self, event: DomainEvent, return_type: Any = None) -> Any:
         refuse_orders(event)
-        answers = await self.queue.aput(in_its_chain(event))
+        answers = await self.queue.aput(dataclasses.replace(event, **chain_for(event)))
         return None if return_type is None else _one_answer(self.queue, event, answers)
 
 
@@ -102,7 +95,7 @@ class Publisher:
         happened, which is why everybody who hears it may react and nobody has to.
         """
         refuse_orders(event)
-        answers = self.queue.put(in_its_chain(event))
+        answers = self.queue.put(dataclasses.replace(event, **chain_for(event)))
         return None if return_type is None else _one_answer(self.queue, event, answers)
 
     def get_async_publisher(self) -> "AsyncPublisher":

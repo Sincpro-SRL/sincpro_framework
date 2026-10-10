@@ -57,8 +57,8 @@ from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.ddd.query import Query
-from sincpro_framework.entrypoints.exposure import rest
-from sincpro_framework.entrypoints.fastapi import (
+from sincpro_framework.entrypoints.entrypoint.decorators import rest
+from sincpro_framework.entrypoints.adapters.fastapi import (
     BusCall,
     FastApiGateway,
     bus_call,
@@ -66,7 +66,7 @@ from sincpro_framework.entrypoints.fastapi import (
     operation_extra,
     problem_responses,
 )
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework import FailureKind
 
 
 class BillingPermission(Permission):
@@ -300,7 +300,7 @@ the answer, outside idempotency.
 A Command with a `bytes` field (a PDF, an image) has no JSON body. What a wire carries is its
 port's (`Wire.carries_bytes`), and this one carries JSON, so it generates no route for it.
 Declaring `@rest.post` on its handler is refused: `verify()` names it and `app()` raises
-`ExposureRefused`. A `bytes` Command with no binding is skipped with one log line, `Skipping
+`ProgrammingError`. A `bytes` Command with no binding is skipped with one log line, `Skipping
 non-JSON Feature/ApplicationService [Command…]`.
 
 The Command stays as it is, and so does its Feature. The route that accepts the file as base64

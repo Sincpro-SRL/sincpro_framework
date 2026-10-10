@@ -17,8 +17,8 @@ publish that catalog over a transport without the domain learning about the tran
 
 They are extras: `[fastapi]`, `[rest]`, `[rpc]`, `[grpc]`, `[mcp]` and `[faststream]`. A service that only runs a bus installs none of them.
 
-A program that stays up and runs loops is not a wire. It lives in
-[process/](../process/README.md) (`sincpro_framework.process`).
+A program that stays up and runs loops lives here too, but it is not a wire:
+[process/](../process/README.md) (`sincpro_framework.entrypoints.entrypoint.workers`).
 
 For the distinction between public Python contracts, transport entrypoints and process composition,
 see [PRD_25](../prd/PRD_25_context-composition-and-durable-delivery.md). This assessment also records

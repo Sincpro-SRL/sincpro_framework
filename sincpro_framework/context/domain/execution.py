@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sincpro_framework.ids import moment_of
+from sincpro_framework.common.ids import moment_of
 
 if TYPE_CHECKING:
     from sincpro_framework.context.domain.level import Level

@@ -29,7 +29,7 @@ from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd import Entity
-from sincpro_framework.orm import Database, Isolation, Repository, entity_table, map_aggregates
+from sincpro_framework.data_layer.orm import Database, Isolation, Repository, map_aggregates, template_table
 
 
 @dataclass
@@ -51,14 +51,14 @@ class Account(Entity):
 
 
 treasury = registry()
-account_table = entity_table(
+account_table = template_table.entity_table(
     "account",
     treasury.metadata,
     Column("holder", Text, nullable=False, unique=True),
     Column("balance", Integer, nullable=False),
     CheckConstraint("balance >= 0", name="balance_never_negative"),
 )
-movement_table = entity_table(
+movement_table = template_table.entity_table(
     "movement",
     treasury.metadata,
     Column("account_id", Text, ForeignKey("account.id"), nullable=False),
@@ -87,7 +87,7 @@ with repository.context(read_only=True) as unit:      # a report: any write is r
 
 | Option | Means | Where the engine lacks it |
 |---|---|---|
-| `isolation` | `Isolation.READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE` | refused — `ContractViolation`; SQLite runs every level as `serializable`, which honours it |
+| `isolation` | `Isolation.READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE` | refused — `ProgrammingError`; SQLite runs every level as `serializable`, which honours it |
 | `read_only` | no write may leave the block; Postgres is asked too | always honoured: the refusal is the framework's |
 | `timeout` | seconds any one statement may run (`SET LOCAL statement_timeout`) | warned, statements run unbounded |
 | `engine` | SQLAlchemy's `execution_options`, as they come | — |
@@ -108,7 +108,7 @@ loaded, as the session tracks it: Fowler's object registration, where the defaul
 registration — the same choice Doctrine's `DEFERRED_EXPLICIT`, Django, Rails and Ecto make.
 
 ```python
-from sincpro_framework.orm import Writes
+from sincpro_framework.data_layer.orm import Writes
 
 with repository.context() as unit:
     forgotten = unit.get_by(Account, holder="bob")
@@ -247,7 +247,7 @@ class Rate(Entity):
 
 
 rates = registry()
-rate_table = entity_table(
+rate_table = template_table.entity_table(
     "rate",
     rates.metadata,
     Column("currency", Text, nullable=False, unique=True),
@@ -375,9 +375,9 @@ A fiscal invoice's number has no holes. A database sequence is fast and never ga
 the unit of work that saves what carries them: committed with them, or given back with them.
 
 ```python
-from sincpro_framework.orm import DatabaseNumbering, numbering_table
+from sincpro_framework.data_layer.orm import DatabaseNumbering, template_table
 
-counters = numbering_table("numbering", treasury.metadata)
+counters = template_table.numbering_table("numbering", treasury.metadata)
 treasury.metadata.create_all(database.engine)
 numbering = DatabaseNumbering(database, counters)
 

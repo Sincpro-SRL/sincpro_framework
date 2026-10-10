@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework import ProgrammingError
 from sincpro_framework.event_driven import (
     AsyncPublisher,
     Publisher,
@@ -53,9 +53,9 @@ def test_publish_with_a_type_waits_for_the_answer_like_a_command(feature_bus, he
 
 
 def test_a_typed_publish_needs_exactly_one_bus_that_answers(publisher):
-    with pytest.raises(ContractViolation, match="2 subscribers"):
+    with pytest.raises(ProgrammingError, match="2 subscribers"):
         publisher.publish(TicketClosed(reason="x"), ResponseNotify)
-    with pytest.raises(ContractViolation, match="0 subscribers"):
+    with pytest.raises(ProgrammingError, match="0 subscribers"):
         publisher.publish(NobodyListens(), ResponseNotify)
 
 
@@ -100,7 +100,7 @@ def test_a_command_is_refused_because_a_queue_carries_facts(sync_queue):
     """A command is something one bus is asked to do, and it is asked directly. Published, it
     used to fail deep inside the queue with `'CommandAudit' object has no attribute 'name'` —
     true, and no help at all about why."""
-    with pytest.raises(ContractViolation, match="facts rather than orders"):
+    with pytest.raises(ProgrammingError, match="facts rather than orders"):
         Publisher(sync_queue).publish(CommandAudit(text="do this"))  # type: ignore[arg-type]
 
 
@@ -108,5 +108,5 @@ def test_the_async_publisher_refuses_a_command_too(sync_queue):
     async def publish() -> None:
         await AsyncPublisher(sync_queue).publish(CommandAudit(text="do this"))  # type: ignore[arg-type]
 
-    with pytest.raises(ContractViolation, match="facts rather than orders"):
+    with pytest.raises(ProgrammingError, match="facts rather than orders"):
         asyncio.run(publish())

@@ -5,11 +5,13 @@ from typing import Any, Dict, List
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.exceptions import UnknownDTOToExecute
-from sincpro_framework.observability import ObservabilityIdentity, registry, resolve_identity
+from sincpro_framework.observability import ObservabilityIdentity
 from sincpro_framework.observability.domain import framework_identity
 from sincpro_framework.observability.domain import installed_version as dist_version
+from sincpro_framework.observability.domain import resolve_identity
 from sincpro_framework.observability.errors.record_error import record_error
-from sincpro_framework.observability.errors.setup import setup
+from sincpro_framework.observability.errors.setup import setup_errors
+from sincpro_framework.observability.registry import registry
 from sincpro_framework.sincpro_conf import settings
 
 
@@ -94,7 +96,7 @@ def test_setup_sentry_silent_without_dsn(monkeypatch):
 
     monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", None)
-    status = setup(resolve_identity("test-bc"))
+    status = setup_errors(resolve_identity("test-bc"))
     assert status.state == "off"
     assert status.reason == "dsn_missing"
 
@@ -104,7 +106,7 @@ def test_setup_sentry_never_calls_global_init(monkeypatch):
     state = CaptureState()
     _install_fake_sentry(monkeypatch, state)
 
-    status = setup(
+    status = setup_errors(
         identity_of("payment-cybersource", version="5.0.3", artifact="sincpro-payments-sdk")
     )
     assert state.inits == []
@@ -466,7 +468,7 @@ def test_setup_sentry_reports_dsn_missing(monkeypatch):
     monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", None)
 
-    status = setup(resolve_identity("test-bc"))
+    status = setup_errors(resolve_identity("test-bc"))
     assert status.active is False
     assert status.state == "off"
     assert status.reason == "dsn_missing"
@@ -485,7 +487,7 @@ def test_unusable_dsn_is_dsn_missing(monkeypatch):
     monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", "not-a-dsn")
 
-    status = setup(resolve_identity("test-bc"))
+    status = setup_errors(resolve_identity("test-bc"))
     assert status.reason == "dsn_missing"
 
 

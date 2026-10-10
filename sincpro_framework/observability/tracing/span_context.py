@@ -86,13 +86,13 @@ class FrameworkSpanContext:
         subsequent requests on this worker thread.
         """
         if OTEL_AVAILABLE:
-            from opentelemetry import context as otel_context
+            import opentelemetry.context
 
             if self._root_span is not None:
                 self._root_span.end()
                 self._root_span = None
             if self._otel_token is not None:
-                otel_context.detach(self._otel_token)
+                opentelemetry.context.detach(self._otel_token)
                 self._otel_token = None
 
     def _end_root_span(self, exc_type: Any, exc_val: Any) -> None:
@@ -114,9 +114,9 @@ class FrameworkSpanContext:
         if not OTEL_AVAILABLE or self._otel_token is None:
             return
         try:
-            from opentelemetry import context as otel_context
+            import opentelemetry.context
 
-            otel_context.detach(self._otel_token)
+            opentelemetry.context.detach(self._otel_token)
         except Exception:
             return
 
@@ -178,25 +178,25 @@ class FrameworkSpanContext:
 
         Falls back to UUID-based correlation when no valid span is active.
         """
-        from opentelemetry import trace as otel_trace
+        import opentelemetry.trace
 
-        span_ctx = otel_trace.get_current_span().get_span_context()
+        span_ctx = opentelemetry.trace.get_current_span().get_span_context()
         if span_ctx.is_valid:
             return format(span_ctx.trace_id, "032x"), format(span_ctx.span_id, "016x")
         return str(uuid4()), str(uuid4())
 
     def _setup_from_carrier(self) -> tuple[str, str]:
         """Extract W3C traceparent from carrier headers and attach context."""
-        from opentelemetry import context as otel_context
-        from opentelemetry import trace as otel_trace
+        import opentelemetry.context
+        import opentelemetry.trace
         from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
         ctx = TraceContextTextMapPropagator().extract(carrier=self._carrier)
-        span = otel_trace.get_current_span(ctx)
+        span = opentelemetry.trace.get_current_span(ctx)
         span_ctx = span.get_span_context()
 
         if span_ctx.is_valid:
-            self._otel_token = otel_context.attach(ctx)
+            self._otel_token = opentelemetry.context.attach(ctx)
             return format(span_ctx.trace_id, "032x"), format(span_ctx.span_id, "016x")
 
         # Extraction failed (missing / invalid header) — fall back to a fresh root span
@@ -204,8 +204,8 @@ class FrameworkSpanContext:
 
     def _setup_from_explicit_ids(self) -> tuple[str, str]:
         """Construct a NonRecordingSpan from explicit hex trace_id/span_id."""
-        from opentelemetry import context as otel_context
-        from opentelemetry import trace as otel_trace
+        import opentelemetry.context
+        import opentelemetry.trace
 
         trace_id = self._trace_id  # guaranteed non-None here
         span_id = self._span_id or str(uuid4())
@@ -218,8 +218,8 @@ class FrameworkSpanContext:
                 is_remote=True,
                 trace_flags=TraceFlags(TraceFlags.SAMPLED),
             )
-            ctx = otel_trace.set_span_in_context(NonRecordingSpan(span_ctx))
-            self._otel_token = otel_context.attach(ctx)
+            ctx = opentelemetry.trace.set_span_in_context(NonRecordingSpan(span_ctx))
+            self._otel_token = opentelemetry.context.attach(ctx)
         except ValueError:
             # IDs are not hex (e.g. plain UUIDs from sincpro_log) — skip OTel
             # attachment; log correlation still works with the provided strings.
@@ -238,15 +238,15 @@ class FrameworkSpanContext:
 
         This ensures trace_id in logs matches the OTel trace_id in exported spans.
         """
-        from opentelemetry import context as otel_context
-        from opentelemetry import trace as otel_trace
+        import opentelemetry.context
+        import opentelemetry.trace
 
         tracer = tracer_for(self._identity.bus)
         if tracer is None:
             return str(uuid4()), str(uuid4())
         self._root_span = tracer.start_span(self._identity.bus)
-        ctx = otel_trace.set_span_in_context(self._root_span)
-        self._otel_token = otel_context.attach(ctx)
+        ctx = opentelemetry.trace.set_span_in_context(self._root_span)
+        self._otel_token = opentelemetry.context.attach(ctx)
 
         span_ctx = self._root_span.get_span_context()
         if span_ctx.is_valid:

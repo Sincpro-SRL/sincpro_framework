@@ -3,7 +3,7 @@
 Deep doc in the framework repo: `docs/runtime_use_cases/README.md`, PRD_06 and PRD_07 (every
 block there runs as a test). This page stands alone.
 
-`sincpro_framework.runtime_use_cases` keeps Commands, Responses and the Feature or ApplicationService
+`sincpro_framework.runtime.runtime_use_cases` keeps Commands, Responses and the Feature or ApplicationService
 that answers them as **data** — the source of a module, in a table or in memory — and loads them onto
 the bus of a bounded context without a deploy. The source is the only truth, written and reviewed as
 any Python module; it answers through the same bus, interceptors and observability as the code.
@@ -18,19 +18,19 @@ and the same dependencies and observability. **Whoever serves requests reads `re
 ## A stored use case
 
 ```python
-from sincpro_framework.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
+from sincpro_framework.runtime.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
 
 store = InMemoryUseCases()
 store.save(RuntimeUseCase(name="quote", source=QUOTE))
 registry = BusRegistry(billing, store)
 
-quoted = registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100})
+quoted = registry.execute("billing.CommandQuote", {"amount": 100})
 ```
 
 - A `RuntimeUseCase` is a name and the source of a module with one Feature/ApplicationService; the
   Command it answers is the one its `execute` declares (`execute(self, dto: CommandX)` — the
-  annotation is required). Its module is `sincpro_runtime.<context>.<name>`, so its Commands are
-  routed as `sincpro_runtime.<context>.<name>.<Class>`.
+  annotation is required). Its module is `sincpro_runtime.<context>.<name>`; its Commands are
+  routed by their identity, `<context>.<Class>`, as the ones in code are.
 - **An entrypoint holds the bus object it was given.** A gateway (MCP, RPC, gRPC, REST, a queue)
   built on `billing` never sees a stored use case; built on `registry.current`, it keeps answering
   that generation after a reload. To serve live generations, resolve `registry.current` per
@@ -68,7 +68,7 @@ registry.put(RuntimeUseCase(...))     # check + save + swap in, atomically
 ## Where use cases are kept
 
 `UseCaseStore` is the contract: `active()` and `save(use_case)`. `InMemoryUseCases` needs nothing;
-`SqlUseCases(database, table)` (`sincpro_framework.orm.runtime_use_cases`, `[sqlalchemy]`) keeps them
+`SqlUseCases(database, table)` (`sincpro_framework.data_layer.orm`, `[sqlalchemy]`) keeps them
 in the context's database — replicas share them, and a save by one is loaded by every one on its next
 `reload`. The table is declared on the context's own `MetaData` (`use_case_table(metadata)`), so its
 migrations create and change it.

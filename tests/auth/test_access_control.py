@@ -14,7 +14,13 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.auth import (
     AccessControl,
     AuthProvider,
@@ -30,10 +36,14 @@ from sincpro_framework.auth import (
     as_system,
     current_identity,
 )
-from sincpro_framework.ddd import Condition, Criteria, Entity, MemoryRepository
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Condition, Criteria, Entity
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
-from sincpro_framework.exceptions import ExtensionRefused
-from sincpro_framework.testing import AuthProviderContract, RecordingProvider, granting
+from sincpro_framework.runtime.testing import (
+    AuthProviderContract,
+    RecordingProvider,
+    granting,
+)
 
 
 class BillingPermission(Permission):
@@ -330,7 +340,7 @@ def test_who_acts_follows_the_execution_into_a_thread(billing: UseFramework) -> 
 def test_declared_both_public_and_required_is_refused(
     auth: AccessControl[BillingPermission],
 ) -> None:
-    with pytest.raises(ExtensionRefused):
+    with pytest.raises(ProgrammingError):
 
         @auth.public
         @auth.requires(BillingPermission.READ_INVOICES)
@@ -599,7 +609,7 @@ def test_a_collection_guarded_twice_is_refused_and_a_combination_asks_once() -> 
     client = Hooks(None)
     auth.on(core)
     auth.on(client)
-    with pytest.raises(ExtensionRefused):
+    with pytest.raises(ProgrammingError):
         auth.on(core)
     writer = Identity.user("user:1", permissions={BillingPermission.WRITE_INVOICE})
     with as_identity(writer.model_copy(update={"provider": recording.name})):
@@ -614,7 +624,7 @@ def test_reads_scoped_by_identity_are_refused_to_nobody() -> None:
     with pytest.raises(Unauthenticated):
         auth.scope_of(Invoice)
     with as_identity(Identity.user("user:1").model_copy(update={"provider": "elsewhere"})):
-        with pytest.raises(ExtensionRefused):
+        with pytest.raises(ProgrammingError):
             auth.scope_of(Invoice)
 
 
@@ -734,11 +744,11 @@ def test_wiring_mistakes_are_refused_where_they_are_made() -> None:
     auth = AccessControl[BillingPermission]()
     billing = UseFramework("billing", log_after_execution=False)
     auth.on(billing)
-    with pytest.raises(ExtensionRefused):
+    with pytest.raises(ProgrammingError):
         auth.on(billing)
-    with pytest.raises(ExtensionRefused):
+    with pytest.raises(ProgrammingError):
         auth.requires()
-    with pytest.raises(ExtensionRefused):
+    with pytest.raises(ProgrammingError):
 
         @auth.requires(BillingPermission.AUDIT, when_denied=WhenDenied.SKIP)
         @auth.requires(BillingPermission.READ_INVOICES)

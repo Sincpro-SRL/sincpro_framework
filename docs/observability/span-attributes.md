@@ -204,7 +204,7 @@ span. Keep values short: `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` truncates what is l
 
 | Situation | What happens |
 |---|---|
-| a declaration that could never work (no such field, a value a span cannot hold) | refused at import (`ContractViolation`) — before any run |
+| a declaration that could never work (no such field, a value a span cannot hold) | refused at import (`ProgrammingError`) — before any run |
 | `traces.annotate` with a value a span cannot hold | that attribute is dropped and logged once; the rest are set; the use case runs |
 | no `[opentelemetry]`, `OTEL_SDK_DISABLED`, no endpoint and no host provider | both doors do nothing; a declared run pays one check |
 | `traces.annotate` outside a use case (a script, the transport before the bus) | nothing |

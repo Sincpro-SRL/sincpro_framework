@@ -22,7 +22,7 @@ the block, and refuses a name that was never registered (a typo would otherwise 
 adapter in place):
 
 ```python
-from sincpro_framework.testing import override_dependencies
+from sincpro_framework.runtime.testing import override_dependencies
 
 
 def test_issue_invoice_rejects_unknown_customer():
@@ -36,7 +36,7 @@ Replace I/O at the adapter, never by subclassing the Feature.
 ## Checks every project keeps in its suite
 
 ```python
-from sincpro_framework.testing import import_cycles, layer_violations, unregistered_dependencies
+from sincpro_framework.runtime.testing import import_cycles, layer_violations, unregistered_dependencies
 
 
 def test_wiring_is_whole():
@@ -71,7 +71,7 @@ rules passes that rule's name in `ignore=`.
 - Transport (routes, tool lists) unless the change is the transport — then snapshot
   `gateway.manifest()` (`sincpro-framework-entrypoints`).
 
-## Other doubles in `sincpro_framework.testing`
+## Other doubles in `sincpro_framework.runtime.testing`
 
 `RecordingQueue` (events published, `sincpro-framework-domain-events`), `as_identity` /
 `as_system` / `granting` / `RecordingProvider` (auth, `sincpro-framework-auth`), `ManualClock`

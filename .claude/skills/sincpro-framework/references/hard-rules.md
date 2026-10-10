@@ -138,17 +138,32 @@ framework may not catch. Name by design (`CommandCreateQREconomico`, not `Comman
 
 ## 8. Expected errors are declared, unexpected ones must reach the reporter
 
-An expected refusal is a `DomainError` subclass that declares what it is, with context in the
-message. Every wire maps the kind to its own code (REST status, JSON-RPC code, gRPC status), so no
-project writes its own exception handler:
+An expected error subclasses the base that says **who caused it**, and declares what it is when
+that is not the base's kind. Every wire maps the kind to its own code (REST status, JSON-RPC code,
+gRPC status), so no project writes its own exception handler:
+
+| Base | Who caused it | Kind | The caller |
+|---|---|---|---|
+| `ProgrammingError` | the developer: the code or its configuration | `internal` | fixes the code |
+| `ClientError` | the caller: what it sent is wrong | `invalid` | fixes the request |
+| `DomainError` (`sincpro_framework.ddd`) | a rule of the business says no | `domain` | shows the answer |
+| `ServiceUnavailableError` | a dependency did not answer | `unavailable` | retries later |
+| `OutcomeUnknownError` | sent, and no answer came back | `unknown_outcome` | verifies, then retries |
+
+All of them are `FrameworkError`s; anything else is a crash — `internal`, reported with its
+traceback, nothing of it told to the caller.
 
 ```python
+from sincpro_framework import ClientError, FailureKind
 from sincpro_framework.ddd import DomainError
-from sincpro_framework.transport.failures import FailureKind
 
 
-class InvoiceNotFound(DomainError):
+class InvoiceNotFound(ClientError):
     failure_kind = FailureKind.NOT_FOUND
+
+
+class InvoiceDoesNotBalance(DomainError):
+    pass
 ```
 
 Expected traffic (validation, "already exists", auth) also goes in
@@ -177,7 +192,7 @@ router module happened to be imported. To publish an existing use case, decorate
 - No function in `services/` or `domain/` whose first argument is a bus or a client.
 - `dependencies.py` registers named instances; `DependencyContextType` names match.
 - Nothing request-scoped is written to `self`.
-- Errors are `DomainError` subclasses with `failure_kind`; no exception handler in the project.
+- Errors subclass the base that says who caused them (`ClientError`, `DomainError`, …), with `failure_kind` when it differs; no exception handler in the project.
 - `entrypoints/` holds gateways only.
 - `layer_violations("<package>") == []` and `import_cycles("<package>") == []` in the suite
   ([testing.md](testing.md)).

@@ -6,7 +6,7 @@ folder (dependency direction, `common/`, domain vs adapters) is in
 
 The framework recognises five layer folders by name — `domain`, `adapters`, `services`,
 `infrastructure`, `entrypoints` — and treats the path before the first of them as the bounded
-context. `sincpro_framework.testing.layer_violations` judges imports by those names, so use them
+context. `sincpro_framework.runtime.testing.layer_violations` judges imports by those names, so use them
 exactly.
 
 ## Three variants — follow the one of this repo

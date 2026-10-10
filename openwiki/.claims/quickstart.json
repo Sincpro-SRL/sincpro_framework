@@ -150,7 +150,7 @@
     },
     {
       "id": "claim_60f155cb634a42bcb5dadb1f95645564",
-      "statement": "The end-to-end shape of a minimal bounded context — a DependencyContextType-style typing mixin, registered adapters, local Feature/ApplicationService bases, both decorators and one framework(dto, ResponseDTO) invocation — is exercised by tests/use_container/test_use_framework.py.",
+      "statement": "The end-to-end shape of a minimal bounded context — a DependencyContextType-style typing mixin, registered adapters, local Feature/ApplicationService bases, both decorators and one framework(dto, ResponseDTO) invocation — is exercised by tests/core/use_bus/test_use_framework.py.",
       "evidence": [
         {
           "resource": "repo://tests/use_container/test_use_framework.py#L28-L101",

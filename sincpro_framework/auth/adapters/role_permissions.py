@@ -13,7 +13,7 @@ those of every role it implies, transitively. A role nobody declared grants noth
 
 from collections.abc import Iterable, Mapping
 
-from sincpro_framework.auth.domain import Identity
+from sincpro_framework.auth.domain.identity import Identity
 
 
 class RolePermissions:

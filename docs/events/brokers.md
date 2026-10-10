@@ -3,7 +3,7 @@
 The domain keeps two verbs: `publish(event)`, and registering an event on a bus. Which broker
 carries it — a topic, a queue, a channel, a subject — and with which partitions, retries or
 acknowledgements is the broker's configuration. [FastStream](https://faststream.ag2.ai) speaks to
-each one with the same API, and `sincpro_framework.event_driven.adapters.faststream` sends and `sincpro_framework.entrypoints.faststream` listens:
+each one with the same API, and `sincpro_framework.event_driven.adapters.faststream` sends and `sincpro_framework.entrypoints.adapters.faststream` listens:
 
 - `FastStreamQueue(broker)` is one more `Queue`: `put` for synchronous code, `aput` for async.
 - `subscribe(broker, Subscriber(...))` gives every event the buses registered its subscription.
@@ -47,7 +47,7 @@ class BookPayment(Feature):
 from faststream.kafka import KafkaBroker, TestKafkaBroker
 
 from sincpro_framework.event_driven import Publisher, Subscriber
-from sincpro_framework.entrypoints.faststream import subscribe
+from sincpro_framework.entrypoints.adapters.faststream import subscribe
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
 
 broker = KafkaBroker("kafka:9092")
@@ -165,7 +165,7 @@ Read this before relying on an event to keep two contexts in step.
 
 | | |
 |---|---|
-| `FastStreamQueue(broker, channel_of=by_event_name, options_of=no_options)` | a `Queue`; `start()` / `stop()` for synchronous code |
+| `FastStreamQueue(broker, channel_of=by_event_name, options_of=None)` | a `Queue`; `start()` / `stop()` for synchronous code |
 | `queue.put(event)` / `await queue.aput(event)` | publish and wait until the broker took it |
 | `keyed_by_entity` | Kafka: `entity_id` as the message key |
 | `subscribe(broker, subscriber, channel_of_name=by_name, options=None)` | one subscription per channel of the events the buses registered — `QueueGateway` for events, `options` a `QueueOptions` |

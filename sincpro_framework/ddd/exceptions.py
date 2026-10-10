@@ -1,36 +1,38 @@
-"""What the vocabulary refuses, in its own words.
+"""What the vocabulary refuses, in its own words — each on the base that says who caused it.
 
-A caller only ever needs to tell these apart: what it asked for cannot be answered, the contract
-is being used wrong — by the code, or by data the database refuses — or a write lost a race:
-against a newer version of the same aggregate, against another aggregate already holding a
-unique value, or against another transaction — or the engine stopped at a bound it was given —
-or the one record a read named is not there.
-A stale version and a lost transaction are the ones worth running again.
+    DomainError           a rule of the business says no                   (domain, 422)
+      StaleAggregate        a write lost to a newer version                  (conflict, 409)
+      DuplicateAggregate    a write collided with a unique value             (conflict, 409)
+      TransactionConflict   the transaction lost to another one              (conflict, 409)
+      ConstraintViolation   the database refused the write by a rule of its own
+    InvalidCriteria       the caller asked what cannot be answered          (invalid, 400)
+    AggregateNotFound     the record the caller named is not there          (not found, 404)
+    TimedOut              the engine stopped at a bound it was given        (unavailable, 503)
+    RelationNotResolved   the code read a relation nobody asked for         (internal, 500)
 
-They inherit from `Exception` and nothing else. Every wire answers them through one
-classification (`transport.failures.refined_failure_kind`): `StaleAggregate` and
-`DuplicateAggregate` are a conflict (409 over HTTP), `AggregateNotFound` declares not found
-(404), and the rest — `InvalidCriteria` and `ContractViolation` included — is the domain
-refusing the request (422). An error of a project's own declares another kind with
-`failure_kind = FailureKind...` on its class.
+A stale version and a lost transaction are the ones worth running again. A project's own error
+declares another kind with `failure_kind = FailureKind...` on its class.
 """
 
-from sincpro_framework.transport.failures import FailureKind
+from sincpro_framework.exceptions import (
+    ClientError,
+    FailureKind,
+    FrameworkError,
+    ProgrammingError,
+    ServiceUnavailableError,
+)
 
 
-class DomainError(Exception):
-    """Base for everything the vocabulary raises. Catch this to catch all of it."""
+class DomainError(FrameworkError):
+    """A rule of the business says no — the request was well formed, and the answer is a refusal.
+    Its message is the answer, written for whoever asked, and told to them."""
+
+    failure_kind = FailureKind.DOMAIN
 
 
-class InvalidCriteria(DomainError):
+class InvalidCriteria(ClientError):
     """What was asked cannot be answered: an ordering that would lose rows, a cursor from
     another ordering, a field that is not there."""
-
-
-class ContractViolation(DomainError):
-    """The API is being used against its contract: a class that was never mapped, a page asked
-    to fold itself, a lock outside a transaction, a typed publish on a queue that cannot
-    answer."""
 
 
 class StaleAggregate(DomainError):
@@ -40,6 +42,8 @@ class StaleAggregate(DomainError):
     read again and decide over the current state, never to retry the same write.
     """
 
+    failure_kind = FailureKind.CONFLICT
+
 
 class DuplicateAggregate(DomainError):
     """A save collided with a value the storage keeps unique — an identity, a fingerprint.
@@ -48,8 +52,10 @@ class DuplicateAggregate(DomainError):
     for, without importing the driver's exception to do it.
     """
 
+    failure_kind = FailureKind.CONFLICT
 
-class ConstraintViolation(ContractViolation):
+
+class ConstraintViolation(DomainError):
     """The database refused a write a rule of its own forbids: a reference to a row that does
     not exist, an empty value where one is required, a check.
 
@@ -66,17 +72,20 @@ class TransactionConflict(DomainError):
     which is what `Repository.retrying` does by default.
     """
 
+    failure_kind = FailureKind.CONFLICT
 
-class TimedOut(DomainError):
+
+class TimedOut(ServiceUnavailableError):
     """The engine stopped at a bound the unit of work set: a row lock it was told not to wait
     for (`nowait`), or a statement past `timeout`.
 
-    Not retried by default — the bound was the caller's choice, and running into it again at
-    once is what it was set to avoid. A worker that wants the next free row asks `skip_locked`.
+    Not retried by `Repository.retrying` — the bound was the caller's choice, and running into it
+    again at once is what it was set to avoid. A worker that wants the next free row asks
+    `skip_locked`.
     """
 
 
-class RelationNotResolved(ContractViolation):
+class RelationNotResolved(ProgrammingError):
     """A relation was read that nobody asked for, outside a unit of work.
 
     Inside `context()` a relation resolves on first touch. Outside, the record is detached and
@@ -85,14 +94,7 @@ class RelationNotResolved(ContractViolation):
     """
 
 
-class WriteInPreview(ContractViolation):
-    """A write was attempted inside `previewing()`: a save, a removal, a bulk write or a number
-    taken while answering a form's question. A preview stores nothing; the write belongs to the
-    Command that saves.
-    """
-
-
-class AggregateNotFound(DomainError):
+class AggregateNotFound(ClientError):
     """A read named one record by its identity and there is none: never stored, archived, or
     outside the scope the repository was narrowed to.
 

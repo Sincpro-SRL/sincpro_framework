@@ -1,12 +1,12 @@
 """Where a bounded context is hosted, and how a DTO travels: the two pieces the core owns.
 
 The context map — the conf file's list, `SINCPRO_CONTEXT_MAP` winning per context — names each
-context's address; the payload packs a DTO's values as Python keeps them — `bytes`, `Decimal`,
-`datetime`, `UUID`, enum members — and rebuilds it with its own class, refusing on receipt anything
-outside its allow-list.
+context's address; the message writes a DTO's values as JSON — `bytes`, `Decimal`, `datetime`,
+`UUID`, enum members included — and the receiver rebuilds it with its own class, tolerant of what
+it does not know.
 """
 
-import pickle
+import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -17,17 +17,17 @@ import pytest
 from pydantic import ValidationError
 
 from sincpro_framework import DataTransferObject, sincpro_conf
+from sincpro_framework.common.serialization import pack, unpack
 from sincpro_framework.remote_execution import (
-    CannotTravel,
     HostedAt,
     HostedContext,
     InvalidAddress,
     Wire,
-    configured_host,
-    pack,
-    unpack,
 )
-from sincpro_framework.remote_execution.configuration import _configured
+from sincpro_framework.remote_execution.infrastructure.configuration import (
+    _configured,
+    configured_host,
+)
 from sincpro_framework.settings.domain.config import DefaultFrameworkConfig
 
 
@@ -51,10 +51,6 @@ class CommandIssueInvoice(DataTransferObject):
     pdf: bytes
     lines: list[Line]
     tags: set[str]
-
-
-class Innocent:
-    """A class of the project: it never travels, only values do."""
 
 
 @dataclass
@@ -234,11 +230,19 @@ def test_nothing_and_plain_values_travel():
     assert unpack(pack([1, "a", b"b"]), list) == [1, "a", b"b"]
 
 
-def test_a_class_outside_the_allow_list_is_refused_before_anything_is_built():
-    """No code runs on receipt: a payload naming any other class is refused as it is read."""
-    smuggled = pickle.dumps(Innocent)
+def test_the_message_is_json_and_binary_never_reads_as_text():
+    """Bytes travel tagged, so a PDF is never mistaken for a text field on the way back."""
+    written = pack(CommandPing(note="%PDF", raw=b"%PDF\xff"))
 
-    with pytest.raises(CannotTravel, match="Innocent"):
-        unpack(smuggled, None)
-    with pytest.raises(CannotTravel, match="system"):
-        unpack(b"cos\nsystem\n(S'echo pwned'\ntR.", None)
+    assert json.loads(written) == {"note": "%PDF", "raw": {"$bytes": "JVBERv8="}}
+    assert unpack(written, CommandPing) == CommandPing(note="%PDF", raw=b"%PDF\xff")
+
+
+def test_the_receiver_ignores_what_it_does_not_know_and_defaults_what_is_missing():
+    class Older(DataTransferObject):
+        sku: str
+        units: int = 1
+
+    assert unpack(b'{"sku": "A-1", "added_later": true}', Older) == Older(sku="A-1", units=1)
+    with pytest.raises(ValidationError, match="sku"):
+        unpack(b'{"units": 2}', Older)

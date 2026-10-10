@@ -11,13 +11,14 @@ which does NOT propagate contextvars on its own), `asyncio.to_thread` already
 captures `contextvars.copy_context()` at the call site and runs the target
 inside it (stdlib `asyncio/threads.py`) — that's the documented behavior, not
 an implementation detail we depend on accidentally. So `AsyncBus` calls
-`self._bus.execute` directly: no `ThreadContextBus` involved, no risk of
+`self._run` directly: no `ThreadContextBus` involved, no risk of
 tripping its single-use-snapshot `RuntimeError` guard on a business exception
 that happens to subclass `RuntimeError`.
 """
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Protocol, Type
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Type
 
 if TYPE_CHECKING:
     # Kept out of the runtime import graph on purpose, same reason as
@@ -25,13 +26,6 @@ if TYPE_CHECKING:
     # module (via the aio package) for `Bus.get_async_bus()`, so a real
     # import back here would be circular.
     from ..sincpro_abstractions import TypeDTO, TypeDTOResponse
-
-
-class Executes(Protocol):
-    """What `AsyncBus` runs on a worker thread: a bus — or, for a bus served by another service,
-    its remote execution."""
-
-    def execute(self, dto: Any, return_type: Any = None) -> Any: ...
 
 
 class AsyncBus:
@@ -70,8 +64,11 @@ class AsyncBus:
     # this module.
     """
 
-    def __init__(self, bus: Executes) -> None:
-        self._bus = bus
+    def __init__(self, run: Callable[..., Any]) -> None:
+        self._run = run
+        """What runs a DTO on the worker thread: `bus.execute`, or the `UseFramework` itself —
+        which builds on first use, opens the call's scope and forwards a context hosted
+        elsewhere."""
 
     async def execute(
         self, dto: "TypeDTO", return_type: "Type[TypeDTOResponse] | None" = None
@@ -82,10 +79,7 @@ class AsyncBus:
         the worker thread on its own — see the module docstring.
         """
 
-        def _call() -> "TypeDTOResponse | None":
-            return self._bus.execute(dto, return_type)
-
-        return await asyncio.to_thread(_call)
+        return await asyncio.to_thread(self._run, dto, return_type)
 
     async def __call__(
         self, dto: "TypeDTO", return_type: "Type[TypeDTOResponse] | None" = None

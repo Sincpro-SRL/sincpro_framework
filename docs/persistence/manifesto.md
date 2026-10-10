@@ -11,7 +11,7 @@ because a ledger is only the case where breaking one is noticed first.
 ## I. The port and the type
 
 **1. The concrete repository is what a Feature types.** A Feature declares
-`repository: Repository` from `sincpro_framework.orm` and gets the full surface in its editor —
+`repository: Repository` from `sincpro_framework.data_layer.orm` and gets the full surface in its editor —
 `context()`, its options, `savepoint`, the passthrough. Nobody downcasts, nobody types against a
 narrower class to look portable.
 
@@ -23,7 +23,7 @@ part of it that is true everywhere.
 **3. A word reaches the port only when it passes three questions.**
 
 1. Does it mean the same thing in a relational store, a document store and in memory?
-2. Can `MemoryRepository` implement it — or refuse it with `ContractViolation` when honouring
+2. Can `MemoryRepository` implement it — or refuse it with `ProgrammingError` when honouring
    it needs a transaction it does not have?
 3. Does a Feature written against it behave the same on every store that accepts it?
 

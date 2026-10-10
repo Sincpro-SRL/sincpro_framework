@@ -13,7 +13,8 @@ from datetime import timedelta
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.caching import Cache, Idempotency, InMemoryKeyValue
+from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework.data_layer.caching import Cache, Idempotency
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics
 
@@ -77,7 +78,7 @@ class TicketClosed(DomainEvent):
 def test_every_queue_delivery_is_counted_by_how_it_was_settled(recorder):
     from faststream.kafka import KafkaBroker, TestKafkaBroker
 
-    from sincpro_framework.entrypoints.faststream import QueueGateway, QueueOptions
+    from sincpro_framework.entrypoints.adapters.faststream import QueueGateway, QueueOptions
 
     bus = UseFramework("support", log_after_execution=False)
 

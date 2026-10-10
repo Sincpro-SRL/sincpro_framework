@@ -38,7 +38,7 @@ ChargePayment(nit=-99001, email="  A@B.COM ", amount=10.5)   # nit=99001, email=
 ```
 
 (The declarations above mirror the checked usage in
-`tests/entrypoint/test_entrypoints.py:16-17` and `tests/entrypoint/test_entrypoints.py:33-36`.)
+`tests/entrypoints/test_entrypoints.py:16-17` and `tests/entrypoints/test_entrypoints.py:33-36`.)
 
 ## `DataTransferObject`: a pydantic model with two flags
 

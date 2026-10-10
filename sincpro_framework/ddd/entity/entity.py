@@ -22,7 +22,7 @@ first insert and raises it on every write, refusing a save that carries an older
 the row holds — two callers that both loaded version 3 cannot both write version 4. That is
 the conditional update a worker needs, and it is the ORM's own machinery doing it.
 
-`uuid7()` and `new_entity_id()` live in `sincpro_framework.ids` — the same ids an event and an
+`uuid7()` and `new_entity_id()` live in `sincpro_framework.common.ids` — the same ids an event and an
 execution get — and are named here as they always were.
 
 **`AuditedMixin`, `ArchivableMixin` and `ChangeTrackingMixin` live in `entity/mixins/`** — an
@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import TypeAdapter
 
-from sincpro_framework.annotations import is_class_var, own_annotations
+from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.criteria import (
     TEXT,
@@ -49,8 +49,8 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity.derivations import Derivations
 from sincpro_framework.ddd.entity.presentation import Presentation
-from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.ids import new_entity_id
+from sincpro_framework.ddd.entity.utils.annotations import is_class_var, own_annotations
+from sincpro_framework.exceptions import ProgrammingError
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.events import DomainEvent
@@ -165,7 +165,7 @@ class Entity:
         """Refuse a subclass that redeclares a field the framework writes.
 
             class Spec(Entity):
-                version: int = 3        →  ContractViolation: Spec.version redeclares
+                version: int = 3        →  ProgrammingError: Spec.version redeclares
                                            Entity.version, the optimistic lock …
 
         1. A framework class is not checked: `DomainEvent` restates `id` and `created_at`.
@@ -186,7 +186,7 @@ class Entity:
                 declared is not None and not isinstance(declared, classmethod)
             ):
                 kind = "a field" if hook in annotated else type(declared).__name__
-                raise ContractViolation(
+                raise ProgrammingError(
                     f"{cls.__name__}.{hook} is {kind}: it is a class method the framework "
                     f"calls. Declare it as `@classmethod def {hook}(cls) -> …`."
                 )
@@ -194,7 +194,7 @@ class Entity:
         taken = [name for name in own_annotations(cls) if name in reserved]
         if taken:
             name = taken[0]
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__}.{name} redeclares {reserved[name]}.{name}, a field the "
                 f"framework writes{_MEANING.get(name, '')}. Rename it"
                 f"{_RENAMED.get(name, '')}."
@@ -264,8 +264,8 @@ class Entity:
         fills it the same way. Containment on a text display unless overridden; `None` when
         there is nothing to search.
         """
-        # Imported here: model_meta reads this module to describe a class.
-        from sincpro_framework.ddd.entity.model_meta import (
+        # Imported here: entity_meta reads this module to describe a class.
+        from sincpro_framework.ddd.entity.entity_meta import (
             TEXT_TYPES,
             annotations_of,
             logical_type,

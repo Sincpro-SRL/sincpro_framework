@@ -286,9 +286,9 @@ Two consequences of the layout:
   a value that becomes the bus response and travels back through the facade untouched
   (`sincpro_framework/bus.py:60-64`, `183-189`). The facade's own `handle_error` only sees an
   exception that the sub-bus re-raised (or that the facade itself raised)
-  (`sincpro_framework/bus.py:196-205`). `tests/error_handler/test_application_layer.py:19-73`
+  (`sincpro_framework/bus.py:196-205`). `tests/core/error_handler/test_application_layer.py:19-73`
   exercises exactly this hand-off between the two layers, and
-  `tests/error_handler/test_framework_layer.py:82-135` the re-raise case where the feature-level
+  `tests/core/error_handler/test_framework_layer.py:82-135` the re-raise case where the feature-level
   handler converts one exception type into another for the layer above.
 - **Framework-level failures are reported, not spanned.** Only `UnknownDTOToExecute` and
   `DTOAlreadyRegistered` are sent to observability from the facade, and with `kind="framework"`
@@ -306,7 +306,7 @@ Three further properties of this layout matter when reading the table:
 - **A handled failure is indistinguishable from a success at the call site.** The sub-bus's `return
   self.handle_error(error)` and the facade's equivalent hand the handler's return value back as the
   bus response (`sincpro_framework/bus.py:62-63`, `118-119`, `201-202`), so a handler is free to
-  return a non-DTO: `tests/error_handler/test_framework_layer.py:22-79` asserts a handled error
+  return a non-DTO: `tests/core/error_handler/test_framework_layer.py:22-79` asserts a handled error
   produces the plain string `"Error handled"`. Callers that expect a response DTO must account for
   this.
 - **`__call__` has no `except`.** Nothing above `FrameworkBus.execute` catches anything, so whatever
@@ -320,7 +320,7 @@ The three exceptions this path can raise are defined in `sincpro_framework/excep
 (`DTOAlreadyRegistered`, `UnknownDTOToExecute`, `SincproFrameworkNotBuilt`), and none of them is
 re-exported by `sincpro_framework/__init__.py:12-21`. A caller that wants to catch a routing or
 build failure imports from `sincpro_framework.exceptions`, which is what the bus tests do
-(`tests/bus/test_framework_bus.py:6`) and the Sentry error tests as well
+(`tests/core/bus/test_framework_bus.py:6`) and the Sentry error tests as well
 (`tests/observability/errors/test_sentry.py:7`).
 
 ### Handler delegation
@@ -334,7 +334,7 @@ three independent chains and pushes each onto the matching bus
 `bus.feature_bus.handle_error`, app service → `bus.app_service_bus.handle_error`. All three can be
 registered before or after `build_root_bus()`; registrations made after the build are assigned
 straight onto the live buses (`sincpro_framework/use_bus.py:211-212`, `223-224`, `237-238`).
-`tests/error_handler/test_use_framework_error_handlers.py:25-57` pins the h1 → h2 → h3 ordering.
+`tests/core/error_handler/test_use_framework_error_handlers.py:25-57` pins the h1 → h2 → h3 ordering.
 The full handler contract belongs to [error handling](/openwiki/workflows/error-handling.md).
 
 ## Lifecycle, state and invariants
@@ -354,7 +354,7 @@ The full handler contract belongs to [error handling](/openwiki/workflows/error-
   second `build_root_bus()` produces a new facade over the same sub-buses and the same registries.
 - **Per-instance isolation.** Each `UseFramework` owns its containers, registries, overlay
   `ContextVar`s and observability object; two instances in one process do not share buses
-  (`tests/use_container/test_multiple_instances.py:30-41`,
+  (`tests/core/use_bus/test_multiple_instances.py:30-41`,
   `tests/observability/test_bus_wiring.py:66-83`).
 - **One call, one implicit overlay.** Nested/`with` blocks are never shadowed by `__call__`
   (`sincpro_framework/use_bus.py:390`), and the overlay is always popped in `finally`, including on
@@ -371,12 +371,12 @@ The full handler contract belongs to [error handling](/openwiki/workflows/error-
 
 ### What pins this behaviour
 
-`tests/bus/test_framework_bus.py:16-33` routes one feature DTO and one application-service DTO
+`tests/core/bus/test_framework_bus.py:16-33` routes one feature DTO and one application-service DTO
 through `FrameworkBus.execute`; `:36-47` asserts `UnknownDTOToExecute` for an unregistered DTO;
 `:50-63` asserts `DTOAlreadyRegistered` when the same name is registered in both layers — that case is
 reached at construction, so it pins the build-time check rather than the per-call re-check.
 `tests/test_middleware.py:163-204` proves the `__class__` monkey-patch keeps a transformed DTO
-routable. `tests/error_handler/test_framework_layer.py:22-79` proves a layer's `handle_error` result
+routable. `tests/core/error_handler/test_framework_layer.py:22-79` proves a layer's `handle_error` result
 becomes the bus response. `tests/observability/errors/test_sentry.py:303-321` checks that an unknown
 DTO is reported with `sincpro.kind == "framework"`; `:324-340` that it still reports when
 `ignore_sentry_exceptions` covers `Exception`, because framework-kind errors bypass the ignore list

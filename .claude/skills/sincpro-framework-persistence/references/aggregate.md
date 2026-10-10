@@ -52,7 +52,7 @@ class Invoices(EntityCollection[Invoice]): ...
 **Two aggregates that reference each other** import the second at the **bottom** of the first
 module. `map_aggregates` resolves annotations at runtime against the module's globals
 (`get_type_hints`), so an import under `if TYPE_CHECKING:` fails at boot with
-`ContractViolation: Customer names a type that cannot be resolved at runtime`.
+`ProgrammingError: Customer names a type that cannot be resolved at runtime`.
 
 **Relation fields are `repr=False, compare=False`.** The dataclass `repr`, `==` and f-strings read
 every field; a relation not read raises `RelationNotResolved` outside `context()`, so a record that

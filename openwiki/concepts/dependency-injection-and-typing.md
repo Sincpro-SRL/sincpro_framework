@@ -59,7 +59,7 @@ self._deps_locator = DependencyLocator(self.dynamic_dep_registry)
 
 Because both are instance attributes and the container is per instance too
 (`sincpro_framework/use_bus.py:63-66`), two bounded contexts in one process never share dependencies:
-`tests/use_container/test_deps.py:84-93` registers the same name on two frameworks and asserts each
+`tests/core/use_bus/test_deps.py:84-93` registers the same name on two frameworks and asserts each
 one keeps its own object.
 
 ### `add_dependency`: duplicate guard and the recorded timing contract
@@ -126,7 +126,7 @@ attribute of the Feature / ApplicationService rather than of the framework objec
 - **It covers the registrations present at that moment**, because it iterates the registry entries
   that exist when the build runs. Both halves must therefore be in place before the build: the
   `@framework.feature(...)` / `@framework.app_service(...)` decoration *and* the `add_dependency`
-  call. `tests/use_container/test_use_framework.py` is the end-to-end shape — it registers
+  call. `tests/core/use_bus/test_use_framework.py` is the end-to-end shape — it registers
   `proxy_services` (`:36-37`), decorates a Feature and an ApplicationService (`:64-71`, `:84-93`) and
   the handlers read `self.any_client(...)`, which resolves through `self.proxy_services`
   (`:28-33`); the invocation happens last (`:99-102`).
@@ -139,7 +139,7 @@ attribute of the Feature / ApplicationService rather than of the framework objec
   `DependencyNotRegistered` belongs to `framework.deps` only.
 - **The deps survive a rebuild by living outside the container.** `framework.deps` reads the
   instance's own dict, so it is unaffected by how many times the bus is built — pinned by
-  `tests/use_container/test_deps.py:70-81`.
+  `tests/core/use_bus/test_deps.py:70-81`.
 
 ### `injected_dependencies` is not part of this path
 
@@ -163,19 +163,19 @@ def deps(self) -> TDeps:
 the single `DependencyLocator` created in `__init__` — the same object on every access, and one that
 reads the very dict `add_dependency` writes (`sincpro_framework/deps.py:21-24`). Reading it does
 **not** require a built bus; nothing in the property touches `self.bus`
-(pinned by `tests/use_container/test_deps.py:16-22`, which never builds).
+(pinned by `tests/core/use_bus/test_deps.py:16-22`, which never builds).
 
 `DependencyLocator` (`sincpro_framework/deps.py:12-66`) is deliberately a thin view, not a second
 container:
 
 | Operation | Behaviour |
 | --- | --- |
-| `.name` / `["name"]` | the registered object; both spellings are the same lookup (`sincpro_framework/deps.py:26-36`, pinned as identical in `tests/use_container/test_deps.py:25-30`) |
+| `.name` / `["name"]` | the registered object; both spellings are the same lookup (`sincpro_framework/deps.py:26-36`, pinned as identical in `tests/core/use_bus/test_deps.py:25-30`) |
 | miss | `DependencyNotRegistered` with `Dependency 'name' is not registered. Available: a, b` (`sincpro_framework/deps.py:64-66`), i.e. the sorted names, or `(none)` when the registry is empty |
-| `in`, `len()`, `iter()` | membership, count and iteration over the registered *names* (`sincpro_framework/deps.py:38-45`, pinned by `tests/use_container/test_deps.py:61-67`) |
+| `in`, `len()`, `iter()` | membership, count and iteration over the registered *names* (`sincpro_framework/deps.py:38-45`, pinned by `tests/core/use_bus/test_deps.py:61-67`) |
 | `dir()` | the ordinary object attributes **plus** every dependency name, so tab-completion lists them (`sincpro_framework/deps.py:47-48`) |
 | `repr()` | `DependencyLocator(a, b)` with sorted names, or `DependencyLocator(empty)` (`sincpro_framework/deps.py:50-52`) |
-| `x.name = v`, `del x.name` | `AttributeError("Dependencies are read-only. Register them with add_dependency().")` (`sincpro_framework/deps.py:54-62`, pinned by `tests/use_container/test_deps.py:50-58`) |
+| `x.name = v`, `del x.name` | `AttributeError("Dependencies are read-only. Register them with add_dependency().")` (`sincpro_framework/deps.py:54-62`, pinned by `tests/core/use_bus/test_deps.py:50-58`) |
 
 Two details of that class matter for anyone changing it:
 
@@ -183,7 +183,7 @@ Two details of that class matter for anyone changing it:
   That is deliberate enough to be pinned: `getattr(framework.deps, "missing_adapter", None)` returns
   `None` and `hasattr` is `False`, so optional-dependency probing via `getattr(..., default)` works
   even though direct access raises, and the message is still specific
-  (`tests/use_container/test_deps.py:33-47`).
+  (`tests/core/use_bus/test_deps.py:33-47`).
 - **Read-only is enforced by overriding the attribute protocol, and the constructor steps around
   it.** The instance is `__slots__ = ("_registry",)` and `__init__` installs the dict with
   `object.__setattr__` (`sincpro_framework/deps.py:21-24`) precisely because the class's own
@@ -203,7 +203,7 @@ receive as `self.token_adapter` are available on the root as `my_framework.deps.
 (`sincpro_framework/deps.py:26-30`), and the build pushes the same values
 (`sincpro_framework/use_bus.py:97`, `:105`), so both surfaces resolve to the object the caller passed
 to `add_dependency` — which the test asserts for the root surface
-(`tests/use_container/test_deps.py:16-22`). No test asserts the cross-surface identity (one object
+(`tests/core/use_bus/test_deps.py:16-22`). No test asserts the cross-surface identity (one object
 being both `framework.deps.x` and a handler's `self.x`), so treat that as the design's intent plus
 the README's statement rather than as a pinned contract.
 
@@ -312,7 +312,7 @@ def config_framework(name: str) -> UseFramework[DependencyContextType]:
 `tests/typing_and_linter/typing_cases/typed_context_case.py:29-52` is the type-checked version of
 that idiom — the same `DependencyContextType` mixed into `Feature` and `ApplicationService`, with
 `context` re-annotated on the local bases because a handler's `self.context` type comes from the
-handler class, not from the dependency map. `tests/use_container/test_use_framework.py:28-44` shows
+handler class, not from the dependency map. `tests/core/use_bus/test_use_framework.py:28-44` shows
 the same class used slightly more ambitiously, carrying a helper method (`any_client`) that handlers
 call on `self`; nothing in the framework distinguishes that method from the typed attributes, and the
 file is the end-to-end usage example for the whole path.
@@ -340,14 +340,14 @@ passed to `add_dependency`.
 
 | Behaviour | Pinned by |
 | --- | --- |
-| `framework.deps.name` returns the registered object and is the same as `["name"]` | `tests/use_container/test_deps.py:16-30` |
-| A miss raises `DependencyNotRegistered` naming the available deps | `tests/use_container/test_deps.py:33-41` |
-| `getattr(..., default)` still works, because the error is an `AttributeError` | `tests/use_container/test_deps.py:44-47` |
-| Assignment and deletion through the locator are refused | `tests/use_container/test_deps.py:50-58` |
-| `in`, `len()` over the locator | `tests/use_container/test_deps.py:61-67` |
-| Dependencies survive the bus build | `tests/use_container/test_deps.py:70-81` |
-| Dependencies are per instance, never shared | `tests/use_container/test_deps.py:84-93` |
-| A dependency is readable as `self.<name>` in a Feature and an ApplicationService end to end | `tests/use_container/test_use_framework.py:28-44`, `:64-71`, `:84-93`, `:99-102` |
+| `framework.deps.name` returns the registered object and is the same as `["name"]` | `tests/core/use_bus/test_deps.py:16-30` |
+| A miss raises `DependencyNotRegistered` naming the available deps | `tests/core/use_bus/test_deps.py:33-41` |
+| `getattr(..., default)` still works, because the error is an `AttributeError` | `tests/core/use_bus/test_deps.py:44-47` |
+| Assignment and deletion through the locator are refused | `tests/core/use_bus/test_deps.py:50-58` |
+| `in`, `len()` over the locator | `tests/core/use_bus/test_deps.py:61-67` |
+| Dependencies survive the bus build | `tests/core/use_bus/test_deps.py:70-81` |
+| Dependencies are per instance, never shared | `tests/core/use_bus/test_deps.py:84-93` |
+| A dependency is readable as `self.<name>` in a Feature and an ApplicationService end to end | `tests/core/use_bus/test_use_framework.py:28-44`, `:64-71`, `:84-93`, `:99-102` |
 | `UseFramework[X]` types `framework.deps` as `X` | `tests/typing_and_linter/typing_cases/typed_deps_case.py:11-22` |
 | The typing examples are checked by `pyright` | `tests/typing_and_linter/test_typing_and_linter.py:31-41` |
 

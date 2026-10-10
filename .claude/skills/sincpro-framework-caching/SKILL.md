@@ -18,7 +18,7 @@ key.
   (`Idempotency`).
 - **Is not:** a persistence layer (a kept value may vanish at any time), an HTTP cache, a session
   store, or the in-process rows of a read for analysis (that is `QueryCache` in
-  `sincpro_framework.data_analysis`, `sincpro-framework-analytics`).
+  `sincpro_framework.data_layer.data_analysis`, `sincpro-framework-analytics`).
 - **Do not use it** to make a Command decide from a cached answer (a Command decides from the
   database), for a read that must see its own write with no invalidation path, or for a write that
   is already idempotent by a unique constraint or natural key.
@@ -27,32 +27,32 @@ key.
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `KeyValueStore` | The store contract: `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic), plus `get` | port (abstract) | `sincpro_framework.caching` |
-| `InMemoryKeyValue` | Store in this process; standard library only. One replica | adapter | `sincpro_framework.caching` |
-| `RedisKeyValue(client, prefix=)` | Store on Redis or Valkey — extra `[redis]` | adapter | `sincpro_framework.caching.adapters.redis` |
-| `MemcachedKeyValue(client, prefix=)` | Store on Memcached (pymemcache) — extra `[memcached]` | adapter | `sincpro_framework.caching.adapters.memcached` |
-| `QueryCaching` | Keeps Query answers per bus, tagged by the aggregates the repository saw them read; `.on(bus, Query, policy)` installs an interceptor | registry | `sincpro_framework.caching` |
-| `CachePolicy` | One Query's `ttl`, `vary_by`, `stale_for`, `jitter`, `early_expiry`, `depends_on`, `max_bytes`, `wait_for_others` | setting | `sincpro_framework.caching` |
-| `invalidate_on_commit(database, caching)` | Invalidates every aggregate a SQL commit wrote, after the commit | function | `sincpro_framework.orm` |
+| `KeyValueStore` | The store contract: `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic), plus `get` | port (abstract) | `sincpro_framework.data_layer.caching` |
+| `InMemoryKeyValue` | Store in this process; standard library only. One replica | adapter | `sincpro_framework.data_layer.caching` |
+| `RedisKeyValue(client, prefix=)` | Store on Redis or Valkey — extra `[redis]` | adapter | `sincpro_framework.data_layer.caching.adapters.redis` |
+| `MemcachedKeyValue(client, prefix=)` | Store on Memcached (pymemcache) — extra `[memcached]` | adapter | `sincpro_framework.data_layer.caching.adapters.memcached` |
+| `QueryCaching` | Keeps Query answers per bus, tagged by the aggregates the repository saw them read; `.on(bus, Query, policy)` installs an interceptor | registry | `sincpro_framework.data_layer.caching` |
+| `CachePolicy` | One Query's `ttl`, `vary_by`, `stale_for`, `jitter`, `early_expiry`, `depends_on`, `max_bytes`, `wait_for_others` | setting | `sincpro_framework.data_layer.caching` |
+| `invalidate_on_commit(database, caching)` | Invalidates every aggregate a SQL commit wrote, after the commit | function | `sincpro_framework.data_layer.orm` |
 | `QueryCaching.invalidated_by({Event: [Aggregate]})` | A bus that invalidates when another process's events arrive; hand it to the `Subscriber` | function | (method) |
-| `Cache` | Keeps any value by its parameters: `get_or_compute(key, compute, KeepPolicy, codec)`, `forget` | adapter | `sincpro_framework.caching` |
-| `KeepPolicy` | A `Cache` call's `freshness` + `validation` + `failure` (+ `wait_for_others`, `max_bytes`) | setting | `sincpro_framework.caching` |
-| `Freshness` / `TimeToLive` (alias `Lifetime`) / `Sliding` | How long a value is served as is | port / setting | `sincpro_framework.caching` |
-| `Validation` / `Unconditional` / `ExternalVersion` | Whether a kept value is still right (an ETag-like version) | port / setting | `sincpro_framework.caching` |
-| `FailurePolicy` / `Raise` / `FailSafe` | What a failing source answers (`FailSafe` = stale-if-error) | port / setting | `sincpro_framework.caching` |
-| `Eviction` / `Lru` / `Unbounded` | Bound of the process tier | port / adapter | `sincpro_framework.caching` |
-| `Codec` / `JsonCodec(shape)` | A value as bytes for a shared store | port / adapter | `sincpro_framework.caching` |
-| `CacheObserver` / `SpanObserver`, `MetricsObserver`, `CountingObserver`, `NoObserver`, `Observers` | Told each call's `CacheOutcome` / `IdempotencyOutcome` | port / adapter | `sincpro_framework.caching` |
-| `Idempotency` | Runs a write once per key: `@idempotency.once(...)` on a Feature/ApplicationService, or `.run(...)` by hand | decorator | `sincpro_framework.caching` |
-| `IdempotencyPolicy` | `expires_after`, `in_progress_for`, `wait_for_completion`, `vary_by` | setting | `sincpro_framework.caching` |
-| `IdempotentCommand` | Protocol: a Command with `idempotency_key()` | port (abstract) | `sincpro_framework.caching` |
-| `current_idempotency_key()` / `declares_once(cls)` / `key_of(...)` | The key of the run in progress / whether a class runs once / a hashed key | function | `sincpro_framework.caching` |
-| `IDEMPOTENCY_KEY` | Context key a transport fills with a received `Idempotency-Key` | setting | `sincpro_framework.caching` |
-| `AlreadyInProgress` / `KeyReused` / `IdempotencyError` | Refusals, `DomainError`s (409 / 422) | error | `sincpro_framework.caching` |
-| `IdempotencyRecords` / `KeyValueRecords(store)` | Where claims and answers live: yours over a database (transactional) / on a key-value store (best effort) | port / adapter | `sincpro_framework.caching` |
-| `KeyValueRuns(store)` | Crons across replicas: one claim per tick | adapter | `sincpro_framework.cron` |
-| `KeyValueStoreContract` / `IdempotencyRecordsContract` | Test base classes a store / records of yours inherit | test contract | `sincpro_framework.testing` |
-| `CodecContract` / `FreshnessContract` / `EvictionContract` | Same, for a codec / freshness / eviction | test contract | `sincpro_framework.caching.testing` |
+| `Cache` | Keeps any value by its parameters: `get_or_compute(key, compute, KeepPolicy, codec)`, `forget` | adapter | `sincpro_framework.data_layer.caching` |
+| `KeepPolicy` | A `Cache` call's `freshness` + `validation` + `failure` (+ `wait_for_others`, `max_bytes`) | setting | `sincpro_framework.data_layer.caching` |
+| `Freshness` / `TimeToLive` (alias `Lifetime`) / `Sliding` | How long a value is served as is | port / setting | `sincpro_framework.data_layer.caching` |
+| `Validation` / `Unconditional` / `ExternalVersion` | Whether a kept value is still right (an ETag-like version) | port / setting | `sincpro_framework.data_layer.caching` |
+| `FailurePolicy` / `Raise` / `FailSafe` | What a failing source answers (`FailSafe` = stale-if-error) | port / setting | `sincpro_framework.data_layer.caching` |
+| `Eviction` / `Lru` / `Unbounded` | Bound of the process tier | port / adapter | `sincpro_framework.data_layer.caching` |
+| `Codec` / `JsonCodec(shape)` | A value as bytes for a shared store | port / adapter | `sincpro_framework.data_layer.caching` |
+| `CacheObserver` / `SpanObserver`, `MetricsObserver`, `CountingObserver`, `NoObserver`, `Observers` | Told each call's `CacheOutcome` / `IdempotencyOutcome` | port / adapter | `sincpro_framework.data_layer.caching` |
+| `Idempotency` | Runs a write once per key: `@idempotency.once(...)` on a Feature/ApplicationService, or `.run(...)` by hand | decorator | `sincpro_framework.data_layer.caching` |
+| `IdempotencyPolicy` | `expires_after`, `in_progress_for`, `wait_for_completion`, `vary_by` | setting | `sincpro_framework.data_layer.caching` |
+| `IdempotentCommand` | Protocol: a Command with `idempotency_key()` | port (abstract) | `sincpro_framework.data_layer.caching` |
+| `current_idempotency_key()` / `declares_once(cls)` / `key_of(...)` | The key of the run in progress / whether a class runs once / a hashed key | function | `sincpro_framework.data_layer.caching` |
+| `IDEMPOTENCY_KEY` | Context key a transport fills with a received `Idempotency-Key` | setting | `sincpro_framework.data_layer.caching` |
+| `AlreadyInProgress` / `KeyReused` / `ClientError` | Refusals, `DomainError`s (409 / 422) | error | `sincpro_framework.data_layer.caching` |
+| `IdempotencyRecords` / `KeyValueRecords(store)` | Where claims and answers live: yours over a database (transactional) / on a key-value store (best effort) | port / adapter | `sincpro_framework.data_layer.caching` |
+| `KeyValueRuns(store)` | Crons across replicas: one claim per tick | adapter | `sincpro_framework.entrypoints.adapters.cron` |
+| `KeyValueStoreContract` / `IdempotencyRecordsContract` | Test base classes a store / records of yours inherit | test contract | `sincpro_framework.runtime.testing` |
+| `CodecContract` / `FreshnessContract` / `EvictionContract` | Same, for a codec / freshness / eviction | test contract | `sincpro_framework.runtime.testing` |
 
 Look-alikes: `CachePolicy` (QueryCaching) ≠ `KeepPolicy` (Cache) ≠ `IdempotencyPolicy`.
 `CachePolicy.depends_on` (a field: extra aggregates) ≠ `QueryCaching.depends_on(query)` (a method:
@@ -60,7 +60,7 @@ the tags a held answer depends on). `QueryCaching` ≠ `QueryCache` (data analys
 
 ## Architecture
 
-**Inside the framework.** `sincpro_framework/caching/`: `domain/` (the store port, strategies,
+**Inside the framework.** `sincpro_framework/data_layer/caching/`: `domain/` (the store port, strategies,
 policies, refusals), `adapters/` (in-memory store, `JsonCodec`, evictions, observers,
 `KeyValueRecords`, and `redis.py`/`memcached.py`, loaded only when imported), `infrastructure/`
 (one caller per key, the store breaker), `entrypoint/` (`Cache`, `Idempotency`, `QueryCaching`).
@@ -125,7 +125,7 @@ bus(CommandIssueReceipt) → once(): key = handler + Command + idempotency_key()
   (`references/query-caching.md`).
 - **A tenant or user carried in the context but missing from `vary_by`.** One tenant's answer is
   served to another. List those keys in `QueryCaching(sensitive=...)`: a call that carries one the
-  policy does not vary by is refused (`ContractViolation`), checked on every call, not at `on()`.
+  policy does not vary by is refused (`ProgrammingError`), checked on every call, not at `on()`.
 - **`@idempotency.once` without `vary_by="tenant_id"`** when the key is only unique per tenant:
   tenant B gets tenant A's replayed answer.
 - **A Command with no `idempotency_key()` and a generated field** (`Field(default_factory=uuid4)`,
@@ -143,7 +143,8 @@ bus(CommandIssueReceipt) → once(): key = handler + Command + idempotency_key()
 
 ```python
 from datetime import timedelta
-from sincpro_framework.caching import CachePolicy, InMemoryKeyValue, QueryCaching
+from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
+from sincpro_framework.common.store import InMemoryKeyValue
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
 caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
@@ -160,7 +161,7 @@ caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by=
 ## Idempotency — a write runs once per key
 
 ```python
-from sincpro_framework.caching import AlreadyInProgress, Idempotency, KeyReused
+from sincpro_framework.data_layer.caching import AlreadyInProgress, Idempotency, KeyReused
 
 idempotency = Idempotency(InMemoryKeyValue())          # RedisKeyValue(...) on replicas
 receipts.ignore_sentry_exceptions(AlreadyInProgress, KeyReused)
@@ -187,7 +188,7 @@ class IssueReceipt(Feature): ...
 ## Cache — any value, judged by a policy
 
 ```python
-from sincpro_framework.caching import Cache, ExternalVersion, FailSafe, JsonCodec, KeepPolicy, TimeToLive
+from sincpro_framework.data_layer.caching import Cache, ExternalVersion, FailSafe, JsonCodec, KeepPolicy, TimeToLive
 
 tenants = Cache(InMemoryKeyValue(), namespace="catalog")     # Cache() keeps objects in this process
 policy = KeepPolicy[Tenant](

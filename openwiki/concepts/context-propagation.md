@@ -57,7 +57,7 @@ assignment. `_clean_context()` is the `_set_context({})` shorthand
 (`sincpro_framework/context/mixin.py:49-50`); only tests call it.
 
 Two instances in one process share none of this: separate containers, separate `_overlay_var`s,
-separate shared dicts (`tests/test_context_manager.py:253-287`).
+separate shared dicts (`tests/context/test_context_manager.py:253-287`).
 
 ## Reading it: `self.context` is the live dict
 
@@ -79,7 +79,7 @@ Three consequences a handler author should hold on to:
 1. **It is the store, not a copy.** The returned object is the same dict the framework holds as overlay
    or shared context, so `self.context["k"] = v` is visible to every other handler running in the same
    scope — a write in a Feature is read by a sibling Feature of the same call
-   (`tests/test_context_manager.py:579-599`).
+   (`tests/context/test_context_manager.py:579-599`).
 2. **It is resolved per access, not bound once.** `bind_to_framework` records the owner
    (`sincpro_framework/context/framework_context_consumer.py:15-16`); the lookup happens on every
    `self.context`, so the value follows whichever overlay is active in the *calling* task/thread. That
@@ -87,7 +87,7 @@ Three consequences a handler author should hold on to:
 3. **Assignment is in-place.** `self.context = {...}` routes to the setter
    (`sincpro_framework/context/framework_context_consumer.py:25-31`) and then to `_set_context`, so the
    live overlay keeps its identity, dependencies injected as attributes are unaffected, and a sibling
-   sees the replacement (`tests/test_context_manager.py:601-622`). Only when there is no binder does the
+   sees the replacement (`tests/context/test_context_manager.py:601-622`). Only when there is no binder does the
    setter replace `_context_fallback` with a new dict.
 
 A read is ordinary dict access, so the whole `dict` surface works in a handler:
@@ -154,7 +154,7 @@ def _push_overlay(self, data: Dict[str, Any]) -> tuple[Token, Dict[str, Any]]:
 
 (`sincpro_framework/context/mixin.py:52-56`.) So inheritance works in both directions at once: an inner
 block inherits the outer block's keys and may override them, while keys only it defines disappear when
-it exits (`tests/test_context_manager.py:198-229`, `:404-443`, `:460-478`). The push is a *copy*, so the
+it exits (`tests/context/test_context_manager.py:198-229`, `:404-443`, `:460-478`). The push is a *copy*, so the
 overlay never aliases the mapping passed by the caller. `__exit__` returns the token to
 `_pop_overlay`, which removes the overlay from `_live_overlays` (tolerating a `ValueError` if it was
 already gone) and then resets the `ContextVar` token
@@ -163,14 +163,14 @@ already gone) and then resets the `ContextVar` token
 `FrameworkContext` is **single-use**: `__enter__` raises
 `RuntimeError("Context manager is already entered")` on the second entry
 (`sincpro_framework/context/framework_context.py:44-45`, pinned by
-`tests/test_context_manager.py:105-114`). `__exit__` always returns `False`, so a block never swallows an
+`tests/context/test_context_manager.py:105-114`). `__exit__` always returns `False`, so a block never swallows an
 exception (`sincpro_framework/context/framework_context.py:81`), and it still restores state on the
-exception path (`tests/test_context_manager.py:317-333`).
+exception path (`tests/context/test_context_manager.py:317-333`).
 
 Every `__enter__` also emits the whole block's data to the instance debug log:
 `self.framework.logger.debug(f"with context: {self.context}")`
 (`sincpro_framework/context/framework_context.py:54`). Contexts carry tokens and correlation ids in
-practice (`tests/test_thread_context_bus.py:114` uses `{"TOKEN": "abc123"}`), so debug logging is the
+practice (`tests/context/test_thread_context_bus.py:114` uses `{"TOKEN": "abc123"}`), so debug logging is the
 level at which those values leave the process.
 
 ### `global_scope=True`
@@ -223,8 +223,8 @@ executions can read them", not as a thread-propagation mechanism
   (`sincpro_framework/context/mixin.py:13-23`).
 
 The pinned behaviours are: a concurrent execution on the same instance sees a globally published key
-(`tests/test_context_manager.py:525-557`) and the key is gone afterwards
-(`tests/test_context_manager.py:559-577`).
+(`tests/context/test_context_manager.py:525-557`) and the key is gone afterwards
+(`tests/context/test_context_manager.py:559-577`).
 
 ## The implicit overlay: one per `framework(dto)` call
 
@@ -278,8 +278,8 @@ That gives three distinct write lifetimes, all pinned:
 
 | Where the handler runs | Write via `self.context` lands in | Survives until |
 | --- | --- | --- |
-| bare `framework(dto)`, no block | a throwaway overlay seeded from the shared context | the end of that call (`tests/test_context_manager.py:624-646`) |
-| inside `with framework.context({...})` | the block's overlay | the end of the block, and readable by later calls in the same block (`tests/test_context_manager.py:579-599`) |
+| bare `framework(dto)`, no block | a throwaway overlay seeded from the shared context | the end of that call (`tests/context/test_context_manager.py:624-646`) |
+| inside `with framework.context({...})` | the block's overlay | the end of the block, and readable by later calls in the same block (`tests/context/test_context_manager.py:579-599`) |
 | inside `with framework.context({...}, True)` | the instance shared dict (or the snapshotted overlay) | the end of the global block, then restored |
 
 Because the implicit overlay is pushed by `__call__` only, the two thread/async handles — which call
@@ -314,7 +314,7 @@ keys out of it (`TRACE_KEYS = ("trace_id", "span_id", "carrier")`,
 `X-Correlation-Id` and `traceparent` headers into that map first, with the request body's own `context`
 object overriding the header values (`sincpro_framework/entrypoints/rpc/entrypoint.py:34-48`,
 `sincpro_framework/entrypoints/rpc/jrpc.py:112-122`), which is why a Feature sees a request's
-`correlation_id` in `self.context` (`tests/entrypoint/test_entrypoint_rpc.py:189-220`). See
+`correlation_id` in `self.context` (`tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py:189-220`). See
 [entrypoint rpc](/openwiki/integrations/entrypoint-rpc.md).
 
 **Errors are not enriched with the context dict.** Nothing in the package attaches context data to a
@@ -374,27 +374,27 @@ sidesteps the cross-thread overlay question entirely. The supported crossing is
 
 | Behaviour | Pinned by |
 | --- | --- |
-| Enter yields the same framework; context equal to the block's data; cleaned on exit | `tests/test_context_manager.py:88-103` |
-| Double `__enter__` raises `RuntimeError` | `tests/test_context_manager.py:105-114` |
-| Handlers bound after the build see the block's dict | `tests/test_context_manager.py:136-153` |
-| Nested override + inheritance, and parent restore after inner exit | `tests/test_context_manager.py:198-229`, `:404-443` |
-| Two instances keep isolated contexts | `tests/test_context_manager.py:253-287` |
-| Context restored when the body raises | `tests/test_context_manager.py:317-333` |
-| Per-thread isolation across a `ThreadPoolExecutor` | `tests/test_context_manager.py:365-402` |
-| Concurrent isolated blocks on one instance do not collide | `tests/test_context_manager.py:492-523` |
-| `global_scope=True` visible to a concurrent execution, and restored after exit | `tests/test_context_manager.py:525-577` |
-| A write inside a block is visible to the next call in that block | `tests/test_context_manager.py:579-599` |
-| Whole-dict assignment keeps injected dependencies intact | `tests/test_context_manager.py:601-622` |
-| Writes outside a block do not leak into the next call | `tests/test_context_manager.py:624-646` |
+| Enter yields the same framework; context equal to the block's data; cleaned on exit | `tests/context/test_context_manager.py:88-103` |
+| Double `__enter__` raises `RuntimeError` | `tests/context/test_context_manager.py:105-114` |
+| Handlers bound after the build see the block's dict | `tests/context/test_context_manager.py:136-153` |
+| Nested override + inheritance, and parent restore after inner exit | `tests/context/test_context_manager.py:198-229`, `:404-443` |
+| Two instances keep isolated contexts | `tests/context/test_context_manager.py:253-287` |
+| Context restored when the body raises | `tests/context/test_context_manager.py:317-333` |
+| Per-thread isolation across a `ThreadPoolExecutor` | `tests/context/test_context_manager.py:365-402` |
+| Concurrent isolated blocks on one instance do not collide | `tests/context/test_context_manager.py:492-523` |
+| `global_scope=True` visible to a concurrent execution, and restored after exit | `tests/context/test_context_manager.py:525-577` |
+| A write inside a block is visible to the next call in that block | `tests/context/test_context_manager.py:579-599` |
+| Whole-dict assignment keeps injected dependencies intact | `tests/context/test_context_manager.py:601-622` |
+| Writes outside a block do not leak into the next call | `tests/context/test_context_manager.py:624-646` |
 | `trace_id`/`span_id` readable via `self.context` inside `with_trace()` | `tests/observability/tracing/test_tracing.py:80-107` |
 | `with_trace()` and `context()` compose; nested exit restores the parent | `tests/observability/tracing/test_tracing.py:138-156` |
 | Framework context cleared after `with_trace()` exits | `tests/observability/tracing/test_tracing.py:128-135` |
-| A wire `context` object (and header inheritance) reaches `self.context` | `tests/entrypoint/test_entrypoint_rpc.py:189-220` |
+| A wire `context` object (and header inheritance) reaches `self.context` | `tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py:189-220` |
 | `self.context` typing via a `TypedDict` `ContextT` | `tests/typing_and_linter/typing_cases/typed_context_case.py:14-82` |
 
-Run the focused files with `make test_one t=tests/test_context_manager.py`,
+Run the focused files with `make test_one t=tests/context/test_context_manager.py`,
 `make test_one t=tests/observability/tracing/test_tracing.py` or
-`make test_one t=tests/entrypoint/test_entrypoint_rpc.py` (`README.md:1268-1274`, `Makefile:152-153`).
+`make test_one t=tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py` (`README.md:1268-1274`, `Makefile:152-153`).
 
 ## Related pages
 

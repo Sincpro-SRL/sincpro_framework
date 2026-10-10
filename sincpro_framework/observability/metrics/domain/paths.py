@@ -31,13 +31,14 @@ from typing import (
 
 from pydantic import BaseModel
 
+from sincpro_framework.exceptions import ProgrammingError
+
 
 def refused(message: str) -> Exception:
     """Context: imported here, not at the top — the bus measures every run through this
     package, and a service that only runs buses must not load the DDD layer for it."""
-    from sincpro_framework.ddd.exceptions import ContractViolation
 
-    return ContractViolation(message)
+    return ProgrammingError(message)
 
 
 def is_context_type(cls: Any) -> bool:
@@ -307,17 +308,3 @@ def label_value(value: Any) -> str:
     if isinstance(value, Enum):
         return str(value.value)
     return str(value)
-
-
-__all__ = [
-    "FieldPath",
-    "bounded_label",
-    "context_types_of",
-    "is_context_type",
-    "field_path",
-    "label_value",
-    "numeric_value",
-    "of",
-    "refuse_foreign_paths",
-    "without_none",
-]

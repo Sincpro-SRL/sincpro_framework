@@ -1,26 +1,21 @@
-import sys
 from logging import Logger
 from typing import Callable, Dict, Optional, Type
 
-from .context.domain.level import Level
-from .context.domain.node import ContextNode
-from .context.infrastructure.providers import (
+from sincpro_framework.bus_pipeline.interceptors.interceptor import Interceptor, run_around
+from sincpro_framework.bus_pipeline.outcomes.mixins.announcer import OutcomeAnnouncerMixin
+from sincpro_framework.common.ids import new_entity_id
+from sincpro_framework.common.naming import registered_name
+from sincpro_framework.context.domain.level import Level
+from sincpro_framework.context.domain.node import ContextNode
+from sincpro_framework.context.entrypoint.providers import (
     ContextProvider,
     missing,
     provided,
     required_by,
 )
-from .context.infrastructure.tree import opened_execution
-from .exceptions import ContextRequired, DTOAlreadyRegistered, UnknownDTOToExecute
-from .ids import new_entity_id
-from .observability.failure import failure_of
-
-FAILED_EXECUTION = "__sincpro_failed_execution__"
-"""Where a bus leaves, on an exception, the execution it failed in (`outcomes`)."""
-OUTCOMES_MODULE = "sincpro_framework.outcomes"
-from .interceptors import Interceptor, run_through
-from .observability import Observability
-from .sincpro_abstractions import (
+from sincpro_framework.context.infrastructure.tree import opened_execution
+from sincpro_framework.observability import Observability
+from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
     Bus,
     DataTransferObject,
@@ -28,30 +23,9 @@ from .sincpro_abstractions import (
     TypeDTO,
     TypeDTOResponse,
 )
+
+from .exceptions import ContextRequired, DTOAlreadyRegistered, UnknownDTOToExecute
 from .sincpro_logger import is_logger_in_debug, logger
-
-
-def failed_in(error: BaseException, node: ContextNode) -> None:
-    """The execution `error` was raised in — the innermost one, left for whoever announces it."""
-    if node.execution is not None and not hasattr(error, FAILED_EXECUTION):
-        try:
-            setattr(error, FAILED_EXECUTION, node.execution)
-        except (AttributeError, TypeError):
-            pass
-
-
-def completed_in(
-    dto: object, response: object, bus: str, level: str, node: ContextNode
-) -> None:
-    """The use case answered: to whoever listens — never raising (`outcomes`). Nobody subscribes
-    without importing `outcomes`: until then, nothing is imported and nothing is built."""
-    outcomes = sys.modules.get(OUTCOMES_MODULE)
-    if outcomes is None:
-        return
-    try:
-        outcomes.completed(dto, response, bus, level, node.execution)
-    except Exception:  # noqa: BLE001 - announcing a completion never replaces the response
-        logger.exception("the completion could not be announced")
 
 
 def prepared(node: ContextNode, handler: object, providers: list[ContextProvider]) -> None:
@@ -66,7 +40,7 @@ def prepared(node: ContextNode, handler: object, providers: list[ContextProvider
             raise ContextRequired(type(handler).__name__, absent)
 
 
-class FeatureBus(Bus):
+class FeatureBus(OutcomeAnnouncerMixin, Bus):
     """First layer of the framework, atomic features"""
 
     def __init__(
@@ -113,7 +87,11 @@ class FeatureBus(Bus):
                 self.new_execution_id,
                 self.context_owner,
             ) as node,
-            self.observability.span(dto_name, "feature") as span,
+            self.observability.span(
+                dto_name,
+                "feature",
+                registered_name(dto_type, self.observability.bus_name),
+            ) as span,
             self.observability.measure(dto, feature, "feature") as measured,
         ):
             self.observability.describe(span, feature, dto)
@@ -129,9 +107,9 @@ class FeatureBus(Bus):
                 try:
                     prepared(node, feature, self.context_providers)
                     chain = self.interceptors.get(dto_type, ())
-                    response = run_through(chain, feature.execute, dto)
+                    response = run_around(chain, feature.execute, dto)
                 except Exception as error:
-                    failed_in(error, node)
+                    self._failed_in(error, node)
                     measured.failed(error)
                     self.observability.failed(error, dto, feature, "feature", span)
                     if not self.handle_error:
@@ -141,7 +119,7 @@ class FeatureBus(Bus):
                     return answer
 
             measured.answered(response)
-            completed_in(dto, response, self.observability.bus_name, "feature", node)
+            self._completed(dto, response, "feature", node)
             self.observability.describe(span, feature, response)
             if response:
                 self.logger.debug(
@@ -157,7 +135,7 @@ class FeatureBus(Bus):
         return self.execute(dto, return_type)
 
 
-class ApplicationServiceBus(Bus):
+class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
     """Second layer of the framework, orchestration of features
     This object contains the feature bus internally
     """
@@ -212,7 +190,11 @@ class ApplicationServiceBus(Bus):
                 self.new_execution_id,
                 self.context_owner,
             ) as node,
-            self.observability.span(dto_name, "application_service") as span,
+            self.observability.span(
+                dto_name,
+                "application_service",
+                registered_name(dto_type, self.observability.bus_name),
+            ) as span,
             self.observability.measure(dto, app_service, "application_service") as measured,
         ):
             self.observability.describe(span, app_service, dto)
@@ -228,9 +210,9 @@ class ApplicationServiceBus(Bus):
                 try:
                     prepared(node, app_service, self.context_providers)
                     chain = self.interceptors.get(dto_type, ())
-                    response = run_through(chain, app_service.execute, dto)
+                    response = run_around(chain, app_service.execute, dto)
                 except Exception as error:
-                    failed_in(error, node)
+                    self._failed_in(error, node)
                     measured.failed(error)
                     self.observability.failed(
                         error, dto, app_service, "application_service", span
@@ -242,9 +224,7 @@ class ApplicationServiceBus(Bus):
                     return answer
 
             measured.answered(response)
-            completed_in(
-                dto, response, self.observability.bus_name, "application_service", node
-            )
+            self._completed(dto, response, "application_service", node)
             self.observability.describe(span, app_service, response)
             if response:
                 self.logger.debug(
@@ -256,7 +236,7 @@ class ApplicationServiceBus(Bus):
 # ---------------------------------------------------------------------------------------------
 # Pattern Facade bus
 # ---------------------------------------------------------------------------------------------
-class FrameworkBus(Bus):
+class FrameworkBus(OutcomeAnnouncerMixin, Bus):
     """Facade bus to orchestrate the feature bus and app service bus
     This component contains the following buses:
 
@@ -294,16 +274,6 @@ class FrameworkBus(Bus):
                 f"Data transfer object {intersection_names} is present in application services and features, Change "
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
-
-    def _failure_escaped(self, error: BaseException, dto: TypeDTO) -> None:
-        """The failure that left the call, to whoever listens — never raising (`outcomes`)."""
-        outcomes = sys.modules.get(OUTCOMES_MODULE)
-        if outcomes is None:
-            return
-        try:
-            outcomes.escaped(error, dto, self.observability.bus_name, failure_of(error))
-        except Exception:  # noqa: BLE001 - announcing a failure never replaces it
-            self.logger.exception("the failure could not be announced")
 
     def _dispatch(self, dto: TypeDTO) -> TypeDTOResponse | None:
         dto_type = dto.__class__

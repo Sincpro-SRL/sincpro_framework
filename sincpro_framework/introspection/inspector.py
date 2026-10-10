@@ -14,7 +14,8 @@ from collections.abc import Mapping
 from typing import Any, get_args, get_origin, get_type_hints
 
 from sincpro_framework.bus import FrameworkBus
-from sincpro_framework.interceptors import Interceptor, name_of
+from sincpro_framework.bus_pipeline.interceptors.interceptor import Interceptor
+from sincpro_framework.common.ordering import name_of
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
     DataTransferObject,

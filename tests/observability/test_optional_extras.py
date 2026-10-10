@@ -247,7 +247,7 @@ def test_an_unreachable_collector_neither_blocks_nor_raises(monkeypatch):
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     from sincpro_framework import DataTransferObject, Feature, UseFramework
-    from sincpro_framework.observability import registry
+    from sincpro_framework.observability.registry import registry
 
     provider = TracerProvider()
     provider.add_span_processor(

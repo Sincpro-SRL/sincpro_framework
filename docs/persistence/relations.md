@@ -56,7 +56,7 @@ by surprise:
    earlier. The match reads the column the key references: a `ForeignKey("ws.id")` matches the
    identity, a `ForeignKey("ws.code")` to a unique business key matches `code`, and the
    relation names both sides (`parent_field`, `related_field`) so the definition says so
-   (`tests/orm/test_relation_by_business_key.py`).
+   (`tests/data_layer/orm/test_relation_by_business_key.py`).
 4. **A pointer nothing identifies is published, not expandable.** Annotation to a mapped class,
    no foreign key, no declaration: it appears with `identified_by = None`; asking for it drops
    with `not_expandable`.
@@ -65,7 +65,7 @@ by surprise:
 
 Cardinality always comes from the annotation: `list[Run]` is many, `Run | None` is one. Only
 `many_to_many` is a declared type, because a list cannot say there is a table in between.
-`tests/orm/test_relation_precedence.py` pins each rule.
+`tests/data_layer/orm/test_relation_precedence.py` pins each rule.
 
 ## 4. Declaring what the tables cannot say
 
@@ -247,7 +247,7 @@ key, which refuses the delete while children point at the root — Vernon's rule
 rare: an aggregate holds another by id, not as a collection.
 
 ```python
-remove(customer)    # Customer.invoices declares nothing  →  ContractViolation: removing it would
+remove(customer)    # Customer.invoices declares nothing  →  ProgrammingError: removing it would
                     # leave 3 Invoice of Customer.invoices … orphans=Orphans.DELETE takes them along,
                     # Orphans.DETACH sets their key to NULL
 ```
@@ -309,8 +309,8 @@ window-function statement is SQLAlchemy's.
 
 ## 10. A worked example, all kinds at once
 
-`tests/orm/every_kind_models.py` declares one aggregate with every kind of field and
-`tests/orm/test_field_meta_unified.py` asks for all of it in one criteria: nine scalars filtered,
+`tests/data_layer/orm/every_kind_models.py` declares one aggregate with every kind of field and
+`tests/data_layer/orm/test_field_meta_unified.py` asks for all of it in one criteria: nine scalars filtered,
 an embedded value cut inside, a `many2one` inferred, a `many2many` declared, a `one2many` from
 another context through its bus, a `many2one` from a function. `dropped` is empty, the wire shows
 each relation under its own name, and the definition mirrors the mask. Read that test as the

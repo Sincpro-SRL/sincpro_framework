@@ -34,8 +34,8 @@ from sincpro_framework.ddd.entity.entity_collection import (
     EntityCollection,
     identity_name,
 )
-from sincpro_framework.ddd.entity.model_meta import FieldType, Meta, presentation_of
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta, presentation_of
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
@@ -158,7 +158,7 @@ class ResponsePaginatedQuery(DataTransferObject):
     """What any paged answer returns beside its records.
 
         class ResponseListDatasets(ResponsePaginatedQuery):
-            datasets: list[Dataset]         →   .datasets .cursor .count .model_meta_data
+            datasets: list[Dataset]         →   .datasets .cursor .count .entity_meta_data
 
     The records keep the subclass's own name — `datasets`, `runs`, `plans` — because a reader
     of a response should see what it is about, not `items`.
@@ -171,7 +171,7 @@ class ResponsePaginatedQuery(DataTransferObject):
     """How many match in total, capped unless the criteria asked for the exact number.
     `exact=False` means *at least* that many."""
 
-    model_meta_data: Meta | None = None
+    entity_meta_data: Meta | None = None
     """What may be filtered, ordered and walked, and with which operators, so a client can
     build a filter form, a column menu or a URL without carrying a schema.
 
@@ -206,9 +206,9 @@ class ResponsePaginatedQuery(DataTransferObject):
                 ],
                 "cursor": self.cursor,
                 "count": self.count.model_dump(mode=mode) if self.count else None,
-                "model_meta_data": (
-                    self.model_meta_data.model_dump(mode=mode)
-                    if self.model_meta_data
+                "entity_meta_data": (
+                    self.entity_meta_data.model_dump(mode=mode)
+                    if self.entity_meta_data
                     else None
                 ),
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
@@ -223,7 +223,7 @@ class ResponsePaginatedQuery(DataTransferObject):
 
         **Without this, every paginated answer is published as `{"type": "object"}`.** A model
         with a plain serializer tells pydantic "I write an object" and nothing else, so the
-        schema loses `cursor`, `count`, `model_meta_data`, `dropped` and the records — which is
+        schema loses `cursor`, `count`, `entity_meta_data`, `dropped` and the records — which is
         exactly what a client generating types needs, and why the TypeScript package had to
         write those types by hand.
 
@@ -266,7 +266,7 @@ class ResponsePaginatedQuery(DataTransferObject):
             if name not in ResponsePaginatedQuery.model_fields
         ]
         if len(own) != 1:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a paginated response declares exactly one, holding its records"
             )
@@ -291,7 +291,7 @@ class ResponsePaginatedQuery(DataTransferObject):
             **{cls.records_field(): list(page.items)},
             cursor=page.cursor,
             count=page.count,
-            model_meta_data=(
+            entity_meta_data=(
                 page.meta.only(criteria.specification)
                 if criteria.meta and page.meta is not None
                 else None
@@ -307,13 +307,13 @@ class ResponseRecord(DataTransferObject):
     """What a read of one record returns beside it.
 
     class ResponseAccount(ResponseRecord):
-        account: Account            →   .account .model_meta_data .dropped
+        account: Account            →   .account .entity_meta_data .dropped
 
     The record keeps the subclass's own name for the same reason a page's records do. On the
     wire it is cut by the specification exactly as a record of a page is.
     """
 
-    model_meta_data: Meta | None = None
+    entity_meta_data: Meta | None = None
     """What may be asked about the model, unless the criteria said `meta=false`."""
 
     dropped: list[Dropped] = []
@@ -331,9 +331,9 @@ class ResponseRecord(DataTransferObject):
         with writing_out():
             written = {
                 field: _record(getattr(self, field), self._specification, self._meta, mode),
-                "model_meta_data": (
-                    self.model_meta_data.model_dump(mode=mode)
-                    if self.model_meta_data
+                "entity_meta_data": (
+                    self.entity_meta_data.model_dump(mode=mode)
+                    if self.entity_meta_data
                     else None
                 ),
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
@@ -370,7 +370,7 @@ class ResponseRecord(DataTransferObject):
         """
         own = [name for name in cls.model_fields if name not in ResponseRecord.model_fields]
         if len(own) != 1:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a record response declares exactly one, holding its record"
             )
@@ -382,11 +382,11 @@ class ResponseRecord(DataTransferObject):
         read in.
 
             in      Account(1105, 'Caja'), the page it came in, the criteria it answered
-            out     ResponseAccount(account=Account(1105, 'Caja'), model_meta_data=Meta(...))
+            out     ResponseAccount(account=Account(1105, 'Caja'), entity_meta_data=Meta(...))
         """
         response = cls(
             **{cls.record_field(): record},
-            model_meta_data=(
+            entity_meta_data=(
                 page.meta.only(criteria.specification)
                 if criteria.meta and page.meta is not None
                 else None
@@ -402,7 +402,7 @@ class ResponseRecords(DataTransferObject):
     """What a read of several records by their identities returns: a list, not a page.
 
     class ResponseAccounts(ResponseRecords):
-        accounts: list[Account]     →   .accounts .missing .model_meta_data .dropped
+        accounts: list[Account]     →   .accounts .missing .entity_meta_data .dropped
 
     The records come in the order the identities were asked, each one cut by the specification
     as a record of a page is. An identity with no record is listed in `missing`, not raised:
@@ -412,7 +412,7 @@ class ResponseRecords(DataTransferObject):
     missing: list[str] = []
     """The identities asked that have no record."""
 
-    model_meta_data: Meta | None = None
+    entity_meta_data: Meta | None = None
     """What may be asked about the model, unless the criteria said `meta=false`."""
 
     dropped: list[Dropped] = []
@@ -433,9 +433,9 @@ class ResponseRecords(DataTransferObject):
                     for one in getattr(self, field)
                 ],
                 "missing": list(self.missing),
-                "model_meta_data": (
-                    self.model_meta_data.model_dump(mode=mode)
-                    if self.model_meta_data
+                "entity_meta_data": (
+                    self.entity_meta_data.model_dump(mode=mode)
+                    if self.entity_meta_data
                     else None
                 ),
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
@@ -473,7 +473,7 @@ class ResponseRecords(DataTransferObject):
         """
         own = [name for name in cls.model_fields if name not in ResponseRecords.model_fields]
         if len(own) != 1:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a records response declares exactly one, holding its records"
             )
@@ -492,7 +492,7 @@ class ResponseRecords(DataTransferObject):
         response = cls(
             **{cls.records_field(): [found[one] for one in ids if one in found]},
             missing=[one for one in ids if one not in found],
-            model_meta_data=(
+            entity_meta_data=(
                 page.meta.only(criteria.specification)
                 if criteria.meta and page.meta is not None
                 else None

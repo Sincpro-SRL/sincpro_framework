@@ -210,7 +210,7 @@ The owner's reasoning, kept in [decision 31](../persistence/decisions.md#31-a-bo
 5. **`DeliverableEventMixin`, not `IntegrationEventMixin`.** It marks that an event is
    delivered, wherever to; `is_deliverable` makes it a filter.
 6. **Event sourcing is in, with `entity_version`.** `version` is the entity's optimistic lock.
-7. **Templates in `orm/sqlalchemy/entrypoint/templates/`, one file each**; `data_mapper` maps.
+7. **Templates in `orm/sqlalchemy/entrypoint/template_table/`, one file each**; `data_mapper` maps.
 8. **Facilitate, never force.** A context with no event table records and pulls events as
    before; `pull_events()` is never taken away.
 

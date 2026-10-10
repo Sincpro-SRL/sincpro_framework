@@ -90,7 +90,7 @@ format-yaml:
 	fi
 	@if command -v yamllint > /dev/null; then \
 		echo "Linting YAML files with yamllint..."; \
-		yamllint -f parsable sincpro_framework/conf/*.yml tests/config/resources/*.yml; \
+		yamllint -f parsable sincpro_framework/conf/*.yml tests/core/config/resources/*.yml; \
 	else \
 		echo "yamllint not found. Install with: pip install yamllint"; \
 	fi

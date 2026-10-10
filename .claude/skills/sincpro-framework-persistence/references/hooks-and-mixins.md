@@ -14,7 +14,8 @@ event published by the Feature, not a hook.
 ## A hook is a class registered for its aggregate
 
 ```python
-from sincpro_framework.ddd import ContractViolation, Hook, Hooks
+from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import Hook, Hooks
 
 
 class Numbering:
@@ -33,7 +34,7 @@ invoicing_hooks = Hooks(None)
 class TotalIsPositive(Hook):
     def before_save(self, invoice: Invoice) -> None:
         if invoice.total <= 0:
-            raise ContractViolation(f"invoice {invoice.number} has no total")
+            raise DomainError(f"invoice {invoice.number} has no total")
 
 
 @invoicing_hooks.on(Invoice, after=TotalIsPositive)
@@ -74,7 +75,7 @@ use cases, and they import the bus that is still being built — a circular `Imp
 | `Hooks(None)` | nothing; filled by hand |
 
 The walk happens lazily, the first time a moment fires, so import order does not matter. After it
-the collection is closed: a hook registered later raises `ExtensionRefused`. A hook that
+the collection is closed: a hook registered later raises `ProgrammingError`. A hook that
 implements no moment, or `extends=X` on a class that is not a subclass of `X`, is refused at
 `on(...)`. `assert list(billing_hooks)` in a test reads the collection at once.
 
@@ -108,7 +109,7 @@ Ordering and extension: `on(X, after=Other, before=[...], sequence=5)`,
 the original whole.
 
 A hook that writes through the repository that fired it — directly, through `context()`,
-`narrowed()` or a Command — raises `ContractViolation`: a rule validates, computes or refuses.
+`narrowed()` or a Command — raises `ProgrammingError`: a rule validates, computes or refuses.
 
 ## Mixins
 
@@ -130,7 +131,7 @@ claims_hooks = Hooks(None)
 class WrittenOnce(Hook):
     def before_save(self, record: Claim) -> None:
         if not record.is_new:
-            raise ContractViolation(f"{type(record).__name__} is written once and never replaced")
+            raise DomainError(f"{type(record).__name__} is written once and never replaced")
 
 
 Repository(database, claims_hooks)

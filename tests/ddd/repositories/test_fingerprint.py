@@ -4,7 +4,8 @@ asks for — and a different one the moment the rows could differ."""
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sincpro_framework.ddd import Criteria, Entity, MemoryRepository
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Criteria, Entity
 
 
 @dataclass

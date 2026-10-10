@@ -5,6 +5,7 @@ the summary at the end of the run so a regression is a number and not an impress
 
 import pytest
 
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
@@ -16,7 +17,6 @@ from sincpro_framework.ddd.criteria import (
     parse_order,
 )
 from sincpro_framework.ddd.criteria.pagination import Pagination
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
 
 from .contexts import CommandRebuildBalance, ResponseBalances
 from .ledger import Account, Line, Lines

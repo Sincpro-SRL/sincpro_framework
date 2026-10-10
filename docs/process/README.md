@@ -1,7 +1,7 @@
 # One process, the loops it runs
 
-`sincpro_framework.process` sits at the package root, beside `registry.py`. It is not a wire
-under `entrypoints/`: those put use cases on a protocol. This module keeps the program alive.
+`sincpro_framework.entrypoints.entrypoint.workers` keeps the program alive. It is an entrypoint but not a
+wire: the wires put use cases on a protocol, a process runs the loops that call them.
 
 For a deployment, the worker is this OS process. Inside it, each thing that stays up is a
 loop: `run` blocks, `stop` makes it return. One process can run several.
@@ -9,8 +9,8 @@ loop: `run` blocks, `stop` makes it return. One process can run several.
 ```python
 from datetime import timedelta
 
-from sincpro_framework.cron import CronGateway
-from sincpro_framework.process import Poll, Process
+from sincpro_framework.entrypoints.adapters.cron import CronGateway
+from sincpro_framework.entrypoints.entrypoint.workers import Poll, Process
 
 def deliver() -> None:
     relay.run_once()
@@ -29,7 +29,7 @@ poll tick returns when that tick returns.
 
 | Word | What it is |
 |---|---|
-| Process | This program, staying up, running one or more loops. `sincpro_framework.process.Process`. |
+| Process | This program, staying up, running one or more loops. `sincpro_framework.entrypoints.entrypoint.workers.Process`. |
 | Loop | `run` / `stop`. `CronGateway` is one. `Poll` is one. A project class with those two methods is one. |
 | Poll | Every interval, call the function the project passed. The function is the pass. |
 | Cron | A clock. `CronGateway` is the loop. `CronProcess` is that loop in a child, beside a server. `workers=` on the gateway is how many ticks run at once, a thread cap. |

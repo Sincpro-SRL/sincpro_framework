@@ -1,12 +1,12 @@
 """The two queues the framework ships against one surface: the sync one answers in the call,
 the background one crosses to a worker that built its own subscriber."""
 
+import json
 import multiprocessing
 
 import pytest
 
-from sincpro_framework import UseFramework
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework import ProgrammingError, UseFramework
 from sincpro_framework.event_driven import (
     BackgroundQueue,
     Publisher,
@@ -55,12 +55,12 @@ def test_a_background_queue_stops_its_worker(background_queue):
 
 
 def test_a_background_queue_cannot_answer_in_the_same_call(background_queue):
-    with pytest.raises(ContractViolation, match="cannot answer in the same call"):
+    with pytest.raises(ProgrammingError, match="cannot answer in the same call"):
         Publisher(background_queue).publish(TicketClosed(reason="x"), ResponseNotify)
 
 
 def test_a_background_queue_never_forks():
-    with pytest.raises(ContractViolation, match="does not fork"):
+    with pytest.raises(ProgrammingError, match="does not fork"):
         BackgroundQueue(Subscriber, context="fork")
 
 
@@ -90,7 +90,7 @@ def test_the_trace_rides_beside_the_event_across_the_process_boundary():
     from opentelemetry import trace
     from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
-    from sincpro_framework.event_driven.infrastructure.trace import (
+    from sincpro_framework.observability.tracing.propagation import (
         trace_carrier,
         within_trace,
     )
@@ -123,7 +123,7 @@ def test_the_trace_rides_beside_the_event_across_the_process_boundary():
 
 
 def test_without_a_trace_or_a_carrier_nothing_breaks():
-    from sincpro_framework.event_driven.infrastructure.trace import (
+    from sincpro_framework.observability.tracing.propagation import (
         trace_carrier,
         within_trace,
     )
@@ -135,7 +135,7 @@ def test_without_a_trace_or_a_carrier_nothing_breaks():
 
 
 def test_put_is_what_actually_sends_the_trace(background_queue):
-    """The envelope `put` builds, read straight off the inbox: three parts, and the third is
+    """What `put` hands over, read straight off the inbox: two parts, and the second is
     the trace. Asserting on the helpers alone would not catch a `put` that stopped calling
     them."""
     from opentelemetry import context as otel_context
@@ -159,9 +159,10 @@ def test_put_is_what_actually_sends_the_trace(background_queue):
     finally:
         otel_context.detach(token)
 
-    name, payload, carrier = background_queue.inbox.get(timeout=30)
+    raw, carrier = background_queue.inbox.get(timeout=30)
+    written = json.loads(raw)
 
-    assert name == "TicketClosed" and payload["reason"] == "traced"
+    assert written["name"] == "TicketClosed" and written["reason"] == "traced"
     assert carrier["traceparent"].startswith("00-4bf92f3577b34da6a3ce929d0e0e4736-")
 
 
@@ -176,7 +177,7 @@ def test_a_queue_that_was_never_started_refuses_rather_than_swallowing(heard):
     queue = BackgroundQueue(ReportingSubscriber(multiprocessing.get_context("spawn").Queue()))
     assert queue.process is None
 
-    with pytest.raises(ContractViolation, match="never started"):
+    with pytest.raises(ProgrammingError, match="never started"):
         queue.put(TicketClosed(reason="stale"))
 
 
@@ -185,15 +186,15 @@ def test_the_background_queue_refuses_a_subscriber_that_was_already_built():
     variables that do not pickle. Handed one anyway, the failure used to come out of
     `multiprocessing` as `cannot pickle '_contextvars.ContextVar' object`, from a stack that
     names nothing the caller wrote."""
-    with pytest.raises(ContractViolation, match="builds a Subscriber"):
+    with pytest.raises(ProgrammingError, match="builds a Subscriber"):
         BackgroundQueue(Subscriber(auditing_bus([])))  # type: ignore[arg-type]
 
-    with pytest.raises(ContractViolation, match="not callable"):
+    with pytest.raises(ProgrammingError, match="not callable"):
         BackgroundQueue("not a factory")  # type: ignore[arg-type]
 
 
 def test_the_sync_queue_refuses_what_it_cannot_use():
-    with pytest.raises(ContractViolation, match="neither"):
+    with pytest.raises(ProgrammingError, match="neither"):
         SyncQueue(42)  # type: ignore[arg-type]
 
 
@@ -220,3 +221,18 @@ def test_the_sync_queue_takes_a_function_and_builds_it_on_the_first_publish(hear
 
     Publisher(queue).publish(TicketClosed(reason="again"))
     assert built == [1]  # and kept
+
+
+def test_a_background_queue_starts_once(background_queue):
+    with pytest.raises(ProgrammingError, match="already started"):
+        background_queue.start()
+
+
+def test_a_background_queue_whose_worker_died_refuses_what_is_published(background_queue):
+    """The inbox would take the event and nobody would ever read it: the refusal says so where
+    the event was published."""
+    background_queue.process.terminate()
+    background_queue.process.join(5)
+
+    with pytest.raises(ProgrammingError, match="no longer running"):
+        Publisher(background_queue).publish(TicketClosed(reason="lost"))

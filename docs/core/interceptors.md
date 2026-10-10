@@ -77,7 +77,7 @@ assert answer.due_days == 30
   workflow step, a scheduled tick.
 - What reaches `call_next` must be the same Command class — change values with `model_copy`. What
   comes back must be the response class the handler answered. Anything else raises
-  `InterceptorContractViolation`, naming the interceptor.
+  `ProgrammingError`, naming the interceptor.
 - An exception in an interceptor is reported like one in the handler, with `error_at` on the
   interceptor's line.
 - Interceptors are fixed when the bus is built: registering one afterwards raises
@@ -90,7 +90,7 @@ Each one is a pattern to copy and adapt, not a piece of the framework.
 ### Veto: a credit check
 
 ```python
-from sincpro_framework.ddd import ContractViolation
+from sincpro_framework.ddd import DomainError
 
 billing = new_billing()
 blocked = {"moroso"}
@@ -101,14 +101,14 @@ def credit_check(
     dto: CommandCreateInvoice, call_next: CallNext[ResponseCreateInvoice]
 ) -> ResponseCreateInvoice:
     if dto.customer_id in blocked:
-        raise ContractViolation(f"{dto.customer_id} has no credit")
+        raise DomainError(f"{dto.customer_id} has no credit")
     return call_next(dto)
 
 
 try:
     billing(CommandCreateInvoice(customer_id="moroso", total=100))
     raise AssertionError("the credit check should have refused it")
-except ContractViolation:
+except DomainError:
     pass
 ```
 
@@ -342,7 +342,7 @@ assert tax(CommandComputeTax(amount=100), ResponseComputeTax).tax == 16
 ## Order, replacing, switching off
 
 Several interceptors on one Command run outermost first, in the order every extension point of
-the framework uses (`sincpro_framework.ordering`): `before=` / `after=` by reference, then
+the framework uses (`sincpro_framework.common.ordering`): `before=` / `after=` by reference, then
 `sequence=` (lower first, 10 when not said), then the order they were registered. A
 replacement runs in the place of the one it names and wraps the same Commands; one switched off
 wraps nothing. Error handlers take the same `replaces=`, `before=`, `after=` and `sequence=`.

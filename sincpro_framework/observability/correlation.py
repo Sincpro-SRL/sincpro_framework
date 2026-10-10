@@ -30,6 +30,7 @@ from sincpro_framework.context.domain.keys import (
     PLUMBING,
     TENANT_ID,
 )
+from sincpro_framework.context.infrastructure.said import keeping_what_scopes_say, said
 from sincpro_framework.context.infrastructure.tree import current_execution
 from sincpro_framework.observability.domain import UNKNOWN, ObservabilityIdentity
 from sincpro_framework.sincpro_conf import settings
@@ -56,35 +57,20 @@ class ExecutionSource(Protocol):
 
 
 _running: ContextVar[ExecutionSource | None] = ContextVar("sincpro_execution", default=None)
-_said: ContextVar[dict[str, Any] | None] = ContextVar("sincpro_execution_said", default=None)
-"""What the scopes opened and closed inside the execution said — kept, because its span, its
-metrics and its error are recorded after those scopes closed."""
 
 
 @contextmanager
 def running(source: ExecutionSource) -> Generator[None, None, None]:
     """The execution of a use case of `source`'s bus, from its span's opening to its closing."""
-    token, said = _running.set(source), _said.set({})
+    token = _running.set(source)
     try:
-        yield
+        with keeping_what_scopes_say():
+            yield
     finally:
         try:
-            _said.reset(said)
             _running.reset(token)
         except ValueError:
             pass
-
-
-def remember(scope: Mapping[str, Any]) -> None:
-    """A `bus.context(...)` scope closing inside an execution: what it said still counts for the
-    signals the execution records when it closes. Never raises."""
-    said = _said.get()
-    if said is None:
-        return
-    try:
-        said.update(scope)
-    except Exception:
-        pass
 
 
 def current() -> ExecutionSource | None:
@@ -124,7 +110,7 @@ def _identity() -> Any:
     """The authenticated caller, when auth is in play — `None` otherwise."""
     # Only when auth is already loaded: a service that never authenticates has no identity to
     # read, and must not load the auth layer (and the DDD one under it) for it.
-    module = sys.modules.get("sincpro_framework.auth.security_context")
+    module = sys.modules.get("sincpro_framework.auth.infrastructure.security_context")
     if module is None:
         return None
     try:
@@ -146,11 +132,11 @@ def execution_context() -> Mapping[str, Any]:
         live = live_context()
     except Exception:
         live = {}
-    said = _said.get()
+    scopes = said()
     running = current_execution()
-    if not said and running is None:
+    if not scopes and running is None:
         return live
-    return {**live, **(said or {}), **(running.chain() if running is not None else {})}
+    return {**live, **scopes, **(running.chain() if running is not None else {})}
 
 
 def _hidden() -> frozenset[str]:
@@ -295,25 +281,3 @@ def metric_labels(keys: tuple[str, ...]) -> dict[str, str]:
 def reset_metric_labels() -> None:
     """Forget the labels buses declared — what a test starts from."""
     _metric_labels.clear()
-
-
-__all__ = [
-    "ALWAYS_ON_METRICS",
-    "IDENTITY_KEYS",
-    "RELEASE",
-    "SERVICE_NAME",
-    "SERVICE_VERSION",
-    "TENANT",
-    "USER_ID",
-    "declare_metric_labels",
-    "deployment_tenant",
-    "execution_context",
-    "execution_keys",
-    "identity_keys",
-    "metric_label_keys",
-    "metric_labels",
-    "reset_metric_labels",
-    "running",
-    "tenant",
-    "user_id",
-]

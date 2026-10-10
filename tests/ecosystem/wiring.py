@@ -20,13 +20,13 @@ behind — `SyncQueue` takes a *function*, so the queue is built before a single
 from dataclasses import dataclass, field
 
 from sincpro_framework import UseFramework
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.event_driven import (
     Publisher,
     Subscriber,
     SyncQueue,
 )
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 from .shop import billing, inventory, notifications, orders
 

@@ -101,11 +101,11 @@ hides the entity's defaults.
 
 | Case | Test |
 |---|---|
-| defaults with nothing declared; overrides; inheritance of the ones not overridden | `tests/ddd/entity/test_query_entity.py`, `tests/ddd/test_reads.py` |
-| key other than `id` for `Get`/`GetMany`, `missing` by key | `tests/ddd/test_reads.py` |
-| caller's specification replaces the reading (even asking for more), `Criteria()` keeps it, a caller filter adds to the key | `tests/ddd/test_reads.py` |
-| a scope merged with `merged_with` keeps the defaults | `tests/ddd/test_reads.py` |
-| template filled, blank literal keeps the rest of the template, `TEXT` inside a list | `tests/ddd/test_reads.py` |
-| every refusal of §4 | `tests/ddd/test_reads.py`, `tests/ddd/entity/test_query_entity.py`, `tests/orm/test_presentation_sql.py` |
-| a relation comes in its own entity's `DEFAULT_ORDER` on SQL | `tests/orm/test_presentation_sql.py` |
+| defaults with nothing declared; overrides; inheritance of the ones not overridden | `tests/ddd/entity/test_query_entity.py`, `tests/ddd/reads/test_reads.py` |
+| key other than `id` for `Get`/`GetMany`, `missing` by key | `tests/ddd/reads/test_reads.py` |
+| caller's specification replaces the reading (even asking for more), `Criteria()` keeps it, a caller filter adds to the key | `tests/ddd/reads/test_reads.py` |
+| a scope merged with `merged_with` keeps the defaults | `tests/ddd/reads/test_reads.py` |
+| template filled, blank literal keeps the rest of the template, `TEXT` inside a list | `tests/ddd/reads/test_reads.py` |
+| every refusal of §4 | `tests/ddd/reads/test_reads.py`, `tests/ddd/entity/test_query_entity.py`, `tests/data_layer/orm/test_presentation_sql.py` |
+| a relation comes in its own entity's `DEFAULT_ORDER` on SQL | `tests/data_layer/orm/test_presentation_sql.py` |
 | Forge (213 tests) on this branch | adopted in Forge's working tree |

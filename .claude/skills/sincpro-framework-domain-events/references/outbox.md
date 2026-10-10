@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd import DeliverableEventMixin, DomainEvent
-from sincpro_framework.orm import event_table, map_events
+from sincpro_framework.data_layer.orm import map_events, template_table
 
 
 @dataclass(kw_only=True)
@@ -28,7 +28,7 @@ class InvoiceSent(DeliverableEventMixin, BillingEvent):
 
 
 billing = registry()
-events = event_table("billing_events", billing.metadata)
+events = template_table.event_table("billing_events", billing.metadata)
 map_events(billing, BillingEvent, events)
 ```
 
@@ -73,8 +73,9 @@ relay = EventRelay(
 result = relay.run_once()
 ```
 
-A pass selects deliverable subclasses whose `delivered_at` is empty and `next_delivery_at`
-is due, orders by event id, publishes, and saves the outcomes. On a transactional repository
+A pass selects, in one query on the context's base class, the deliverable events whose
+`delivered_at` is empty and `next_delivery_at` is due, orders by event id, holds what a waiting
+retry holds back, publishes, and saves the outcomes. On a transactional repository
 this is **one transaction**, including publication, not three claim/send/ack transactions.
 `FOR UPDATE SKIP LOCKED` is used where the repository advertises row locks. Memory and SQLite
 do not prove multi-replica exclusion; use PostgreSQL integration tests for that requirement.
@@ -84,22 +85,23 @@ The relay has no timer. Register it with `Crons.run_relay(relay)` or build it th
 
 ## Failure and dead letters
 
-- `RetryInPlace(attempts=5)` is the default: schedules a retry and stops the current pass.
-- `RetryLater` schedules a retry, holding later events of that entity in the current pass
-    when `holds_stream=True`; unrelated entities continue.
-- `ParkAndContinue` leaves `next_delivery_at=None` and the reason in `delivery`.
-    `event.replayed()` followed by `repository.save(event)` makes it due again.
+- `RetryInPlace(attempts=5)` is the default: schedules a retry; nothing after it goes out —
+    in this pass or the next ones — until it did or was parked.
+- `RetryLater` schedules a retry; with `holds_stream=True` (as it comes) the later events of
+    that entity wait until it went out or was parked; unrelated entities continue.
+- `ParkAndContinue` leaves `next_delivery_at=None` and the reason in `delivery`. A parked event
+    holds nothing: its entity's later events go on. `event.replayed()` followed by
+    `repository.save(event)` makes it due again.
 - `SkipAndContinue` marks it delivered and records the reason. Use only for explicitly
     dispensable events.
-- `FixedBackoff` and `ExponentialBackoff` space attempts; `never_retry` avoids futile retries.
+- `FixedBackoff` and `ExponentialBackoff` space attempts. The kinds a consumer dead-letters
+    (`common.failures.PERMANENT`) and the errors in `never_retry` go to `then` at once; an error's
+    `retry_after` is waited before the next attempt.
 - Delivery is at least once: a crash after publication but before commit causes a resend.
     Consumers need idempotency. A nondurable target queue does not become durable just because
     the relay successfully enqueued into it.
 
-**Current ordering limitation:** the held-entity set exists only within one pass. A retry not
-yet due is absent from the next selection, so later events can overtake it. Row locks also
-do not serialize an entity's entire stream across replicas. Do not promise strict stream
-ordering until both scenarios have been addressed and verified on the deployment backend.
+**Ordering across replicas:** Row locks keep two replicas from taking the same event, not an entity's whole stream: two replicas can each take a different event of one entity in the same instant. Where that matters, run one relay per context, or key the broker by entity (`keyed_by_entity`).
 
 ## What a relay needs (and what already answers it)
 
@@ -111,5 +113,5 @@ ordering until both scenarios have been addressed and verified on the deployment
 | scheduling | `Crons.run_relay` / `Crons.relay_deliverable_events`, or `Poll(every, relay.run_once)` inside a `Process` (`docs/process/README.md`). The relay has no timer |
 | failure behavior | a `DeliveryFailurePolicy`, not a second relay implementation |
 
-Framework evidence: `tests/event_driven/test_relay.py`, `tests/orm/test_events_table.py`,
+Framework evidence: `tests/event_driven/test_relay.py`, `tests/data_layer/orm/test_events_table.py`,
 `docs/persistence/guide.md` section 12.

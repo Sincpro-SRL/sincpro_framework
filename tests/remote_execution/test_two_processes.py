@@ -3,7 +3,8 @@
 The context is written to disk and imported by both. Service B hosts it — `billing.serve(...)`
 over gRPC, or the HTTP route on an app of its own — and service A has no line of code about B:
 only `SINCPRO_CONTEXT_MAP` in its environment. A executes the context's use cases as it always
-would, 64 MiB of bytes included, and prints what it got back.
+would, 64 MiB of bytes included, and prints what it got back — and what crossed the wire: the
+command, the response and the domain error, each one JSON message and never a pickle.
 """
 
 import json
@@ -105,7 +106,7 @@ import uvicorn
 from starlette.applications import Starlette
 
 from billing_two_processes import billing
-from sincpro_framework.remote_execution.entrypoint.http import open_host_routes
+from sincpro_framework.remote_execution import open_host_routes
 
 host, _, port = sys.argv[1].rpartition(":")
 app = Starlette(routes=open_host_routes([billing]))
@@ -129,7 +130,33 @@ from billing_two_processes import (
     ResponseIssueInvoice,
     billing,
 )
+from sincpro_framework.remote_execution.domain.payload import Payload
 from sincpro_framework.remote_execution import ContextTimeout
+from sincpro_framework.remote_execution.domain import errors
+
+wire: list[bytes] = []
+write, read, read_details = Payload.as_json, Payload.from_json.__func__, errors.read_values
+
+
+def written(self):
+    raw = write(self)
+    wire.append(bytes(raw[:64]))
+    return raw
+
+
+def received(cls, raw):
+    wire.append(bytes(raw[:64]))
+    return read(cls, raw)
+
+
+def details(raw):
+    wire.append(bytes(raw[:64]))
+    return read_details(raw)
+
+
+Payload.as_json = written
+Payload.from_json = classmethod(received)
+errors.read_values = details
 
 pdf = bytes(range(256)) * 400
 with billing.context({"user_id": 7}):
@@ -160,6 +187,9 @@ print(json.dumps({
     "large_size": len(echoed.data),
     "large_sent": hashlib.sha256(large).hexdigest(),
     "large_back": hashlib.sha256(echoed.data).hexdigest(),
+    "on_the_wire": len(wire),
+    "all_json": all(one.startswith(b"{") for one in wire),
+    "any_pickle": any(one.startswith(b"\\x80") for one in wire),
 }))
 """
 
@@ -237,4 +267,7 @@ def test_a_service_configured_only_by_its_environment_is_answered_by_the_other(
         "refused": "over the credit limit",
         "timed_out": True,
         "large_size": 64 * 1024 * 1024,
+        "on_the_wire": 7,  # four commands, two responses, one domain error
+        "all_json": True,
+        "any_pickle": False,
     }

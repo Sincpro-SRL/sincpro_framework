@@ -12,8 +12,13 @@ from enum import StrEnum
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.observability import of, traces
 
 pytest.importorskip("opentelemetry.sdk.trace")
@@ -217,7 +222,7 @@ class CommandLogin(DataTransferObject):
     ids=["a mapping", "bytes", "empty", "no namespace"],
 )
 def test_a_declaration_that_could_never_work_is_refused_at_import(declare, refusal):
-    with pytest.raises(ContractViolation, match=refusal):
+    with pytest.raises(ProgrammingError, match=refusal):
         declare()
 
 
@@ -246,13 +251,13 @@ def test_no_key_is_refused_for_its_name(declare):
 
 
 def test_a_path_into_another_dto_or_a_key_declared_twice_is_refused_at_import():
-    with pytest.raises(ContractViolation, match="neither the Command nor the Response"):
+    with pytest.raises(ProgrammingError, match="neither the Command nor the Response"):
 
         @traces.attributes(of(CommandLogin).code, namespace="pay")
         class Foreign(Feature):
             def execute(self, dto: CommandPay) -> ResponsePay: ...
 
-    with pytest.raises(ContractViolation, match="declared twice"):
+    with pytest.raises(ProgrammingError, match="declared twice"):
 
         @traces.attributes(of(CommandPay).merchant_id, namespace="pay")
         @traces.attributes(namespace="pay", merchant_id=of(CommandPay).merchant_id)

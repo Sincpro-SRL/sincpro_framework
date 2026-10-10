@@ -301,16 +301,3 @@ class Traces:
 
 
 traces = Traces()
-
-
-__all__ = [
-    "SpanAttribute",
-    "SpanValue",
-    "Traces",
-    "declared_attributes",
-    "describe",
-    "holds_on_a_span",
-    "key_problem",
-    "span_value",
-    "traces",
-]

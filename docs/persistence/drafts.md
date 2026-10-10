@@ -7,8 +7,9 @@ place: optional, optimistic, and always with a TTL.
 ```python
 from datetime import timedelta
 
-from sincpro_framework.caching.adapters.redis import RedisKeyValue
-from sincpro_framework.ddd.drafts import InMemoryDrafts, KeyValueDrafts
+from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.ddd.editing.drafts import InMemoryDrafts
+from sincpro_framework.ddd import KeyValueDrafts
 
 drafts = KeyValueDrafts(RedisKeyValue(redis), ttl=timedelta(days=7))   # every replica
 drafts = InMemoryDrafts(ttl=timedelta(hours=1))                        # one process, tests

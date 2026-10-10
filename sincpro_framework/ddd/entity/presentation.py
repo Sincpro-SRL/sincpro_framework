@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
 from sincpro_framework.ddd.criteria import Operator
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class Fields:
 
     def __getattr__(self, name: str) -> FieldRef:
         if name not in self._names:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{self._owner}.{self._declaration} names {name}, "
                 f"which is not a field of {self._owner}"
             )
@@ -66,12 +66,12 @@ def field_name(value: object, form: str) -> str:
     """The name behind a `FieldRef`; anything else is refused, showing the form it takes.
 
     in      FieldRef("number"), "i.number"    →  out  "number"
-    in      "number", "i.number"              →  ContractViolation: takes a field read through
+    in      "number", "i.number"              →  ProgrammingError: takes a field read through
                                                  the entity, as in lambda a: i.number
     """
     if isinstance(value, FieldRef):
         return value.name
-    raise ContractViolation(
+    raise ProgrammingError(
         f"a presentation takes a field read through the entity, as in lambda a: {form}; "
         f"it was given {value!r}"
     )

@@ -67,11 +67,11 @@ The infrastructure, once, beside the tables:
 ```python
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
-from sincpro_framework.orm import Database, Repository, entity_table, map_aggregates
+from sincpro_framework.data_layer.orm import Database, Repository, map_aggregates, template_table
 
 shelf = registry()
-author_table = entity_table("author", shelf.metadata, Column("name", Text, nullable=False))
-book_table = entity_table(
+author_table = template_table.entity_table("author", shelf.metadata, Column("name", Text, nullable=False))
+book_table = template_table.entity_table(
     "book", shelf.metadata,
     Column("title", Text, nullable=False),
     Column("pages", Integer, nullable=False),
@@ -108,7 +108,7 @@ The request, from anywhere:
 
 The answer: twenty books of more than two hundred pages, longest first, each with `id` and
 `title` and its author as `{"id", "name"}`, plus `count`, a `cursor` for the next page, an empty
-`dropped`, and `model_meta_data` cut to the same three fields, saying which operators `pages`
+`dropped`, and `entity_meta_data` cut to the same three fields, saying which operators `pages`
 takes and that `author` is a `many2one` identified by `author_id`. Two statements ran.
 
 ## Glossary

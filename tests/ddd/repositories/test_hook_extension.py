@@ -17,10 +17,10 @@ from typing import Any
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import UseFramework
-from sincpro_framework.ddd import Entity, MemoryRepository
+from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
-from sincpro_framework.exceptions import ExtensionRefused
 
 
 @dataclass
@@ -144,7 +144,7 @@ def test_extending_a_hook_runs_it_through_super_in_its_place():
 def test_extending_needs_a_subclass_of_what_it_extends():
     hooks, checks, _audits = _collection()
 
-    with pytest.raises(ExtensionRefused, match="subclass"):
+    with pytest.raises(ProgrammingError, match="subclass"):
 
         @hooks.on(Invoice, extends=checks)
         class NotASubclass(_Recording):
@@ -307,7 +307,7 @@ def test_a_hook_registered_after_a_repository_used_the_collection_is_refused():
     hooks, _checks, _audits = _collection()
     _ran(hooks, Invoice(id="i1"))
 
-    with pytest.raises(ExtensionRefused, match="registered late"):
+    with pytest.raises(ProgrammingError, match="registered late"):
 
         @hooks.on(Invoice)
         class TooLate(_Recording):
@@ -356,5 +356,5 @@ def test_hooks_that_must_run_before_one_another_are_refused_naming_them():
     hooks.on(Invoice, before=(Second,))(First)
     repository = MemoryRepository(hooks=hooks)
 
-    with pytest.raises(ExtensionRefused, match="circle"):
+    with pytest.raises(ProgrammingError, match="circle"):
         repository.save(Invoice(id="i1"))

@@ -8,7 +8,7 @@ sincpro_framework/
 │   ├── entity/
 │   │   ├── entity.py             Entity: id (UUID v7), created_at, updated_at, version, translations()
 │   │   ├── entity_collection.py  EntityCollection, Count, Dropped, identity_of / identity_name
-│   │   ├── model_meta.py         Meta, FieldMeta, FieldType, annotations_of, related_class
+│   │   ├── entity_meta.py         Meta, FieldMeta, FieldType, annotations_of, related_class
 │   │   ├── relations.py          Relation (resolved_by, bus), Resolver, BusResolver, resolve_elsewhere
 │   │   └── mixins/               what an aggregate opts into, one file each
 │   │       ├── audited.py        AuditedMixin: created_by, updated_by
@@ -28,7 +28,7 @@ sincpro_framework/
 │   ├── query.py                  Query, ResponsePaginatedQuery (the answer, masked on the wire)
 │   ├── events/                   DomainEvent (domain_event.py), DeliverableEventMixin (mixins.py)
 │   ├── value_object.py           ValueObject
-│   └── exceptions.py             DomainError, InvalidCriteria, ContractViolation, StaleAggregate, DuplicateAggregate, RelationNotResolved
+│   └── exceptions.py             DomainError, InvalidCriteria, StaleAggregate, DuplicateAggregate, TransactionConflict, TimedOut, AggregateNotFound, RelationNotResolved
 └── orm/sqlalchemy/               the adapter · the [sqlalchemy] extra
    ├── entrypoint/               Repository facade, aggregate views, numbering, table templates
    ├── services/workflows/       Reading, Writing, UnitOfWork, shared Store
@@ -37,7 +37,7 @@ sincpro_framework/
    └── infrastructure/          Database, session tracking, shared unit in play, observability
 ```
 
-The line between the two is a test: `tests/orm/test_optional_extra.py` imports the vocabulary
+The line between the two is a test: `tests/data_layer/orm/test_optional_extra.py` imports the vocabulary
 with `sqlalchemy` blocked. Anything under `ddd/` that needed SQLAlchemy would fail there.
 
 ## The flow of a read

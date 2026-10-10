@@ -31,7 +31,7 @@ never knows this exists.
 | `EntityUpdated` | `ddd/entity/mixins/tracking.py` | The generic event: `changes: {field: (before, after)}`, plus `label` and `field_labels` — the words a person reads |
 | `_tracking` | `orm/sqlalchemy/infrastructure/change_tracking.py` | On SQLAlchemy: the diff the engine is about to write, at `before_flush` |
 | `ChangeTrackingRepositoryMixin` | `ddd/repositories/change_tracking.py` | On a store with no flush: a baseline on the way out, the diff on `save()` |
-| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/templates/events.py` | The context's one event table, where the event is kept in the transaction of the change |
+| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/template_table/events.py` | The context's one event table, where the event is kept in the transaction of the change |
 
 ## Where the diff comes from, and why it is not the same in both stores
 
@@ -51,7 +51,7 @@ with repository.context(writes=Writes.CHANGED) as unit:
     invoice.total = 900          # no save(): the session already knows, and so does the event
 ```
 
-`Writes` is exported by `sincpro_framework.orm`. The default is `Writes.SAVED`: changes not
+`Writes` is exported by `sincpro_framework.data_layer.orm`. The default is `Writes.SAVED`: changes not
 passed to `save` are discarded at commit with a warning. The example opts into session writes
 to demonstrate tracking at flush, not the recommended aggregate write path. Use `save(invoice)`
 to run hooks and cascade and persist its mapped events in the same transaction.

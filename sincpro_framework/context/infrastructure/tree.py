@@ -7,19 +7,19 @@
 
 `contextvars` answers one question — which node is current — and does it per thread and per async
 task: an asyncio task starts from a copy of its creator's, a thread from none on the default build
-(`infrastructure.threads` hands it on). The tree itself is `domain.node`.
+(`entrypoint.threads` hands it on). The tree itself is `domain.node`.
 
 Only the standard library and the domain: the buses import this, nothing here imports a bus.
 """
 
-import sys
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import replace
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
+from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context.domain.execution import (
     CAUSATION_ID,
     CONTEXT_NODE,
@@ -28,11 +28,9 @@ from sincpro_framework.context.domain.execution import (
     Execution,
     chained,
 )
-from sincpro_framework.context.domain.keys import standardized
 from sincpro_framework.context.domain.level import SCOPES, EntrypointKind, Level
 from sincpro_framework.context.domain.node import ContextNode
 from sincpro_framework.context.infrastructure.distributed import sharing_of
-from sincpro_framework.ids import new_entity_id
 
 ROOT = ContextNode(Level.ROOT, None, label="process")
 """The process: one per interpreter, the parent of every flow."""
@@ -81,16 +79,6 @@ def shared(node: ContextNode, node_id: str | None = None) -> ContextNode:
     return sharing.kept(node, node_id or new_entity_id())
 
 
-@contextmanager
-def carrying(
-    context: Mapping[str, Any], kind: EntrypointKind = EntrypointKind.DIRECT
-) -> Generator[None, None, None]:
-    """Every bus executed inside the block starts from `context` — what a caller that is not a bus,
-    a cron or a worker, hands the buses it calls."""
-    with entered(child(Level.SCOPE, standardized(context), kind=kind)):
-        yield
-
-
 def executing_context() -> Mapping[str, Any]:
     """Everything the node in play sees, read-only — empty outside every scope but the process's."""
     return MappingProxyType(current().flattened())
@@ -114,10 +102,8 @@ def _text(value: Any) -> str | None:
 
 def _event_cause(dto: Any) -> tuple[str, str | None] | None:
     """The event being executed, when it is one: it is the cause of the execution it starts."""
-    events = sys.modules.get("sincpro_framework.ddd.events")
-    if events is None or not isinstance(dto, events.DomainEvent):
-        return None
-    return dto.id, dto.correlation_id
+    cause = getattr(dto, "execution_cause", None)
+    return cast("tuple[str, str | None]", cause()) if callable(cause) else None
 
 
 def _identified(dto: Any, new_id: Callable[[], str]) -> tuple[str, str | None, str]:

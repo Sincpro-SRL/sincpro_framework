@@ -9,11 +9,12 @@ from dataclasses import dataclass, field, fields
 
 import pytest
 
+from sincpro_framework import ProgrammingError
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     NAME_SEARCH_LIMIT,
     TEXT,
     Entity,
-    MemoryRepository,
     Presentation,
     detail_of,
     matching,
@@ -26,8 +27,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.entity.model_meta import describe_class, presentation_of
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.ddd.entity.entity_meta import describe_class, presentation_of
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 from sincpro_framework.ddd.repositories import AggregateRepository
 
@@ -177,9 +177,9 @@ def test_an_unknown_field_is_refused_when_the_class_is_described():
             readonly=lambda a: a.cde  # type: ignore[attr-defined]
         )
 
-    with pytest.raises(ContractViolation, match="DEFAULT_DISPLAY answers 'cde'"):
+    with pytest.raises(ProgrammingError, match="DEFAULT_DISPLAY answers 'cde'"):
         describe_class(Typo, "id")
-    with pytest.raises(ContractViolation, match="HintTypo.presentation names cde"):
+    with pytest.raises(ProgrammingError, match="HintTypo.presentation names cde"):
         describe_class(HintTypo, "id")
 
 
@@ -194,7 +194,7 @@ def test_a_prefix_on_a_number_is_refused_instead_of_widening_the_search():
                 where=Condition(field="number", operator=Operator.STARTS_WITH, value=TEXT)
             )
 
-    with pytest.raises(ContractViolation, match="searches number by starts with"):
+    with pytest.raises(ProgrammingError, match="searches number by starts with"):
         describe_class(Numbered, "id")
 
 
@@ -246,7 +246,7 @@ def test_a_select_carries_the_identity_and_the_display_on_the_wire(accounts):
     answer = ResponseListAccounts.of(accounts.search(asked), asked).model_dump()
 
     assert all(set(record) == {"id", "name"} for record in answer["accounts"])
-    assert list(answer["model_meta_data"]["fields"]) == ["id", "name"]
+    assert list(answer["entity_meta_data"]["fields"]) == ["id", "name"]
 
 
 def test_get_without_a_detail_is_the_stored_record(accounts):

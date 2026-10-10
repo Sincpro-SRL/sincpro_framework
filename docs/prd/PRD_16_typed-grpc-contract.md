@@ -76,7 +76,7 @@ What is **static** — produced by a command at development time and committed:
 - **the lock** (§2): the only state the runtime cannot derive, because it is history;
 - **the `.proto` export** (§6): rendered from the same descriptors, for clients that compile stubs.
 
-The runtime **MUST** refuse to start (`ExposureRefused`) when a published field has no number in
+The runtime **MUST** refuse to start (`ProgrammingError`) when a published field has no number in
 the lock. It **MUST NOT** invent a number at runtime: a number decided at startup could differ
 between two replicas or two deploys.
 

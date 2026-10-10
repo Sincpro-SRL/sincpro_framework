@@ -14,15 +14,14 @@ from sqlalchemy import Column, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework.data_layer.orm import map_aggregates, map_events, template_table
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd import Criteria, DeliverableEventMixin, DomainEvent
 from sincpro_framework.ddd.criteria import Condition, Operator, parse_order
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.event_driven import DeliveryFailurePolicy, EventRelay, RelayPass
-from sincpro_framework.orm import event_table, map_events
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.orm.sqlalchemy.entrypoint.templates import entity_table
-from sincpro_framework.orm.sqlalchemy.services.data_mapper import map_aggregates
 
 from .contracts import InvoiceIssued, StockReserved
 
@@ -62,7 +61,7 @@ invoice_table = entity_table(
     Column("customer", Text),
     Column("total", Integer),
 )
-events_table = event_table("shop_billing_events", metadata)
+events_table = template_table.event_table("shop_billing_events", metadata)
 map_aggregates(mapper, {Invoice: invoice_table})
 map_events(mapper, BillingEvent, events_table)
 

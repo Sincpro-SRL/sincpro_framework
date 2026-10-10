@@ -44,7 +44,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
     identity_name,
     identity_of,
 )
-from sincpro_framework.ddd.entity.model_meta import Meta
+from sincpro_framework.ddd.entity.entity_meta import Meta
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 
 NESTED_LIMIT = 40
@@ -255,7 +255,7 @@ def _records_of(answer: Any, limit: int | None) -> tuple[list[Any], Meta | None,
         partitioned = (
             answer.cursor is None and answer.count is not None and answer.count.exact
         )
-        return records, answer.model_meta_data, partitioned and limit is not None
+        return records, answer.entity_meta_data, partitioned and limit is not None
     if isinstance(answer, EntityCollection):
         partitioned = (
             answer.cursor is None and answer.count is not None and answer.count.exact

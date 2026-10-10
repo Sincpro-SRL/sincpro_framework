@@ -19,6 +19,7 @@ from typing import Any, ContextManager, Optional, Tuple, Type
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
+from sincpro_framework.common.naming import registered_name
 from sincpro_framework.observability import correlation, failure
 from sincpro_framework.observability.domain import (
     OK,
@@ -33,14 +34,14 @@ from sincpro_framework.observability.domain import (
     resolve_identity,
 )
 from sincpro_framework.observability.errors.record_error import ErrorKind, record_error
-from sincpro_framework.observability.errors.setup import setup as setup_errors
+from sincpro_framework.observability.errors.setup import setup_errors
 from sincpro_framework.observability.registry import PROCESS, registry
 from sincpro_framework.observability.tracing.setup import (
     OTEL_AVAILABLE,
     current_otel_context,
     host_provider_is_real,
+    setup_tracing,
 )
-from sincpro_framework.observability.tracing.setup import setup as setup_tracing
 from sincpro_framework.observability.tracing.span_context import FrameworkSpanContext
 from sincpro_framework.observability.tracing.span_error import (
     span_attributes,
@@ -125,17 +126,21 @@ class Observability:
         self.ignored_errors = tuple(known)
 
     @contextmanager
-    def span(self, dto_name: str, layer: str) -> Generator[Any, None, None]:
+    def span(
+        self, dto_name: str, layer: str, use_case: str = ""
+    ) -> Generator[Any, None, None]:
         """Span for one DTO execution, with its ids and coordinates bound to the logger. It
         starts `ok`; `failed` replaces the outcome with the failure's, as the metrics do.
 
         Context: the execution is this bus's for as long as the span is open, so every signal
         recorded inside reads this bus's context (PRD_03 §4.10). The context goes on the span
-        when it closes — what an interceptor, a hook or `execute` set midway included."""
+        when it closes — what an interceptor, a hook or `execute` set midway included.
+        `use_case` is the use case's identity (`registered_name`), `dto_name` when not given.
+        """
         with (
             correlation.running(self),
             span_execution(
-                dto_name, layer, self.identity.bus, self.logger, {OUTCOME: OK}
+                dto_name, layer, self.identity.bus, self.logger, {OUTCOME: OK}, use_case
             ) as span,
         ):
             try:
@@ -203,7 +208,7 @@ class Observability:
             fields = {
                 "dto": repr(dto),
                 "error_type": type(error).__name__,
-                "sincpro_use_case": type(dto).__name__,
+                "sincpro_use_case": registered_name(type(dto), self._bus),
                 "sincpro_outcome": self._outcome(error),
             }
             return f"{type(dto).__name__} failed: {type(error).__name__}: {error}", fields
@@ -255,6 +260,7 @@ class Observability:
             ignored_exceptions=self.ignored_errors,
             details={**self.logger.logger_fields, **recorded.fields()},
             outcome=outcome,
+            use_case=registered_name(type(dto), self._bus),
         )
 
     def escaped(self, error: BaseException, dto: object) -> None:
@@ -342,6 +348,33 @@ class ProcessObservability:
             return trace.get_tracer(instrumentation_name)
         except Exception:
             return None
+
+    def current_span(self) -> Optional[Any]:
+        """The OpenTelemetry span running right now — to add an event or an attribute to it —
+        or ``None`` when nothing is tracing or opentelemetry is not installed. Never raises.
+        """
+        try:
+            from opentelemetry import trace
+
+            span = trace.get_current_span()
+            return span if span.get_span_context().is_valid else None
+        except Exception:
+            return None
+
+    def span_failed(self, span: Any, error: BaseException) -> None:
+        """A span a caller opened itself (`tracer(...).start_span`) ends in `error`: the
+        exception recorded, `error.type` set as the metrics and the logs spell it, the status
+        ERROR. Nothing without a span or without opentelemetry. Never raises."""
+        if span is None:
+            return
+        try:
+            from opentelemetry.trace import Status, StatusCode
+
+            span.record_exception(error)
+            span.set_attribute("error.type", type(error).__name__)
+            span.set_status(Status(StatusCode.ERROR, type(error).__name__))
+        except Exception:
+            return
 
     def bind_logger(self, logger: Any) -> None:
         """Make a process logger stamp the ids of the request being served.

@@ -31,8 +31,8 @@ from typing import Any, ClassVar, Self, cast, get_args, get_origin
 
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories.repository import IRepository
+from sincpro_framework.exceptions import ProgrammingError
 
 
 class AggregateRepository[T]:
@@ -59,12 +59,12 @@ class AggregateRepository[T]:
         a table was mapped to, of the aggregate the view was written for."""
         named = aggregate if aggregate is not None else self.declared
         if named is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{type(self).__name__} does not say which aggregate it holds: name it in the "
                 "base, AggregateRepository[Invoice], or hand it in"
             )
         if self.declared is not None and not issubclass(named, self.declared):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{type(self).__name__} holds {self.declared.__name__}, not {named.__name__}"
             )
         self.repository = repository

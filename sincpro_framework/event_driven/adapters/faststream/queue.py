@@ -24,8 +24,8 @@ from typing import Any, Protocol
 from sincpro_framework.context.adapters.propagation import inject
 from sincpro_framework.context.infrastructure.tree import live_context
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.event_driven.infrastructure.trace import trace_carrier
+from sincpro_framework.exceptions import ProgrammingError, ServiceUnavailableError
+from sincpro_framework.observability.tracing.propagation import trace_carrier
 
 EVENT_HEADER = "sincpro-event"
 """The event's wire name, so a channel several events share still routes each to its class."""
@@ -51,10 +51,6 @@ def by_event_name(event: DomainEvent) -> str:
     return event.name
 
 
-def no_options(event: DomainEvent) -> dict[str, Any]:
-    return {}
-
-
 def keyed_by_entity(event: DomainEvent) -> dict[str, Any]:
     """Kafka: the event's entity as the message key, so one entity's events stay in order."""
     return {"key": event.entity_id.encode()} if event.entity_id else {}
@@ -65,10 +61,11 @@ class FastStreamQueue:
         self,
         broker: Broker,
         channel_of: ChannelOf = by_event_name,
-        options_of: OptionsOf = no_options,
+        options_of: OptionsOf | None = None,
     ) -> None:
         """`channel_of` names where an event goes — its wire name by default; `options_of` adds
-        what one broker takes and another does not, such as Kafka's `key`."""
+        what one broker takes and another does not, such as Kafka's `key` — nothing by
+        default."""
         self.broker = broker
         self.channel_of = channel_of
         self.options_of = options_of
@@ -80,7 +77,7 @@ class FastStreamQueue:
     ) -> T:
         loop = self._loop
         if loop is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "this FastStreamQueue was never started: call start() where the process begins "
                 "and stop() where it ends, so synchronous code has a loop to publish on"
             )
@@ -113,12 +110,19 @@ class FastStreamQueue:
         return {**inject(live_context()), **trace_carrier(), EVENT_HEADER: event.name}
 
     async def _publish(self, event: DomainEvent, headers: dict[str, str]) -> None:
-        await self.broker.publish(
-            event.as_json().encode(),
-            self.channel_of(event),
-            headers=headers,
-            **self.options_of(event),
-        )
+        """Context: the event is written and its channel chosen here, before the broker is
+        reached — what fails after that is the broker not taking it, `ServiceUnavailableError`:
+        retry later."""
+        written = event.as_json().encode()
+        channel = self.channel_of(event)
+        options = self.options_of(event) if self.options_of else {}
+        try:
+            await self.broker.publish(written, channel, headers=headers, **options)
+        except Exception as error:
+            raise ServiceUnavailableError(
+                f"the broker did not take {event.name} on {channel}: "
+                f"{type(error).__name__}: {error}"
+            ) from error
 
     def put(self, event: DomainEvent) -> None:
         """Publish from synchronous code and wait until the broker took it."""

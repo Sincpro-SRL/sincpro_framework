@@ -19,8 +19,8 @@ deep docs it names live in the framework repository, not in the package.
   Command run once. `CronProcess` is the clock in a child beside a server. `workers=` on
   `CronGateway` is how many ticks run at once.
 - **Process** answers "this program stays up and runs one or more loops". It lives in
-  `sincpro_framework.process`, beside `registry.py`, not under `entrypoints/`. A loop is `run`
-  and `stop`. `CronGateway` is one. `Poll` calls a function every interval; the function is the
+  `sincpro_framework.entrypoints.entrypoint.workers`: an entrypoint, not a wire. A loop is `run` and `stop`.
+  `CronGateway` is one. `Poll` calls a function every interval; the function is the
   project's (a relay pass, or the Commands that claim a row). There is no job-queue table. A
   broker stays `faststream run`. A server stays its gateway. `docs/process/README.md`.
 - **Migrations** answer "in what order do the schema changes of every context and store run, where
@@ -33,33 +33,33 @@ deep docs it names live in the framework repository, not in the package.
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `Crons` | The crons of one bounded context: a name (log/trace identity), dependencies by name, `@cron`, `without`; refuses changes once built | registry | `from sincpro_framework.cron import Crons` |
+| `Crons` | The crons of one bounded context: a name (log/trace identity), dependencies by name, `@cron`, `without`; refuses changes once built | registry | `from sincpro_framework.entrypoints.adapters.cron import Crons` |
 | `run_relay` / `relay_deliverable_events` | Register an existing `EventRelay` or build one from `repository`, `source` and `to`; default interval two seconds | methods | on `Crons` |
-| `Cron` | Base class of a cron: `run(self, tick)`; every registry dependency is set on it as an attribute | port (abstract) | `from sincpro_framework.cron import Cron` |
+| `Cron` | Base class of a cron: `run(self, tick)`; every registry dependency is set on it as an attribute | port (abstract) | `from sincpro_framework.entrypoints.adapters.cron import Cron` |
 | `@crons.cron(...)` | Registers a class: `"0 2 * * *"` + `timezone=`, or `every=timedelta(...)`; `overlap`, `missed`, `missed_window`, `stale_after`, `replaces`, `name` | decorator | method of `Crons` |
-| `Overlap` / `Missed` | Policies: previous run still going (`SKIP`/`ALLOW`); ticks missed while down (`SKIP`/`RUN_LATEST`/`RUN_ALL`) | setting | `from sincpro_framework.cron import Overlap, Missed` |
-| `Tick` | The run in progress: `cron`, `scheduled_for`, `once(key)` | DTO (frozen dataclass) | `from sincpro_framework.cron import Tick` |
+| `Overlap` / `Missed` | Policies: previous run still going (`SKIP`/`ALLOW`); ticks missed while down (`SKIP`/`RUN_LATEST`/`RUN_ALL`) | setting | `from sincpro_framework.entrypoints.adapters.cron import Overlap, Missed` |
+| `Tick` | The run in progress: `cron`, `scheduled_for`, `once(key)` | DTO (frozen dataclass) | `from sincpro_framework.entrypoints.adapters.cron import Tick` |
 | `tick.once(key)` | `True` the first time `key` is asked for this tick, on any replica — an item-level, at-most-once guard | function | method of `Tick` |
-| `CronGateway` | The orchestrator: looks every 5 s, claims each due tick, runs each in its own thread; `run`, `stop`, `wait`, `plan`, `status`, `run_now` | adapter (entrypoint) | `from sincpro_framework.cron import CronGateway` |
-| `CronProcess` | Runs a gateway in a spawned child process beside the service; `start`, `stop`, `is_alive` | adapter (entrypoint) | `from sincpro_framework.cron import CronProcess` |
-| `Process` | This OS process stays up and runs each loop on its own thread until SIGINT, SIGTERM or `stop` | adapter | `from sincpro_framework.process import Process` |
-| `Poll` | A loop: call `tick` every `every`, at once and then on the interval; a failing tick is logged and the loop continues | adapter | `from sincpro_framework.process import Poll` |
-| `Loop` | `run` blocks, `stop` makes it return. `CronGateway` and `Poll` are loops | port | `sincpro_framework.process` |
-| `CronRuns` | The record of runs and the once-per-tick claim: `claim`, `finish`, `running`, `last`, `last_success` | port (abstract) | `from sincpro_framework.cron import CronRuns` |
-| `InMemoryRuns` | Default `CronRuns`, in the process — one replica only | adapter | `from sincpro_framework.cron import InMemoryRuns` |
-| `KeyValueRuns` | `CronRuns` over any `KeyValueStore` (Redis/Valkey/Memcached) — shared by replicas | adapter | `from sincpro_framework.cron import KeyValueRuns` |
-| `Run` / `RunOutcome` / `CronStatus` | One claimed tick / `SUCCEEDED`, `FAILED`, `SKIPPED` / `last_run`, `last_success`, `next_tick` | DTO | `from sincpro_framework.cron import Run, RunOutcome, CronStatus` |
-| `ManualClock` | A clock that moves when the test says (`advance(minutes=2)`) | adapter | `from sincpro_framework.testing import ManualClock` |
-| `ContextMigrations` | What one context migrates: its name, its folder, one engine per store | registry | `from sincpro_framework.migrations import ContextMigrations` |
-| `Chain` | One (context × store): steps run in order, position kept in the store itself | DTO (frozen dataclass) | `from sincpro_framework.migrations import Chain` |
-| `Step` | One migration: UUIDv7 `id`, `parent`, `requires` (`context/store/id`), `irreversible`, `checksum` | DTO (frozen dataclass) | `from sincpro_framework.migrations import Step` |
-| `Migrations` | The composition root: every context merged into one timeline; `status`, `upgrade`, `downgrade`, `revision`, `hash`, `check`, `resolve`, `adopt`, `*_plan` | registry | `from sincpro_framework.migrations import Migrations` |
+| `CronGateway` | The orchestrator: looks every 5 s, claims each due tick, runs each in its own thread; `run`, `stop`, `wait`, `plan`, `status`, `run_now` | adapter (entrypoint) | `from sincpro_framework.entrypoints.adapters.cron import CronGateway` |
+| `CronProcess` | Runs a gateway in a spawned child process beside the service; `start`, `stop`, `is_alive` | adapter (entrypoint) | `from sincpro_framework.entrypoints.adapters.cron import CronProcess` |
+| `Process` | This OS process stays up and runs each loop on its own thread until SIGINT, SIGTERM or `stop` | adapter | `from sincpro_framework.entrypoints.entrypoint.workers import Process` |
+| `Poll` | A loop: call `tick` every `every`, at once and then on the interval; a failing tick is logged and the loop continues | adapter | `from sincpro_framework.entrypoints.entrypoint.workers import Poll` |
+| `Loop` | `run` blocks, `stop` makes it return. `CronGateway` and `Poll` are loops | port | `sincpro_framework.entrypoints.entrypoint.workers` |
+| `CronRuns` | The record of runs and the once-per-tick claim: `claim`, `finish`, `running`, `last`, `last_success` | port (abstract) | `from sincpro_framework.entrypoints.adapters.cron import CronRuns` |
+| `InMemoryRuns` | Default `CronRuns`, in the process — one replica only | adapter | `from sincpro_framework.entrypoints.adapters.cron import InMemoryRuns` |
+| `KeyValueRuns` | `CronRuns` over any `KeyValueStore` (Redis/Valkey/Memcached) — shared by replicas | adapter | `from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns` |
+| `Run` / `RunOutcome` / `CronStatus` | One claimed tick / `SUCCEEDED`, `FAILED`, `SKIPPED` / `last_run`, `last_success`, `next_tick` | DTO | `from sincpro_framework.entrypoints.adapters.cron import Run, RunOutcome, CronStatus` |
+| `ManualClock` | A clock that moves when the test says (`advance(minutes=2)`) | adapter | `from sincpro_framework.runtime.testing import ManualClock` |
+| `ContextMigrations` | What one context migrates: its name, its folder, one engine per store | registry | `from sincpro_framework.data_layer.migrations import ContextMigrations` |
+| `Chain` | One (context × store): steps run in order, position kept in the store itself | DTO (frozen dataclass) | `from sincpro_framework.data_layer.migrations import Chain` |
+| `Step` | One migration: UUIDv7 `id`, `parent`, `requires` (`context/store/id`), `irreversible`, `checksum` | DTO (frozen dataclass) | `from sincpro_framework.data_layer.migrations import Step` |
+| `Migrations` | The composition root: every context merged into one timeline; `status`, `upgrade`, `downgrade`, `revision`, `hash`, `check`, `resolve`, `adopt`, `*_plan` | registry | `from sincpro_framework.data_layer.migrations import Migrations` |
 | Timeline | `migrations.status().timeline`: every step of every chain in run order, with whether it is applied | function | — |
-| `command_line` | The CLI the Makefile calls; exit 1 on refusal, failure or a `check` problem | function | `from sincpro_framework.migrations import command_line` |
-| `MigrationEngine` | What a store implements: `position`, `record`, `apply`, `revert`, `scaffold`, optional `drift`, `transactional` | port (abstract) | `from sincpro_framework.migrations import MigrationEngine` |
-| `AlembicEngine` | SQL stores: autogenerates from the context's `MetaData`, one version table per chain | adapter | `from sincpro_framework.orm.migrations import AlembicEngine` (extra `[migrations]`) |
-| `InMemoryEngine` | A store in memory — tests and learning | adapter | `from sincpro_framework.migrations import InMemoryEngine` |
-| `ChainState` / `ChainStatus` / `MigrationStatus` / `Position` | `UP_TO_DATE`/`BEHIND`/`AHEAD`/`DIRTY`; per-chain status; whole status; `head` + `dirty` | DTO | `from sincpro_framework.migrations import ...` |
+| `command_line` | The CLI the Makefile calls; exit 1 on refusal, failure or a `check` problem | function | `from sincpro_framework.data_layer.migrations import command_line` |
+| `MigrationEngine` | What a store implements: `position`, `record`, `apply`, `revert`, `scaffold`, optional `drift`, `transactional` | port (abstract) | `from sincpro_framework.data_layer.migrations import MigrationEngine` |
+| `AlembicEngine` | SQL stores: autogenerates from the context's `MetaData`, one version table per chain | adapter | `from sincpro_framework.data_layer.orm import AlembicEngine` (extra `[migrations]`) |
+| `InMemoryEngine` | A store in memory — tests and learning | adapter | `from sincpro_framework.data_layer.migrations import InMemoryEngine` |
+| `ChainState` / `ChainStatus` / `MigrationStatus` / `Position` | `UP_TO_DATE`/`BEHIND`/`AHEAD`/`DIRTY`; per-chain status; whole status; `head` + `dirty` | DTO | `from sincpro_framework.data_layer.migrations import ...` |
 
 Look-alikes: the framework's `Cron` (abstract) vs the context's own `Cron(_Cron,
 CronDependencyContextType)` base — import the first as `_Cron`. `CronDependencyContextType` is a
@@ -72,13 +72,13 @@ stay applied.
 
 ## Architecture
 
-**In the framework.** `sincpro_framework.cron` (`domain/` Cron, Tick, policies, `CronRuns` port;
+**In the framework.** `sincpro_framework.entrypoints.adapters.cron` (`domain/` Cron, Tick, policies, `CronRuns` port;
 `adapters/` InMemoryRuns, KeyValueRuns, clocks; `registry` Crons; `entrypoint/` CronGateway,
-CronProcess) needs only the stdlib. `sincpro_framework.migrations` (`domain/` Chain, Step, engine
+CronProcess) needs only the stdlib. `sincpro_framework.data_layer.migrations` (`domain/` Chain, Step, engine
 port; `adapters/` InMemoryEngine; `manifest` meta_migration.json; `orchestrator` Migrations;
 `entrypoint/` command_line) needs no database. Optional extras: `AlembicEngine` in
-`sincpro_framework.orm.migrations` (`[migrations]` = sqlalchemy + alembic); the Redis/Valkey or
-Memcached store behind `KeyValueRuns` (`sincpro_framework.caching.adapters.redis` /
+`sincpro_framework.data_layer.orm` (`[migrations]` = sqlalchemy + alembic); the Redis/Valkey or
+Memcached store behind `KeyValueRuns` (`sincpro_framework.data_layer.caching.adapters.redis` /
 `.memcached`, extras `[redis]` / `[memcached]`).
 
 **In a consumer service** (one `UseFramework` bus per bounded context, created in
@@ -160,7 +160,7 @@ make migrate → python -m myapp.entrypoints.migrations upgrade
 from datetime import timedelta
 
 from sincpro_framework import UseFramework
-from sincpro_framework.cron import Cron as _Cron, Crons, Missed, Overlap, Tick
+from sincpro_framework.entrypoints.adapters.cron import Cron as _Cron, Crons, Missed, Overlap, Tick
 
 
 class CronDependencyContextType:                 # infrastructure/dependencies.py
@@ -199,8 +199,8 @@ PRD_08.
 ```python
 from pathlib import Path
 
-from sincpro_framework.migrations import ContextMigrations, Migrations, command_line
-from sincpro_framework.orm.migrations import AlembicEngine
+from sincpro_framework.data_layer.migrations import ContextMigrations, Migrations, command_line
+from sincpro_framework.data_layer.orm import AlembicEngine
 
 # domains/billing/entrypoints/migrations/__init__.py
 billing_migrations = ContextMigrations("billing", Path(__file__).parent)

@@ -40,8 +40,8 @@ subset. The same mechanism configures the framework itself (log, OTLP, Sentry, r
 | `settings` (framework's) | The framework's settings object, built at import | setting | `from sincpro_framework.sincpro_conf import settings` |
 | `SINCPRO_FRAMEWORK_CONFIG_FILE` | Env var: another file for the framework's own settings | setting | (environment) |
 | `load_yaml_file` | Reads the YAML document as a dict | adapter | `from sincpro_framework.sincpro_conf import load_yaml_file` |
-| `settings_scope_violations` | Test helper: a context reading another context's section | function | `from sincpro_framework.testing import settings_scope_violations` |
-| `override_dependencies` | Test helper: swap a registered dependency (a settings copy) | function | `from sincpro_framework.testing import override_dependencies` |
+| `settings_scope_violations` | Test helper: a context reading another context's section | function | `from sincpro_framework.runtime.testing import settings_scope_violations` |
+| `override_dependencies` | Test helper: swap a registered dependency (a settings copy) | function | `from sincpro_framework.runtime.testing import override_dependencies` |
 
 Look-alikes: the **framework's** `settings` (`sincpro_framework.sincpro_conf.settings`) is not the
 **project's** singleton (`<pkg>.settings.settings`). `FrameworkSettings` is the class a project
@@ -238,7 +238,7 @@ and their variables: [references/framework-settings.md](references/framework-set
 ## Scope check and test override
 
 ```python
-from sincpro_framework.testing import override_dependencies, settings_scope_violations
+from sincpro_framework.runtime.testing import override_dependencies, settings_scope_violations
 
 
 def test_each_context_reads_only_its_own_settings():

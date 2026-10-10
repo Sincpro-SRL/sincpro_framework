@@ -82,7 +82,7 @@ dependency-injector's container-attribute behaviour, which this repository does 
 treat it as the reason the code is shaped this way, not as a verified contract.
 
 Because each instance has its own container, a decoration registers into exactly one bounded context.
-`tests/use_container/test_multiple_instances.py:30-41` registers one DTO on each of two instances and
+`tests/core/use_bus/test_multiple_instances.py:30-41` registers one DTO on each of two instances and
 asserts the two `feature_registry` key sets differ.
 
 ### `_register_service`: single DTO or list of DTOs
@@ -158,7 +158,7 @@ attached with `add_attributes(...)` on those same bus providers
 `kwargs` is dependency-injector's behaviour and is not asserted anywhere in this repository: no test
 in the suite exercises the decorator-side raise paths, and the only `DTOAlreadyRegistered` assertions
 go through the bus registration API or the cross-layer check
-(`tests/bus/test_framework_bus.py:50-63`). If the check ever misses, the write is a dict literal with
+(`tests/core/bus/test_framework_bus.py:50-63`). If the check ever misses, the write is a dict literal with
 the new name first and the existing entries second (`sincpro_framework/ioc.py:119-121`, `:126-131`,
 `:137-147`), so the earlier entry is the one that survives. Verify both reads against the installed
 library before changing how entries are attached.
@@ -173,7 +173,7 @@ the *materialised* `{name: instance}` dict with the same name-collision guard
 update `dto_registry`, and the docstring states the decorator is the intended path
 ("This method is not used directly", `sincpro_framework/bus.py:85-86`). The test suite uses it to wire
 fixture buses by hand (`tests/fixtures.py:25-28`, `:52-58`,
-`tests/bus/test_framework_bus.py:59-60`; also `tests/error_handler/test_framework_layer.py:51`,
+`tests/core/bus/test_framework_bus.py:59-60`; also `tests/core/error_handler/test_framework_layer.py:51`,
 `:66-68`).
 
 Two consequences separate the two entry points, and both are observable:
@@ -203,7 +203,7 @@ Two consequences separate the two entry points, and both are observable:
    (`sincpro_framework/use_bus.py:99-105`). The push therefore targets the *registration entries*
    (`providers.Factory` objects), not the container and not a bus instance — the docstring's intent is
    that the dependency becomes an attribute of the Feature / ApplicationService
-   (`sincpro_framework/use_bus.py:152-164`). `tests/use_container/test_use_framework.py` is the
+   (`sincpro_framework/use_bus.py:152-164`). `tests/core/use_bus/test_use_framework.py` is the
    end-to-end exercise of that path: it registers `proxy_services` (`:36-37`), a Feature then calls
    `self.any_client("client_name")` (`:64-71`), and the framework is invoked (`:99-102`). Note the
    timing: the call happens only from the build (`sincpro_framework/use_bus.py:125`), so it covers the
@@ -250,7 +250,7 @@ Step 5 is the only place a handler is instantiated: registration stores `Factory
 | `app_service_bus` | `Singleton(ApplicationServiceBus, logger_bus, observability)` | `sincpro_framework/ioc.py:55-57` | one `ApplicationServiceBus` per instance |
 | `framework_bus` | `Factory(FrameworkBus, feature_bus=…, app_service_bus=…)` | `sincpro_framework/ioc.py:60-66` | a **new** facade on every `framework_bus()` call |
 | `feature_registry` / `app_service_registry` | `providers.Dict(...)`, accumulated at registration | `sincpro_framework/ioc.py:48`, `:54`, `:119-150` | dicts of `Factory` providers until a sub-bus resolves them |
-| `dto_registry` | `providers.Dict(...)` | `sincpro_framework/ioc.py:45`, `:119-121` | accumulated the same way, but its values are the DTO **classes** — introspection reads them directly (`sincpro_framework/introspection/inspector.py:116-118`, pinned by `tests/test_introspection.py:67-73`) |
+| `dto_registry` | `providers.Dict(...)` | `sincpro_framework/ioc.py:45`, `:119-121` | accumulated the same way, but its values are the DTO **classes** — introspection reads them directly (`sincpro_framework/introspection/inspector.py:116-118`, pinned by `tests/introspection/test_introspection.py:67-73`) |
 | `logger_bus` / `observability` / `injected_dependencies` | `providers.Object()` / `providers.Dict()` | `sincpro_framework/ioc.py:42-44` | the first two are supplied by the instance (`sincpro_framework/use_bus.py:63-66`) |
 
 Two consequences follow directly:
@@ -312,8 +312,8 @@ under `_register_service`, no test in this repository drives it, so the bus-API 
 The cross-layer check is the one that spans both moments: at registration time a name may legally be
 registered in each layer (each layer's check only looks at its own registry,
 `sincpro_framework/ioc.py:99-113`), and the collision is detected when the facade is constructed
-(`sincpro_framework/bus.py:150-162`). `tests/bus/test_framework_bus.py:50-63` builds that situation
-through the bus API and asserts `DTOAlreadyRegistered`; `tests/bus/test_framework_bus.py:36-47` asserts
+(`sincpro_framework/bus.py:150-162`). `tests/core/bus/test_framework_bus.py:50-63` builds that situation
+through the bus API and asserts `DTOAlreadyRegistered`; `tests/core/bus/test_framework_bus.py:36-47` asserts
 `UnknownDTOToExecute` for a DTO that was never registered. Both are also re-checked and reported from
 the facade's `except` at call time (`sincpro_framework/bus.py:196-205`). Routing rules and the full
 execution path live on [executing a DTO](/openwiki/architecture/bus-execution.md).
@@ -335,15 +335,15 @@ about behaviour beyond it.
 
 | Behaviour | Pinned by |
 | --- | --- |
-| Two instances never share a registry | `tests/use_container/test_multiple_instances.py:30-41` |
+| Two instances never share a registry | `tests/core/use_bus/test_multiple_instances.py:30-41` |
 | The `FeatureBus` injected into an `ApplicationService` is the facade's own | `tests/observability/test_bus_wiring.py:54-63` |
 | Container singletons are per framework, not per process | `tests/observability/test_bus_wiring.py:76-83` |
 | A rebuild keeps the same observability identity | `tests/observability/test_bus_wiring.py:113-121` |
-| `DTOAlreadyRegistered` across layers; `UnknownDTOToExecute` for an unregistered DTO | `tests/bus/test_framework_bus.py:50-63`, `:36-47` |
-| Registrations reach introspection as `features` / `app_services` / `dtos`, and an unbuilt framework raises `ValueError` | `tests/test_introspection.py:43-48`, `:76-80` |
-| Dependencies survive the build and are isolated per instance | `tests/use_container/test_deps.py:70-93` |
+| `DTOAlreadyRegistered` across layers; `UnknownDTOToExecute` for an unregistered DTO | `tests/core/bus/test_framework_bus.py:50-63`, `:36-47` |
+| Registrations reach introspection as `features` / `app_services` / `dtos`, and an unbuilt framework raises `ValueError` | `tests/introspection/test_introspection.py:43-48`, `:76-80` |
+| Dependencies survive the build and are isolated per instance | `tests/core/use_bus/test_deps.py:70-93` |
 | The list form `@framework.feature([A, B])` type-checks | `tests/typing_and_linter/typing_cases/list_dto_registration_case.py:15`, checked by `tests/typing_and_linter/test_typing_and_linter.py:31-41` |
-| A hand-wired bus via `register_feature` / `register_app_service` still executes and honours `handle_error` | `tests/error_handler/test_framework_layer.py:50-79` |
+| A hand-wired bus via `register_feature` / `register_app_service` still executes and honours `handle_error` | `tests/core/error_handler/test_framework_layer.py:50-79` |
 
 ## Where to go next
 

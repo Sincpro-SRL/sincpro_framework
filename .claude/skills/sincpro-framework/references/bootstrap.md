@@ -43,7 +43,7 @@ def register_dependencies(
 
 The attribute names on `DependencyContextType` **must** match the `add_dependency` names. A test
 that executes a throwaway Feature reading every attribute is the check that wiring is complete —
-see `unregistered_dependencies` in `sincpro_framework.testing`.
+see `unregistered_dependencies` in `sincpro_framework.runtime.testing`.
 
 ## `framework.py` — the typed bases
 
@@ -126,6 +126,6 @@ thread. `self.context` is per call; everything else on `self` is shared. Keep re
 
 ## Missing dependency
 
-`unregistered_dependencies(my_framework)` (from `sincpro_framework.testing`) returns
+`unregistered_dependencies(my_framework)` (from `sincpro_framework.runtime.testing`) returns
 `{handler: [names]}` for every declared name nobody registered. Assert it is `{}` in a setup test.
 See [testing.md](testing.md).

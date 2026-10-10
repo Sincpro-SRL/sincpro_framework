@@ -14,14 +14,14 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import UseFramework
+from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     AllHold,
     AnyHolds,
     EntityReads,
     Get,
     Is,
-    MemoryRepository,
     Presentation,
     ResponseRecord,
     When,
@@ -30,8 +30,8 @@ from sincpro_framework.ddd import (
 from sincpro_framework.ddd.criteria import Operator, expression_from
 from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.model_meta import Meta, describe_class
-from sincpro_framework.ddd.exceptions import ConstraintViolation, ContractViolation
+from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
+from sincpro_framework.ddd.exceptions import ConstraintViolation
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
 
@@ -337,7 +337,7 @@ def test_a_condition_on_a_field_that_does_not_exist_is_refused_when_the_class_is
             visible_when=lambda b: (When(Is(b.stat, Operator.EQ, "x"), b.state),),  # type: ignore[attr-defined]
         )
 
-    with pytest.raises(ContractViolation, match="stat"):
+    with pytest.raises(ProgrammingError, match="stat"):
         describe_class(Broken, "id")
 
 
@@ -351,7 +351,7 @@ def test_a_condition_written_as_a_bare_value_is_refused_showing_the_form():
             readonly_when=lambda l: (When(l.state == "done", l.notes),),
         )
 
-    with pytest.raises(ContractViolation, match="Is, AllHold or AnyHolds"):
+    with pytest.raises(ProgrammingError, match="Is, AllHold or AnyHolds"):
         describe_class(Loose, "id")
 
 
@@ -364,7 +364,7 @@ def test_a_hint_list_that_is_not_made_of_when_is_refused():
             visible_when=lambda m: (m.state,),  # type: ignore[arg-type,return-value]
         )
 
-    with pytest.raises(ContractViolation, match="takes When"):
+    with pytest.raises(ProgrammingError, match="takes When"):
         describe_class(Mixed, "id")
 
 
@@ -391,7 +391,7 @@ def test_the_screen_gets_the_record_and_its_hints_in_one_answer():
         pass
 
     answer = bus(QueryGetInvoice(id=confirmed.id), ResponseInvoice).model_dump(mode="json")
-    fields = answer["model_meta_data"]["fields"]
+    fields = answer["entity_meta_data"]["fields"]
 
     assert answer["invoice"]["state"] == "confirmed"
     assert fields["number"]["readonly"] is True

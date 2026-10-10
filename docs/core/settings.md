@@ -179,7 +179,7 @@ Scoping is guidance, never a wall: a context may read the global. A team that wa
 tests it, like `layer_violations`:
 
 ```python
-from sincpro_framework.testing import settings_scope_violations
+from sincpro_framework.runtime.testing import settings_scope_violations
 
 
 def test_each_context_reads_only_its_own_settings():

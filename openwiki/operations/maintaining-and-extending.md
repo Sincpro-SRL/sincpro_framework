@@ -88,7 +88,7 @@ drops it.
 
 | Invariant | Established by | What a change breaks |
 | --- | --- | --- |
-| The container and its registries are **per `UseFramework` instance**, never per process | container built in `UseFramework.__init__` (`sincpro_framework/use_bus.py:63-66`); decorators bound to it as `partial`s (`:69-70`); Singletons declared per container (`sincpro_framework/ioc.py:49-57`) | two bounded contexts in one process would share handlers and identity; pinned by `tests/observability/test_bus_wiring.py:76-83`, `tests/use_container/test_multiple_instances.py:30-41` |
+| The container and its registries are **per `UseFramework` instance**, never per process | container built in `UseFramework.__init__` (`sincpro_framework/use_bus.py:63-66`); decorators bound to it as `partial`s (`:69-70`); Singletons declared per container (`sincpro_framework/ioc.py:49-57`) | two bounded contexts in one process would share handlers and identity; pinned by `tests/observability/test_bus_wiring.py:76-83`, `tests/core/use_bus/test_multiple_instances.py:30-41` |
 | One handler **instance** is produced per registration, and only at build time | registration stores `providers.Factory(...)` per DTO name (`sincpro_framework/ioc.py:126-131`, `:137-147`); only `framework_bus()` evaluates them (`sincpro_framework/use_bus.py:128-131`) | instantiate a handler at registration and `self.context` binding, per-instance caches and the "handlers are created by the container" model all change shape |
 | The **routing key is the input DTO class `__name__`**, at registration and at execution | written at `sincpro_framework/ioc.py:96`; read at `sincpro_framework/bus.py:45`, `:53`, `:101`, `:109`, `:173` | switching to the class object (or to a qualified name) makes every existing registry key miss; two same-named DTO classes also stop colliding |
 | **A name may live in only one layer.** The facade rejects a DTO registered in both | `FrameworkBus.__init__` intersects both key sets and raises `DTOAlreadyRegistered` (`sincpro_framework/bus.py:150-162`), re-checked on every call (`:175-182`); unregistered names raise `UnknownDTOToExecute` (`:191-194`) | ambiguous routing becomes silent priority resolution instead of a build-time error |
@@ -180,7 +180,7 @@ limitation. They are recorded as caveats, not as facts — do not promote them i
 
 | Caveat | What the source says | Verify before changing |
 | --- | --- | --- |
-| **Provider attribute plumbing** | The duplicate check reads `feature_bus.kwargs` / `app_service_bus.kwargs` (`sincpro_framework/ioc.py:101`, `:109`) while the accumulation is attached with `add_attributes(...)` (`:133-135`, `:148-150`) and read back from `.attributes` at build time (`sincpro_framework/use_bus.py:91-94`, `:99-102`). How `add_attributes` surfaces on `.kwargs` is dependency-injector's behaviour and no test exercises the decorator-side raise paths | Check both accessors against the installed `dependency-injector` before changing how entries are attached; the only `DTOAlreadyRegistered` assertions go through the bus API or the cross-layer check (`tests/bus/test_framework_bus.py:50-63`) |
+| **Provider attribute plumbing** | The duplicate check reads `feature_bus.kwargs` / `app_service_bus.kwargs` (`sincpro_framework/ioc.py:101`, `:109`) while the accumulation is attached with `add_attributes(...)` (`:133-135`, `:148-150`) and read back from `.attributes` at build time (`sincpro_framework/use_bus.py:91-94`, `:99-102`). How `add_attributes` surfaces on `.kwargs` is dependency-injector's behaviour and no test exercises the decorator-side raise paths | Check both accessors against the installed `dependency-injector` before changing how entries are attached; the only `DTOAlreadyRegistered` assertions go through the bus API or the cross-layer check (`tests/core/bus/test_framework_bus.py:50-63`) |
 | **Non-atomic list registration** | The loop registers DTO names one at a time (`sincpro_framework/ioc.py:95-150`), so a collision on the third element of a list leaves the first two already in the layer registry **and** in `dto_registry` when `DTOAlreadyRegistered` is raised | Decide the intended behaviour (roll back, or document the partial state) rather than assuming atomicity; nothing instantiates at that point, but a later build will route the partial entries |
 | **A `str` DTO element is admitted by the internal alias but unusable** | `DTORegistration = DTOClass \| str \| list[DTOClass \| str]` (`sincpro_framework/ioc.py:28`) while the loop reads `__name__` off every element unconditionally (`:96`) and nothing resolves a string to a class; the public stub narrows to classes (`sincpro_framework/use_bus.pyi:27`, `:45-46`) | Treat the stub as the accurate contract; if the string form is ever wanted, it needs a resolution step, not a type widening |
 | **Free-threading gaps (not implemented or targeted)** | `dependency-injector` (required) forces CPython to re-enable the GIL at import on `python3.14t` (`sincpro_framework/ioc.py:7-14`, `pyproject.toml:15-23`); `_live_overlays` is a plain unlocked list (`sincpro_framework/context/mixin.py:13-24`);  `dynamic_dep_registry` is a lock-free dict and the docstring says to call `add_dependency` during startup, "not concurrently with in-flight requests" (`sincpro_framework/use_bus.py:155-165`) | Reproduce the concurrent mutation you care about on both a GIL and a free-threaded build before "fixing" it; two named tests encode the GIL-build assumption and would legitimately fail on a free-threaded interpreter (`sincpro_framework/context/thread_context_bus.py:16-21`) |
@@ -191,16 +191,16 @@ limitation. They are recorded as caveats, not as facts — do not promote them i
 
 | Behaviour | Pinned by |
 | --- | --- |
-| Two instances share no registry | `tests/use_container/test_multiple_instances.py:30-41` |
+| Two instances share no registry | `tests/core/use_bus/test_multiple_instances.py:30-41` |
 | The three buses share one `Observability`; two frameworks never do | `tests/observability/test_bus_wiring.py:46-51`, `:66-73` |
 | The `FeatureBus` injected into an `ApplicationService` is the facade's own | `tests/observability/test_bus_wiring.py:54-63` |
 | A second `build_root_bus()` keeps the same observability identity | `tests/observability/test_bus_wiring.py:113-121` |
 | Truthiness of the optional extras: the bus runs with neither SDK installed | `tests/observability/test_optional_extras.py:8-50` |
-| Cross-layer `DTOAlreadyRegistered` and `UnknownDTOToExecute` | `tests/bus/test_framework_bus.py:50-63`, `:36-47` |
+| Cross-layer `DTOAlreadyRegistered` and `UnknownDTOToExecute` | `tests/core/bus/test_framework_bus.py:50-63`, `:36-47` |
 | A rebuild does not orphan the identity; a hand-built `FeatureBus` still has one | `tests/observability/test_bus_wiring.py:113-121`, `:124-129` |
 | Middleware cannot break the routing key | `tests/test_middleware.py:166-205` |
-| Registrations reach introspection; an unbuilt framework raises | `tests/test_introspection.py:43-48` |
-| Thread/async hand-off semantics | `tests/test_thread_context_bus.py`, `tests/test_async_bus.py` |
+| Registrations reach introspection; an unbuilt framework raises | `tests/introspection/test_introspection.py:43-48` |
+| Thread/async hand-off semantics | `tests/context/test_thread_context_bus.py`, `tests/aio/test_async_bus.py` |
 
 Two gate details that decide whether a change is actually verified:
 

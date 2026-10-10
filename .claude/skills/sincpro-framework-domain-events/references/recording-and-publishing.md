@@ -106,7 +106,7 @@ built, so register the publisher before the first execution.
 process, development, tests, and reactions that must be visible at once. **Publishing runs the
 subscriber in the call**, so a subscriber that publishes re-enters the queue depth-first. Where
 order of facts matters, write the fact down in the context it happened in, or send it through an
-outbox whose relay delivers in order.
+outbox whose relay keeps them in order (a waiting retry holds back what comes after it).
 
 **`BackgroundQueue(build_subscriber)`** — the smallest "do it in the background":
 
@@ -132,7 +132,7 @@ queue.stop()
 ## Testing what was published
 
 ```python
-from sincpro_framework.testing import RecordingQueue, override_dependencies
+from sincpro_framework.runtime.testing import RecordingQueue, override_dependencies
 
 published = RecordingQueue()                              # or RecordingQueue(SyncQueue(...)) to also deliver
 with override_dependencies(billing, publisher=Publisher(published)):

@@ -17,7 +17,7 @@ Python remains: framework(dto)                                ValueObject
 
 Real SDK evaluation (SIAT SOAP, not Greeting): **[entrypoint_mcp_use_case.md](mcp-use-case.md)**.
 
-Package path: `sincpro_framework.entrypoints.mcp` (`build_mcp_server`, `Entrypoint`). The **feature name** in docs and product language is `entrypoint_mcp`.
+Package path: `sincpro_framework.entrypoints.adapters.mcp` (`build_mcp_server`, `Entrypoint`). The **feature name** in docs and product language is `entrypoint_mcp`.
 
 The bus projection is `Catalog` / `PackedFeatureOrAppService` (`entrypoints/catalog.py`), built on `sincpro_framework.introspection` (features/app_services registries). This host only binds FastMCP.
 
@@ -40,7 +40,7 @@ result = siat_soap_sdk(SomeCommand(...), SomeResponse)
 ## Public API
 
 ```python
-from sincpro_framework.entrypoints.mcp import build_mcp_server, Entrypoint
+from sincpro_framework.entrypoints.adapters.mcp import build_mcp_server, Entrypoint
 
 # Default — every JSON-safe Feature and ApplicationService becomes a tool
 build_mcp_server(siat_soap_sdk).run()
@@ -73,8 +73,9 @@ tools; `Exposure.CATALOG` publishes every JSON-safe use case of every bus and lo
 `@internal` is on neither.
 
 ```python
-from sincpro_framework.entrypoints.exposure import Exposure, mcp
-from sincpro_framework.entrypoints.mcp import McpGateway
+from sincpro_framework.entrypoints.entrypoint.decorators import mcp
+from sincpro_framework.entrypoints.domain.surface import Exposure
+from sincpro_framework.entrypoints.adapters.mcp import McpGateway
 
 @billing.feature(CommandIssueInvoice)
 @auth.requires(BillingPermission.ISSUE)
@@ -213,7 +214,7 @@ A Command that is a **dataclass** does work here: the tool signature is built fr
 
 ### Binary DTOs
 
-MCP tool arguments are JSON, and `McpWire` declares `carries_bytes = False`: a DTO with `bytes` / `format: binary|byte` has no tool. Those tools are **skipped** at `server()` time with a warning. They remain callable in-process via `framework(dto)`. `to_callables()` still includes them; the FastMCP host does not. Declaring `@mcp()` on one is refused: the gateway's `verify()` names it and `server()` raises `ExposureRefused`, since the tool would not exist.
+MCP tool arguments are JSON, and `McpWire` declares `carries_bytes = False`: a DTO with `bytes` / `format: binary|byte` has no tool. Those tools are **skipped** at `server()` time with a warning. They remain callable in-process via `framework(dto)`. `to_callables()` still includes them; the FastMCP host does not. Declaring `@mcp()` on one is refused: the gateway's `verify()` names it and `server()` raises `ProgrammingError`, since the tool would not exist.
 
 ---
 
@@ -351,8 +352,8 @@ SSE (`transport="sse"`) exists for old clients. Do not use it for new work.
 
 ## Verification
 
-- Declared surface: `tests/entrypoint/test_entrypoint_mcp.py` — DECLARED vs CATALOG, names and clashes, hints on `tools/list`, parity with the bus, hints never authorize.
-- Unit: `tests/entrypoint/test_entrypoints.py` — catalog (Feature + ApplicationService), own docstring (not base class), VO roundtrip + `validate_fn`, `Field` / attribute descriptions in schema, include/exclude/wrap, binary skip, extra import contract.
+- Declared surface: `tests/entrypoints/adapters/mcp/test_entrypoint_mcp.py` — DECLARED vs CATALOG, names and clashes, hints on `tools/list`, parity with the bus, hints never authorize.
+- Unit: `tests/entrypoints/test_entrypoints.py` — catalog (Feature + ApplicationService), own docstring (not base class), VO roundtrip + `validate_fn`, `Field` / attribute descriptions in schema, include/exclude/wrap, binary skip, extra import contract.
 - Manual: `pip install sincpro-framework[mcp]`, `build_mcp_server(your_sdk).run()`, point Cursor / Claude Desktop at stdio, call one Feature and one ApplicationService.
 - Failure mode: a new DTO with `bytes` silently missing from MCP is expected (warning log). A Feature whose docstring is only inherited from `Feature` will publish a useless description — add a class or `execute` docstring.
 
@@ -364,7 +365,7 @@ In the bounded context package (not inside domain Features):
 
 ```python
 # your_sdk/entrypoint_mcp.py  — or entrypoints/mcp.py; the feature is still entrypoint_mcp
-from sincpro_framework.entrypoints.mcp import build_mcp_server
+from sincpro_framework.entrypoints.adapters.mcp import build_mcp_server
 from your_sdk import your_framework
 
 def main() -> None:

@@ -15,7 +15,7 @@ The path never carries the layer. `openapi()` gives OpenAPI 3.1 (`operationId` i
 problem details, `Idempotency-Key`, one OpenAPI document for generated and hand-written routes:
 
 ```python
-from sincpro_framework.entrypoints.fastapi import FastApiGateway
+from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
 api = FastApiGateway([billing], title="Billing API")
 api.group(billing, version="v1")        # /v1/billing/...
 app = api.app()                         # install_problem_handlers for free
@@ -48,7 +48,7 @@ AIP names: package `billing.v1`, service `BillingService`, method `IssueInvoice`
 `google.protobuf.Struct` in and out (field names verbatim). Server reflection (v1 + v1alpha) and
 `sincpro.Introspection/Describe`; no `protoc`, no generated stubs. `.write_proto_files(dir)` for a
 Go/TS client at build time. `.server()` / `.handlers()` / `.mount()` for a host's own server;
-`GrpcClient(target)` (`from sincpro_framework.entrypoints.grpc.client import GrpcClient`) is a
+`GrpcClient(target)` (`from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient`) is a
 dict-in/dict-out Python caller.
 
 - **The response shape** is the declared `execute` return annotation (or
@@ -81,7 +81,7 @@ The built-in gateways carry JSON today — REST (`FastApiGateway`), JSON-RPC, MC
 and the gRPC gateway, whose payload is `google.protobuf.Struct` (unary, no protobuf `bytes`).
 That is the gateways' current design, not a limit of HTTP or gRPC. On those wires a DTO with a
 `bytes` field bound with `@rest.post`, `@mcp()`, `bind`… is refused (`verify()` names it, the
-build raises `ExposureRefused`); unbound, it is skipped with one warning, `Skipping non-JSON
+build raises `ProgrammingError`); unbound, it is skipped with one warning, `Skipping non-JSON
 Feature/ApplicationService [Command…]`. It stays callable in-process. To publish it on a JSON
 wire, write the route by hand and call the bus (REST: `bus_call`). A project's own `Wire` with
 `carries_bytes = True` publishes it as it is.

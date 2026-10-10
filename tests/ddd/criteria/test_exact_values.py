@@ -11,9 +11,15 @@ import pytest
 from sqlalchemy import Column, Numeric
 from sqlalchemy.orm import registry
 
-from sincpro_framework.ddd import Criteria, Entity, MemoryRepository
-from sincpro_framework.ddd.entity.model_meta import FieldType, describe_class
-from sincpro_framework.orm import Database, Repository, entity_table, map_aggregates
+from sincpro_framework.data_layer.orm import (
+    Database,
+    Repository,
+    map_aggregates,
+    template_table,
+)
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Criteria, Entity
+from sincpro_framework.ddd.entity.entity_meta import FieldType, describe_class
 
 
 @dataclass
@@ -30,7 +36,11 @@ class Ticket:
 MAPPING = registry()
 map_aggregates(
     MAPPING,
-    {Line: entity_table("exact_line", MAPPING.metadata, Column("amount", Numeric(12, 2)))},
+    {
+        Line: template_table.entity_table(
+            "exact_line", MAPPING.metadata, Column("amount", Numeric(12, 2))
+        )
+    },
 )
 
 

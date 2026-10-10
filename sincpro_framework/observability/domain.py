@@ -6,11 +6,11 @@ emitting** (``ObservabilityIdentity``) and **whether a backend came up**
 release and the Tempo ``service.name`` from drifting apart.
 """
 
+import importlib.metadata
 import inspect
 import os
 from functools import cache
 from importlib.metadata import distribution, packages_distributions
-from importlib.metadata import version as distribution_version
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Iterator, Literal, Mapping
@@ -150,7 +150,7 @@ def log_fields(identity: ObservabilityIdentity) -> dict[str, str]:
     """Who a log line comes from and for whom, on the line itself: the same release, service,
     version and tenant the spans, the metrics and GlitchTip carry — readable without the
     collector's labels. The tenant and the user are the execution's (PRD_03 §4.10)."""
-    from sincpro_framework.observability.correlation import tenant as execution_tenant
+    from sincpro_framework.observability import correlation
     from sincpro_framework.observability.correlation import user_id
 
     fields = {"service_name": identity.service_name}
@@ -158,7 +158,7 @@ def log_fields(identity: ObservabilityIdentity) -> dict[str, str]:
         fields["service_version"] = identity.service_version
     if identity.artifact != UNKNOWN and identity.release:
         fields["release"] = identity.release
-    who = execution_tenant()
+    who = correlation.tenant()
     if who:
         fields["tenant"] = who
     user = user_id()
@@ -204,7 +204,7 @@ def failure_of(exc: BaseException) -> ComponentStatus:
 def installed_version(distribution: str) -> str:
     """Version of an installed distribution, or ``""`` when it is not one."""
     try:
-        return distribution_version(distribution)
+        return importlib.metadata.version(distribution)
     except Exception:
         return ""
 

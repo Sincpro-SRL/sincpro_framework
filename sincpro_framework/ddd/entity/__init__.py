@@ -5,10 +5,11 @@ when it was a single module: `Entity`, `AuditedMixin`, `ArchivableMixin`, `Chang
     from sincpro_framework.ddd.entity import Entity, AuditedMixin, ChangeTrackingMixin
 
 Still the whole story in one import; `entity.py`, `mixins/audited.py`, `mixins/archivable.py`
-and `mixins/tracking.py` are how it is organized underneath, not something a caller needs to
+and `mixins/change_tracking.py` are how it is organized underneath, not something a caller needs to
 know.
 """
 
+from sincpro_framework.common.ids import new_entity_id, uuid7
 from sincpro_framework.ddd.entity.entity import (
     RECORDED,
     Entity,
@@ -18,9 +19,11 @@ from sincpro_framework.ddd.entity.entity import (
 )
 from sincpro_framework.ddd.entity.mixins.archivable import ArchivableMixin
 from sincpro_framework.ddd.entity.mixins.audited import AuditedMixin
+from sincpro_framework.ddd.entity.mixins.change_tracking import (
+    ChangeTrackingMixin,
+    EntityUpdated,
+)
 from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
-from sincpro_framework.ddd.entity.mixins.tracking import ChangeTrackingMixin, EntityUpdated
-from sincpro_framework.ids import new_entity_id, uuid7
 
 __all__ = [
     "RECORDED",

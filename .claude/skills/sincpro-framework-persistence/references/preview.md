@@ -85,7 +85,7 @@ self.repository.save(invoice)        # derivations recomputed, before_save hooks
 
 - **Writing inside a preview.** Every store write, numbering `take`, session flush, `text(...)`
   that is not one plain read (a `WITH … UPDATE`, two statements, `FOR UPDATE`) and locking read
-  (`for_update`) raises `WriteInPreview` inside `previewing()`. Reads inside a preview do not
+  (`for_update`) raises `ProgrammingError` inside `previewing()`. Reads inside a preview do not
   autoflush: changes a unit of work holds pending are not seen, and are written at its commit. Number the document in the Command that saves it;
   show `"/"` before. A bare `ThreadPoolExecutor` does not carry the guard: use `ContextExecutor`.
 - **Assigning `id` or `version` from a form.** `assign` refuses framework fields, and a

@@ -8,7 +8,7 @@ from sincpro_framework.observability.domain import (
     ObservabilityIdentity,
     framework_identity,
 )
-from sincpro_framework.observability.errors import setup as errors_setup
+from sincpro_framework.observability.errors import setup
 from sincpro_framework.observability.tracing.setup import current_otel_context
 
 ErrorKind = Literal["instance", "framework"]
@@ -24,8 +24,10 @@ def record_error(
     ignored_exceptions: IgnoredExceptions = (),
     details: Optional[Mapping[str, Any]] = None,
     outcome: str = "",
+    use_case: str = "",
 ) -> None:
-    """Capture on the framework's own client, tagged with who and where.
+    """Capture on the framework's own client, tagged with who and where — ``sincpro.use_case``
+    is the use case's identity, ``dto_name`` when none is given.
 
     ``details`` (handler, DTO chain, where it failed, the execution's context) travel as
     the event's ``sincpro`` context; the handler is also a searchable tag.
@@ -40,7 +42,7 @@ def record_error(
     that is a separate product event, and intentionally not suppressed here.
     """
     try:
-        if not errors_setup.SDK_AVAILABLE:
+        if not setup.SDK_AVAILABLE:
             return
         if kind == "instance" and ignored_exceptions:
             if isinstance(error, ignored_exceptions):
@@ -53,7 +55,7 @@ def record_error(
         isolation_scope = getattr(sentry_sdk, "isolation_scope", None)
         if isolation_scope is None:
             return
-        client = errors_setup.client_for(identity.release)
+        client = setup.client_for(identity.release)
         if client is None:
             return
 
@@ -73,7 +75,7 @@ def record_error(
                 scope.set_context("sincpro", dict(details))
                 if details.get("handler"):
                     scope.set_tag("sincpro.handler", details["handler"])
-            _tag_correlation(scope, error, dto_name, identity, outcome)
+            _tag_correlation(scope, error, use_case or dto_name, identity, outcome)
             _tag_execution(scope)
             sentry_sdk.capture_exception(error)
     except Exception:
@@ -81,7 +83,7 @@ def record_error(
 
 
 def _tag_correlation(
-    scope: Any, error: Exception, dto_name: str, identity: ObservabilityIdentity, outcome: str
+    scope: Any, error: Exception, use_case: str, identity: ObservabilityIdentity, outcome: str
 ) -> None:
     tags = {
         "service_name": identity.service_name,
@@ -89,7 +91,7 @@ def _tag_correlation(
         "release": identity.release if identity.artifact != UNKNOWN else "",
         "sincpro.version": identity.service_version,
         "sincpro.context": identity.bus,
-        "sincpro.use_case": dto_name,
+        "sincpro.use_case": use_case,
         "sincpro.outcome": outcome,
         "error.type": type(error).__name__,
     }

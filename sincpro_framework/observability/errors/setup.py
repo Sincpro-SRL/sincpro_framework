@@ -66,7 +66,7 @@ def client_for(release: str) -> Optional[Any]:
     return client
 
 
-def setup(identity: ObservabilityIdentity) -> ComponentStatus:
+def setup_errors(identity: ObservabilityIdentity) -> ComponentStatus:
     """Prepare the isolated client for this bus's release."""
     try:
         if not SDK_AVAILABLE:

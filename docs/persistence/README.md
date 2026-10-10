@@ -31,4 +31,4 @@ Read in this order:
 | [Decisions](decisions.md) | Why each piece is the way it is, and what was rejected |
 
 Everything here needs Python 3.12 or later. The vocabulary, `sincpro_framework.ddd`, installs
-with the framework. The SQLAlchemy adapter, `sincpro_framework.orm`, is the `[sqlalchemy]` extra.
+with the framework. The SQLAlchemy adapter, `sincpro_framework.data_layer.orm`, is the `[sqlalchemy]` extra.

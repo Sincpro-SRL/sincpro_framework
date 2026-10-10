@@ -11,8 +11,9 @@ from decimal import Decimal
 import pytest
 
 from sincpro_framework import UseFramework
-from sincpro_framework.caching.domain.failure import FailSafe
-from sincpro_framework.caching.domain.policies import CachePolicy
+from sincpro_framework.data_layer.caching.domain.failure import FailSafe
+from sincpro_framework.data_layer.caching.domain.policies import CachePolicy
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     Derivations,
     Derive,
@@ -23,8 +24,8 @@ from sincpro_framework.ddd import (
     presentation_of,
 )
 from sincpro_framework.ddd.criteria import Operator, Sort
-from sincpro_framework.ddd.entity.model_meta import derivations_of
-from sincpro_framework.ddd.repositories import Hook, Hooks, MemoryRepository
+from sincpro_framework.ddd.entity.entity_meta import derivations_of
+from sincpro_framework.ddd.repositories import Hook, Hooks
 
 
 @dataclass

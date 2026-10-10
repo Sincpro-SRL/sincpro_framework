@@ -480,7 +480,7 @@ reference: never built, it forwards every call. DTOs, `bytes`, `Decimal` and the
 context travel as they are, in chunks; the answer is the DTO, an exception raised there is raised
 here as itself, and only a DTO that does not fit fails — versions are never compared. Nothing configured, every context runs here; in code,
 `billing.hosted_by("grpc://…")` does the same without configuration (the last one applied wins:
-configuration, then `hosted_by`, then serving). The component is `sincpro_framework.remote_execution`. See [docs/entrypoints/bounded-contexts-across-services.md](docs/entrypoints/bounded-contexts-across-services.md).
+configuration, then `hosted_by`, then serving). The component is `sincpro_framework.bus_communication.remote_execution`. See [docs/entrypoints/bounded-contexts-across-services.md](docs/entrypoints/bounded-contexts-across-services.md).
 
 - Same catalog, gRPC wire: `GrpcGateway({"qr": qr}).run("0.0.0.0:50051")`.
 - Methods are `/qr.Features/CommandCreateQREconomico` — unary, `google.protobuf.Struct` in and out.
@@ -732,7 +732,7 @@ fails the first time it runs. One assertion checks the whole bus, every handler 
 
 ```python
 # tests/my_domain/test_framework_setup.py
-from sincpro_framework.testing import unregistered_dependencies
+from sincpro_framework.runtime.testing import unregistered_dependencies
 
 from my_sdk.apps.my_domain import my_framework
 
@@ -773,7 +773,7 @@ fails. A name that was never registered is refused, so a typo cannot leave the r
 talking to the outside world.
 
 ```python
-from sincpro_framework.testing import override_dependencies
+from sincpro_framework.runtime.testing import override_dependencies
 
 from my_sdk.apps.payments import payments
 
@@ -798,7 +798,7 @@ given one, so the subscribers still hear it.
 
 ```python
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
-from sincpro_framework.testing import RecordingQueue
+from sincpro_framework.runtime.testing import RecordingQueue
 
 
 def test_issuing_publishes_invoice_issued():
@@ -816,7 +816,7 @@ Two checks read the package's source — without importing it, so an SDK that op
 connection on import is safe to check — and return what they find:
 
 ```python
-from sincpro_framework.testing import import_cycles, layer_violations
+from sincpro_framework.runtime.testing import import_cycles, layer_violations
 
 
 def test_no_import_cycles():
@@ -1093,7 +1093,7 @@ framework.add_global_error_handler(base_handler)          # 3rd = final fallback
 ## Persistence (ORM)
 
 `sincpro_framework.ddd` is the vocabulary — aggregates, `Criteria`, repositories, events — and
-needs nothing installed. `sincpro_framework.orm` is the SQLAlchemy adapter:
+needs nothing installed. `sincpro_framework.data_layer.orm` is the SQLAlchemy adapter:
 `pip install sincpro-framework[sqlalchemy]`.
 
 ### What it covers
@@ -1112,7 +1112,7 @@ needs nothing installed. `sincpro_framework.orm` is the SQLAlchemy adapter:
 | Hooks | `Rule` functions and `Hook` classes on `before_*` / `after_*` of every write and read |
 | Mixins | `ArchivableMixin`, `AuditedMixin` (who wrote it), `ChangeTrackingMixin` (what changed) |
 | Domain events | Recorded by the aggregate, published by a Feature, answered by other buses |
-| Event table | A domain event is an entity: one table per bounded context (`event_table`, `map_events`), kept by `save` with the change |
+| Event table | A domain event is an entity: one table per bounded context (`template_table.event_table`, `map_events`), kept by `save` with the change |
 | Delivery | `DeliverableEventMixin` keeps its delivery on the row; `EventRelay` sends it on — `SKIP LOCKED`, failure policies, at least once |
 | Event sourcing | `EventSourcedMixin`: rebuilt from its events by `get`, appended by `save`, `entity_version` against two writers |
 | Testing | `MemoryRepository`: the same vocabulary with no database |
@@ -1126,7 +1126,7 @@ from sqlalchemy import Column, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.ddd import Criteria, Entity, EntityCollection
-from sincpro_framework.orm import Database, Repository, entity_table, map_aggregates
+from sincpro_framework.data_layer.orm import Database, Repository, map_aggregates, template_table
 
 
 @dataclass
@@ -1139,7 +1139,7 @@ class Products(EntityCollection[Product]): ...
 
 
 catalog = registry()
-product_table = entity_table(
+product_table = template_table.entity_table(
     "product",
     catalog.metadata,
     Column("name", Text, nullable=False),
@@ -1187,8 +1187,8 @@ A cron is one more caller of the buses, like an RPC method: a class registered o
 its bounded context, the buses it orchestrates injected by name.
 
 ```python
-from sincpro_framework.cron import Cron as _Cron
-from sincpro_framework.cron import CronGateway, CronProcess, Crons, Tick
+from sincpro_framework.entrypoints.cron import Cron as _Cron
+from sincpro_framework.entrypoints.cron import CronGateway, CronProcess, Crons, Tick
 
 
 class CronDependencyContextType:
@@ -1233,8 +1233,8 @@ The project writes each migration step; the framework orders every chain of ever
 store into one timeline and moves the whole system along it.
 
 ```python
-from sincpro_framework.migrations import ContextMigrations, Migrations, command_line
-from sincpro_framework.orm.migrations import AlembicEngine            # the [migrations] extra
+from sincpro_framework.data_layer.migrations import ContextMigrations, Migrations, command_line
+from sincpro_framework.data_layer.orm.migrations import AlembicEngine            # the [migrations] extra
 
 billing_migrations = ContextMigrations("billing", Path("domains/billing/entrypoints/migrations"))
 billing_migrations.store("main", AlembicEngine(billing_tables, database))
@@ -1260,7 +1260,7 @@ narrowed without asking again. A utility, not an engine — the computing is pan
 DuckDB's.
 
 ```python
-from sincpro_framework.data_analysis import QueryCache
+from sincpro_framework.data_layer.data_analysis import QueryCache
 
 cache = QueryCache(max_rows=2_000_000)
 page = cache.fetch(repository, InvoiceLine, posted)                  # one read
@@ -1286,7 +1286,7 @@ A use case stored as source — its Commands, its Responses and the one handler 
 — loaded onto the bus without a deploy.
 
 ```python
-from sincpro_framework.runtime_use_cases import BusRegistry, RuntimeUseCase
+from sincpro_framework.runtime.runtime_use_cases import BusRegistry, RuntimeUseCase
 
 registry = BusRegistry(billing, store)                              # the code's bus + what is stored
 registry.check(RuntimeUseCase(name="quote", source=source, version=2))          # refused before it is saved
@@ -1311,7 +1311,7 @@ The Commands a bus answers composed as JSON — what a node editor previews and 
 vocabulary may change.
 
 ```python
-from sincpro_framework.workflows import FileWorkflows, Workflows
+from sincpro_framework.runtime.workflows import FileWorkflows, Workflows
 
 workflows = Workflows(billing, FileWorkflows(Path("workflows")))    # one <name>.json each
 run = workflows.run("bill_order", {"order_id": 1})                    # a trace of every step
@@ -1761,7 +1761,7 @@ A section inherits a shared field it does not set (`qr.environment`) from the ne
 above, and overrides it by setting it. Everything required and missing is one validation error
 naming each path. `Secret[str]` masks a value everywhere it is printed. `describe_settings(settings)`
 lists each value with where it came from — file, section inherited, variable or default.
-`sincpro_framework.testing.settings_scope_violations` reports a context reading another context's
+`sincpro_framework.runtime.testing.settings_scope_violations` reports a context reading another context's
 section, for a team that wants the rule. A shared class inheriting `FrameworkSettings` hands the
 framework its log, OTLP, Sentry and release settings — no `framework_settings.x = …` lines.
 
@@ -1798,7 +1798,7 @@ make test-realworld       # the ledger cases over a populated database (docs/per
 make test-stress          # the same at 25 000 entries, timed; SINCPRO_REALWORLD_ENTRIES and DATABASE_URL apply
 make test-coverage        # the above + HTML report in htmlcov/
 make test-coverage-open   # the above + opens htmlcov/index.html in the browser
-make test_one t=tests/test_async_bus.py   # a single file/test, verbose, no coverage
+make test_one t=tests/aio/test_async_bus.py   # a single file/test, verbose, no coverage
 make clean-coverage       # remove .coverage, coverage.xml and htmlcov/
 ```
 
@@ -1840,7 +1840,7 @@ attempts it.** Everything below was verified hands-on (3.14.7 vs. 3.14.7t), not 
   (free-threaded), it's already propagated with no `thread_context()` involved. This
   doesn't make `thread_context()` wrong or unnecessary — most users run a GIL build, and
   code shouldn't silently depend on a free-threaded-only behavior — but it does mean
-  `tests/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread` and
+  `tests/context/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread` and
   `::test_fan_out_without_thread_context_loses_context_for_every_worker` encode a
   GIL-build-specific assumption and would legitimately fail if that suite is ever run on a
   free-threaded interpreter.

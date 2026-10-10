@@ -1,49 +1,49 @@
 """The gRPC transport of hosted contexts, the caller's side: `/sincpro.Contexts/Execute`, chunks of
 bytes both ways.
 
-    GrpcTransport(HostedAt(Wire.GRPC, "b:50051")).execute("billing", dto, Response, request)
+    GrpcTransport(HostedAt(Wire.GRPC, "b:50051")).execute("billing", dto, request)
 
 Context: one generic method rather than one per DTO, because both ends run the same code — the
-context's name, the DTO's registered name and the request context ride as metadata, the DTO's
-values as a stream of 1 MiB chunks each way (`remote_execution.domain.payload`), so no message comes
-near gRPC's per-message limit and a payload of several GiB is never one buffer. This module imports
-gRPC — it is imported only when an address names `grpc://`.
+context's name rides as metadata, the message (`sincpro_framework.remote_execution.domain.payload`: the DTO's identity,
+its values, the request context) as a stream of 1 MiB chunks each way, so no gRPC message comes
+near its per-message limit. This module imports gRPC — it is imported only when an address names
+`grpc://`.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any
 
-from pydantic import ValidationError
-
-from sincpro_framework.event_driven.infrastructure.trace import trace_carrier
-from sincpro_framework.ioc import registered_name
+from sincpro_framework.common.naming import registered_name
+from sincpro_framework.common.transport.addresses import HostedAt
+from sincpro_framework.common.transport.grpc import grpc
+from sincpro_framework.observability.tracing.propagation import trace_carrier
 from sincpro_framework.remote_execution.domain.errors import (
     ContextOutcomeUnknown,
     ContextTimeout,
     ContextUnavailable,
-    DTODoesNotFit,
     raised_as_itself,
 )
-from sincpro_framework.remote_execution.domain.payload import (
-    ChunkReader,
-    pack_context,
-    packed,
-    unpacked,
-)
-from sincpro_framework.transport.addresses import HostedAt
-from sincpro_framework.transport.grpc import grpc
+from sincpro_framework.remote_execution.domain.payload import Payload
 
 SERVICE = "sincpro.Contexts"
 METHOD = "Execute"
 PATH = f"/{SERVICE}/{METHOD}"
 CONTEXT_HEADER = "sp-bounded-context"
-DTO_HEADER = "sp-dto"
-REQUEST_CONTEXT_HEADER = "sp-request-context-bin"
 ACCEPTED_HEADER = "sp-accepted"
 """What the host answers first, before it reads the DTO — a call dropped after it may have run."""
 ERROR_MODULE = "sp-error-module"
 ERROR_KIND = "sp-error-kind"
 ERROR_DETAILS = "sp-error-details-bin"
+CHUNK_SIZE = 1024 * 1024
+"""Bytes per gRPC message — far below its per-message limit."""
+
+
+def chunks_of(data: bytes) -> Iterator[bytes]:
+    """`data` cut in `CHUNK_SIZE` pieces — one empty piece when there is nothing."""
+    view = memoryview(data)
+    yield bytes(view[:CHUNK_SIZE])
+    for start in range(CHUNK_SIZE, len(view), CHUNK_SIZE):
+        yield bytes(view[start : start + CHUNK_SIZE])
 
 
 def _raised(error: Any, context: str, hosted_at: HostedAt) -> Exception:
@@ -81,34 +81,27 @@ class GrpcTransport:
         self._channel = grpc.insecure_channel(hosted_at.address)
         self._call = self._channel.stream_stream(PATH)
 
-    def execute(
-        self, context: str, dto: Any, response: Any, request: Mapping[str, Any]
-    ) -> Any:
-        """1. The DTO's values as a stream of chunks; the context, the DTO's name, the request
-           context, the trace and who the call acts for as metadata.
+    def execute(self, context: str, dto: Any, request: Mapping[str, Any]) -> Payload:
+        """1. The message as a stream of chunks — the DTO by its identity, its values, the
+           request context; the context, the trace and who the call acts for as metadata.
         2. One streaming call, with the address's deadline.
-        3. Final: the answer rebuilt as `response` — as the host sent it when `None` — as its
-           chunks arrive, or the failure raised as `_raised` says.
+        3. Final: the answer's message, or the failure raised as `_raised` says.
         """
-        from sincpro_framework.auth.transports import identity_headers
+        from sincpro_framework.auth.entrypoint.transports import identity_headers
 
         metadata = (
             (CONTEXT_HEADER, context),
-            (DTO_HEADER, registered_name(type(dto))),
-            (REQUEST_CONTEXT_HEADER, pack_context(request)),
             *trace_carrier().items(),
             *identity_headers(context).items(),
         )
+        body = Payload.of(registered_name(type(dto), context), dto, request).as_json()
         try:
             answers = self._call(
-                packed(dto), metadata=metadata, timeout=self.hosted_at.timeout
+                chunks_of(body), metadata=metadata, timeout=self.hosted_at.timeout
             )
-            return unpacked(ChunkReader(answers), response)
+            return Payload.from_json(b"".join(answers))
         except grpc.RpcError as error:
             raise _raised(error, context, self.hosted_at) from None
-        except ValidationError as error:
-            where = f"the answer of {context} at {self.hosted_at.address}"
-            raise DTODoesNotFit(where, error) from None
 
     def close(self) -> None:
         self._channel.close()

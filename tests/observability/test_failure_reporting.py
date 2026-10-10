@@ -252,7 +252,8 @@ def test_the_exception_is_recorded_on_one_span_and_every_span_it_crosses_is_an_e
     _run(_payments(), CommandCheckout(order_id=7))
 
     spans = {
-        span.attributes["sincpro.use_case"]: span for span in otel_setup.get_finished_spans()
+        str(span.attributes["sincpro.use_case"]).rpartition(".")[2]: span
+        for span in otel_setup.get_finished_spans()
     }
     exception_events = [
         event for span in spans.values() for event in span.events if event.name == "exception"
@@ -309,7 +310,7 @@ def test_the_span_of_a_replaced_use_case_names_what_it_replaced(otel_setup):
     [span] = [
         span
         for span in otel_setup.get_finished_spans()
-        if span.attributes["sincpro.use_case"] == "CommandRefund"
+        if str(span.attributes["sincpro.use_case"]).endswith(".CommandRefund")
     ]
     assert span.attributes["sincpro.replaces"].endswith("Refund")
 

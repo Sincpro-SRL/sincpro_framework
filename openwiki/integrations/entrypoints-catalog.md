@@ -261,7 +261,7 @@ from crashing *after* the Feature already produced its side effect:
 
 Step 4's probe is load-bearing: pydantic happily keeps arbitrary objects on an `Any` field inside
 `model_dump()`, so without it the failure would surface inside the host as a serialization error
-after the side effect. `tests/entrypoint/test_entrypoints.py:310-317` pins the contract — a response
+after the side effect. `tests/entrypoints/test_entrypoints.py:310-317` pins the contract — a response
 carrying a SOAP-like object keeps its other fields, the raw value becomes a string, and the whole
 result is `json.dumps`-able. DTO hygiene, not the wire, decides whether step 5 ever runs.
 
@@ -367,14 +367,14 @@ never on a Feature) and the response DTO's business content (`docs/architecture/
 
 ## What the tests pin
 
-`tests/entrypoint/test_entrypoints.py` is where the catalog's behaviour is pinned. Most of it reaches
+`tests/entrypoints/test_entrypoints.py` is where the catalog's behaviour is pinned. Most of it reaches
 the shared layer through the MCP facade — `Entrypoint(...).tools()` and `.to_callables()` — and never
 needs a FastMCP install; the two tests that do produce a server guard the import with
-`try`/`except ImportError` (`tests/entrypoint/test_entrypoints.py:253-258`, `:292-296`). What the
+`try`/`except ImportError` (`tests/entrypoints/test_entrypoints.py:253-258`, `:292-296`). What the
 suite fixes:
 
 - both layers published, with the layer name on each entry
-  (`tests/entrypoint/test_entrypoints.py:145-155`);
+  (`tests/entrypoints/test_entrypoints.py:145-155`);
 - the description is the handler's own docstring, not the base-class essay (`:157-162`);
 - the binary decision, positive and negative (`:165-167` — `dto_is_json_serializable(ValidateCard) is
   True`, `dto_is_json_serializable(SendBinaryPackage) is False`);
@@ -384,9 +384,9 @@ suite fixes:
 - DTO field descriptions and Value Object titles surviving into `json_schema` (`:231-236`, `:261-269`);
 - a non-JSON response value coerced while the other fields survive (`:310-317`).
 
-`tests/entrypoint/test_entrypoint_rpc.py` pins the wire-visible consequence of the filter and of the
+`tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py` pins the wire-visible consequence of the filter and of the
 shared catalog: a binary DTO is absent from the method index
-(`tests/entrypoint/test_entrypoint_rpc.py:271-273`), and a per-instance `exclude` at mount time
+(`tests/entrypoints/adapters/rpc/test_entrypoint_rpc.py:271-273`), and a per-instance `exclude` at mount time
 removes one DTO without touching the other methods (`:276-282`).
 
 ## Related

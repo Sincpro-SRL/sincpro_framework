@@ -16,7 +16,11 @@ from types import ModuleType
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.remote_execution import Attach, ContextUnavailable, serve_contexts
+from sincpro_framework.remote_execution import (
+    Attach,
+    ContextUnavailable,
+    serve_contexts,
+)
 
 HOSTED = """
 import os

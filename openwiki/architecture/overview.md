@@ -45,7 +45,7 @@ module global:
 
 Two consequences the tests pin: `feature_bus` and `app_service_bus` are per-framework singletons, not
 process singletons (`tests/observability/test_bus_wiring.py:76-83`), and two instances never share a
-registry (`tests/use_container/test_multiple_instances.py:30-41`).
+registry (`tests/core/use_bus/test_multiple_instances.py:30-41`).
 
 ## The three bus layers and who owns which registry
 
@@ -208,7 +208,7 @@ Everything else is an internal you reach deliberately:
   `framework.app_service` attributes wrap (`sincpro_framework/use_bus.py:69-70`).
 - `sincpro_framework.bus` holds the concrete `FeatureBus` / `ApplicationServiceBus` / `FrameworkBus`,
   reachable through `framework.bus`. The test suite imports it directly
-  (`tests/bus/test_framework_bus.py:5`), which is also how a caller bypasses the middleware pipeline
+  (`tests/core/bus/test_framework_bus.py:5`), which is also how a caller bypasses the middleware pipeline
   and `UnknownDTOToExecute`.
 - `sincpro_framework.deps` (the locator behind `framework.deps`), plus `exceptions.py`,
   `error_handler.py`, `sincpro_conf.py`, `sincpro_logger.py` and `conf/sincpro_framework_conf.yml`.

@@ -16,29 +16,28 @@ from typing import (
 from _typeshed import DataclassInstance
 from sincpro_log.logger import LoggerProxy
 
-from sincpro_framework.observability import FrameworkSpanContext as FrameworkSpanContext
-from sincpro_framework.observability import Observability as Observability
+from sincpro_framework.observability import Observability
+from sincpro_framework.observability.tracing.span_context import FrameworkSpanContext
 
-from .aio import AsyncBus as AsyncBus
-from .bus import FrameworkBus as FrameworkBus
+from .aio import AsyncBus
+from .bus import FrameworkBus
+from .bus_pipeline.interceptors.interceptor import Interceptor
+from .common.transport.addresses import HostedAt
 from .context.domain.level import EntrypointKind
 from .context.domain.store import ContextStore
-from .context.entrypoint.bus import ContextMixin, FrameworkContext
+from .context.entrypoint.bus import FrameworkContext
 from .context.entrypoint.facade import Context
-from .context.infrastructure.providers import ContextProviderFunction
-from .deps import TDeps
-from .error_handler import ErrorHandler as ErrorHandler
-from .interceptors import Interceptor
+from .context.entrypoint.providers import ContextProviderFunction
+from .context.mixins.bus_context import BusContextMixin
+from .dependencies import TDeps
+from .error_handler import ErrorHandler
 from .remote_execution.entrypoint.hosts import Attach, OpenHost
-from .sincpro_abstractions import DataTransferObject
-from .sincpro_abstractions import TypeDTO as TypeDTO
-from .sincpro_abstractions import TypeDTOResponse as TypeDTOResponse
-from .transport.addresses import HostedAt
+from .sincpro_abstractions import DataTransferObject, TypeDTO, TypeDTOResponse
 
 DTOClass = Type[DataTransferObject] | Type[DataclassInstance]
 DTORegistration = DTOClass | list[DTOClass]
 
-class UseFramework(ContextMixin, Generic[TDeps]):
+class UseFramework(BusContextMixin, Generic[TDeps]):
     """
     Main class to use the framework, this is the main entry point to configure the framework.
 
@@ -160,8 +159,9 @@ class UseFramework(ContextMixin, Generic[TDeps]):
         building nothing."""
         ...
 
-    def map_to_dto_or_event(self, name: str, payload: str | dict[str, Any]) -> Any:
-        """The DTO or event registered under `name`, rebuilt from raw data."""
+    def map_to_dto_or_event(self, name: str, payload: str | bytes | Mapping[str, Any]) -> Any:
+        """The DTO or event registered under `name` — its identity, or its class name within
+        this bus — rebuilt from its JSON values."""
         ...
 
     def feature[T: type](

@@ -24,10 +24,16 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Generic, cast
 
+from sincpro_framework.common.ordering import (
+    DEFAULT_SEQUENCE,
+    Ordered,
+    Placement,
+    name_of,
+    ordered,
+)
 from sincpro_framework.context.domain.level import Level
 from sincpro_framework.context.infrastructure.tree import child, entered
-from sincpro_framework.exceptions import DependencyNotRegistered, ExtensionRefused
-from sincpro_framework.ordering import DEFAULT_SEQUENCE, Ordered, Placement, name_of, ordered
+from sincpro_framework.exceptions import DependencyNotRegistered, ProgrammingError
 from sincpro_framework.sincpro_abstractions import ContextT
 from sincpro_framework.sincpro_logger import logger
 
@@ -90,7 +96,7 @@ class Hook(Generic[ContextT]):
         class InvoiceMustBalance(BillingHook):
             def before_save(self, invoice: Invoice) -> None:
                 if not self.billing.allows(invoice.total):          # a dependency of the bus
-                    raise ContractViolation(f"refused for {self.context['user_id']}")
+                    raise ProgrammingError(f"refused for {self.context['user_id']}")
 
     Typed the way a Feature is: the dependencies by inheriting the context's
     `DependencyContextType`, the request's context by `Hook[ContextT]`.
@@ -223,7 +229,7 @@ class Hooks:
 
     def _refuse_late(self, hook: type[Hook]) -> None:
         if self._read:
-            raise ExtensionRefused(
+            raise ProgrammingError(
                 f"{hook.__name__} registered late: this collection was already read by a "
                 "repository, so it would never run — import its module before the repository "
                 "first saves or reads"
@@ -241,13 +247,13 @@ class Hooks:
         3. Final: the hook it takes the place of, or `None`.
         """
         if extends is not None and not issubclass(hook, extends):
-            raise ExtensionRefused(
+            raise ProgrammingError(
                 f"{hook.__name__} extends {extends.__name__}, so it has to be a subclass of it "
                 f"— super() is how it runs {extends.__name__}; to run beside it, "
                 f"register it with after={extends.__name__}"
             )
         if not _implemented(hook):
-            raise ExtensionRefused(
+            raise ProgrammingError(
                 f"{hook.__name__} implements none of {', '.join(MOMENTS)}, so it would never "
                 "run"
             )
@@ -357,7 +363,7 @@ class Hooks:
         self._read = True
 
     def _ordered(self) -> Ordered:
-        """The order the hooks run in (see `sincpro_framework.ordering`), worked out once — the
+        """The order the hooks run in (see `sincpro_framework.common.ordering`), worked out once — the
         collection is closed by then — with what was asked and could not be done as said
         logged once, not refused.
 
@@ -524,7 +530,7 @@ class HookChain:
     def fire(self, moment: str, record: Any) -> None:
         """Every hook implementing `moment` whose aggregate `record` is, in order.
 
-        fire("before_save", Invoice(total=-1))   →   ContractViolation from InvoiceMustBalance
+        fire("before_save", Invoice(total=-1))   →   ProgrammingError from InvoiceMustBalance
         """
         for link in self._compiled()[moment]:
             if isinstance(record, link.entities) and self._admits(link.hook, moment, record):

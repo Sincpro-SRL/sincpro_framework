@@ -5,6 +5,6 @@ for callers that are themselves async and want to fan out DTOs concurrently. Fut
 async-only additions belong here too, so this stays the one place to look.
 """
 
-from .bus import AsyncBus as AsyncBus
+from sincpro_framework.aio.bus import AsyncBus
 
 __all__ = ["AsyncBus"]

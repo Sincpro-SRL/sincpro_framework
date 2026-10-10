@@ -148,7 +148,7 @@ with repository.context(engine={"postgresql_readonly": True}) as unit: ...
 
 | Option | Meaning | SQLAlchemy | Not supported by the dialect |
 |---|---|---|---|
-| `isolation` | `"read_committed"`, `"repeatable_read"`, `"serializable"` | `connection.execution_options(isolation_level=…)` before the first statement | refused — `ContractViolation` |
+| `isolation` | `"read_committed"`, `"repeatable_read"`, `"serializable"` | `connection.execution_options(isolation_level=…)` before the first statement | refused — `ProgrammingError` |
 | `read_only` | no write may leave this unit of work | `save`/`remove`/`archive`/`upsert`/`*_all` refuse before any statement; `SET TRANSACTION READ ONLY` where the dialect has it | always honoured: the refusal is the framework's |
 | `timeout` | seconds any one statement may run | `SET LOCAL statement_timeout` (Postgres) | warning, statement runs unbounded |
 | `engine` | a mapping handed to `execution_options` as is | passthrough | whatever SQLAlchemy does with it |
@@ -175,7 +175,7 @@ style, principle 5):
 | SQLSTATE | MySQL | SQLite | Exception | New |
 |---|---|---|---|---|
 | `23505` | 1062 | `UNIQUE`, `PRIMARYKEY` | `DuplicateAggregate` | — |
-| `23503`, `23502`, `23514` | 1451, 1452, 1048, 3819 | `FOREIGNKEY`, `NOTNULL`, `CHECK` | `ConstraintViolation(ContractViolation)` | yes |
+| `23503`, `23502`, `23514` | 1451, 1452, 1048, 3819 | `FOREIGNKEY`, `NOTNULL`, `CHECK` | `ConstraintViolation(DomainError)` | yes |
 | `40001`, `40P01` | 1213, 1205 | `BUSY`, `LOCKED` | `TransactionConflict(DomainError)` | yes |
 | `55P03`, `57014` | 3572 | — | `TimedOut(DomainError)` — not retried | yes |
 
@@ -345,14 +345,14 @@ only costs time, so it warns.
 
 ## Phases
 
-1. **Owned relations** (§2) — built: `cascade.py`, `Held`, `tests/orm/test_cascade.py`.
+1. **Owned relations** (§2) — built: `cascade.py`, `Held`, `tests/data_layer/orm/test_cascade.py`.
 2. **Transactions** (§3, §4, §5) — built: `context(...)`, `nowait`, `engine_errors.py`,
-   `tests/orm/test_transactions.py`.
+   `tests/data_layer/orm/test_transactions.py`.
 3. **Bulk and hooks** (§6, §7, §8) — built: `upsert`, `update_all`/`remove_all`,
-   `transaction_hooks.py`, `tests/orm/test_bulk_writes.py`; the event log of #131 builds on §8.
+   `transaction_hooks.py`, `tests/data_layer/orm/test_bulk_writes.py`; the event log of #131 builds on §8.
 
 Every engine-sensitive test runs on SQLite and, with `SINCPRO_POSTGRES_URL` set, on Postgres
-(`tests/orm/engines.py`).
+(`tests/data_layer/orm/engines.py`).
 
 ## Open questions
 

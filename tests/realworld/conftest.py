@@ -23,14 +23,14 @@ from time import perf_counter
 import pytest
 
 from sincpro_framework import UseFramework
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.event_driven import (
     BackgroundQueue,
     Publisher,
     Subscriber,
     SyncQueue,
 )
-from sincpro_framework.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.orm.sqlalchemy.infrastructure.database import Database
 
 from .contexts import Heard, ledger_bus, lines_of, notifications_bus, reporting_bus
 from .databases import open_database

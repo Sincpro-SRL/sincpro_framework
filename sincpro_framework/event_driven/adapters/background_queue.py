@@ -8,36 +8,53 @@ crash is kept by the repository in the transaction of the change, marked
 `DeliverableEventMixin`, and handed on by an `EventRelay`.
 """
 
-import dataclasses
+import json
 import multiprocessing
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from pydantic import ValidationError
 
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.event_driven.infrastructure.trace import trace_carrier, within_trace
-from sincpro_framework.event_driven.services.subscriber import Subscriber
+from sincpro_framework.ddd.events.domain_event import NAME
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.observability.api import process
+from sincpro_framework.observability.tracing.propagation import trace_carrier, within_trace
 from sincpro_framework.sincpro_logger import logger
 
-STOP = ("__stop__", {}, {})
-"""What `stop()` puts in so the worker returns. The same three-part envelope every event
-travels in, so the consumer unpacks one shape and nothing else."""
+STOP = ("", {})
+"""What `stop()` puts in so the worker returns. The same two parts every event travels in — its
+JSON and the trace — so the consumer unpacks one shape and nothing else."""
+
+if TYPE_CHECKING:
+    from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
 
 
-def _consume(inbox: Any, build_subscriber: Callable[[], Subscriber]) -> None:
-    """The worker: its own subscriber, one event at a time, until told to stop."""
+def _consume(inbox: Any, build_subscriber: "Callable[[], Subscriber]") -> None:
+    """The worker: its own subscriber, one message at a time, until told to stop."""
     subscriber = build_subscriber()
     while True:
-        name, payload, carrier = inbox.get()
-        if (name, payload, carrier) == STOP:
+        raw, carrier = inbox.get()
+        if (raw, carrier) == STOP:
             return
+        written = json.loads(raw)
+        name = written.get(NAME, "")
         event_type = subscriber.event_type(name)
         if event_type is None:
+            logger.debug(f"event {name} {written.get('id')}: no bus of the worker answers it")
+            continue
+        try:
+            event = event_type.from_json(written)
+        except ValidationError as error:
+            logger.error(
+                f"event {name} {written.get('id')} does not fit {event_type.__name__} in "
+                f"the background worker and is not delivered: {error}"
+            )
+            process.record_error(error, layer="events")
             continue
         try:
             with within_trace(carrier):
-                subscriber.handle(event_type(**payload))
+                subscriber.handle(event)
         except Exception as error:  # noqa: BLE001 - one event failing must not end the worker
             if not process.was_reported(error):
                 logger.exception(f"event {name} failed in the background worker")
@@ -57,27 +74,23 @@ class BackgroundQueue:
     """
 
     def __init__(
-        self, build_subscriber: Callable[[], Subscriber], context: str = "spawn"
+        self, build_subscriber: "Callable[[], Subscriber]", context: str = "spawn"
     ) -> None:
         """`spawn` and never `fork`: a spawned worker starts a fresh interpreter, so what
         `build_subscriber()` builds — engines, pools, sessions — is its own. A forked one
         would inherit the parent's open connections, which SQLAlchemy forbids sharing."""
         if context == "fork":
-            raise ContractViolation(
+            raise ProgrammingError(
                 "BackgroundQueue does not fork: the worker would inherit the parent's database "
                 "connections; use 'spawn' or 'forkserver'"
             )
-        if isinstance(build_subscriber, Subscriber):
-            raise ContractViolation(
-                "BackgroundQueue takes a function that builds a Subscriber, not one already "
-                "built: the worker is another interpreter, and a bus cannot be sent to it — "
-                "it holds context variables that cannot be pickled. Hand over a module-level "
-                "function and it will build its own there"
-            )
         if not callable(build_subscriber):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"BackgroundQueue takes a function that builds a Subscriber; "
-                f"{type(build_subscriber).__name__} is not callable"
+                f"{type(build_subscriber).__name__} is not callable. The worker is another "
+                "interpreter, and a bus cannot be sent to it — it holds context variables that "
+                "cannot be pickled. Hand over a module-level function and it will build its own "
+                "there"
             )
         self.build_subscriber = build_subscriber
         self._context: Any = multiprocessing.get_context(context)
@@ -85,6 +98,12 @@ class BackgroundQueue:
         self.process: Any = None
 
     def start(self) -> "BackgroundQueue":
+        """Spawns the worker — once: a second worker on the same inbox would leave the first
+        without a `stop()` that reaches it."""
+        if self.process is not None:
+            raise ProgrammingError(
+                "this BackgroundQueue was already started: call stop() before starting it again"
+            )
         self.process = self._context.Process(
             target=_consume, args=(self.inbox, self.build_subscriber), daemon=True
         )
@@ -92,21 +111,27 @@ class BackgroundQueue:
         return self
 
     def put(self, event: DomainEvent) -> None:
-        """The event, and the trace it was published under, over to the worker.
+        """The event as its own JSON (`DomainEvent.as_json`, its `name` included), and the trace
+        it was published under, over to the worker.
 
-        **Refused when nobody is on the other end.** The inbox accepts whatever it is handed
-        whether or not a worker was ever spawned, so a process that publishes without calling
-        `start()` — a CLI run, a test, a notebook — used to enqueue every event into a queue no
-        one reads, and say nothing at all. A fact that was supposed to leave the process and
-        did not is worse than a refusal.
+        **Refused when nobody is on the other end** — never started, or its worker died. The
+        inbox accepts whatever it is handed whether or not a worker reads it, so a fact that was
+        supposed to leave the process would wait for nobody and say nothing; a refusal says
+        it where it was published.
         """
         if self.process is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{event.name} was published to a BackgroundQueue that was never started: "
                 "call start() where the process begins and stop() where it ends, or use a "
                 "SyncQueue where the work is in-process"
             )
-        self.inbox.put((event.name, dataclasses.asdict(event), trace_carrier()))
+        if not self.process.is_alive():
+            raise ProgrammingError(
+                f"{event.name} was published to a BackgroundQueue whose worker is no longer "
+                f"running (exit code {self.process.exitcode}): it would wait in the inbox for "
+                "nobody — see the worker's log, then stop() and start() it again"
+            )
+        self.inbox.put((event.as_json(), trace_carrier()))
 
     async def aput(self, event: DomainEvent) -> None:
         self.put(event)
