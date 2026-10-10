@@ -10,10 +10,16 @@ import importlib
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity, Hook, Hooks
-from sincpro_framework.exceptions import BusAlreadyBuilt, ExtensionRefused
+from sincpro_framework.exceptions import BusAlreadyBuilt
 
 
 class CommandPing(DataTransferObject):
@@ -72,7 +78,7 @@ def test_a_hook_decorated_after_a_repository_read_the_collection_is_refused():
     hooks = Hooks(None)
     MemoryRepository(hooks=hooks).save(Note())  # its first use reads the collection
 
-    with pytest.raises(ExtensionRefused, match="LateAudit.*already read"):
+    with pytest.raises(ProgrammingError, match="LateAudit.*already read"):
 
         @hooks.on(Note)
         class LateAudit(Hook):

@@ -8,8 +8,8 @@ from dataclasses import dataclass
 import pytest
 from structlog.testing import capture_logs
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.event_driven import Subscriber
 from sincpro_framework.event_driven.adapters.background_queue import STOP, _consume
 
@@ -52,7 +52,7 @@ def test_an_event_s_json_says_which_event_it_is():
 
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_a_blank_name_is_refused_when_the_class_is_declared(blank):
-    with pytest.raises(ContractViolation) as refused:
+    with pytest.raises(ProgrammingError) as refused:
 
         @dataclass(kw_only=True)
         class Nameless(DomainEvent):

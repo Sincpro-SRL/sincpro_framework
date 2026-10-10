@@ -28,10 +28,10 @@ from typing import Any
 
 from pydantic_core import to_jsonable_python
 
-from sincpro_framework.common.failures import FailureKind
 from sincpro_framework.common.store import KeyValueStore
 from sincpro_framework.ddd.entity.entity import utc_now
 from sincpro_framework.ddd.exceptions import DomainError, StaleAggregate
+from sincpro_framework.exceptions import FailureKind
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

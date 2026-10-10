@@ -253,11 +253,12 @@ repository.get(RowLineage, ("fp1", "a"))
 Append-only is a hook, not a mode the store has:
 
 ```python
+from sincpro_framework.ddd import DomainError
 @claims_hooks.on(Claim)
 class WrittenOnce(Hook):
     def before_save(self, record: Claim) -> None:
         if not record.is_new:
-            raise ContractViolation(f"{type(record).__name__} is written once and never replaced")
+            raise DomainError(f"{type(record).__name__} is written once and never replaced")
 
 Repository(database, claims_hooks)
 ```

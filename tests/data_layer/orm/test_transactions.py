@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlalchemy import delete, insert, text
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Isolation, Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure import transaction_opening
@@ -13,12 +14,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows import (
     unit_of_work as unit_of_work_module,
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
-from sincpro_framework.ddd.exceptions import (
-    ConstraintViolation,
-    ContractViolation,
-    DuplicateAggregate,
-    TimedOut,
-)
+from sincpro_framework.ddd.exceptions import ConstraintViolation, DuplicateAggregate, TimedOut
 
 from .engines import fresh
 from .ledger_models import Account, Owner, account_table, bank, declare
@@ -103,9 +99,9 @@ def test_a_read_only_unit_of_work_refuses_every_write(ledger, opened):
     with ledger.context(read_only=True) as unit:
         account = unit.get(Account, opened.id)
         account.withdraw(10)
-        with pytest.raises(ContractViolation, match="read_only"):
+        with pytest.raises(ProgrammingError, match="read_only"):
             unit.save(account)
-        with pytest.raises(ContractViolation, match="read_only"):
+        with pytest.raises(ProgrammingError, match="read_only"):
             unit.remove(account)
     assert ledger.get(Account, opened.id).balance == 100
 
@@ -123,7 +119,7 @@ def test_what_a_read_only_unit_of_work_read_is_usable_after_it_and_after_commit_
 
 def test_retrying_inside_a_unit_of_work_is_refused(ledger):
     with ledger.context() as unit:
-        with pytest.raises(ContractViolation, match="around the context"):
+        with pytest.raises(ProgrammingError, match="around the context"):
             unit.retrying(lambda: None)
 
 
@@ -164,7 +160,7 @@ def test_a_nested_unit_of_work_joins_and_cannot_reconfigure(ledger, opened):
             assert same is unit
         with unit.context(isolation=Isolation.SERIALIZABLE) as same:
             assert same is unit
-        with pytest.raises(ContractViolation, match="already began"):
+        with pytest.raises(ProgrammingError, match="already began"):
             with unit.context(read_only=True):
                 pass
 
@@ -256,7 +252,7 @@ def test_a_nested_block_asking_another_writes_is_refused(ledger):
     with ledger.context(writes=Writes.CHANGED) as unit:
         with unit.context() as same:
             assert same is unit
-        with pytest.raises(ContractViolation, match="already began"):
+        with pytest.raises(ProgrammingError, match="already began"):
             with unit.context(writes=Writes.SAVED):
                 pass
 
@@ -266,13 +262,13 @@ def test_a_nested_block_asking_another_writes_is_refused(ledger):
 
 def test_nowait_and_skip_locked_cannot_both_be_asked(ledger, opened):
     with ledger.context() as unit:
-        with pytest.raises(ContractViolation, match="ask for one"):
+        with pytest.raises(ProgrammingError, match="ask for one"):
             unit.get(Account, opened.id, for_update=True, nowait=True, skip_locked=True)
 
 
 def test_how_to_take_a_lock_needs_a_lock(ledger, opened):
     with ledger.context() as unit:
-        with pytest.raises(ContractViolation, match="for_update=True"):
+        with pytest.raises(ProgrammingError, match="for_update=True"):
             unit.get(Account, opened.id, nowait=True)
 
 
@@ -305,7 +301,7 @@ def test_a_statement_past_its_timeout_stops(ledger, opened):
 
 
 def test_the_double_refuses_nowait_as_it_refuses_for_update():
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         MemoryRepository().get(Account, "x", for_update=True, nowait=True)
 
 

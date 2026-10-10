@@ -16,8 +16,13 @@ import pytest
 from google.protobuf import descriptor_pb2
 from grpc_reflection.v1alpha import reflection_pb2  # pyright: ignore[reportMissingImports]
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.entrypoints import ExposureRefused
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.domain.bindings import GrpcBinding
@@ -142,7 +147,7 @@ def test_two_methods_answering_one_name_after_stripping_fail_the_build() -> None
         def execute(self, dto: QueryInvoice) -> None:
             return None
 
-    with pytest.raises(ExposureRefused) as refused:
+    with pytest.raises(ProgrammingError) as refused:
         GrpcGateway({"clashing": bus}, unguarded=True).methods()
 
     said = str(refused.value)
@@ -155,12 +160,12 @@ def test_a_name_that_is_no_proto_identifier_fails_the_build() -> None:
         CommandIssueInvoice, method="issue-invoice"
     )
 
-    with pytest.raises(ExposureRefused, match="issue-invoice"):
+    with pytest.raises(ProgrammingError, match="issue-invoice"):
         gateway.methods()
 
 
 def test_a_bus_nobody_guards_is_refused_unless_said() -> None:
-    with pytest.raises(ExposureRefused, match="unguarded=True"):
+    with pytest.raises(ProgrammingError, match="unguarded=True"):
         GrpcGateway({"billing": _billing()}).methods()
 
 

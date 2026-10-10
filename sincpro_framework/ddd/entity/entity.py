@@ -50,7 +50,7 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.entity.derivations import Derivations
 from sincpro_framework.ddd.entity.presentation import Presentation
 from sincpro_framework.ddd.entity.utils.annotations import is_class_var, own_annotations
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.events import DomainEvent
@@ -165,7 +165,7 @@ class Entity:
         """Refuse a subclass that redeclares a field the framework writes.
 
             class Spec(Entity):
-                version: int = 3        →  ContractViolation: Spec.version redeclares
+                version: int = 3        →  ProgrammingError: Spec.version redeclares
                                            Entity.version, the optimistic lock …
 
         1. A framework class is not checked: `DomainEvent` restates `id` and `created_at`.
@@ -186,7 +186,7 @@ class Entity:
                 declared is not None and not isinstance(declared, classmethod)
             ):
                 kind = "a field" if hook in annotated else type(declared).__name__
-                raise ContractViolation(
+                raise ProgrammingError(
                     f"{cls.__name__}.{hook} is {kind}: it is a class method the framework "
                     f"calls. Declare it as `@classmethod def {hook}(cls) -> …`."
                 )
@@ -194,7 +194,7 @@ class Entity:
         taken = [name for name in own_annotations(cls) if name in reserved]
         if taken:
             name = taken[0]
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__}.{name} redeclares {reserved[name]}.{name}, a field the "
                 f"framework writes{_MEANING.get(name, '')}. Rename it"
                 f"{_RENAMED.get(name, '')}."

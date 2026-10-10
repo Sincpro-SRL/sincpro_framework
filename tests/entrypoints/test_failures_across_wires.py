@@ -15,8 +15,17 @@ import pytest
 from google.protobuf.struct_pb2 import Struct
 from starlette.testclient import TestClient
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.common.failures import FailureKind, failure_kind, refined_failure_kind
+from sincpro_framework import (
+    ClientError,
+    DataTransferObject,
+    FailureKind,
+    Feature,
+    OutcomeUnknownError,
+    ProgrammingError,
+    ServiceUnavailableError,
+    UseFramework,
+)
+from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.data_layer.caching import AlreadyInProgress, KeyReused
 from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
@@ -58,7 +67,7 @@ def _billing() -> UseFramework:
 
 
 def test_each_failure_is_one_kind() -> None:
-    assert [failure_kind(one) for one in RAISED.values()] == [
+    assert [refined_failure_kind(one) for one in RAISED.values()] == [
         FailureKind.DOMAIN,
         FailureKind.CONFLICT,
         FailureKind.CONFLICT,
@@ -70,20 +79,29 @@ class InvoiceNotFound(DomainError):
     failure_kind = FailureKind.NOT_FOUND
 
 
-def test_the_refined_kinds_name_what_the_shared_ones_cannot() -> None:
-    """The idempotency refusals and a kind an error declares are told apart — every wire
-    answers them (`refined_failure_kind`) — while `failure_kind` keeps the shared kinds only.
-    """
-    refined = [AlreadyInProgress("k"), KeyReused("k"), InvoiceNotFound("F-9")]
+def test_every_base_says_its_own_kind_and_a_subclass_may_say_another() -> None:
+    """Who caused a failure is its base; what to do about it, its kind. A crash nobody foresaw —
+    no base of the framework — is internal."""
+    raised = [
+        ProgrammingError("a DTO registered twice"),
+        ClientError("a request that does not validate"),
+        ServiceUnavailableError("the database did not answer"),
+        OutcomeUnknownError("sent, and no answer came back"),
+        AlreadyInProgress("k"),
+        KeyReused("k"),
+        InvoiceNotFound("F-9"),
+        ZeroDivisionError("a crash"),
+    ]
 
-    assert [refined_failure_kind(one) for one in refined] == [
+    assert [refined_failure_kind(one) for one in raised] == [
+        FailureKind.INTERNAL,
+        FailureKind.INVALID,
+        FailureKind.UNAVAILABLE,
+        FailureKind.UNKNOWN_OUTCOME,
         FailureKind.IN_PROGRESS,
         FailureKind.KEY_REUSED,
         FailureKind.NOT_FOUND,
-    ]
-    assert {failure_kind(one) for one in refined} == {FailureKind.DOMAIN}
-    assert [refined_failure_kind(one) for one in RAISED.values()] == [
-        failure_kind(one) for one in RAISED.values()
+        FailureKind.INTERNAL,
     ]
 
 

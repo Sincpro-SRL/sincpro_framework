@@ -13,7 +13,8 @@ from enum import StrEnum
 
 import pytest
 
-from sincpro_framework.common.failures import FailureKind, refined_failure_kind
+from sincpro_framework import FailureKind
+from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.common.store.in_memory import InMemoryKeyValue
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import KeyValueDrafts, assign

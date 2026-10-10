@@ -15,13 +15,10 @@ from sincpro_framework import (
     CallNext,
     DataTransferObject,
     Feature,
+    ProgrammingError,
     UseFramework,
 )
-from sincpro_framework.exceptions import (
-    BusAlreadyBuilt,
-    InterceptorContractViolation,
-    UnknownDTOToExecute,
-)
+from sincpro_framework.exceptions import BusAlreadyBuilt, UnknownDTOToExecute
 from sincpro_framework.introspection import features
 
 
@@ -153,9 +150,7 @@ def test_passing_another_command_class_on_is_refused():
     def swaps_the_command(dto: CommandCreateInvoice, call_next: CallNext[Any]) -> Any:
         return call_next(SomethingElse())
 
-    with pytest.raises(
-        InterceptorContractViolation, match="swaps_the_command.*SomethingElse"
-    ):
+    with pytest.raises(ProgrammingError, match="swaps_the_command.*SomethingElse"):
         _create(billing)
 
 
@@ -167,9 +162,7 @@ def test_answering_with_another_response_class_is_refused():
         call_next(dto)
         return SomethingElse()
 
-    with pytest.raises(
-        InterceptorContractViolation, match="swaps_the_response.*SomethingElse"
-    ):
+    with pytest.raises(ProgrammingError, match="swaps_the_response.*SomethingElse"):
         _create(billing)
 
 

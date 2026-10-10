@@ -414,7 +414,8 @@ for its Command. Its moments are the methods it implements; it reads the bus's d
 attributes, like a Feature, and `self.context` is the request in play:
 
 ```python
-from sincpro_framework.ddd import ContractViolation, Hook, Hooks
+from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import Hook, Hooks
 
 
 class Numbering:
@@ -433,7 +434,7 @@ invoicing_hooks = Hooks(None)
 class TotalIsPositive(Hook):
     def before_save(self, invoice: Invoice) -> None:
         if invoice.total <= 0:
-            raise ContractViolation(f"invoice {invoice.number} has no total")
+            raise DomainError(f"invoice {invoice.number} has no total")
 
 
 @invoicing_hooks.on(Invoice, after=TotalIsPositive)
@@ -456,7 +457,7 @@ assert fresh.number == "F-101"
 try:
     numbered.save(Invoice(number="F-006", customer_id=ana.id, total=0))
     raise AssertionError("the hook should have refused it")
-except ContractViolation:
+except DomainError:
     pass
 ```
 
@@ -670,7 +671,7 @@ class CustomerAccount(EventSourcedMixin, Entity):
 
     def withdraw(self, amount: int) -> None:
         if amount > self.balance:
-            raise ContractViolation("not enough money in the account")
+            raise DomainError("not enough money in the account")
         self.happened(MoneyWithdrawn(amount=amount))
 
     def apply(self, event: DomainEvent) -> None:   # how each event moves the state

@@ -39,7 +39,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import key_pair
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:
@@ -119,7 +119,7 @@ def _key_is_unique(entity: type, table: Any, key: str, identity: str) -> None:
     }
     if column.primary_key or column.unique or (key,) in alone:
         return
-    raise ContractViolation(
+    raise ProgrammingError(
         f"{entity.__name__}.DEFAULT_GET_ID answers {key}, and {table.name}.{key} is not "
         f"unique: a Get reads one record by it. Declare the column unique=True."
     )
@@ -155,7 +155,7 @@ def describe(entity: type) -> Meta:
         map_new_event_classes()  # an event class declared after its base was mapped
         mapper = inspect(entity)
     if mapper is None:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{entity.__name__} is not a mapped aggregate; there is nothing to query"
         )
 

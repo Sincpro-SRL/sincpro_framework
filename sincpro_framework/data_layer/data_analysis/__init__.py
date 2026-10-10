@@ -15,10 +15,6 @@ The core needs nothing; Parquet and Arrow need pyarrow, the `[data-analysis]` ex
 """
 
 from sincpro_framework.data_layer.data_analysis.cache import QueryCache
-from sincpro_framework.data_layer.data_analysis.frame import (
-    DataFrame,
-    NotComplete,
-    SchemaMismatch,
-)
+from sincpro_framework.data_layer.data_analysis.frame import DataFrame
 
-__all__ = ["DataFrame", "NotComplete", "QueryCache", "SchemaMismatch"]
+__all__ = ["DataFrame", "QueryCache"]

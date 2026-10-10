@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import Field
 
+from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -47,7 +48,7 @@ class WorkflowRun(DataTransferObject):
     error: str = ""
 
 
-class WorkflowFailed(Exception):
+class WorkflowFailed(DomainError):
     """A run stopped — by a `fail` step, a step that failed, or a guard. `run` is its trace."""
 
     def __init__(self, message: str, run: WorkflowRun) -> None:

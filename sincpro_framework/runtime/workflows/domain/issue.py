@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from sincpro_framework.exceptions import ProgrammingError
+
 
 @dataclass(frozen=True)
 class Issue:
@@ -19,7 +21,7 @@ class Issue:
         return f"{self.workflow} {where}: {self.message}"
 
 
-class WorkflowsInvalid(Exception):
+class WorkflowsInvalid(ProgrammingError):
     """The first load found issues: there is no valid set to serve."""
 
     def __init__(self, issues: list[Issue]) -> None:

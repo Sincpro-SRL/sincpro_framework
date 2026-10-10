@@ -23,12 +23,10 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_meta import Meta
-from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
-)
 from sincpro_framework.ddd.repositories.capabilities import StoreCapabilities
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.repository import IRepository
+from sincpro_framework.exceptions import ProgrammingError
 
 WITHOUT_ROW_LOCKS = frozenset({"sqlite"})
 """The dialects that drop `FOR UPDATE`: SQLite locks the whole database on its first write, so
@@ -112,7 +110,7 @@ class Store(IRepository):
         if self._scope is not None:
             kept, dropped = meta.accept(self._scope.expression)
             if dropped or kept is None:
-                raise ContractViolation(
+                raise ProgrammingError(
                     f"{meta.aggregate} cannot answer the scope this repository was narrowed "
                     f"by ({', '.join(one.field for one in dropped) or 'nothing survived'}); "
                     "reading it wide is not an option"
@@ -133,14 +131,14 @@ class Store(IRepository):
 
     def _refuse_outside(self, record: Any) -> None:
         if not self._in_scope(record):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{type(record).__name__} lies outside what this repository was narrowed to; "
                 "it can neither be written nor removed here"
             )
 
     def _refuse_read_only(self) -> None:
         if self._transaction.read_only:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "this unit of work was opened read_only=True; nothing may be written in it"
             )
 

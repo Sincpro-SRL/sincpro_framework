@@ -33,17 +33,14 @@ from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
-    DuplicateAggregate,
-    StaleAggregate,
-)
+from sincpro_framework.ddd.exceptions import DuplicateAggregate, StaleAggregate
 from sincpro_framework.ddd.repositories.capabilities import Upserted
 from sincpro_framework.ddd.repositories.repository import (
     records_of,
     refuse_unarchivable,
     refuse_writing_in_preview,
 )
+from sincpro_framework.exceptions import ProgrammingError
 
 
 def _named(records: list[Any]) -> str:
@@ -93,7 +90,7 @@ class Writing(Store):
         own event, rather than being folded back into this one.
         """
         if self._bound is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "record_changes needs the unit of work holding this aggregate — outside "
                 "context() there is nothing pending to write down, and a plain save() is "
                 "what settles it"
@@ -299,14 +296,14 @@ class Writing(Store):
         out — and refused whole when any condition could not be answered, because a dropped
         condition widens a write where it only widened a read."""
         if criteria.pagination.asked:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{verb} writes every row its filter matches; a page cannot bound it — "
                 "narrow the filter instead"
             )
         meta = describe(model)
         expression, dropped = meta.accept(self._asked(model, meta, criteria))
         if dropped:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{verb} cannot answer {', '.join(one.field for one in dropped)} on "
                 f"{model.__name__}; a write never runs wider than it was asked"
             )
@@ -338,7 +335,7 @@ class Writing(Store):
         fixed = {describe(model).identity, "created_at", "version", "updated_at"}
         wrong = sorted(name for name in values if name not in columns or name in fixed)
         if wrong:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a column, "
                 "or one the framework keeps"
             )

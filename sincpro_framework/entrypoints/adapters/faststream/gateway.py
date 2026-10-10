@@ -35,7 +35,7 @@ from sincpro_framework.entrypoints.adapters.faststream.wire import (
     arrival_channel,
     channel_of,
 )
-from sincpro_framework.entrypoints.domain.bindings import ExposureRefused, QueueBinding
+from sincpro_framework.entrypoints.domain.bindings import QueueBinding
 from sincpro_framework.entrypoints.domain.surface import (
     Exposure,
     Group,
@@ -51,6 +51,7 @@ from sincpro_framework.entrypoints.entrypoint.gateway import (
 )
 from sincpro_framework.entrypoints.infrastructure.registry import registry
 from sincpro_framework.event_driven.adapters.faststream.queue import Broker
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.use_bus import UseFramework
 
 
@@ -160,9 +161,9 @@ class QueueGateway(Gateway):
             )
             problem = self._wire._access_problem(resolved)
             if problem:
-                raise ExposureRefused(problem)
+                raise ProgrammingError(problem)
             return resolved
-        raise ExposureRefused(
+        raise ProgrammingError(
             f"consume(as_={command.__name__}): no bus of this gateway answers it"
         )
 

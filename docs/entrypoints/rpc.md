@@ -91,7 +91,7 @@ together, before anything is served.
 change and renames nothing a client calls (tested). `layers=` still narrows what CATALOG mode
 publishes; it never appears in a name, a tag or the document.
 
-The build refuses (`ExposureRefused`, every reason at once):
+The build refuses (`ProgrammingError`, every reason at once):
 
 - a name that is not dotted snake_case with at least two segments (`issue`, `Billing.Issue`,
   `billing.issue-invoice`);
@@ -232,7 +232,7 @@ A nested DTO's definitions are published in `components.schemas` and referenced 
 every `$ref` of the document resolves. The document validates against the OpenRPC 1.4
 meta-schema (`tests/entrypoints/adapters/rpc/test_jsonrpc_errors.py`).
 
-JSON-RPC params are JSON (`carries_bytes = False` on its wire): binary DTOs (`bytes`) are skipped, same as MCP. Declaring `@rpc()` on one is refused: `verify()` names it and the build raises `ExposureRefused`.
+JSON-RPC params are JSON (`carries_bytes = False` on its wire): binary DTOs (`bytes`) are skipped, same as MCP. Declaring `@rpc()` on one is refused: `verify()` names it and the build raises `ProgrammingError`.
 
 ---
 

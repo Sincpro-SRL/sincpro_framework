@@ -38,7 +38,6 @@ merged by `id`, so a row that moved between two pages is held once.
 frame answers the filter it holds and one more condition by itself:
 
 ```python
-from sincpro_framework.data_layer.data_analysis import NotComplete
 
 sales = cache.fetch_all(repository, InvoiceLine, posted)
 september = sales.narrow({"field": "posted_at", "operator": ">=", "value": "2026-09-01"})
@@ -47,7 +46,7 @@ sal = september.narrow({"field": "journal", "operator": "=", "value": "SAL"})
 
 `where` is written as in a `Criteria` (a condition, or `{"all": …}`, `{"any": …}`, `{"negate": …}`).
 A field the frame has no column for is refused, and so is a value not of the column's type. A frame
-that stopped at a page refuses (`NotComplete`) — from it there is no telling which rows are missing;
+that stopped at a page refuses (`ProgrammingError`) — from it there is no telling which rows are missing;
 read the narrower filter as its own query instead.
 
 ## Not refreshed on its own

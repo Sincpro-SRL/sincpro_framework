@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import fakeredis
 import pytest
 
-from sincpro_framework import DataTransferObject
+from sincpro_framework import DataTransferObject, ProgrammingError
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
     Cache,
@@ -23,7 +23,6 @@ from sincpro_framework.data_layer.caching import (
     TimeToLive,
 )
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.runtime.testing import ManualClock
 
 
@@ -272,7 +271,7 @@ def test_a_key_never_carries_its_parameters_in_clear(tier):
 def test_a_shared_store_without_a_codec_is_refused():
     cache = Cache(InMemoryKeyValue())
 
-    with pytest.raises(ContractViolation, match="Codec"):
+    with pytest.raises(ProgrammingError, match="Codec"):
         cache.get_or_compute("k", lambda: 1)
 
 

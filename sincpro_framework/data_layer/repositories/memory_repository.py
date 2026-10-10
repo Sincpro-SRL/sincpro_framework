@@ -67,7 +67,6 @@ from sincpro_framework.ddd.events.mixins.deliverable import (
     DeliverableEventMixin,
 )
 from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
     DuplicateAggregate,
     InvalidCriteria,
     StaleAggregate,
@@ -91,6 +90,7 @@ from sincpro_framework.ddd.repositories.repository import (
     refuse_wiring_as_a_record,
     refuse_writing_in_preview,
 )
+from sincpro_framework.exceptions import ProgrammingError
 
 
 def _percentile(values: list[Any], fraction: float) -> Any:
@@ -586,7 +586,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         found = self.fetch_all(target, _by(values))
         if len(found) > 1:
             named = ", ".join(f"{field}={value!r}" for field, value in values.items())
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{len(found)} records answer to {named}; a natural key names one"
             )
         return found.first()
@@ -665,7 +665,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         for level in grouping.group_by:
             meta.field(level.field)
             if level.grain is not None:
-                raise ContractViolation(
+                raise ProgrammingError(
                     f"a memory repository cannot cut '{level.field}' to a {level.grain}; "
                     "a date grain is answered by the database adapter"
                 )
@@ -821,13 +821,13 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         """The records a write by criteria reaches, refused as the engine refuses it: a page
         cannot bound it, and a condition the aggregate cannot answer would widen it."""
         if criteria.pagination.asked:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{verb} writes every record its filter matches; a page cannot bound it"
             )
         rows, dropped = self._matching(model, criteria, handed_back=False)
         unanswered = [one.field for one in dropped if one.reason != "not_expandable"]
         if unanswered:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{verb} cannot answer {', '.join(unanswered)} on {model.__name__}; a write "
                 "never runs wider than it was asked"
             )
@@ -849,7 +849,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             or meta.fields[name].type.is_relational
         )
         if wrong:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a field, "
                 "or one the framework keeps"
             )
@@ -887,7 +887,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             {"id", "created_at", "version", "updated_at"} & set(update or ())
         )
         if kept_by_framework:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"upsert cannot overwrite {', '.join(kept_by_framework)}: the framework keeps it"
             )
         latest: dict[Any, Any] = {}
@@ -903,7 +903,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             meta = self.definition(model)
             unknown = [name for name in [*on, *(update or ())] if name not in meta.fields]
             if unknown:
-                raise ContractViolation(f"{model.__name__} has no field {', '.join(unknown)}")
+                raise ProgrammingError(f"{model.__name__} has no field {', '.join(unknown)}")
             keyed = None not in tuple(getattr(one, name) for name in on)
             held = next(
                 (

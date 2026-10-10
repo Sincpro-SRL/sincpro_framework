@@ -10,9 +10,9 @@ from typing import Any
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
 from sincpro_framework.ddd import Query
-from sincpro_framework.entrypoints import Exposure, ExposureRefused, Gateway, Group
+from sincpro_framework.entrypoints import Exposure, Gateway, Group
 from sincpro_framework.entrypoints.domain.bindings import Binding, RestBinding, RpcBinding
 from sincpro_framework.entrypoints.domain.surface import Operation, Resolved, Wire
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp, rest
@@ -114,7 +114,7 @@ def test_a_gateway_that_names_no_wire_keeps_the_catalog_of_prd_12():
         "CommandIssueInvoice",
         "QueryInvoice",
     ]
-    with pytest.raises(ExposureRefused, match="names no wire"):
+    with pytest.raises(ProgrammingError, match="names no wire"):
         gateway.surface()
 
 
@@ -191,7 +191,7 @@ def test_override_alone_does_not_publish_in_declared_mode():
     gateway = RestSurface([_billing()], unguarded=True).override(QueryInvoice, status=200)
 
     with pytest.raises(
-        ExposureRefused, match="override shapes a binding, bind publishes one"
+        ProgrammingError, match="override shapes a binding, bind publishes one"
     ):
         gateway.surface()
 
@@ -199,9 +199,9 @@ def test_override_alone_does_not_publish_in_declared_mode():
 def test_override_and_bind_are_checked_against_the_gateway_wire():
     gateway = RestSurface([_billing()], unguarded=True)
 
-    with pytest.raises(ExposureRefused, match="has no stauts"):
+    with pytest.raises(ProgrammingError, match="has no stauts"):
         gateway.override(CommandIssueInvoice, stauts=201)
-    with pytest.raises(ExposureRefused, match="bind a RestBinding"):
+    with pytest.raises(ProgrammingError, match="bind a RestBinding"):
         gateway.bind(CommandIssueInvoice, RpcBinding(name="billing.issue"))
 
 
@@ -284,5 +284,5 @@ def test_a_group_is_data_every_wire_reads():
 def test_a_group_for_a_bus_not_on_the_gateway_is_refused():
     gateway = RestSurface([_billing()], unguarded=True)
 
-    with pytest.raises(ExposureRefused, match="add it first"):
+    with pytest.raises(ProgrammingError, match="add it first"):
         gateway.group(_billing("sales"), prefix="/ventas")

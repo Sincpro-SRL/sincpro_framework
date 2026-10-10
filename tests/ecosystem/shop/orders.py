@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
@@ -23,7 +23,6 @@ from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
 from sincpro_framework.ddd.entity import ChangeTrackingMixin, Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 from .contracts import InvoiceIssued, OrderPlaced, StockRejected, StockReserved
 
@@ -39,7 +38,7 @@ class Order(ChangeTrackingMixin, Entity):
 
     def refused(self, why: str) -> None:
         if self.state != "placed":
-            raise ContractViolation(f"an order that is {self.state} cannot be refused")
+            raise ProgrammingError(f"an order that is {self.state} cannot be refused")
         self.state = f"rejected: {why}"
 
 
@@ -184,7 +183,7 @@ def build(repository: Repository, publisher) -> UseFramework:
         def execute(self, dto: CommandTellAboutOrder) -> ResponseAboutOrder:
             order = self.repository.get(Order, dto.order_id)
             if order is None:
-                raise ContractViolation(f"no order {dto.order_id}")
+                raise ProgrammingError(f"no order {dto.order_id}")
             return ResponseAboutOrder(
                 customer=order.customer, total=order.total, state=order.state
             )

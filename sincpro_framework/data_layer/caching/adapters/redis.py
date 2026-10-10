@@ -23,22 +23,30 @@ class RedisKeyValue(KeyValueStore):
         self.prefix = prefix
 
     def get_many(self, keys: list[str]) -> list[bytes | None]:
-        if not keys:
-            return []
-        return list(self.client.mget([self.prefix + key for key in keys]))
+        with self._reaching():
+            if not keys:
+                return []
+            return list(self.client.mget([self.prefix + key for key in keys]))
 
     def set(self, key: str, value: bytes, ttl: timedelta | None = None) -> None:
-        self.client.set(self.prefix + key, value, px=_milliseconds(ttl))
+        with self._reaching():
+            self.client.set(self.prefix + key, value, px=_milliseconds(ttl))
 
     def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
-        return bool(self.client.set(self.prefix + key, value, nx=True, px=_milliseconds(ttl)))
+        with self._reaching():
+            return bool(
+                self.client.set(self.prefix + key, value, nx=True, px=_milliseconds(ttl))
+            )
 
     def increment(self, key: str) -> int:
-        return int(self.client.incr(self.prefix + key))
+        with self._reaching():
+            return int(self.client.incr(self.prefix + key))
 
     def delete(self, key: str) -> None:
-        self.client.delete(self.prefix + key)
+        with self._reaching():
+            self.client.delete(self.prefix + key)
 
     def take(self, key: str) -> bytes | None:
         """`GETDEL` — Redis 6.2 and every Valkey."""
-        return self.client.getdel(self.prefix + key)
+        with self._reaching():
+            return self.client.getdel(self.prefix + key)

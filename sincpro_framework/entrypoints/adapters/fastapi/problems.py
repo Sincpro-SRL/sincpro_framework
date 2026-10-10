@@ -34,13 +34,13 @@ from sincpro_framework.auth.domain.exceptions import (
 )
 from sincpro_framework.auth.entrypoint.transports import challenges_of
 from sincpro_framework.common.failures import (
-    FailureKind,
     failure_reason,
     refined_failure_kind,
     retry_after,
     said_to_the_caller,
 )
 from sincpro_framework.entrypoints.adapters.rest.routing import InvalidRequest
+from sincpro_framework.exceptions import ClientError, FailureKind
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import trace_id_of
 from sincpro_framework.sincpro_logger import logger
@@ -100,7 +100,7 @@ KIND_OF_STATUS: Mapping[int, FailureKind] = {
 """The kind of an `HTTPException` a route or Starlette raised — by its status."""
 
 
-class IdempotencyKeyMissing(Exception):
+class IdempotencyKeyMissing(ClientError):
     """A use case that runs once, whose Command says nothing of what identifies it, called
     without an `Idempotency-Key` header — answered 400: the retry could not be told from a new
     request."""

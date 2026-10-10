@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sincpro_framework import DataTransferObject
+from sincpro_framework import DataTransferObject, ProgrammingError
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
     Cache,
@@ -22,7 +22,6 @@ from sincpro_framework.data_layer.caching import (
 from sincpro_framework.data_layer.caching.domain.codec import Codec
 from sincpro_framework.data_layer.caching.domain.eviction import Eviction
 from sincpro_framework.data_layer.caching.domain.freshness import Freshness
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.runtime.testing import (
     CodecContract,
     EvictionContract,
@@ -212,5 +211,5 @@ def test_an_unbounded_tier_keeps_every_key():
 
 
 def test_an_lru_of_nothing_is_refused():
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         Lru(max_entries=0)

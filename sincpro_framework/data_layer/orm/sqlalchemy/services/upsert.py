@@ -20,7 +20,7 @@ from sqlalchemy import Table
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.schema import UniqueConstraint
 
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 INSERTS: dict[str, Any] = {"postgresql": postgresql.insert, "sqlite": sqlite.insert}
 """The dialects an upsert speaks, each with its own `INSERT … ON CONFLICT`."""
@@ -53,26 +53,26 @@ def refuse(
     overwrite: Sequence[str] | None,
     fixed: set[str],
 ) -> None:
-    """Raises `ContractViolation` for a batch no single upsert can write correctly."""
+    """Raises `ProgrammingError` for a batch no single upsert can write correctly."""
     if extends_another:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{model.__name__} extends another aggregate across two tables; one INSERT cannot "
             "upsert it — save it instead"
         )
     if dialect not in INSERTS:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{dialect} has no upsert this repository speaks; Postgres and SQLite do"
         )
     unknown = [name for name in [*on, *(overwrite or ())] if name not in names]
     if unknown:
-        raise ContractViolation(f"{model.__name__} has no column {', '.join(unknown)}")
+        raise ProgrammingError(f"{model.__name__} has no column {', '.join(unknown)}")
     kept_by_framework = sorted(fixed & set(overwrite or ()))
     if kept_by_framework:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"upsert cannot overwrite {', '.join(kept_by_framework)}: the framework keeps it"
         )
     if not unique_on(table, {names[name] for name in on}):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"upsert on {', '.join(on)} needs the table to hold them unique; {table.name} does "
             "not, so a conflict would never be detected"
         )

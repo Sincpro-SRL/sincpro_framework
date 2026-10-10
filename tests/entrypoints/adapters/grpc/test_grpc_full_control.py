@@ -19,7 +19,13 @@ from google.protobuf.struct_pb2 import Struct
 from grpc_reflection.v1alpha import reflection_pb2  # pyright: ignore[reportMissingImports]
 from grpc_status import rpc_status  # pyright: ignore[reportMissingImports]
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework, entrypoints
+from sincpro_framework import (
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+    entrypoints,
+)
 from sincpro_framework.auth import (
     AccessControl,
     Identity,
@@ -29,8 +35,6 @@ from sincpro_framework.auth import (
 )
 from sincpro_framework.context import EXECUTION_ID
 from sincpro_framework.context.domain.execution import CHAIN_KEYS
-from sincpro_framework.ddd.exceptions import ContractViolation
-from sincpro_framework.entrypoints import ExposureRefused
 from sincpro_framework.entrypoints.adapters.grpc import (
     GrpcGateway,
     bus_call,
@@ -74,7 +78,7 @@ def _parity() -> UseFramework:
         def execute(self, dto: CommandIssueInvoice) -> Issued:
             ran.append(dto.total)
             if dto.total < 0:
-                raise ContractViolation("an invoice has to balance")
+                raise ProgrammingError("an invoice has to balance")
             return Issued(
                 number=f"F-{dto.total}",
                 by=current_identity().subject,
@@ -335,7 +339,7 @@ def test_a_hand_written_path_the_gateway_also_serves_fails_the_build() -> None:
     bus = _parity()
     server = grpc.server(futures.ThreadPoolExecutor(1))
 
-    with pytest.raises(ExposureRefused, match="/parity.v1.ParityService/IssueInvoice"):
+    with pytest.raises(ProgrammingError, match="/parity.v1.ParityService/IssueInvoice"):
         GrpcGateway({"parity": bus}).mount(
             server, reflection_extra=[_hand_written_file("ParityService")]
         )

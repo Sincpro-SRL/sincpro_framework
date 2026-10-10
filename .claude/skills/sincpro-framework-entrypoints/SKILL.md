@@ -39,11 +39,11 @@ The wires of this package are the transports above. A program that stays up and 
 | **group** | One bounded context's conventions on a wire: prefix, version, tags, namespace, package | DTO `Group`, set with `gateway.group(bus, ...)` | `sincpro_framework.entrypoints` |
 | **operation** | One published use case as facts: alias, Command, handler, schemas, Query or not, access | DTO `Operation` | `sincpro_framework.entrypoints` |
 | **resolved** | An operation with its final binding (precedence applied) and its group | DTO `Resolved` | `sincpro_framework.entrypoints` |
-| **surface** | The list of resolved operations: what the gateway actually publishes. Validated, or `ExposureRefused` | `gateway.surface()` | — |
+| **surface** | The list of resolved operations: what the gateway actually publishes. Validated, or `ProgrammingError` | `gateway.surface()` | — |
 | **manifest** | The surface as frozen, JSON-safe rows, for a snapshot test | `gateway.manifest()` → `ManifestEntry` | — |
 | **port** (`Wire`) | The interface a project implements for a transport of its own | abstract class | `sincpro_framework.entrypoints` |
 | `bus_call(bus)` | FastAPI dependency: run a DTO on the bus from a hand-written route, the generated routes' way | function | `sincpro_framework.entrypoints.adapters.fastapi` |
-| `failure_kind` | The class attribute that classifies an error for every wire | attribute + `FailureKind` enum | `sincpro_framework.common.failures` |
+| `failure_kind` | The class attribute that classifies an error for every wire | attribute + `FailureKind` enum | `sincpro_framework` |
 
 "Exposure" is both the package of the decorators (`entrypoints.exposure`) and the mode enum
 (`Exposure`). When this skill says *mode*, it means the enum.
@@ -147,7 +147,7 @@ app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /
 What a wire can carry is the wire's (`Wire.carries_bytes`). The built-in gateways carry JSON
 today, the gRPC gateway included (`Struct`, unary), so a Command with a `bytes` field (a file, an
 image) gets no generated route. A `@rest.post` (or `@mcp()`, `@rpc()`, `@grpc()`…) on its handler
-is **refused** on such a wire: `verify()` names it and the build raises `ExposureRefused`. Remove
+is **refused** on such a wire: `verify()` names it and the build raises `ProgrammingError`. Remove
 that binding; don't wrap the Command in a new Feature. (Python service to Python service,
 `remote_execution` carries `bytes` as they are, over a gRPC stream — no route needed.) The same applies when the client's body is not the Command (base64 instead of bytes,
 renamed fields). The Command and its Feature stay
@@ -182,7 +182,7 @@ its own code (REST status, JSON-RPC code, gRPC status):
 
 ```python
 from sincpro_framework.ddd.exceptions import DomainError
-from sincpro_framework.common.failures import FailureKind
+from sincpro_framework import FailureKind
 
 class ExtractionError(DomainError):
     failure_kind = FailureKind.INVALID       # REST 422, message in `detail`
@@ -263,7 +263,7 @@ handler inherits, wire by wire, the binding of the one it replaces.
 - **The build fails closed.** A published use case on a guarded bus must declare
   `@auth.requires` / `@auth.public`; a bus with no `AccessControl` needs `unguarded=True`. A
   `{field}` in a path must be a Command field. Wrong hints, reserved names, `@internal` + a binding,
-  a deprecation past its sunset — all refused, every reason at once, `ExposureRefused`.
+  a deprecation past its sunset — all refused, every reason at once, `ProgrammingError`.
 - **The facade is handed back, not started.** `.routes()`, `.app()`, `.server()`, `.handlers()` let
   the project add middleware, interceptors, plugins. `.run(...)` is the one-liner.
 - **Snapshot the surface in CI.** `gateway.manifest()` is frozen, JSON-safe and sorted; assert it

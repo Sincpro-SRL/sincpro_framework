@@ -13,7 +13,8 @@ import pyarrow.ipc
 import pyarrow.parquet
 import pytest
 
-from sincpro_framework.data_layer.data_analysis import DataFrame, QueryCache, SchemaMismatch
+from sincpro_framework import ProgrammingError
+from sincpro_framework.data_layer.data_analysis import DataFrame, QueryCache
 from tests.data_layer.data_analysis.conftest import CountingRepository, Line, criteria
 
 
@@ -33,7 +34,7 @@ def test_appending_a_page_keeps_every_row_once():
 def test_a_page_of_another_shape_is_refused():
     first = DataFrame.from_rows([{"id": "a", "v": 1}])
 
-    with pytest.raises(SchemaMismatch, match="w"):
+    with pytest.raises(ProgrammingError, match="w"):
         first.append(DataFrame.from_rows([{"id": "b", "w": 1}]))
 
 

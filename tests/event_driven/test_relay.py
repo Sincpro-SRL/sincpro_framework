@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     DeliverableEventMixin,
@@ -13,7 +14,7 @@ from sincpro_framework.ddd import (
     Entity,
     EventSourcedMixin,
 )
-from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
+from sincpro_framework.ddd.exceptions import StaleAggregate
 from sincpro_framework.event_driven import (
     EventRelay,
     FixedBackoff,
@@ -264,7 +265,7 @@ def test_publishing_through_the_repository_keeps_the_event_for_the_relay(reposit
 
 
 def test_a_relay_reads_at_least_one(repository):
-    with pytest.raises(ContractViolation, match="at least one"):
+    with pytest.raises(ProgrammingError, match="at least one"):
         EventRelay(repository, ShopEvent, Broker(), batch=0)
 
 

@@ -8,13 +8,13 @@ import threading
 from collections import OrderedDict
 
 from sincpro_framework.data_layer.caching.domain.eviction import Eviction
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 
 class Lru(Eviction):
     def __init__(self, max_entries: int = 10_000) -> None:
         if max_entries < 1:
-            raise ContractViolation("Lru keeps at least one entry: max_entries must be >= 1")
+            raise ProgrammingError("Lru keeps at least one entry: max_entries must be >= 1")
         self.max_entries = max_entries
         self._order: OrderedDict[str, None] = OrderedDict()
         self._lock = threading.Lock()

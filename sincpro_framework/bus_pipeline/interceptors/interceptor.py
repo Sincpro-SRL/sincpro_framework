@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sincpro_framework.common.ordering import DEFAULT_SEQUENCE, Placement, name_of
-from sincpro_framework.exceptions import InterceptorContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 type CallNext[TResponse] = Callable[[Any], TResponse]
 type Interceptor = Callable[[Any, CallNext[Any]], Any]
@@ -72,7 +72,7 @@ def run_around(
 
         def call_next(next_dto: Any) -> Any:
             if type(next_dto) is not command:
-                raise InterceptorContractViolation(
+                raise ProgrammingError(
                     f"{name_of(interceptor)} passed {type(next_dto).__name__} on, but it "
                     f"intercepts {command.__name__}: adjust it with model_copy, keep its class"
                 )
@@ -82,7 +82,7 @@ def run_around(
 
         result = interceptor(current, call_next)
         if answered and answered[0] is not None and not isinstance(result, type(answered[0])):
-            raise InterceptorContractViolation(
+            raise ProgrammingError(
                 f"{name_of(interceptor)} answered {type(result).__name__}, but "
                 f"{command.__name__} answers {type(answered[0]).__name__}"
             )

@@ -32,7 +32,7 @@ from enum import StrEnum
 
 from sincpro_framework.common.failures import PERMANENT, refined_failure_kind, retry_after
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 
 class Holds(StrEnum):
@@ -107,7 +107,7 @@ class ExponentialBackoff(BackoffStrategy):
         maximum: timedelta = timedelta(minutes=10),
     ) -> None:
         if multiplier < 1:
-            raise ContractViolation(f"a backoff never shrinks: multiplier {multiplier} < 1")
+            raise ProgrammingError(f"a backoff never shrinks: multiplier {multiplier} < 1")
         self.initial = initial
         self.multiplier = multiplier
         self.maximum = maximum
@@ -157,7 +157,7 @@ class _Retrying(DeliveryFailurePolicy):
         """`attempts` counts every try, the first included; `then` decides once they are
         spent, or at once for an error in `never_retry`."""
         if attempts < 1:
-            raise ContractViolation(f"an event is tried at least once, not {attempts} times")
+            raise ProgrammingError(f"an event is tried at least once, not {attempts} times")
         self.attempts = attempts
         self.backoff = backoff or ExponentialBackoff()
         self.then = then or ParkAndContinue()

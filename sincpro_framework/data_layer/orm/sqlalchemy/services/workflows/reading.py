@@ -53,12 +53,10 @@ from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.entity.entity_meta import Meta
-from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
-    InvalidCriteria,
-)
+from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
 from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 DEFAULT_COUNT_CAP = 10_000
@@ -491,19 +489,19 @@ class Reading(Store):
         """
         if not for_update:
             if skip_locked or nowait:
-                raise ContractViolation(
+                raise ProgrammingError(
                     "skip_locked and nowait say how to take a row lock; ask for one with "
                     "for_update=True"
                 )
             return None
         refuse_writing_in_preview("a read that locks rows")
         if self._bound is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "for_update only means something inside context(): the lock is held "
                 "until the block commits"
             )
         if skip_locked and nowait:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "skip_locked passes over a held row and nowait fails on it; ask for one"
             )
         if skip_locked:
@@ -591,7 +589,7 @@ class Reading(Store):
         )
         history = self.fetch_all(model.event_base, about)
         if any(one.reason == UNKNOWN_EVENT for one in history.dropped):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{model.__name__} {identity} has an event no class of this process is named "
                 "like; its state cannot be rebuilt without it — import or restore that event class"
             )
@@ -799,7 +797,7 @@ class Reading(Store):
         """The single record this criteria matches, refusing zero and refusing two.
 
             in      a criteria that matches exactly one   →  out  the record
-            in      one that matches none, or several     →  ContractViolation
+            in      one that matches none, or several     →  ProgrammingError
 
         Two rows are fetched and no more: what makes this safe is that it never loads a set to
         find out it was not one.
@@ -826,7 +824,7 @@ class Reading(Store):
         """One record by a natural key: the values that identify it besides its id.
 
             in      Account, code="1010"    →  out  Account(…) or None
-            in      values two rows share   →  ContractViolation
+            in      values two rows share   →  ProgrammingError
 
         A natural key names one record; two answers mean it was not one, and guessing which
         would be the bug.
@@ -847,7 +845,7 @@ class Reading(Store):
         page = self.search(target, asked)
         if len(page) > 1:
             named = ", ".join(f"{field}={value!r}" for field, value in values.items())
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{len(page)} records answer to {named}; a natural key names one"
             )
         return page.first()

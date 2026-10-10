@@ -24,7 +24,7 @@ from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import Declaration, WhenDenied
 from sincpro_framework.auth.infrastructure.security_context import _decided, current_identity
 from sincpro_framework.context.infrastructure.tree import executing_context
-from sincpro_framework.exceptions import ExtensionRefused
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
@@ -54,7 +54,7 @@ class Declarations:
             merged = declaration
         elif held.kind == declaration.kind == "requires":
             if held.when_denied != declaration.when_denied:
-                raise ExtensionRefused(
+                raise ProgrammingError(
                     f"{cls.__name__} requires with when_denied={held.when_denied} and "
                     f"{declaration.when_denied}: declare one"
                 )
@@ -62,7 +62,7 @@ class Declarations:
                 "requires", held.requirements + declaration.requirements, held.when_denied
             )
         else:
-            raise ExtensionRefused(
+            raise ProgrammingError(
                 f"{cls.__name__} is declared both {held} and {declaration}"
             )
         self._by_class[cls] = merged

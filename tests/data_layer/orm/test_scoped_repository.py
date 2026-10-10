@@ -7,9 +7,9 @@ table, which is the one failure this exists to prevent, so it fails loudly inste
 
 import pytest
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 from .models import ROW_COUNT, Note, Notes, Thing, Things, a_thing
 
@@ -57,11 +57,11 @@ def test_the_scope_reaches_grouping_and_totals(scoped: Repository, things):
 def test_writing_outside_the_scope_is_refused(scoped: Repository):
     theirs = a_thing(2)  # owner-2
 
-    with pytest.raises(ContractViolation, match="outside what this repository"):
+    with pytest.raises(ProgrammingError, match="outside what this repository"):
         scoped.save(theirs)
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         scoped.remove(theirs)
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         scoped.save([a_thing(1), theirs])
 
 
@@ -95,9 +95,9 @@ def test_an_aggregate_that_cannot_answer_the_scope_is_refused_and_not_read_wide(
     scoped = store.narrowed(MINE)
     store.save(Note(title="not mine"))
 
-    with pytest.raises(ContractViolation, match="cannot answer the scope"):
+    with pytest.raises(ProgrammingError, match="cannot answer the scope"):
         scoped.search(Notes)
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         scoped.count(Notes)
 
 
@@ -106,5 +106,5 @@ def test_a_unit_of_work_of_a_scoped_repository_stays_scoped(scoped: Repository, 
         assert unit.count(Things).value == len(
             [one for one in things if one.owner == "owner-1"]
         )
-        with pytest.raises(ContractViolation):
+        with pytest.raises(ProgrammingError):
             unit.save(a_thing(2))

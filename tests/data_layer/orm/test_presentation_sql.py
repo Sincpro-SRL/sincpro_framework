@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework import UseFramework
+from sincpro_framework import ProgrammingError, UseFramework
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
@@ -33,7 +33,6 @@ from sincpro_framework.ddd import (
     matching,
 )
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 
 @dataclass
@@ -255,6 +254,6 @@ def test_a_key_other_than_the_identity_must_be_unique_on_disk():
         },
     )
 
-    with pytest.raises(ContractViolation, match="loose_code.code is not unique"):
+    with pytest.raises(ProgrammingError, match="loose_code.code is not unique"):
         describe(Coded)
     assert describe(Unique).get_id == "code"

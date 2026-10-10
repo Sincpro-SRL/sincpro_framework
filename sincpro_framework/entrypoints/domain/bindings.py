@@ -12,7 +12,6 @@ from typing import ClassVar, Literal
 
 from pydantic import ConfigDict
 
-from sincpro_framework.exceptions import ExtensionRefused
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 type HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -116,8 +115,3 @@ BUILT_IN_BINDINGS: dict[str, type[Binding]] = {
 }
 """The binding type of each wire the framework ships — what `override(Command, **fields)` is
 checked against on a gateway that names its wire."""
-
-
-class ExposureRefused(ExtensionRefused):
-    """An exposure that cannot hold as declared — a second binding for one wire on a class, or
-    a surface the build refuses (PRD_14 §7), every reason listed at once."""

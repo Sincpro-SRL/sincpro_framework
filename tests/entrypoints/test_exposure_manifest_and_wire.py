@@ -12,11 +12,11 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.auth.domain.exceptions import Unauthenticated
 from sincpro_framework.ddd import Query
-from sincpro_framework.entrypoints import ExposureRefused, Gateway, Group, declare
+from sincpro_framework.entrypoints import Gateway, Group, declare
 from sincpro_framework.entrypoints.domain.bindings import Binding, Deprecation
 from sincpro_framework.entrypoints.domain.surface import Operation, Resolved, Wire
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp, rest
@@ -226,7 +226,7 @@ def test_a_project_wire_refuses_its_own_clashes_through_the_build():
         CommandIssueInvoice, command="billing show"
     )
 
-    with pytest.raises(ExposureRefused, match="'billing show' answered by"):
+    with pytest.raises(ProgrammingError, match="'billing show' answered by"):
         gateway.build()
 
 

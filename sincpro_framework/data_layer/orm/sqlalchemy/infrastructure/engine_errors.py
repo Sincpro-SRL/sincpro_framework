@@ -31,7 +31,7 @@ from sincpro_framework.ddd.exceptions import (
     TransactionConflict,
 )
 
-Fact = tuple[type[DomainError], str]
+Fact = tuple[type[DomainError] | type[TimedOut], str]
 
 DUPLICATE: Fact = (DuplicateAggregate, "collides with a record already stored")
 FOREIGN_KEY: Fact = (ConstraintViolation, "breaks a foreign key")

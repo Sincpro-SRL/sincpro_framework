@@ -31,13 +31,14 @@ from typing import (
 
 from pydantic import BaseModel
 
+from sincpro_framework.exceptions import ProgrammingError
+
 
 def refused(message: str) -> Exception:
     """Context: imported here, not at the top — the bus measures every run through this
     package, and a service that only runs buses must not load the DDD layer for it."""
-    from sincpro_framework.ddd.exceptions import ContractViolation
 
-    return ContractViolation(message)
+    return ProgrammingError(message)
 
 
 def is_context_type(cls: Any) -> bool:

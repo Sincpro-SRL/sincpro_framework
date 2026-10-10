@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 from pydantic import model_validator
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, FailureKind, Feature, UseFramework
 from sincpro_framework.auth import (
     AccessControl,
     Identity,
@@ -26,7 +26,6 @@ from sincpro_framework.auth import (
     StaticProvider,
     current_identity,
 )
-from sincpro_framework.common.failures import FailureKind
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import AlreadyInProgress, Idempotency, KeyReused
 from sincpro_framework.ddd.exceptions import DomainError, StaleAggregate

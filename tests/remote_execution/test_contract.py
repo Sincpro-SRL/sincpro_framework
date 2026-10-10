@@ -21,10 +21,11 @@ from structlog.testing import capture_logs
 from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
+    FailureKind,
     Feature,
     UseFramework,
 )
-from sincpro_framework.common.failures import FailureKind, refined_failure_kind
+from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.context import requires_context
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import DomainError

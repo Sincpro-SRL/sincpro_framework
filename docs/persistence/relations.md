@@ -247,7 +247,7 @@ key, which refuses the delete while children point at the root — Vernon's rule
 rare: an aggregate holds another by id, not as a collection.
 
 ```python
-remove(customer)    # Customer.invoices declares nothing  →  ContractViolation: removing it would
+remove(customer)    # Customer.invoices declares nothing  →  ProgrammingError: removing it would
                     # leave 3 Invoice of Customer.invoices … orphans=Orphans.DELETE takes them along,
                     # Orphans.DETACH sets their key to NULL
 ```

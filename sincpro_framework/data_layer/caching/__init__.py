@@ -34,7 +34,6 @@ from sincpro_framework.data_layer.caching.domain.codec import Codec
 from sincpro_framework.data_layer.caching.domain.eviction import Eviction
 from sincpro_framework.data_layer.caching.domain.exceptions import (
     AlreadyInProgress,
-    IdempotencyError,
     KeyReused,
 )
 from sincpro_framework.data_layer.caching.domain.failure import FailSafe, FailurePolicy, Raise
@@ -91,7 +90,6 @@ __all__ = [
     "Freshness",
     "IDEMPOTENCY_KEY",
     "Idempotency",
-    "IdempotencyError",
     "IdempotencyOutcome",
     "IdempotencyPolicy",
     "IdempotencyRecord",

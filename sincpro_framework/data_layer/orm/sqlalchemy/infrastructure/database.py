@@ -247,8 +247,8 @@ def _statement_refused_in_preview(state: Any) -> None:
     """A statement sent through a session inside `previewing()` that writes or locks is refused:
     an INSERT, UPDATE or DELETE, a text statement that is not a read, a read that locks rows.
 
-        UPDATE … / text("DELETE …")             →  WriteInPreview
-        SELECT … FOR UPDATE                      →  WriteInPreview
+        UPDATE … / text("DELETE …")             →  ProgrammingError
+        SELECT … FOR UPDATE                      →  ProgrammingError
         SELECT … / text("SELECT …")             →  runs, without an autoflush
     """
     if not is_previewing():

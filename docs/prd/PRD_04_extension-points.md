@@ -65,6 +65,7 @@ the bus middleware — so it can be replaced rather than stretched.
 ### 1. Interceptors
 
 ```python
+from sincpro_framework.ddd import DomainError
 from sincpro_framework import CallNext
 
 @billing.interceptor(CommandCreateInvoice)
@@ -72,7 +73,7 @@ def credit_check(
     dto: CommandCreateInvoice, call_next: CallNext[ResponseCreateInvoice]
 ) -> ResponseCreateInvoice:
     if not credit.allows(dto.customer_id):
-        raise ContractViolation(f"{dto.customer_id} has no credit")   # veto: the core never runs
+        raise DomainError(f"{dto.customer_id} has no credit")   # veto: the core never runs
     adjusted = dto.model_copy(update={"due_days": 30})               # same class, other values
     response = call_next(adjusted)
     return response.model_copy(update={"note": "credit checked"})     # adjust the answer

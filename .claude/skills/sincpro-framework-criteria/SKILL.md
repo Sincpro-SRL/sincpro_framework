@@ -128,7 +128,7 @@ Silent ones first — the runtime gives no error for these.
 - **`Offset` for a listing people page through** repeats and skips rows under concurrent inserts.
   Keep the default cursor; `Offset` is for a one-off read and for paging groups.
 - Loud, but common: ordering by a nullable or unknown field raises `InvalidCriteria`; folding a
-  page (`page.sum_by(...)`) raises `ContractViolation` — ask `repository.measures(...)`.
+  page (`page.sum_by(...)`) raises `ProgrammingError` — ask `repository.measures(...)`.
 
 ## The one object
 

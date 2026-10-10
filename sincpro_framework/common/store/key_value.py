@@ -15,10 +15,33 @@ and `take` are atomic: they are what several replicas coordinate on. An abstract
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import timedelta
+
+from sincpro_framework.exceptions import ServiceUnavailableError
+
+
+class StoreUnavailable(ServiceUnavailableError):
+    """The store did not answer — down, unreachable, past its timeout. Whoever holds context,
+    drafts or cached values there retries later; the cache answers from the process meanwhile.
+    """
 
 
 class KeyValueStore(ABC):
+    @contextmanager
+    def _reaching(self) -> Generator[None, None, None]:
+        """A call to the store's own client: whatever it raises is the store not answering —
+        `StoreUnavailable`, carrying the client's error as its cause."""
+        try:
+            yield
+        except StoreUnavailable:
+            raise
+        except Exception as error:
+            raise StoreUnavailable(
+                f"{type(self).__name__} did not answer: {type(error).__name__}: {error}"
+            ) from error
+
     @abstractmethod
     def get_many(self, keys: list[str]) -> list[bytes | None]:
         """The values of `keys`, in that order, `None` for a key that is not there."""

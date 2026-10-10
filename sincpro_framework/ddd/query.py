@@ -35,7 +35,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
     identity_name,
 )
 from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta, presentation_of
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
@@ -266,7 +266,7 @@ class ResponsePaginatedQuery(DataTransferObject):
             if name not in ResponsePaginatedQuery.model_fields
         ]
         if len(own) != 1:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a paginated response declares exactly one, holding its records"
             )
@@ -370,7 +370,7 @@ class ResponseRecord(DataTransferObject):
         """
         own = [name for name in cls.model_fields if name not in ResponseRecord.model_fields]
         if len(own) != 1:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a record response declares exactly one, holding its record"
             )
@@ -473,7 +473,7 @@ class ResponseRecords(DataTransferObject):
         """
         own = [name for name in cls.model_fields if name not in ResponseRecords.model_fields]
         if len(own) != 1:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a records response declares exactly one, holding its records"
             )

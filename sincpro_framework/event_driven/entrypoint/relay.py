@@ -40,7 +40,6 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity import utc_now
 from sincpro_framework.ddd.events import DeliverableEventMixin, DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories import IRepository, Transacts
 from sincpro_framework.event_driven.domain.failure import (
     DEFAULT_FAILURE_POLICY,
@@ -49,6 +48,7 @@ from sincpro_framework.event_driven.domain.failure import (
     HandlingFailure,
     Holds,
 )
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
@@ -109,7 +109,7 @@ class EventRelay:
         or anything with its `publish(event)`. `on_failure` is `DEFAULT_FAILURE_POLICY` unless
         given. `clock` is the time, for a test to move."""
         if batch < 1:
-            raise ContractViolation(f"a relay reads at least one event, not {batch}")
+            raise ProgrammingError(f"a relay reads at least one event, not {batch}")
         self.repository = repository
         self.source = source
         self.publisher = publisher

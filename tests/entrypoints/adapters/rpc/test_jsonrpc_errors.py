@@ -12,18 +12,18 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    DataTransferObject,
+    FailureKind,
+    Feature,
+    UseFramework,
+)
 from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
-from sincpro_framework.common.failures import FailureKind
 from sincpro_framework.data_layer.caching.domain.exceptions import (
     AlreadyInProgress,
     KeyReused,
 )
-from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
-    DuplicateAggregate,
-    StaleAggregate,
-)
+from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
 from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import upper_snake
 from sincpro_framework.entrypoints.entrypoint.decorators import rpc
@@ -38,7 +38,7 @@ class HsmDown(Exception):
 
 
 RAISED: dict[str, Exception] = {
-    "domain": ContractViolation("an invoice has to balance"),
+    "domain": DomainError("an invoice has to balance"),
     "stale": StaleAggregate("invoice F-1 was written by someone else"),
     "duplicate": DuplicateAggregate("invoice F-1 already exists"),
     "in_progress": AlreadyInProgress("key k-1 is running"),
@@ -107,7 +107,7 @@ def _error(gateway: RpcGateway, method: str, params: Any = None) -> dict[str, An
             "domain",
             -32010,
             "domain",
-            "CONTRACT_VIOLATION",
+            "DOMAIN_ERROR",
             False,
             "an invoice has to balance",
         ),
@@ -203,7 +203,7 @@ def test_an_unknown_method_names_it(gateway: RpcGateway) -> None:
 
 
 def test_the_reason_is_the_error_class_in_upper_snake() -> None:
-    assert upper_snake("ContractViolation") == "CONTRACT_VIOLATION"
+    assert upper_snake("InvoiceDoesNotBalance") == "INVOICE_DOES_NOT_BALANCE"
     assert upper_snake("QRCodeExpired") == "QR_CODE_EXPIRED"
     assert upper_snake("KeyReused") == "KEY_REUSED"
 

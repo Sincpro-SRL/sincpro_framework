@@ -23,13 +23,13 @@ from pydantic import ValidationError
 from sincpro_framework.auth.domain.exceptions import AuthError
 from sincpro_framework.auth.entrypoint.transports import refusal_body
 from sincpro_framework.common.failures import (
-    FailureKind,
     json_safe_validation_errors,
     refined_failure_kind,
 )
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.domain.layers import Scalar
 from sincpro_framework.entrypoints.entrypoint.catalog import PackedFeatureOrAppService
+from sincpro_framework.exceptions import ClientError, FailureKind
 from sincpro_framework.use_bus import UseFramework
 
 PATH_PARAMETER = re.compile(r"{([A-Za-z_][A-Za-z0-9_]*)}")
@@ -152,7 +152,7 @@ def payload_from_query(query: Mapping[str, str], schema: Mapping[str, Any]) -> S
     return payload
 
 
-class InvalidRequest(Exception):
+class InvalidRequest(ClientError):
     """A request the wire cannot read into a payload — answered 400."""
 
 

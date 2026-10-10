@@ -48,7 +48,7 @@ key.
 | `IdempotentCommand` | Protocol: a Command with `idempotency_key()` | port (abstract) | `sincpro_framework.data_layer.caching` |
 | `current_idempotency_key()` / `declares_once(cls)` / `key_of(...)` | The key of the run in progress / whether a class runs once / a hashed key | function | `sincpro_framework.data_layer.caching` |
 | `IDEMPOTENCY_KEY` | Context key a transport fills with a received `Idempotency-Key` | setting | `sincpro_framework.data_layer.caching` |
-| `AlreadyInProgress` / `KeyReused` / `IdempotencyError` | Refusals, `DomainError`s (409 / 422) | error | `sincpro_framework.data_layer.caching` |
+| `AlreadyInProgress` / `KeyReused` / `ClientError` | Refusals, `DomainError`s (409 / 422) | error | `sincpro_framework.data_layer.caching` |
 | `IdempotencyRecords` / `KeyValueRecords(store)` | Where claims and answers live: yours over a database (transactional) / on a key-value store (best effort) | port / adapter | `sincpro_framework.data_layer.caching` |
 | `KeyValueRuns(store)` | Crons across replicas: one claim per tick | adapter | `sincpro_framework.entrypoints.adapters.cron` |
 | `KeyValueStoreContract` / `IdempotencyRecordsContract` | Test base classes a store / records of yours inherit | test contract | `sincpro_framework.runtime.testing` |
@@ -125,7 +125,7 @@ bus(CommandIssueReceipt) → once(): key = handler + Command + idempotency_key()
   (`references/query-caching.md`).
 - **A tenant or user carried in the context but missing from `vary_by`.** One tenant's answer is
   served to another. List those keys in `QueryCaching(sensitive=...)`: a call that carries one the
-  policy does not vary by is refused (`ContractViolation`), checked on every call, not at `on()`.
+  policy does not vary by is refused (`ProgrammingError`), checked on every call, not at `on()`.
 - **`@idempotency.once` without `vary_by="tenant_id"`** when the key is only unique per tenant:
   tenant B gets tenant A's replayed answer.
 - **A Command with no `idempotency_key()` and a generated field** (`Field(default_factory=uuid4)`,

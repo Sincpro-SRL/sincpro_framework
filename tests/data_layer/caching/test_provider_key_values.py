@@ -12,7 +12,9 @@ import pytest
 from pymemcache.client.base import PooledClient
 from pymemcache.test.utils import MockMemcacheClient
 
-from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework import FailureKind
+from sincpro_framework.common.failures import refined_failure_kind
+from sincpro_framework.common.store import KeyValueStore, StoreUnavailable
 from sincpro_framework.data_layer.caching.adapters.memcached import MemcachedKeyValue
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import KeyValueStoreContract
@@ -131,3 +133,26 @@ def test_memcached_take_answers_nothing_to_a_caller_whose_cas_lost():
     store.set("code", b"1")
 
     assert store.take("code") is None
+
+
+class _DeadClient:
+    """A client whose server is gone: every call fails the way a driver does."""
+
+    def __getattr__(self, name: str):
+        def call(*args, **kwargs):
+            raise ConnectionRefusedError(111, "Connection refused")
+
+        return call
+
+
+@pytest.mark.parametrize(
+    "store", [RedisKeyValue(_DeadClient()), MemcachedKeyValue(_DeadClient())]
+)
+def test_a_store_that_does_not_answer_is_unavailable_with_the_drivers_error_as_its_cause(
+    store: KeyValueStore,
+):
+    with pytest.raises(StoreUnavailable) as raised:
+        store.get_many(["a"])
+
+    assert refined_failure_kind(raised.value) is FailureKind.UNAVAILABLE
+    assert isinstance(raised.value.__cause__, ConnectionRefusedError)

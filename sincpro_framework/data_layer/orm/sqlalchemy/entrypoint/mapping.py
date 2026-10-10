@@ -29,7 +29,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import 
 )
 from sincpro_framework.ddd.entity import Entity, relations
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 
 def map_aggregates(
@@ -95,7 +95,7 @@ def map_events(mapper_registry: registry, base: type[DomainEvent], table: Table)
     no-op.
     """
     if not (isinstance(base, type) and issubclass(base, DomainEvent)):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{base!r} is not a DomainEvent class: there is nothing to map"
         )
     if base in bases:

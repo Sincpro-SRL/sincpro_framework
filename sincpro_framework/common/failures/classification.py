@@ -3,13 +3,13 @@
 Shared by every wire (JSON-RPC, gRPC, REST, queues): the status code differs per protocol, the
 classification, the stable reason and the disclosure policy do not (PRD_15 §1.3).
 
-    class InvoiceNotFound(DomainError):
+    class InvoiceNotFound(ClientError):
         failure_kind = FailureKind.NOT_FOUND        # an error declares a kind of its own
 
 Context: `refined_failure_kind` is the classification every wire (REST, JSON-RPC, gRPC, FastAPI,
 queues) and the `ExecutionFailed` event answer with — each wire's table has a row for every kind.
-`failure_kind` is its shared core: the kinds a failure has whatever it declares (`INVALID`,
-`UNAUTHENTICATED`, `PERMISSION_DENIED`, `CONFLICT`, `DOMAIN`, `INTERNAL`).
+The error says its own kind: every base of `sincpro_framework.exceptions` declares one, so nothing
+here knows the components that raise them.
 """
 
 import json
@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.common.failures.kind import FailureKind
+from sincpro_framework.exceptions import ClientError, FailureKind
 
 RETRYABLE = frozenset(
     {FailureKind.IN_PROGRESS, FailureKind.EXHAUSTED, FailureKind.UNAVAILABLE}
@@ -43,52 +43,19 @@ DEFAULT_RETRY_AFTER = timedelta(seconds=1)
 UPPER_SNAKE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
-def failure_kind(error: Exception) -> FailureKind:
-    from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
-    from sincpro_framework.ddd.exceptions import (
-        DomainError,
-        DuplicateAggregate,
-        StaleAggregate,
-    )
-
+def refined_failure_kind(error: Exception) -> FailureKind:
+    """The kind every wire answers a failure with: what the error declares (`failure_kind` on its
+    class — every base of `sincpro_framework.exceptions` declares one), a request that did not
+    validate as its DTO, and a crash for anything else."""
+    declared = getattr(error, "failure_kind", None)
+    if isinstance(declared, str):
+        try:
+            return FailureKind(declared)
+        except ValueError:
+            pass
     if isinstance(error, ValidationError):
         return FailureKind.INVALID
-    if isinstance(error, Unauthenticated):
-        return FailureKind.UNAUTHENTICATED
-    if isinstance(error, PermissionDenied):
-        return FailureKind.PERMISSION_DENIED
-    if isinstance(error, (StaleAggregate, DuplicateAggregate)):
-        return FailureKind.CONFLICT
-    if isinstance(error, DomainError):
-        return FailureKind.DOMAIN
     return FailureKind.INTERNAL
-
-
-def _declared_kind(error: Exception) -> FailureKind | None:
-    declared = getattr(type(error), "failure_kind", None)
-    try:
-        return FailureKind(declared) if isinstance(declared, str) else None
-    except ValueError:
-        return None
-
-
-def refined_failure_kind(error: Exception) -> FailureKind:
-    """The kind every wire answers a failure with: what the error declares
-    (`failure_kind = FailureKind.NOT_FOUND` on its class), then the idempotency refusals, then
-    the shared kinds (`failure_kind`)."""
-    from sincpro_framework.data_layer.caching.domain.exceptions import (
-        AlreadyInProgress,
-        KeyReused,
-    )
-
-    declared = _declared_kind(error)
-    if declared is not None:
-        return declared
-    if isinstance(error, AlreadyInProgress):
-        return FailureKind.IN_PROGRESS
-    if isinstance(error, KeyReused):
-        return FailureKind.KEY_REUSED
-    return failure_kind(error)
 
 
 def failure_reason(error: Exception, kind: FailureKind) -> str:
@@ -129,7 +96,7 @@ def json_safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:
 def said_to_the_caller(error: Exception) -> str | None:
     """What of a failure a client is allowed to read.
 
-    **A `DomainError` was written for whoever asked** — "an invoice has to balance" is the
+    **A `ClientError` or a `DomainError` was written for whoever asked** — "an invoice has to balance" is the
     answer, and hiding it helps nobody. Anything else is the inside of the process, and its
     message routinely carries what must never leave it: a connection string with a password, a
     statement with the value it was filtering on, a path on the server.
@@ -141,4 +108,4 @@ def said_to_the_caller(error: Exception) -> str | None:
     """
     from sincpro_framework.ddd.exceptions import DomainError
 
-    return str(error) if isinstance(error, DomainError) else None
+    return str(error) if isinstance(error, (ClientError, DomainError)) else None

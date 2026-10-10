@@ -6,7 +6,13 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    FailureKind,
+    Feature,
+    UseFramework,
+)
 from sincpro_framework.bus_pipeline.outcomes.events import (
     ExecutionCompleted,
     ExecutionFailed,
@@ -16,7 +22,6 @@ from sincpro_framework.bus_pipeline.outcomes.listeners import (
     failures,
     to_publisher,
 )
-from sincpro_framework.common.failures import FailureKind
 from sincpro_framework.context.infrastructure.tree import current_execution
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 

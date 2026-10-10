@@ -37,7 +37,7 @@ from sincpro_framework.ddd.events.mixins.deliverable import (
     DELIVERY_FIELDS,
     DeliverableEventMixin,
 )
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 ENVELOPE = frozenset(one.name for one in dataclasses.fields(DomainEvent))
@@ -101,7 +101,7 @@ def claim(table: Table, cls: type) -> None:
     """`cls` is what `cls.name` reads as in `table` — refused when another class holds the name.
 
         in      Posted (name "Posted") then Reposted (name "Posted"), one table
-        out     ContractViolation naming both
+        out     ProgrammingError naming both
 
     Two classes under one name would make the second the reading of every row the first wrote:
     its fields lost, the wrong class answered, and nothing said.
@@ -109,7 +109,7 @@ def claim(table: Table, cls: type) -> None:
     held = _named.setdefault(table, {})
     other = held.get(cls.name)  # type: ignore[attr-defined]
     if other is not None and other is not cls:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{other.__name__} and {cls.__name__} are both named '{cls.name}' in the event "  # type: ignore[attr-defined]
             f"table {table.name}: a name is the event's identity, so each class needs its own "
             f'— name = "<context>.<aggregate>.<event>"'

@@ -12,7 +12,7 @@ from enum import StrEnum
 
 import pytest
 
-from sincpro_framework import UseFramework
+from sincpro_framework import ProgrammingError, UseFramework
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.ddd import (
     AggregateNotFound,
@@ -26,7 +26,6 @@ from sincpro_framework.ddd import (
     Preview,
     ResponsePreview,
     When,
-    WriteInPreview,
     advise,
     assign,
     previewing,
@@ -34,7 +33,6 @@ from sincpro_framework.ddd import (
 )
 from sincpro_framework.ddd.criteria import Operator
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.reads.reads import copied
 
 
@@ -210,7 +208,7 @@ def test_a_derivation_that_cannot_be_ordered_is_refused_when_the_class_is_read(
 
         derivations = Derivations["Broken"](declared)
 
-    with pytest.raises(ContractViolation, match=refusal):
+    with pytest.raises(ProgrammingError, match=refusal):
         recompute(Broken())
 
 
@@ -241,9 +239,9 @@ def test_assign_reads_each_value_as_its_field_type_and_answers_what_changed():
 def test_assign_refuses_a_name_that_is_not_a_field_and_a_value_the_type_cannot_read():
     invoice = Invoice(partner_id="p1")
 
-    with pytest.raises(ContractViolation, match="no field colour"):
+    with pytest.raises(ProgrammingError, match="no field colour"):
         assign(invoice, {"colour": "red"})
-    with pytest.raises(ContractViolation, match="Invoice.discount cannot take 'mucho'"):
+    with pytest.raises(ProgrammingError, match="Invoice.discount cannot take 'mucho'"):
         assign(invoice, {"discount": "mucho"})
 
 
@@ -364,7 +362,7 @@ def test_every_write_door_is_refused_inside_a_preview(write):
     folder = Folder(name="docs")
     store = MemoryRepository().add(folder)
 
-    with previewing(), pytest.raises(WriteInPreview):
+    with previewing(), pytest.raises(ProgrammingError):
         write(store, folder)
 
     assert [one.name for one in store.search(Folder)] == ["docs"]
@@ -398,7 +396,7 @@ def test_a_number_taken_by_domain_code_during_a_preview_is_refused_and_not_spent
     class NumberedReads(EntityReads[NumberedInvoice]):
         pass
 
-    with pytest.raises(WriteInPreview, match="take inside a preview"):
+    with pytest.raises(ProgrammingError, match="take inside a preview"):
         bus(QueryPreviewNumbered(), ResponsePreviewNumbered)
 
     assert numbering.next_number("invoice") == 1
@@ -510,16 +508,16 @@ def test_assign_builds_the_lines_through_their_own_class_and_refuses_framework_f
 
     assert isinstance(ticket.lines[0], TicketLine)
     assert (ticket.lines[0].qty, ticket.lines[0].price) == (3, Decimal("5"))
-    with pytest.raises(ContractViolation, match="version"):
+    with pytest.raises(ProgrammingError, match="version"):
         assign(ticket, {"version": 1})
-    with pytest.raises(ContractViolation, match="id"):
+    with pytest.raises(ProgrammingError, match="id"):
         assign(ticket, {"id": "another"})
-    with pytest.raises(ContractViolation, match="version"):
+    with pytest.raises(ProgrammingError, match="version"):
         assign(ticket, {"lines": [{"qty": 1, "version": 4}]})
 
 
 def test_recompute_refuses_a_change_that_names_no_field():
-    with pytest.raises(ContractViolation, match="nonexistent"):
+    with pytest.raises(ProgrammingError, match="nonexistent"):
         recompute(Ticket(), ("nonexistent",))
 
 

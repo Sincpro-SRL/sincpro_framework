@@ -9,9 +9,14 @@ from typing import Any
 import grpc
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    UseFramework,
+)
 from sincpro_framework.ddd import ValueObject
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.adapters.grpc.proto import DESCRIBE_PATH
@@ -131,7 +136,7 @@ def _instance(name: str, with_app_service: bool = False) -> UseFramework:
     @framework.feature(RefuseCharge)
     class RefuseChargeFeature(Feature):
         def execute(self, dto: RefuseCharge) -> ChargePaymentResponse:
-            raise ContractViolation(f"an invoice has to balance: {dto.reason}")
+            raise DomainError(f"an invoice has to balance: {dto.reason}")
 
     @framework.feature(LeakSecret)
     class LeakSecretFeature(Feature):

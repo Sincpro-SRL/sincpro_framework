@@ -21,7 +21,6 @@ from pydantic import ValidationError
 from sincpro_framework.auth.domain.exceptions import AuthError, Unauthenticated
 from sincpro_framework.auth.entrypoint.transports import challenges_of, refusal_body
 from sincpro_framework.common.failures import (
-    FailureKind,
     failure_reason,
     json_safe_validation_errors,
     refined_failure_kind,
@@ -42,9 +41,9 @@ from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.ddd.exceptions import DuplicateAggregate
 from sincpro_framework.entrypoints.adapters.grpc import naming, proto
 from sincpro_framework.entrypoints.adapters.grpc.proto import GrpcMethodSpec
-from sincpro_framework.entrypoints.domain.bindings import ExposureRefused
 from sincpro_framework.entrypoints.domain.layers import RunFn, Scalar
 from sincpro_framework.entrypoints.services.scalar_executor import dump_scalar_result, execute
+from sincpro_framework.exceptions import FailureKind, ProgrammingError
 from sincpro_framework.observability import process
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
@@ -550,7 +549,7 @@ def refuse_clashes(specs: Mapping[str, GrpcMethodSpec], extra: Sequence[Any]) ->
     answers would depend on mounting order."""
     clashing = sorted(paths_of(extra) & set(specs))
     if clashing:
-        raise ExposureRefused(
+        raise ProgrammingError(
             "hand-written methods the gateway also serves: "
             + ", ".join(
                 f"{path} ({specs[path].operation.command.__name__})" for path in clashing

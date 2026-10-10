@@ -77,11 +77,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     presentation_of,
 )
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import (
-    AggregateNotFound,
-    ContractViolation,
-    RelationNotResolved,
-)
+from sincpro_framework.ddd.exceptions import AggregateNotFound, RelationNotResolved
 from sincpro_framework.ddd.query import (
     Query,
     ResponsePaginatedQuery,
@@ -91,6 +87,7 @@ from sincpro_framework.ddd.query import (
 )
 from sincpro_framework.ddd.reads.defaults import detail_of, matching
 from sincpro_framework.ddd.repositories.repository import IRepository
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject, Feature
 
 
@@ -190,7 +187,7 @@ class Preview[T, R: ResponsePreview](DataTransferObject):
     QueryPreviewInvoice()                                       a new record's defaults
 
     Nothing is stored: the answer is computed over a record nobody saves, and any write
-    attempted while it runs raises `WriteInPreview`.
+    attempted while it runs raises `ProgrammingError`.
     """
 
     values: dict[str, Any] = {}
@@ -219,7 +216,7 @@ def declared_by(dto: type) -> tuple[type, type]:
         arguments = generic.get("args", ()) if generic else ()
         if len(arguments) == 2 and all(isinstance(one, type) for one in arguments):
             return arguments[0], arguments[1]
-    raise ContractViolation(
+    raise ProgrammingError(
         f"{dto.__name__} does not name its entity and response: "
         f"class {dto.__name__}(Get[Account, ResponseAccount])"
     )
@@ -234,7 +231,7 @@ def events_of(response: type) -> type:
     arguments = get_args(annotation) if get_origin(annotation) is list else ()
     held = arguments[0] if arguments else None
     if not (isinstance(held, type) and issubclass(held, DomainEvent)):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{response.__name__} holds {annotation!r}, not events: `DomainEvents` answers "
             f"`events: list[<the context's DomainEvent>]`"
         )
@@ -259,7 +256,7 @@ def history_of(*records: Any) -> Criteria:
     in      issue, run_1, run_2    →  out  any of those three pairs
     """
     if not records:
-        raise ContractViolation("history_of needs at least one record")
+        raise ProgrammingError("history_of needs at least one record")
     pairs = [
         subject(type(one).__name__, str(getattr(one, identity_name(type(one)))))
         for one in records
@@ -283,7 +280,7 @@ class EntityReads[T](Feature):
         bounded context named it otherwise."""
         repository = getattr(self, "repository", None)
         if not isinstance(repository, IRepository):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{type(self).__name__} reads from the dependency named 'repository', and the "
                 "bus has none: add it, or override reads_from()"
             )
@@ -303,7 +300,7 @@ class EntityReads[T](Feature):
                 return self.search(dto)
             case Preview():
                 return self.preview(dto)
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{type(self).__name__} answers Get, GetMany, LiteralSearch, Search, DomainEvents and "
             f"Preview, not {type(dto).__name__}"
         )
@@ -383,7 +380,7 @@ class EntityReads[T](Feature):
         events = events_of(response)
         key = dto.id.strip()
         if not key:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{type(dto).__name__} needs the {entity.__name__}'s key: a blank one would read "
                 "every event about no record"
             )

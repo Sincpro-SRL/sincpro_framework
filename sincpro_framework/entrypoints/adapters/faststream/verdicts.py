@@ -17,7 +17,8 @@ from enum import StrEnum
 
 from pydantic import ConfigDict
 
-from sincpro_framework.common.failures import PERMANENT, FailureKind
+from sincpro_framework.common.failures import PERMANENT
+from sincpro_framework.exceptions import FailureKind
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

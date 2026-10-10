@@ -374,7 +374,7 @@ path the generated gateway also serves fails the build.
 methods' own path (`wire.through_the_bus`) — parity test on status, details, trailers and the
 Feature's span; `dto` may be a factory so its validation error is `INVALID_ARGUMENT`.
 `framework_interceptors()` = deadline pre-check + call log. `mount(server, reflection_extra=[...])`
-merges the hand-written files into one reflection and refuses (`ExposureRefused`) a hand-written
+merges the hand-written files into one reflection and refuses (`ProgrammingError`) a hand-written
 path the gateway serves. The clash is detected from `reflection_extra` — a servicer mounted without
 its descriptor is not seen (grpcio exposes no handler list).
 

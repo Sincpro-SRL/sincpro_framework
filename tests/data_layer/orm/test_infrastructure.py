@@ -10,6 +10,7 @@ from datetime import datetime
 import pytest
 from sqlalchemy.dialects.sqlite import dialect as SQLiteDialect
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
     JsonText,
     TranslatedText,
@@ -19,7 +20,7 @@ from sincpro_framework.ddd.criteria import Condition, CountMode, Criteria, Opera
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
-from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
+from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .models import Thing, Things
 
@@ -45,7 +46,7 @@ def test_a_collection_that_does_not_say_what_it_holds_is_refused(store):
     class Nameless(EntityCollection):
         pass
 
-    with pytest.raises(ContractViolation, match="does not say which aggregate"):
+    with pytest.raises(ProgrammingError, match="does not say which aggregate"):
         store.search(Nameless, Criteria(pagination=Pagination(limit=1)))
 
 

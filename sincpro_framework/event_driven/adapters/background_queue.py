@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.events.domain_event import NAME
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.observability.api import process
 from sincpro_framework.observability.tracing.propagation import trace_carrier, within_trace
 from sincpro_framework.sincpro_logger import logger
@@ -80,12 +80,12 @@ class BackgroundQueue:
         `build_subscriber()` builds — engines, pools, sessions — is its own. A forked one
         would inherit the parent's open connections, which SQLAlchemy forbids sharing."""
         if context == "fork":
-            raise ContractViolation(
+            raise ProgrammingError(
                 "BackgroundQueue does not fork: the worker would inherit the parent's database "
                 "connections; use 'spawn' or 'forkserver'"
             )
         if not callable(build_subscriber):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"BackgroundQueue takes a function that builds a Subscriber; "
                 f"{type(build_subscriber).__name__} is not callable. The worker is another "
                 "interpreter, and a bus cannot be sent to it — it holds context variables that "
@@ -101,7 +101,7 @@ class BackgroundQueue:
         """Spawns the worker — once: a second worker on the same inbox would leave the first
         without a `stop()` that reaches it."""
         if self.process is not None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "this BackgroundQueue was already started: call stop() before starting it again"
             )
         self.process = self._context.Process(
@@ -120,13 +120,13 @@ class BackgroundQueue:
         it where it was published.
         """
         if self.process is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{event.name} was published to a BackgroundQueue that was never started: "
                 "call start() where the process begins and stop() where it ends, or use a "
                 "SyncQueue where the work is in-process"
             )
         if not self.process.is_alive():
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{event.name} was published to a BackgroundQueue whose worker is no longer "
                 f"running (exit code {self.process.exitcode}): it would wait in the inbox for "
                 "nobody — see the worker's log, then stop() and start() it again"

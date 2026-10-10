@@ -64,7 +64,7 @@ GrpcGateway([billing], exposure=Exposure.CATALOG)   # every use case, logged one
 | `Exposure.CATALOG` | every Feature and ApplicationService of every bus, each one logged at build — same names |
 
 Whatever the mode, a use case marked `@internal` is on no wire, and the build refuses (every
-reason at once, `ExposureRefused`) a surface that does not hold:
+reason at once, `ProgrammingError`) a surface that does not hold:
 
 - a published use case on a bus guarded by `AccessControl` that declares neither
   `@auth.requires` nor `@auth.public`;
@@ -257,7 +257,7 @@ idempotency run in flight is `ABORTED`.
 
 **`ErrorInfo` is always there.** `reason` is the stable UPPER_SNAKE a client switches on — the
 error's class when the caller may read the error (`InvoiceNotFound` → `INVOICE_NOT_FOUND`,
-`ContractViolation` → `CONTRACT_VIOLATION`), the kind otherwise (`INVALID`, `INTERNAL`,
+`ProgrammingError` → `CONTRACT_VIOLATION`), the kind otherwise (`INVALID`, `INTERNAL`,
 `UNAVAILABLE`): the class of an inside failure (`OperationalError`) says what runs inside.
 `domain` is the served package (`billing.v1`), `metadata["kind"]` the kind; an auth refusal adds
 its `reason`, `requirement` or `step_up`.
@@ -449,7 +449,7 @@ never reach `bus_call`. **Never auth**: the bus's `AccessControl` is the only gu
 servicer that calls the bus is guarded.
 
 **A hand-written method path the gateway also serves fails the build**: `mount` raises
-`ExposureRefused` naming the path and the Command before mounting anything — which of the two
+`ProgrammingError` naming the path and the Command before mounting anything — which of the two
 answered would otherwise depend on the order handlers were added. Exclude the use case from the
 gateway (`exclude=`, or no `@grpc()`), or rename the hand-written method.
 

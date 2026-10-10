@@ -20,8 +20,8 @@ from typing import Any, TypeVar, overload
 
 from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.event_driven.domain.queue import Queue
+from sincpro_framework.exceptions import ProgrammingError
 
 Response = TypeVar("Response")
 
@@ -29,12 +29,12 @@ Response = TypeVar("Response")
 def _one_answer(queue: Queue, event: DomainEvent, answers: Any) -> Any:
     """The single answer a typed publish promised, or the reason there is none."""
     if not isinstance(answers, list):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{type(queue).__name__} cannot answer in the same call; "
             "publish(event) without a return type"
         )
     if len(answers) != 1:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{event.name} was answered by {len(answers)} subscribers; a typed publish "
             "needs exactly one"
         )
@@ -49,7 +49,7 @@ def refuse_orders(event: Any) -> None:
     command has no business being published.
     """
     if not isinstance(event, DomainEvent):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{type(event).__name__} is not a DomainEvent, and a queue carries facts rather "
             "than orders: a command is asked of one bus directly, `bus(command)`. If this is "
             "meant to be a fact, make it a DomainEvent and give it a wire name"

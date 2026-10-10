@@ -27,33 +27,39 @@ class MemcachedKeyValue(KeyValueStore):
         self.prefix = prefix
 
     def get_many(self, keys: list[str]) -> list[bytes | None]:
-        found = self.client.get_many([self.prefix + key for key in keys])
-        return [found.get(self.prefix + key) for key in keys]
+        with self._reaching():
+            found = self.client.get_many([self.prefix + key for key in keys])
+            return [found.get(self.prefix + key) for key in keys]
 
     def set(self, key: str, value: bytes, ttl: timedelta | None = None) -> None:
-        self.client.set(self.prefix + key, value, expire=_seconds(ttl), noreply=False)
+        with self._reaching():
+            self.client.set(self.prefix + key, value, expire=_seconds(ttl), noreply=False)
 
     def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
-        return bool(
-            self.client.add(self.prefix + key, value, expire=_seconds(ttl), noreply=False)
-        )
+        with self._reaching():
+            return bool(
+                self.client.add(self.prefix + key, value, expire=_seconds(ttl), noreply=False)
+            )
 
     def increment(self, key: str) -> int:
-        while True:
-            counted = self.client.incr(self.prefix + key, 1, noreply=False)
-            if counted is not None:
-                return int(counted)
-            if self.client.add(self.prefix + key, b"1", expire=0, noreply=False):
-                return 1
+        with self._reaching():
+            while True:
+                counted = self.client.incr(self.prefix + key, 1, noreply=False)
+                if counted is not None:
+                    return int(counted)
+                if self.client.add(self.prefix + key, b"1", expire=0, noreply=False):
+                    return 1
 
     def delete(self, key: str) -> None:
-        self.client.delete(self.prefix + key, noreply=False)
+        with self._reaching():
+            self.client.delete(self.prefix + key, noreply=False)
 
     def take(self, key: str) -> bytes | None:
-        value, token = self.client.gets(self.prefix + key)
-        if value is None:
-            return None
-        if not self.client.cas(self.prefix + key, b"", token, expire=1, noreply=False):
-            return None
-        self.client.delete(self.prefix + key, noreply=False)
-        return value
+        with self._reaching():
+            value, token = self.client.gets(self.prefix + key)
+            if value is None:
+                return None
+            if not self.client.cas(self.prefix + key, b"", token, expire=1, noreply=False):
+                return None
+            self.client.delete(self.prefix + key, noreply=False)
+            return value

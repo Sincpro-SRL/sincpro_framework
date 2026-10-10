@@ -10,6 +10,7 @@ engine.
 import pytest
 from sqlalchemy import func, select
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm import register_grain_translator
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
@@ -18,7 +19,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import 
 )
 from sincpro_framework.ddd.criteria import Condition, Criteria, Level, Operator
 from sincpro_framework.ddd.criteria.pagination import Pagination
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 from .models import ROW_COUNT, Note, Notes, Thing, Things
 
@@ -28,7 +28,7 @@ def titled(store, title: str) -> Notes:
 
 
 def test_the_session_exists_only_inside_a_unit_of_work(store):
-    with pytest.raises(ContractViolation, match="only inside context"):
+    with pytest.raises(ProgrammingError, match="only inside context"):
         store.session
 
     with store.context() as repository:
@@ -86,9 +86,9 @@ def test_flush_makes_a_write_visible_to_the_next_read_before_the_commit(store):
 
 
 def test_a_lock_is_refused_outside_a_unit_of_work(store):
-    with pytest.raises(ContractViolation, match="for_update only means something inside"):
+    with pytest.raises(ProgrammingError, match="for_update only means something inside"):
         store.get(Thing, "th_0001", for_update=True)
-    with pytest.raises(ContractViolation, match="for_update"):
+    with pytest.raises(ProgrammingError, match="for_update"):
         store.search(Things, for_update=True)
 
 
@@ -136,6 +136,6 @@ def test_a_provider_registers_the_grain_translation_for_its_engine():
     finally:
         del GRAIN_TRANSLATORS["acmedb"]
 
-    with pytest.raises(ContractViolation, match="register_grain_translator"):
+    with pytest.raises(ProgrammingError, match="register_grain_translator"):
         grouping_column(Thing, Level(field="made_at", grain="month"), "acmedb")
     assert Operator.GT in Operator

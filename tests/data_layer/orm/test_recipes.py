@@ -12,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import registry
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import JsonText
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
@@ -20,7 +21,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
 from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
 # --- an aggregate whose identity is two columns --------------------------------------------
@@ -132,7 +132,7 @@ def test_written_once_is_a_hook_and_not_a_mode_the_store_has():
     class WrittenOnce(Hook):
         def before_save(self, record: Claim) -> None:
             if not record.is_new:
-                raise ContractViolation(
+                raise ProgrammingError(
                     f"{type(record).__name__} is written once and never replaced"
                 )
 
@@ -143,7 +143,7 @@ def test_written_once_is_a_hook_and_not_a_mode_the_store_has():
     store.save(claim)
 
     claim.verdict = "something else"
-    with pytest.raises(ContractViolation, match="written once"):
+    with pytest.raises(ProgrammingError, match="written once"):
         store.save(claim)
 
     stored = store.get(Claim, claim.id)

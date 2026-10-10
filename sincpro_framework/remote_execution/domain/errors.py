@@ -20,11 +20,16 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.common.failures import FailureKind
 from sincpro_framework.common.serialization import read_values, values_of
+from sincpro_framework.exceptions import (
+    ClientError,
+    ExternalServiceError,
+    OutcomeUnknownError,
+    ServiceUnavailableError,
+)
 
 
-class ContextFailed(Exception):
+class ContextFailed(ExternalServiceError):
     """The hosting service raised something this process cannot raise as itself — its class is
     not imported here. `kind` names it."""
 
@@ -34,29 +39,23 @@ class ContextFailed(Exception):
         self.message = message
 
 
-class ContextUnavailable(Exception):
+class ContextUnavailable(ServiceUnavailableError):
     """It did not run: nobody answered where the context is hosted, or the service there does
     not host it. A retry may succeed."""
 
-    failure_kind = FailureKind.UNAVAILABLE
 
-
-class ContextOutcomeUnknown(Exception):
+class ContextOutcomeUnknown(OutcomeUnknownError):
     """It may have run: the call was sent and no answer came back. Verify — or retry with an
     idempotency key — before doing it again or undoing it."""
-
-    failure_kind = FailureKind.UNKNOWN_OUTCOME
 
 
 class ContextTimeout(ContextOutcomeUnknown):
     """The hosting service did not answer before the call's deadline."""
 
 
-class DTODoesNotFit(Exception):
+class DTODoesNotFit(ClientError):
     """A DTO or an answer does not fit the class that rebuilds it — a required field missing, a
     value of another type. `fields` says which, each with why."""
-
-    failure_kind = FailureKind.INVALID
 
     def __init__(self, what: str, error: ValidationError) -> None:
         self.fields = [

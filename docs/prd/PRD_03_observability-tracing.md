@@ -181,7 +181,7 @@ service shows is its decision.
    text; `None` stays off the span. A DTO, a mapping, `bytes` or `Any` do not fit a span.
 3. The execution context goes on the span by itself (§4.10 rule 2); a reference into the context
    type reads it (`of(BillingContext)["user_id"]`, §4.10 rule 6).
-4. **Declared: refused at import** (`ContractViolation`) only for what could never work — a field
+4. **Declared: refused at import** (`ProgrammingError`) only for what could never work — a field
    the DTO or the context type lacks, a path into a DTO or a context that is not the use case's, a
    value that does not fit a span, a key declared twice, a declaration with nothing in it, an
    empty namespace.

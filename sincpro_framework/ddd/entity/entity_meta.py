@@ -61,7 +61,8 @@ from sincpro_framework.ddd.entity.presentation import (
     When,
     field_name,
 )
-from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
+from sincpro_framework.ddd.exceptions import InvalidCriteria
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 TRUTHY = frozenset({"1", "true", "yes", "on", "t"})
@@ -219,7 +220,7 @@ def annotations_of(declared: type) -> dict[str, Any]:
     try:
         hints = get_type_hints(declared, vars(sys.modules[declared.__module__]))
     except NameError as error:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{declared.__name__} names a type that cannot be resolved at runtime: {error}"
         ) from error
     return {
@@ -793,12 +794,12 @@ KEY_TYPES = frozenset({FieldType.TEXT, FieldType.INTEGER, FieldType.UUID})
 def _get_id_checked(owner: str, answered: object, annotations: dict[str, Any]) -> str:
     """`DEFAULT_GET_ID`: a text, integer or uuid field of the entity's own."""
     if not isinstance(answered, str) or answered not in annotations:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_GET_ID answers {answered!r}, which is not a field of {owner}"
         )
     kind = logical_type(annotations[answered])
     if kind not in KEY_TYPES:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_GET_ID answers {answered}, a {kind} field: a record is found by "
             f"a text, integer or uuid field"
         )
@@ -810,12 +811,12 @@ def _display_checked(owner: str, answered: object, annotations: dict[str, Any]) 
     if answered == "":
         return ""
     if not isinstance(answered, str) or answered not in annotations:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_DISPLAY answers {answered!r}, which is not a field of {owner}"
         )
     kind = logical_type(annotations[answered])
     if kind.is_relational or kind in (FieldType.EMBEDDED, FieldType.UNKNOWN):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_DISPLAY answers {answered}, a {kind} field: what is shown beside "
             f"the identity is a value of the record itself"
         )
@@ -829,12 +830,12 @@ def _order_checked(
     entries = tuple(answered) if isinstance(answered, (list, tuple)) else (answered,)
     for entry in entries:
         if not isinstance(entry, Sort):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f'{owner}.DEFAULT_ORDER answers Sort, as in (Sort(field="code"),); '
                 f"it was given {entry!r}"
             )
         if entry.field not in annotations:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{owner}.DEFAULT_ORDER orders by {entry.field}, which is not a field of {owner}"
             )
     return cast(tuple[Sort, ...], entries)
@@ -852,13 +853,13 @@ def _reading_checked(
     if answered is None:
         return None
     if not isinstance(answered, Specification):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_READING answers a Specification — what of each record, never "
             f"which records —; it was given {type(answered).__name__}"
         )
     unknown = sorted(set(answered.root) - set(annotations))
     if unknown:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_READING names {', '.join(unknown)}, "
             f"which {'is' if len(unknown) == 1 else 'are'} not a field of {owner}"
         )
@@ -877,25 +878,25 @@ def _search_checked(
     if answered is None:
         return None
     if not isinstance(answered, Criteria):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH answers a Criteria whose where holds TEXT; "
             f"it was given {type(answered).__name__}"
         )
     extra = sorted(answered.model_fields_set - {"where"})
     if extra:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH sets {', '.join(extra)}: a template is a where "
             f"alone — the page, the order and what each record brings are the read's own"
         )
     conditions = conditions_of(answered.where)
     if not any(holds_text(one) for one in conditions):
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH never uses TEXT: a template says where the typed "
             f'text goes, as in Condition(field="name", operator=Operator.LIKE, value=TEXT)'
         )
     for one in conditions:
         if one.field not in annotations:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{owner}.DEFAULT_LITERAL_SEARCH searches {one.field}, "
                 f"which is not a field of {owner}"
             )
@@ -905,7 +906,7 @@ def _search_checked(
         if (one.operator is Operator.STARTS_WITH and kind is not FieldType.TEXT) or (
             one.operator is Operator.LIKE and kind not in TEXT_TYPES
         ):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{owner}.DEFAULT_LITERAL_SEARCH searches {one.field} by "
                 f"{one.operator.value}, which a {kind} field cannot answer"
             )
@@ -931,7 +932,7 @@ def _condition(owner: str, declared: object) -> Expression:
         return All(all=[_condition(owner, one) for one in declared.conditions])
     if isinstance(declared, AnyHolds):
         return Any_(any=[_condition(owner, one) for one in declared.conditions])
-    raise ContractViolation(
+    raise ProgrammingError(
         f"{owner}.presentation takes a condition as Is, AllHold or AnyHolds, as in "
         f"When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id); it was given {declared!r}"
     )
@@ -943,7 +944,7 @@ def _while(owner: str, answered: object, part: str) -> dict[str, Expression]:
     covered: dict[str, list[Expression]] = {}
     for entry in _entries(answered):
         if not isinstance(entry, When):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{owner}.presentation {part} takes When, as in "
                 f"lambda a: [When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id)]; "
                 f"it was given {entry!r}"
@@ -1127,16 +1128,16 @@ def derivations_of(declared: type) -> tuple[Derivation, ...]:
     read: dict[str, Derivation] = {}
     for entry in _entries(declaration.declared(fields)):
         if not isinstance(entry, Derive):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{owner}.derivations takes Derive, as in lambda i: "
                 f"[Derive(i.total, depends=i.subtotal, by={owner}.total_of)]; "
                 f"it was given {entry!r}"
             )
         name = field_name(entry.field, "Derive(i.total, ...)")
         if name in read:
-            raise ContractViolation(f"{owner}.derivations computes {name} twice")
+            raise ProgrammingError(f"{owner}.derivations computes {name} twice")
         if not callable(entry.by):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{owner}.derivations computes {name} by {entry.by!r}, which is not callable"
             )
         read[name] = Derivation(
@@ -1159,13 +1160,13 @@ def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
     }
     for name, derivation in read.items():
         if name in derivation.depends:
-            raise ContractViolation(f"{owner}.derivations computes {name} from itself")
+            raise ProgrammingError(f"{owner}.derivations computes {name} from itself")
     ordered: list[str] = []
     while waiting:
         free = [name for name, needs in waiting.items() if not needs]
         if not free:
             cycle = " → ".join(sorted(waiting))
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{owner}.derivations depend on each other in a cycle: {cycle}"
             )
         for name in free:

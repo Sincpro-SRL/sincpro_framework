@@ -78,7 +78,6 @@ from sincpro_framework.ddd.events import (
 from sincpro_framework.ddd.exceptions import (
     AggregateNotFound,
     ConstraintViolation,
-    ContractViolation,
     DomainError,
     DuplicateAggregate,
     InvalidCriteria,
@@ -86,7 +85,6 @@ from sincpro_framework.ddd.exceptions import (
     StaleAggregate,
     TimedOut,
     TransactionConflict,
-    WriteInPreview,
 )
 from sincpro_framework.ddd.query import (
     Query,
@@ -184,7 +182,6 @@ __all__ = [
     "FieldState",
     "Preview",
     "ResponsePreview",
-    "WriteInPreview",
     "advise",
     "assign",
     "previewing",
@@ -205,7 +202,6 @@ __all__ = [
     "Offset",
     "Operator",
     "DomainError",
-    "ContractViolation",
     "Pagination",
     "Pivot",
     "PivotCell",

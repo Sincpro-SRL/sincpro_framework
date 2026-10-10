@@ -57,7 +57,7 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `AuditedMixin` | `created_by` on insert, `updated_by` on each later update (it stays `None` until the first update), from `Database(actor=…)` | dataclass mixin | `from sincpro_framework.ddd import AuditedMixin` |
 | `ChangeTrackingMixin` | One `EntityUpdated` per save of a stored aggregate, with every changed field; an insert records nothing — record your own created event | dataclass mixin | `from sincpro_framework.ddd import ChangeTrackingMixin` |
 | `StaleAggregate` / `DuplicateAggregate` | A write lost a race: newer version / unique value taken | exception | `from sincpro_framework.ddd import StaleAggregate, DuplicateAggregate` |
-| `ContractViolation` / `RelationNotResolved` | API used against its contract / relation read that nobody asked for | exception | `from sincpro_framework.ddd import ContractViolation, RelationNotResolved` |
+| `ProgrammingError` / `RelationNotResolved` | API used against its contract / relation read that nobody asked for | exception | `from sincpro_framework.ddd import ProgrammingError, RelationNotResolved` |
 | `DEFAULT_GET_ID` / `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_DISPLAY` / `DEFAULT_LITERAL_SEARCH` | How the entity is read: the key `Get` finds it by, what one record brings (`Specification`), the list order (`Sort`s), the field shown beside the identity, the template a typed text fills (`Criteria` with `TEXT`). `@classmethod`s `Entity` defines with defaults; override what you need; what a caller's criteria names wins | `@classmethod` on the entity | `Entity`; `TEXT` from `sincpro_framework.ddd` |
 | `Presentation` | Class attribute of an entity: form hints only (`readonly`, `required`, `readonly_when`, `required_when`, `visible_when`), fields named by lambda (`lambda a: a.code`) | declaration | `from sincpro_framework.ddd import Presentation` |
 | `Is` / `When` / `AllHold` / `AnyHolds` | A hint's condition as the Criteria triple: `When(Is(i.state, Operator.NE, State.DRAFT), i.partner_id)` | declaration | `sincpro_framework.ddd` |
@@ -70,7 +70,7 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `assign` / `recompute` | Put a form's values on a record (read as each field's type) / run the derivations a change reaches | functions | `sincpro_framework.ddd` |
 | `Preview` / `ResponsePreview` / `FieldState` | DTO base answered by `EntityReads.preview`: values that moved, field states, advice — nothing stored | DTO bases | `sincpro_framework.ddd` |
 | `Drafts` / `InMemoryDrafts` / `KeyValueDrafts` / `refuse_stale` | What a form keeps between requests: optimistic version (`DraftConflict`, 409), a TTL; `refuse_stale` before activating over the stored record | port / adapters / function | `sincpro_framework.ddd` |
-| `previewing` / `is_previewing` / `advise` / `WriteInPreview` | The block where every store write, numbering `take` and SQL session flush raises; advice collected inside it | context manager / function / exception | `sincpro_framework.ddd` |
+| `previewing` / `is_previewing` / `advise` / `ProgrammingError` | The block where every store write, numbering `take` and SQL session flush raises; advice collected inside it | context manager / function / exception | `sincpro_framework.ddd` |
 
 "Aggregate" is the DDD root; a sum or a count is a **measure** (`sincpro-framework-criteria`).
 A `Hook` is your rule for one aggregate; a repository mixin (`ChangeTrackingRepositoryMixin`) is
@@ -178,7 +178,7 @@ Silent ones first — the runtime gives no error for these.
   own fields: `archived_at`, `created_by`, `updated_by`) belong to `Entity`; a subclass that
   redeclares one is refused when the class is defined — `version` is the optimistic lock.
 - Loud, but common: reading a relation outside `context()` that the `specification` did not name
-  raises `RelationNotResolved`; `for_update=True` outside `context()` raises `ContractViolation`.
+  raises `RelationNotResolved`; `for_update=True` outside `context()` raises `ProgrammingError`.
 
 ## The shape
 
@@ -275,7 +275,7 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
 - **A value a form must see before saving is a derivation, not a hook.** Declare
   `derivations` on the entity; `save` and `EntityReads.preview` run the same `recompute`, and
-  nothing is written inside a preview (`WriteInPreview`). Recipe:
+  nothing is written inside a preview (`ProgrammingError`). Recipe:
   [references/preview.md](references/preview.md). What a form keeps between requests is a draft
   (`KeyValueDrafts` over Redis), never a half-saved record: [references/drafts.md](references/drafts.md).
 - **Form hints are defaults for a client, never rules.** `presentation`'s `readonly`,

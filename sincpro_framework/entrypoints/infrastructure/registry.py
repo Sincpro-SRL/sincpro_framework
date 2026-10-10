@@ -11,7 +11,8 @@ drops a public operation; the composition's `exclude` does that on purpose.
 from collections.abc import Iterable, Mapping
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
-from sincpro_framework.entrypoints.domain.bindings import Binding, ExposureRefused
+from sincpro_framework.entrypoints.domain.bindings import Binding
+from sincpro_framework.exceptions import ProgrammingError
 
 
 class Bindings:
@@ -24,7 +25,7 @@ class Bindings:
         only one of them could be published."""
         held = self._by_class.setdefault(cls, {})
         if binding.wire in held:
-            raise ExposureRefused(
+            raise ProgrammingError(
                 f"{cls.__name__} declares two {binding.wire} bindings — {held[binding.wire]!r} "
                 f"and {binding!r}: declare one"
             )

@@ -41,7 +41,7 @@ def tenant_of_the_caller(context):
 ```
 
 A context key named in `sensitive` that the policy does not vary by makes that call **refused**
-(`ContractViolation`) — checked on every call, not when the policy is registered: two users never
+(`ProgrammingError`) — checked on every call, not when the policy is registered: two users never
 share an answer.
 
 ## Invalidation is the mechanism; ttl is the safety net

@@ -14,14 +14,19 @@ from datetime import UTC, datetime, timedelta
 import fakeredis
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Criteria, Entity
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.event_driven import (
     Publisher,
     Subscriber,
@@ -222,9 +227,7 @@ def test_a_sensitive_context_key_the_policy_does_not_vary_by_is_refused():
     caching = QueryCaching(InMemoryKeyValue(now=clock.now), sensitive=("user_id",))
     caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
 
-    with billing.context({"user_id": "u1"}), pytest.raises(
-        ContractViolation, match="user_id"
-    ):
+    with billing.context({"user_id": "u1"}), pytest.raises(ProgrammingError, match="user_id"):
         billing(QueryBalance(customer_id="c1"), ResponseBalance)
 
 

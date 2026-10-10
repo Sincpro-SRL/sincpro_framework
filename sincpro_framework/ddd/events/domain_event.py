@@ -57,7 +57,7 @@ from sincpro_framework.context.domain.execution import chained
 from sincpro_framework.ddd.entity import Entity, utc_now
 from sincpro_framework.ddd.entity.entity import json_serializer
 from sincpro_framework.ddd.entity.utils.annotations import own_annotations
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 NAME = "name"
 
@@ -98,7 +98,7 @@ class DomainEvent(Entity):
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if NAME in own_annotations(cls):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} declares 'name' as a typed field — 'name' is reserved for "
                 "the wire name every DomainEvent subclass gets (see this module's docstring). "
                 "Rename the field, or drop the annotation to override the wire name instead: "
@@ -107,7 +107,7 @@ class DomainEvent(Entity):
         if NAME not in cls.__dict__:
             cls.name = cls.__name__
         if not isinstance(cls.name, str) or not cls.name.strip():
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cls.__name__} is named {cls.name!r}: a name is what the event is known by on "
                 "the wire and in its table, so it cannot be blank"
             )

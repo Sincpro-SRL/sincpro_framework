@@ -3,7 +3,8 @@ filter over a complete result is none, and another tenant's rows are never hande
 
 import pytest
 
-from sincpro_framework.data_layer.data_analysis import DataFrame, NotComplete, QueryCache
+from sincpro_framework import ProgrammingError
+from sincpro_framework.data_layer.data_analysis import DataFrame, QueryCache
 from sincpro_framework.ddd.criteria import Offset, Pagination
 from tests.data_layer.data_analysis.conftest import POSTED, CountingRepository, Line, criteria
 
@@ -55,7 +56,7 @@ def test_a_result_that_is_not_complete_cannot_answer_a_narrower_filter(
 ):
     partial = QueryCache().fetch(repository, Line, criteria(limit=100))
 
-    with pytest.raises(NotComplete, match="100 rows.*fetch_all"):
+    with pytest.raises(ProgrammingError, match="100 rows.*fetch_all"):
         partial.narrow({"field": "journal", "operator": "=", "value": "SAL"})
 
 

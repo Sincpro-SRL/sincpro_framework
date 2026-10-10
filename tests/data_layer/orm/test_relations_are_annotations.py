@@ -10,8 +10,8 @@ import pytest
 from sqlalchemy import Column, Integer, Table, Text
 from sqlalchemy.orm import registry
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 mapper_registry = registry()
 
@@ -129,11 +129,11 @@ def test_a_relation_is_a_field_of_its_own_type_beside_its_key():
 
 
 def test_a_class_that_is_not_mapped_cannot_be_described():
-    with pytest.raises(ContractViolation, match="not a mapped aggregate"):
+    with pytest.raises(ProgrammingError, match="not a mapped aggregate"):
         describe(Unmapped)
 
 
 def test_an_annotation_that_does_not_resolve_fails_where_it_is_described():
     """At boot, not on the first request that asks for it."""
-    with pytest.raises(ContractViolation, match="cannot be resolved"):
+    with pytest.raises(ProgrammingError, match="cannot be resolved"):
         describe(Dangling)

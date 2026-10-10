@@ -16,13 +16,13 @@ from pydantic import ValidationError
 from sincpro_framework.auth.domain.exceptions import AuthError
 from sincpro_framework.auth.entrypoint.transports import refusal_body
 from sincpro_framework.common.failures import (
-    FailureKind,
     failure_reason,
     json_safe_validation_errors,
     refined_failure_kind,
     said_to_the_caller,
 )
 from sincpro_framework.ddd.exceptions import DuplicateAggregate
+from sincpro_framework.exceptions import FailureKind
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600

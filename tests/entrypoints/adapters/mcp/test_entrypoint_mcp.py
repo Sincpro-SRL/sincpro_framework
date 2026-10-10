@@ -14,12 +14,17 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.ddd import Query
-from sincpro_framework.entrypoints import ExposureRefused
 from sincpro_framework.entrypoints.adapters.mcp import (
     McpGateway,
     McpWire,
@@ -125,7 +130,7 @@ def test_catalog_publishes_every_use_case_of_every_bus() -> None:
 
 
 def test_an_unguarded_bus_must_be_said_unguarded() -> None:
-    with pytest.raises(ExposureRefused, match="has no AccessControl"):
+    with pytest.raises(ProgrammingError, match="has no AccessControl"):
         McpGateway([_billing()]).server()
 
 
@@ -194,7 +199,7 @@ def test_a_declared_name_twice_is_refused_at_build() -> None:
     twice = McpGateway(
         [_declaring("one", "facturar"), _declaring("two", "facturar")], unguarded=True
     )
-    with pytest.raises(ExposureRefused, match="tool facturar answered by"):
+    with pytest.raises(ProgrammingError, match="tool facturar answered by"):
         twice.server()
 
 

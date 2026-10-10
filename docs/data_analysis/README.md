@@ -102,7 +102,7 @@ frame answers the filter it holds and one more condition by itself — values wr
 read as each column's type:
 
 ```python
-from sincpro_framework.data_layer.data_analysis import NotComplete
+from sincpro_framework import ProgrammingError
 
 sales = cache.fetch_all(repository, InvoiceLine, posted)
 assert (len(sales), sales.complete, repository.reads) == (1_875, True, 4)
@@ -114,7 +114,7 @@ assert all(line["journal"] == "SAL" for line in sal.rows())
 
 try:
     first.narrow({"field": "journal", "operator": "=", "value": "SAL"})
-except NotComplete:
+except ProgrammingError:
     pass  # a frame that stopped at a page cannot tell which rows it is missing
 ```
 
@@ -270,8 +270,8 @@ kept by `QueryCaching`, in [caching](../caching/README.md).
 | `cache.fetch(repository, target, criteria, pages=1)` | at least `pages` pages, only the missing ones read |
 | `cache.fetch_all(repository, target, criteria)` | every row, the frame complete |
 | `cache.get(...)` / `cache.invalidate(target=None)` | what is held, or nothing / let go of it |
-| `frame.narrow(where)` | the rows that also answer `where`; `NotComplete` on a frame that stopped at a page |
-| `frame.append(page)` | the next page merged by `key`; `SchemaMismatch` for other columns |
+| `frame.narrow(where)` | the rows that also answer `where`; `ProgrammingError` on a frame that stopped at a page |
+| `frame.append(page)` | the next page merged by `key`; `ProgrammingError` for other columns |
 | `frame.sort(keys)` / `frame.select(columns)` | ordered, `null` last / some columns |
 | `frame.to_arrow()` / `to_parquet()` / `to_ipc()` / `to_json()` | handed on |
 | `DataFrame.from_arrow(table, key="id")` | a `pyarrow.Table` as a frame, typed by its schema |

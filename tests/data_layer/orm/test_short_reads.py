@@ -8,6 +8,7 @@ the whole result set say so.
 
 import pytest
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.criteria import (
     Condition,
@@ -17,7 +18,7 @@ from sincpro_framework.ddd.criteria import (
     parse_order,
 )
 from sincpro_framework.ddd.criteria.pagination import Pagination
-from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
+from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .models import ROW_COUNT, Thing, Things
 
@@ -48,15 +49,15 @@ def test_one_refuses_none_and_refuses_two(store: Repository, things):
     only = store.one(Things, Criteria(where=Condition(field="thing_id", value="th_0007")))
 
     assert only.thing_id == "th_0007"
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         store.one(Things, Criteria(where=Condition(field="size", value=3)))
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         store.one(Things, Criteria(where=Condition(field="size", value=99)))
 
 
 def test_one_never_loads_the_set_to_find_out_it_was_not_one(store: Repository, queries_run):
     with queries_run() as statements:
-        with pytest.raises(ContractViolation):
+        with pytest.raises(ProgrammingError):
             store.one(Things)
 
     assert any("LIMIT" in one.upper() for one in statements)
@@ -67,7 +68,7 @@ def test_get_by_answers_a_natural_key(store: Repository):
 
     assert found is not None and found.thing_id == "th_0004"
     assert store.get_by(Things, name="nobody") is None
-    with pytest.raises(ContractViolation, match="a natural key names one"):
+    with pytest.raises(ProgrammingError, match="a natural key names one"):
         store.get_by(Things, size=3)
     with pytest.raises(InvalidCriteria):
         store.get_by(Things)

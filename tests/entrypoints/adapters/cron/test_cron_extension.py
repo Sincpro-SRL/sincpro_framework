@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import pytest
 from structlog.testing import capture_logs
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.entrypoints.adapters.cron import (
     Cron,
     CronGateway,
@@ -17,7 +18,7 @@ from sincpro_framework.entrypoints.adapters.cron import (
     RunOutcome,
     Tick,
 )
-from sincpro_framework.exceptions import BusAlreadyBuilt, ExtensionRefused
+from sincpro_framework.exceptions import BusAlreadyBuilt
 from sincpro_framework.runtime.testing import ManualClock
 
 START = datetime(2026, 9, 26, 1, 59, tzinfo=UTC)
@@ -186,7 +187,7 @@ def test_running_now_a_cron_the_gateway_does_not_run_is_refused():
 
     gateway = CronGateway([crons], clock=ManualClock(START))
 
-    with pytest.raises(ExtensionRefused, match="Stranger"):
+    with pytest.raises(ProgrammingError, match="Stranger"):
         gateway.run_now(Stranger)
 
 

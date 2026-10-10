@@ -14,8 +14,14 @@ from typing import Literal
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.ddd.exceptions import ContractViolation, DomainError
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
+from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.observability.metrics import (
     InMemoryRecorder,
     Recorder,
@@ -215,7 +221,7 @@ def test_a_use_case_says_what_it_measures(recorder):
 def test_an_attribute_the_dto_does_not_have_is_refused_where_it_is_written():
     """A metric named by a field reference cannot drift from the code: a renamed field fails
     at import, not as a silent empty series in a dashboard."""
-    with pytest.raises(ContractViolation, match="CommandIssueInvoice has no field 'curency'"):
+    with pytest.raises(ProgrammingError, match="CommandIssueInvoice has no field 'curency'"):
         of(CommandIssueInvoice).curency  # type: ignore[attr-defined]
 
 
@@ -233,7 +239,7 @@ def test_an_unbounded_label_is_accepted_with_a_warning():
 
 
 def test_only_a_number_is_summed_or_measured():
-    with pytest.raises(ContractViolation, match="currency is not a number"):
+    with pytest.raises(ProgrammingError, match="currency is not a number"):
         metrics.sums(of(CommandIssueInvoice).currency)
 
 
@@ -241,7 +247,7 @@ def test_a_path_of_another_dto_than_the_use_cases_is_refused():
     class CommandOther(DataTransferObject):
         amount: int
 
-    with pytest.raises(ContractViolation, match="CommandOther is neither"):
+    with pytest.raises(ProgrammingError, match="CommandOther is neither"):
 
         @metrics.sums(of(CommandOther).amount)
         class IssueInvoice(Feature):
@@ -249,7 +255,7 @@ def test_a_path_of_another_dto_than_the_use_cases_is_refused():
 
 
 def test_a_label_is_a_field_reference_never_a_value():
-    with pytest.raises(ContractViolation, match="of\\(Command\\)"):
+    with pytest.raises(ProgrammingError, match="of\\(Command\\)"):
         metrics.counts(by=Currency.BOB)  # type: ignore[arg-type]
 
 
@@ -421,7 +427,7 @@ def _outcome_of_a_run(bus: UseFramework, recorder: InMemoryRecorder) -> dict[str
 def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
     """`failure_kind = NOT_FOUND` on an error is what its callers already read on every wire:
     a dashboard that says `domain` for it hides the one kind it is looking for."""
-    from sincpro_framework.common.failures import FailureKind
+    from sincpro_framework import FailureKind
 
     class InvoiceNotFound(DomainError):
         failure_kind = FailureKind.NOT_FOUND

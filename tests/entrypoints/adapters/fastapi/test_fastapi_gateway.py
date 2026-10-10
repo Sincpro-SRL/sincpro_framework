@@ -14,10 +14,9 @@ import pytest
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.ddd.query import Query
-from sincpro_framework.entrypoints import ExposureRefused
 from sincpro_framework.entrypoints.adapters.fastapi import (
     BusCall,
     FastApiGateway,
@@ -249,7 +248,7 @@ def test_two_operations_on_one_method_and_path_are_refused() -> None:
             return Invoice(invoice_id=dto.number)
 
     api = FastApiGateway([bus], unguarded=True)
-    with pytest.raises(ExposureRefused, match="GET /clash/invoices/.* answers both"):
+    with pytest.raises(ProgrammingError, match="GET /clash/invoices/.* answers both"):
         api.app()
 
 
@@ -281,7 +280,7 @@ def test_what_is_served_only_in_phase_2_is_refused_not_ignored() -> None:
 
 
 def test_wrap_is_refused_because_this_wire_never_calls_the_wrapped_run() -> None:
-    with pytest.raises(ExposureRefused, match="wrap"):
+    with pytest.raises(ProgrammingError, match="wrap"):
         FastApiGateway().add(_billing(), wrap={CommandIssueInvoice: lambda run: run})
 
 

@@ -7,6 +7,7 @@ import inspect
 import pytest
 from sqlalchemy import func
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm import DatabaseAggregateRepository, Repository
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
@@ -22,7 +23,7 @@ from sincpro_framework.ddd import (
     WritesAggregates,
     WritesInBulk,
 )
-from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
+from sincpro_framework.ddd.exceptions import StaleAggregate
 
 from .engines import fresh
 from .ledger_models import Account, Owner, account_table, bank, declare
@@ -104,12 +105,12 @@ def test_a_view_nobody_names_is_handed_its_aggregate(ledger, ana):
 
 
 def test_a_view_without_an_aggregate_is_refused(ledger):
-    with pytest.raises(ContractViolation, match="which aggregate"):
+    with pytest.raises(ProgrammingError, match="which aggregate"):
         DatabaseAggregateRepository(ledger)
 
 
 def test_a_named_view_cannot_be_pointed_at_another_aggregate(ledger):
-    with pytest.raises(ContractViolation, match="holds Account"):
+    with pytest.raises(ProgrammingError, match="holds Account"):
         Accounts(ledger, Owner)  # pyright: ignore[reportArgumentType]
 
 

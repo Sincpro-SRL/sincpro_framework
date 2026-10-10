@@ -70,7 +70,7 @@ assert raised.value.failure_id == failure.id          # the exception names the 
 | `escaped_from` | the bus whose caller received the exception |
 | `dto` | the DTO as it was handed, as JSON values |
 | `error_type`, `error` | the exception's class and message |
-| `kind` | the `FailureKind` every wire answers it with (`common.failures`): `domain`, `conflict`, `unavailable`, `internal`… |
+| `kind` | the `FailureKind` every wire answers it with (`from sincpro_framework import FailureKind`): `domain`, `conflict`, `unavailable`, `internal`… |
 | `retry_after` | seconds to wait before sending the same call again — `None` when sending it again will not help |
 | `execution_id` · `causation_id` · `correlation_id` | the execution that failed, and its flow — what its log line, span and error report carry |
 | `context` | what the flow carried — the keys that travel, a `Secret` as its value |
@@ -82,7 +82,7 @@ A listener that retries or compensates decides with what the caller was told. An
 own kind:
 
 ```python
-from sincpro_framework.common.failures import FailureKind
+from sincpro_framework import FailureKind
 
 
 class CommandSendInvoice(DataTransferObject):

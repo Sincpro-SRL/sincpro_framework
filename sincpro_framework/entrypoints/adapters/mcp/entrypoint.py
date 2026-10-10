@@ -158,7 +158,7 @@ class McpGateway(Gateway):
         )
 
     def tools(self) -> list[McpTool]:
-        """The validated surface as tools — refused with `ExposureRefused`, every reason at
+        """The validated surface as tools — refused with `ProgrammingError`, every reason at
         once, when it does not hold."""
         return self.build()
 

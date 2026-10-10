@@ -22,11 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sincpro_framework.auth.domain.identity import Credentials
 from sincpro_framework.auth.entrypoint.transports import authenticated_as
-from sincpro_framework.common.failures import (
-    FailureKind,
-    failure_reason,
-    refined_failure_kind,
-)
+from sincpro_framework.common.failures import failure_reason, refined_failure_kind
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.context.adapters.propagation import extract
 from sincpro_framework.context.domain.execution import CAUSATION_ID, CORRELATION_ID
@@ -63,6 +59,7 @@ from sincpro_framework.entrypoints.domain.bindings import QueueBinding
 from sincpro_framework.entrypoints.domain.surface import Group, Operation, Resolved, Wire
 from sincpro_framework.entrypoints.infrastructure import json_schema
 from sincpro_framework.event_driven.adapters.faststream.queue import Broker
+from sincpro_framework.exceptions import FailureKind
 from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,

@@ -22,7 +22,7 @@ from faststream.message import AckStatus
 from faststream.rabbit import RabbitBroker, TestRabbitBroker
 from faststream.redis import RedisBroker, TestRedisBroker
 
-from sincpro_framework import Feature, UseFramework
+from sincpro_framework import Feature, ProgrammingError, UseFramework
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
@@ -643,7 +643,6 @@ def test_consume_applies_the_producer_rule_and_the_inbox():
 
 def test_consume_refuses_a_command_no_bus_answers():
     from sincpro_framework import DataTransferObject
-    from sincpro_framework.entrypoints import ExposureRefused
 
     class Unknown(DataTransferObject):
         x: int
@@ -653,7 +652,7 @@ def test_consume_refuses_a_command_no_bus_answers():
     async def scenario() -> None:
         await gateway.consume(None, as_=Unknown)  # type: ignore[arg-type]
 
-    with pytest.raises(ExposureRefused, match="no bus of this gateway answers it"):
+    with pytest.raises(ProgrammingError, match="no bus of this gateway answers it"):
         asyncio.run(scenario())
 
 

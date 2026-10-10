@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 if TYPE_CHECKING:
     from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
@@ -31,7 +31,7 @@ class SyncQueue:
 
     def __init__(self, subscriber: "Subscriber | Callable[[], Subscriber]") -> None:
         if not hasattr(subscriber, "handle") and not callable(subscriber):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"SyncQueue takes a Subscriber or a function that builds one; "
                 f"{type(subscriber).__name__} is neither"
             )

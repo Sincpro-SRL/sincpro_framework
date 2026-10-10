@@ -43,7 +43,7 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `ErrorHandler` | `(error) -> answer`, or re-raise to delegate | function | `from sincpro_framework.error_handler import ErrorHandler` |
 | `add_global_error_handler` / `add_feature_error_handler` / `add_app_service_error_handler` | Append a handler to one of three chains | registry | methods of `UseFramework` |
 | `ignore_sentry_exceptions(*types)` | Marks error types as expected traffic: not sent to Sentry, outcome `expected` | setting | method of `UseFramework` |
-| `InterceptorContractViolation` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework.exceptions import InterceptorContractViolation` |
+| `ProgrammingError` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework.exceptions import ProgrammingError` |
 | `BusAlreadyBuilt` | Raised when registering an interceptor/handler/dependency after the bus built | DTO | `from sincpro_framework.exceptions import BusAlreadyBuilt` |
 | `describe` / `features` | What answers a Command and which interceptors wrap it | function | `from sincpro_framework.introspection import describe, features` |
 
@@ -155,20 +155,20 @@ or answer by itself, and never changes either's class. They run outermost first,
 Command is executed** (`bus(dto)`, `self.feature_bus(dto)`, a workflow step, a cron tick).
 
 ```python
+from sincpro_framework.ddd import DomainError
 from sincpro_framework import CallNext
-from sincpro_framework.ddd import ContractViolation
 
 
 @billing.interceptor(CommandCreateInvoice)
 def credit_check(dto, call_next: CallNext[ResponseCreateInvoice]) -> ResponseCreateInvoice:
     if dto.customer_id in blocked:
-        raise ContractViolation(f"{dto.customer_id} has no credit")
+        raise DomainError(f"{dto.customer_id} has no credit")
     return call_next(dto)
 ```
 
 - Adjust the input with `dto.model_copy(update=...)`; what reaches `call_next` must be the same
   Command class, and what comes back the class the handler answered, else
-  `InterceptorContractViolation`.
+  `ProgrammingError`.
 - Fixed when the bus is built: registering after raises `BusAlreadyBuilt`; naming a Command nobody
   answers raises `UnknownDTOToExecute` at build.
 - Ordering: `before=[fn]`, `after=[fn]`, `sequence=` (lower first, 10 default), then registration

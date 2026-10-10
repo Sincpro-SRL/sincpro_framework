@@ -27,6 +27,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator
 
+from sincpro_framework.exceptions import ProgrammingError
+
 logger = logging.getLogger("sincpro_framework")
 
 DEFAULT_TIMEOUT = 30.0
@@ -47,7 +49,7 @@ class Wire(StrEnum):
 WRITE = "write grpc://<host>:<port>, http://<host>:<port> or https://<host>:<port>[?timeout=<seconds>]"
 
 
-class InvalidAddress(ValueError):
+class InvalidAddress(ProgrammingError, ValueError):
     """An address no wire can reach — it names what was written and what to write instead."""
 
 

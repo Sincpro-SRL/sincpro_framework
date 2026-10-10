@@ -31,7 +31,7 @@ def thirty_days_by_default(dto, call_next: CallNext[ResponseCreateInvoice]) -> R
 - Run outermost first, **however the Command is executed**: `bus(dto)`,
   `self.feature_bus.execute(dto)`, a workflow step, a scheduled tick.
 - What reaches `call_next` must be the same Command class (change values with `model_copy`); what
-  comes back must be the class the handler answered, else `InterceptorContractViolation`, naming
+  comes back must be the class the handler answered, else `ProgrammingError`, naming
   the interceptor. An interceptor that never calls `call_next` answers alone and is not checked.
 - An exception in an interceptor goes to the same error chain as the handler's and is reported
   with `error_at` on the interceptor's line.
@@ -43,7 +43,7 @@ def thirty_days_by_default(dto, call_next: CallNext[ResponseCreateInvoice]) -> R
 
 Each is a pattern to copy, not a framework piece.
 
-- **Veto**: a credit check raises `ContractViolation` (`sincpro_framework.ddd`).
+- **Veto**: a credit check raises `ProgrammingError` (`sincpro_framework.ddd`).
 - **Audit**: `@bus.interceptor(CommandA, CommandB)` records the command,
   `bus.current_context().get("user_id")` and the response. Name the Commands: with none it also
   runs on every Feature an ApplicationService calls.
@@ -71,7 +71,7 @@ def retry_stale(dto, call_next: CallNext[ResponsePostInvoice]) -> ResponsePostIn
 
 Extension points share one ordering (`sincpro_framework.common.ordering`): `before=` / `after=` by
 reference, then `sequence=` (lower first, 10 when not said), then registration order. A cycle of
-`before`/`after` raises `ExtensionRefused`; a constraint on something not registered is ignored.
+`before`/`after` raises `ProgrammingError`; a constraint on something not registered is ignored.
 
 ```python
 extended.interceptor(CommandCreateInvoice, sequence=50)(audit)

@@ -16,9 +16,14 @@ from typing import TypedDict
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.auth import Identity, as_identity
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
 from sincpro_framework.observability.tracing.attributes import traces
 from sincpro_framework.sincpro_conf import settings
@@ -448,7 +453,7 @@ def test_the_decorators_read_the_typed_context(deployed, recorder, otel_setup):
 
 
 def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_import():
-    with pytest.raises(ContractViolation, match="has no field 'compny'"):
+    with pytest.raises(ProgrammingError, match="has no field 'compny'"):
         of(BillingContext)["compny"]
 
     class OtherContext(TypedDict, total=False):
@@ -457,7 +462,7 @@ def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_im
     class BillingFeature(Feature[CommandCharge, ResponseCharge, BillingContext]):
         pass
 
-    with pytest.raises(ContractViolation, match="not the context"):
+    with pytest.raises(ProgrammingError, match="not the context"):
 
         @metrics.counts(by=of(OtherContext)["region"])
         class Charge(BillingFeature):

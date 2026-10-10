@@ -7,8 +7,14 @@ its own tests (test_jsonrpc_naming.py)."""
 import json
 from typing import Any
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    UseFramework,
+)
 from sincpro_framework.ddd import ValueObject
+from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.entrypoints import Exposure
 from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import INVALID_PARAMS, METHOD_NOT_FOUND
@@ -460,9 +466,8 @@ def test_an_internal_failure_tells_the_caller_nothing_about_the_inside():
 def test_a_domain_error_still_answers_the_caller():
     """The other half: a `DomainError` was written for whoever asked, and hiding it helps
     nobody."""
-    from sincpro_framework.ddd.exceptions import ContractViolation
 
-    answered = _asked(_blowing_up(ContractViolation("an invoice has to balance")))
+    answered = _asked(_blowing_up(DomainError("an invoice has to balance")))
 
     assert answered["error"]["data"]["message"] == "an invoice has to balance"
 

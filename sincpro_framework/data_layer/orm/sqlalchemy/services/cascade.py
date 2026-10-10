@@ -44,7 +44,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection im
 from sincpro_framework.data_layer.orm.sqlalchemy.services.upsert import unique_on
 from sincpro_framework.ddd.entity.entity_collection import identity_name, identity_of
 from sincpro_framework.ddd.entity.relations import key_pair
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 WRITTEN = {Held.ASSIGNED: Held.WHOLE, Held.BLIND: Held.CUT}
@@ -127,8 +127,8 @@ def _plain_column(mapper: Any) -> str | None:
     return None
 
 
-def _refused(owned: Owned, root: type, children: list[Any], moment: str) -> ContractViolation:
-    return ContractViolation(
+def _refused(owned: Owned, root: type, children: list[Any], moment: str) -> ProgrammingError:
+    return ProgrammingError(
         f"{moment} {len(children)} {owned.related.__name__} of {root.__name__}.{owned.name}, and "
         "the relation does not say what that does — remove them first, or declare it: "
         f"Relation.foreign_key({owned.related.__name__}, …, orphans=Orphans.DELETE) takes them "
@@ -242,7 +242,7 @@ def _refuse_a_child_removed_before(records: list[Any]) -> None:
     for one in records:
         state = sqlalchemy.inspect(one, raiseerr=False)
         if state is not None and (state.deleted or state.was_deleted):
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{type(one).__name__} {identity_of(one)} was removed earlier in this unit of "
                 "work, as an orphan of the root that held it; to move children between roots, "
                 "save both in one call — save([old_root, new_root])"

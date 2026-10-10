@@ -6,12 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlalchemy import MetaData
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm import DatabaseNumbering, Repository, template_table
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint import (
     numbering as numbering_module,
 )
 from sincpro_framework.data_layer.repositories import MemoryNumbering
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 from .engines import fresh
 from .ledger_models import Owner, bank, declare
@@ -92,13 +92,13 @@ def test_outside_a_unit_of_work_a_number_commits_on_its_own_and_says_so(
 
 def test_a_read_only_unit_of_work_takes_no_number(ledger, numbering):
     with ledger.context(read_only=True):
-        with pytest.raises(ContractViolation, match="read_only"):
+        with pytest.raises(ProgrammingError, match="read_only"):
             numbering.next_number("F")
 
 
 def test_at_least_one_number_is_taken(ledger, numbering):
     with ledger.context():
-        with pytest.raises(ContractViolation, match="at least one"):
+        with pytest.raises(ProgrammingError, match="at least one"):
             numbering.take("F", count=0)
 
 

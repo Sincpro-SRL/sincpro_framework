@@ -72,7 +72,7 @@ from sincpro_framework.data_layer.caching.infrastructure.flight import (
     StoreFlight,
     awaited,
 )
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 
 
 def utc_now() -> datetime:
@@ -515,7 +515,7 @@ class Cache:
 
     def _codec_required(self, codec: Codec[Any] | None) -> Codec[Any]:
         if codec is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "a Cache on a shared store keeps bytes: pass the Codec its values are kept with"
             )
         return codec

@@ -87,7 +87,7 @@ with repository.context(read_only=True) as unit:      # a report: any write is r
 
 | Option | Means | Where the engine lacks it |
 |---|---|---|
-| `isolation` | `Isolation.READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE` | refused — `ContractViolation`; SQLite runs every level as `serializable`, which honours it |
+| `isolation` | `Isolation.READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE` | refused — `ProgrammingError`; SQLite runs every level as `serializable`, which honours it |
 | `read_only` | no write may leave the block; Postgres is asked too | always honoured: the refusal is the framework's |
 | `timeout` | seconds any one statement may run (`SET LOCAL statement_timeout`) | warned, statements run unbounded |
 | `engine` | SQLAlchemy's `execution_options`, as they come | — |

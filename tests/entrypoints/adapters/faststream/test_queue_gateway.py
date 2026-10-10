@@ -13,10 +13,10 @@ from faststream import AckPolicy
 from faststream.kafka import KafkaBroker
 from faststream.rabbit import RabbitBroker
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.ddd import DomainEvent
-from sincpro_framework.entrypoints import Exposure, ExposureRefused
+from sincpro_framework.entrypoints import Exposure
 from sincpro_framework.entrypoints.adapters.faststream import (
     QueueGateway,
     QueueOptions,
@@ -204,7 +204,7 @@ def test_two_handlers_on_one_command_channel_are_refused():
         f"command channel {ISSUE_CHANNEL} is consumed by billing:CommandIssueInvoice, "
         "copy:CommandIssueInvoice" in problems
     )
-    with pytest.raises(ExposureRefused):
+    with pytest.raises(ProgrammingError):
         gateway.build()
 
 

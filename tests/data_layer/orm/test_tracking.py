@@ -10,6 +10,7 @@ so it sees **every** route that reaches the database — including the ones that
 
 import pytest
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
@@ -249,7 +250,6 @@ def test_it_answers_nothing_when_nothing_differs(database: Database):
 def test_it_is_refused_outside_a_unit_of_work(database: Database):
     """There is nothing pending in a session that does not hold the aggregate, and answering
     `None` there would read as "nothing changed" when something had."""
-    from sincpro_framework.ddd.exceptions import ContractViolation
 
     repository = Repository(database)
     note = _stored(repository)
@@ -257,5 +257,5 @@ def test_it_is_refused_outside_a_unit_of_work(database: Database):
     assert loaded is not None
     loaded.title = "changed"
 
-    with pytest.raises(ContractViolation, match="unit of work"):
+    with pytest.raises(ProgrammingError, match="unit of work"):
         repository.record_changes(loaded)

@@ -19,13 +19,19 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    ProgrammingError,
+    UseFramework,
+)
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.auth.entrypoint.transports import credentials_from_asgi
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.ddd import Query
-from sincpro_framework.entrypoints import Exposure, ExposureRefused
+from sincpro_framework.entrypoints import Exposure
 from sincpro_framework.entrypoints.adapters.rpc import (
     JsonRpcWire,
     RpcGateway,
@@ -99,7 +105,7 @@ def _call(method: str, params: dict[str, Any] | None = None, request_id: Any = 1
 
 
 def _refused(gateway: RpcGateway) -> str:
-    with pytest.raises(ExposureRefused) as refused:
+    with pytest.raises(ProgrammingError) as refused:
         gateway.surface()
     return str(refused.value)
 

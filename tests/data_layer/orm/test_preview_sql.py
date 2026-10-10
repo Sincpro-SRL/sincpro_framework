@@ -11,7 +11,7 @@ from sqlalchemy import Column, ForeignKey, Integer, MetaData, Numeric, Text, eve
 from sqlalchemy.orm import registry
 from structlog.testing import capture_logs
 
-from sincpro_framework import UseFramework
+from sincpro_framework import ProgrammingError, UseFramework
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.numbering import DatabaseNumbering
@@ -27,7 +27,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     Condition,
-    ContractViolation,
     Criteria,
     Derivations,
     Derive,
@@ -37,7 +36,6 @@ from sincpro_framework.ddd import (
     ResponsePreview,
     Specification,
     StaleAggregate,
-    WriteInPreview,
     assign,
     previewing,
     refuse_stale,
@@ -183,7 +181,7 @@ def test_every_write_door_of_the_database_is_refused_inside_a_preview(database, 
     store = Repository(database)
     sale = a_stored_sale(store)
 
-    with previewing(), pytest.raises(WriteInPreview):
+    with previewing(), pytest.raises(ProgrammingError):
         write(store, sale)
 
     assert store.count(Sale).value == 1
@@ -193,7 +191,7 @@ def test_every_write_door_of_the_database_is_refused_inside_a_preview(database, 
 def test_a_database_number_is_not_spent_by_a_preview(database):
     numbers = DatabaseNumbering(database, counters)
 
-    with previewing(), pytest.raises(WriteInPreview, match="take"):
+    with previewing(), pytest.raises(ProgrammingError, match="take"):
         numbers.next_number("sale")
 
     assert numbers.next_number("sale") == 1
@@ -394,7 +392,7 @@ def test_a_preview_reads_the_lines_its_totals_need_even_when_the_detail_names_no
 def test_no_door_of_a_unit_of_work_writes_inside_a_preview(order_store, door):
     order = a_stored_order(order_store)
 
-    with pytest.raises(WriteInPreview):
+    with pytest.raises(ProgrammingError):
         with previewing():
             if door == "tracked commit":
                 with order_store.context(writes=Writes.CHANGED) as repository:
@@ -623,7 +621,7 @@ def test_a_line_id_the_order_does_not_hold_is_refused_naming_it(order_store):
     with order_store.context() as repository:
         kept = repository.get(Order, order.id)
         assert kept is not None
-        with pytest.raises(ContractViolation, match="gone-line"):
+        with pytest.raises(ProgrammingError, match="gone-line"):
             assign(kept, {"lines": [{"id": "gone-line", "order_id": order.id, "qty": 1}]})
 
 
@@ -655,7 +653,7 @@ def test_an_edited_line_keeps_its_row_in_memory_too():
 def test_a_text_statement_that_writes_is_refused_inside_a_preview(order_store):
     a_stored_order(order_store)
 
-    with pytest.raises(WriteInPreview):
+    with pytest.raises(ProgrammingError):
         with previewing():
             with order_store.context() as repository:
                 repository.session.execute(text("UPDATE reviewed_order SET discount = 3"))
@@ -670,7 +668,7 @@ def test_a_text_statement_that_writes_is_refused_inside_a_preview(order_store):
 def test_a_read_that_locks_rows_is_refused_inside_a_preview(order_store):
     order = a_stored_order(order_store)
 
-    with pytest.raises(WriteInPreview, match="locks"):
+    with pytest.raises(ProgrammingError, match="locks"):
         with previewing():
             with order_store.context() as repository:
                 repository.get(Order, order.id, for_update=True)
@@ -761,7 +759,7 @@ def test_assign_without_ids_over_lines_never_read_replaces_them_as_an_assignment
 def test_a_text_statement_that_writes_or_locks_in_disguise_is_refused(order_store, statement):
     a_stored_order(order_store)
 
-    with pytest.raises(WriteInPreview):
+    with pytest.raises(ProgrammingError):
         with previewing():
             with order_store.context() as repository:
                 repository.session.execute(text(statement))

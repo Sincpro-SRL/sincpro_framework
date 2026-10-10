@@ -4,11 +4,12 @@ A hook runs **inside the write**, on one aggregate: it validates, computes or re
 class, registered for its aggregate the way a Feature is registered for its Command.
 
 ```python
+from sincpro_framework.ddd import DomainError
 from dataclasses import dataclass
 from typing import TypedDict
 
 from sincpro_framework import UseFramework
-from sincpro_framework.ddd import ContractViolation, Entity, Hook, Hooks
+from sincpro_framework.ddd import Entity, Hook, Hooks
 from sincpro_framework.data_layer.repositories import MemoryRepository
 
 
@@ -52,7 +53,7 @@ billing_hooks = Hooks(None).inject(billing)
 class InvoiceMustBalance(BillingHook):
     def before_save(self, invoice: Invoice) -> None:
         if not self.billing.allows(invoice.total):
-            raise ContractViolation(f"billing refused {invoice.total}")
+            raise DomainError(f"billing refused {invoice.total}")
         self.trail.append("balances")
 
 
@@ -232,7 +233,7 @@ class RespectsTheCreditLimit(SalesHook):
         customer = self.customers.get(Customer, order.customer_id)  # another repository
         rate = self.bus(QueryExchangeRate(currency=order.currency), ResponseExchangeRate).rate
         if customer is None or order.total * rate > customer.credit_limit:
-            raise ContractViolation(f"over the credit limit, asked by {self.context.get('user_id')}")
+            raise DomainError(f"over the credit limit, asked by {self.context.get('user_id')}")
 
 
 orders = MemoryRepository(hooks=sales_hooks)
@@ -241,7 +242,7 @@ with sales.context({"user_id": "ana"}):
     try:
         orders.save(SalesOrder(customer_id="c1", total=200, currency="USD"))  # 1 400 BOB
         raise AssertionError("over the limit")
-    except ContractViolation as refused:
+    except DomainError as refused:
         assert "asked by ana" in str(refused)
 ```
 
@@ -405,18 +406,18 @@ A unit of work and a narrowing run the chain of the repository they came from.
 
 ## What is refused, and what is only said
 
-Refused only what cannot work — a wiring mistake is `ExtensionRefused`, raised where it is
-declared; a hook's own refusal of a record is the domain's `ContractViolation`:
+Refused only what cannot work — a wiring mistake is `ProgrammingError`, raised where it is
+declared; a hook's own refusal of a record is a `DomainError`:
 
 | Cannot work | Refused |
 |---|---|
-| hooks that must run before one another in a circle — no order exists | `ExtensionRefused`, at the first read or write |
-| `extends=X` on a class that is not a subclass of `X` — `super()` would fail | `ExtensionRefused`, at `on(...)` |
-| a hook that implements none of the moments — it would never run | `ExtensionRefused`, at `on(...)` |
-| a hook registered after a repository used the collection — it would never run | `ExtensionRefused`, at `on(...)` |
-| a collection or a hook passed where the memory store's records go — nothing would run | `ContractViolation`, when the repository is built |
+| hooks that must run before one another in a circle — no order exists | `ProgrammingError`, at the first read or write |
+| `extends=X` on a class that is not a subclass of `X` — `super()` would fail | `ProgrammingError`, at `on(...)` |
+| a hook that implements none of the moments — it would never run | `ProgrammingError`, at `on(...)` |
+| a hook registered after a repository used the collection — it would never run | `ProgrammingError`, at `on(...)` |
+| a collection or a hook passed where the memory store's records go — nothing would run | `ProgrammingError`, when the repository is built |
 | `self.<name>` or `self.bus` with no bus given | `DependencyNotRegistered`, when the hook reads it |
-| a write back through the repository that fired the hook, even via `context()`, `narrowed()` or a Command | `ContractViolation`, when it fires |
+| a write back through the repository that fired the hook, even via `context()`, `narrowed()` or a Command | `ProgrammingError`, when it fires |
 
 Everything else works, and is said in the log as a warning:
 
@@ -430,7 +431,7 @@ Everything else works, and is said in the log as a warning:
 | a replacement that covers other aggregates than what it replaces | it covers its own |
 
 ```python
-from sincpro_framework.exceptions import ExtensionRefused
+from sincpro_framework import ProgrammingError
 
 refusals = Hooks(None)
 try:
@@ -440,7 +441,7 @@ try:
         def before_save(self, invoice: Invoice) -> None: ...
 
     raise AssertionError("extends needs a subclass")
-except ExtensionRefused as refused:
+except ProgrammingError as refused:
     assert "has to be a subclass" in str(refused)
 ```
 

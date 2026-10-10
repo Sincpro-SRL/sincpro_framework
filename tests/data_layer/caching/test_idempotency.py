@@ -13,7 +13,7 @@ import fakeredis
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
 from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.data_layer.caching import (
     IDEMPOTENCY_KEY,
@@ -26,7 +26,6 @@ from sincpro_framework.data_layer.caching import (
     KeyValueRecords,
 )
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.runtime.testing import IdempotencyRecordsContract, ManualClock
 
 
@@ -391,7 +390,7 @@ def test_whether_a_class_runs_once_is_asked_by_its_resolved_execute():
 def test_once_twice_on_one_class_and_on_an_async_use_case_are_refused():
     idempotency = Idempotency(InMemoryKeyValue())
 
-    with pytest.raises(ContractViolation, match="twice"):
+    with pytest.raises(ProgrammingError, match="twice"):
 
         @idempotency.once(expires_after=timedelta(minutes=2))
         @idempotency.once(expires_after=timedelta(minutes=2))
@@ -399,7 +398,7 @@ def test_once_twice_on_one_class_and_on_an_async_use_case_are_refused():
             def execute(self, dto: CommandPing) -> ResponsePing:
                 return ResponsePing(pong=1)
 
-    with pytest.raises(ContractViolation, match="async"):
+    with pytest.raises(ProgrammingError, match="async"):
 
         @idempotency.once(expires_after=timedelta(minutes=2))
         class Asynchronous(Feature):
@@ -481,7 +480,7 @@ def test_a_use_case_whose_answer_has_no_type_cannot_be_declared_once():
         def execute(self, dto):  # type: ignore[no-untyped-def]
             return ResponsePing(pong=1)
 
-    with pytest.raises(ContractViolation, match="declares no response type"):
+    with pytest.raises(ProgrammingError, match="declares no response type"):
         billing(CommandPing(), ResponsePing)
 
 

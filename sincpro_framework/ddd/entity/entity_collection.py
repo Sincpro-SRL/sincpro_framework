@@ -9,7 +9,7 @@ from collections.abc import Callable, Hashable, Iterable, Iterator
 from dataclasses import dataclass, fields, is_dataclass
 from typing import TYPE_CHECKING, Any, get_args, get_origin
 
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ def model_and_collection(target: type) -> tuple[type, type]:
 
     held = target.holds()
     if held is None:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{target.__name__} does not say which aggregate it holds; "
             "declare it as EntityCollection[TheAggregate]"
         )
@@ -275,10 +275,10 @@ class EntityCollection[T]:
         """The values an aggregation is about, once it is established that it may answer.
 
         complete   EntityCollection([a(2), b(3)]) → [2, 3]
-        partial    a page of 20 out of 8412 → ContractViolation, naming `self.repository.measures(...)`
+        partial    a page of 20 out of 8412 → ProgrammingError, naming `self.repository.measures(...)`
         """
         if self.is_partial:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{name} would answer about {len(self.items)} records out of "
                 f"{self.count or 'more'}; ask the engine instead, which folds the whole "
                 f"result set: self.repository.measures(<aggregate>, criteria, total=('sum', '<field>'))"
@@ -349,13 +349,13 @@ class EntityCollection[T]:
         """The single record held, or a refusal saying how many there actually were.
 
             in      EntityCollection([a])      out  a
-            in      EntityCollection([a, b])   out  ContractViolation: expected exactly one record, found 2
+            in      EntityCollection([a, b])   out  ProgrammingError: expected exactly one record, found 2
 
         Holding a set and needing one element is real, and `collection[0]` is how it gets
         handled silently — including the day a filter that was unique stops being.
         """
         if len(self.items) != 1:
-            raise ContractViolation(f"expected exactly one record, found {len(self.items)}")
+            raise ProgrammingError(f"expected exactly one record, found {len(self.items)}")
         return self.items[0]
 
     def filtered(self, predicate: Callable[[T], bool]) -> "EntityCollection[T]":

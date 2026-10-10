@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 from sincpro_framework.ddd.criteria import Criteria, holds
 from sincpro_framework.ddd.criteria.criteria import All, Any_, Condition, Expression, Not
+from sincpro_framework.exceptions import ProgrammingError
 
 WIDER = {
     frozenset({"integer", "number"}): "number",
@@ -32,14 +33,6 @@ WIDER = {
 }
 
 type Direction = Literal["asc", "desc"]
-
-
-class NotComplete(Exception):
-    """A frame that stopped at a page was asked something only every row can answer."""
-
-
-class SchemaMismatch(Exception):
-    """A page of another shape was appended to a frame."""
 
 
 def type_of(value: Any) -> str:
@@ -236,7 +229,7 @@ class DataFrame:
         says about the rest: its cursor, and whether it was the last."""
         if len(self) and len(page) and page.columns != self.columns:
             missing = sorted(set(self.columns) ^ set(page.columns))
-            raise SchemaMismatch(
+            raise ProgrammingError(
                 f"the page has other columns than the frame: {', '.join(missing)}"
             )
         if self.key not in page.columns:
@@ -261,7 +254,7 @@ class DataFrame:
         """The rows that also answer `where` — with no read, since every row is here. Refused on
         a frame that stopped at a page."""
         if not self.complete:
-            raise NotComplete(
+            raise ProgrammingError(
                 f"this frame holds {len(self)} rows of a read that has more — fetch_all it before "
                 "narrowing, or read the narrower filter as its own query"
             )

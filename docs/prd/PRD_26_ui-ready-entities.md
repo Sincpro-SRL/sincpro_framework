@@ -159,7 +159,7 @@ class Invoice(Entity):
   method of the entity: the computation is the domain's, the framework only orders it.
 - Read when the class is described: the dependency graph is ordered (Kahn, beside
   `presentation_of` in `entity_meta`; `ordering.py` orders extensions and refuses with
-  `ExtensionRefused`, a field graph refuses with `ContractViolation`), and a cycle, a field
+  `ProgrammingError`, a field graph refuses with `ProgrammingError`), and a cycle, a field
   computed twice, a self-dependency or an unknown field is refused there, naming it.
 - `recompute(record, changed)` runs, in order, every derivation reachable from `changed`
   (all of them when `changed` is empty) and answers the fields it changed.
@@ -207,7 +207,7 @@ bus(QueryPreviewInvoice(id=invoice_id, values={"discount": "50"}, changed=["disc
    needs), and the advice the domain gave.
 5. **Nothing is written, by construction and by guard.** The record is never handed to a
    store; the preview runs inside `previewing()`, and any `save`, `remove`, `archive`,
-   `upsert`, `update_all`, `remove_all` or numbering `take` inside it raises `WriteInPreview`
+   `upsert`, `update_all`, `remove_all` or numbering `take` inside it raises `ProgrammingError`
    naming the call. A preview that writes would corrupt data silently; refusing loudly is the
    one place a refusal is warranted. Events the aggregate records are pulled and dropped.
 6. Advice, not errors: a method may call `advise("discount above 10% needs approval",

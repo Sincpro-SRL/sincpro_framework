@@ -81,7 +81,7 @@ The built-in gateways carry JSON today — REST (`FastApiGateway`), JSON-RPC, MC
 and the gRPC gateway, whose payload is `google.protobuf.Struct` (unary, no protobuf `bytes`).
 That is the gateways' current design, not a limit of HTTP or gRPC. On those wires a DTO with a
 `bytes` field bound with `@rest.post`, `@mcp()`, `bind`… is refused (`verify()` names it, the
-build raises `ExposureRefused`); unbound, it is skipped with one warning, `Skipping non-JSON
+build raises `ProgrammingError`); unbound, it is skipped with one warning, `Skipping non-JSON
 Feature/ApplicationService [Command…]`. It stays callable in-process. To publish it on a JSON
 wire, write the route by hand and call the bus (REST: `bus_call`). A project's own `Wire` with
 `carries_bytes = True` publishes it as it is.

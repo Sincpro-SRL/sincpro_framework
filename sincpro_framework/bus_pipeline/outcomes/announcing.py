@@ -132,11 +132,8 @@ def announce_completion(
 
 def _classified(error: BaseException) -> tuple[str, float | None]:
     """The kind every wire answers `error` with, and the seconds to wait before a retry."""
-    from sincpro_framework.common.failures import (
-        FailureKind,
-        refined_failure_kind,
-        retry_after,
-    )
+    from sincpro_framework.common.failures import refined_failure_kind, retry_after
+    from sincpro_framework.exceptions import FailureKind
 
     if not isinstance(error, Exception):
         return FailureKind.INTERNAL.value, None

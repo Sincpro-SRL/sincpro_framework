@@ -40,7 +40,8 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_meta import Meta
-from sincpro_framework.ddd.exceptions import ContractViolation, InvalidCriteria
+from sincpro_framework.ddd.exceptions import InvalidCriteria
+from sincpro_framework.exceptions import ProgrammingError
 
 
 def _as_stored_text(column: Any) -> Any:
@@ -378,7 +379,7 @@ def grouping_column(model: type, level: Level, dialect: str = "sqlite") -> Colum
 
     translator = GRAIN_TRANSLATORS.get(dialect)
     if translator is None:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"no date grain translator for dialect {dialect!r}; the built-in ones are "
             f"{sorted(GRAIN_TRANSLATORS)} — add yours with register_grain_translator()"
         )

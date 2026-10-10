@@ -28,7 +28,7 @@ sincpro_framework/
 │   ├── query.py                  Query, ResponsePaginatedQuery (the answer, masked on the wire)
 │   ├── events/                   DomainEvent (domain_event.py), DeliverableEventMixin (mixins.py)
 │   ├── value_object.py           ValueObject
-│   └── exceptions.py             DomainError, InvalidCriteria, ContractViolation, StaleAggregate, DuplicateAggregate, RelationNotResolved
+│   └── exceptions.py             DomainError, InvalidCriteria, StaleAggregate, DuplicateAggregate, TransactionConflict, TimedOut, AggregateNotFound, RelationNotResolved
 └── orm/sqlalchemy/               the adapter · the [sqlalchemy] extra
    ├── entrypoint/               Repository facade, aggregate views, numbering, table templates
    ├── services/workflows/       Reading, Writing, UnitOfWork, shared Store

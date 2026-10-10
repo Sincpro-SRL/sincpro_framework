@@ -11,7 +11,7 @@ from sqlalchemy import Column, Text
 from sqlalchemy.orm import registry
 from structlog.testing import capture_logs
 
-from sincpro_framework import UseFramework
+from sincpro_framework import ProgrammingError, UseFramework
 from sincpro_framework.data_layer.orm import (
     Repository,
     map_aggregates,
@@ -34,7 +34,6 @@ from sincpro_framework.ddd import (
     ResponsePaginatedQuery,
 )
 from sincpro_framework.ddd.entity.entity_collection import Dropped
-from sincpro_framework.ddd.exceptions import ContractViolation
 
 from .engines import fresh
 
@@ -129,7 +128,7 @@ def test_two_classes_named_alike_are_refused_when_the_base_is_mapped():
     class Readmitted(ClinicEvent):
         name = "tests.clinic.v1.admitted"
 
-    with pytest.raises(ContractViolation) as refused:
+    with pytest.raises(ProgrammingError) as refused:
         map_events(
             shared,
             ClinicEvent,
@@ -160,7 +159,7 @@ def test_a_class_declared_later_under_a_taken_name_is_refused_before_it_is_mappe
     class Left(FleetEvent):
         name = "tests.fleet.v1.departed"
 
-    with pytest.raises(ContractViolation) as refused:
+    with pytest.raises(ProgrammingError) as refused:
         map_new_event_classes()
     message = str(refused.value)
     del Left, refused  # until the class is gone, every mapping refuses: so is the process
@@ -236,7 +235,7 @@ def test_an_event_sourced_entity_with_an_unknown_event_is_refused_not_rebuilt_wr
 
     a_row_nobody_can_read(repository, "Bin", "B-1")
 
-    with pytest.raises(ContractViolation) as refused:
+    with pytest.raises(ProgrammingError) as refused:
         repository.get(Bin, "B-1")
     assert "B-1" in str(refused.value)
 

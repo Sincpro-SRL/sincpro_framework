@@ -26,7 +26,8 @@ from sincpro_framework.ddd.entity.entity_meta import (
     related_class,
     without_optional,
 )
-from sincpro_framework.ddd.exceptions import ContractViolation, RelationNotResolved
+from sincpro_framework.ddd.exceptions import RelationNotResolved
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 UNREAD = object()
@@ -65,12 +66,12 @@ def assign(record: Any, values: Mapping[str, Any]) -> tuple[str, ...]:
     annotations = annotations_of(owner)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner.__name__} has no field {', '.join(unknown)} to assign"
         )
     written = sorted(set(values) & framework_fields(owner))
     if written:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner.__name__}.{', '.join(written)} is written by the framework, not assigned"
         )
     changed: list[str] = []
@@ -120,7 +121,7 @@ def _read(record: Any, name: str, annotation: Any, value: Any) -> Any:
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
         ) from error
 
@@ -159,7 +160,7 @@ def _held_by_identity(record: Any, name: str, kind: type, value: list[Any]) -> d
     try:
         current = getattr(record, name)
     except RelationNotResolved as error:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{type(record).__name__}.{name} names records by {identity}, and they were not "
             "read: read them inside context(), or name them in the criteria's specification"
         ) from error
@@ -184,7 +185,7 @@ def _edited_or_built(kind: type, values: Mapping[str, Any], held: dict[str, Any]
     if identity and identity in values:
         found = held.get(str(values[identity]))
         if found is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{kind.__name__} {values[identity]} is not held here: an edited record is one "
                 "the field already holds, and a new one comes without its identity"
             )
@@ -199,19 +200,17 @@ def _built(kind: type, values: Mapping[str, Any]) -> Any:
     annotations = annotations_of(kind)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise ContractViolation(
-            f"{kind.__name__} has no field {', '.join(unknown)} to assign"
-        )
+        raise ProgrammingError(f"{kind.__name__} has no field {', '.join(unknown)} to assign")
     written = sorted(set(values) & framework_fields(kind))
     if written:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{kind.__name__}.{', '.join(written)} is written by the framework, not assigned"
         )
     read = {name: _plain(kind, name, annotations[name], one) for name, one in values.items()}
     try:
         return kind(**read)
     except TypeError as error:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{kind.__name__} cannot be built from {dict(values)!r}: {error}"
         )
 
@@ -230,7 +229,7 @@ def _plain(kind: type, name: str, annotation: Any, value: Any) -> Any:
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{kind.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
         ) from error
 
@@ -258,7 +257,7 @@ def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
     owner = type(record)
     unknown = sorted(set(changed) - set(annotations_of(owner))) if changed else []
     if unknown:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{owner.__name__} has no field {', '.join(unknown)} to recompute"
         )
     return _tree(record, set(changed), False, set())

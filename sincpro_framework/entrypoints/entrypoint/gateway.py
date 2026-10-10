@@ -37,7 +37,6 @@ from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.domain.bindings import (
     BUILT_IN_BINDINGS,
     Binding,
-    ExposureRefused,
     McpBinding,
     QueueBinding,
     RestBinding,
@@ -58,6 +57,7 @@ from sincpro_framework.entrypoints.entrypoint.catalog import (
 )
 from sincpro_framework.entrypoints.entrypoint.internal import is_internal
 from sincpro_framework.entrypoints.infrastructure.registry import registry
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.introspection import inspector
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
@@ -349,7 +349,7 @@ class Gateway:
             return self._port.binding
         wire = type(self).wire
         if wire is None or wire not in BUILT_IN_BINDINGS:
-            raise ExposureRefused(
+            raise ProgrammingError(
                 f"{type(self).__name__} names no wire the framework knows ({wire!r}): give it "
                 "a Wire port, or set its `wire`"
             )
@@ -373,7 +373,7 @@ class Gateway:
         ]
         if not aliases:
             named = bus if isinstance(bus, str) else bus.name
-            raise ExposureRefused(
+            raise ProgrammingError(
                 f"group({named!r}): no bus of this gateway is {named!r} — add it first; it has "
                 f"{', '.join(self._catalogs) or 'none'}"
             )
@@ -396,7 +396,7 @@ class Gateway:
         binding_type = self._binding_type()
         unknown = sorted(set(fields) - set(binding_type.model_fields))
         if unknown:
-            raise ExposureRefused(
+            raise ProgrammingError(
                 f"override({target.__name__}): {binding_type.__name__} has no "
                 f"{', '.join(unknown)}"
             )
@@ -409,7 +409,7 @@ class Gateway:
         field by field over its decorator's; the last call wins."""
         binding_type = self._binding_type()
         if not isinstance(binding, binding_type):
-            raise ExposureRefused(
+            raise ProgrammingError(
                 f"bind({target.__name__}, {type(binding).__name__}): this gateway publishes "
                 f"{binding_type.wire} — bind a {binding_type.__name__}"
             )
@@ -609,7 +609,7 @@ class Gateway:
     def _resolve(self) -> tuple[list[tuple[Resolved[Any], Published]], list[str]]:
         wire = self.wire_name
         if wire is None:
-            raise ExposureRefused(
+            raise ProgrammingError(
                 f"{type(self).__name__} names no wire: it publishes its catalog as PRD_12 did, "
                 "and has no declared surface to resolve"
             )
@@ -630,7 +630,7 @@ class Gateway:
             return self._resolved
         resolved, problems = self._resolve()
         if problems:
-            raise ExposureRefused(
+            raise ProgrammingError(
                 f"{type(self).__name__} ({self.wire_name}) refuses its surface:\n- "
                 + "\n- ".join(problems)
             )
@@ -650,7 +650,7 @@ class Gateway:
 
     def surface(self) -> list[Resolved[Any]]:
         """The validated surface — each published use case with its resolved binding. Refused
-        with `ExposureRefused`, every reason listed, when it does not hold."""
+        with `ProgrammingError`, every reason listed, when it does not hold."""
         return [one for one, _ in self._resolve_validated()]
 
     def build(self) -> Any:

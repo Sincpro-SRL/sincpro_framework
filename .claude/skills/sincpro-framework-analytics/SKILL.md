@@ -48,7 +48,7 @@ skill stands alone; the deep docs it names live in the framework repository, not
 | `CommandRunWorkflow` / `ResponseRunWorkflow` | The Command `expose()` registers on the bus; a gateway serves it once bound (`gateway.bind(CommandRunWorkflow, McpBinding())`) | DTO | `from sincpro_framework.runtime.workflows import ...` |
 | `Issue` | One validation problem: `workflow`, `step`, `path`, `message` | DTO (frozen dataclass) | `from sincpro_framework.runtime.workflows import Issue` |
 
-Exceptions: `NotComplete` (narrowing a frame that stopped at a page), `SchemaMismatch`
+Exceptions: `ProgrammingError` (narrowing a frame that stopped at a page), `ProgrammingError`
 (`data_analysis`); `UseCaseRefused` (a stored use case that does not load — the bus stays as it
 was); `WorkflowFailed` (a run stopped; `error.run` is the trace), `WorkflowsInvalid` (the first
 load found issues).

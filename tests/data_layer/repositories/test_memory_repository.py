@@ -10,6 +10,7 @@ from datetime import datetime
 
 import pytest
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd.criteria import (
     All,
@@ -26,11 +27,7 @@ from sincpro_framework.ddd.criteria.pagination import Offset, Pagination
 from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
-from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
-    InvalidCriteria,
-    StaleAggregate,
-)
+from sincpro_framework.ddd.exceptions import InvalidCriteria, StaleAggregate
 
 
 @dataclass
@@ -137,9 +134,9 @@ def test_the_short_readings_answer_the_same_as_the_adapter(ledger, accounts):
         Accounts, "balance", Criteria(where=Condition(field="kind", value="debt"))
     )
     assert ledger.distinct(Accounts, "kind") == ["asset", "debt"]
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         ledger.get_by(Accounts, kind="asset")
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         ledger.one(Accounts)
 
 
@@ -187,7 +184,7 @@ def test_a_page_asked_gives_every_group_its_ids(ledger):
 
 
 def test_a_date_grain_says_it_is_the_database_that_answers_it(ledger):
-    with pytest.raises(ContractViolation, match="date grain"):
+    with pytest.raises(ProgrammingError, match="date grain"):
         ledger.group_by_levels(
             Accounts,
             Criteria(grouping=Grouping(group_by=(Level(field="created_at", grain="month"),))),
@@ -431,24 +428,22 @@ def test_saving_nothing_is_nothing(ledger):
 def test_archive_refuses_an_aggregate_that_cannot_say_it_was_archived(ledger):
     """`Thing` has no `archived_at` to stamp. Refused by name rather than silently doing
     nothing, and refused before touching any of them so a mixed batch is all or none."""
-    from sincpro_framework.ddd.exceptions import ContractViolation
 
     @dataclass
     class Plain(Entity):
         label: str = ""
 
-    with pytest.raises(ContractViolation, match="cannot be archived"):
+    with pytest.raises(ProgrammingError, match="cannot be archived"):
         ledger.archive(Plain())
 
 
 def test_a_mixed_batch_is_refused_whole_rather_than_half_archived(ledger, accounts):
-    from sincpro_framework.ddd.exceptions import ContractViolation
 
     @dataclass
     class Plain(Entity):
         label: str = ""
 
-    with pytest.raises(ContractViolation, match="cannot be archived"):
+    with pytest.raises(ProgrammingError, match="cannot be archived"):
         ledger.archive([accounts[0], Plain()])
 
     assert not accounts[0].is_archived  # the archivable one was not touched either
@@ -459,15 +454,14 @@ def test_a_row_lock_is_refused_rather_than_quietly_ignored():
     lock passed every test here and then raced in production, where the engine refuses the
     same call outside `context()`. A double that disagrees with the engine is worse than no
     double."""
-    from sincpro_framework.ddd.exceptions import ContractViolation
 
     repository = MemoryRepository()
     account = Account(code="1010")
     repository.save(account)
 
-    with pytest.raises(ContractViolation, match="unit of work"):
+    with pytest.raises(ProgrammingError, match="unit of work"):
         repository.get(Account, account.id, for_update=True)
-    with pytest.raises(ContractViolation, match="unit of work"):
+    with pytest.raises(ProgrammingError, match="unit of work"):
         repository.search(Accounts, for_update=True)
 
     assert repository.get(Account, account.id, for_update=False) is not None

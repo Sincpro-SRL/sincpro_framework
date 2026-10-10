@@ -15,16 +15,15 @@ from google.protobuf.struct_pb2 import Struct
 from google.rpc import error_details_pb2  # pyright: ignore[reportMissingImports]
 from grpc_status import rpc_status  # pyright: ignore[reportMissingImports]
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
-from sincpro_framework.common.failures import FailureKind
-from sincpro_framework.data_layer.caching import AlreadyInProgress, KeyReused
-from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
-    DomainError,
-    DuplicateAggregate,
-    StaleAggregate,
+from sincpro_framework import (
+    DataTransferObject,
+    FailureKind,
+    Feature,
+    UseFramework,
 )
+from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
+from sincpro_framework.data_layer.caching import AlreadyInProgress, KeyReused
+from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import scalar_to_struct
 from sincpro_framework.entrypoints.domain.surface import Exposure
@@ -48,7 +47,7 @@ class LedgerDown(Exception):
 RAISED: dict[str, Exception] = {
     "unauthenticated": Unauthenticated("token expired"),
     "permission_denied": PermissionDenied("user:1", "invoices:issue"),
-    "domain": ContractViolation("an invoice has to balance"),
+    "domain": DomainError("an invoice has to balance"),
     "stale": StaleAggregate("invoice F-1 was written by someone else"),
     "duplicate": DuplicateAggregate("invoice F-1 already exists"),
     "not_found": InvoiceNotFound("invoice F-9 does not exist"),
@@ -136,7 +135,7 @@ def _refused(call: Any, payload: dict[str, Any]) -> tuple[Any, Any, dict[str, An
             "domain",
             "FAILED_PRECONDITION",
             "domain",
-            "CONTRACT_VIOLATION",
+            "DOMAIN_ERROR",
             "PreconditionFailure",
             None,
         ),
@@ -201,7 +200,7 @@ def test_a_domain_refusal_names_the_rule_it_broke(call: Any) -> None:
     _, _, details = _refused(call, {"how": "domain"})
     violation = details["PreconditionFailure"].violations[0]
 
-    assert violation.type == "CONTRACT_VIOLATION"
+    assert violation.type == "DOMAIN_ERROR"
     assert violation.description == "an invoice has to balance"
 
 

@@ -30,13 +30,13 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from sincpro_framework.exceptions import ExtensionRefused
+from sincpro_framework.exceptions import ProgrammingError
 
 DEFAULT_SEQUENCE = 10
 
 
-def refused(message: str) -> ExtensionRefused:
-    return ExtensionRefused(message)
+def refused(message: str) -> ProgrammingError:
+    return ProgrammingError(message)
 
 
 def name_of(item: Any) -> str:

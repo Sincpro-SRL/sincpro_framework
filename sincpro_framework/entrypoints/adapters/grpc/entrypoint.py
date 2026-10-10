@@ -126,7 +126,7 @@ class GrpcGateway(Gateway):
 
     def methods(self) -> dict[str, GrpcMethodSpec]:
         """Every served method keyed by its gRPC path — the validated surface, built. Refused
-        with `ExposureRefused`, every reason listed, when it does not hold."""
+        with `ProgrammingError`, every reason listed, when it does not hold."""
         return self.build()
 
     def describe(self) -> Scalar:
@@ -185,7 +185,7 @@ class GrpcGateway(Gateway):
         reflection listing them and the hand-written services of `reflection_extra` — compiled
         `*_pb2.DESCRIPTOR` files.
 
-        A hand-written method on a path this gateway serves is refused with `ExposureRefused`
+        A hand-written method on a path this gateway serves is refused with `ProgrammingError`
         before anything is mounted. Answers `server`.
         """
         from sincpro_framework.entrypoints.adapters.grpc import wire

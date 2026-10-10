@@ -85,7 +85,7 @@ from sincpro_framework.data_layer.caching.domain.observer import (
 )
 from sincpro_framework.data_layer.caching.domain.policies import IdempotencyPolicy
 from sincpro_framework.data_layer.caching.infrastructure.flight import POLL_SECONDS
-from sincpro_framework.ddd.exceptions import ContractViolation
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 _running: ContextVar[str | None] = ContextVar("sincpro_idempotency_key", default=None)
@@ -129,7 +129,7 @@ def _qualified(cls: type) -> str:
 def _response_of(handler: type, execute: Callable[..., Any]) -> Any:
     response = get_type_hints(execute).get("return")
     if response is None:
-        raise ContractViolation(
+        raise ProgrammingError(
             f"{handler.__name__}.execute declares no response type: declare it, so a kept "
             "answer can be replayed as what the use case answers"
         )
@@ -279,10 +279,10 @@ class Idempotency:
                answer's codec is read from its return type at the first run.
             """
             if cls in self._declared:
-                raise ContractViolation(f"{cls.__name__} declares once() twice: declare one")
+                raise ProgrammingError(f"{cls.__name__} declares once() twice: declare one")
             original = cls.execute  # type: ignore[attr-defined]
             if inspect.iscoroutinefunction(original):
-                raise ContractViolation(
+                raise ProgrammingError(
                     f"{cls.__name__}.execute is async: once() runs synchronous use cases — "
                     "declare it def execute, and reach it from async code with "
                     "bus.get_async_bus()"

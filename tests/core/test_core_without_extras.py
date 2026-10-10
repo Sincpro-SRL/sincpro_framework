@@ -334,8 +334,8 @@ from sincpro_framework.data_layer.caching import (
 from sincpro_framework.entrypoints import Exposure, Gateway
 from sincpro_framework.entrypoints.entrypoint.decorators import grpc, mcp, queue, rest, rpc
 from sincpro_framework.entrypoints.entrypoint.internal import internal
-from sincpro_framework.common.failures import FailureKind
-from sincpro_framework.common.failures import failure_kind
+from sincpro_framework import FailureKind
+from sincpro_framework.common.failures import refined_failure_kind
 
 kept = Cache(eviction=Lru(max_entries=10))
 fresh = KeepPolicy(
@@ -396,7 +396,7 @@ surface = RestSurface([exposed], unguarded=True)
 assert [entry.command.rsplit(".", 1)[-1] for entry in surface.manifest()] == ["CommandCharge"]
 catalog = RestSurface([exposed], exposure=Exposure.CATALOG, unguarded=True)
 assert "CommandSecret" not in str(catalog.manifest())
-assert failure_kind(PermissionDenied("a", "b", "c")) == FailureKind.PERMISSION_DENIED
+assert refined_failure_kind(PermissionDenied("a", "b", "c")) == FailureKind.PERMISSION_DENIED
 
 for module, extra in (
     ("sincpro_framework.entrypoints.adapters.fastapi", "fastapi"),

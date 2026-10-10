@@ -19,10 +19,11 @@ a generation that is not the context's bus until the project adds it.
 
 import threading
 
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.use_bus import UseFramework
 
 
-class BusAlreadyRegistered(Exception):
+class BusAlreadyRegistered(ProgrammingError):
     """A second, different bus was added under a name this process already holds."""
 
     def __init__(self, name: str) -> None:
@@ -33,7 +34,7 @@ class BusAlreadyRegistered(Exception):
         self.name = name
 
 
-class BusNotRegistered(LookupError):
+class BusNotRegistered(ProgrammingError, LookupError):
     """`get` was asked for a name nobody added."""
 
     def __init__(self, name: str) -> None:

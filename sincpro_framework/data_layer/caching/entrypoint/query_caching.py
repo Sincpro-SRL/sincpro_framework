@@ -51,8 +51,8 @@ from sincpro_framework.data_layer.caching.adapters.keys import canonical
 from sincpro_framework.data_layer.caching.domain.policies import CachePolicy
 from sincpro_framework.data_layer.caching.infrastructure.flight import StoreFlight, awaited
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import ContractViolation
 from sincpro_framework.ddd.repositories.reads import aggregate_tag, noting_reads
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import Feature
 from sincpro_framework.use_bus import UseFramework
 
@@ -138,7 +138,7 @@ class QueryCaching:
     def _registration(self, query: type) -> _Cached:
         cached = self._cached.get(query)
         if cached is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{query.__name__} is not cached here — cache it with on()"
             )
         return cached
@@ -151,7 +151,7 @@ class QueryCaching:
             if name in context and name not in cached.policy.vary_by
         ]
         if exposed:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{cached.query.__name__} runs with {', '.join(exposed)} in its context and its "
                 f"cache policy does not vary by it: one caller's answer would reach another — "
                 f"add it to vary_by, or do not cache this query"

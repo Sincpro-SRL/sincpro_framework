@@ -214,7 +214,7 @@ A Command that is a **dataclass** does work here: the tool signature is built fr
 
 ### Binary DTOs
 
-MCP tool arguments are JSON, and `McpWire` declares `carries_bytes = False`: a DTO with `bytes` / `format: binary|byte` has no tool. Those tools are **skipped** at `server()` time with a warning. They remain callable in-process via `framework(dto)`. `to_callables()` still includes them; the FastMCP host does not. Declaring `@mcp()` on one is refused: the gateway's `verify()` names it and `server()` raises `ExposureRefused`, since the tool would not exist.
+MCP tool arguments are JSON, and `McpWire` declares `carries_bytes = False`: a DTO with `bytes` / `format: binary|byte` has no tool. Those tools are **skipped** at `server()` time with a warning. They remain callable in-process via `framework(dto)`. `to_callables()` still includes them; the FastMCP host does not. Declaring `@mcp()` on one is refused: the gateway's `verify()` names it and `server()` raises `ProgrammingError`, since the tool would not exist.
 
 ---
 

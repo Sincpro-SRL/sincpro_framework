@@ -7,9 +7,10 @@ nothing behind.
 
 import pytest
 
+from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd.criteria import Condition, Criteria
-from sincpro_framework.ddd.exceptions import ContractViolation, StaleAggregate
+from sincpro_framework.ddd.exceptions import StaleAggregate
 
 from .models import Note, Notes
 
@@ -130,7 +131,7 @@ def test_retrying_leaves_anything_else_alone(store: Repository):
     with pytest.raises(ValueError):
         store.retrying(work, wait=0)
 
-    with pytest.raises(ContractViolation):
+    with pytest.raises(ProgrammingError):
         store.retrying(lambda: None, attempts=0)
 
 

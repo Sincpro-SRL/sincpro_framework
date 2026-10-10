@@ -37,7 +37,7 @@ Every one takes `deprecated=True` or `deprecated=Deprecation(since=, sunset=, re
 
 - Bindings are kept **by class, never on the class**; the order the decorators are written never
   matters.
-- **One binding per wire** per class; a second is refused where written (`ExposureRefused`).
+- **One binding per wire** per class; a second is refused where written (`ProgrammingError`).
 - A `replaces=` handler inherits the binding of the one it replaces, wire by wire.
 - A project's own binding: subclass `Binding` with its own `wire`, `declare(handler, binding)`.
 
@@ -63,7 +63,7 @@ api.add(billing, exclude=[CommandReconcile])
 
 ## Build fails closed
 
-`surface()`, `build()`, `manifest()`, `operations()` validate first and raise `ExposureRefused` with
+`surface()`, `build()`, `manifest()`, `operations()` validate first and raise `ProgrammingError` with
 **every** reason at once; `verify()` answers the list without raising. Refused, among others:
 `@internal` with a binding; a path `{field}` that is not a Command field; a `location` field not a
 response field; `GET` on a non-`Query`; a hint against a fact (`mcp(read_only=True)` on a Command);

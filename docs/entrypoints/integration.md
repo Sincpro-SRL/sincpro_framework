@@ -74,7 +74,7 @@ Every one takes `deprecated=True` or `deprecated=Deprecation(since=, sunset=, re
   returns the class unchanged — the order the lines are written in never matters. It records only
   what it was told: a field left at its default stays unset, so it never overrides a group.
 - **One binding per wire** per class: a second `@rest...` on the same class is refused where it
-  is written (`ExposureRefused`).
+  is written (`ProgrammingError`).
 - A `replaces=` handler inherits, **wire by wire**, the binding of the one it replaces when it
   declares none for that wire: replacing a handler never moves or drops a public operation.
 - A project's own binding type (a subclass of `Binding` with its own `wire`) is recorded the same
@@ -137,7 +137,7 @@ A scalar declared by a closer layer wins; a collection (`tags`) declared adds to
 ### Validation — the build fails closed
 
 `gateway.surface()`, `build()`, `manifest()` and `operations()` (on a gateway that names its
-wire) validate first and raise `ExposureRefused` with **every** reason at once;
+wire) validate first and raise `ProgrammingError` with **every** reason at once;
 `gateway.verify()` answers the list without raising.
 
 | Refused | Example |

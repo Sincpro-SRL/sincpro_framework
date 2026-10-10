@@ -75,7 +75,7 @@ repository.save(first)                      # UPDATE … WHERE version = 1 → v
 its children get the root's key and are inserted or updated with it, and an **assignment over a
 whole reading** settles the children that reading saw and the root no longer holds, as the
 relation declares: `orphans=Orphans.DELETE` deletes them, `Orphans.DETACH` sets their key to NULL,
-and **with nothing declared the write is refused** (`ContractViolation` naming the relation).
+and **with nothing declared the write is refused** (`ProgrammingError` naming the relation).
 `remove(root)` follows the same declaration: a root with children under a silent relation is
 refused — delete them first, or declare it. A reference (`owned=False`) is left to its foreign
 key. Inside `context()` an assignment over an unread relation reads it first.
@@ -124,8 +124,8 @@ What the engine refuses, in the layer's own words — catch these, never a drive
 | `TransactionConflict` | serialization failure, deadlock | yes, on a fresh read |
 | `TimedOut` | `nowait` on a held row, a statement past `timeout` | no — the bound was yours |
 
-Every gateway already maps these, do not remap them by hand: `InvalidCriteria`, `ContractViolation`/`ConstraintViolation` → 422 (kind `domain`),
-the three conflicts → 409.
+Every gateway already maps these, do not remap them by hand: `InvalidCriteria` → 400 (kind `invalid`), `ConstraintViolation` → 422 (kind `domain`),
+the three conflicts → 409, `TimedOut` → 503 (kind `unavailable`).
 
 `repository.retrying(work, attempts=3, wait=0.05)` re-runs a callable on `StaleAggregate` or `TransactionConflict` when it
 lost a race, with a doubling wait, and re-raises the last failure. The callable must read again:
@@ -148,7 +148,7 @@ repository.remove(temporary)                # DELETE; takes records, never ids
 repository.archive(luis)                    # ArchivableMixin only: stamps archived_at, keeps the row
 ```
 
-`archive` on an aggregate without `ArchivableMixin` raises `ContractViolation`. Reads skip
+`archive` on an aggregate without `ArchivableMixin` raises `ProgrammingError`. Reads skip
 archived rows unless the criteria names `archived_at`; `get` answers `None` for one.
 
 ## A unit of work
@@ -240,14 +240,14 @@ The short questions:
 from sincpro_framework.ddd import Condition, Criteria
 
 repository.get(Invoice, invoice_id)                # one or None
-repository.get_by(Invoice, number="F-001")         # natural key; two matches → ContractViolation
+repository.get_by(Invoice, number="F-001")         # natural key; two matches → ProgrammingError
 repository.browse(Invoices, [id_3, id_1])          # by ids, in the order given, missing skipped
 repository.exists(Invoice, Criteria(where=Condition(field="number", value="F-001")))
 repository.count(Invoice).value                    # Count(value, exact)
 repository.pluck(Invoice, "number")                # one column of the whole result set
 repository.distinct(Invoice, "state")
 repository.first(Invoices, criteria)               # or None
-repository.one(Invoices, criteria)                 # exactly one, else ContractViolation
+repository.one(Invoices, criteria)                 # exactly one, else ProgrammingError
 ```
 
 `search` answers **one page** (50 rows by default). The rest of the surface — `search`,
@@ -255,7 +255,7 @@ repository.one(Invoices, criteria)                 # exactly one, else ContractV
 is `sincpro-framework-criteria`.
 
 **Multi-tenant narrowing.** `narrowed(criteria)` hands out a repository that can only see — and
-only write — what the criteria allows; a write outside it raises `ContractViolation`, and an
+only write — what the criteria allows; a write outside it raises `ProgrammingError`, and an
 aggregate that cannot answer the scope is refused rather than read wide:
 
 ```python

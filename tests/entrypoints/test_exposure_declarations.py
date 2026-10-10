@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.entrypoints import ExposureRefused, declare
+from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
+from sincpro_framework.entrypoints import declare
 from sincpro_framework.entrypoints import internal as internal_from_entrypoints
 from sincpro_framework.entrypoints.domain.bindings import (
     Binding,
@@ -70,7 +70,7 @@ def test_the_order_decorators_are_written_in_does_not_change_the_bindings():
 
 
 def test_a_second_binding_for_one_wire_is_refused_where_it_is_written():
-    with pytest.raises(ExposureRefused, match="two rest bindings"):
+    with pytest.raises(ProgrammingError, match="two rest bindings"):
 
         @rest.get("/invoices")
         @rest.post("/invoices")

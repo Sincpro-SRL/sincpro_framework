@@ -30,6 +30,7 @@ from sincpro_framework.entrypoints.domain.bindings import RpcBinding
 from sincpro_framework.entrypoints.domain.layers import Scalar
 from sincpro_framework.entrypoints.domain.surface import Resolved
 from sincpro_framework.entrypoints.services.scalar_executor import execute
+from sincpro_framework.exceptions import ClientError
 from sincpro_framework.observability import process
 from sincpro_framework.sincpro_logger import logger
 
@@ -46,13 +47,13 @@ type MethodIndex = Mapping[str, Resolved[RpcBinding]]
 """Each published method by its name — what a request's `method` is looked up in."""
 
 
-class MethodNotFound(Exception):
+class MethodNotFound(ClientError):
     def __init__(self, method: str):
         self.method = method
         super().__init__(method)
 
 
-class InvalidParams(Exception):
+class InvalidParams(ClientError):
     """Params the method cannot take whatever their values — by position, on a by-name API."""
 
     def __init__(self, reason: str, message: str):

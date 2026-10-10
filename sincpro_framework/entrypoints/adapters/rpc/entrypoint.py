@@ -134,7 +134,7 @@ class RpcGateway(Gateway):
 
     def build(self) -> RpcSurface:
         """The validated surface as the wire serves it — built once per resolution, refused
-        with `ExposureRefused` (every reason listed) when it does not hold."""
+        with `ProgrammingError` (every reason listed) when it does not hold."""
         surface: Sequence[Resolved[RpcBinding]] = self.surface()
         resolved = self._resolved
         if self._built is None or self._built[0] is not resolved:

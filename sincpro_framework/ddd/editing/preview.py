@@ -9,7 +9,7 @@ Context: inside `previewing()` every write door of every store (`save`, `remove`
 `upsert`, `update_all`, `remove_all`), every numbering `take`, every flush or writing statement
 of a SQL session (`record_changes`, a unit of work committing what it tracks, a record added to
 `repository.session` by hand, a `text(...)` statement that is not a read) and every read that
-locks rows raises `WriteInPreview`, naming the call. The guard is a
+locks rows raises `ProgrammingError`, naming the call. The guard is a
 context variable: a statement on a raw connection, and a thread started without the
 framework's context (`ContextExecutor`), are outside it. A preview that wrote would leave a record, a number or a lock behind the
 user's back, which is the one failure here worth a refusal. Outside a preview nothing changes.
@@ -43,7 +43,7 @@ def previewing() -> Generator[list[Advice]]:
     """A block whose writes are refused and whose advice is collected.
 
     with previewing() as advice:
-        repository.save(invoice)          →   WriteInPreview: save inside a preview
+        repository.save(invoice)          →   ProgrammingError: save inside a preview
 
     A preview inside another one hands its advice to the outer one as well when it ends.
     """

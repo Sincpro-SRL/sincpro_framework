@@ -48,7 +48,7 @@ from sincpro_framework.auth.services.guard import (
 )
 from sincpro_framework.context.infrastructure.tree import executing_context
 from sincpro_framework.ddd.repositories.hooks import Hooks
-from sincpro_framework.exceptions import ExtensionRefused
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
@@ -124,7 +124,7 @@ class AccessControl[P: Permission]:
         needed — `any_of` for one among several. On a Feature, an ApplicationService or a Hook.
         """
         if not requirements:
-            raise ExtensionRefused("requires() names at least one permission")
+            raise ProgrammingError("requires() names at least one permission")
 
         def declared[T: type](cls: T) -> T:
             return self.declarations.add(
@@ -154,7 +154,7 @@ class AccessControl[P: Permission]:
         for provider in self.providers:
             if provider.name == identity.provider:
                 return provider
-        raise ExtensionRefused(
+        raise ProgrammingError(
             f"{identity.subject} was vouched for by '{identity.provider}', a provider this "
             "AccessControl does not hold"
         )
@@ -313,12 +313,12 @@ class AccessControl[P: Permission]:
             logger.warning("access control is disabled: nothing it guards is checked")
         if isinstance(target, Hooks):
             if any(target is one for one in self._hooks):
-                raise ExtensionRefused("AccessControl already guards this Hooks")
+                raise ProgrammingError("AccessControl already guards this Hooks")
             target.gate(self._hook_guard)
             self._hooks.append(target)
             return
         if target in self._roots:
-            raise ExtensionRefused(f"AccessControl already guards '{target.name}'")
+            raise ProgrammingError(f"AccessControl already guards '{target.name}'")
         target.extend(self.attach)
         target.logger.add_context_source(self._identity_for_logs)
         self._roots.append(target)

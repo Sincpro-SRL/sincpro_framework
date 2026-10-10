@@ -37,7 +37,6 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ValidationError
 
 from sincpro_framework.auth.entrypoint.access_control import access_control_of
-from sincpro_framework.common.failures import FailureKind
 from sincpro_framework.ddd.exceptions import DuplicateAggregate, StaleAggregate
 from sincpro_framework.entrypoints.adapters.fastapi.calling import (
     bus_call,
@@ -59,7 +58,7 @@ from sincpro_framework.entrypoints.adapters.rest.routing import (
     kebab,
     payload_from_query,
 )
-from sincpro_framework.entrypoints.domain.bindings import ExposureRefused, RestBinding
+from sincpro_framework.entrypoints.domain.bindings import RestBinding
 from sincpro_framework.entrypoints.domain.layers import Wrapper
 from sincpro_framework.entrypoints.domain.surface import (
     Exposure,
@@ -69,6 +68,7 @@ from sincpro_framework.entrypoints.domain.surface import (
     Wire,
 )
 from sincpro_framework.entrypoints.entrypoint.gateway import DEFAULT_LAYERS, Buses, Gateway
+from sincpro_framework.exceptions import FailureKind, ProgrammingError
 from sincpro_framework.use_bus import UseFramework
 
 type Profile = Literal["resource", "rpc"]
@@ -561,7 +561,7 @@ class FastApiGateway(Gateway):
         wrap: Mapping[type | str, Wrapper] | None = None,
     ) -> "FastApiGateway":
         if wrap:
-            raise ExposureRefused(
+            raise ProgrammingError(
                 "FastApiGateway: wrap decorates the dictionary-in call this wire never makes — "
                 "the route validates the DTO once and calls the bus; use an interceptor"
             )
@@ -598,7 +598,7 @@ class FastApiGateway(Gateway):
                 for alias, catalog in self.catalogs.items()
             )
         ):
-            raise ExposureRefused(f"router({bus!r}): no bus of this gateway is {bus!r}")
+            raise ProgrammingError(f"router({bus!r}): no bus of this gateway is {bus!r}")
         built = self._wire.build(surface)
         if bus is not None and len(built) == 1:
             return next(iter(built.values()))

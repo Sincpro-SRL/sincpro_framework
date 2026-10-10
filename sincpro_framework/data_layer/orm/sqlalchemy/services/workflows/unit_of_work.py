@@ -31,11 +31,8 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.store import
 from sincpro_framework.ddd.criteria import (
     Criteria,
 )
-from sincpro_framework.ddd.exceptions import (
-    ContractViolation,
-    StaleAggregate,
-    TransactionConflict,
-)
+from sincpro_framework.ddd.exceptions import StaleAggregate, TransactionConflict
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 
@@ -49,7 +46,7 @@ class UnitOfWork(Store):
 
             books = repository.narrowed(Criteria(where=Condition(field="tenant", value="acme")))
             books.search(Invoices, criteria)      →  … AND tenant = 'acme'
-            books.save(invoice_of_another_tenant) →  ContractViolation
+            books.save(invoice_of_another_tenant) →  ProgrammingError
 
         Every reading merges the scope with AND, and every write is checked against it before
         it reaches the database, with the same evaluator the translator is specified by. An
@@ -80,7 +77,7 @@ class UnitOfWork(Store):
         `statement()` and `run()`.
         """
         if self._bound is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "the session exists only inside context(); open one, or use "
                 "statement() and run() for a single read"
             )
@@ -129,7 +126,7 @@ class UnitOfWork(Store):
 
     def _registered(self, moment: str, callback: Callback) -> None:
         if self._bound is None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 f"{moment} belongs to a unit of work; outside context() every call commits on "
                 "its own, so what would wait for the commit can simply run now"
             )
@@ -244,7 +241,7 @@ class UnitOfWork(Store):
             )
             joined = replace(asked, writes=writes or self._transaction.writes)
             if given and joined != self._transaction:
-                raise ContractViolation(
+                raise ProgrammingError(
                     "this unit of work already began with other options; a nested context() "
                     "joins the transaction in play and cannot configure it again"
                 )
@@ -296,9 +293,9 @@ class UnitOfWork(Store):
         same beat; the last failure is raised as it was, not wrapped.
         """
         if attempts < 1:
-            raise ContractViolation("retrying needs at least one attempt")
+            raise ProgrammingError("retrying needs at least one attempt")
         if self._bound is not None:
-            raise ContractViolation(
+            raise ProgrammingError(
                 "retrying runs a whole unit of work again; inside context() the transaction "
                 "that lost is the one in play — call it on the repository, around the context()"
             )

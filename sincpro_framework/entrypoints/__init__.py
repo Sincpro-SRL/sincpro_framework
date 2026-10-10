@@ -9,7 +9,6 @@ serves it.
 from sincpro_framework.entrypoints.domain.bindings import (
     Binding,
     Deprecation,
-    ExposureRefused,
     GrpcBinding,
     McpBinding,
     QueueBinding,
@@ -46,7 +45,6 @@ __all__ = [
     "Catalog",
     "Deprecation",
     "Exposure",
-    "ExposureRefused",
     "Gateway",
     "Group",
     "GrpcBinding",
