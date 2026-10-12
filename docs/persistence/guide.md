@@ -914,6 +914,107 @@ assert (stored.number, stored.total, stored.reason) == ("NC-1", 50, "returned go
 parent, and refuses a table that does not reference the parent's key. A `Criteria` filters and
 orders by inherited and own fields alike.
 
+## 15. A form's whole life: keep, save, find again
+
+A form that is not always saved — an edit continued tomorrow, from another device, or dropped —
+is one command, `Edit`, answered by `EntityEdits` (an `EntityReads` too). `KEEP` holds the
+caller's draft where the context is kept; `SAVE` stores it; `Get(draft=True)` and
+`Search(drafts=True)` find it again after the client lost its state:
+
+```python
+from decimal import Decimal
+
+from sincpro_framework.context import InMemoryContexts
+from sincpro_framework import UseFramework
+from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import (
+    Derivations,
+    Derive,
+    Edit,
+    EditAction,
+    EntityEdits,
+    Get,
+    ResponseEdit,
+    ResponsePaginatedQuery,
+    ResponseRecord,
+    Search,
+)
+
+
+@dataclass
+class Quote(Entity):
+    customer: str = ""
+    amount: Decimal = Decimal("0")
+    discount: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
+
+    def total_of(self) -> Decimal:
+        return self.amount - self.discount
+
+    derivations = Derivations["Quote"](
+        lambda q: (Derive(q.total, depends=(q.amount, q.discount), by=Quote.total_of),)
+    )
+
+
+class ResponseQuote(ResponseRecord):
+    quote: Quote
+
+
+class ResponseEditQuote(ResponseEdit):
+    quote: Quote
+
+
+class ResponseQuotes(ResponsePaginatedQuery):
+    quotes: list[Quote]
+
+
+class QueryGetQuote(Get[Quote, ResponseQuote]):
+    pass
+
+
+class QueryListQuotes(Search[Quote, ResponseQuotes]):
+    pass
+
+
+class CommandEditQuote(Edit[Quote, ResponseEditQuote]):
+    pass
+
+
+quotes_bus = UseFramework("quotes", log_after_execution=False)
+quotes = MemoryRepository()
+quotes_bus.add_dependency("repository", quotes)
+quotes_bus.context_store(InMemoryContexts())          # a KeyValueContexts over Redis in production
+
+
+@quotes_bus.feature([QueryGetQuote, QueryListQuotes, CommandEditQuote])
+class QuoteForms(EntityEdits[Quote]):
+    pass
+
+
+with quotes_bus.context({"tenant_id": "acme", "user_id": "ana"}):
+    kept = quotes_bus(
+        CommandEditQuote(id="0192q1", values={"customer": "Eva", "amount": "100", "discount": "5"}),
+        ResponseEditQuote,
+    )
+    assert kept.quote.total == Decimal("95") and quotes.get(Quote, "0192q1") is None
+
+    # the browser closed: the draft is found again, where it was left
+    again = quotes_bus(QueryGetQuote(id="0192q1", draft=True), ResponseQuote)
+    assert again.draft.version == kept.draft.version
+    mine = quotes_bus(QueryListQuotes(drafts=True), ResponseQuotes)
+    assert [one.id for one in mine.quotes] == ["0192q1"]
+
+    saved = quotes_bus(
+        CommandEditQuote(id="0192q1", version=again.draft.version, action=EditAction.SAVE),
+        ResponseEditQuote,
+    )
+    assert saved.draft is None and quotes.get(Quote, "0192q1").total == Decimal("95")
+```
+
+Two tabs on old versions lose with `DraftConflict`; a record somebody saved meanwhile is `stale`
+and its save refused. The whole page — creating, updating, a transition such as posting with a
+number, a project's own command — is [edits.md](edits.md).
+
 ---
 
 ## Where to read next
@@ -922,6 +1023,7 @@ orders by inherited and own fields alike.
 |---|---|
 | [criteria.md](criteria.md) | The grammar of a `Criteria`, how two merge, what `dropped` means |
 | [specification.md](specification.md) | What to bring back, at any depth |
+| [edits.md](edits.md) | A form's whole life in one command: drafts, save, find again, transitions |
 | [relations.md](relations.md) | Every kind of relation and how each one is resolved |
 | [lifecycle.md](lifecycle.md) | What runs, in which order, when something is written |
 | [hooks.md](hooks.md) | Hooks in full: discovery, dependencies, what is refused |

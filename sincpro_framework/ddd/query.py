@@ -16,6 +16,7 @@ them slightly differently.
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime
 from functools import cache
 from typing import Any, Literal
 
@@ -26,6 +27,7 @@ from pydantic import (
     TypeAdapter,
     model_serializer,
 )
+from pydantic_core import to_jsonable_python
 
 from sincpro_framework.ddd.criteria import Criteria, Specification
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -213,6 +215,10 @@ class ResponsePaginatedQuery(DataTransferObject):
                 ),
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
             }
+        for name in type(self).model_fields:
+            if name not in written:
+                value = getattr(self, name)
+                written[name] = to_jsonable_python(value) if mode == "json" else value
         return written
 
     @classmethod
@@ -303,6 +309,19 @@ class ResponsePaginatedQuery(DataTransferObject):
         return response
 
 
+class DraftState(DataTransferObject):
+    """The record was answered from its owner's draft — what a form kept and nobody saved yet.
+
+    `version` is what the next edit names as `version`; `stale` says the stored record moved on
+    since the draft started, so saving it would be refused.
+    """
+
+    version: int
+    origin_version: int
+    kept_at: datetime
+    stale: bool = False
+
+
 class ResponseRecord(DataTransferObject):
     """What a read of one record returns beside it.
 
@@ -319,13 +338,18 @@ class ResponseRecord(DataTransferObject):
     dropped: list[Dropped] = []
     """What the specification named and the model could not answer."""
 
+    draft: DraftState | None = None
+    """`None`: the record as stored. Otherwise its owner's draft, asked for with `draft=True`
+    (`Get`) or answered by an edit (`Edit`)."""
+
     _specification: Specification | None = PrivateAttr(default=None)
     _meta: Meta | None = PrivateAttr(default=None)
 
     @model_serializer(mode="plain")
     def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
         """On the wire, the record shows what the specification named plus its identity, and
-        each named relation under its own name, as a record of a page does."""
+        each named relation under its own name, as a record of a page does; every other field
+        follows as itself."""
         mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
         field = self.record_field()
         with writing_out():
@@ -338,6 +362,10 @@ class ResponseRecord(DataTransferObject):
                 ),
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
             }
+        for name in type(self).model_fields:
+            if name not in written:
+                value = getattr(self, name)
+                written[name] = to_jsonable_python(value) if mode == "json" else value
         return written
 
     @classmethod
@@ -368,7 +396,14 @@ class ResponseRecord(DataTransferObject):
         class ResponseAccount(ResponseRecord):
             account: Account            →   out  'account'
         """
-        own = [name for name in cls.model_fields if name not in ResponseRecord.model_fields]
+        declared = {
+            name
+            for base in cls.__mro__
+            if base.__module__.startswith("sincpro_framework.")
+            and hasattr(base, "model_fields")
+            for name in base.model_fields
+        }
+        own = [name for name in cls.model_fields if name not in declared]
         if len(own) != 1:
             raise ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "

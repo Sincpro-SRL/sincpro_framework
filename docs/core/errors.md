@@ -52,12 +52,13 @@ what to do; anything else is its base with a clear message.
 | Base | Subclasses | Kind |
 |---|---|---|
 | `ProgrammingError` | `DTOAlreadyRegistered`, `DependencyAlreadyRegistered`, `DependencyNotRegistered`, `UnknownDTOToExecute`, `BusAlreadyBuilt`, `SincproFrameworkNotBuilt`, `ContextRequired` (`missing`), `BusAlreadyRegistered`, `BusNotRegistered`, `RelationNotResolved`, `MigrationRefused`, `WorkflowsInvalid` (`issues`), `InvalidAddress` | internal |
-| `ClientError` | `InvalidCriteria`, `DTODoesNotFit` (`fields`), `UseCaseRefused` | invalid |
+| `ClientError` | `InvalidCriteria`, `DTODoesNotFit` (`fields`), `UseCaseRefused`, a form's value `assign` cannot take | invalid |
+| | `DraftConflict` (`current`) | conflict |
 | | `AggregateNotFound` | not_found |
 | | `AuthError` → `Unauthenticated`, `PermissionDenied` | unauthenticated, permission_denied |
 | | `AlreadyInProgress`, `KeyReused` | in_progress, key_reused |
 | `DomainError` | `ConstraintViolation`, `WorkflowFailed` (`run`) | domain |
-| | `StaleAggregate`, `DuplicateAggregate`, `TransactionConflict`, `DraftConflict` | conflict |
+| | `StaleAggregate`, `DuplicateAggregate`, `TransactionConflict` | conflict |
 | `ExternalServiceError` | `ContextFailed` (the remote class), `MigrationFailed` | internal |
 | `ServiceUnavailableError` | `ContextUnavailable`, `TimedOut`, `StoreUnavailable` (a Redis or Memcached store), a broker that does not take an event | unavailable |
 | `OutcomeUnknownError` | `ContextOutcomeUnknown` → `ContextTimeout` | unknown_outcome |

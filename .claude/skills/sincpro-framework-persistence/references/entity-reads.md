@@ -122,7 +122,15 @@ def search(self, dto: QueryListInvoices) -> ResponseListInvoices:
 - Repository named otherwise: override `reads_from(self) -> Repository` and return it.
 - Around every use case: a bus interceptor. Replace it entirely: `replaces=InvoiceReads`.
 
-## 6. A record's history
+## 6. The caller's drafts
+
+`QueryGetInvoice(id=..., draft=True)` answers the caller's draft when one is kept — the same shape
+as the stored record for the same criteria, plus `draft` (version, `stale`); `QueryListInvoices(...,
+drafts=True)` lists the caller's drafts by the same criteria. Never implicit. The edits themselves
+are `Edit` + `EntityEdits` (an `EntityReads` too): [edits.md](edits.md). Override `drafts()` to key
+them by session or other keys.
+
+## 7. A record's history
 
 ```python
 class ResponseIssueEvents(ResponsePaginatedQuery):

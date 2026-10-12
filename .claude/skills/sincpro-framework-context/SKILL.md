@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-context
-description: Read, scope, carry and keep the execution context of a sincpro_framework service — use_context() from anywhere, the tree of levels (ROOT, BUS, ENTRYPOINT, APPLICATION, FEATURE, HOOK, SCOPE), bus.context(...) and self.context, set vs mapping writes, threads and pools (ContextExecutor, ContextThread, in_context), context_provider, context_schema, requires_context, Secret, stores (InMemoryContexts, KeyValueContexts over Redis; keep_as/restore; root.share across replicas), propagation (inject/extract, baggage, sincpro-context) and the execution identity (execution_id, causation_id, correlation_id). Use whenever a task reads or passes tenant/user/lang/correlation, hands work to a thread, derives credentials per tenant, keeps a session or a flow, shares settings across replicas, or carries context to another service, a broker or the frontend.
+description: Read, scope, carry and keep the execution context of a sincpro_framework service — use_context() from anywhere, the tree of levels (ROOT, BUS, ENTRYPOINT, APPLICATION, FEATURE, HOOK, SCOPE), bus.context(...) and self.context, set vs mapping writes, threads and pools (ContextExecutor, ContextThread, in_context), context_provider, context_schema, requires_context, Secret, stores (InMemoryContexts, KeyValueContexts over Redis; keep_as/restore; root.share across replicas), propagation (inject/extract, baggage, sincpro-context) and the execution identity (execution_id, causation_id, correlation_id). Use whenever a task reads or passes tenant/user/lang/correlation, hands work to a thread, derives credentials per tenant, keeps a session or a flow, keeps a form's draft per user or session, shares settings across replicas, or carries context to another service, a broker or the frontend.
 ---
 
 # sincpro-framework-context
@@ -39,7 +39,8 @@ can be kept in a store for whoever resumes the flow.
 | `requires_context(*keys)` | Declares keys a use case cannot run without; `ContextRequired` before the handler when missing | decorator | `sincpro_framework.context` |
 | `ContextRequired` | Raised for a declared key that is missing | DTO | `sincpro_framework.exceptions` |
 | `Secret` | pydantic's: masked on every signal, never travels, `.get_secret_value()` where it is used | DTO | `from pydantic import Secret` |
-| `ContextStore` | Port: `keep(key, values, ttl)`, `restore(key)`, `forget(key)`, `version(key)` | port | `sincpro_framework.context` |
+| `ContextStore` | Port: `keep(key, values, ttl)`, `restore(key)`, `forget(key)`, `version(key)`, `drafts()` — the drafts kept beside the contexts | port | `sincpro_framework.context` |
+| `Drafts` | `use_context().drafts(by=...)`: what a form keeps between requests, by user (default), session or any keys of the context, in the context's store; `keep` / `read` / `discard`, `DraftConflict` | class | `sincpro_framework.context` |
 | `InMemoryContexts` / `KeyValueContexts(store, codec)` | One process / every replica over any `KeyValueStore` (Redis, Valkey, Memcached) | adapter | `sincpro_framework.context` |
 | `PlainCodec` / `TypedCodec(schema)` / `PickleCodec` | How a store writes a context: any language / types back / anything picklable | adapter | `sincpro_framework.context` |
 | `bus.context_store(store, ttl=, every=)` | Shares this bus's context through the store — every node kept, the sender's chain read back across services — and keeps/restores with it | function | method of `UseFramework` |
@@ -188,6 +189,7 @@ with siat.context({"nit_id": nit.id}):                # the caller says which te
 - [references/levels-and-writes.md](references/levels-and-writes.md) — the tree, navigation, the two writes, scopes, values by type, the standard keys
 - [references/threads.md](references/threads.md) — pools, threads, async, why the framework hands it on
 - [references/providers-and-requirements.md](references/providers-and-requirements.md) — `context_provider`, `context_schema`, `requires_context`, `Secret`
+- [references/drafts.md](references/drafts.md) — what a form keeps between requests, by user or session, where the context is kept; conflicts; activating with `refuse_stale`
 - [references/stores-and-propagation.md](references/stores-and-propagation.md) — `ContextStore`, codecs, the context shared across services (`bus.context_store`, `Level.GLOBAL`), `keep_as`/`restore`, `root.share`, `inject`/`extract`, the frontend
 
 Deep docs in the framework repo: `docs/core/context-manager.md` (runs as a test),

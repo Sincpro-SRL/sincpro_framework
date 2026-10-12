@@ -4,6 +4,10 @@
     KeyValueContexts(RedisKeyValue(redis))              every replica and service sharing Redis
     KeyValueContexts(store, TypedCodec(SIATContext))    the types back, the same codebase
 
+Each keeps the drafts of the flows it serves beside the contexts (`drafts()`): in the same memory,
+or on the same `KeyValueStore` under a prefix of their own, each lasting `drafts_ttl` from its last
+keep.
+
 `KeyValueContexts` stands on `KeyValueStore`, so Redis, Valkey and Memcached are the adapters
 `sincpro_framework.data_layer.caching` already has — behind their extras, nothing new to install. A key is
 written in one `SET`; its version is an atomic `INCR` beside it.
@@ -16,15 +20,21 @@ from typing import Any
 
 from sincpro_framework.common.store import KeyValueStore
 from sincpro_framework.context.adapters.codecs import PlainCodec
+from sincpro_framework.context.adapters.drafts import InMemoryDrafts, KeyValueDrafts
 from sincpro_framework.context.domain.codec import ContextCodec
+from sincpro_framework.context.domain.drafts import DraftStore
 from sincpro_framework.context.domain.store import ContextStore
+
+DRAFTS_TTL = timedelta(days=7)
+"""How long a draft lasts after its last keep, unless the store is told otherwise."""
 
 
 class InMemoryContexts(ContextStore):
-    def __init__(self) -> None:
+    def __init__(self, drafts_ttl: timedelta = DRAFTS_TTL) -> None:
         self._kept: dict[str, tuple[dict[str, Any], datetime | None]] = {}
         self._versions: dict[str, int] = {}
         self._lock = threading.Lock()
+        self._drafts = InMemoryDrafts(drafts_ttl)
 
     def keep(self, key: str, values: Mapping[str, Any], ttl: timedelta | None = None) -> None:
         until = None if ttl is None else datetime.now(UTC) + ttl
@@ -51,6 +61,9 @@ class InMemoryContexts(ContextStore):
         with self._lock:
             return self._versions.get(key, 0)
 
+    def drafts(self) -> DraftStore:
+        return self._drafts
+
 
 class KeyValueContexts(ContextStore):
     def __init__(
@@ -58,11 +71,13 @@ class KeyValueContexts(ContextStore):
         store: KeyValueStore,
         codec: ContextCodec | None = None,
         prefix: str = "sincpro:context",
+        drafts_ttl: timedelta = DRAFTS_TTL,
     ) -> None:
         """`codec` is how a context is written — plain JSON by default, readable by any language."""
         self.store = store
         self.codec = codec or PlainCodec()
         self.prefix = prefix
+        self._drafts = KeyValueDrafts(store, drafts_ttl, prefix=f"{prefix}:draft")
 
     def _key(self, key: str) -> str:
         return f"{self.prefix}:{key}"
@@ -89,3 +104,6 @@ class KeyValueContexts(ContextStore):
     def version(self, key: str) -> int:
         counted = self.store.get(self._version_key(key))
         return 0 if counted is None else int(counted)
+
+    def drafts(self) -> DraftStore:
+        return self._drafts

@@ -27,7 +27,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     without_optional,
 )
 from sincpro_framework.ddd.exceptions import RelationNotResolved
-from sincpro_framework.exceptions import ProgrammingError
+from sincpro_framework.exceptions import ClientError, ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 UNREAD = object()
@@ -40,7 +40,7 @@ def adapter_of(annotation: Any) -> TypeAdapter:
     return TypeAdapter(annotation)
 
 
-def assign(record: Any, values: Mapping[str, Any]) -> tuple[str, ...]:
+def assign(record: Any, values: Mapping[str, Any], adopt: bool = False) -> tuple[str, ...]:
     """Put a form's values on `record`, each read as its field's type, and answer which fields
     now hold another value.
 
@@ -54,33 +54,68 @@ def assign(record: Any, values: Mapping[str, Any]) -> tuple[str, ...]:
        into its enum, a list of mappings into the line records.
        3.1 A mapping carrying an identity is the record the field already holds with it,
            edited in place, so its row is updated; an identity the field does not hold is
-           refused, naming it.
+           refused, naming it — or, with `adopt`, a new record built under that identity: what
+           a draft holds of a record it made, read back the same each time.
        3.2 A mapping without one is a new record built through its own class, so a mapped
            one is a record its store can write.
        3.3 A value the type cannot read is refused, naming the field and why.
     4. A relation nobody read is replaced by a list without identities, exactly as assigning
        it directly does — blind: a save then keeps what reads it, and says so.
     Final: the fields whose value changed, in the order the values came.
+
+    Each refusal of the values is a `ClientError`: they came from whoever sent the form, and
+    every wire answers it as a request to fix. Relations the code never read are the code's
+    (`ProgrammingError`).
     """
     owner = type(record)
     annotations = annotations_of(owner)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise ProgrammingError(
-            f"{owner.__name__} has no field {', '.join(unknown)} to assign"
-        )
+        raise ClientError(f"{owner.__name__} has no field {', '.join(unknown)} to assign")
     written = sorted(set(values) & framework_fields(owner))
     if written:
-        raise ProgrammingError(
+        raise ClientError(
             f"{owner.__name__}.{', '.join(written)} is written by the framework, not assigned"
         )
     changed: list[str] = []
     for name, value in values.items():
-        read = _read(record, name, annotations[name], value)
+        read = _read(record, name, annotations[name], value, adopt)
         if _current(record, name) != read:
             changed.append(name)
         setattr(record, name, read)
     return tuple(changed)
+
+
+def form_values(
+    kind: type, values: Mapping[str, Any], nested: bool = False
+) -> dict[str, Any]:
+    """A record's values as a form sends them back to `assign`: what the framework writes left
+    out at every level — a nested record keeping its identity, the way a form names the line it
+    edits.
+
+        in      Sale, {"id": "s1", "version": 2, "discount": "5",
+                       "lines": [{"id": "l1", "version": 1, "qty": 2}]}
+        out     {"discount": "5", "lines": [{"id": "l1", "qty": 2}]}
+    """
+    annotations = annotations_of(kind)
+    kept = _identity_of(kind) if nested else ""
+    left_out = framework_fields(kind) - {kept}
+    written: dict[str, Any] = {}
+    for name, value in values.items():
+        if name in left_out:
+            continue
+        base = without_optional(annotations.get(name))
+        members = get_args(base)
+        if get_origin(base) is list and members and _is_record_class(members[0]):
+            if isinstance(value, list):
+                value = [
+                    form_values(members[0], one, True) if isinstance(one, Mapping) else one
+                    for one in value
+                ]
+        elif _is_record_class(base) and isinstance(value, Mapping):
+            value = form_values(base, value, True)
+        written[name] = value
+    return written
 
 
 def _current(record: Any, name: str) -> Any:
@@ -92,7 +127,7 @@ def _current(record: Any, name: str) -> Any:
         return UNREAD
 
 
-def _read(record: Any, name: str, annotation: Any, value: Any) -> Any:
+def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
     """`value` as the field `name` of `record` holds it.
 
     in      list[InvoiceLine], [{"qty": 2, "price": "10"}]   →  [InvoiceLine(qty=2, price=10)]
@@ -112,16 +147,20 @@ def _read(record: Any, name: str, annotation: Any, value: Any) -> Any:
         held = _held_by_identity(record, name, kind, value)
         tied = _tied_to(record, name, kind)
         return [
-            _edited_or_built(kind, {**one, **tied}, held) if isinstance(one, Mapping) else one
+            (
+                _edited_or_built(kind, {**one, **tied}, held, adopt)
+                if isinstance(one, Mapping)
+                else one
+            )
             for one in value
         ]
     if _is_record_class(base) and isinstance(value, Mapping):
         held = _held_by_identity(record, name, base, [value])
-        return _edited_or_built(base, value, held)
+        return _edited_or_built(base, value, held, adopt)
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise ProgrammingError(
+        raise ClientError(
             f"{owner.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
         ) from error
 
@@ -179,57 +218,71 @@ def _identity_of(kind: type) -> str:
     return identity if identity in framework_fields(kind) else ""
 
 
-def _edited_or_built(kind: type, values: Mapping[str, Any], held: dict[str, Any]) -> Any:
-    """The held record a mapping names by its identity, edited in place; or a new one."""
+def _edited_or_built(
+    kind: type, values: Mapping[str, Any], held: dict[str, Any], adopt: bool
+) -> Any:
+    """The held record a mapping names by its identity, edited in place; or a new one — under
+    the identity it names, when adopting."""
     identity = _identity_of(kind)
     if identity and identity in values:
         found = held.get(str(values[identity]))
+        if found is None and adopt:
+            return _built(kind, values, adopt)
         if found is None:
-            raise ProgrammingError(
+            raise ClientError(
                 f"{kind.__name__} {values[identity]} is not held here: an edited record is one "
                 "the field already holds, and a new one comes without its identity"
             )
-        assign(found, {name: one for name, one in values.items() if name != identity})
+        assign(found, {name: one for name, one in values.items() if name != identity}, adopt)
         return found
-    return _built(kind, values)
+    return _built(kind, values, adopt)
 
 
-def _built(kind: type, values: Mapping[str, Any]) -> Any:
+def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     """A new nested record built through its own constructor, each value read as its field's
-    type. Nothing the framework writes comes with it, its identity included."""
+    type. Nothing the framework writes comes with it — its identity included, unless adopting:
+    then the record keeps the identity it names."""
+    identity = _identity_of(kind)
+    adopted = values.get(identity) if adopt and identity else None
+    values = {name: one for name, one in values.items() if not (adopted and name == identity)}
     annotations = annotations_of(kind)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise ProgrammingError(f"{kind.__name__} has no field {', '.join(unknown)} to assign")
+        raise ClientError(f"{kind.__name__} has no field {', '.join(unknown)} to assign")
     written = sorted(set(values) & framework_fields(kind))
     if written:
-        raise ProgrammingError(
+        raise ClientError(
             f"{kind.__name__}.{', '.join(written)} is written by the framework, not assigned"
         )
-    read = {name: _plain(kind, name, annotations[name], one) for name, one in values.items()}
+    read = {
+        name: _plain(kind, name, annotations[name], one, adopt)
+        for name, one in values.items()
+    }
     try:
-        return kind(**read)
+        built = kind(**read)
     except TypeError as error:
-        raise ProgrammingError(
-            f"{kind.__name__} cannot be built from {dict(values)!r}: {error}"
-        )
+        raise ClientError(f"{kind.__name__} cannot be built from {dict(values)!r}: {error}")
+    if adopted:
+        setattr(built, identity, adopted)
+    return built
 
 
-def _plain(kind: type, name: str, annotation: Any, value: Any) -> Any:
+def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
     """A value for a record being built: nothing is held yet, so every nested one is new."""
     base = without_optional(annotation)
     members = get_args(base)
     if get_origin(base) is list and members and _is_record_class(members[0]):
         if isinstance(value, list):
             return [
-                _built(members[0], one) if isinstance(one, Mapping) else one for one in value
+                _built(members[0], one, adopt) if isinstance(one, Mapping) else one
+                for one in value
             ]
     if _is_record_class(base) and isinstance(value, Mapping):
-        return _built(base, value)
+        return _built(base, value, adopt)
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise ProgrammingError(
+        raise ClientError(
             f"{kind.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
         ) from error
 
@@ -257,9 +310,7 @@ def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
     owner = type(record)
     unknown = sorted(set(changed) - set(annotations_of(owner))) if changed else []
     if unknown:
-        raise ProgrammingError(
-            f"{owner.__name__} has no field {', '.join(unknown)} to recompute"
-        )
+        raise ClientError(f"{owner.__name__} has no field {', '.join(unknown)} to recompute")
     return _tree(record, set(changed), False, set())
 
 

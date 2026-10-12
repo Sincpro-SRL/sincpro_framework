@@ -285,5 +285,8 @@ SQL partitioning live in `orm/sqlalchemy/services/relation_resolver.py`:
 ```
 
 Scalars come flat; a to-one as an object or `null`; a to-many as `{"items", "count", "cursor"}`.
+A caller's draft (`draft=True`, `drafts=True` — [edits.md](edits.md)) goes out cut by the same
+specification, with the same definition: the store describes the model, never the rows, so a read
+with no row and a draft nobody stored answer the definition a full read does.
 Keys are the node names as asked, never dotted paths. The definition mirrors the mask, and for
 every expanded relation carries the target's definition cut the same way, with what identifies it.

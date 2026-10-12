@@ -218,7 +218,7 @@ class Reading(Store):
 
         next_cursor = page.next_from(kept[-1], sorts) if has_more and kept else None
 
-        if criteria.specification is not None and kept:
+        if criteria.specification is not None:
             dropped = list(dropped)
             meta = resolve_relations(
                 self.prepare, session, model, kept, criteria.specification, meta, dropped

@@ -184,11 +184,28 @@ project(QueryIssueEvents(id=issue_id, criteria=Criteria(
   criteria a `Search` on the context's event class reads them with, each by its type and
   identity.
 
+## The caller's drafts
+
+A form's record that is not saved yet — see [edits.md](edits.md) — is read the same way, when the
+caller asks for it:
+
+```python
+QueryGetInvoice(id="0192…", draft=True)              # the caller's draft of it, else the stored one
+QueryListInvoices(criteria=criteria, drafts=True)    # the caller's drafts, by the same criteria
+```
+
+A draft goes out exactly as the stored record does for the same criteria — the fields its
+specification names, the same definition — and `draft` says it is one: its version, and `stale`
+when the stored record moved on since it started. Without `draft=True` a read never answers a
+draft: business logic never reads values nobody saved. Whose a draft is, the context says
+(`drafts()`, overridable); `EntityEdits` answers these reads and the edits in one Feature.
+
 ## Extending
 
 | To | Do |
 |---|---|
 | Act before or after one read | Override `get`, `get_many`, `literal_search` or `search` and call `super()` |
+| Key the caller's drafts otherwise | Override `drafts()` — `use_context().drafts(by=["session_id"])` |
 | Read from a dependency not called `repository` | Override `reads_from()` and return it, typed |
 | Act around every use case, from outside the class | An interceptor on the bus |
 | Replace the whole Feature | `@accounting.feature(QueryGetAccount, replaces=AccountReads)` |

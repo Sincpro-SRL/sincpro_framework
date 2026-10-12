@@ -348,6 +348,16 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 - Uses a **feature bus** to orchestrate multiple features into complex business workflows (e.g., customer onboarding).
 - Integrates smaller use cases into cohesive flows to manage entire business processes effectively.
 
+### 📝 Reads and forms of one aggregate, built in
+
+- `Get`, `GetMany`, `LiteralSearch`, `Search`, `Preview` and `DomainEvents`: one Feature
+  (`EntityReads`) answers them from what the entity says about itself — see
+  [docs/persistence/entity-reads.md](docs/persistence/entity-reads.md).
+- `Edit`: a form's whole life in one command — keep the caller's draft, save it, discard it, find
+  it again after the browser closed (`Get(draft=True)`, `Search(drafts=True)`) — answered by
+  `EntityEdits`; drafts live where the context is kept, by user or session — see
+  [docs/persistence/edits.md](docs/persistence/edits.md).
+
 ### 💻 IDE Support with Typing
 
 - Uses type hints to enhance code quality and support features like autocompletion and type checking.

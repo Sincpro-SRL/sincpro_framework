@@ -12,6 +12,7 @@
     context.level · context.parent · context.root · context.entrypoint · context.application
     context.feature · context.hook · context.bus · context.at(Level.ENTRYPOINT)
     context.own · context.origin("tenant_id") · context.lineage() · context.execution
+    context.drafts() · context.drafts(by=["session_id"])   kept where the context is kept
 
 **Two ways to write, on purpose.** As a mapping — `context[key] = value`, `update`, `del` — a write
 lands on the scope of the call: the `bus.context(...)` block, or the call itself; every execution of
@@ -21,7 +22,7 @@ Feature's own value, reaching what it runs and never its siblings or its caller.
 `self.context` in a handler and `bus.current_context()` are this same object.
 """
 
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
 from typing import Any, overload
@@ -36,6 +37,7 @@ from sincpro_framework.context.domain.keys import standardized, travelling
 from sincpro_framework.context.domain.level import EntrypointKind, Level, Origin
 from sincpro_framework.context.domain.node import REMOVED, ContextNode
 from sincpro_framework.context.domain.store import ContextStore
+from sincpro_framework.context.entrypoint.drafts import BY_USER, Drafts
 from sincpro_framework.context.infrastructure.shared import SharedValues
 from sincpro_framework.context.infrastructure.tree import (
     ROOT,
@@ -332,6 +334,14 @@ class Context(dict[Any, Any]):
                 continue
             merged.update(kept)
         return standardized(merged)
+
+    def drafts(
+        self, by: Sequence[str] = BY_USER, store: ContextStore | None = None
+    ) -> Drafts:
+        """The drafts of whoever this context says — the user by default, any keys of it with `by`
+        (`["session_id"]`) — kept where the context is kept: the store given, else the nearest
+        `ContextStore`."""
+        return Drafts(self._required_store(store).drafts(), self, by)
 
     def _required_store(self, given: ContextStore | None) -> ContextStore:
         found = self.store(given)
