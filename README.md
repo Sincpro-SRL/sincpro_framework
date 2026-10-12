@@ -1197,8 +1197,8 @@ A cron is one more caller of the buses, like an RPC method: a class registered o
 its bounded context, the buses it orchestrates injected by name.
 
 ```python
-from sincpro_framework.entrypoints.cron import Cron as _Cron
-from sincpro_framework.entrypoints.cron import CronGateway, CronProcess, Crons, Tick
+from sincpro_framework.entrypoints.adapters.cron import Cron as _Cron
+from sincpro_framework.entrypoints.adapters.cron import CronGateway, CronProcess, Crons, Tick
 
 
 class CronDependencyContextType:
@@ -1244,7 +1244,7 @@ store into one timeline and moves the whole system along it.
 
 ```python
 from sincpro_framework.data_layer.migrations import ContextMigrations, Migrations, command_line
-from sincpro_framework.data_layer.orm.migrations import AlembicEngine            # the [migrations] extra
+from sincpro_framework.data_layer.orm import AlembicEngine            # the [migrations] extra
 
 billing_migrations = ContextMigrations("billing", Path("domains/billing/entrypoints/migrations"))
 billing_migrations.store("main", AlembicEngine(billing_tables, database))

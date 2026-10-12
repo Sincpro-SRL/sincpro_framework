@@ -234,7 +234,7 @@ Interceptors, error handlers and bus tracing are unchanged.
 A failure is answered with `context.abort_with_status(...)`: the status code, a message, and a
 [`google.rpc.Status`](https://google.aip.dev/193) in `grpc-status-details-bin` that every
 generated client (Go, Java, TypeScript, `grpcio-status` in Python) decodes. Its kind is the one
-classification every wire shares ([`transport/failures.py`](../../sincpro_framework/common/failures/classification.py),
+classification every wire shares ([`common/failures/classification.py`](../../sincpro_framework/common/failures/classification.py),
 PRD_15 §1.3); the code is gRPC's own:
 
 | Kind | Raised by | gRPC status | Details besides `ErrorInfo` |
