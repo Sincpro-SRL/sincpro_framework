@@ -1,52 +1,86 @@
-"""`sincpro_framework.ddd.criteria` — a package now, same public names as when it was one
-module: the filter language (`criteria.py`), how it is answered in memory (`evaluate.py`), and
-how a page is asked for (`pagination.py`).
+"""`sincpro_framework.ddd.criteria` — the filter language, and what is done with it.
 
-    from sincpro_framework.ddd.criteria import Criteria, Condition, Operator
+    from sincpro_framework.ddd.criteria import Criteria, Condition, Operator, Today
 
-Still the whole story in one import; the three files are how it is organized underneath.
+Three layers, each importing only the one before it:
+
+    domain/       the language: a criteria, a condition, a value that is read when it is used,
+                  and what is intrinsic to them (`combined`, `mapped`, `canonical`, `with_text`)
+    services/     the pieces that need more than the language — calendar arithmetic, reading a
+                  value, comparing — used by the entrypoints, never exposed
+    entrypoint/   what other modules call: `resolve` a filter's dynamic values, `holds` and
+                  `matches` to evaluate it over records in memory
+
+This module exposes the domain and the entrypoints. Whoever needs something more reaches for it
+by asking for it to be exposed here, not by importing a file.
 
 A filter written in code uses the names its JSON uses — `All`, `Any`, `Not` and `Condition`.
 Context: the class behind `Any` is `Any_`, because the modules that define and read it also use
 `typing.Any`; `Any_` stays importable, as 3.10 published it.
 """
 
-from sincpro_framework.ddd.criteria.criteria import (
-    MULTI_VALUED,
-    TEXT,
-    All,
-    Any_,
+from sincpro_framework.ddd.criteria.domain.canonical import canonical
+from sincpro_framework.ddd.criteria.domain.criteria import (
     Bucket,
-    Condition,
     CountMode,
     Criteria,
+    Specification,
+)
+from sincpro_framework.ddd.criteria.domain.expression import (
+    MULTI_VALUED,
+    All,
+    Any_,
+    Condition,
     Expression,
-    Grouping,
-    Level,
-    Measure,
     Not,
     Operator,
-    Pivot,
-    PivotCell,
-    Sort,
-    Specification,
     combined,
     conditions_of,
     expression_from,
     holds_text,
-    parse_order,
-    with_text,
 )
-from sincpro_framework.ddd.criteria.evaluate import holds, matches
-from sincpro_framework.ddd.criteria.pagination import Cursor, CursorKeys, Offset, Pagination
-from sincpro_framework.ddd.criteria.strict import TOLERANT
+from sincpro_framework.ddd.criteria.domain.grouping import (
+    Grouping,
+    Level,
+    Measure,
+    Pivot,
+    PivotCell,
+)
+from sincpro_framework.ddd.criteria.domain.pagination import (
+    Cursor,
+    CursorKeys,
+    Offset,
+    Pagination,
+)
+from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
+from sincpro_framework.ddd.criteria.domain.sort import Sort, parse_order
+from sincpro_framework.ddd.criteria.domain.strict import TOLERANT
+from sincpro_framework.ddd.criteria.domain.templates import with_text
+from sincpro_framework.ddd.criteria.domain.values import (
+    RESOLVERS,
+    TEXT,
+    FromContext,
+    FromField,
+    Grain,
+    Now,
+    Param,
+    Period,
+    Periods,
+    ResolverMeta,
+    Span,
+    Today,
+)
+from sincpro_framework.ddd.criteria.domain.walk import mapped
+from sincpro_framework.ddd.criteria.entrypoint.evaluation import holds, matches
+from sincpro_framework.ddd.criteria.entrypoint.resolution import has_dynamic_values, resolve
 
 Any = Any_
 
 __all__ = [
-    "TOLERANT",
     "MULTI_VALUED",
+    "RESOLVERS",
     "TEXT",
+    "TOLERANT",
     "All",
     "Any",
     "Any_",
@@ -57,23 +91,38 @@ __all__ = [
     "Cursor",
     "CursorKeys",
     "Expression",
+    "FromContext",
+    "FromField",
+    "Grain",
     "Grouping",
     "Level",
     "Measure",
     "Not",
+    "Now",
     "Offset",
     "Operator",
     "Pagination",
+    "Param",
+    "Period",
+    "Periods",
     "Pivot",
     "PivotCell",
+    "ResolutionContext",
+    "ResolverMeta",
     "Sort",
+    "Span",
     "Specification",
+    "Today",
+    "canonical",
     "combined",
     "conditions_of",
     "expression_from",
-    "holds_text",
+    "has_dynamic_values",
     "holds",
+    "holds_text",
+    "mapped",
     "matches",
     "parse_order",
+    "resolve",
     "with_text",
 ]

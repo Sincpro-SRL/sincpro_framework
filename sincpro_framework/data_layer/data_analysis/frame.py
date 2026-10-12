@@ -20,8 +20,15 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal
 
-from sincpro_framework.ddd.criteria import Criteria, holds
-from sincpro_framework.ddd.criteria.criteria import All, Any_, Condition, Expression, Not
+from sincpro_framework.ddd.criteria import (
+    All,
+    Any_,
+    Condition,
+    Criteria,
+    Expression,
+    Not,
+    holds,
+)
 from sincpro_framework.exceptions import ProgrammingError
 
 WIDER = {
@@ -211,6 +218,15 @@ class DataFrame:
             [dict(zip(self.columns, row)) for row in zip(*self.values)] if self.values else []
         )
 
+    def to_json(self) -> dict[str, Any]:
+        """By column — smaller than an object per row — with a decimal as text and `types`
+        saying it is one, so a total is never rounded on its way to a screen."""
+        return {
+            "columns": list(self.columns),
+            "types": list(self.types),
+            "values": [[_json_value(value) for value in column] for column in self.values],
+        }
+
     @property
     def version(self) -> str:
         """The frame's content as a key — the same rows, the same version: a strong ETag."""
@@ -293,15 +309,6 @@ class DataFrame:
             types=tuple(self.types[one] for one in positions),
             values=tuple(self.values[one] for one in positions),
         )
-
-    def to_json(self) -> dict[str, Any]:
-        """By column — smaller than an object per row — with a decimal as text and `types`
-        saying it is one, so a total is never rounded on its way to a screen."""
-        return {
-            "columns": list(self.columns),
-            "types": list(self.types),
-            "values": [[_json_value(value) for value in column] for column in self.values],
-        }
 
     def to_arrow(self) -> Any:
         """A `pyarrow.Table` — decimals as `decimal128(38, scale)`.

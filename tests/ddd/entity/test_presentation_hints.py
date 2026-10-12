@@ -17,21 +17,19 @@ import pytest
 from sincpro_framework import ProgrammingError, UseFramework
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
-    AllHold,
-    AnyHolds,
+    All,
+    Condition,
     EntityReads,
     Get,
-    Is,
     Presentation,
     ResponseRecord,
     When,
     presentation_of,
 )
-from sincpro_framework.ddd.criteria import Operator, expression_from
-from sincpro_framework.ddd.criteria.evaluate import matches
+from sincpro_framework.ddd.criteria import Any_, Operator, expression_from, matches
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
-from sincpro_framework.ddd.exceptions import ConstraintViolation
+from sincpro_framework.ddd.exceptions import ConstraintViolation, InvalidCriteria
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
 
@@ -73,15 +71,17 @@ class Invoice(Entity):
     presentation = Presentation["Invoice"](
         readonly=lambda i: (i.number, i.state),
         readonly_when=lambda i: (
-            When(Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount),
+            When(
+                Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount
+            ),
         ),
         required_when=lambda i: (
-            When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
-            When(Is(i.payment, Operator.EQ, Payment.TRANSFER), i.bank_account),
+            When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+            When(Condition.on(i.payment, Operator.EQ, Payment.TRANSFER), i.bank_account),
         ),
         visible_when=lambda i: (
-            When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
-            When(Is(i.payment, Operator.EQ, Payment.TRANSFER), i.bank_account),
+            When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+            When(Condition.on(i.payment, Operator.EQ, Payment.TRANSFER), i.bank_account),
         ),
     )
 
@@ -223,22 +223,26 @@ class Order(Entity):
     presentation = Presentation["Order"](
         required_when=lambda o: (
             When(
-                AllHold(
-                    Is(o.state, Operator.EQ, InvoiceState.DRAFT),
-                    Is(o.discount, Operator.GT, Decimal("0")),
+                All(
+                    all=[
+                        Condition.on(o.state, Operator.EQ, InvoiceState.DRAFT),
+                        Condition.on(o.discount, Operator.GT, Decimal("0")),
+                    ]
                 ),
                 o.discount_reason,
             ),
         ),
         readonly_when=lambda o: (
             When(
-                AnyHolds(
-                    Is(o.state, Operator.EQ, InvoiceState.CONFIRMED),
-                    Is(o.state, Operator.EQ, InvoiceState.CANCELLED),
+                Any_(
+                    any=[
+                        Condition.on(o.state, Operator.EQ, InvoiceState.CONFIRMED),
+                        Condition.on(o.state, Operator.EQ, InvoiceState.CANCELLED),
+                    ]
                 ),
                 o.discount,
             ),
-            When(Is(o.payment, Operator.EQ, Payment.CARD), o.discount),
+            When(Condition.on(o.payment, Operator.EQ, Payment.CARD), o.discount),
         ),
     )
 
@@ -334,11 +338,33 @@ def test_a_condition_on_a_field_that_does_not_exist_is_refused_when_the_class_is
         state: str = ""
 
         presentation = Presentation["Broken"](
-            visible_when=lambda b: (When(Is(b.stat, Operator.EQ, "x"), b.state),),  # type: ignore[attr-defined]
+            visible_when=lambda b: (When(Condition.on(b.stat, Operator.EQ, "x"), b.state),),  # type: ignore[attr-defined]
         )
 
     with pytest.raises(ProgrammingError, match="stat"):
         describe_class(Broken, "id")
+
+
+def test_a_condition_written_with_a_name_the_entity_lacks_is_refused_even_as_plain_text():
+    @dataclass
+    class Typo(Entity):
+        state: str = ""
+
+        presentation = Presentation["Typo"](
+            visible_when=lambda t: (When(Condition(field="stat", value="x"), t.state),),
+        )
+
+    with pytest.raises(
+        ProgrammingError, match="asks about stat, which is not a field of Typo"
+    ):
+        describe_class(Typo, "id")
+
+
+def test_a_condition_on_takes_a_name_and_nothing_else():
+    assert Condition.on("state", Operator.EQ, "x") == Condition(field="state", value="x")
+
+    with pytest.raises(InvalidCriteria, match="read through the entity"):
+        Condition.on(3, Operator.EQ, "x")
 
 
 def test_a_condition_written_as_a_bare_value_is_refused_showing_the_form():
@@ -348,10 +374,10 @@ def test_a_condition_written_as_a_bare_value_is_refused_showing_the_form():
         notes: str = ""
 
         presentation = Presentation["Loose"](
-            readonly_when=lambda l: (When(l.state == "done", l.notes),),
+            readonly_when=lambda l: (When(l.state == "done", l.notes),),  # type: ignore[arg-type]
         )
 
-    with pytest.raises(ProgrammingError, match="Is, AllHold or AnyHolds"):
+    with pytest.raises(ProgrammingError, match="Condition, All, Any or Not"):
         describe_class(Loose, "id")
 
 

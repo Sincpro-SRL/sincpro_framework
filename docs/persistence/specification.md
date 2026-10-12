@@ -147,7 +147,7 @@ entity's order is `Meta.default_order`, which the store applies when a criteria 
 carries the result, so a client builds a form without being told twice:
 
 ```python
-from sincpro_framework.ddd import AllHold, Is, Presentation, When
+from sincpro_framework.ddd import All, Condition, Presentation, When
 from sincpro_framework.ddd.criteria import Operator
 
 
@@ -163,12 +163,14 @@ class Invoice(Entity):
     presentation = Presentation["Invoice"](
         readonly=lambda i: i.number,
         readonly_when=lambda i: When(
-            Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount
+            Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount
         ),
         required_when=lambda i: When(
-            Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference
+            Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference
         ),
-        visible_when=lambda i: When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+        visible_when=lambda i: When(
+            Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference
+        ),
     )
 ```
 
@@ -181,10 +183,11 @@ class Invoice(Entity):
 | `required_when` | asks for it while the condition holds | — |
 | `visible_when` | shows it only while the condition holds | always shown |
 
-A condition is the triple a criteria carries, written through the entity:
-`Is(i.state, Operator.NE, InvoiceState.DRAFT)` is published as
-`{"field": "state", "operator": "!=", "value": "draft"}`. `AllHold(...)` and `AnyHolds(...)`
-combine them; a field named by two `When` is covered while either holds. A client evaluates it
+A condition is the one a criteria carries, written through the entity:
+`Condition.on(i.state, Operator.NE, InvoiceState.DRAFT)` is published as
+`{"field": "state", "operator": "!=", "value": "draft"}`. `All(...)`, `Any(...)` and `Not(...)`
+combine them, as anywhere a criteria is written; a field the entity does not have is refused when
+the class is described, even if it is written as plain text; a field named by two `When` is covered while either holds. A client evaluates it
 with the same evaluator it filters with (`@sincpro/criteria`), reading each value as its
 field's type: an amount travels as the text `"0"`.
 

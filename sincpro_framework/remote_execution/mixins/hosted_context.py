@@ -50,6 +50,14 @@ class HostedContextMixin:
         @property
         def dto_registry(self) -> Mapping[str, type]: ...
 
+    def _reach_at(self, hosted_at: HostedAt) -> None:
+        """Point this bus at the service hosting it — said once in the logs, so a process's start
+        shows every context it reaches elsewhere."""
+        self._hosted_at = hosted_at
+        self.logger.info(
+            f"{self._logger_name} is hosted at {hosted_at}: this bus forwards every call"
+        )
+
     def _init_hosting(self, bundled_context_name: str) -> None:
         self._hosted_at: HostedAt | None = None
         """Where another service hosts this bounded context — the context map, or `hosted_by`."""
@@ -112,14 +120,6 @@ class HostedContextMixin:
         if not self._runs_here:
             self._runs_here = True
             self._registrations.append(lambda bus: bus.run_here())
-
-    def _reach_at(self, hosted_at: HostedAt) -> None:
-        """Point this bus at the service hosting it — said once in the logs, so a process's start
-        shows every context it reaches elsewhere."""
-        self._hosted_at = hosted_at
-        self.logger.info(
-            f"{self._logger_name} is hosted at {hosted_at}: this bus forwards every call"
-        )
 
     def hosted_by(self, address: HostedAt | str) -> None:
         """Execute every DTO of this context on the service at `address` — what the context map

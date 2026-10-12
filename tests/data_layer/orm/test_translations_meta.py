@@ -19,8 +19,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Re
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
-from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
-from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.criteria import Condition, Criteria, Operator, Pagination
 from sincpro_framework.ddd.entity import Entity, Translated
 from sincpro_framework.ddd.entity.entity_meta import FieldType
 

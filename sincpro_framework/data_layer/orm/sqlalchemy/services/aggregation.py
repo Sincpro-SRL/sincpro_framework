@@ -39,7 +39,7 @@ def level_of(one: str | Level) -> Level:
     if isinstance(one, Level):
         return one
     field, _, grain = one.partition(":")
-    return Level(field=field, grain=grain or None)
+    return Level.read({"field": field, "grain": grain or None})
 
 
 def measure_columns(
@@ -85,6 +85,113 @@ def one_of(column: Any, values: list[Any]) -> Any:
     present = [value for value in values if value is not None]
     clause = column.in_(present)
     return or_(clause, column.is_(None)) if len(present) != len(values) else clause
+
+
+def where_measures_clause(grouping: Grouping, measures: dict[str, Any]) -> Any:
+    """`having` as a clause over what the groups folded, every name checked first.
+
+        in      Condition(count, GT, 10), measures {'debit': sum(debit)}
+        out     count(*) > 10
+
+    The names it may use are the ones in `measures` and `count`; a name outside them is
+    refused rather than dropped, because a filter that vanishes here would answer groups
+    the caller ruled out.
+    """
+    if grouping.where_measures is None:
+        return None
+    for condition in conditions_of(grouping.where_measures):
+        if condition.field not in measures:
+            raise InvalidCriteria(
+                f"'{condition.field}' is not something a group folded; `where_measures` reads "
+                f"{', '.join(sorted(measures))} — a filter over the rows is `where`"
+            )
+    return sql_translator.clause_over(measures.__getitem__, grouping.where_measures)
+
+
+def group_order(grouping: Grouping, keys: list[Any], measures: dict[str, Any]) -> list[Any]:
+    """How the groups of a level come back: by its own columns, or by what they folded.
+
+    in      nothing asked                    →  out  the group columns, ascending
+    in      Sort(count, descending=True)     →  out  count(*) DESC
+    in      Sort("debit", descending=True)   →  out  sum(debit) DESC
+    """
+    if not grouping.order:
+        return list(keys)
+    by_field = {level.field: column for level, column in zip(grouping.group_by, keys)}
+    clauses = []
+    for sort in grouping.order:
+        # `or` would ask a column for its truth, which SQLAlchemy refuses on purpose.
+        column = measures[sort.field] if sort.field in measures else by_field.get(sort.field)
+        if column is None:
+            raise InvalidCriteria(
+                f"a grouping is ordered by a level, by a total or by count; "
+                f"'{sort.field}' is none of those"
+            )
+        clauses.append(column.desc() if sort.descending else column.asc())
+    return clauses
+
+
+def ids_per_group(
+    session: Session,
+    model: type,
+    meta: Meta,
+    criteria: Criteria,
+    clause: Any,
+    columns: list[Any],
+) -> dict[tuple, tuple[list[Any], str | None]]:
+    """The first page of identities of every group of the deepest level, in one statement.
+
+        SELECT id, <sort columns>, <group columns> FROM (
+          SELECT …, row_number() OVER (PARTITION BY <group columns> ORDER BY <order>) AS position,
+                    count(*)     OVER (PARTITION BY <group columns>)                 AS total
+          FROM model WHERE <clause>
+        ) WHERE position <= :limit
+
+    Ids and not rows: the page is a reference the consumer opens with `browse` when it
+    wants, and the specification never runs for rows nobody will look at. The cursor per
+    group is minted from the sort values of its last id, so going on inside the group is an
+    ordinary `search` with `bucket.criteria.resuming_from(bucket.cursor)`.
+    """
+    sorts = sql_translator.ordering_for(criteria, meta)
+    order = sql_translator.order_clauses(model, sorts)
+    keys = [
+        column.label(f"{sql_translator.GROUP_KEY}{index}")
+        for index, column in enumerate(columns)
+    ]
+    sort_columns = [getattr(model, sort.field) for sort in sorts]
+    position = (
+        func.row_number()
+        .over(partition_by=columns, order_by=order)
+        .label(sql_translator.POSITION)
+    )
+    total = func.count().over(partition_by=columns).label(sql_translator.TOTAL)
+    inner = select(*sort_columns, *keys, position, total).select_from(model)
+    if clause is not None:
+        inner = inner.where(clause)
+    sub = inner.subquery()
+    statement = (
+        select(sub)
+        .where(sub.c[sql_translator.POSITION] <= criteria.limit)
+        .order_by(*(sub.c[key.name] for key in keys), sub.c[sql_translator.POSITION])
+    )
+
+    pages: dict[tuple, tuple[list[Any], str | None]] = {}
+    last: dict[tuple, tuple[Any, int]] = {}
+    for row in session.execute(statement).all():
+        path = tuple(row[len(sorts) + index] for index in range(len(keys)))
+        ids, _ = pages.setdefault(path, ([], None))
+        ids.append(getattr(row, meta.identity))
+        last[path] = (row, row[-1])
+    for path, (row, total_rows) in last.items():
+        ids, _ = pages[path]
+        position = types.SimpleNamespace(
+            **{sort.field: getattr(row, sort.field) for sort in sorts}
+        )
+        cursor = (
+            criteria.pagination.next_from(position, sorts) if total_rows > len(ids) else None
+        )
+        pages[path] = (ids, cursor)
+    return pages
 
 
 def bucketed(
@@ -193,113 +300,6 @@ def bucketed(
                 )
             )
     return children.get((), [])
-
-
-def where_measures_clause(grouping: Grouping, measures: dict[str, Any]) -> Any:
-    """`having` as a clause over what the groups folded, every name checked first.
-
-        in      Condition(count, GT, 10), measures {'debit': sum(debit)}
-        out     count(*) > 10
-
-    The names it may use are the ones in `measures` and `count`; a name outside them is
-    refused rather than dropped, because a filter that vanishes here would answer groups
-    the caller ruled out.
-    """
-    if grouping.where_measures is None:
-        return None
-    for condition in conditions_of(grouping.where_measures):
-        if condition.field not in measures:
-            raise InvalidCriteria(
-                f"'{condition.field}' is not something a group folded; `where_measures` reads "
-                f"{', '.join(sorted(measures))} — a filter over the rows is `where`"
-            )
-    return sql_translator.clause_over(measures.__getitem__, grouping.where_measures)
-
-
-def group_order(grouping: Grouping, keys: list[Any], measures: dict[str, Any]) -> list[Any]:
-    """How the groups of a level come back: by its own columns, or by what they folded.
-
-    in      nothing asked                    →  out  the group columns, ascending
-    in      Sort(count, descending=True)     →  out  count(*) DESC
-    in      Sort("debit", descending=True)   →  out  sum(debit) DESC
-    """
-    if not grouping.order:
-        return list(keys)
-    by_field = {level.field: column for level, column in zip(grouping.group_by, keys)}
-    clauses = []
-    for sort in grouping.order:
-        # `or` would ask a column for its truth, which SQLAlchemy refuses on purpose.
-        column = measures[sort.field] if sort.field in measures else by_field.get(sort.field)
-        if column is None:
-            raise InvalidCriteria(
-                f"a grouping is ordered by a level, by a total or by count; "
-                f"'{sort.field}' is none of those"
-            )
-        clauses.append(column.desc() if sort.descending else column.asc())
-    return clauses
-
-
-def ids_per_group(
-    session: Session,
-    model: type,
-    meta: Meta,
-    criteria: Criteria,
-    clause: Any,
-    columns: list[Any],
-) -> dict[tuple, tuple[list[Any], str | None]]:
-    """The first page of identities of every group of the deepest level, in one statement.
-
-        SELECT id, <sort columns>, <group columns> FROM (
-          SELECT …, row_number() OVER (PARTITION BY <group columns> ORDER BY <order>) AS position,
-                    count(*)     OVER (PARTITION BY <group columns>)                 AS total
-          FROM model WHERE <clause>
-        ) WHERE position <= :limit
-
-    Ids and not rows: the page is a reference the consumer opens with `browse` when it
-    wants, and the specification never runs for rows nobody will look at. The cursor per
-    group is minted from the sort values of its last id, so going on inside the group is an
-    ordinary `search` with `bucket.criteria.resuming_from(bucket.cursor)`.
-    """
-    sorts = sql_translator.ordering_for(criteria, meta)
-    order = sql_translator.order_clauses(model, sorts)
-    keys = [
-        column.label(f"{sql_translator.GROUP_KEY}{index}")
-        for index, column in enumerate(columns)
-    ]
-    sort_columns = [getattr(model, sort.field) for sort in sorts]
-    position = (
-        func.row_number()
-        .over(partition_by=columns, order_by=order)
-        .label(sql_translator.POSITION)
-    )
-    total = func.count().over(partition_by=columns).label(sql_translator.TOTAL)
-    inner = select(*sort_columns, *keys, position, total).select_from(model)
-    if clause is not None:
-        inner = inner.where(clause)
-    sub = inner.subquery()
-    statement = (
-        select(sub)
-        .where(sub.c[sql_translator.POSITION] <= criteria.limit)
-        .order_by(*(sub.c[key.name] for key in keys), sub.c[sql_translator.POSITION])
-    )
-
-    pages: dict[tuple, tuple[list[Any], str | None]] = {}
-    last: dict[tuple, tuple[Any, int]] = {}
-    for row in session.execute(statement).all():
-        path = tuple(row[len(sorts) + index] for index in range(len(keys)))
-        ids, _ = pages.setdefault(path, ([], None))
-        ids.append(getattr(row, meta.identity))
-        last[path] = (row, row[-1])
-    for path, (row, total_rows) in last.items():
-        ids, _ = pages[path]
-        position = types.SimpleNamespace(
-            **{sort.field: getattr(row, sort.field) for sort in sorts}
-        )
-        cursor = (
-            criteria.pagination.next_from(position, sorts) if total_rows > len(ids) else None
-        )
-        pages[path] = (ids, cursor)
-    return pages
 
 
 def pivot_cells(

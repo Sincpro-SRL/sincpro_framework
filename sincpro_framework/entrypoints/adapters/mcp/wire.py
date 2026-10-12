@@ -111,6 +111,9 @@ class McpWire(Wire[McpBinding]):
             destructive=not operation.is_query,
         )
 
+    def _is_derived(self, resolved: Resolved[McpBinding]) -> bool:
+        return resolved.binding.name == self.derive(resolved.operation, resolved.group).name
+
     def names(self, surface: Sequence[Resolved[McpBinding]]) -> list[str]:
         """Each operation's tool name, in the surface's order — its binding's, or, when a derived
         name is answered by more than one operation, `{group prefix or alias}_{name}`. A name
@@ -124,9 +127,6 @@ class McpWire(Wire[McpBinding]):
             )
             for one in surface
         ]
-
-    def _is_derived(self, resolved: Resolved[McpBinding]) -> bool:
-        return resolved.binding.name == self.derive(resolved.operation, resolved.group).name
 
     def name_of(self, resolved: Resolved[McpBinding]) -> str:
         operation = resolved.operation

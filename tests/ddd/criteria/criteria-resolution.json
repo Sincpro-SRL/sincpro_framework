@@ -1,0 +1,824 @@
+{
+  "about": "What a dynamic value reads to. Every case gives the instant, the timezone, the first weekday (0 is Monday), what the server's context and the call's params hold, the filter as stored (`where`) and as run (`resolved`). Dates are `YYYY-MM-DD`; instants are UTC `…Z`. Written by hand in tests/ddd/criteria/test_criteria_contract.py and read by the Python engine and by @sincpro/criteria. Do not edit by hand.",
+  "cases": [
+    {
+      "name": "today",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-10-12"
+      }
+    },
+    {
+      "name": "thirty days ago",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": ">=",
+        "value": {
+          "$": "today",
+          "plus": {
+            "days": -30
+          }
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": ">=",
+        "value": "2026-09-12"
+      }
+    },
+    {
+      "name": "a week ahead",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today",
+          "plus": {
+            "weeks": 1
+          }
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-10-19"
+      }
+    },
+    {
+      "name": "the first of the month",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today",
+          "start_of": "month"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-10-01"
+      }
+    },
+    {
+      "name": "the first of the quarter",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today",
+          "start_of": "quarter"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-10-01"
+      }
+    },
+    {
+      "name": "the first of the year",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today",
+          "start_of": "year"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-01-01"
+      }
+    },
+    {
+      "name": "the start of the week, Monday first",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": ">=",
+        "value": {
+          "$": "today",
+          "start_of": "week"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": ">=",
+        "value": "2026-10-12"
+      }
+    },
+    {
+      "name": "the start of the week, Sunday first",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 6,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": ">=",
+        "value": {
+          "$": "today",
+          "start_of": "week"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": ">=",
+        "value": "2026-10-11"
+      }
+    },
+    {
+      "name": "a month end is clamped",
+      "now": "2026-01-31T09:00:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today",
+          "plus": {
+            "months": 1
+          }
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-02-28"
+      }
+    },
+    {
+      "name": "a leap year keeps its 29th",
+      "now": "2028-01-31T09:00:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today",
+          "plus": {
+            "months": 1
+          }
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2028-02-29"
+      }
+    },
+    {
+      "name": "a move comes before the snap",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today",
+          "plus": {
+            "months": -1
+          },
+          "start_of": "month"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-09-01"
+      }
+    },
+    {
+      "name": "now two hours ago",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "at",
+        "operator": ">=",
+        "value": {
+          "$": "now",
+          "plus": {
+            "hours": -2
+          }
+        }
+      },
+      "resolved": {
+        "field": "at",
+        "operator": ">=",
+        "value": "2026-10-12T13:30:00Z"
+      }
+    },
+    {
+      "name": "the timezone decides the day",
+      "now": "2026-10-13T02:00:00Z",
+      "timezone": "America/La_Paz",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "<",
+        "value": {
+          "$": "today"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": "<",
+        "value": "2026-10-12"
+      }
+    },
+    {
+      "name": "the start of a day in a timezone is a UTC instant",
+      "now": "2026-10-13T02:00:00Z",
+      "timezone": "America/La_Paz",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "at",
+        "operator": ">=",
+        "value": {
+          "$": "now",
+          "start_of": "day"
+        }
+      },
+      "resolved": {
+        "field": "at",
+        "operator": ">=",
+        "value": "2026-10-12T04:00:00Z"
+      }
+    },
+    {
+      "name": "a day across a clock change is a day",
+      "now": "2026-09-05T12:00:00Z",
+      "timezone": "America/Santiago",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "at",
+        "operator": ">=",
+        "value": {
+          "$": "now",
+          "plus": {
+            "days": 1
+          }
+        }
+      },
+      "resolved": {
+        "field": "at",
+        "operator": ">=",
+        "value": "2026-09-06T11:00:00Z"
+      }
+    },
+    {
+      "name": "a value of the server's context",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {
+        "user_id": "u-7"
+      },
+      "params": {},
+      "where": {
+        "field": "owner_id",
+        "operator": "=",
+        "value": {
+          "$": "context",
+          "key": "user_id"
+        }
+      },
+      "resolved": {
+        "field": "owner_id",
+        "operator": "=",
+        "value": "u-7"
+      }
+    },
+    {
+      "name": "a date of the context, moved and snapped",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {
+        "report_date": "2026-06-15"
+      },
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": ">=",
+        "value": {
+          "$": "context",
+          "key": "report_date",
+          "plus": {
+            "months": -3
+          },
+          "start_of": "month"
+        }
+      },
+      "resolved": {
+        "field": "due",
+        "operator": ">=",
+        "value": "2026-03-01"
+      }
+    },
+    {
+      "name": "a parameter is found by a path",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {
+        "steps": {
+          "order": {
+            "total": 9
+          }
+        }
+      },
+      "where": {
+        "field": "total",
+        "operator": ">",
+        "value": {
+          "$": "param",
+          "name": "steps.order.total"
+        }
+      },
+      "resolved": {
+        "field": "total",
+        "operator": ">",
+        "value": 9
+      }
+    },
+    {
+      "name": "a dynamic value inside a list",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {
+        "text": "1.2"
+      },
+      "where": {
+        "field": "code",
+        "operator": "in",
+        "value": [
+          {
+            "$": "param",
+            "name": "text"
+          },
+          "0"
+        ]
+      },
+      "resolved": {
+        "field": "code",
+        "operator": "in",
+        "value": [
+          "1.2",
+          "0"
+        ]
+      }
+    },
+    {
+      "name": "this month is closed at the start and open at the end",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "name": "this_month"
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2026-10-01"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-11-01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "last month in January is December of the year before",
+      "now": "2026-01-20T09:00:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "name": "last_month"
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2025-12-01"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-01-01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "this week, Monday first",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "name": "this_week"
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2026-10-12"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-10-19"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the next quarter",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "name": "next_quarter"
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2027-01-01"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2027-04-01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the last thirty days leave today out",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "unit": "day",
+          "last": 30
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2026-09-12"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-10-12"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the last thirty days with today",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "unit": "day",
+          "last": 30,
+          "include_current": true
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2026-09-13"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-10-13"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the next seven days with today",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "unit": "day",
+          "next": 7,
+          "include_current": true
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2026-10-12"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-10-19"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the last three months",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "due",
+        "operator": "between",
+        "value": {
+          "$": "period",
+          "unit": "month",
+          "last": 3
+        }
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": ">=",
+            "value": "2026-07-01"
+          },
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-10-01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a column against another is left for the row",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "field": "total",
+        "operator": ">",
+        "value": {
+          "$": "field",
+          "name": "credit_limit"
+        }
+      },
+      "resolved": {
+        "field": "total",
+        "operator": ">",
+        "value": {
+          "$": "field",
+          "name": "credit_limit"
+        }
+      }
+    },
+    {
+      "name": "a group keeps its shape around what it reads",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "all": [
+          {
+            "field": "due",
+            "operator": "<",
+            "value": {
+              "$": "today"
+            }
+          },
+          {
+            "negate": {
+              "field": "state",
+              "operator": "=",
+              "value": "draft"
+            }
+          },
+          {
+            "any": [
+              {
+                "field": "due",
+                "operator": ">=",
+                "value": {
+                  "$": "today",
+                  "plus": {
+                    "days": -1
+                  }
+                }
+              },
+              {
+                "field": "n",
+                "operator": "=",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-10-12"
+          },
+          {
+            "negate": {
+              "field": "state",
+              "operator": "=",
+              "value": "draft"
+            }
+          },
+          {
+            "any": [
+              {
+                "field": "due",
+                "operator": ">=",
+                "value": "2026-10-11"
+              },
+              {
+                "field": "n",
+                "operator": "=",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "nothing dynamic is left alone",
+      "now": "2026-10-12T15:30:00Z",
+      "timezone": "UTC",
+      "week_starts_on": 0,
+      "context": {},
+      "params": {},
+      "where": {
+        "all": [
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-01-01"
+          },
+          {
+            "field": "meta",
+            "operator": "=",
+            "value": {
+              "today": 1
+            }
+          }
+        ]
+      },
+      "resolved": {
+        "all": [
+          {
+            "field": "due",
+            "operator": "<",
+            "value": "2026-01-01"
+          },
+          {
+            "field": "meta",
+            "operator": "=",
+            "value": {
+              "today": 1
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

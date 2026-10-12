@@ -184,6 +184,12 @@ def _body(
     return body
 
 
+def _answer(body: dict[str, Any], headers: Mapping[str, str] | None = None) -> JSONResponse:
+    return JSONResponse(
+        body, status_code=body["status"], headers=dict(headers or {}), media_type=PROBLEM_JSON
+    )
+
+
 def problem_of(request: Request, error: Exception) -> JSONResponse:
     """The answer to `error`, raised anywhere a request is served.
 
@@ -266,12 +272,6 @@ def problem_of(request: Request, error: Exception) -> JSONResponse:
     if kind == FailureKind.INTERNAL and not process.was_reported(error):
         logger.exception("REST %s %s failed", request.method, request.url.path)
     return _answer(body, headers)
-
-
-def _answer(body: dict[str, Any], headers: Mapping[str, str] | None = None) -> JSONResponse:
-    return JSONResponse(
-        body, status_code=body["status"], headers=dict(headers or {}), media_type=PROBLEM_JSON
-    )
 
 
 type Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]

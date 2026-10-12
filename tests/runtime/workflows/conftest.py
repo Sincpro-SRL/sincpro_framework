@@ -93,7 +93,7 @@ BILL_ORDER = {
             "id": "approval",
             "execute": "CommandRequestApproval",
             "input": {"invoice_id": "$steps.invoice.invoice_id"},
-            "when": {"field": "$steps.order.total", "operator": ">=", "value": 10_000},
+            "when": {"field": "steps.order.total", "operator": ">=", "value": 10_000},
         },
     ],
     "output": {"invoice_id": "$steps.invoice.invoice_id"},

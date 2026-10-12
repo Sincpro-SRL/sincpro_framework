@@ -9,13 +9,14 @@ from sincpro_framework.ddd.criteria import (
     All,
     Condition,
     Criteria,
+    Cursor,
     Grouping,
     Level,
     Operator,
+    Pagination,
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.criteria.pagination import Cursor, Pagination
 
 BIGGER_THAN_A_THOUSAND = Condition(field="row_count", value=1000, operator=Operator.GT)
 

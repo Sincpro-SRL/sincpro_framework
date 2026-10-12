@@ -52,6 +52,18 @@ def entered(node: ContextNode) -> Generator[ContextNode, None, None]:
         _current.reset(token)
 
 
+def shared(node: ContextNode, node_id: str | None = None) -> ContextNode:
+    """`node`, kept in the store of the nearest bus that shares its context — as it is, when none
+    does. Free when no bus of the process shares: only a shared process has a global above it.
+    """
+    if ROOT.parent is None:
+        return node
+    sharing = sharing_of(node)
+    if sharing is None:
+        return node
+    return sharing.kept(node, node_id or new_entity_id())
+
+
 def child(
     level: Level,
     values: Mapping[Any, Any] | None = None,
@@ -65,18 +77,6 @@ def child(
     if level is Level.SCOPE and parent.nearest(Level.ENTRYPOINT) is None:
         level, kind = Level.ENTRYPOINT, kind or EntrypointKind.DIRECT
     return shared(ContextNode(level, parent, values, label, owner, kind))
-
-
-def shared(node: ContextNode, node_id: str | None = None) -> ContextNode:
-    """`node`, kept in the store of the nearest bus that shares its context — as it is, when none
-    does. Free when no bus of the process shares: only a shared process has a global above it.
-    """
-    if ROOT.parent is None:
-        return node
-    sharing = sharing_of(node)
-    if sharing is None:
-        return node
-    return sharing.kept(node, node_id or new_entity_id())
 
 
 def executing_context() -> Mapping[str, Any]:
@@ -106,6 +106,11 @@ def _event_cause(dto: Any) -> tuple[str, str | None] | None:
     return cast("tuple[str, str | None]", cause()) if callable(cause) else None
 
 
+def _given(node: ContextNode, key: str) -> Any:
+    holder = node.holding(key)
+    return None if holder is None else holder.own[key]
+
+
 def _identified(dto: Any, new_id: Callable[[], str]) -> tuple[str, str | None, str]:
     """1. The cause: the event being executed; else the execution that called this one; else
        what the flow was handed — an entrypoint, a remote caller, a message.
@@ -133,11 +138,6 @@ def _identified(dto: Any, new_id: Callable[[], str]) -> tuple[str, str | None, s
         own = _text(_given(node, EXECUTION_ID)) or new_id()
     causation_id, correlation_id = chained(cause_id, correlation, own)
     return own, causation_id, correlation_id
-
-
-def _given(node: ContextNode, key: str) -> Any:
-    holder = node.holding(key)
-    return None if holder is None else holder.own[key]
 
 
 def recorrelated(node: ContextNode, correlation_id: Any) -> None:

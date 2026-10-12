@@ -56,6 +56,24 @@ class PrometheusRecorder(Recorder):
         self._metrics: dict[str, tuple[Instrument, Any]] = {}
         self._differing: set[str] = set()
 
+    def _created(self, name: str, instrument: Instrument) -> Any:
+        labels = [prometheus_label(one) for one in instrument.label_keys]
+        common: dict[str, Any] = {
+            "name": name,
+            "documentation": instrument.description or instrument.name,
+            "labelnames": labels,
+            "registry": self.registry,
+        }
+        if instrument.kind == InstrumentKind.COUNTER:
+            return prometheus_client.Counter(**common)
+        if instrument.kind == InstrumentKind.UP_DOWN:
+            if os.environ.get(MULTIPROCESS_DIR):
+                common["multiprocess_mode"] = "livesum"
+            return prometheus_client.Gauge(**common)
+        if instrument.buckets:
+            common["buckets"] = instrument.buckets
+        return prometheus_client.Histogram(**common)
+
     def _metric(self, instrument: Instrument) -> tuple[Instrument, Any] | None:
         """The `prometheus_client` metric for `instrument`, created once, with the instrument it
         was created for. An instrument declared again under the same name with another kind is
@@ -84,24 +102,6 @@ class PrometheusRecorder(Recorder):
                 f"with ({', '.join(declared.label_keys)}); it keeps those"
             )
         return known
-
-    def _created(self, name: str, instrument: Instrument) -> Any:
-        labels = [prometheus_label(one) for one in instrument.label_keys]
-        common: dict[str, Any] = {
-            "name": name,
-            "documentation": instrument.description or instrument.name,
-            "labelnames": labels,
-            "registry": self.registry,
-        }
-        if instrument.kind == InstrumentKind.COUNTER:
-            return prometheus_client.Counter(**common)
-        if instrument.kind == InstrumentKind.UP_DOWN:
-            if os.environ.get(MULTIPROCESS_DIR):
-                common["multiprocess_mode"] = "livesum"
-            return prometheus_client.Gauge(**common)
-        if instrument.buckets:
-            common["buckets"] = instrument.buckets
-        return prometheus_client.Histogram(**common)
 
     def _series(self, known: tuple[Instrument, Any], labels: Mapping[str, str]) -> Any:
         """Every label the metric was created with, empty when the measurement lacks it — an

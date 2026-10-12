@@ -1,0 +1,870 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sincpro.com.bo/schemas/criteria.schema.json",
+  "$defs": {
+    "All": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Condition"
+              },
+              {
+                "$ref": "#/$defs/All"
+              },
+              {
+                "$ref": "#/$defs/Any_"
+              },
+              {
+                "$ref": "#/$defs/Not"
+              }
+            ]
+          },
+          "title": "All",
+          "type": "array"
+        }
+      },
+      "required": [
+        "all"
+      ],
+      "title": "All",
+      "type": "object"
+    },
+    "Any_": {
+      "additionalProperties": false,
+      "properties": {
+        "any": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Condition"
+              },
+              {
+                "$ref": "#/$defs/All"
+              },
+              {
+                "$ref": "#/$defs/Any_"
+              },
+              {
+                "$ref": "#/$defs/Not"
+              }
+            ]
+          },
+          "title": "Any",
+          "type": "array"
+        }
+      },
+      "required": [
+        "any"
+      ],
+      "title": "Any_",
+      "type": "object"
+    },
+    "Condition": {
+      "additionalProperties": false,
+      "description": "One question about one field.\n\n`value` is required: a condition without a value is not a condition, and a `None` default\nlet `Condition(field=\"name\")` build happily, meaning \"name equals nothing\".\n\nIt is `JsonValue` and not `Any`: what a condition compares is a value that travelled in a\nJSON — a number, a text, a boolean, a list of them — and `Any` let any Python object\nthrough until the SQL translator tripped over it, far from here.\n\n`operator` does have a default, and that is a different case: omitting it means equality.\n\nBeside JSON it takes `datetime`, `date` and `Decimal`, because a Feature also builds\nconditions from Python and forcing it to serialise a date to text for the model to read\nback was a detour. In `model_dump(mode=\"json\")` they come out as text all the same.",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Value"
+        },
+        "operator": {
+          "$ref": "#/$defs/Operator",
+          "default": "="
+        }
+      },
+      "required": [
+        "field",
+        "value"
+      ],
+      "title": "Condition",
+      "type": "object"
+    },
+    "CountMode": {
+      "enum": [
+        "none",
+        "capped",
+        "exact"
+      ],
+      "title": "CountMode",
+      "type": "string"
+    },
+    "Criteria": {
+      "additionalProperties": false,
+      "properties": {
+        "where": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Condition"
+            },
+            {
+              "$ref": "#/$defs/All"
+            },
+            {
+              "$ref": "#/$defs/Any_"
+            },
+            {
+              "$ref": "#/$defs/Not"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The filter: a `Condition`, or an `All`/`Any`/`Not` grouping more of them.\n\n**The declared type is exactly what is accepted.** No abbreviated spelling and no\nconversion, so pydantic and the type checker see the same thing and `criteria.where` reads\nwith an exhaustive `match`. All the validator does is build the nodes when the tree\narrives serialised from JSON — which is the same tree, not another form.",
+          "title": "Where"
+        },
+        "order": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Sort"
+          },
+          "title": "Order",
+          "type": "array"
+        },
+        "pagination": {
+          "$ref": "#/$defs/Pagination",
+          "description": "How many, and from where. Always the object: `{\"limit\": 80, \"strategy\": {\"token\": \"eyJ…\"}}`."
+        },
+        "specification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Specification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What to bring back of each record: field name → how to bring it, the value being a\ncriteria exactly like this one. `None` and `{}` are NOT the same thing:\n\n    None    nothing was asked          →  every scalar, no relation expanded\n    {}      asked, nothing survived    →  the identity alone\n\nRead as one, a mask whose every field was dropped hands back the whole record, which is\nexactly what it existed to prevent."
+        },
+        "grouping": {
+          "$ref": "#/$defs/Grouping",
+          "description": "How to split the result set, when it is being counted rather than listed. Ignored by a\nplain search: a page of records has no buckets."
+        },
+        "count": {
+          "$ref": "#/$defs/CountMode",
+          "default": "capped"
+        },
+        "meta": {
+          "default": true,
+          "description": "Whether the answer carries the model definition — what may be filtered, ordered and\nshown, and with which operators.\n\n**On by default, and off only when somebody says `meta=false`.** It was opt-in first, to\nsave the kilobyte and a half on every page of a listing. What that bought in bytes it cost\nin surprise: a client asking a resource got an answer it could not build a form, a column\nmenu or a filter from, and had to know to ask a second time for the part that explains the\nfirst. A door that describes itself is worth more than the kilobyte.",
+          "title": "Meta",
+          "type": "boolean"
+        }
+      },
+      "title": "Criteria",
+      "type": "object"
+    },
+    "Cursor": {
+      "additionalProperties": false,
+      "description": "Locating a page by where the previous one ended. **The strategy this engine implements.**\n\n    in      Cursor()                          the first page; nothing came before it\n    in      Cursor(token=\"eyJrIjo…\")          the next one, resumed from that row\n    out     the rows past that row, in the criteria's own order\n\nA row inserted or deleted mid-walk changes nothing, because the cursor names a ROW and not\na position. The token is minted from the last row of the page before; `keys_for` turns it\nback into the keys it holds, checked against the ordering in play.",
+      "properties": {
+        "token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Token"
+        }
+      },
+      "title": "Cursor",
+      "type": "object"
+    },
+    "FromContext": {
+      "additionalProperties": false,
+      "description": "A value of the server's own context — the user, the tenant, a date it holds — never one the\nclient sends.",
+      "properties": {
+        "plus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How far to move it, signed: `{\"days\": -30}` is thirty days ago."
+        },
+        "start_of": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The start of the calendar unit it falls in once moved: `month` is the first of the month."
+        },
+        "$": {
+          "const": "context",
+          "default": "context",
+          "title": "$",
+          "type": "string"
+        },
+        "key": {
+          "description": "The key it reads, as the context holds it.",
+          "title": "Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "FromContext",
+      "type": "object"
+    },
+    "FromField": {
+      "additionalProperties": false,
+      "description": "Another field of the same row: a column compared with a column.\n\n    {\"field\": \"total\", \"operator\": \">\", \"value\": {\"$\": \"field\", \"name\": \"credit_limit\"}}\n\nIt is not read before the row: it is the other side of the comparison, and it takes only the\noperators that compare (`=`, `!=`, `<`, `<=`, `>`, `>=`) and a field of the same type.",
+      "properties": {
+        "$": {
+          "const": "field",
+          "default": "field",
+          "title": "$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The field it reads, of the same entity.",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "FromField",
+      "type": "object"
+    },
+    "Grain": {
+      "description": "A calendar unit a date snaps to the start of.",
+      "enum": [
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year"
+      ],
+      "title": "Grain",
+      "type": "string"
+    },
+    "Grouping": {
+      "additionalProperties": false,
+      "description": "How a result set is split: the levels, and the numbers folded out of every group.\n\n    in      {\"by\": [\"produced_by\", \"registered_at:month\"], \"measures\": {\"filas\": [\"sum\", \"row_count\"]}}\n    out     every level `by` names, each group counted and folded, carrying how to open it\n\nAll the levels named are answered, one statement each: grouping by three fields is three\nstatements whatever the number of rows. A screen that drills down one click at a time asks\nfor one level and, on the click, reads `bucket.criteria` with a grouping of its own; it never\nhas to know how deep the whole tree is.",
+      "properties": {
+        "group_by": {
+          "default": [],
+          "description": "The levels the set is split by, one statement each.",
+          "items": {
+            "$ref": "#/$defs/Level"
+          },
+          "title": "Group By",
+          "type": "array"
+        },
+        "measures": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Measure"
+          },
+          "default": {},
+          "description": "The numbers every group answers, each under a name the caller chose.",
+          "title": "Measures",
+          "type": "object"
+        },
+        "where_measures": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Condition"
+            },
+            {
+              "$ref": "#/$defs/All"
+            },
+            {
+              "$ref": "#/$defs/Any_"
+            },
+            {
+              "$ref": "#/$defs/Not"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A filter over what the groups measured, not over the rows: `count > 10`, `debit > 1000`.\n\nThe names it may use are the ones in `measures` plus `count`. `where` filters the rows that\nmake the groups; this filters the groups those rows made — which is why it is not called\n`where`: it reads measures, not fields.",
+          "title": "Where Measures"
+        },
+        "order": {
+          "default": [],
+          "description": "How the groups of each level come back: by the level's own field, by a name in `measures`\nor by `count`. Empty means by the level's field, ascending, which is how a list of groups\nreads when nobody asked for anything else. It orders the GROUPS; `Criteria.order` orders\nthe rows, and with a page asked for it decides which rows each group shows first.",
+          "items": {
+            "$ref": "#/$defs/Sort"
+          },
+          "title": "Order",
+          "type": "array"
+        },
+        "pagination": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pagination"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How many groups of the FIRST level come back, and from where. `None`, the default, is\nevery group: a grouping is a set of counts and a client asked for all of them. When a page\nis asked, the deeper levels answer only for the groups that survived it.\n\nA page and not a keyset: ordering by an aggregate has no stable key to resume from, so\n`Offset` is the honest strategy here and a cursor is not minted."
+        }
+      },
+      "title": "Grouping",
+      "type": "object"
+    },
+    "Item": {
+      "oneOf": [
+        {
+          "discriminator": {
+            "mapping": {
+              "context": "#/$defs/FromContext",
+              "field": "#/$defs/FromField",
+              "now": "#/$defs/Now",
+              "param": "#/$defs/Param",
+              "period": "#/$defs/Period",
+              "today": "#/$defs/Today"
+            },
+            "propertyName": "$"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Today"
+            },
+            {
+              "$ref": "#/$defs/Now"
+            },
+            {
+              "$ref": "#/$defs/FromContext"
+            },
+            {
+              "$ref": "#/$defs/Param"
+            },
+            {
+              "$ref": "#/$defs/Period"
+            },
+            {
+              "$ref": "#/$defs/FromField"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JsonValue"
+            },
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    "JsonValue": {},
+    "Level": {
+      "additionalProperties": false,
+      "description": "One level of grouping: the field it splits by, and how finely.\n\nin      \"produced_by\"           →  Level(field='produced_by', grain=None)\nin      \"registered_at:month\"   →  Level(field='registered_at', grain='month')",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "grain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "Level",
+      "type": "object"
+    },
+    "Measure": {
+      "additionalProperties": false,
+      "description": "One number a group answers: a function over a field, under a name the caller chose.\n\n    in      {\"function\": \"sum\", \"field\": \"row_count\"}\n    out     Measure(function='sum', field='row_count')       → sum(row_count) AS <name>\n\n**Named parts and not `\"sum:row_count\"`**, so nobody has to split a string in whatever\nlanguage is reading this — the same reason a condition travels as `{field, operator,\nvalue}`. The pair `[\"sum\", \"row_count\"]` is read as well, because writing one by hand in\nPython is a pair; what a caller sends over a wire is the object.\n\nIt is called a measure and not an aggregate on purpose: in this codebase an *aggregate* is\nthe DDD root — what `Meta.aggregate` names — and two meanings for one word in the same\nsentence is how a reader loses an afternoon.",
+      "properties": {
+        "function": {
+          "title": "Function",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "argument": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the function needs besides a column, when it needs anything.\n\nOnly `percentile` does: the fraction it cuts at, `0.5` for the median and `0.95` for a P95.\nEvery other measure refuses one rather than ignoring it, because a number that is quietly\ndropped is a report that is quietly wrong.",
+          "title": "Argument"
+        }
+      },
+      "required": [
+        "function",
+        "field"
+      ],
+      "title": "Measure",
+      "type": "object"
+    },
+    "Not": {
+      "additionalProperties": false,
+      "properties": {
+        "negate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Condition"
+            },
+            {
+              "$ref": "#/$defs/All"
+            },
+            {
+              "$ref": "#/$defs/Any_"
+            },
+            {
+              "$ref": "#/$defs/Not"
+            }
+          ],
+          "title": "Negate"
+        }
+      },
+      "required": [
+        "negate"
+      ],
+      "title": "Not",
+      "type": "object"
+    },
+    "Now": {
+      "additionalProperties": false,
+      "description": "The current instant, in UTC.",
+      "properties": {
+        "plus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How far to move it, signed: `{\"days\": -30}` is thirty days ago."
+        },
+        "start_of": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The start of the calendar unit it falls in once moved: `month` is the first of the month."
+        },
+        "$": {
+          "const": "now",
+          "default": "now",
+          "title": "$",
+          "type": "string"
+        }
+      },
+      "title": "Now",
+      "type": "object"
+    },
+    "Offset": {
+      "additionalProperties": false,
+      "description": "Locating a page by counting rows from the start. **What everybody else does.**\n\n    in      Offset(rows=160)                    the third page of eighty\n    out     the rows after skipping 160\n\nHere because an integration eventually counts pages, and because a strategy that exists is\nbetter than one that gets bolted on. Honest about its cost: the database still walks the\nskipped rows, and a row inserted mid-walk shifts everything after it — which is the bug\n`Cursor` does not have.",
+      "properties": {
+        "rows": {
+          "default": 0,
+          "title": "Rows",
+          "type": "integer"
+        }
+      },
+      "title": "Offset",
+      "type": "object"
+    },
+    "Operator": {
+      "description": "How a question is asked. **The enum's value is how it is written outside**, so the\ndefinition publishes these same symbols in `ops` and no translation table exists anywhere.",
+      "enum": [
+        "=",
+        "!=",
+        "in",
+        "not in",
+        "like",
+        "starts with",
+        ">",
+        ">=",
+        "<",
+        "<=",
+        "is null",
+        "contains",
+        "not contains",
+        "between"
+      ],
+      "title": "Operator",
+      "type": "string"
+    },
+    "Pagination": {
+      "additionalProperties": false,
+      "description": "How many, and from where.\n\n    in      Pagination(limit=80)                              the first eighty\n    in      Pagination(limit=80, strategy=Cursor(token=\"eyJ…\"))   the next eighty\n    in      Pagination(limit=80, strategy=Offset(rows=160))     the third page of eighty\n\nTwo separate things, and that is the point: **how many belongs to the page, from where is a\nSTRATEGY.** Cursor is one strategy and not the object — a caller that switches to counting\nrows changes the strategy, not the way it asks for a page.\n\n`limit` has a default and no ceiling. A framework says what happens when nobody chooses;\nit does not decide for the application how much it may ask for.",
+      "properties": {
+        "limit": {
+          "default": 50,
+          "minimum": 0,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "strategy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "$ref": "#/$defs/Offset"
+            }
+          ],
+          "title": "Strategy"
+        }
+      },
+      "title": "Pagination",
+      "type": "object"
+    },
+    "Param": {
+      "additionalProperties": false,
+      "description": "A value the caller supplied for this call: a typed text, a step's result.",
+      "properties": {
+        "plus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How far to move it, signed: `{\"days\": -30}` is thirty days ago."
+        },
+        "start_of": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The start of the calendar unit it falls in once moved: `month` is the first of the month."
+        },
+        "$": {
+          "const": "param",
+          "default": "param",
+          "title": "$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The parameter, or a path into it with dots: `steps.order.total`.",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Param",
+      "type": "object"
+    },
+    "Period": {
+      "additionalProperties": false,
+      "description": "A span of the calendar as a range `[start, end)`: only with the operator `between`.\n\nEither a named one, or a window of whole units counted from the current one:\n\n    {\"$\": \"period\", \"name\": \"this_month\"}\n    {\"$\": \"period\", \"unit\": \"day\", \"last\": 30}                      the 30 days before today\n    {\"$\": \"period\", \"unit\": \"week\", \"next\": 2, \"include_current\": true}\n\n`last` and `next` leave the current unit out unless `include_current` is set.",
+      "properties": {
+        "$": {
+          "const": "period",
+          "default": "period",
+          "title": "$",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Periods"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "last": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next"
+        },
+        "include_current": {
+          "default": false,
+          "title": "Include Current",
+          "type": "boolean"
+        }
+      },
+      "title": "Period",
+      "type": "object"
+    },
+    "Periods": {
+      "description": "A calendar span, as a closed range `[start, end)`. Only with the operator `between`.",
+      "enum": [
+        "today",
+        "yesterday",
+        "tomorrow",
+        "this_week",
+        "last_week",
+        "next_week",
+        "this_month",
+        "last_month",
+        "next_month",
+        "this_quarter",
+        "last_quarter",
+        "next_quarter",
+        "this_year",
+        "last_year",
+        "next_year"
+      ],
+      "title": "Periods",
+      "type": "string"
+    },
+    "Sort": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "descending": {
+          "default": false,
+          "title": "Descending",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "Sort",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "A signed amount of time, by unit. Only the units asked for travel.\n\n{\"days\": -30}                       thirty days back\n{\"months\": 1, \"days\": -1}           a month ahead, a day back",
+      "properties": {
+        "minutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minutes"
+        },
+        "hours": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hours"
+        },
+        "days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Days"
+        },
+        "weeks": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weeks"
+        },
+        "months": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Months"
+        },
+        "years": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Years"
+        }
+      },
+      "title": "Span",
+      "type": "object"
+    },
+    "Specification": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Criteria"
+      },
+      "default": {},
+      "description": "Field name → the criteria that says how to bring it.\n\n    in      {\"name\": {}, \"lines\": {\"pagination\": {\"limit\": 20}}}\n    out     Specification with two fields, the second carrying its own page\n\n**One type and no union**: every value is a `Criteria`, the same one as outside, so a\nconsumer deserialises `dict[str, Criteria]` in any language and never has to tell a string\nfrom an object. A scalar's is empty, because there is nothing to say about how to bring a\nnumber. A relation's carries where, order, pagination and its own specification, so the\nvocabulary inside a node is the vocabulary outside it, at any depth.\n\nA `RootModel` and not an object with one field inside: in JSON it is the bare mapping,\nwithout a key that means nothing, and in here it has the methods that belong to it.",
+      "title": "Specification",
+      "type": "object"
+    },
+    "Today": {
+      "additionalProperties": false,
+      "description": "The current date, in the context's timezone.",
+      "properties": {
+        "plus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How far to move it, signed: `{\"days\": -30}` is thirty days ago."
+        },
+        "start_of": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The start of the calendar unit it falls in once moved: `month` is the first of the month."
+        },
+        "$": {
+          "const": "today",
+          "default": "today",
+          "title": "$",
+          "type": "string"
+        }
+      },
+      "title": "Today",
+      "type": "object"
+    },
+    "Value": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/Item"
+        }
+      ]
+    }
+  },
+  "$ref": "#/$defs/Criteria"
+}

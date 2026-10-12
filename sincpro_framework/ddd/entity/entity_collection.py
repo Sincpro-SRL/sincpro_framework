@@ -271,6 +271,27 @@ class EntityCollection[T]:
         """
         return type(self)(items=tuple(items), meta=self.meta)
 
+    @property
+    def is_partial(self) -> bool:
+        """Whether these records are a fragment of what the criteria matched.
+
+            cursor="…"                        →  True    there is another page
+            count=None                        →  False   nobody asked, nothing claimed
+            count=Count(10000, exact=False)   →  True     a floor is a fragment
+            count=Count(2, exact=True), 2 held→  False    everything is in hand
+
+
+        1. Holding a cursor means there is another page — the cheapest answer.
+        2. No count means nobody asked, so nothing here claims to be a fragment.
+        3. Final: a floor is a fragment by definition, and so is an exact total larger than
+           what is held.
+        """
+        if self.cursor is not None:
+            return True
+        if self.count is None:
+            return False
+        return not self.count.exact or self.count.value > len(self.items)
+
     def _fold(self, name: str, selector: Callable[[T], Any]) -> list[Any]:
         """The values an aggregation is about, once it is established that it may answer.
 
@@ -299,27 +320,6 @@ class EntityCollection[T]:
                 if declared and isinstance(declared[0], type):
                     return declared[0]
         return None
-
-    @property
-    def is_partial(self) -> bool:
-        """Whether these records are a fragment of what the criteria matched.
-
-            cursor="…"                        →  True    there is another page
-            count=None                        →  False   nobody asked, nothing claimed
-            count=Count(10000, exact=False)   →  True     a floor is a fragment
-            count=Count(2, exact=True), 2 held→  False    everything is in hand
-
-
-        1. Holding a cursor means there is another page — the cheapest answer.
-        2. No count means nobody asked, so nothing here claims to be a fragment.
-        3. Final: a floor is a fragment by definition, and so is an exact total larger than
-           what is held.
-        """
-        if self.cursor is not None:
-            return True
-        if self.count is None:
-            return False
-        return not self.count.exact or self.count.value > len(self.items)
 
     @property
     def ids(self) -> list[Any]:
@@ -382,7 +382,7 @@ class EntityCollection[T]:
         >>> page.filtered_by(criteria.expression).ids
         ['ds_01b2…']
         """
-        from sincpro_framework.ddd.criteria.evaluate import matches
+        from sincpro_framework.ddd.criteria import matches
 
         return self._derived(record for record in self.items if matches(record, expression))
 

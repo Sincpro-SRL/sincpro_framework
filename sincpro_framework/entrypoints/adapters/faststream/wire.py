@@ -345,52 +345,6 @@ class QueueWire(Wire[QueueBinding]):
             for (channel, group, kind), by_type in grouped.items()
         ]
 
-    def _handler(self, subscription: Subscription) -> Callable[..., Any]:
-        async def handle(message: StreamMessage[Any] = Context("message")) -> None:
-            await self.process(message, subscription.by_type, subscription.channel)
-
-        handle.__name__ = handle.__qualname__ = "_".join(
-            (
-                "consume" if subscription.kind == "consumes" else "hear",
-                *sorted(subscription.by_type),
-            )
-        )
-        return handle
-
-    def _concurrency(self, subscription: Subscription) -> int | None:
-        declared = [
-            one.binding.concurrency
-            for handlers in subscription.by_type.values()
-            for one in handlers
-        ]
-        return max((one for one in declared if one is not None), default=None)
-
-    def build(self, surface: Sequence[Resolved[QueueBinding]]) -> list[Subscription]:
-        """Register one subscription per channel and group on the broker — once; building
-        again answers what was registered."""
-        if self.subscriptions is not None:
-            return list(self.subscriptions)
-        subscriptions = self.subscriptions_of(surface)
-        for subscription in subscriptions:
-            concurrency = self._concurrency(subscription)
-            handler = self._handler(subscription)
-            if self.options.subscription_of is not None:
-                self.options.subscription_of(
-                    self.broker, subscription.channel, subscription.group, concurrency
-                )(handler)
-                continue
-            options = subscription_options(self.broker_name, subscription.group, concurrency)
-            described = ", ".join(sorted(subscription.by_type))
-            self.broker.subscriber(
-                subscription.channel,
-                description=f"{subscription.kind} {described}",
-                **options,
-            )(handler)
-        self.subscriptions = subscriptions
-        return list(subscriptions)
-
-    # the one path every delivery takes
-
     def _pick(
         self, by_type: dict[str, tuple[Resolved[QueueBinding], ...]], envelope: Envelope
     ) -> tuple[Resolved[QueueBinding], ...]:
@@ -413,6 +367,8 @@ class QueueWire(Wire[QueueBinding]):
             return False
         sent = envelope.time if envelope.time.tzinfo else envelope.time.replace(tzinfo=UTC)
         return datetime.now(UTC) - sent > limit
+
+    # the one path every delivery takes
 
     async def _run(
         self,
@@ -443,90 +399,6 @@ class QueueWire(Wire[QueueBinding]):
                 await running
             else:
                 await asyncio.wait_for(running, limit.total_seconds())
-
-    async def process(
-        self,
-        message: StreamMessage[Any],
-        by_type: dict[str, tuple[Resolved[QueueBinding], ...]],
-        channel: str,
-        decode: Decode | None = None,
-        as_given: bool = False,
-    ) -> Verdict:
-        """One delivery, from its envelope to its settlement.
-
-        1. What it is: an event nobody here handles on a shared channel is skipped (ack).
-        2. Who sent it: a producer a binding does not allow is dead-lettered, before the bus.
-        3. A message past `expires_after` is dead-lettered.
-        4. Decoded as the Command, once: what does not decode is dead-lettered.
-        5. Each context that handles it runs on its own (`_handled`), handed the message as the
-           class *it* declared for that wire name — a context that may not import the publisher
-           declares its own, and another context's instance would find no handler.
-        Final: settled from the verdicts combined (`combined`), which is answered.
-        """
-        envelope = Envelope.of(message.headers)
-        handlers = next(iter(by_type.values())) if as_given else self._pick(by_type, envelope)
-        if not handlers:
-            verdict = Verdict(settlement=Settlement.SKIP, command=envelope.type)
-            await self._settle(message, verdict, channel, envelope)
-            return verdict
-        command = handlers[0].operation.command
-        name = type_name(command, handlers[0].operation.bus.name)
-        attempts = self._attempts(message, envelope)
-        max_attempts = min(
-            one.binding.max_attempts or self.options.max_attempts for one in handlers
-        )
-        identity = self.options.identify(message, envelope)
-
-        def refused(kind: FailureKind, reason: str) -> Verdict:
-            return failed(kind, reason, attempts, max_attempts, name)
-
-        verdict: Verdict | None = None
-        if any(
-            one.binding.producers and identity not in one.binding.producers
-            for one in handlers
-        ):
-            verdict = refused(FailureKind.PERMISSION_DENIED, "PRODUCER_NOT_ALLOWED")
-        elif self._expired(envelope):
-            verdict = refused(FailureKind.INVALID, "EXPIRED")
-        if verdict is not None:
-            await self._settle(message, verdict, channel, envelope)
-            return verdict
-
-        try:
-            dto = (
-                _validated(command, decode(message))
-                if decode
-                else _decoded(command, message.body)
-            )
-        except Exception:
-            verdict = refused(FailureKind.INVALID, "UNDECODABLE")
-            await self._settle(message, verdict, channel, envelope)
-            return verdict
-
-        message_id = (
-            envelope.id
-            or (dto.id if isinstance(dto, DomainEvent) else None)
-            or message.message_id
-        )
-        envelope = envelope.model_copy(
-            update={"id": message_id, "type": envelope.type or name}
-        )
-        verdicts: list[Verdict] = []
-        for one in handlers:
-            own = one.operation.command
-            try:
-                as_known = dto if isinstance(dto, own) else _decoded(own, message.body)
-            except Exception:
-                verdicts.append(refused(FailureKind.INVALID, "UNDECODABLE"))
-                continue
-            verdicts.append(
-                await self._handled(
-                    one, as_known, message, message_id, envelope, identity, attempts, refused
-                )
-            )
-        verdict = combined(verdicts)
-        await self._settle(message, verdict, channel, envelope)
-        return verdict
 
     async def _handled(
         self,
@@ -571,8 +443,6 @@ class QueueWire(Wire[QueueBinding]):
         if self.inbox is not None and owner is not None:
             await self.inbox.complete(key, message.body, owner)
         return Verdict(settlement=Settlement.ACK, attempts=attempts, command=name)
-
-    # settling
 
     def _copy_headers(
         self, message: StreamMessage[Any], envelope: Envelope, attempts: int
@@ -660,3 +530,133 @@ class QueueWire(Wire[QueueBinding]):
             await message.ack()
         else:
             await message.nack()
+
+    async def process(
+        self,
+        message: StreamMessage[Any],
+        by_type: dict[str, tuple[Resolved[QueueBinding], ...]],
+        channel: str,
+        decode: Decode | None = None,
+        as_given: bool = False,
+    ) -> Verdict:
+        """One delivery, from its envelope to its settlement.
+
+        1. What it is: an event nobody here handles on a shared channel is skipped (ack).
+        2. Who sent it: a producer a binding does not allow is dead-lettered, before the bus.
+        3. A message past `expires_after` is dead-lettered.
+        4. Decoded as the Command, once: what does not decode is dead-lettered.
+        5. Each context that handles it runs on its own (`_handled`), handed the message as the
+           class *it* declared for that wire name — a context that may not import the publisher
+           declares its own, and another context's instance would find no handler.
+        Final: settled from the verdicts combined (`combined`), which is answered.
+        """
+        envelope = Envelope.of(message.headers)
+        handlers = next(iter(by_type.values())) if as_given else self._pick(by_type, envelope)
+        if not handlers:
+            verdict = Verdict(settlement=Settlement.SKIP, command=envelope.type)
+            await self._settle(message, verdict, channel, envelope)
+            return verdict
+        command = handlers[0].operation.command
+        name = type_name(command, handlers[0].operation.bus.name)
+        attempts = self._attempts(message, envelope)
+        max_attempts = min(
+            one.binding.max_attempts or self.options.max_attempts for one in handlers
+        )
+        identity = self.options.identify(message, envelope)
+
+        def refused(kind: FailureKind, reason: str) -> Verdict:
+            return failed(kind, reason, attempts, max_attempts, name)
+
+        verdict: Verdict | None = None
+        if any(
+            one.binding.producers and identity not in one.binding.producers
+            for one in handlers
+        ):
+            verdict = refused(FailureKind.PERMISSION_DENIED, "PRODUCER_NOT_ALLOWED")
+        elif self._expired(envelope):
+            verdict = refused(FailureKind.INVALID, "EXPIRED")
+        if verdict is not None:
+            await self._settle(message, verdict, channel, envelope)
+            return verdict
+
+        try:
+            dto = (
+                _validated(command, decode(message))
+                if decode
+                else _decoded(command, message.body)
+            )
+        except Exception:
+            verdict = refused(FailureKind.INVALID, "UNDECODABLE")
+            await self._settle(message, verdict, channel, envelope)
+            return verdict
+
+        message_id = (
+            envelope.id
+            or (dto.id if isinstance(dto, DomainEvent) else None)
+            or message.message_id
+        )
+        envelope = envelope.model_copy(
+            update={"id": message_id, "type": envelope.type or name}
+        )
+        verdicts: list[Verdict] = []
+        for one in handlers:
+            own = one.operation.command
+            try:
+                as_known = dto if isinstance(dto, own) else _decoded(own, message.body)
+            except Exception:
+                verdicts.append(refused(FailureKind.INVALID, "UNDECODABLE"))
+                continue
+            verdicts.append(
+                await self._handled(
+                    one, as_known, message, message_id, envelope, identity, attempts, refused
+                )
+            )
+        verdict = combined(verdicts)
+        await self._settle(message, verdict, channel, envelope)
+        return verdict
+
+    # settling
+
+    def _handler(self, subscription: Subscription) -> Callable[..., Any]:
+        async def handle(message: StreamMessage[Any] = Context("message")) -> None:
+            await self.process(message, subscription.by_type, subscription.channel)
+
+        handle.__name__ = handle.__qualname__ = "_".join(
+            (
+                "consume" if subscription.kind == "consumes" else "hear",
+                *sorted(subscription.by_type),
+            )
+        )
+        return handle
+
+    def _concurrency(self, subscription: Subscription) -> int | None:
+        declared = [
+            one.binding.concurrency
+            for handlers in subscription.by_type.values()
+            for one in handlers
+        ]
+        return max((one for one in declared if one is not None), default=None)
+
+    def build(self, surface: Sequence[Resolved[QueueBinding]]) -> list[Subscription]:
+        """Register one subscription per channel and group on the broker — once; building
+        again answers what was registered."""
+        if self.subscriptions is not None:
+            return list(self.subscriptions)
+        subscriptions = self.subscriptions_of(surface)
+        for subscription in subscriptions:
+            concurrency = self._concurrency(subscription)
+            handler = self._handler(subscription)
+            if self.options.subscription_of is not None:
+                self.options.subscription_of(
+                    self.broker, subscription.channel, subscription.group, concurrency
+                )(handler)
+                continue
+            options = subscription_options(self.broker_name, subscription.group, concurrency)
+            described = ", ".join(sorted(subscription.by_type))
+            self.broker.subscriber(
+                subscription.channel,
+                description=f"{subscription.kind} {described}",
+                **options,
+            )(handler)
+        self.subscriptions = subscriptions
+        return list(subscriptions)

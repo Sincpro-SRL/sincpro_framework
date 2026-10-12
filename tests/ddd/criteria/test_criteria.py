@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import pytest
 
-from sincpro_framework.ddd.criteria import Measure
+from sincpro_framework.ddd.criteria import Grain, Measure
 from sincpro_framework.ddd.exceptions import InvalidCriteria as _InvalidCriteria
 
 
@@ -32,12 +32,13 @@ from sincpro_framework.ddd.criteria import (
     Level,
     Measure,
     Not,
+    Offset,
     Operator,
     Sort,
     combined,
     conditions_of,
 )
-from sincpro_framework.ddd.criteria.pagination import DEFAULT_LIMIT, Offset
+from sincpro_framework.ddd.criteria.domain.pagination import DEFAULT_LIMIT
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 # ── the filter ─────────────────────────────────────────────────────────────────
@@ -168,7 +169,7 @@ def test_the_grouping_declares_its_levels_and_its_folds():
 
     assert asked.grouping.group_by == (
         Level(field="produced_by"),
-        Level(field="registered_at", grain="month"),
+        Level(field="registered_at", grain=Grain.MONTH),
     )
     assert asked.grouping.measures == {"rows": Measure(function="sum", field="row_count")}
 

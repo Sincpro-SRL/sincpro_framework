@@ -17,8 +17,14 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import 
     GRAIN_TRANSLATORS,
     grouping_column,
 )
-from sincpro_framework.ddd.criteria import Condition, Criteria, Level, Operator
-from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.criteria import (
+    Condition,
+    Criteria,
+    Grain,
+    Level,
+    Operator,
+    Pagination,
+)
 
 from .models import ROW_COUNT, Note, Notes, Thing, Things
 
@@ -130,12 +136,12 @@ def test_a_provider_registers_the_grain_translation_for_its_engine():
     register_grain_translator("acmedb", by_hand)
     try:
         rendered = str(
-            grouping_column(Thing, Level(field="made_at", grain="month"), "acmedb")
+            grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "acmedb")
         )
         assert "my_trunc" in rendered
     finally:
         del GRAIN_TRANSLATORS["acmedb"]
 
     with pytest.raises(ProgrammingError, match="register_grain_translator"):
-        grouping_column(Thing, Level(field="made_at", grain="month"), "acmedb")
+        grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "acmedb")
     assert Operator.GT in Operator

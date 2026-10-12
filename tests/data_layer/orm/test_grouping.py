@@ -5,6 +5,7 @@ opening a bucket. That is why every bucket carries the criteria that opens it �
 checks it is what keeps a client from rebuilding that filter by hand and drifting from it.
 """
 
+import re
 from datetime import datetime
 
 import pytest
@@ -16,16 +17,17 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    Grain,
     Grouping,
     Level,
     Measure,
     Not,
     Operator,
+    Pagination,
     Sort,
     conditions_of,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_collection import Count
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 
@@ -113,7 +115,7 @@ def test_grouping_by_a_field_that_does_not_exist_is_refused(store):
 def test_a_date_is_grouped_at_the_grain_asked_for(store):
     """Without this, grouping a catalogue by date gives one bucket per row: a listing with
     extra steps."""
-    monthly = Grouping(group_by=(Level(field="made_at", grain="month"),))
+    monthly = Grouping(group_by=(Level(field="made_at", grain=Grain.MONTH),))
 
     buckets = store.group_by_levels(Things, Criteria(grouping=monthly))
 
@@ -121,11 +123,18 @@ def test_a_date_is_grouped_at_the_grain_asked_for(store):
     assert len(buckets) < store.count(Things).value
 
 
-def test_a_grain_that_does_not_exist_is_refused_naming_the_ones_that_do(store):
-    odd_grain = Grouping(group_by=(Level(field="made_at", grain="fortnight"),))
+def test_a_grain_that_does_not_exist_is_refused_naming_the_ones_that_do():
+    with pytest.raises(InvalidCriteria, match="granularity.*quarter"):
+        Level(field="made_at", grain="fortnight")  # type: ignore[arg-type]
 
-    with pytest.raises(InvalidCriteria, match="granularity"):
-        store.group_by_levels(Things, Criteria(grouping=odd_grain))
+
+def test_a_date_is_grouped_by_quarter(store):
+    quarterly = Grouping(group_by=(Level(field="made_at", grain=Grain.QUARTER),))
+
+    buckets = store.group_by_levels(Things, Criteria(grouping=quarterly))
+
+    assert all(re.fullmatch(r"\d{4}-Q[1-4]", str(one.value)) for one in buckets)
+    assert sum(one.count for one in buckets) == store.count(Things).value
 
 
 def test_a_level_and_a_fold_already_built_pass_through():
@@ -143,7 +152,7 @@ def test_opening_a_date_bucket_returns_that_bucket(store):
     `strftime` gave — the text "2026" — and the criteria compared it for equality against a
     date column: the model dropped it as an unreadable value, the condition vanished, and
     opening the bucket brought the whole catalogue while the count said otherwise."""
-    monthly = Grouping(group_by=(Level(field="made_at", grain="month"),))
+    monthly = Grouping(group_by=(Level(field="made_at", grain=Grain.MONTH),))
 
     for bucket in store.group_by_levels(Things, Criteria(grouping=monthly)):
         page = store.search(Things, bucket.criteria)
@@ -156,7 +165,8 @@ def test_a_date_bucket_opens_with_a_half_open_range(store):
     """The end stays out: with an inclusive range, a row saved at 00:00 on the first of the
     next month would fall in two buckets and the levels would stop adding up."""
     bucket = store.group_by_levels(
-        Things, Criteria(grouping=Grouping(group_by=(Level(field="made_at", grain="year"),)))
+        Things,
+        Criteria(grouping=Grouping(group_by=(Level(field="made_at", grain=Grain.YEAR),))),
     )[0]
 
     leaves = conditions_of(bucket.criteria.expression)
@@ -168,8 +178,8 @@ def test_date_levels_add_up_to_what_the_parent_says(store):
     """If one level's range overlapped the next one's, this would not close."""
     nested = Grouping(
         group_by=(
-            Level(field="made_at", grain="year"),
-            Level(field="made_at", grain="month"),
+            Level(field="made_at", grain=Grain.YEAR),
+            Level(field="made_at", grain=Grain.MONTH),
         ),
     )
 
@@ -184,6 +194,8 @@ def test_date_levels_add_up_to_what_the_parent_says(store):
         ("month", "2026-09", datetime(2026, 9, 1), datetime(2026, 10, 1)),
         # December crosses the year: `(12 % 12) + 1` gives January, and the year adds one.
         ("month", "2026-12", datetime(2026, 12, 1), datetime(2027, 1, 1)),
+        ("quarter", "2026-Q3", datetime(2026, 7, 1), datetime(2026, 10, 1)),
+        ("quarter", "2026-Q4", datetime(2026, 10, 1), datetime(2027, 1, 1)),
         ("week", "2026-W37", datetime(2026, 9, 7), datetime(2026, 9, 14)),  # ISO week
         ("day", "2026-09-13", datetime(2026, 9, 13), datetime(2026, 9, 14)),
     ],
@@ -460,7 +472,7 @@ def test_one_reading_says_everything_at_once(store):
         pagination=Pagination(limit=3),
         # the groups
         grouping=Grouping(
-            group_by=(Level(field="owner"), Level(field="made_at", grain="month")),
+            group_by=(Level(field="owner"), Level(field="made_at", grain=Grain.MONTH)),
             measures={
                 "total": Measure(function="sum", field="size"),
                 "biggest": Measure(function="max", field="size"),

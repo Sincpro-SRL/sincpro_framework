@@ -27,7 +27,7 @@ hands it to the repository. It is JSON, it is typed, and every part of it is opt
 | `order` | the ordering, `-` for descending | the identity is appended as tiebreaker so a keyset is a total order; a nullable column is refused for ordering because a keyset over NULLs loses rows |
 | `pagination` | how many and from where | `Cursor` (keyset, the default; the token is opaque and typed, it carries datetimes and decimals) or `Offset` (skip rows; costs grow with the offset) |
 | `specification` | what to bring back of each record | field → criteria, recursive; see [specification.md](specification.md) |
-| `grouping` | how to split the set when counting rather than listing | `group_by` the levels, `measures` the folds, `where_measures` a filter over what they folded, `order` by a level, a total or `count`, `pagination` for how many groups of the first level. One statement per level; drilling down one click at a time is opening a bucket with a grouping of its own. **With an explicit `pagination` on the criteria, a page per group**: every group of the deepest level carries the ids of its first `limit` rows, an exact count and a cursor; `search` with both answers `limit` rows for every group |
+| `grouping` | how to split the set when counting rather than listing | `group_by` the levels (a level's `grain` cuts a date: `day`, `week` ISO, `month`, `quarter` as `2026-Q3`, `year`), `measures` the folds, `where_measures` a filter over what they folded, `order` by a level, a total or `count`, `pagination` for how many groups of the first level. One statement per level; drilling down one click at a time is opening a bucket with a grouping of its own. **With an explicit `pagination` on the criteria, a page per group**: every group of the deepest level carries the ids of its first `limit` rows, an exact count and a cursor; `search` with both answers `limit` rows for every group |
 | `count` | `none`, `capped` (stops at 10 000 and says so), `exact` | free when the first page came back short |
 | `meta` | whether the definition travels | on by default |
 
@@ -48,9 +48,66 @@ Operators by type:
 `measures` plus `count`. A name outside them is refused rather than dropped, because a filter
 that vanished there would answer groups the caller ruled out.
 
-`matches(record, expression)` in `ddd/criteria/evaluate.py` is the in-memory evaluator and the
+`matches(record, expression)` in `ddd/criteria/entrypoint/evaluation.py` is the in-memory evaluator and the
 specification of the translator: every operator has to agree with it on every row, and the
 real-world suite checks exactly that over the whole ledger.
+
+## Values that are read when the filter is used
+
+A condition's `value` is a literal, or an object with the reserved key `"$"` naming a value the
+server reads when the filter runs:
+
+```json
+{"field": "due",        "operator": "<",  "value": {"$": "today"}}
+{"field": "created_at", "operator": ">=", "value": {"$": "today", "plus": {"days": -30}}}
+{"field": "posted_at",  "operator": ">=", "value": {"$": "today", "start_of": "month"}}
+{"field": "closed_at",  "operator": "between", "value": {"$": "period", "name": "this_month"}}
+{"field": "owner_id",   "operator": "=",  "value": {"$": "context", "key": "user_id"}}
+{"field": "closed_at",  "operator": ">=", "value": {"$": "context", "key": "report_date",
+                                                     "plus": {"months": -3}, "start_of": "month"}}
+```
+
+It is stored as written, so a saved view that says `today` means the day it is opened. The server
+resolves it — the client never sends a processed date, and a client cannot name another user:
+`context` reads the server's own `use_context()`.
+
+| `$` | Reads | Notes |
+|---|---|---|
+| `today` | the current date | in the timezone the server's context names under `timezone` (an IANA name, `America/La_Paz`), UTC without one; `week_starts_on` (0 is Monday) sets the week |
+| `now` | the current instant | UTC |
+| `period` | a span of the calendar as `[start, end)` | either `name` (`today`, `yesterday`, `tomorrow`, `this_`/`last_`/`next_` + `week`, `month`, `quarter`, `year`) or a window of whole units: `unit` with `last` or `next` — `{"$": "period", "unit": "day", "last": 30}` is the 30 days before today, today left out unless `include_current`. Only with `between` |
+| `context` | a key of the server's context | `key`; a key the context does not hold is refused, never ignored |
+| `param` | a value the caller supplied for this call | `name`, or a path with dots |
+| `field` | another field of the same row | `name`. A column against a column: `{"field": "total", "operator": ">", "value": {"$": "field", "name": "credit_limit"}}`. Not read before the row; takes `=` `!=` `<` `<=` `>` `>=` and a field of the same type, or the condition is dropped and reported |
+
+`plus` (a signed `Span`: `{"days": -30}`) and `start_of` (`day`, `week`, `month`, `quarter`,
+`year`) are allowed on every value that is a date: `today`, `now`, and what `context` or `param`
+read. **`plus` is applied first, then `start_of`**: `{"$": "today", "plus": {"months": -1},
+"start_of": "month"}` is the first day of last month. Months and years move by the calendar and
+clamp at a month end (31 January plus a month is 28 February); days follow the wall clock of the
+timezone, so a day across a clock change is still a day; hours and minutes are elapsed time and
+only `now` takes them. A week starts on Monday unless the resolution says otherwise.
+
+**One instant per resolution**: `today` and `now` in the same filter agree. Everything is UTC; a
+timezone only decides where a calendar boundary falls. A date compared with an instant column is
+that date's midnight in the context's timezone, as a UTC instant: in La Paz, `2026-10-12` against a
+datetime column is `2026-10-12T04:00:00Z`.
+
+In Python the nodes are classes, moved with `before`, `after` and `at_start_of`:
+
+```python
+from sincpro_framework.ddd.criteria import Condition, FromContext, Grain, Operator, Today
+
+Condition(field="due", operator=Operator.LT, value=Today())
+Condition(field="created_at", operator=Operator.GTE, value=Today().before(days=30))
+Condition(field="closed_at", operator=Operator.GTE,
+          value=FromContext(key="report_date").before(months=3).at_start_of(Grain.MONTH))
+```
+
+`Meta.accept` reads them before it checks anything, so the memory store, SQL and the fingerprint
+of a cache see only literals: the key of a cached read is made from the rows asked for, and two
+users asking for «mine» never share one. `resolve(expression, ResolutionContext(now=…))`, from `sincpro_framework.ddd.criteria`, is the same
+step with the clock in hand, which is how a test pins the day.
 
 ## What *reflexive* means
 
@@ -130,3 +187,16 @@ The nodes carry the names the JSON uses — `All`, `Any`, `Not` and `Condition`,
 `sincpro_framework.ddd` — so `{"any": [...]}` is `Any(any=[...])`.
 `Query` is the command base that carries one, `ResponsePaginatedQuery` the answer base that
 returns the page with its definition cut by the same specification.
+
+## What a client reads
+
+`Meta.resolvers` lists the dynamic values the server reads — each one's name, what it reads to and
+its parameters, with the values a parameter may take — so a filter builder offers «Today» and «This
+month» from what the backend says and a value a project adds appears with no client release.
+
+The language is also published as data: `tests/ddd/criteria/criteria.schema.json` (the JSON Schema of
+a `Criteria`, generated from the models), `criteria-parity.json` (what a filter keeps, per
+operator) and `criteria-resolution.json` (what each dynamic value reads to, given the instant, the
+timezone, the context and the parameters; the expectations are written by hand). `make
+criteria-contract` regenerates the three and copies them to the TypeScript package, and a test fails
+when what is committed is not what the engine generates.

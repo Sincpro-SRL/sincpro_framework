@@ -15,10 +15,10 @@ from sincpro_framework.data_layer.caching.domain.failure import FailSafe
 from sincpro_framework.data_layer.caching.domain.policies import CachePolicy
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
+    Condition,
     Derivations,
     Derive,
     Entity,
-    Is,
     Presentation,
     When,
     presentation_of,
@@ -51,9 +51,9 @@ class AsList(Entity):
     presentation = Presentation["AsList"](
         readonly=lambda a: [a.code],
         required=lambda a: [a.name],
-        readonly_when=lambda a: [When(Is(a.state, Operator.NE, "draft"), a.name)],
-        required_when=lambda a: [When(Is(a.state, Operator.EQ, "draft"), a.code)],
-        visible_when=lambda a: [When(Is(a.state, Operator.EQ, "draft"), a.total)],
+        readonly_when=lambda a: [When(Condition.on(a.state, Operator.NE, "draft"), a.name)],
+        required_when=lambda a: [When(Condition.on(a.state, Operator.EQ, "draft"), a.code)],
+        visible_when=lambda a: [When(Condition.on(a.state, Operator.EQ, "draft"), a.total)],
     )
     derivations = Derivations["AsList"](
         lambda a: [
@@ -75,9 +75,9 @@ class AsTuple(Entity):
     presentation = Presentation["AsTuple"](
         readonly=lambda a: (a.code,),
         required=lambda a: (a.name,),
-        readonly_when=lambda a: (When(Is(a.state, Operator.NE, "draft"), a.name),),
-        required_when=lambda a: (When(Is(a.state, Operator.EQ, "draft"), a.code),),
-        visible_when=lambda a: (When(Is(a.state, Operator.EQ, "draft"), a.total),),
+        readonly_when=lambda a: (When(Condition.on(a.state, Operator.NE, "draft"), a.name),),
+        required_when=lambda a: (When(Condition.on(a.state, Operator.EQ, "draft"), a.code),),
+        visible_when=lambda a: (When(Condition.on(a.state, Operator.EQ, "draft"), a.total),),
     )
     derivations = Derivations["AsTuple"](
         lambda a: (
@@ -99,9 +99,9 @@ class AsOne(Entity):
     presentation = Presentation["AsOne"](
         readonly=lambda a: a.code,
         required=lambda a: a.name,
-        readonly_when=lambda a: When(Is(a.state, Operator.NE, "draft"), a.name),
-        required_when=lambda a: When(Is(a.state, Operator.EQ, "draft"), a.code),
-        visible_when=lambda a: When(Is(a.state, Operator.EQ, "draft"), a.total),
+        readonly_when=lambda a: When(Condition.on(a.state, Operator.NE, "draft"), a.name),
+        required_when=lambda a: When(Condition.on(a.state, Operator.EQ, "draft"), a.code),
+        visible_when=lambda a: When(Condition.on(a.state, Operator.EQ, "draft"), a.total),
     )
     derivations = Derivations["AsOne"](
         lambda a: [

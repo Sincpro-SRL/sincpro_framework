@@ -15,6 +15,47 @@ ErrorKind = Literal["instance", "framework"]
 IgnoredExceptions = Tuple[Type[Exception], ...]
 
 
+def _tag_correlation(
+    scope: Any, error: Exception, use_case: str, identity: ObservabilityIdentity, outcome: str
+) -> None:
+    tags = {
+        "service_name": identity.service_name,
+        "service_version": identity.service_version,
+        "release": identity.release if identity.artifact != UNKNOWN else "",
+        "sincpro.version": identity.service_version,
+        "sincpro.context": identity.bus,
+        "sincpro.use_case": use_case,
+        "sincpro.outcome": outcome,
+        "error.type": type(error).__name__,
+    }
+    ids = current_otel_context()
+    if ids:
+        tags["trace_id"] = ids["trace_id"]
+        # Sentry fills `contexts.trace` with an id of its own only when it is absent.
+        scope.set_context("trace", {"trace_id": ids["trace_id"], "span_id": ids["span_id"]})
+    for key, value in tags.items():
+        if value:
+            scope.set_tag(key, value)
+
+
+def _tag_execution(scope: Any) -> None:
+    """The execution's context on the event (PRD_03 §4.10): its tenant, and every key it carries
+    as a tag; `user_id` also as the event's user, so an issue says how many users it hit."""
+    keys = correlation.execution_keys()
+    for key, value in keys.items():
+        try:
+            text = str(getattr(value, "value", value))
+            if text:
+                scope.set_tag(key, text[:TAG_LENGTH])
+        except Exception:
+            continue
+    user = keys.get(correlation.USER_ID)
+    if user:
+        set_user = getattr(scope, "set_user", None)
+        if set_user is not None:
+            set_user({"id": str(user)})
+
+
 def record_error(
     error: Exception,
     dto_name: str,
@@ -82,46 +123,7 @@ def record_error(
         return
 
 
-def _tag_correlation(
-    scope: Any, error: Exception, use_case: str, identity: ObservabilityIdentity, outcome: str
-) -> None:
-    tags = {
-        "service_name": identity.service_name,
-        "service_version": identity.service_version,
-        "release": identity.release if identity.artifact != UNKNOWN else "",
-        "sincpro.version": identity.service_version,
-        "sincpro.context": identity.bus,
-        "sincpro.use_case": use_case,
-        "sincpro.outcome": outcome,
-        "error.type": type(error).__name__,
-    }
-    ids = current_otel_context()
-    if ids:
-        tags["trace_id"] = ids["trace_id"]
-        # Sentry fills `contexts.trace` with an id of its own only when it is absent.
-        scope.set_context("trace", {"trace_id": ids["trace_id"], "span_id": ids["span_id"]})
-    for key, value in tags.items():
-        if value:
-            scope.set_tag(key, value)
-
-
 TAG_LENGTH = 200
+
+
 """What a Sentry tag holds; a longer value is cut there, never dropped."""
-
-
-def _tag_execution(scope: Any) -> None:
-    """The execution's context on the event (PRD_03 §4.10): its tenant, and every key it carries
-    as a tag; `user_id` also as the event's user, so an issue says how many users it hit."""
-    keys = correlation.execution_keys()
-    for key, value in keys.items():
-        try:
-            text = str(getattr(value, "value", value))
-            if text:
-                scope.set_tag(key, text[:TAG_LENGTH])
-        except Exception:
-            continue
-    user = keys.get(correlation.USER_ID)
-    if user:
-        set_user = getattr(scope, "set_user", None)
-        if set_user is not None:
-            set_user({"id": str(user)})

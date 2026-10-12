@@ -175,6 +175,15 @@ class QueryCaching:
     def _valid(self, entry: _Entry) -> bool:
         return self._versions(entry.tags) == entry.tags
 
+    def _keep_near(self, key: str, entry: _Entry) -> None:
+        if self.near is None:
+            return
+        with self._near.lock:
+            self._near.entries[key] = (
+                entry.encoded(),
+                self._moment() + self.near.total_seconds(),
+            )
+
     def _held(self, key: str) -> _Entry | None:
         """The answer kept under `key` whose dependencies have not moved — near first."""
         if self.near is not None:
@@ -189,15 +198,6 @@ class QueryCaching:
             return None
         self._keep_near(key, entry)
         return entry
-
-    def _keep_near(self, key: str, entry: _Entry) -> None:
-        if self.near is None:
-            return
-        with self._near.lock:
-            self._near.entries[key] = (
-                entry.encoded(),
-                self._moment() + self.near.total_seconds(),
-            )
 
     def _recompute_early(self, cached: _Cached, entry: _Entry, now: float) -> bool:
         """XFetch: true with a probability that grows as `fresh_until` nears."""

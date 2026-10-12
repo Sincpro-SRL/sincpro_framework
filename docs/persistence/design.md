@@ -14,10 +14,12 @@ sincpro_framework/
 │   │       ├── audited.py        AuditedMixin: created_by, updated_by
 │   │       ├── archivable.py     ArchivableMixin: archived_at, archive(), restore()
 │   │       └── tracking.py       ChangeTrackingMixin, EntityUpdated: what counts as a change
-│   ├── criteria/
-│   │   ├── criteria.py           Criteria, Condition/All/Any/Not, Sort, Grouping, Level, Bucket, Specification
-│   │   ├── pagination.py         Pagination, Cursor (keyset), Offset, CursorKeys
-│   │   └── evaluate.py           matches(): the in-memory evaluator, the specification of the translator
+│   ├── criteria/                 domain ← services ← entrypoint; the package exposes domain + entrypoint
+│   │   ├── domain/               the language: Criteria, Condition/All/Any/Not, values read when used (Today, FromContext…),
+│   │   │                         Sort, Grouping, Pagination, Specification; combined, mapped, canonical, with_text
+│   │   ├── services/             calendar arithmetic, reading one value, one comparison — never exposed
+│   │   └── entrypoint/           resolve (dynamic values → literals), holds / matches (the in-memory evaluator,
+│   │                             the specification of the translator)
 │   ├── repositories/
 │   │   ├── repository.py         IRepository and the read/write/analysis/transaction capabilities
 │   │   ├── aggregate_repository.py  AggregateRepository: one aggregate's typed view

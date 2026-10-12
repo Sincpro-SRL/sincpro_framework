@@ -18,8 +18,7 @@ from datetime import datetime
 from hypothesis import given
 from hypothesis import strategies as st
 
-from sincpro_framework.ddd.criteria import Condition, Criteria, conditions_of
-from sincpro_framework.ddd.criteria.pagination import CursorKeys
+from sincpro_framework.ddd.criteria import Condition, Criteria, CursorKeys, conditions_of
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 
 

@@ -10,15 +10,21 @@ import copy
 import traceback
 from collections.abc import Callable, Mapping
 from contextvars import ContextVar
+from datetime import UTC, datetime
 from functools import partial
 from time import perf_counter
 from typing import Any, NoReturn
 
-from sincpro_framework.ddd.criteria import Criteria, holds
+from sincpro_framework.ddd.criteria import (
+    Criteria,
+    Expression,
+    ResolutionContext,
+    conditions_of,
+    holds,
+)
 from sincpro_framework.runtime.workflows.domain.references import (
+    Reference,
     UnresolvedReference,
-    condition_fields,
-    reference_in,
     resolve,
     resolve_all,
 )
@@ -78,16 +84,17 @@ def _shown(read: Callable[[str], Any], field: str) -> str:
         return "not reached"
 
 
-def _reason(condition: Mapping[str, Any], read: Callable[[str], Any]) -> str:
-    values = ", ".join(f"{one} is {_shown(read, one)}" for one in condition_fields(condition))
+def _reason(expression: Expression | None, read: Callable[[str], Any]) -> str:
+    values = ", ".join(
+        f"${one.field} is {_shown(read, one.field)}" for one in conditions_of(expression)
+    )
     return f"its condition did not hold — {values}"
 
 
 def _read(scope: Mapping[str, Any], field: str) -> Any:
-    reference = reference_in(field)
-    if reference is None:
-        raise UnresolvedReference(f"{field}: a condition's field is a reference")
-    return resolve(reference, scope)
+    """A condition's field is a path into the scope — `steps.order.total`, `input.amount`."""
+    root, *path = field.split(".")
+    return resolve(Reference(root, tuple(path), f"${field}"), scope)
 
 
 def _checked_snippet_answer(step: Step, answer: Any) -> dict[str, Any]:
@@ -123,9 +130,10 @@ class WorkflowRunner:
             return True, ""
         expression = Criteria.model_validate({"where": step.when}).expression
         read = partial(_read, scope)
-        if holds(expression, read):
+        resolution = ResolutionContext(now=datetime.now(UTC), params=scope)
+        if holds(expression, read, resolution):
             return True, ""
-        return False, _reason(step.when, read)
+        return False, _reason(expression, read)
 
     def _answer(
         self, workflow: Workflow, step: Step, scope: dict[str, Any], run: WorkflowRun

@@ -40,6 +40,15 @@ def adapter_of(annotation: Any) -> TypeAdapter:
     return TypeAdapter(annotation)
 
 
+def _current(record: Any, name: str) -> Any:
+    """What the field holds now, never reading for it: a relation nobody read answers `UNREAD`,
+    and assigning over it is a replacement, as `record.lines = [...]` is."""
+    try:
+        return getattr(record, name, None)
+    except RelationNotResolved:
+        return UNREAD
+
+
 def assign(record: Any, values: Mapping[str, Any], adopt: bool = False) -> tuple[str, ...]:
     """Put a form's values on `record`, each read as its field's type, and answer which fields
     now hold another value.
@@ -86,6 +95,17 @@ def assign(record: Any, values: Mapping[str, Any], adopt: bool = False) -> tuple
     return tuple(changed)
 
 
+def _identity_of(kind: type) -> str:
+    """The identity a mapping names a held record by: the framework's own (`Entity.id`); a plain
+    value record has none to match on."""
+    identity = identity_name(kind)
+    return identity if identity in framework_fields(kind) else ""
+
+
+def _is_record_class(annotation: Any) -> bool:
+    return isinstance(annotation, type) and dataclasses.is_dataclass(annotation)
+
+
 def form_values(
     kind: type, values: Mapping[str, Any], nested: bool = False
 ) -> dict[str, Any]:
@@ -116,53 +136,6 @@ def form_values(
             value = form_values(base, value, True)
         written[name] = value
     return written
-
-
-def _current(record: Any, name: str) -> Any:
-    """What the field holds now, never reading for it: a relation nobody read answers `UNREAD`,
-    and assigning over it is a replacement, as `record.lines = [...]` is."""
-    try:
-        return getattr(record, name, None)
-    except RelationNotResolved:
-        return UNREAD
-
-
-def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
-    """`value` as the field `name` of `record` holds it.
-
-    in      list[InvoiceLine], [{"qty": 2, "price": "10"}]   →  [InvoiceLine(qty=2, price=10)]
-    in      list[InvoiceLine], [{"id": "l1", "qty": 5}]      →  [the held line l1, qty now 5]
-    in      Decimal, "50"                                     →  Decimal("50")
-    """
-    owner = type(record)
-    base = without_optional(annotation)
-    members = get_args(base)
-    if (
-        get_origin(base) is list
-        and members
-        and _is_record_class(members[0])
-        and isinstance(value, list)
-    ):
-        kind = members[0]
-        held = _held_by_identity(record, name, kind, value)
-        tied = _tied_to(record, name, kind)
-        return [
-            (
-                _edited_or_built(kind, {**one, **tied}, held, adopt)
-                if isinstance(one, Mapping)
-                else one
-            )
-            for one in value
-        ]
-    if _is_record_class(base) and isinstance(value, Mapping):
-        held = _held_by_identity(record, name, base, [value])
-        return _edited_or_built(base, value, held, adopt)
-    try:
-        return adapter_of(annotation).validate_python(value)
-    except ValidationError as error:
-        raise ClientError(
-            f"{owner.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
-        ) from error
 
 
 def _tied_to(record: Any, name: str, kind: type) -> dict[str, Any]:
@@ -211,31 +184,42 @@ def _held_by_identity(record: Any, name: str, kind: type, value: list[Any]) -> d
     return {str(getattr(one, identity)): one for one in held}
 
 
-def _identity_of(kind: type) -> str:
-    """The identity a mapping names a held record by: the framework's own (`Entity.id`); a plain
-    value record has none to match on."""
-    identity = identity_name(kind)
-    return identity if identity in framework_fields(kind) else ""
+def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
+    """`value` as the field `name` of `record` holds it.
 
-
-def _edited_or_built(
-    kind: type, values: Mapping[str, Any], held: dict[str, Any], adopt: bool
-) -> Any:
-    """The held record a mapping names by its identity, edited in place; or a new one — under
-    the identity it names, when adopting."""
-    identity = _identity_of(kind)
-    if identity and identity in values:
-        found = held.get(str(values[identity]))
-        if found is None and adopt:
-            return _built(kind, values, adopt)
-        if found is None:
-            raise ClientError(
-                f"{kind.__name__} {values[identity]} is not held here: an edited record is one "
-                "the field already holds, and a new one comes without its identity"
+    in      list[InvoiceLine], [{"qty": 2, "price": "10"}]   →  [InvoiceLine(qty=2, price=10)]
+    in      list[InvoiceLine], [{"id": "l1", "qty": 5}]      →  [the held line l1, qty now 5]
+    in      Decimal, "50"                                     →  Decimal("50")
+    """
+    owner = type(record)
+    base = without_optional(annotation)
+    members = get_args(base)
+    if (
+        get_origin(base) is list
+        and members
+        and _is_record_class(members[0])
+        and isinstance(value, list)
+    ):
+        kind = members[0]
+        held = _held_by_identity(record, name, kind, value)
+        tied = _tied_to(record, name, kind)
+        return [
+            (
+                _edited_or_built(kind, {**one, **tied}, held, adopt)
+                if isinstance(one, Mapping)
+                else one
             )
-        assign(found, {name: one for name, one in values.items() if name != identity}, adopt)
-        return found
-    return _built(kind, values, adopt)
+            for one in value
+        ]
+    if _is_record_class(base) and isinstance(value, Mapping):
+        held = _held_by_identity(record, name, base, [value])
+        return _edited_or_built(base, value, held, adopt)
+    try:
+        return adapter_of(annotation).validate_python(value)
+    except ValidationError as error:
+        raise ClientError(
+            f"{owner.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
+        ) from error
 
 
 def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
@@ -267,6 +251,26 @@ def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     return built
 
 
+def _edited_or_built(
+    kind: type, values: Mapping[str, Any], held: dict[str, Any], adopt: bool
+) -> Any:
+    """The held record a mapping names by its identity, edited in place; or a new one — under
+    the identity it names, when adopting."""
+    identity = _identity_of(kind)
+    if identity and identity in values:
+        found = held.get(str(values[identity]))
+        if found is None and adopt:
+            return _built(kind, values, adopt)
+        if found is None:
+            raise ClientError(
+                f"{kind.__name__} {values[identity]} is not held here: an edited record is one "
+                "the field already holds, and a new one comes without its identity"
+            )
+        assign(found, {name: one for name, one in values.items() if name != identity}, adopt)
+        return found
+    return _built(kind, values, adopt)
+
+
 def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
     """A value for a record being built: nothing is held yet, so every nested one is new."""
     base = without_optional(annotation)
@@ -285,73 +289,6 @@ def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> A
         raise ClientError(
             f"{kind.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
         ) from error
-
-
-def _is_record_class(annotation: Any) -> bool:
-    return isinstance(annotation, type) and dataclasses.is_dataclass(annotation)
-
-
-def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
-    """Run, in order, every derivation the change reaches — the records inside it first — and
-    answer the fields of `record` it changed.
-
-        in      Invoice, ("discount",)          →  total runs; subtotal does not
-        in      Invoice, ("lines",)             →  each line's amount, then subtotal, then total
-        in      Invoice, ()                     →  every derivation
-
-    1. A name in `changed` that is not a field is refused, naming it.
-    2. The records it owns are computed first, whole (`owned`): a line's amount before the
-       subtotal that sums it; a field whose records moved is reached.
-    3. With `changed` empty every derivation of the record runs, in order.
-    4. Otherwise a derivation runs when it reads a field the change reached; its own field is
-       then reached too, so a derivation of a derivation follows.
-    Final: the derived fields of `record` whose value moved.
-    """
-    owner = type(record)
-    unknown = sorted(set(changed) - set(annotations_of(owner))) if changed else []
-    if unknown:
-        raise ClientError(f"{owner.__name__} has no field {', '.join(unknown)} to recompute")
-    return _tree(record, set(changed), False, set())
-
-
-def recompute_whole(record: Any) -> tuple[str, ...]:
-    """Every derivation of the record, the records it owns first — what a save runs, so a total
-    over its lines reads lines already computed.
-
-    in      Sale(lines=[Line(qty=2, price=10, amount=0)], subtotal=0)
-    out     Line.amount = 20, then Sale.subtotal = 20
-
-    **A save never reads, and never computes over a relation it does not hold whole.** A
-    derivation that reads a relation not loaded, cut by a specification, or assigned without a
-    whole reading behind it is skipped and keeps its stored value; a derivation that reads it
-    computes from that stored value. A relation never read cannot have changed, so that skip is
-    silent; one held in part may have, so a warning names the field, the relation and how to
-    read it whole. The records held are computed either way. An aggregate with no derivations
-    is not looked into at all.
-    """
-    return _tree(record, set(), True, set())
-
-
-def _tree(record: Any, reached: set[str], tolerant: bool, seen: set[int]) -> tuple[str, ...]:
-    if id(record) in seen:
-        return ()
-    seen.add(id(record))
-    for name in owned(type(record)):
-        # The records held are computed, whether the relation is held whole or in part: each
-        # line's own amount reads only the line. What reads the relation is decided in `_ran`.
-        if not (_holds_whole(record, name) or _held_in_part(record, name)):
-            continue
-        value = getattr(record, name)
-        moved = False
-        for one in value if isinstance(value, (list, EntityCollection)) else (value,):
-            if dataclasses.is_dataclass(one) and not isinstance(one, type):
-                moved = bool(_tree(one, set(), tolerant, seen)) or moved
-        if moved and reached:
-            reached.add(name)
-    derivations = derivations_of(type(record))
-    if not derivations:
-        return ()
-    return _ran(record, derivations, reached, tolerant)
 
 
 @cache
@@ -410,6 +347,19 @@ def _warn_kept(record: Any, derivation: Derivation) -> None:
             return
 
 
+def _computed(derivation: Derivation, record: Any) -> Any:
+    """The derivation's value for `record`. A method named in the declaration is called as the
+    record's own, so a subclass that overrides it is heard; any other callable is called as is.
+    """
+    by = derivation.by
+    name = getattr(by, "__name__", "")
+    if inspect.isfunction(by) and name != "<lambda>":
+        own = getattr(type(record), name, None)
+        if inspect.isfunction(own):
+            return own(record)
+    return by(record)
+
+
 def _ran(
     record: Any, derivations: tuple[Derivation, ...], reached: set[str], tolerant: bool
 ) -> tuple[str, ...]:
@@ -438,14 +388,64 @@ def _ran(
     return tuple(moved)
 
 
-def _computed(derivation: Derivation, record: Any) -> Any:
-    """The derivation's value for `record`. A method named in the declaration is called as the
-    record's own, so a subclass that overrides it is heard; any other callable is called as is.
+def _tree(record: Any, reached: set[str], tolerant: bool, seen: set[int]) -> tuple[str, ...]:
+    if id(record) in seen:
+        return ()
+    seen.add(id(record))
+    for name in owned(type(record)):
+        # The records held are computed, whether the relation is held whole or in part: each
+        # line's own amount reads only the line. What reads the relation is decided in `_ran`.
+        if not (_holds_whole(record, name) or _held_in_part(record, name)):
+            continue
+        value = getattr(record, name)
+        moved = False
+        for one in value if isinstance(value, (list, EntityCollection)) else (value,):
+            if dataclasses.is_dataclass(one) and not isinstance(one, type):
+                moved = bool(_tree(one, set(), tolerant, seen)) or moved
+        if moved and reached:
+            reached.add(name)
+    derivations = derivations_of(type(record))
+    if not derivations:
+        return ()
+    return _ran(record, derivations, reached, tolerant)
+
+
+def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
+    """Run, in order, every derivation the change reaches — the records inside it first — and
+    answer the fields of `record` it changed.
+
+        in      Invoice, ("discount",)          →  total runs; subtotal does not
+        in      Invoice, ("lines",)             →  each line's amount, then subtotal, then total
+        in      Invoice, ()                     →  every derivation
+
+    1. A name in `changed` that is not a field is refused, naming it.
+    2. The records it owns are computed first, whole (`owned`): a line's amount before the
+       subtotal that sums it; a field whose records moved is reached.
+    3. With `changed` empty every derivation of the record runs, in order.
+    4. Otherwise a derivation runs when it reads a field the change reached; its own field is
+       then reached too, so a derivation of a derivation follows.
+    Final: the derived fields of `record` whose value moved.
     """
-    by = derivation.by
-    name = getattr(by, "__name__", "")
-    if inspect.isfunction(by) and name != "<lambda>":
-        own = getattr(type(record), name, None)
-        if inspect.isfunction(own):
-            return own(record)
-    return by(record)
+    owner = type(record)
+    unknown = sorted(set(changed) - set(annotations_of(owner))) if changed else []
+    if unknown:
+        raise ClientError(f"{owner.__name__} has no field {', '.join(unknown)} to recompute")
+    return _tree(record, set(changed), False, set())
+
+
+def recompute_whole(record: Any) -> tuple[str, ...]:
+    """Every derivation of the record, the records it owns first — what a save runs, so a total
+    over its lines reads lines already computed.
+
+    in      Sale(lines=[Line(qty=2, price=10, amount=0)], subtotal=0)
+    out     Line.amount = 20, then Sale.subtotal = 20
+
+    **A save never reads, and never computes over a relation it does not hold whole.** A
+    derivation that reads a relation not loaded, cut by a specification, or assigned without a
+    whole reading behind it is skipped and keeps its stored value; a derivation that reads it
+    computes from that stored value. A relation never read cannot have changed, so that skip is
+    silent; one held in part may have, so a warning names the field, the relation and how to
+    read it whole. The records held are computed either way. An aggregate with no derivations
+    is not looked into at all.
+    """
+    return _tree(record, set(), True, set())

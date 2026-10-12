@@ -17,10 +17,10 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
     Operator,
+    Pagination,
     Specification,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.exceptions import RelationNotResolved
 from sincpro_framework.ddd.query import ResponsePaginatedQuery

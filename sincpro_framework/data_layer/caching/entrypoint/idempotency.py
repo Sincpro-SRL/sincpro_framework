@@ -166,6 +166,30 @@ class Idempotency:
 
     # Running
 
+    def _run_again[T](
+        self,
+        hashed: str,
+        run: Callable[[], T],
+        held: IdempotencyRecord,
+        policy: IdempotencyPolicy,
+        codec: Codec[T],
+        error: Exception,
+    ) -> T:
+        """The kept answer no longer reads as what the use case answers — a deploy changed its
+        shape: run again, said, and keep the new answer in its place."""
+        logger.warning(
+            f"the answer kept under idempotency key {hashed} no longer fits the use case's "
+            f"response and it runs again: {error}"
+        )
+        with _running_as(hashed):
+            answer = run()
+        self.records.complete(
+            hashed,
+            held.model_copy(update={"answer": codec.encode(answer)}),
+            policy.expires_after,
+        )
+        return answer
+
     def run[T](
         self,
         key: Any,
@@ -225,30 +249,6 @@ class Idempotency:
                     "a run with this idempotency key is still in progress"
                 )
             time.sleep(POLL_SECONDS)
-
-    def _run_again[T](
-        self,
-        hashed: str,
-        run: Callable[[], T],
-        held: IdempotencyRecord,
-        policy: IdempotencyPolicy,
-        codec: Codec[T],
-        error: Exception,
-    ) -> T:
-        """The kept answer no longer reads as what the use case answers — a deploy changed its
-        shape: run again, said, and keep the new answer in its place."""
-        logger.warning(
-            f"the answer kept under idempotency key {hashed} no longer fits the use case's "
-            f"response and it runs again: {error}"
-        )
-        with _running_as(hashed):
-            answer = run()
-        self.records.complete(
-            hashed,
-            held.model_copy(update={"answer": codec.encode(answer)}),
-            policy.expires_after,
-        )
-        return answer
 
     # Declaring
 

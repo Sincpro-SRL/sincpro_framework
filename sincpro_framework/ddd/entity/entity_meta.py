@@ -17,7 +17,7 @@ import inspect
 import sys
 import types
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, tzinfo
 from decimal import Decimal
 from enum import Enum, StrEnum
 from functools import cache
@@ -31,32 +31,38 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import PydanticSchemaGenerationError, TypeAdapter, computed_field
+from pydantic import Field, PydanticSchemaGenerationError, TypeAdapter, computed_field
 from pydantic_core import PydanticSerializationError
 
+from sincpro_framework.context.entrypoint.facade import use_context
 from sincpro_framework.ddd.criteria import (
     MULTI_VALUED,
+    RESOLVERS,
     All,
     Any_,
     Condition,
     Criteria,
     Expression,
+    FromField,
     Not,
     Operator,
+    ResolutionContext,
+    ResolverMeta,
     Sort,
     Specification,
     conditions_of,
+    has_dynamic_values,
     holds_text,
+    mapped,
+    resolve,
 )
 from sincpro_framework.ddd.entity.derivations import Derivations, Derive
 from sincpro_framework.ddd.entity.entity import Translated
 from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
-    AllHold,
-    AnyHolds,
     Fields,
-    Is,
     Presentation,
     When,
     field_name,
@@ -100,7 +106,7 @@ class FieldType(StrEnum):
         """
         return self in (FieldType.MANY2ONE, FieldType.ONE2MANY, FieldType.MANY2MANY)
 
-    def read(self, raw: Any) -> Any:
+    def read(self, raw: Any, timezone: tzinfo = UTC) -> Any:
         """Reads a value written as text into what this type holds.
 
             in      "1000" as INTEGER          the text a URL carries
@@ -118,6 +124,12 @@ class FieldType(StrEnum):
         >>> FieldType.INTEGER.read("banana")
         Unreadable: invalid literal for int() with base 10: 'banana'
         """
+        if (
+            self is FieldType.DATETIME
+            and isinstance(raw, date)
+            and not isinstance(raw, datetime)
+        ):
+            return datetime.combine(raw, time.min, tzinfo=timezone).astimezone(UTC)
         if not isinstance(raw, str):
             return raw
         try:
@@ -149,6 +161,11 @@ COMPARABLE: tuple[Operator, ...] = (
     Operator.LTE,
     Operator.BETWEEN,
 )
+
+SAME_ROW: tuple[Operator, ...] = tuple(
+    one for one in COMPARABLE if one is not Operator.BETWEEN
+)
+"""The operators that compare a column with another column of the same row."""
 
 OPERATORS_BY_TYPE: dict[FieldType, tuple[Operator, ...]] = {
     FieldType.TEXT: (
@@ -461,15 +478,15 @@ class FieldMeta(DataTransferObject):
         """
         return operator in self.ops
 
-    def _value(self, raw: Any) -> Any:
+    def _value(self, raw: Any, timezone: tzinfo = UTC) -> Any:
         if self.exact and isinstance(raw, (str, int, float)) and not isinstance(raw, bool):
             try:
                 return Decimal(str(raw))
             except ArithmeticError as error:
                 raise Unreadable(f"{raw!r} is not a decimal") from error
-        return self.type.read(raw)
+        return self.type.read(raw, timezone)
 
-    def read(self, condition: Condition) -> Condition:
+    def read(self, condition: Condition, timezone: tzinfo = UTC) -> Condition:
         """Context: the same condition with its value in the type this column compares against.
 
         >>> row_count.read(Condition(field="row_count", value="1000", operator=Operator.GT))
@@ -491,13 +508,17 @@ class FieldMeta(DataTransferObject):
                 raise Unreadable(
                     f"'between' compares against two bounds; got {condition.value!r}"
                 )
-            return condition.model_copy(update={"value": [self._value(one) for one in given]})
+            return condition.model_copy(
+                update={"value": [self._value(one, timezone) for one in given]}
+            )
 
         if condition.operator in MULTI_VALUED:
             given = (
                 condition.value if isinstance(condition.value, list) else [condition.value]
             )
-            return condition.model_copy(update={"value": [self._value(one) for one in given]})
+            return condition.model_copy(
+                update={"value": [self._value(one, timezone) for one in given]}
+            )
 
         if self.type is FieldType.TEXT_LIST:
             # `contains` asks about one member, so its value is a member's type; `eq` and `ne`
@@ -508,7 +529,26 @@ class FieldMeta(DataTransferObject):
                 update={"value": FieldType.TEXT.read(condition.value)}
             )
 
-        return condition.model_copy(update={"value": self._value(condition.value)})
+        return condition.model_copy(update={"value": self._value(condition.value, timezone)})
+
+
+def _ambient_resolution() -> ResolutionContext:
+    """What a dynamic value reads when nobody gave it a resolution: this moment, and the server's
+    own context — its `timezone` (an IANA name, UTC without one) and `week_starts_on`."""
+    context = use_context()
+    zone = context.get("timezone", "UTC")
+    try:
+        timezone = ZoneInfo(zone)
+    except ZoneInfoNotFoundError as error:
+        raise ProgrammingError(
+            f"the context's timezone {zone!r} is not a timezone name"
+        ) from error
+    return ResolutionContext(
+        now=datetime.now(UTC),
+        timezone=timezone,
+        week_starts_on=context.get("week_starts_on", 0),
+        context=context,
+    )
 
 
 class Meta(DataTransferObject):
@@ -537,6 +577,9 @@ class Meta(DataTransferObject):
     name: Translated
     """The aggregate's own name, exactly as the class's `translations()` answered it. A
     field's own label/help live on `fields[name].label`/`.help`, not here."""
+    resolvers: list[ResolverMeta] = Field(default_factory=lambda: list(RESOLVERS))
+    """The dynamic values a condition's value may be (`today`, `context`, …): what a filter builder
+    offers beside a literal."""
 
     @property
     def relations(self) -> dict[str, FieldMeta]:
@@ -549,7 +592,9 @@ class Meta(DataTransferObject):
             name: field for name, field in self.fields.items() if field.type.is_relational
         }
 
-    def _kept(self, condition: Condition) -> tuple[Condition | None, Dropped | None]:
+    def _kept(
+        self, condition: Condition, timezone: tzinfo = UTC
+    ) -> tuple[Condition | None, Dropped | None]:
         """One condition, kept and read — or dropped with the reason.
 
             in      Condition(row_count, "1000", GT)
@@ -557,7 +602,8 @@ class Meta(DataTransferObject):
             or      (None, Dropped(field='gone', reason='unknown_field'))
 
         Three things can be wrong and they are not the same: an unknown field, an operator the
-        type does not take, and a value that will not read.
+        type does not take, and a value that will not read. A column compared with another
+        (`FromField`) needs the other to exist, to be of the same type, and a comparing operator.
         """
         field = self.fields.get(condition.field)
         if field is None:
@@ -566,37 +612,18 @@ class Meta(DataTransferObject):
         if not field.accepts(condition.operator):
             return None, Dropped(field=condition.field, reason="unsupported_operator")
 
+        if isinstance(condition.value, FromField):
+            other = self.fields.get(condition.value.name)
+            if other is None:
+                return None, Dropped(field=condition.value.name, reason="unknown_field")
+            if condition.operator not in SAME_ROW or other.type is not field.type:
+                return None, Dropped(field=condition.field, reason="bad_value")
+            return condition, None
+
         try:
-            return field.read(condition), None
+            return field.read(condition, timezone), None
         except Unreadable:
             return None, Dropped(field=condition.field, reason="bad_value")
-
-    def _pruned(self, expression: Expression, dropped: list[Dropped]) -> Expression | None:
-        """The tree with every unusable leaf removed, collapsing whatever is left empty.
-
-            in      All([Condition(name, LIKE), Condition(gone, EQ)])
-            keep    [Condition(name, LIKE)]              the second is unknown
-            out     Condition(name, LIKE)                one part needs no wrapper
-
-        A connective that loses all of its parts disappears rather than becoming empty — an
-        empty `AND` matches everything and an empty `OR` matches nothing, and neither was
-        asked for. Removing the node hands the decision to its parent.
-        """
-        match expression:
-            case Condition():
-                kept, loss = self._kept(expression)
-                if loss is not None:
-                    dropped.append(loss)
-                return kept
-            case All():
-                parts = [p for p in (self._pruned(x, dropped) for x in expression.all) if p]
-                return All(all=parts) if len(parts) > 1 else (parts[0] if parts else None)
-            case Any_():
-                parts = [p for p in (self._pruned(x, dropped) for x in expression.any) if p]
-                return Any_(any=parts) if len(parts) > 1 else (parts[0] if parts else None)
-            case Not():
-                inner = self._pruned(expression.negate, dropped)
-                return Not(negate=inner) if inner is not None else None
 
     def field(self, name: str) -> FieldMeta:
         """The field, or a refusal naming it. For the callers that cannot go on without one.
@@ -718,22 +745,45 @@ class Meta(DataTransferObject):
         return self.model_copy(update={"fields": kept})
 
     def accept(
-        self, expression: Expression | None
+        self, expression: Expression | None, resolution: ResolutionContext | None = None
     ) -> tuple[Expression | None, list[Dropped]]:
         """The part of a filter this model can answer, and the list of what it could not.
 
-        Nothing raises: an unusable condition is dropped and reported, because a shared link
-        outlives the schema it was written against and a dropped filter always widens.
+        Nothing raises for a condition it cannot use: it is dropped and reported, because a shared
+        link outlives the schema it was written against and a dropped filter always widens.
+
+        A dynamic value (`today`, the user) is read first, so everything downstream — the store,
+        the SQL, the key of a cache — sees only what actually ran. Without a `resolution` it is
+        built from this moment and the framework's own context.
 
         >>> meta.accept(Condition(field="row_count", operator=Operator.GT, value="1000"))
         (Condition(field='row_count', operator=<Operator.GT>, value=1000), [])
         >>> meta.accept(Condition(field="gone", value="1"))
         (None, [Dropped(field='gone', reason='unknown_field')])
         """
-        if expression is None:
-            return None, []
+        if has_dynamic_values(expression):
+            resolution = resolution or _ambient_resolution()
+            expression = resolve(expression, resolution)
+
+        if resolution is None and any(
+            isinstance(leaf.value, date)
+            and not isinstance(leaf.value, datetime)
+            and (held := self.fields.get(leaf.field)) is not None
+            and held.type is FieldType.DATETIME
+            for leaf in conditions_of(expression)
+        ):
+            resolution = _ambient_resolution()
+        timezone = resolution.timezone if resolution is not None else UTC
+
         dropped: list[Dropped] = []
-        return self._pruned(expression, dropped), dropped
+
+        def kept(condition: Condition) -> Condition | None:
+            read, loss = self._kept(condition, timezone)
+            if loss is not None:
+                dropped.append(loss)
+            return read
+
+        return mapped(expression, kept), dropped
 
 
 def _worded(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
@@ -913,46 +963,34 @@ def _search_checked(
     return answered
 
 
-def _condition(owner: str, declared: object) -> Expression:
-    """A `When`'s condition as the expression a Criteria carries.
-
-    in      Is(a.state, NE, InvoiceState.DRAFT)           →  out  Condition(state, !=, "draft")
-    in      AllHold(Is(a.state, …), Is(a.payment, …))       →  out  All([…, …])
-    """
-    if isinstance(declared, Is):
-        value = declared.value
-        if isinstance(value, Enum) and not isinstance(value, (str, int)):
-            value = value.value
-        return Condition(
-            field=field_name(declared.field, "Is(a.state, Operator.EQ, State.DRAFT)"),
-            operator=declared.operator,
-            value=cast(Any, value),
-        )
-    if isinstance(declared, AllHold):
-        return All(all=[_condition(owner, one) for one in declared.conditions])
-    if isinstance(declared, AnyHolds):
-        return Any_(any=[_condition(owner, one) for one in declared.conditions])
-    raise ProgrammingError(
-        f"{owner}.presentation takes a condition as Is, AllHold or AnyHolds, as in "
-        f"When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id); it was given {declared!r}"
-    )
-
-
-def _while(owner: str, answered: object, part: str) -> dict[str, Expression]:
+def _while(
+    owner: str, answered: object, part: str, annotations: dict[str, Any]
+) -> dict[str, Expression]:
     """Each field a `When` covers, with its condition. A field covered twice is covered while
-    either holds."""
+    either holds. The condition is a criteria's own, over fields the entity has."""
     covered: dict[str, list[Expression]] = {}
     for entry in _entries(answered):
         if not isinstance(entry, When):
             raise ProgrammingError(
                 f"{owner}.presentation {part} takes When, as in "
-                f"lambda a: [When(Is(a.state, Operator.EQ, State.DRAFT), a.partner_id)]; "
+                f"lambda a: [When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id)]; "
                 f"it was given {entry!r}"
             )
-        condition = _condition(owner, entry.condition)
+        if not isinstance(entry.condition, (Condition, All, Any_, Not)):
+            raise ProgrammingError(
+                f"{owner}.presentation {part} takes a condition as Condition, All, Any or Not, "
+                f"as in When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id); "
+                f"it was given {entry.condition!r}"
+            )
+        for leaf in conditions_of(entry.condition):
+            if leaf.field not in annotations:
+                raise ProgrammingError(
+                    f"{owner}.presentation {part} asks about {leaf.field}, "
+                    f"which is not a field of {owner}"
+                )
         for one in entry.fields:
             covered.setdefault(field_name(one, "When(..., a.partner_id)"), []).append(
-                condition
+                entry.condition
             )
     return {
         name: conditions[0] if len(conditions) == 1 else Any_(any=conditions)
@@ -1058,17 +1096,17 @@ def presentation_of(declared: type) -> Presented:
         readonly=readonly,
         required=required,
         readonly_when=(
-            _while(owner, presentation.readonly_when(fields), "readonly_when")
+            _while(owner, presentation.readonly_when(fields), "readonly_when", annotations)
             if presentation.readonly_when
             else {}
         ),
         required_when=(
-            _while(owner, presentation.required_when(fields), "required_when")
+            _while(owner, presentation.required_when(fields), "required_when", annotations)
             if presentation.required_when
             else {}
         ),
         visible_when=(
-            _while(owner, presentation.visible_when(fields), "visible_when")
+            _while(owner, presentation.visible_when(fields), "visible_when", annotations)
             if presentation.visible_when
             else {}
         ),
@@ -1102,6 +1140,32 @@ class Derivation:
     field: str
     depends: tuple[str, ...]
     by: Any
+
+
+def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
+    """The derived fields, each after the derived fields it reads (Kahn, declaration order among
+    the free ones). A cycle is refused, naming it."""
+    waiting = {
+        name: {one for one in derivation.depends if one in read and one != name}
+        for name, derivation in read.items()
+    }
+    for name, derivation in read.items():
+        if name in derivation.depends:
+            raise ProgrammingError(f"{owner}.derivations computes {name} from itself")
+    ordered: list[str] = []
+    while waiting:
+        free = [name for name, needs in waiting.items() if not needs]
+        if not free:
+            cycle = " → ".join(sorted(waiting))
+            raise ProgrammingError(
+                f"{owner}.derivations depend on each other in a cycle: {cycle}"
+            )
+        for name in free:
+            ordered.append(name)
+            del waiting[name]
+        for needs in waiting.values():
+            needs.difference_update(free)
+    return ordered
 
 
 @cache
@@ -1149,32 +1213,6 @@ def derivations_of(declared: type) -> tuple[Derivation, ...]:
             by=entry.by,
         )
     return tuple(read[name] for name in _derivation_order(owner, read))
-
-
-def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
-    """The derived fields, each after the derived fields it reads (Kahn, declaration order among
-    the free ones). A cycle is refused, naming it."""
-    waiting = {
-        name: {one for one in derivation.depends if one in read and one != name}
-        for name, derivation in read.items()
-    }
-    for name, derivation in read.items():
-        if name in derivation.depends:
-            raise ProgrammingError(f"{owner}.derivations computes {name} from itself")
-    ordered: list[str] = []
-    while waiting:
-        free = [name for name, needs in waiting.items() if not needs]
-        if not free:
-            cycle = " → ".join(sorted(waiting))
-            raise ProgrammingError(
-                f"{owner}.derivations depend on each other in a cycle: {cycle}"
-            )
-        for name in free:
-            ordered.append(name)
-            del waiting[name]
-        for needs in waiting.values():
-            needs.difference_update(free)
-    return ordered
 
 
 def default_order_of(declared: type, identity: str) -> str:

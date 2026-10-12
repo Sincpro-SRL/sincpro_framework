@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import ConfigDict, ValidationInfo, model_validator
 
+from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 TOLERANT: dict[str, Any] = {"unknown_keys": "ignore"}
@@ -39,3 +40,13 @@ class Strict(DataTransferObject):
             f.alias for f in cls.model_fields.values() if f.alias
         }
         return {key: value for key, value in data.items() if key in known}
+
+
+def refused_or_dropped(value: dict, known: set[str], tolerant: bool) -> dict:
+    unknown = sorted(set(value) - known)
+    if unknown and not tolerant:
+        raise InvalidCriteria(
+            f"a filter node has no {', '.join(repr(one) for one in unknown)}; "
+            f"it takes {sorted(known)}"
+        )
+    return {key: one for key, one in value.items() if key in known}

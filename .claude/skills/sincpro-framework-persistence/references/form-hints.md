@@ -8,7 +8,7 @@ fields are read-only, asked for, pre-filled, or shown only in some states.
 ```python
 from dataclasses import dataclass
 from decimal import Decimal
-from sincpro_framework.ddd import AllHold, AnyHolds, Entity, Is, Presentation, When
+from sincpro_framework.ddd import All, Condition, Entity, Presentation, When
 from sincpro_framework.ddd.criteria import Operator
 
 @dataclass
@@ -25,14 +25,14 @@ class Invoice(Entity):
         readonly=lambda i: [i.number, i.state],       # the domain writes them
         required=lambda i: i.partner_id,
         readonly_when=lambda i: When(
-            Is(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.discount
+            Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.discount
         ),
         required_when=lambda i: [
-            When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
-            When(AllHold(Is(i.state, Operator.EQ, InvoiceState.DRAFT),
-                         Is(i.discount, Operator.GT, Decimal("0"))), i.discount_reason),
+            When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+            When(All(all=[Condition.on(i.state, Operator.EQ, InvoiceState.DRAFT),
+                          Condition.on(i.discount, Operator.GT, Decimal("0"))]), i.discount_reason),
         ],
-        visible_when=lambda i: When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+        visible_when=lambda i: When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
     )
 ```
 
@@ -82,7 +82,7 @@ own method refusing the change, or a `before_save` hook comparing with the store
 - **Hiding a sensitive field only in the UI.** Hiding is not omitting: cut it on the server
   with the specification or an `after_read` hook.
 - **Writing a condition as a Python expression.** `When(i.state == "done", ...)` is refused:
-  write `When(Is(i.state, Operator.EQ, State.DONE), ...)`, which is publishable data.
+  write `When(Condition.on(i.state, Operator.EQ, State.DONE), ...)`, which is publishable data.
 - **Asking a record with a specification that drops the fields a condition reads.** The client
   cannot evaluate `readonly_when` over `state` if the record arrived without `state`.
 - **Adding role or tenant logic to `presentation`.** It is the same for every caller; groups and

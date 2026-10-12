@@ -41,23 +41,6 @@ class Subscriber:
                 return found
         return None
 
-    def handle(self, event: DomainEvent) -> list[Any]:
-        """The event to every bus that answers it, now; what each one returned, in order — or,
-        once every bus ran, what failed: the error when one did, an `ExceptionGroup` when
-        several did."""
-        answers: list[Any] = []
-        failures: list[Exception] = []
-        for bus in self.listeners(event.name):
-            try:
-                answers.append(bus(self.as_known_by(bus, event)))
-            except Exception as error:  # noqa: BLE001 - the other buses still hear it
-                failures.append(error)
-        if len(failures) == 1:
-            raise failures[0]
-        if failures:
-            raise ExceptionGroup(f"{event.name} failed in {len(failures)} buses", failures)
-        return answers
-
     def as_known_by(self, bus: UseFramework, event: DomainEvent) -> DomainEvent:
         """This event as *that* bus declared it — its own class for the same wire name.
 
@@ -79,6 +62,23 @@ class Subscriber:
         if declared is None or type(event) is declared:
             return event
         return declared.from_json(json.loads(event.as_json()))
+
+    def handle(self, event: DomainEvent) -> list[Any]:
+        """The event to every bus that answers it, now; what each one returned, in order — or,
+        once every bus ran, what failed: the error when one did, an `ExceptionGroup` when
+        several did."""
+        answers: list[Any] = []
+        failures: list[Exception] = []
+        for bus in self.listeners(event.name):
+            try:
+                answers.append(bus(self.as_known_by(bus, event)))
+            except Exception as error:  # noqa: BLE001 - the other buses still hear it
+                failures.append(error)
+        if len(failures) == 1:
+            raise failures[0]
+        if failures:
+            raise ExceptionGroup(f"{event.name} failed in {len(failures)} buses", failures)
+        return answers
 
     def get_async_subscriber(self) -> "AsyncSubscriber":
         """The same subscriber for an `async def` caller."""

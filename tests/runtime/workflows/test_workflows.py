@@ -137,7 +137,7 @@ def test_fail_stops_the_run_with_its_message_and_nothing_after_it_runs(calls):
             {
                 "id": "too_big",
                 "fail": "orders over 10000 need a manager",
-                "when": {"field": "$steps.order.total", "operator": ">", "value": 10_000},
+                "when": {"field": "steps.order.total", "operator": ">", "value": 10_000},
             },
             {
                 "id": "invoice",
@@ -385,15 +385,15 @@ def test_a_skipped_step_whose_condition_short_circuits_past_an_unreachable_field
                 "id": "maybe",
                 "execute": "CommandReserve",
                 "input": {"product": "x", "quantity": 1},
-                "when": {"field": "$steps.order.total", "operator": ">", "value": 10**9},
+                "when": {"field": "steps.order.total", "operator": ">", "value": 10**9},
             },
             {
                 "id": "after",
                 "fail": "never",
                 "when": {
                     "all": [
-                        {"field": "$steps.order.total", "operator": ">", "value": 10**9},
-                        {"field": "$steps.maybe.reserved", "operator": "=", "value": True},
+                        {"field": "steps.order.total", "operator": ">", "value": 10**9},
+                        {"field": "steps.maybe.reserved", "operator": "=", "value": True},
                     ]
                 },
             },
@@ -409,6 +409,77 @@ def test_a_skipped_step_whose_condition_short_circuits_past_an_unreachable_field
         StepStatus.SKIPPED,
     ]
     assert "$steps.maybe.reserved is not reached" in run.steps[-1].reason
+
+
+def test_a_condition_compares_two_paths_of_the_run(calls):
+    comparing = {
+        "name": "comparing",
+        "input": {"order_id": "integer"},
+        "steps": [
+            {
+                "id": "order",
+                "execute": "CommandGetOrder",
+                "input": {"order_id": "$input.order_id"},
+            },
+            {
+                "id": "same",
+                "fail": "the order id is the total",
+                "when": {
+                    "field": "steps.order.total",
+                    "operator": "=",
+                    "value": {"$": "param", "name": "input.order_id"},
+                },
+            },
+        ],
+    }
+    workflows = _workflows(calls, comparing)
+
+    skipped = workflows.run("comparing", {"order_id": 1})
+
+    assert skipped.steps[-1].status is StepStatus.SKIPPED
+
+
+def test_a_value_out_of_reach_is_not_asked_for_when_an_earlier_part_already_decided(calls):
+    guarded = {
+        "name": "lazy_value",
+        "input": {"order_id": "integer"},
+        "steps": [
+            {
+                "id": "order",
+                "execute": "CommandGetOrder",
+                "input": {"order_id": "$input.order_id"},
+            },
+            {
+                "id": "maybe",
+                "execute": "CommandReserve",
+                "input": {"product": "x", "quantity": 1},
+                "when": {"field": "steps.order.total", "operator": ">", "value": 10**9},
+            },
+            {
+                "id": "after",
+                "fail": "never",
+                "when": {
+                    "all": [
+                        {"field": "steps.order.total", "operator": ">", "value": 10**9},
+                        {
+                            "field": "steps.order.total",
+                            "operator": "=",
+                            "value": {"$": "param", "name": "steps.maybe.reserved"},
+                        },
+                    ]
+                },
+            },
+        ],
+    }
+    workflows = _workflows(calls, guarded)
+
+    run = workflows.run("lazy_value", {"order_id": 1})
+
+    assert [step.status for step in run.steps] == [
+        StepStatus.RAN,
+        StepStatus.SKIPPED,
+        StepStatus.SKIPPED,
+    ]
 
 
 def test_a_skipped_step_inside_for_each_is_left_out_of_its_items(calls):
@@ -429,7 +500,7 @@ def test_a_skipped_step_inside_for_each_is_left_out_of_its_items(calls):
                         "id": "big",
                         "execute": "CommandReserve",
                         "input": {"product": "$item.product", "quantity": "$item.quantity"},
-                        "when": {"field": "$item.quantity", "operator": ">", "value": 1},
+                        "when": {"field": "item.quantity", "operator": ">", "value": 1},
                     }
                 ],
             },

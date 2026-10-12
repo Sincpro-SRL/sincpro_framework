@@ -140,14 +140,42 @@ class EventRelay:
             ).items
         )
 
-    def run_once(self) -> RelayPass:
-        """One pass: claim the due events, deliver them in order, mark them — one transaction
-        on a store that has them."""
-        now = self.clock()
-        if isinstance(self.repository, Transacts):
-            with self.repository.context() as unit:
-                return self._carried_out(unit, now, self.repository.capabilities.row_locks)
-        return self._carried_out(self.repository, now, False)
+    def _decided(
+        self, event: Any, error: Exception, now: datetime
+    ) -> tuple[Became, bool, bool]:
+        failure = HandlingFailure(event, error, event.delivery_attempts + 1, now)
+        decision = self.on_failure.decide(failure)
+        reason = f"{type(error).__name__}: {error}"
+        logger.warning(
+            f"{event.name} {event.id} failed (attempt {failure.attempts}), "
+            f"{decision.outcome}: {reason}"
+        )
+        match decision.outcome:
+            case FailureOutcome.RETRY_IN_PLACE:
+                event.failed(reason, decision.retry_at or now)
+                return Became.RETRIED, True, True
+            case FailureOutcome.RETRY_LATER:
+                event.failed(reason, decision.retry_at or now)
+                return Became.RETRIED, decision.holds_stream, False
+            case FailureOutcome.PARK:
+                event.parked(reason)
+                return Became.PARKED, False, False
+            case FailureOutcome.SKIP:
+                event.delivered(now)
+                event.delivery = {**event.delivery, "skipped": reason}
+                return Became.SKIPPED, False, False
+
+    def _delivered(self, event: Any, now: datetime) -> tuple[Became, bool, bool]:
+        """What became of it: the outcome, whether its entity waits behind it, whether the pass
+        stops at it."""
+        try:
+            self.publisher.publish(event)
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - a failed delivery is decided, never raised
+            return self._decided(event, error, now)
+        event.delivered(now)
+        return Became.DELIVERED, False, False
 
     def _carried_out(self, repository: Any, now: datetime, locks: bool) -> RelayPass:
         """1. The due events, oldest first, at most a batch — locked, where the store locks.
@@ -197,39 +225,11 @@ class EventRelay:
             repository.save(touched)
         return RelayPass(read=len(events), **{str(became): n for became, n in counts.items()})
 
-    def _delivered(self, event: Any, now: datetime) -> tuple[Became, bool, bool]:
-        """What became of it: the outcome, whether its entity waits behind it, whether the pass
-        stops at it."""
-        try:
-            self.publisher.publish(event)
-        except (
-            Exception
-        ) as error:  # noqa: BLE001 - a failed delivery is decided, never raised
-            return self._decided(event, error, now)
-        event.delivered(now)
-        return Became.DELIVERED, False, False
-
-    def _decided(
-        self, event: Any, error: Exception, now: datetime
-    ) -> tuple[Became, bool, bool]:
-        failure = HandlingFailure(event, error, event.delivery_attempts + 1, now)
-        decision = self.on_failure.decide(failure)
-        reason = f"{type(error).__name__}: {error}"
-        logger.warning(
-            f"{event.name} {event.id} failed (attempt {failure.attempts}), "
-            f"{decision.outcome}: {reason}"
-        )
-        match decision.outcome:
-            case FailureOutcome.RETRY_IN_PLACE:
-                event.failed(reason, decision.retry_at or now)
-                return Became.RETRIED, True, True
-            case FailureOutcome.RETRY_LATER:
-                event.failed(reason, decision.retry_at or now)
-                return Became.RETRIED, decision.holds_stream, False
-            case FailureOutcome.PARK:
-                event.parked(reason)
-                return Became.PARKED, False, False
-            case FailureOutcome.SKIP:
-                event.delivered(now)
-                event.delivery = {**event.delivery, "skipped": reason}
-                return Became.SKIPPED, False, False
+    def run_once(self) -> RelayPass:
+        """One pass: claim the due events, deliver them in order, mark them — one transaction
+        on a store that has them."""
+        now = self.clock()
+        if isinstance(self.repository, Transacts):
+            with self.repository.context() as unit:
+                return self._carried_out(unit, now, self.repository.capabilities.row_locks)
+        return self._carried_out(self.repository, now, False)

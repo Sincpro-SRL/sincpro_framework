@@ -15,14 +15,12 @@ from typing import Any, get_args
 from pydantic import ValidationError
 
 from sincpro_framework.common.naming import local_name
-from sincpro_framework.ddd.criteria import Criteria
+from sincpro_framework.ddd.criteria import Criteria, Param, conditions_of
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.introspection.operations import Operation
 from sincpro_framework.runtime.workflows.domain.issue import Issue
 from sincpro_framework.runtime.workflows.domain.references import (
     Reference,
-    condition_fields,
-    condition_values,
     reference_in,
     references_in,
 )
@@ -136,32 +134,39 @@ class WorkflowValidator:
         return issues
 
     def _condition(self, workflow: str, step: Step, scope: _Scope) -> list[Issue]:
+        """A step's condition is a criteria evaluated over the scope as a record: each `field` is
+        a path into it (`steps.order.total`), and a value may be a `param` naming another path.
+        """
         if step.when is None:
             return []
         try:
-            Criteria.model_validate({"where": step.when})
+            expression = Criteria.model_validate({"where": step.when}).expression
         except (ValidationError, InvalidCriteria) as error:
             return [
                 Issue(workflow, step.id, "when", f"not a condition: {_first_problem(error)}")
             ]
-        fields = condition_fields(step.when)
-        issues = [
-            Issue(workflow, step.id, "when", f"{one}: a condition's field is a reference")
-            for one in fields
-            if not one.startswith("$")
-        ]
-        issues += [
-            Issue(
-                workflow,
-                step.id,
-                "when",
-                f"{value}: a condition's value is a literal — compare two references in a "
-                "snippet",
+        issues = []
+        for leaf in conditions_of(expression):
+            if leaf.field.startswith("$"):
+                issues.append(
+                    Issue(
+                        workflow,
+                        step.id,
+                        "when",
+                        f"{leaf.field}: a condition's field is a path, written without the $ — "
+                        f"{leaf.field[1:]}",
+                    )
+                )
+                continue
+            paths = [leaf.field] + [
+                one.name
+                for one in (leaf.value if isinstance(leaf.value, list) else [leaf.value])
+                if isinstance(one, Param)
+            ]
+            issues += self._references(
+                workflow, step.id, "when", [f"${path}" for path in paths], scope
             )
-            for value in condition_values(step.when)
-            if reference_in(value) is not None
-        ]
-        return issues + self._references(workflow, step.id, "when", fields, scope)
+        return issues
 
     def _execute(self, workflow: str, step: Step, scope: _Scope) -> list[Issue]:
         operation = self._operation(step.execute)
@@ -281,20 +286,6 @@ class WorkflowValidator:
         issues += self._references(workflow.name, "", "output", workflow.output, scope)
         return issues
 
-    def validate_all(self, raws: Sequence[tuple[str, Any]]) -> list[Issue]:
-        issues: list[Issue] = []
-        names: dict[str, str] = {}
-        for origin, raw in raws:
-            issues += self.validate(raw, origin)
-            name = raw.get("name") if isinstance(raw, Mapping) else None
-            if isinstance(name, str) and name in names:
-                issues.append(
-                    Issue(name, "", "name", f"defined twice: in {names[name]} and {origin}")
-                )
-            elif isinstance(name, str):
-                names[name] = origin
-        return issues + self._run_workflow_issues(raws, set(names))
-
     def _run_workflow_issues(
         self, raws: Sequence[tuple[str, Any]], names: set[str]
     ) -> list[Issue]:
@@ -318,3 +309,17 @@ class WorkflowValidator:
                         )
                     )
         return issues
+
+    def validate_all(self, raws: Sequence[tuple[str, Any]]) -> list[Issue]:
+        issues: list[Issue] = []
+        names: dict[str, str] = {}
+        for origin, raw in raws:
+            issues += self.validate(raw, origin)
+            name = raw.get("name") if isinstance(raw, Mapping) else None
+            if isinstance(name, str) and name in names:
+                issues.append(
+                    Issue(name, "", "name", f"defined twice: in {names[name]} and {origin}")
+                )
+            elif isinstance(name, str):
+                names[name] = origin
+        return issues + self._run_workflow_issues(raws, set(names))

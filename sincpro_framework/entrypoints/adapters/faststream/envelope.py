@@ -132,6 +132,13 @@ class Envelope(DataTransferObject):
         return headers
 
 
+def type_name(message: Any, context: str = "") -> str:
+    """The wire type of a message, its identity: a DomainEvent's `name`, a Command's
+    `context.Class` (`registered_name`)."""
+    cls = message if isinstance(message, type) else type(message)
+    return registered_name(cls, context)
+
+
 def cloud_event_headers(
     message: DomainEvent | DataTransferObject | None = None,
     source: str = "",
@@ -183,10 +190,3 @@ def cloud_event_headers(
     if isinstance(message, DomainEvent):
         headers[EVENT_HEADER] = message.name
     return headers
-
-
-def type_name(message: Any, context: str = "") -> str:
-    """The wire type of a message, its identity: a DomainEvent's `name`, a Command's
-    `context.Class` (`registered_name`)."""
-    cls = message if isinstance(message, type) else type(message)
-    return registered_name(cls, context)

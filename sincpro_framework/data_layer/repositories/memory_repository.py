@@ -39,6 +39,7 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    CursorKeys,
     Grouping,
     Level,
     Measure,
@@ -46,10 +47,9 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     combined,
     conditions_of,
+    matches,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.evaluate import matches
-from sincpro_framework.ddd.criteria.pagination import CursorKeys
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity, utc_now
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -190,6 +190,47 @@ def _measured(rows: list[Any], grouping: Grouping) -> dict[str, Any]:
     }
 
 
+def _page_of_ids(
+    rows: list[Any], criteria: Criteria, meta: Meta
+) -> tuple[list[Any], str | None]:
+    if not criteria.pagination.asked:
+        return [], None
+    sorts = criteria.order or parse_order(meta.default_order)
+    if not any(sort.field == meta.identity for sort in sorts):
+        sorts = sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
+    ordered = _sorted(rows, sorts)
+    kept = ordered[: criteria.limit]
+    cursor = (
+        criteria.pagination.next_from(kept[-1], sorts)
+        if kept and len(ordered) > criteria.limit
+        else None
+    )
+    return [getattr(record, meta.identity) for record in kept], cursor
+
+
+def _bucket_key(bucket: Bucket, name: str) -> Any:
+    if name == "count":
+        return bucket.count
+    if name in bucket.measures:
+        return bucket.measures[name]
+    return (bucket.value is None, str(bucket.value))
+
+
+def _ordered_buckets(buckets: list[Bucket], grouping: Grouping) -> list[Bucket]:
+    if not grouping.order:
+        buckets.sort(key=lambda bucket: (bucket.value is None, str(bucket.value)))
+    else:
+        for sort in reversed(grouping.order):
+            buckets.sort(
+                key=lambda bucket, name=sort.field: _bucket_key(bucket, name),
+                reverse=sort.descending,
+            )
+    if grouping.pagination is None:
+        return buckets
+    start = grouping.pagination.skipped()
+    return buckets[start : start + grouping.pagination.limit]
+
+
 def _tree(
     rows: list[Any],
     grouping: Grouping,
@@ -230,47 +271,6 @@ def _tree(
             )
         )
     return _ordered_buckets(buckets, grouping)
-
-
-def _page_of_ids(
-    rows: list[Any], criteria: Criteria, meta: Meta
-) -> tuple[list[Any], str | None]:
-    if not criteria.pagination.asked:
-        return [], None
-    sorts = criteria.order or parse_order(meta.default_order)
-    if not any(sort.field == meta.identity for sort in sorts):
-        sorts = sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
-    ordered = _sorted(rows, sorts)
-    kept = ordered[: criteria.limit]
-    cursor = (
-        criteria.pagination.next_from(kept[-1], sorts)
-        if kept and len(ordered) > criteria.limit
-        else None
-    )
-    return [getattr(record, meta.identity) for record in kept], cursor
-
-
-def _ordered_buckets(buckets: list[Bucket], grouping: Grouping) -> list[Bucket]:
-    if not grouping.order:
-        buckets.sort(key=lambda bucket: (bucket.value is None, str(bucket.value)))
-    else:
-        for sort in reversed(grouping.order):
-            buckets.sort(
-                key=lambda bucket, name=sort.field: _bucket_key(bucket, name),
-                reverse=sort.descending,
-            )
-    if grouping.pagination is None:
-        return buckets
-    start = grouping.pagination.skipped()
-    return buckets[start : start + grouping.pagination.limit]
-
-
-def _bucket_key(bucket: Bucket, name: str) -> Any:
-    if name == "count":
-        return bucket.count
-    if name in bucket.measures:
-        return bucket.measures[name]
-    return (bucket.value is None, str(bucket.value))
 
 
 class _Measured:
@@ -384,6 +384,13 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         if any(sort.field == meta.identity for sort in sorts):
             return sorts
         return sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
+
+    def _events_about(self, aggregate: type, identity: Any) -> list[DomainEvent]:
+        return [
+            event
+            for event in self._rows(DomainEvent)
+            if event.entity_type == aggregate.__name__ and event.entity_id == identity
+        ]
 
     def get[T](
         self,
@@ -636,26 +643,6 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             answer[name] = _measure_of(values, measure)
         return answer
 
-    def group_by(
-        self, target: type, by: Sequence[str], criteria: Criteria | None = None
-    ) -> list[dict[str, Any]]:
-        criteria = criteria or Criteria()
-        levels = tuple(Level(field=field) for field in by)
-        buckets = self._grouped(target, criteria, Grouping(group_by=levels))
-        return [
-            dict(zip(by, path)) | {"count": bucket.count}
-            for path, bucket in _flattened_buckets(buckets)
-        ]
-
-    def group_by_levels(self, target: type, criteria: Criteria | None = None) -> list[Bucket]:
-        criteria = criteria or Criteria()
-        if not criteria.grouping.asked:
-            raise InvalidCriteria(
-                "grouping by nothing answers one bucket holding everything, which is a count "
-                "and not a grouping; name at least one field in criteria.grouping"
-            )
-        return self._grouped(target, criteria, criteria.grouping)
-
     def _grouped(self, target: type, criteria: Criteria, grouping: Grouping) -> list[Bucket]:
         """The levels the grouping names, split in memory. A grain is the adapter's: cutting a
         date to a month is SQL a database writes, and a double that guessed it would be a
@@ -674,38 +661,32 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             rows, grouping, criteria, tuple(level.field for level in grouping.group_by), meta
         )
 
+    def group_by(
+        self, target: type, by: Sequence[str], criteria: Criteria | None = None
+    ) -> list[dict[str, Any]]:
+        criteria = criteria or Criteria()
+        levels = tuple(Level(field=field) for field in by)
+        buckets = self._grouped(target, criteria, Grouping(group_by=levels))
+        return [
+            dict(zip(by, path)) | {"count": bucket.count}
+            for path, bucket in _flattened_buckets(buckets)
+        ]
+
     # ---------------------------------------------------------------- writing
 
-    def save(self, record: Any) -> None:
-        """Keeps one aggregate or several, raising the version the way the adapter does, and
-        refusing a write whose version the stored record has already moved past.
-
-        **Every `before_save` first, then the writes, then every `after_save`** — the shape the
-        engine has, where one flush follows all of them. Interleaved per record, a batch whose
-        third aggregate is refused left the first two written and their `after_save` already
-        fired, while the engine wrote nothing at all. A test against this double would see
-        records that production never stored.
-        """
-        refuse_writing_in_preview("save")
-        self._refuse_reentrant_write()
-        records = self._events_of_sourced(records_of(record))
-        newness = self._before_writes(records)
-        for one in records:
-            self._save_one(one)
-        self._keep_recorded(records)
-        self._after_writes(records, newness)
+    def group_by_levels(self, target: type, criteria: Criteria | None = None) -> list[Bucket]:
+        criteria = criteria or Criteria()
+        if not criteria.grouping.asked:
+            raise InvalidCriteria(
+                "grouping by nothing answers one bucket holding everything, which is a count "
+                "and not a grouping; name at least one field in criteria.grouping"
+            )
+        return self._grouped(target, criteria, criteria.grouping)
 
     def _kept(self, event: Any) -> bool:
         return any(
             event.id in held for kind, held in self._stored.items() if isinstance(event, kind)
         )
-
-    def _events_about(self, aggregate: type, identity: Any) -> list[DomainEvent]:
-        return [
-            event
-            for event in self._rows(DomainEvent)
-            if event.entity_type == aggregate.__name__ and event.entity_id == identity
-        ]
 
     def _events_of_sourced(self, records: list[Any]) -> list[Any]:
         """An event-sourced entity stands for the events it recorded since it was rebuilt; one
@@ -732,15 +713,31 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
                 written.append(event)
         return written
 
-    def _keep_recorded(self, records: list[Any]) -> None:
-        """What the aggregates written recorded, kept beside them — read, never taken, and each
-        once — the way the database keeps them in the context's event table."""
-        for one in records:
-            if isinstance(one, DomainEvent) or not hasattr(one, "recorded_events"):
-                continue
-            for event in one.recorded_events():
-                if not self._kept(event):
-                    self._save_one(event)
+    def _acting(self) -> str | None:
+        """Read per save and never raises: a write with nobody behind it is `None`, not a
+        failure — the same bargain the engine makes."""
+        if self._actor is None:
+            return None
+        try:
+            return self._actor()
+        except Exception:
+            return None
+
+    def _stamp(self, record: Any, is_new: bool) -> None:
+        """Who wrote it, for an aggregate that has somewhere to put it.
+
+        The engine does this on the flush, where it reaches every write. Here there is only
+        `save()`, so that is where it goes — the point being that an aggregate tested against
+        this double comes back stamped the way it will be in production, instead of carrying a
+        `None` that only ever appears in tests.
+        """
+        acting = self._acting()
+        if acting is None:
+            return
+        if is_new and getattr(record, "created_by", "") is None:
+            record.created_by = acting
+        if not is_new and hasattr(record, "updated_by"):
+            record.updated_by = acting
 
     def _save_one(self, record: Any) -> None:
         stored = self._stored.setdefault(type(record), {})
@@ -759,6 +756,38 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             self._stamp(record, held is None)
             record.version += 1
         stored[identity] = record
+
+    def _keep_recorded(self, records: list[Any]) -> None:
+        """What the aggregates written recorded, kept beside them — read, never taken, and each
+        once — the way the database keeps them in the context's event table."""
+        for one in records:
+            if isinstance(one, DomainEvent) or not hasattr(one, "recorded_events"):
+                continue
+            for event in one.recorded_events():
+                if not self._kept(event):
+                    self._save_one(event)
+
+    def save(self, record: Any) -> None:
+        """Keeps one aggregate or several, raising the version the way the adapter does, and
+        refusing a write whose version the stored record has already moved past.
+
+        **Every `before_save` first, then the writes, then every `after_save`** — the shape the
+        engine has, where one flush follows all of them. Interleaved per record, a batch whose
+        third aggregate is refused left the first two written and their `after_save` already
+        fired, while the engine wrote nothing at all. A test against this double would see
+        records that production never stored.
+        """
+        refuse_writing_in_preview("save")
+        self._refuse_reentrant_write()
+        records = self._events_of_sourced(records_of(record))
+        newness = self._before_writes(records)
+        for one in records:
+            self._save_one(one)
+        self._keep_recorded(records)
+        self._after_writes(records, newness)
+
+    def _forget(self, record: Any) -> None:
+        self._stored.setdefault(type(record), {}).pop(identity_of(record), None)
 
     def remove(self, record: Any) -> None:
         """Deletes one aggregate or several, archivable or not.
@@ -787,35 +816,6 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         self.save(records)
         for one in records:
             self._after_archive(one)
-
-    def _stamp(self, record: Any, is_new: bool) -> None:
-        """Who wrote it, for an aggregate that has somewhere to put it.
-
-        The engine does this on the flush, where it reaches every write. Here there is only
-        `save()`, so that is where it goes — the point being that an aggregate tested against
-        this double comes back stamped the way it will be in production, instead of carrying a
-        `None` that only ever appears in tests.
-        """
-        acting = self._acting()
-        if acting is None:
-            return
-        if is_new and getattr(record, "created_by", "") is None:
-            record.created_by = acting
-        if not is_new and hasattr(record, "updated_by"):
-            record.updated_by = acting
-
-    def _acting(self) -> str | None:
-        """Read per save and never raises: a write with nobody behind it is `None`, not a
-        failure — the same bargain the engine makes."""
-        if self._actor is None:
-            return None
-        try:
-            return self._actor()
-        except Exception:
-            return None
-
-    def _forget(self, record: Any) -> None:
-        self._stored.setdefault(type(record), {}).pop(identity_of(record), None)
 
     def _matched_for_writing(self, model: type, criteria: Criteria, verb: str) -> list[Any]:
         """The records a write by criteria reaches, refused as the engine refuses it: a page

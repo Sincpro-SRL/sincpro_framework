@@ -45,8 +45,10 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `entity_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
 | `Bucket` / `Pivot` | A group with its count, measures and the `criteria` that opens it / a cross table with margins | DTO | `from sincpro_framework.ddd import Bucket, Pivot` |
 | `matches` | Evaluates a filter in memory, the same semantics as the SQL translator | function | `from sincpro_framework.ddd import matches` |
+| `Today` / `Now` / `FromContext` / `Period` / `Param` / `FromField` | A condition's value that is read when the filter runs, not when it was written: `Condition(field="due", operator=Operator.LT, value=Today())`, `Today().before(days=30)`, `FromContext(key="user_id")`, `Period(name=Periods.THIS_MONTH)` or a window `Period(unit=Grain.DAY, last=30)` (with `between`), `FromField(name="credit_limit")` for a column against a column. On the wire `{"$": "today", "plus": {"days": -30}, "start_of": "month"}`. The server reads them (UTC; the context's `timezone` and `week_starts_on` decide the calendar); `context` is the server's own context, never the client's | node | `from sincpro_framework.ddd import Today, Now, FromContext, FromField, Period, Periods, Grain` |
+| `resolve` / `holds` / `canonical` / `mapped` | What other modules call: read a filter's dynamic values, evaluate it in memory (`holds` reads a value lazily, so `all`/`any` still stop early), put it in one form for a key, rebuild it leaf by leaf | function | `from sincpro_framework.ddd.criteria import resolve, holds, canonical, mapped, ResolutionContext` |
 | `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_LITERAL_SEARCH` | What an entity answers once, as criteria: what a record brings (`Specification`), the list order (`Sort`s), the template a typed text fills (`Criteria` whose `where` holds `TEXT`) — with `DEFAULT_GET_ID` and `DEFAULT_DISPLAY`. `@classmethod`s on `Entity`; a caller's criteria wins for each part it names (`Criteria.replaced_by`) | `@classmethod` | `Entity`; `TEXT` from `sincpro_framework.ddd` |
-| `Presentation` | Form hints only, whose conditions are Criteria triples (`When(Is(...))`) | class attribute | `from sincpro_framework.ddd import Presentation` |
+| `Presentation` | Form hints only, whose conditions are criteria expressions (`When(Condition.on(i.state, …), i.field)`) | class attribute | `from sincpro_framework.ddd import Presentation` |
 | `matching` / `detail_of` | `DEFAULT_LITERAL_SEARCH` filled with a literal / `DEFAULT_READING` as the criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
 | `InvalidCriteria` | A question that cannot be answered (unorderable field, bad grouping, unknown measure) | exception | `from sincpro_framework.ddd import InvalidCriteria` |
 
@@ -57,7 +59,7 @@ Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `wher
 ## Architecture
 
 **(a) Inside the framework.** The language is stdlib + pydantic in `sincpro_framework/ddd/criteria/`
-(`criteria.py`, `pagination.py`, `evaluate.py` for in-memory `matches`); `Meta` is
+(`domain/` the language, `services/` its pieces, `entrypoint/` `resolve`, `holds` and the in-memory `matches`; the package exposes the domain and the entrypoints); `Meta` is
 `ddd/entity/entity_meta.py`; `Query`/`ResponsePaginatedQuery` are `ddd/query.py`. Two stores answer
 it: `MemoryRepository` (in memory, no extra) and the SQLAlchemy `Repository`, whose
 `orm/sqlalchemy/services/sql_translator.py` turns a Criteria into a `Select` (extra `[sqlalchemy]`).

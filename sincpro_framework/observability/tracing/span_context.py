@@ -139,32 +139,6 @@ class FrameworkSpanContext:
     # Internal helpers — each case is isolated, OTel imports are deferred
     # ------------------------------------------------------------------
 
-    def _setup_trace_context(self) -> tuple[str, str]:
-        """Resolve trace_id/span_id and attach OTel context when available."""
-        if not OTEL_AVAILABLE:
-            if self._carrier is not None:
-                import warnings
-
-                warnings.warn(
-                    "with_trace(carrier=...) was called but opentelemetry is not installed. "
-                    "The carrier will be ignored and new trace IDs will be generated. "
-                    "Install sincpro_framework[opentelemetry] to enable W3C trace propagation.",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-            return self._trace_id or str(uuid4()), self._span_id or str(uuid4())
-
-        if self._adopt_active:
-            return self._setup_from_active_span()
-
-        if self._carrier is not None:
-            return self._setup_from_carrier()
-
-        if self._trace_id is not None:
-            return self._setup_from_explicit_ids()
-
-        return self._setup_root_span()
-
     def _setup_from_active_span(self) -> tuple[str, str]:
         """Read trace context from the currently active OTel span.
 
@@ -183,6 +157,36 @@ class FrameworkSpanContext:
         span_ctx = opentelemetry.trace.get_current_span().get_span_context()
         if span_ctx.is_valid:
             return format(span_ctx.trace_id, "032x"), format(span_ctx.span_id, "016x")
+        return str(uuid4()), str(uuid4())
+
+    def _setup_root_span(self) -> tuple[str, str]:
+        """Create a root container span for this execution block.
+
+        The span name is the bus name; its ``service.name`` comes from this bus's
+        own provider, so the root span and the DTO spans below it report the same
+        identity even when the host application registered OTel first.
+
+        All bus spans (FeatureBus, ApplicationServiceBus) become its children
+        because OTel uses contextvars to propagate the active span automatically.
+
+        This ensures trace_id in logs matches the OTel trace_id in exported spans.
+        """
+        import opentelemetry.context
+        import opentelemetry.trace
+
+        tracer = tracer_for(self._identity.bus)
+        if tracer is None:
+            return str(uuid4()), str(uuid4())
+        self._root_span = tracer.start_span(self._identity.bus)
+        ctx = opentelemetry.trace.set_span_in_context(self._root_span)
+        self._otel_token = opentelemetry.context.attach(ctx)
+
+        span_ctx = self._root_span.get_span_context()
+        if span_ctx.is_valid:
+            return format(span_ctx.trace_id, "032x"), format(span_ctx.span_id, "016x")
+
+        # OTel installed but provider is no-op (no SDK configured) →
+        # fall back to UUID-based correlation so logs always have trace_id.
         return str(uuid4()), str(uuid4())
 
     def _setup_from_carrier(self) -> tuple[str, str]:
@@ -226,32 +230,28 @@ class FrameworkSpanContext:
             pass
         return trace_id, span_id  # type: ignore[return-value]
 
-    def _setup_root_span(self) -> tuple[str, str]:
-        """Create a root container span for this execution block.
+    def _setup_trace_context(self) -> tuple[str, str]:
+        """Resolve trace_id/span_id and attach OTel context when available."""
+        if not OTEL_AVAILABLE:
+            if self._carrier is not None:
+                import warnings
 
-        The span name is the bus name; its ``service.name`` comes from this bus's
-        own provider, so the root span and the DTO spans below it report the same
-        identity even when the host application registered OTel first.
+                warnings.warn(
+                    "with_trace(carrier=...) was called but opentelemetry is not installed. "
+                    "The carrier will be ignored and new trace IDs will be generated. "
+                    "Install sincpro_framework[opentelemetry] to enable W3C trace propagation.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+            return self._trace_id or str(uuid4()), self._span_id or str(uuid4())
 
-        All bus spans (FeatureBus, ApplicationServiceBus) become its children
-        because OTel uses contextvars to propagate the active span automatically.
+        if self._adopt_active:
+            return self._setup_from_active_span()
 
-        This ensures trace_id in logs matches the OTel trace_id in exported spans.
-        """
-        import opentelemetry.context
-        import opentelemetry.trace
+        if self._carrier is not None:
+            return self._setup_from_carrier()
 
-        tracer = tracer_for(self._identity.bus)
-        if tracer is None:
-            return str(uuid4()), str(uuid4())
-        self._root_span = tracer.start_span(self._identity.bus)
-        ctx = opentelemetry.trace.set_span_in_context(self._root_span)
-        self._otel_token = opentelemetry.context.attach(ctx)
+        if self._trace_id is not None:
+            return self._setup_from_explicit_ids()
 
-        span_ctx = self._root_span.get_span_context()
-        if span_ctx.is_valid:
-            return format(span_ctx.trace_id, "032x"), format(span_ctx.span_id, "016x")
-
-        # OTel installed but provider is no-op (no SDK configured) →
-        # fall back to UUID-based correlation so logs always have trace_id.
-        return str(uuid4()), str(uuid4())
+        return self._setup_root_span()

@@ -188,6 +188,29 @@ class ResponsePaginatedQuery(DataTransferObject):
     _specification: Specification | None = PrivateAttr(default=None)
     _meta: Meta | None = PrivateAttr(default=None)
 
+    @classmethod
+    def records_field(cls) -> str:
+        """The one field the subclass added: where its records go.
+
+            class ResponseListDatasets(ResponsePaginatedQuery):
+                datasets: list[Dataset]     →   out  'datasets'
+
+        A convention rather than a declaration, the same way the first field of an aggregate
+        is its identity. Anything but exactly one added field is refused, because then nobody
+        — including this method — can tell which one holds the records.
+        """
+        own = [
+            name
+            for name in cls.model_fields
+            if name not in ResponsePaginatedQuery.model_fields
+        ]
+        if len(own) != 1:
+            raise ProgrammingError(
+                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
+                "a paginated response declares exactly one, holding its records"
+            )
+        return own[0]
+
     @model_serializer(mode="plain")
     def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
         """On the wire, a record shows what the specification named plus its identity, and each
@@ -256,29 +279,6 @@ class ResponsePaginatedQuery(DataTransferObject):
         }
 
     @classmethod
-    def records_field(cls) -> str:
-        """The one field the subclass added: where its records go.
-
-            class ResponseListDatasets(ResponsePaginatedQuery):
-                datasets: list[Dataset]     →   out  'datasets'
-
-        A convention rather than a declaration, the same way the first field of an aggregate
-        is its identity. Anything but exactly one added field is refused, because then nobody
-        — including this method — can tell which one holds the records.
-        """
-        own = [
-            name
-            for name in cls.model_fields
-            if name not in ResponsePaginatedQuery.model_fields
-        ]
-        if len(own) != 1:
-            raise ProgrammingError(
-                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
-                "a paginated response declares exactly one, holding its records"
-            )
-        return own[0]
-
-    @classmethod
     def of(cls, page: EntityCollection, criteria: Criteria) -> Any:
         """A page as the answer that goes out.
 
@@ -345,6 +345,28 @@ class ResponseRecord(DataTransferObject):
     _specification: Specification | None = PrivateAttr(default=None)
     _meta: Meta | None = PrivateAttr(default=None)
 
+    @classmethod
+    def record_field(cls) -> str:
+        """The one field the subclass added: where its record goes.
+
+        class ResponseAccount(ResponseRecord):
+            account: Account            →   out  'account'
+        """
+        declared = {
+            name
+            for base in cls.__mro__
+            if base.__module__.startswith("sincpro_framework.")
+            and hasattr(base, "model_fields")
+            for name in base.model_fields
+        }
+        own = [name for name in cls.model_fields if name not in declared]
+        if len(own) != 1:
+            raise ProgrammingError(
+                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
+                "a record response declares exactly one, holding its record"
+            )
+        return own[0]
+
     @model_serializer(mode="plain")
     def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
         """On the wire, the record shows what the specification named plus its identity, and
@@ -388,28 +410,6 @@ class ResponseRecord(DataTransferObject):
             "properties": {name: handler(one["schema"]) for name, one in fields.items()},
             "required": sorted(fields),
         }
-
-    @classmethod
-    def record_field(cls) -> str:
-        """The one field the subclass added: where its record goes.
-
-        class ResponseAccount(ResponseRecord):
-            account: Account            →   out  'account'
-        """
-        declared = {
-            name
-            for base in cls.__mro__
-            if base.__module__.startswith("sincpro_framework.")
-            and hasattr(base, "model_fields")
-            for name in base.model_fields
-        }
-        own = [name for name in cls.model_fields if name not in declared]
-        if len(own) != 1:
-            raise ProgrammingError(
-                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
-                "a record response declares exactly one, holding its record"
-            )
-        return own[0]
 
     @classmethod
     def of(cls, record: Any, page: EntityCollection, criteria: Criteria) -> Any:
@@ -456,6 +456,21 @@ class ResponseRecords(DataTransferObject):
     _specification: Specification | None = PrivateAttr(default=None)
     _meta: Meta | None = PrivateAttr(default=None)
 
+    @classmethod
+    def records_field(cls) -> str:
+        """The one field the subclass added: where its records go.
+
+        class ResponseAccounts(ResponseRecords):
+            accounts: list[Account]     →   out  'accounts'
+        """
+        own = [name for name in cls.model_fields if name not in ResponseRecords.model_fields]
+        if len(own) != 1:
+            raise ProgrammingError(
+                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
+                "a records response declares exactly one, holding its records"
+            )
+        return own[0]
+
     @model_serializer(mode="plain")
     def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
         """On the wire, each record shows what the specification named plus its identity."""
@@ -498,21 +513,6 @@ class ResponseRecords(DataTransferObject):
             "properties": {name: handler(one["schema"]) for name, one in fields.items()},
             "required": sorted(fields),
         }
-
-    @classmethod
-    def records_field(cls) -> str:
-        """The one field the subclass added: where its records go.
-
-        class ResponseAccounts(ResponseRecords):
-            accounts: list[Account]     →   out  'accounts'
-        """
-        own = [name for name in cls.model_fields if name not in ResponseRecords.model_fields]
-        if len(own) != 1:
-            raise ProgrammingError(
-                f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
-                "a records response declares exactly one, holding its records"
-            )
-        return own[0]
 
     @classmethod
     def of(

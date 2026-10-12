@@ -41,12 +41,6 @@ class RecorderContract:
         self.total = total
         self.count = count
 
-    def check(self) -> None:
-        self.a_counter_adds_up_per_set_of_labels()
-        self.an_up_down_counter_goes_both_ways()
-        self.a_histogram_counts_its_observations_per_set_of_labels()
-        self.concurrent_adds_are_all_kept()
-
     def a_counter_adds_up_per_set_of_labels(self) -> None:
         ok, failed = {"contract.outcome": "ok"}, {"contract.outcome": "domain"}
         self.recorder.add(COUNTER, 2, ok)
@@ -79,3 +73,9 @@ class RecorderContract:
         for one in threads:
             one.join()
         assert self.total(COUNTER.name, labels) == 1600, "no add is lost under threads"
+
+    def check(self) -> None:
+        self.a_counter_adds_up_per_set_of_labels()
+        self.an_up_down_counter_goes_both_ways()
+        self.a_histogram_counts_its_observations_per_set_of_labels()
+        self.concurrent_adds_are_all_kept()

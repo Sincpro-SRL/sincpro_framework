@@ -20,7 +20,7 @@ code, or are loaded with `sincpro_framework.runtime.runtime_use_cases`.
     {"id": "discount", "code": "total = steps['order']['total']\nreturn {'total': total * 95 // 100 if total > 10000 else total}", "returns": ["total"]},
     {"id": "invoice", "execute": "CommandCreateInvoice", "input": {"order_id": "$input.order_id", "total": "$steps.discount.total"}},
     {"id": "approval", "execute": "CommandRequestApproval", "input": {"invoice_id": "$steps.invoice.invoice_id"},
-     "when": {"field": "$steps.order.total", "operator": ">=", "value": 10000}}
+     "when": {"field": "steps.order.total", "operator": ">=", "value": 10000}}
   ],
   "output": {"invoice_id": "$steps.invoice.invoice_id"}
 }
@@ -32,12 +32,13 @@ code, or are loaded with `sincpro_framework.runtime.runtime_use_cases`.
 | `code` + `returns` | a snippet: reads `input`, `steps` (and `item`), returns a mapping with the fields it declares |
 | `for_each` + `steps` | runs its steps once per item of a list; `$item` is the item; answers `{"items": [...]}` |
 | `fail` | stops the run with its message — a veto |
-| `when` (on any step) | a condition in the grammar of `Criteria`; not holding, the step is skipped |
+| `when` (on any step) | a condition in the grammar of `Criteria` over what the run holds; not holding, the step is skipped |
 
 A value is a literal or a **whole** reference — `$input.<field>`, `$steps.<id>.<field>`,
 `$item.<field>`. No templating, no function inside a value: computing is a snippet's job, so every
 reference is checked against the schemas before anything runs. A `when` is one condition or `all` /
-`any` / `negate`.
+`any` / `negate`; its `field` is a path into the run without the `$` (`steps.order.total`), and its
+value a literal or `{"$": "param", "name": "steps.order.total"}` to compare two paths.
 
 ## Put them in force and run one
 

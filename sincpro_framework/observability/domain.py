@@ -42,6 +42,33 @@ class ObservabilityIdentity(BaseModel):
     version: str = ""
     bus: str = DEFAULT_BUS
 
+    def _split(self) -> tuple[str, str]:
+        """Name and version out of a release, read as an image reference or ``name@version``.
+
+        1. A version given apart (a library's) is kept as it is.
+        2. ``@``: a digest (``@sha256:…``) is dropped; anything else is the version.
+        3. ``:`` after the last ``/`` is the tag; one before it is a registry's port.
+        """
+        artifact, version = self.artifact, self.version
+        if version:
+            return artifact, version
+        if "@" in artifact:
+            artifact, after = artifact.rsplit("@", 1)
+            if ":" not in after:
+                return artifact, after
+        colon = artifact.rfind(":")
+        if colon > artifact.rfind("/"):
+            return artifact[:colon], artifact[colon + 1 :]
+        return artifact, ""
+
+    @property
+    def service(self) -> str:
+        """The artifact without its version or its registry — stable across releases.
+        `APP_RELEASE` arrives whole, often as an image reference
+        (`registry.example.com/team/sincpro-odoo:18.5.0-rc2`, kept verbatim for the GlitchTip
+        release): the name is `sincpro-odoo`. A library comes as name and version apart."""
+        return self._split()[0].rsplit("/", 1)[-1]
+
     @property
     def service_name(self) -> str:
         """Tempo ``service.name`` and the logs' ``service_name``: the artifact, stable across
@@ -69,35 +96,8 @@ class ObservabilityIdentity(BaseModel):
         return ":".join(part for part in (artifact, self.version) if part)
 
     @property
-    def service(self) -> str:
-        """The artifact without its version or its registry — stable across releases.
-        `APP_RELEASE` arrives whole, often as an image reference
-        (`registry.example.com/team/sincpro-odoo:18.5.0-rc2`, kept verbatim for the GlitchTip
-        release): the name is `sincpro-odoo`. A library comes as name and version apart."""
-        return self._split()[0].rsplit("/", 1)[-1]
-
-    @property
     def service_version(self) -> str:
         return self._split()[1]
-
-    def _split(self) -> tuple[str, str]:
-        """Name and version out of a release, read as an image reference or ``name@version``.
-
-        1. A version given apart (a library's) is kept as it is.
-        2. ``@``: a digest (``@sha256:…``) is dropped; anything else is the version.
-        3. ``:`` after the last ``/`` is the tag; one before it is a registry's port.
-        """
-        artifact, version = self.artifact, self.version
-        if version:
-            return artifact, version
-        if "@" in artifact:
-            artifact, after = artifact.rsplit("@", 1)
-            if ":" not in after:
-                return artifact, after
-        colon = artifact.rfind(":")
-        if colon > artifact.rfind("/"):
-            return artifact[:colon], artifact[colon + 1 :]
-        return artifact, ""
 
 
 def tenant() -> str:

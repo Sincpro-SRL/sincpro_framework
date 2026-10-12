@@ -62,6 +62,15 @@ class _Components:
             return [self._pointed(one) for one in node]
         return node
 
+    def _put(self, name: str, schema: dict[str, Any]) -> None:
+        held = self.schemas.get(name)
+        if held is not None and held != schema:
+            logger.warning(
+                f"OpenAPI: two models are named {name}; the first one is published"
+            )
+            return
+        self.schemas[name] = schema
+
     def keep(self, name: str, schema: Mapping[str, Any], qualifier: str = "") -> str:
         """`schema` kept under `name`, its `$defs` lifted beside it; the name it was kept under
         answered.
@@ -80,15 +89,6 @@ class _Components:
             name = f"{qualifier}.{name}"
         self._put(name, pointed)
         return name
-
-    def _put(self, name: str, schema: dict[str, Any]) -> None:
-        held = self.schemas.get(name)
-        if held is not None and held != schema:
-            logger.warning(
-                f"OpenAPI: two models are named {name}; the first one is published"
-            )
-            return
-        self.schemas[name] = schema
 
 
 def reference(name: str) -> dict[str, str]:

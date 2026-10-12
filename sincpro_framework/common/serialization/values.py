@@ -49,20 +49,20 @@ def _restored(written: dict[str, Any]) -> Any:
     return written
 
 
-def read_values(written: Any) -> Any:
-    """What `values_of` wrote, from JSON text or already parsed — each tagged `bytes` back as
-    bytes."""
-    if isinstance(written, str | bytes | bytearray):
-        return json.loads(written, object_hook=_restored)
-    return _walked(written)
-
-
 def _walked(written: Any) -> Any:
     if isinstance(written, Mapping):
         return _restored({str(key): _walked(one) for key, one in written.items()})
     if isinstance(written, list):
         return [_walked(one) for one in written]
     return written
+
+
+def read_values(written: Any) -> Any:
+    """What `values_of` wrote, from JSON text or already parsed — each tagged `bytes` back as
+    bytes."""
+    if isinstance(written, str | bytes | bytearray):
+        return json.loads(written, object_hook=_restored)
+    return _walked(written)
 
 
 def _held(instance: Any) -> dict[str, Any]:

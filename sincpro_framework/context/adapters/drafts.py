@@ -148,6 +148,10 @@ class KeyValueDrafts(DraftStore):
     def _index(self, owner: str) -> str:
         return f"{self.prefix}:{owner}:subjects"
 
+    def _listed(self, owner: str) -> list[str]:
+        held = self.store.get(self._index(owner))
+        return [] if held is None else list(json.loads(held))
+
     def keep(
         self,
         owner: str,
@@ -179,10 +183,6 @@ class KeyValueDrafts(DraftStore):
         at the same instant may each list only its own subject until the next keep; a draft is
         never lost by it — it is read by its subject all the same."""
         return [one for one in self._listed(owner) if self.read(owner, one) is not None]
-
-    def _listed(self, owner: str) -> list[str]:
-        held = self.store.get(self._index(owner))
-        return [] if held is None else list(json.loads(held))
 
     def _head(self, key: str) -> str:
         return f"{self.prefix}:{key}:head"

@@ -146,6 +146,17 @@ class RelatedAttribute:
         state = held(record, self.name)
         return state.value if state is Held.CUT or state is Held.BLIND else ""
 
+    def _written_by_root(self, record: Any) -> bool:
+        """Whether a save of the record writes this relation — the only case its reading is
+        worth a query before an assignment."""
+        if (
+            self.relation.kind != "foreign_key"
+            or getattr(self.relation, "owned", None) is False
+        ):
+            return False
+        annotation = annotations_of(type(record)).get(self.name)
+        return annotation is not None and related_class(annotation)[1]
+
     def joined_by(self, record: Any) -> tuple[str, str] | None:
         """How a new record of this relation is tied to `record`, when a save of `record` writes
         it: `record`'s field, and the field of the new record that holds its value.
@@ -159,17 +170,6 @@ class RelatedAttribute:
         if not self._written_by_root(record):
             return None
         return key_pair(identity_name(type(record)), self.relation, True)
-
-    def _written_by_root(self, record: Any) -> bool:
-        """Whether a save of the record writes this relation — the only case its reading is
-        worth a query before an assignment."""
-        if (
-            self.relation.kind != "foreign_key"
-            or getattr(self.relation, "owned", None) is False
-        ):
-            return False
-        annotation = annotations_of(type(record)).get(self.name)
-        return annotation is not None and related_class(annotation)[1]
 
     def __set__(self, record: Any, value: Any) -> None:
         """An assignment replaces the set. Context: inside a unit of work, a stored record whose
