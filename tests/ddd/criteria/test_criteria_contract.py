@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from sincpro_framework.ddd.criteria import (
+    RESOLVERS,
     Criteria,
     ResolutionContext,
     expression_from,
@@ -312,6 +313,58 @@ CASES: list[dict[str, Any]] = [
 ]
 
 
+EXAMPLES: list[dict[str, Any]] = [
+    {
+        "where": {
+            "all": [
+                {"field": "row_count", "operator": ">", "value": 1000},
+                {
+                    "any": [
+                        {"field": "encoding", "operator": "in", "value": ["utf-8", "latin-1"]}
+                    ]
+                },
+            ]
+        },
+        "order": [{"field": "registered_at", "descending": True}],
+        "pagination": {"limit": 100},
+        "specification": {"name": {}, "runs": {"pagination": {"limit": 20}}},
+        "grouping": {
+            "group_by": [{"field": "encoding"}, {"field": "registered_at", "grain": "month"}],
+            "measures": {"rows": {"function": "sum", "field": "row_count"}},
+        },
+        "count": "capped",
+        "meta": True,
+    },
+    {
+        "where": {
+            "all": [
+                {"field": "due", "operator": "<", "value": {"$": "today"}},
+                {
+                    "field": "owner_id",
+                    "operator": "=",
+                    "value": {"$": "context", "key": "user_id"},
+                },
+                {
+                    "field": "posted_at",
+                    "operator": ">=",
+                    "value": {"$": "today", "plus": {"days": -30}, "start_of": "month"},
+                },
+                {
+                    "field": "closed_at",
+                    "operator": "between",
+                    "value": {"$": "period", "unit": "day", "last": 30},
+                },
+                {
+                    "field": "total",
+                    "operator": ">",
+                    "value": {"$": "field", "name": "credit_limit"},
+                },
+            ]
+        }
+    },
+]
+
+
 def resolution_of(one: dict[str, Any]) -> ResolutionContext:
     return ResolutionContext(
         now=datetime.fromisoformat(one["now"]),
@@ -331,10 +384,19 @@ def contract_files() -> dict[Path, str]:
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://sincpro.com.bo/schemas/criteria.schema.json",
         **Criteria.model_json_schema(mode="validation"),
+        "examples": EXAMPLES,
     }
     return {
         SCHEMA: json.dumps(schema, indent=2, ensure_ascii=False) + "\n",
-        RESOLUTION: json.dumps({"about": ABOUT, "cases": CASES}, indent=2, ensure_ascii=False)
+        RESOLUTION: json.dumps(
+            {
+                "about": ABOUT,
+                "resolvers": [one.model_dump(mode="json") for one in RESOLVERS],
+                "cases": CASES,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
         + "\n",
     }
 
@@ -353,6 +415,14 @@ def test_the_cases_cover_every_kind_of_dynamic_value():
 
     for kind in ("today", "now", "period", "context", "param", "field"):
         assert f'"$": "{kind}"' in asked, kind
+
+
+@pytest.mark.parametrize("example", EXAMPLES)
+def test_an_example_of_the_schema_is_a_criteria_the_engine_reads(example: dict[str, Any]):
+    read = Criteria.model_validate(example)
+
+    assert read.model_dump(mode="json", exclude_none=True, exclude_defaults=True) is not None
+    assert Criteria.model_validate(read.model_dump(mode="json")) == read
 
 
 @pytest.mark.parametrize("path", [SCHEMA, RESOLUTION], ids=lambda path: path.name)

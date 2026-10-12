@@ -55,6 +55,8 @@ def holds(
             value = expression.value
             if isinstance(value, FromField):
                 value = read(value.name)
+                if value is None:
+                    return False
             return compare(read(expression.field), expression.operator, value)
         case All():
             return all(holds(part, read, resolution) for part in expression.all)

@@ -1,5 +1,154 @@
 {
   "about": "What a dynamic value reads to. Every case gives the instant, the timezone, the first weekday (0 is Monday), what the server's context and the call's params hold, the filter as stored (`where`) and as run (`resolved`). Dates are `YYYY-MM-DD`; instants are UTC `…Z`. Written by hand in tests/ddd/criteria/test_criteria_contract.py and read by the Python engine and by @sincpro/criteria. Do not edit by hand.",
+  "resolvers": [
+    {
+      "name": "today",
+      "returns": "date",
+      "params": {
+        "plus": "span",
+        "start_of": "grain"
+      },
+      "choices": {
+        "plus": [
+          "minutes",
+          "hours",
+          "days",
+          "weeks",
+          "months",
+          "years"
+        ],
+        "start_of": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ]
+      }
+    },
+    {
+      "name": "now",
+      "returns": "datetime",
+      "params": {
+        "plus": "span",
+        "start_of": "grain"
+      },
+      "choices": {
+        "plus": [
+          "minutes",
+          "hours",
+          "days",
+          "weeks",
+          "months",
+          "years"
+        ],
+        "start_of": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ]
+      }
+    },
+    {
+      "name": "period",
+      "returns": "range",
+      "params": {
+        "name": "period",
+        "unit": "grain",
+        "last": "integer",
+        "next": "integer",
+        "include_current": "boolean"
+      },
+      "choices": {
+        "name": [
+          "today",
+          "yesterday",
+          "tomorrow",
+          "this_week",
+          "last_week",
+          "next_week",
+          "this_month",
+          "last_month",
+          "next_month",
+          "this_quarter",
+          "last_quarter",
+          "next_quarter",
+          "this_year",
+          "last_year",
+          "next_year"
+        ],
+        "unit": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ]
+      }
+    },
+    {
+      "name": "context",
+      "returns": "any",
+      "params": {
+        "key": "text",
+        "plus": "span",
+        "start_of": "grain"
+      },
+      "choices": {
+        "plus": [
+          "minutes",
+          "hours",
+          "days",
+          "weeks",
+          "months",
+          "years"
+        ],
+        "start_of": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ]
+      }
+    },
+    {
+      "name": "param",
+      "returns": "any",
+      "params": {
+        "name": "text",
+        "plus": "span",
+        "start_of": "grain"
+      },
+      "choices": {
+        "plus": [
+          "minutes",
+          "hours",
+          "days",
+          "weeks",
+          "months",
+          "years"
+        ],
+        "start_of": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ]
+      }
+    },
+    {
+      "name": "field",
+      "returns": "field",
+      "params": {
+        "name": "text"
+      },
+      "choices": {}
+    }
+  ],
   "cases": [
     {
       "name": "today",

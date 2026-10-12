@@ -532,7 +532,7 @@ class FieldMeta(DataTransferObject):
         return condition.model_copy(update={"value": self._value(condition.value, timezone)})
 
 
-def _ambient_resolution() -> ResolutionContext:
+def ambient_resolution() -> ResolutionContext:
     """What a dynamic value reads when nobody gave it a resolution: this moment, and the server's
     own context — its `timezone` (an IANA name, UTC without one) and `week_starts_on`."""
     context = use_context()
@@ -762,7 +762,7 @@ class Meta(DataTransferObject):
         (None, [Dropped(field='gone', reason='unknown_field')])
         """
         if has_dynamic_values(expression):
-            resolution = resolution or _ambient_resolution()
+            resolution = resolution or ambient_resolution()
             expression = resolve(expression, resolution)
 
         if resolution is None and any(
@@ -772,7 +772,7 @@ class Meta(DataTransferObject):
             and held.type is FieldType.DATETIME
             for leaf in conditions_of(expression)
         ):
-            resolution = _ambient_resolution()
+            resolution = ambient_resolution()
         timezone = resolution.timezone if resolution is not None else UTC
 
         dropped: list[Dropped] = []

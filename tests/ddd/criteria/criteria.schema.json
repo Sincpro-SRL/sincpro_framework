@@ -421,6 +421,15 @@
       "description": "One number a group answers: a function over a field, under a name the caller chose.\n\n    in      {\"function\": \"sum\", \"field\": \"row_count\"}\n    out     Measure(function='sum', field='row_count')       → sum(row_count) AS <name>\n\n**Named parts and not `\"sum:row_count\"`**, so nobody has to split a string in whatever\nlanguage is reading this — the same reason a condition travels as `{field, operator,\nvalue}`. The pair `[\"sum\", \"row_count\"]` is read as well, because writing one by hand in\nPython is a pair; what a caller sends over a wire is the object.\n\nIt is called a measure and not an aggregate on purpose: in this codebase an *aggregate* is\nthe DDD root — what `Meta.aggregate` names — and two meanings for one word in the same\nsentence is how a reader loses an afternoon.",
       "properties": {
         "function": {
+          "enum": [
+            "sum",
+            "avg",
+            "min",
+            "max",
+            "count",
+            "count_distinct",
+            "percentile"
+          ],
           "title": "Function",
           "type": "string"
         },
@@ -866,5 +875,115 @@
       ]
     }
   },
-  "$ref": "#/$defs/Criteria"
+  "$ref": "#/$defs/Criteria",
+  "examples": [
+    {
+      "where": {
+        "all": [
+          {
+            "field": "row_count",
+            "operator": ">",
+            "value": 1000
+          },
+          {
+            "any": [
+              {
+                "field": "encoding",
+                "operator": "in",
+                "value": [
+                  "utf-8",
+                  "latin-1"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "order": [
+        {
+          "field": "registered_at",
+          "descending": true
+        }
+      ],
+      "pagination": {
+        "limit": 100
+      },
+      "specification": {
+        "name": {},
+        "runs": {
+          "pagination": {
+            "limit": 20
+          }
+        }
+      },
+      "grouping": {
+        "group_by": [
+          {
+            "field": "encoding"
+          },
+          {
+            "field": "registered_at",
+            "grain": "month"
+          }
+        ],
+        "measures": {
+          "rows": {
+            "function": "sum",
+            "field": "row_count"
+          }
+        }
+      },
+      "count": "capped",
+      "meta": true
+    },
+    {
+      "where": {
+        "all": [
+          {
+            "field": "due",
+            "operator": "<",
+            "value": {
+              "$": "today"
+            }
+          },
+          {
+            "field": "owner_id",
+            "operator": "=",
+            "value": {
+              "$": "context",
+              "key": "user_id"
+            }
+          },
+          {
+            "field": "posted_at",
+            "operator": ">=",
+            "value": {
+              "$": "today",
+              "plus": {
+                "days": -30
+              },
+              "start_of": "month"
+            }
+          },
+          {
+            "field": "closed_at",
+            "operator": "between",
+            "value": {
+              "$": "period",
+              "unit": "day",
+              "last": 30
+            }
+          },
+          {
+            "field": "total",
+            "operator": ">",
+            "value": {
+              "$": "field",
+              "name": "credit_limit"
+            }
+          }
+        ]
+      }
+    }
+  ]
 }

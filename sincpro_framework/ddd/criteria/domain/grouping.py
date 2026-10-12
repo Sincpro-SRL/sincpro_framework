@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from sincpro_framework.ddd.criteria.domain.expression import Expression
 from sincpro_framework.ddd.criteria.domain.pagination import Pagination
@@ -43,7 +43,7 @@ class Measure(Strict):
     sentence is how a reader loses an afternoon.
     """
 
-    function: str
+    function: str = Field(json_schema_extra={"enum": list(MEASURE_FUNCTIONS)})
     field: str
 
     argument: float | None = None

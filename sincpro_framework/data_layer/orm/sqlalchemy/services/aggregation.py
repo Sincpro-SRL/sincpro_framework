@@ -18,8 +18,10 @@ from sincpro_framework.ddd.criteria import (
     Measure,
     PivotCell,
     conditions_of,
+    has_dynamic_values,
+    resolve,
 )
-from sincpro_framework.ddd.entity.entity_meta import Meta
+from sincpro_framework.ddd.entity.entity_meta import Meta, ambient_resolution
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 WITHOUT_PERCENTILES = frozenset({"sqlite"})
@@ -97,15 +99,18 @@ def where_measures_clause(grouping: Grouping, measures: dict[str, Any]) -> Any:
     refused rather than dropped, because a filter that vanishes here would answer groups
     the caller ruled out.
     """
-    if grouping.where_measures is None:
+    having = grouping.where_measures
+    if having is None:
         return None
-    for condition in conditions_of(grouping.where_measures):
+    if has_dynamic_values(having):
+        having = resolve(having, ambient_resolution())
+    for condition in conditions_of(having):
         if condition.field not in measures:
             raise InvalidCriteria(
                 f"'{condition.field}' is not something a group folded; `where_measures` reads "
                 f"{', '.join(sorted(measures))} — a filter over the rows is `where`"
             )
-    return sql_translator.clause_over(measures.__getitem__, grouping.where_measures)
+    return sql_translator.clause_over(measures.__getitem__, having)
 
 
 def group_order(grouping: Grouping, keys: list[Any], measures: dict[str, Any]) -> list[Any]:
