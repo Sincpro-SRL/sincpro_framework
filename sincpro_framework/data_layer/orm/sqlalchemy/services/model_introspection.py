@@ -36,6 +36,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     logical_type,
     presentation_of,
     related_class,
+    with_computed,
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import key_pair
@@ -171,15 +172,20 @@ def describe(entity: type) -> Meta:
     fields: dict[str, FieldMeta] = {}
     for column in mapper.columns:
         annotation = annotations.get(column.key) or _column_type(column)
+        # A computed field is an expression, not a column: it has no NOT NULL, so its annotation
+        # says whether it may be absent.
+        nullable = (
+            bool(column.nullable)
+            if hasattr(column, "nullable")
+            else annotation != without_optional(annotation)
+        )
         shape, many = related_class(annotation)
         if shape is not None and _is_shape(shape):
-            fields[column.key] = FieldMeta.for_embedded(
-                describe_shape(shape), many, bool(column.nullable)
-            )
+            fields[column.key] = FieldMeta.for_embedded(describe_shape(shape), many, nullable)
         else:
             fields[column.key] = FieldMeta.for_column(
                 logical_type(annotation),
-                bool(column.nullable),
+                nullable,
                 _members_of(annotation),
                 without_optional(annotation) is Decimal,
             )
@@ -221,7 +227,7 @@ def describe(entity: type) -> Meta:
             for name, meta in fields.items()
         }
 
-    fields = hinted(fields, entity)
+    fields = hinted(with_computed(fields, entity), entity)
     presented = presentation_of(entity)
     _key_is_unique(entity, mapper.local_table, presented.get_id, identity)
     return Meta(

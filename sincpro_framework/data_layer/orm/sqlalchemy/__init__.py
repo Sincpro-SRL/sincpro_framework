@@ -34,6 +34,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.mapping import (
     map_aggregates,
     map_events,
     register_grain_translator,
+    register_part_translator,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.numbering import (
     DatabaseNumbering,
@@ -67,5 +68,6 @@ __all__ = [
     "map_aggregates",
     "map_events",
     "register_grain_translator",
+    "register_part_translator",
     "template_table",
 ]

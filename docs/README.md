@@ -18,6 +18,7 @@ that left `presentation`: [PRD_27](prd/PRD_27_entity-default-reads.md).
 | Layer | Package | Start here | What is in it |
 |---|---|---|---|
 | **Version 4.0.0** | — | [version-4.md](version-4.md) | Exploration of ORM, Criteria, Entrypoints, Entity and events: production stays on 3.x until the architect is convinced; the spec is the essence, the style may change |
+| **Specifications** | — | [spec/](spec/README.md) | What the framework covers and how far it has got, kept up to date in place: the entity model, reading, analysis, writing and stores, each capability with its status and the test that holds it. A PRD is history; the specification is what is true today |
 | **Start here** | — | [shapes.md](shapes.md) | What shape is your system — one database, a database per context, or the facts *are* the state — and what to wire for each |
 | **Architecture** | the whole | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | The hexagonal layout, every component with its layer and dependencies, the flow of a request |
 | **Core: the bus** | `sincpro_framework` | [core/](core/README.md) | `UseFramework`, Features and ApplicationServices, dependencies, interceptors, error handling; the context — `use_context()` from anywhere, a tree from the process to each execution, threads, providers, stores, carried on every transport ([context-manager.md](core/context-manager.md)) |
@@ -33,7 +34,7 @@ that left `presentation`: [PRD_27](prd/PRD_27_entity-default-reads.md).
 | **Auth** | `auth` | [auth/](auth/README.md) | Permissions declared on use cases and hooks (`@auth.requires`, `authenticated`, `public`, `when_denied=SKIP`), `AuthProvider` — the one contract a JWT issuer, an API key table or Odoo implements — `AccessControl` as the outermost guard of a bus and a gate of hooks, `as_identity` / `as_system`, `AuthProviderContract` and `granting` for tests; JSON-RPC, gRPC, MCP, an ASGI middleware and calls between services authenticate by themselves; `ApiKeyProvider`, `ServiceTokenProvider` |
 | **Entrypoints** | `entrypoints` | [entrypoints/](entrypoints/README.md) | The bus catalog on every wire through one `Gateway` — REST with OpenAPI 3.1, JSON-RPC 2.0, gRPC, MCP — N buses automatically, `internal` and `include`/`exclude` to narrow, the app or server handed back |
 | **Observability** | `observability` | [observability/](observability/README.md) | Traces, errors, logs and metrics: what works with no extra, what OpenTelemetry, Sentry and Prometheus add, the [metrics guide](observability/metrics.md) |
-| **PRDs** | history and proposals | [prd/](prd/) | The requirement documents each layer was built from, and the proposals for what comes next (PRD_04–09) |
+| **PRDs** | history | [prd/](prd/) | Why each layer was built the way it was at the time. Not edited to stay true: the [specifications](spec/README.md) are |
 
 ## Conventions
 

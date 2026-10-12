@@ -32,6 +32,7 @@ a database starts — and `remove` here deletes, the way it does there; `archive
 import dataclasses
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from copy import copy
+from decimal import Decimal
 from typing import Any, overload
 
 from sincpro_framework.ddd.criteria import (
@@ -45,14 +46,20 @@ from sincpro_framework.ddd.criteria import (
     Measure,
     Operator,
     Sort,
+    axis_values,
+    check_levels,
+    check_measures,
     combined,
     conditions_of,
+    empty_measure,
     has_dynamic_values,
     matches,
     parse_order,
+    part_of,
     resolve,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity, utc_now
+from sincpro_framework.ddd.entity.computed import computations_of
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
@@ -110,7 +117,9 @@ def _percentile(values: list[Any], fraction: float) -> Any:
     below, above = int(at), min(int(at) + 1, len(ordered) - 1)
     if below == above:
         return ordered[below]
-    return ordered[below] + (ordered[above] - ordered[below]) * (at - below)
+    # A decimal column is interpolated as a decimal, because a decimal times a float is an error.
+    reach = Decimal(str(at - below)) if isinstance(ordered[below], Decimal) else at - below
+    return ordered[below] + (ordered[above] - ordered[below]) * reach
 
 
 MEASURES: dict[str, Callable[..., Any]] = {
@@ -121,6 +130,9 @@ MEASURES: dict[str, Callable[..., Any]] = {
     "max": lambda values: max(values, default=None),
     "avg": lambda values: (sum(values) / len(values)) if values else None,
     "percentile": _percentile,
+    "median": lambda values: _percentile(values, 0.5),
+    "bool_and": lambda values: all(values) if values else None,
+    "bool_or": lambda values: any(values) if values else None,
 }
 
 
@@ -218,9 +230,18 @@ def _bucket_key(bucket: Bucket, name: str) -> Any:
     return (bucket.value is None, str(bucket.value))
 
 
+def _by_value(bucket: Bucket) -> tuple[bool, Any]:
+    """A group's own value as the database orders it: numbers as numbers, text as text, and
+    nothing last."""
+    return (bucket.value is None, 0 if bucket.value is None else bucket.value)
+
+
 def _ordered_buckets(buckets: list[Bucket], grouping: Grouping) -> list[Bucket]:
     if not grouping.order:
-        buckets.sort(key=lambda bucket: (bucket.value is None, str(bucket.value)))
+        try:
+            buckets.sort(key=_by_value)
+        except TypeError:
+            buckets.sort(key=lambda bucket: (bucket.value is None, str(bucket.value)))
     else:
         for sort in reversed(grouping.order):
             buckets.sort(
@@ -233,21 +254,32 @@ def _ordered_buckets(buckets: list[Bucket], grouping: Grouping) -> list[Bucket]:
     return buckets[start : start + grouping.pagination.limit]
 
 
+def _value_of(record: Any, level: Level) -> Any:
+    """The group a record lands in for a level: its field, or the part of a date it holds."""
+    value = getattr(record, level.field)
+    return value if level.part is None else part_of(value, level.part)
+
+
 def _tree(
     rows: list[Any],
     grouping: Grouping,
     criteria: Criteria,
-    fields: tuple[str, ...],
+    levels: tuple[Level, ...],
     meta: Meta,
+    where: Any,
 ) -> list[Bucket]:
     """One level of groups and the levels below it, with the same having, order and page the
-    database would apply."""
-    if not fields:
+    database would apply. A level that fills lists the values with no rows as groups of 0."""
+    if not levels:
         return []
-    field, rest = fields[0], fields[1:]
+    level, rest = levels[0], levels[1:]
     by_value: dict[Any, list[Any]] = {}
     for record in rows:
-        by_value.setdefault(getattr(record, field), []).append(record)
+        by_value.setdefault(_value_of(record, level), []).append(record)
+    if level.fill:
+        field = meta.field(level.field)
+        for value in axis_values(level, field.choices, field.type.value == "boolean", where):
+            by_value.setdefault(value, [])
 
     having = grouping.where_measures
     if has_dynamic_values(having):
@@ -255,23 +287,34 @@ def _tree(
 
     buckets = []
     for value, mine in by_value.items():
-        opens = criteria.merged_with(
-            Criteria(where=Condition(field=field, operator=Operator.EQ, value=value))
-        ).model_copy(update={"grouping": Grouping()})
-        measures = _measured(mine, grouping)
+        opens = (
+            criteria
+            if level.part is not None
+            else criteria.merged_with(
+                Criteria(
+                    where=Condition(field=level.field, operator=Operator.EQ, value=value)
+                )
+            ).model_copy(update={"grouping": Grouping()})
+        )
+        measures = (
+            _measured(mine, grouping)
+            if mine
+            else {name: empty_measure(one) for name, one in grouping.measures.items()}
+        )
         if having is not None and not matches(_Measured(count=len(mine), **measures), having):
             continue
         ids, cursor = _page_of_ids(mine, criteria, meta)
         buckets.append(
             Bucket(
-                field=field,
+                field=level.field,
                 value=value,
                 count=len(mine),
                 measures=measures,
                 criteria=opens,
                 ids=ids,
                 cursor=cursor,
-                groups=_tree(mine, grouping, opens, rest, meta),
+                groups=_tree(mine, grouping, opens, rest, meta, where),
+                openable=level.opens,
             )
         )
     return _ordered_buckets(buckets, grouping)
@@ -319,6 +362,28 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         """What may be asked about this aggregate, read off its annotations."""
         return describe_class(aggregate, identity_name(aggregate))
 
+    def _with_computed(self, record: Any) -> Any:
+        """The record with its computed fields set from `python`, which is what a store in memory
+        answers where a database would run the field's `sql`. A field with only `sql` keeps its
+        default here, and `_refuse_unanswerable` stops a criteria from asking for it."""
+        for name, computation in computations_of(type(record)).items():
+            if computation.python is not None:
+                setattr(record, name, computation.python(record))
+        return record
+
+    def _refuse_unanswerable(self, aggregate: type, names: Sequence[str]) -> None:
+        """A computed field with no `python` cannot be answered in memory, and guessing its
+        value would be a second implementation that quietly differs: it is refused, naming it.
+        """
+        for name in names:
+            computation = computations_of(aggregate).get(name)
+            if computation is not None and computation.python is None:
+                raise InvalidCriteria(
+                    f"{aggregate.__name__}.{name} is computed in SQL and has no `python`: a "
+                    "memory store cannot filter, order or group by it — give "
+                    "`computed(python=…)` its value over a record"
+                )
+
     def _filterable(self, aggregate: type) -> Meta:
         """What a filter may name: an event is read by its envelope — its name, its subject, its
         flow, its delivery — as a context's event table holds them in columns; what a subclass
@@ -347,7 +412,10 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
                 for record in held.values()
             ]
             return sorted(found, key=identity_of)
-        return list(self._stored.setdefault(aggregate, {}).values())
+        return [
+            self._with_computed(record)
+            for record in self._stored.setdefault(aggregate, {}).values()
+        ]
 
     def _live(self, aggregate: type, criteria: Criteria) -> bool:
         """Whether the archived have to be left out: they do, unless the criteria named them."""
@@ -369,6 +437,9 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         an aggregate must see exactly the ones somebody is handed.
         """
         meta = self.definition(aggregate)
+        self._refuse_unanswerable(
+            aggregate, [leaf.field for leaf in conditions_of(criteria.expression)]
+        )
         expression, dropped = self._filterable(aggregate).accept(criteria.expression)
         _, unanswerable = meta.accept_specification(criteria.specification)
         rows = [
@@ -383,6 +454,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
     def _ordering(self, aggregate: type, criteria: Criteria) -> tuple[Sort, ...]:
         meta = self.definition(aggregate)
         sorts = criteria.order or parse_order(meta.default_order)
+        self._refuse_unanswerable(aggregate, [sort.field for sort in sorts])
         for sort in sorts:
             meta.orderable(sort.field)
         if any(sort.field == meta.identity for sort in sorts):
@@ -422,7 +494,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         found = self._stored.setdefault(aggregate, {}).get(identity)
         if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
             return None
-        return self._read(found)
+        return self._read(found if found is None else self._with_computed(found))
 
     @overload
     def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...
@@ -434,7 +506,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         aggregate, holder = model_and_collection(target)
         note_read(aggregate)
         stored = self._stored.setdefault(aggregate, {})
-        found = [self._read(stored[key]) for key in ids if key in stored]
+        found = [self._read(self._with_computed(stored[key])) for key in ids if key in stored]
         return self._searched(
             target,
             holder(
@@ -648,11 +720,16 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         return answer
 
     def _grouped(self, target: type, criteria: Criteria, grouping: Grouping) -> list[Bucket]:
-        """The levels the grouping names, split in memory. A grain is the adapter's: cutting a
-        date to a month is SQL a database writes, and a double that guessed it would be a
-        second implementation to keep in step."""
+        """The levels the grouping names, split in memory. A **grain** is the adapter's: cutting a
+        date to a month is SQL a database writes, and a double that guessed it would be a second
+        implementation to keep in step. A **part** is extraction — a number a date holds — so it is
+        answered here, by the same arithmetic the database does."""
         aggregate, holder = model_and_collection(target)
         meta = self.definition(aggregate)
+        check_levels(criteria, grouping)
+        check_measures(
+            grouping, {name: field.type.value for name, field in meta.fields.items()}
+        )
         for level in grouping.group_by:
             meta.field(level.field)
             if level.grain is not None:
@@ -660,10 +737,14 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
                     f"a memory repository cannot cut '{level.field}' to a {level.grain}; "
                     "a date grain is answered by the database adapter"
                 )
-        rows, _ = self._matching(aggregate, criteria, handed_back=False)
-        return _tree(
-            rows, grouping, criteria, tuple(level.field for level in grouping.group_by), meta
+        self._refuse_unanswerable(
+            aggregate,
+            [level.field for level in grouping.group_by]
+            + [measure.field for measure in grouping.measures.values()],
         )
+        rows, _ = self._matching(aggregate, criteria, handed_back=False)
+        where, _ = self._filterable(aggregate).accept(criteria.expression)
+        return _tree(rows, grouping, criteria, tuple(grouping.group_by), meta, where)
 
     def group_by(
         self, target: type, by: Sequence[str], criteria: Criteria | None = None

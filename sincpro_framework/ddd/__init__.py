@@ -26,6 +26,7 @@ from sincpro_framework.ddd.criteria import (
     Offset,
     Operator,
     Pagination,
+    Part,
     Period,
     Periods,
     Pivot,
@@ -53,6 +54,7 @@ from sincpro_framework.ddd.entity import (
     new_entity_id,
     utc_now,
 )
+from sincpro_framework.ddd.entity.computed import computed
 from sincpro_framework.ddd.entity.derivations import Derivations, Derive
 from sincpro_framework.ddd.entity.entity_collection import (
     Changes,
@@ -180,6 +182,7 @@ __all__ = [
     "Offset",
     "Operator",
     "Pagination",
+    "Part",
     "Period",
     "Periods",
     "Pivot",
@@ -214,6 +217,7 @@ __all__ = [
     "WritesInBulk",
     "advise",
     "assign",
+    "computed",
     "detail_of",
     "history_of",
     "holds",

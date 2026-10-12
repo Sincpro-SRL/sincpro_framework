@@ -366,6 +366,51 @@ def _postgresql_grain(column: Any, grain: str) -> ColumnElement[Any]:
     return func.to_char(cast(column, DateTime), _POSTGRESQL_FORMATS[grain])
 
 
+PartTranslator = Callable[[Any, str], ColumnElement[Any]]
+
+_SQLITE_PART_FORMATS = {
+    "year": "%Y",
+    "month": "%m",
+    "iso_week": "%V",
+    "day_of_week": "%u",
+    "day_of_month": "%d",
+    "hour": "%H",
+}
+_POSTGRESQL_PARTS = {
+    "year": "year",
+    "quarter": "quarter",
+    "month": "month",
+    "iso_week": "week",
+    "day_of_week": "isodow",
+    "day_of_month": "day",
+    "hour": "hour",
+}
+
+
+def _sqlite_part(column: Any, part: str) -> ColumnElement[Any]:
+    """A number out of a date, the way `strftime` writes it, read back as an integer. SQLite has
+    no quarter: it is the month rounded up to three."""
+    if part == "quarter":
+        return (cast(func.strftime("%m", column), Integer) + 2) // 3
+    return cast(func.strftime(_SQLITE_PART_FORMATS[part], column), Integer)
+
+
+def _postgresql_part(column: Any, part: str) -> ColumnElement[Any]:
+    """`EXTRACT` answers a number; the `CAST` makes a timestamp stored as ISO text and a real
+    `timestamp` extract the same way. Weekdays are ISO, Monday as 1."""
+    return cast(func.extract(_POSTGRESQL_PARTS[part], cast(column, DateTime)), Integer)
+
+
+def _duckdb_part(column: Any, part: str) -> ColumnElement[Any]:
+    return cast(func.date_part(_POSTGRESQL_PARTS[part], column), Integer)
+
+
+PART_TRANSLATORS: dict[str, PartTranslator] = {
+    "sqlite": _sqlite_part,
+    "postgresql": _postgresql_part,
+    "duckdb": _duckdb_part,
+}
+
 GRAIN_TRANSLATORS: dict[str, GrainTranslator] = {
     "sqlite": _sqlite_grain,
     "postgresql": _postgresql_grain,
@@ -389,6 +434,14 @@ def grouping_column(model: type, level: Level, dialect: str = "sqlite") -> Colum
     extra steps. A dialect with no translator is refused, naming how to register one.
     """
     column = getattr(model, level.field)
+    if level.part is not None:
+        part_translator = PART_TRANSLATORS.get(dialect)
+        if part_translator is None:
+            raise ProgrammingError(
+                f"no date part translator for dialect {dialect!r}; the built-in ones are "
+                f"{sorted(PART_TRANSLATORS)} — add yours with register_part_translator()"
+            )
+        return part_translator(column, level.part.value)
     if level.grain is None:
         return column
 

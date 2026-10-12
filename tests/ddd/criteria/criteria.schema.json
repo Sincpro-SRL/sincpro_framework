@@ -392,7 +392,7 @@
     "JsonValue": {},
     "Level": {
       "additionalProperties": false,
-      "description": "One level of grouping: the field it splits by, and how finely.\n\nin      \"produced_by\"           →  Level(field='produced_by', grain=None)\nin      \"registered_at:month\"   →  Level(field='registered_at', grain='month')",
+      "description": "One level of grouping: the field it splits by, and how.\n\nin      \"produced_by\"           →  Level(field='produced_by')\nin      \"registered_at:month\"   →  Level(field='registered_at', grain=Grain.MONTH)\nin      {\"field\": \"registered_at\", \"part\": \"month\"}   →  every March, whatever the year\n\nA **grain** cuts a date into ranges of time (`2026-03`); a **part** extracts a number from it\n(`3`). One level takes one or the other, never both.\n\n`fill` lists every value the level can take, including the ones with no rows, as groups with\na count of 0: all the choices of an enum, both values of a boolean, every number a part can\nbe, every grain of a date range that `where` bounds. An axis that is complete is what a chart\nneeds, and what a group that happened to be empty would otherwise silently leave out.",
       "properties": {
         "field": {
           "title": "Field",
@@ -408,6 +408,22 @@
             }
           ],
           "default": null
+        },
+        "part": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Part"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fill": {
+          "default": false,
+          "title": "Fill",
+          "type": "boolean"
         }
       },
       "required": [
@@ -428,7 +444,10 @@
             "max",
             "count",
             "count_distinct",
-            "percentile"
+            "percentile",
+            "median",
+            "bool_and",
+            "bool_or"
           ],
           "title": "Function",
           "type": "string"
@@ -447,7 +466,7 @@
             }
           ],
           "default": null,
-          "description": "What the function needs besides a column, when it needs anything.\n\nOnly `percentile` does: the fraction it cuts at, `0.5` for the median and `0.95` for a P95.\nEvery other measure refuses one rather than ignoring it, because a number that is quietly\ndropped is a report that is quietly wrong.",
+          "description": "What the function needs besides a column, when it needs anything.\n\nOnly `percentile` does: the fraction it cuts at, `0.95` for a P95. `median` is the 0.5 one\nand takes none. Every other measure refuses one rather than ignoring it, because a number\nthat is quietly dropped is a report that is quietly wrong.",
           "title": "Argument"
         }
       },
@@ -627,6 +646,20 @@
       ],
       "title": "Param",
       "type": "object"
+    },
+    "Part": {
+      "description": "A number extracted from a date: the month of the year, whatever the year.\n\nA grain **cuts** (a bucket is a range of time) and a part **extracts** (a bucket is a number\nthat many dates share), so they answer different questions: sales by month `2026-03` is a\ngrain, sales by «March, in any year» is a part. Weekdays count from Monday as 1, as ISO does.",
+      "enum": [
+        "year",
+        "quarter",
+        "month",
+        "iso_week",
+        "day_of_week",
+        "day_of_month",
+        "hour"
+      ],
+      "title": "Part",
+      "type": "string"
     },
     "Period": {
       "additionalProperties": false,

@@ -17,6 +17,7 @@ Read in this order:
 | [Introduction](introduction.md) | What problem this solves, the mental model in one page, a first end-to-end example |
 | [Design](design.md) | The two packages, the flow of a read and of a write, the module map, the invariants, where to extend |
 | [Criteria](criteria.md) | The boundary language: its grammar, what *reflexive* means, how two criterias merge, what `dropped` is |
+| [Analytics from the model](analytics.md) | A computed field, the part of a date, groups with no rows and the extra folds: group, filter and order by things that are not columns, answered the same in memory and in SQL |
 | [Specification](specification.md) | What to bring back of each record, at any depth: the rules, what the entity answers in its `DEFAULT_*` class methods, and the form hints of `presentation` |
 | [Entity reads](entity-reads.md) | `EntityReads`: one Feature for get, get many, the select by text and the list, from the entity's `DEFAULT_*` class methods; what the caller names wins |
 | [Preview](preview.md) | What a record becomes before it is saved: derived fields, `assign`, `Preview` on `EntityReads`, and the guard that makes a preview unable to write |

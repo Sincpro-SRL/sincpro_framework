@@ -35,6 +35,35 @@ class Grain(StrEnum):
     YEAR = "year"
 
 
+class Part(StrEnum):
+    """A number extracted from a date: the month of the year, whatever the year.
+
+    A grain **cuts** (a bucket is a range of time) and a part **extracts** (a bucket is a number
+    that many dates share), so they answer different questions: sales by month `2026-03` is a
+    grain, sales by «March, in any year» is a part. Weekdays count from Monday as 1, as ISO does.
+    """
+
+    YEAR = "year"
+    QUARTER = "quarter"
+    MONTH = "month"
+    ISO_WEEK = "iso_week"
+    DAY_OF_WEEK = "day_of_week"
+    DAY_OF_MONTH = "day_of_month"
+    HOUR = "hour"
+
+
+PART_VALUES: dict[Part, tuple[int, int] | None] = {
+    Part.YEAR: None,
+    Part.QUARTER: (1, 4),
+    Part.MONTH: (1, 12),
+    Part.ISO_WEEK: (1, 53),
+    Part.DAY_OF_WEEK: (1, 7),
+    Part.DAY_OF_MONTH: (1, 31),
+    Part.HOUR: (0, 23),
+}
+"""The numbers each part can take, for the groups that `fill` lists; a year has no fixed range."""
+
+
 class ValueKind(StrEnum):
     """What a dynamic value is. The set is closed: the name decides what runs."""
 
