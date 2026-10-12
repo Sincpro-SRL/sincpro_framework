@@ -72,6 +72,10 @@ class Bucket(DataTransferObject):
     """Where the next page inside this group starts; `None` when there is none, or none asked."""
     groups: list["Bucket"] = []
     """The level below, when the grouping named one. Empty on the deepest level."""
+    openable: bool = True
+    """Whether `criteria` selects this group's rows. False for a group of a date **part** («every
+    March»), which no filter on the date can express: `criteria` is then its parent's, and a
+    consumer that opens it would see rows that are not the group's."""
 
 
 class Specification(RootModel[dict[str, "Criteria"]]):

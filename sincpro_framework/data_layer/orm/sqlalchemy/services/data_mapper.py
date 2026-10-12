@@ -27,7 +27,7 @@ import sqlalchemy
 from sqlalchemy import (
     Table,
 )
-from sqlalchemy.orm import object_session, registry
+from sqlalchemy.orm import column_property, object_session, registry
 
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import (
     RELATIONS,
@@ -45,6 +45,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.relation_resolver impo
     resolve_whole,
 )
 from sincpro_framework.ddd.entity import relations
+from sincpro_framework.ddd.entity.computed import computations_of
 from sincpro_framework.ddd.entity.entity_collection import identity_name
 from sincpro_framework.ddd.entity.entity_meta import (
     annotations_of,
@@ -54,6 +55,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
 from sincpro_framework.ddd.entity.relations import key_pair
 from sincpro_framework.ddd.exceptions import RelationNotResolved
 from sincpro_framework.ddd.query import serialising
+from sincpro_framework.exceptions import ProgrammingError
 
 
 class RelatedAttribute:
@@ -251,6 +253,30 @@ def with_transient_defaults(
                 record.__dict__[name] = make()
 
     return fill
+
+
+def computed_properties(entity: type, table: Table) -> dict[str, Any]:
+    """The expression each `computed(sql=…)` field of a class is mapped as.
+
+        in      Invoice (balance computed over total and paid), the invoice table
+        out     {'balance': column_property(invoice.total - invoice.paid)}
+
+    The function receives the table's columns, so a column it names that the table lacks is
+    refused here, at boot, naming the field and the column, and not on the first query.
+    """
+    found: dict[str, Any] = {}
+    for name, computation in computations_of(entity).items():
+        if computation.sql is None:
+            continue
+        try:
+            expression = computation.sql(table.c)
+        except (AttributeError, KeyError) as error:
+            raise ProgrammingError(
+                f"{entity.__name__}.{name} is computed over a column {table.name} does not "
+                f"have: {error}"
+            ) from error
+        found[name] = column_property(expression)
+    return found
 
 
 def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None:

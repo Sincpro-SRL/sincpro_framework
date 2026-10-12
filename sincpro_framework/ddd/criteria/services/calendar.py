@@ -64,7 +64,7 @@ def snapped[D: date](day: D, grain: Grain, week_starts_on: int) -> D:
     return start
 
 
-def _on_calendar[D: date](day: D, span: Span) -> D:
+def on_calendar[D: date](day: D, span: Span) -> D:
     """A day moved by the calendar units of a span: months and years first, then days and weeks."""
     moved = _with_months(day, (span.months or 0) + 12 * (span.years or 0))
     return moved + timedelta(days=(span.days or 0) + 7 * (span.weeks or 0))
@@ -80,9 +80,9 @@ def moved(day: date | datetime, span: Span, resolution: ResolutionContext) -> da
     if not isinstance(day, datetime):
         if span.hours or span.minutes:
             raise InvalidCriteria("a date has no hours or minutes; use `now` to move by them")
-        return _on_calendar(day, span)
+        return on_calendar(day, span)
 
-    wall = _on_calendar(day.astimezone(resolution.timezone).replace(tzinfo=None), span)
+    wall = on_calendar(day.astimezone(resolution.timezone).replace(tzinfo=None), span)
     elapsed = timedelta(hours=span.hours or 0, minutes=span.minutes or 0)
     return wall.replace(tzinfo=resolution.timezone).astimezone(UTC) + elapsed
 

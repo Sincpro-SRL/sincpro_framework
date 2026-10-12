@@ -10,6 +10,7 @@ from sqlalchemy.orm import registry
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import record_mapping
 from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator
 from sincpro_framework.data_layer.orm.sqlalchemy.services.data_mapper import (
+    computed_properties,
     inferred_foreign_keys,
     install,
     parent_table,
@@ -26,6 +27,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
     GrainTranslator,
+    PartTranslator,
 )
 from sincpro_framework.ddd.entity import Entity, relations
 from sincpro_framework.ddd.events import DomainEvent
@@ -49,6 +51,10 @@ def map_aggregates(
     onto a column with another name, say `{"id": dataset_table.c.dataset_id}` for a table
     that predates the `Entity` convention.
 
+    A field declared with `computed(sql=…)` is mapped as an expression over the table
+    (`column_property`): it is read with the row, and filtered, ordered and grouped by like a
+    column, and it is never written. A `properties` entry for the same name wins.
+
     `relations` is what the tables cannot say on their own — a kind that needs a bus, a
     function or a scope. Whatever is declared here wins over what a foreign key infers.
 
@@ -62,8 +68,9 @@ def map_aggregates(
             continue
 
         options: dict[str, Any] = {}
-        if properties and entity in properties:
-            options["properties"] = properties[entity]
+        computed = computed_properties(entity, table)
+        if computed or (properties and entity in properties):
+            options["properties"] = {**computed, **(properties or {}).get(entity, {})}
         parent = next((base for base in entity.__mro__[1:] if base in already), None)
         if parent is not None:
             refuse_a_table_that_does_not_extend(
@@ -132,3 +139,15 @@ def register_grain_translator(dialect: str, translator: GrainTranslator) -> None
     way everywhere.
     """
     sql_translator.GRAIN_TRANSLATORS[dialect] = translator
+
+
+def register_part_translator(dialect: str, translator: PartTranslator) -> None:
+    """Teaches the translator how another engine extracts a number from a date.
+
+        register_part_translator("mysql", lambda column, part: func.extract(…))
+
+    The translator receives the column and one of `Part`'s values, and must answer the same
+    integer the built-in ones do — the month as 1 to 12, the weekday as 1 (Monday) to 7 — so a
+    group of a part reads the same everywhere.
+    """
+    sql_translator.PART_TRANSLATORS[dialect] = translator

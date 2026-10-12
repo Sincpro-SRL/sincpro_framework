@@ -9,7 +9,7 @@ from sincpro_framework.ddd.criteria.domain.expression import Expression
 from sincpro_framework.ddd.criteria.domain.pagination import Pagination
 from sincpro_framework.ddd.criteria.domain.sort import Sort
 from sincpro_framework.ddd.criteria.domain.strict import Strict, refused_or_dropped
-from sincpro_framework.ddd.criteria.domain.values import Grain
+from sincpro_framework.ddd.criteria.domain.values import Grain, Part
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -21,8 +21,11 @@ MEASURE_FUNCTIONS: tuple[str, ...] = (
     "count",
     "count_distinct",
     "percentile",
+    "median",
+    "bool_and",
+    "bool_or",
 )
-"""The five functions a measure may ask for. A closed list, because the name reaches SQL:
+"""The functions a measure may ask for. A closed list, because the name reaches SQL:
 anything outside it is refused before a statement exists. Adding one is a change here, not a
 string a caller can invent."""
 
@@ -49,9 +52,9 @@ class Measure(Strict):
     argument: float | None = None
     """What the function needs besides a column, when it needs anything.
 
-    Only `percentile` does: the fraction it cuts at, `0.5` for the median and `0.95` for a P95.
-    Every other measure refuses one rather than ignoring it, because a number that is quietly
-    dropped is a report that is quietly wrong."""
+    Only `percentile` does: the fraction it cuts at, `0.95` for a P95. `median` is the 0.5 one
+    and takes none. Every other measure refuses one rather than ignoring it, because a number
+    that is quietly dropped is a report that is quietly wrong."""
 
     @field_validator("function")
     @classmethod
@@ -105,14 +108,25 @@ class Measure(Strict):
 
 
 class Level(Strict):
-    """One level of grouping: the field it splits by, and how finely.
+    """One level of grouping: the field it splits by, and how.
 
-    in      "produced_by"           →  Level(field='produced_by', grain=None)
-    in      "registered_at:month"   →  Level(field='registered_at', grain='month')
+    in      "produced_by"           →  Level(field='produced_by')
+    in      "registered_at:month"   →  Level(field='registered_at', grain=Grain.MONTH)
+    in      {"field": "registered_at", "part": "month"}   →  every March, whatever the year
+
+    A **grain** cuts a date into ranges of time (`2026-03`); a **part** extracts a number from it
+    (`3`). One level takes one or the other, never both.
+
+    `fill` lists every value the level can take, including the ones with no rows, as groups with
+    a count of 0: all the choices of an enum, both values of a boolean, every number a part can
+    be, every grain of a date range that `where` bounds. An axis that is complete is what a chart
+    needs, and what a group that happened to be empty would otherwise silently leave out.
     """
 
     field: str
     grain: Grain | None = None
+    part: Part | None = None
+    fill: bool = False
 
     @field_validator("grain", mode="before")
     @classmethod
@@ -123,12 +137,41 @@ class Level(Strict):
             )
         return grain
 
+    @field_validator("part", mode="before")
+    @classmethod
+    def _a_part_that_exists(cls, part: Any) -> Any:
+        if part is not None and part not in {one.value for one in Part}:
+            raise InvalidCriteria(
+                f"{part!r} is not a part of a date; use one of {sorted(one.value for one in Part)}"
+            )
+        return part
+
+    @model_validator(mode="after")
+    def _a_grain_or_a_part(self) -> "Level":
+        """A level cuts a date or extracts a number from it, not both.
+
+        >>> Level(field="made_at", grain="month", part="month")
+        InvalidCriteria: a level takes a grain (a range of time) or a part (a number), not both
+        """
+        if self.grain is not None and self.part is not None:
+            raise InvalidCriteria(
+                "a level takes a grain (a range of time) or a part (a number), not both"
+            )
+        return self
+
+    @property
+    def opens(self) -> bool:
+        """Whether a group of this level can be opened as a filter. A part cannot: «the third
+        month of any year» is not a condition on the date, so its groups say so instead of
+        pointing at rows that are not theirs."""
+        return self.part is None
+
     @classmethod
     def read(cls, written: Any, tolerant: bool = False) -> "Level":
         """A level as it comes in JSON: the object — `{"field": "registered_at", "grain": "month"}`.
 
         >>> Level.read({"field": "registered_at", "grain": "month"})
-        Level(field='registered_at', grain='month')
+        Level(field='registered_at', grain=<Grain.MONTH: 'month'>, part=None, fill=False)
         """
         if isinstance(written, Level):
             return written

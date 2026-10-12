@@ -64,6 +64,7 @@ from sincpro_framework.ddd.criteria.domain.values import (
     Grain,
     Now,
     Param,
+    Part,
     Period,
     Periods,
     ResolverMeta,
@@ -71,6 +72,13 @@ from sincpro_framework.ddd.criteria.domain.values import (
     Today,
 )
 from sincpro_framework.ddd.criteria.domain.walk import mapped
+from sincpro_framework.ddd.criteria.entrypoint.axes import (
+    axis_values,
+    check_levels,
+    check_measures,
+    empty_measure,
+    part_of,
+)
 from sincpro_framework.ddd.criteria.entrypoint.evaluation import holds, matches
 from sincpro_framework.ddd.criteria.entrypoint.resolution import has_dynamic_values, resolve
 
@@ -103,6 +111,7 @@ __all__ = [
     "Operator",
     "Pagination",
     "Param",
+    "Part",
     "Period",
     "Periods",
     "Pivot",
@@ -113,9 +122,13 @@ __all__ = [
     "Span",
     "Specification",
     "Today",
+    "axis_values",
     "canonical",
+    "check_levels",
+    "check_measures",
     "combined",
     "conditions_of",
+    "empty_measure",
     "expression_from",
     "has_dynamic_values",
     "holds",
@@ -123,6 +136,7 @@ __all__ = [
     "mapped",
     "matches",
     "parse_order",
+    "part_of",
     "resolve",
     "with_text",
 ]

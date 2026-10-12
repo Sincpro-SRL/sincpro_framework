@@ -58,6 +58,7 @@ from sincpro_framework.ddd.criteria import (
     mapped,
     resolve,
 )
+from sincpro_framework.ddd.entity.computed import computations_of
 from sincpro_framework.ddd.entity.derivations import Derivations, Derive
 from sincpro_framework.ddd.entity.entity import Translated
 from sincpro_framework.ddd.entity.entity_collection import Dropped
@@ -166,6 +167,35 @@ SAME_ROW: tuple[Operator, ...] = tuple(
     one for one in COMPARABLE if one is not Operator.BETWEEN
 )
 """The operators that compare a column with another column of the same row."""
+
+AGGREGATES_BY_TYPE: dict[FieldType, tuple[str, ...]] = {
+    FieldType.INTEGER: (
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "count",
+        "count_distinct",
+        "percentile",
+        "median",
+    ),
+    FieldType.NUMBER: (
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "count",
+        "count_distinct",
+        "percentile",
+        "median",
+    ),
+    FieldType.DATE: ("min", "max", "count", "count_distinct"),
+    FieldType.DATETIME: ("min", "max", "count", "count_distinct"),
+    FieldType.TEXT: ("min", "max", "count", "count_distinct"),
+    FieldType.UUID: ("min", "max", "count", "count_distinct"),
+    FieldType.BOOLEAN: ("bool_and", "bool_or", "count"),
+}
+"""What a field of each type can be folded with. A type that is not here is not folded."""
 
 OPERATORS_BY_TYPE: dict[FieldType, tuple[Operator, ...]] = {
     FieldType.TEXT: (
@@ -359,6 +389,16 @@ class FieldMeta(DataTransferObject):
     """False for every nullable column: a keyset comparison omits rows holding NULL, so
     ordering by one loses rows from the pagination in silence."""
 
+    groupable: bool = False
+    """Whether a grouping may split by this field (`Level(field=…)`): a scalar that is not a list
+    or a translation. A date is grouped by a grain or by a part, which the level says."""
+    aggregates: tuple[str, ...] = ()
+    """The functions this field can be folded with (`Measure(function=…, field=…)`), by its type.
+    A client offers exactly these and never carries the table."""
+    computed: bool = False
+    """The field is computed (`computed(sql=…)`), not a column: it is read-only and is filtered,
+    ordered and grouped like one."""
+
     ops: tuple[Operator, ...]
     """Included although derivable from `type`, so a consumer never has to carry the table."""
     many: bool = False
@@ -465,6 +505,8 @@ class FieldMeta(DataTransferObject):
             choices=list(members or []),
             exact=exact,
             sortable=not nullable and logical not in unsortable,
+            groupable=logical in AGGREGATES_BY_TYPE,
+            aggregates=AGGREGATES_BY_TYPE.get(logical, ()),
             ops=OPERATORS_BY_TYPE[logical] + ((IS_NULL,) if nullable else ()),
         )
 
@@ -1121,9 +1163,9 @@ def hinted(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMe
     return {
         name: meta.model_copy(
             update={
-                "readonly": name in presented.readonly,
+                "readonly": name in presented.readonly or meta.computed,
                 "required": name in presented.required,
-                "default": defaults.get(name),
+                "default": None if meta.computed else defaults.get(name),
                 "readonly_when": presented.readonly_when.get(name),
                 "required_when": presented.required_when.get(name),
                 "visible_when": presented.visible_when.get(name),
@@ -1230,6 +1272,20 @@ EVENT_ENVELOPE = frozenset({"entity_type", "entity_id", "correlation_id", "causa
 """The fields that make a class a domain event's: one carrying them also answers its `name`."""
 
 
+def with_computed(fields: dict[str, FieldMeta], declared: type) -> dict[str, FieldMeta]:
+    """The fields with the computed ones marked. `hinted` then shows them read-only.
+
+    in      {'balance': …}, Invoice (balance computed)   →  out  balance: computed
+    """
+    marked = computations_of(declared)
+    if not marked:
+        return fields
+    return {
+        name: (field.model_copy(update={"computed": True}) if name in marked else field)
+        for name, field in fields.items()
+    }
+
+
 def describe_class(declared: type, identity: str = "") -> "Meta":
     """A definition read off the annotations alone, with no table behind it.
 
@@ -1266,7 +1322,7 @@ def describe_class(declared: type, identity: str = "") -> "Meta":
     ):
         # A domain event's wire name is a class attribute, not a field; every row holds it.
         fields["name"] = FieldMeta.for_column(FieldType.TEXT, False, [], False)
-    fields = hinted(fields, declared)
+    fields = hinted(with_computed(fields, declared), declared)
     presented = presentation_of(declared)
     return Meta(
         aggregate=declared.__name__,

@@ -17,11 +17,15 @@ from sincpro_framework.ddd.criteria import (
     Level,
     Measure,
     PivotCell,
+    axis_values,
+    check_levels,
+    check_measures,
     conditions_of,
+    empty_measure,
     has_dynamic_values,
     resolve,
 )
-from sincpro_framework.ddd.entity.entity_meta import Meta, ambient_resolution
+from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta, ambient_resolution
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 WITHOUT_PERCENTILES = frozenset({"sqlite"})
@@ -42,6 +46,22 @@ def level_of(one: str | Level) -> Level:
         return one
     field, _, grain = one.partition(":")
     return Level.read({"field": field, "grain": grain or None})
+
+
+NATIVE_BOOLEAN_FOLDS = frozenset({"postgresql", "duckdb"})
+"""The dialects with `bool_and` and `bool_or`. The rest hold a boolean as 0 and 1, where «all of
+them» is a minimum of 1 and «any of them» a maximum of 1."""
+
+
+def _boolean_fold(function: str, column: Any, dialect: str) -> Any:
+    """`bool_and` / `bool_or` over a boolean column, in the dialect's own words.
+
+    in      bool_and, Invoice.paid, "postgresql"   →  out  bool_and(invoice.paid)
+    in      bool_and, Invoice.paid, "sqlite"       →  out  min(invoice.paid) = 1
+    """
+    if dialect in NATIVE_BOOLEAN_FOLDS:
+        return getattr(func, function)(column)
+    return (func.min(column) if function == "bool_and" else func.max(column)) == 1
 
 
 def measure_columns(
@@ -68,15 +88,22 @@ def measure_columns(
 
         if measure.function == "count_distinct":
             columns.append(func.count(distinct(column)).label(name))
-        elif measure.function == "percentile":
+        elif measure.function in ("percentile", "median"):
             if dialect in WITHOUT_PERCENTILES:
                 raise InvalidCriteria(
                     f"'{dialect}' does not compute percentiles; ask for one over a database "
                     "that does, or answer it in memory"
                 )
+            fraction = 0.5 if measure.function == "median" else measure.argument
             columns.append(
-                func.percentile_cont(measure.argument).within_group(column.asc()).label(name)
+                func.percentile_cont(fraction).within_group(column.asc()).label(name)
             )
+        elif measure.function in ("bool_and", "bool_or"):
+            check_measures(
+                Grouping(measures={name: measure}),
+                {measure.field: meta.field(measure.field).type.value},
+            )
+            columns.append(_boolean_fold(measure.function, column, dialect).label(name))
         else:
             columns.append(getattr(func, measure.function)(column).label(name))
     return columns
@@ -199,6 +226,58 @@ def ids_per_group(
     return pages
 
 
+def filled_levels(
+    rows_by_level: list[Sequence[Any]],
+    levels: Sequence[Level],
+    grouping: Grouping,
+    meta: Meta,
+    criteria: Criteria,
+) -> list[Sequence[Any]]:
+    """The rows of every level with the groups that have no rows added, as groups of 0.
+
+        in      status filled, rows for 'open' and 'paid' only, choices open|paid|overdue
+        out     the same rows plus ('overdue', 0, None…)
+
+    Each level is completed under every parent it has, parents first, and ordered again by the
+    level's own values unless the grouping chose another order: a filled group has no number to
+    be placed by, so under a chosen order it follows the groups that have rows.
+    """
+    where, _ = meta.accept(criteria.expression)
+    empties = [empty_measure(measure) for measure in grouping.measures.values()]
+    completed: list[Sequence[Any]] = []
+    for how_deep, rows in enumerate(rows_by_level, start=1):
+        level = levels[how_deep - 1]
+        if not level.fill:
+            completed.append(rows)
+            continue
+        field = meta.field(level.field)
+        values = axis_values(level, field.choices, field.type is FieldType.BOOLEAN, where)
+        parents = (
+            [()]
+            if how_deep == 1
+            else sorted({tuple(row[: how_deep - 1]) for row in completed[-1]}, key=str)
+        )
+        present = {tuple(row[:how_deep]) for row in rows}
+        added = [
+            (*parent, value, 0, *empties)
+            for parent in parents
+            for value in values
+            if (*parent, value) not in present
+        ]
+        everything = [*rows, *added]
+        if not grouping.order:
+            try:
+                everything.sort(
+                    key=lambda row: tuple((one is None, one) for one in row[:how_deep])
+                )
+            except TypeError:
+                everything.sort(
+                    key=lambda row: tuple((one is None, str(one)) for one in row[:how_deep])
+                )
+        completed.append(everything)
+    return completed
+
+
 def bucketed(
     session: Session,
     model: type,
@@ -226,6 +305,7 @@ def bucketed(
     """
     meta = describe(model)
     resolved = grouping.group_by
+    check_levels(criteria, grouping)
     columns = []
     for level in resolved:
         meta.field(level.field)
@@ -263,18 +343,25 @@ def bucketed(
         if how_deep == 1 and grouping.paged:
             kept_first = [row[0] for row in rows]
 
+    if any(level.fill for level in resolved):
+        rows_by_level = filled_levels(rows_by_level, resolved, grouping, meta, criteria)
+
     opens: dict[tuple, Criteria] = {(): criteria}
     for how_deep, rows in enumerate(rows_by_level, start=1):
         level = resolved[how_deep - 1]
         for row in rows:
             path = tuple(row[:how_deep])
             # Opening a group is a plain reading of its rows: the grouping stays behind, or
-            # a page asked on the bucket's criteria would be read as «a page per group».
+            # a page asked on the bucket's criteria would be read as «a page per group». A
+            # part of a date cannot be opened — `Bucket.openable` says so — and keeps the
+            # parent's criteria instead of a filter that would select rows that are not its own.
             opens[path] = (
                 opens[path[:-1]]
-                .merged_with(Criteria(where=sql_translator.bucket_condition(level, path[-1])))
-                .model_copy(update={"grouping": Grouping()})
-            )
+                if not level.opens
+                else opens[path[:-1]].merged_with(
+                    Criteria(where=sql_translator.bucket_condition(level, path[-1]))
+                )
+            ).model_copy(update={"grouping": Grouping()})
 
     pages = (
         ids_per_group(session, model, meta, criteria, clause, columns)
@@ -302,6 +389,7 @@ def bucketed(
                     ids=ids,
                     cursor=next_cursor,
                     groups=children.get(path, []),
+                    openable=level.opens,
                 )
             )
     return children.get((), [])
