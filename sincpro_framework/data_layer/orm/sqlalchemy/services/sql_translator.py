@@ -322,8 +322,9 @@ POSITION, TOTAL, GROUP_KEY = "_sincpro_position", "_sincpro_total", "_sincpro_gr
 
 GrainTranslator = Callable[[Any, str], ColumnElement[Any]]
 
-# ISO weeks on both dialects, so a bucket reads the same text whatever the engine: `%G` and
-# `%V` need SQLite 3.44 or later, which every supported Python ships.
+# ISO weeks on every dialect, so a bucket reads the same text whatever the engine. DuckDB reads
+# `%G` and `%V`; SQLite only does from 3.46 (May 2024), and a Python built on an older library
+# answers NULL for them, so SQLite computes the week without those formats (`_sqlite_iso_week`).
 _SQLITE_FORMATS = {"year": "%Y", "month": "%Y-%m", "day": "%Y-%m-%d", "week": "%G-W%V"}
 _POSTGRESQL_FORMATS = {
     "year": "YYYY",
@@ -334,6 +335,19 @@ _POSTGRESQL_FORMATS = {
 }
 
 
+def _thursday_of(column: Any) -> ColumnElement[Any]:
+    """The Thursday of the ISO week a date falls in: a week belongs to the year of its Thursday,
+    and its number is how many sevens fit before it. `-3 days` then the next Thursday (or the same
+    one) lands on it for every weekday, Sunday included."""
+    return func.date(column, "-3 days", "weekday 4")
+
+
+def _sqlite_iso_week(column: Any) -> ColumnElement[Any]:
+    """The ISO week number, 1 to 53, from functions every SQLite has: the day of the year of the
+    week's Thursday, in sevens."""
+    return (cast(func.strftime("%j", _thursday_of(column)), Integer) - 1) // 7 + 1
+
+
 def _sqlite_grain(column: Any, grain: str) -> ColumnElement[Any]:
     """SQLite has no quarter in `strftime`: it is the year, `-Q` and the month rounded up to three."""
     if grain == "quarter":
@@ -342,6 +356,13 @@ def _sqlite_grain(column: Any, grain: str) -> ColumnElement[Any]:
             func.strftime("%Y", column)
             .op("||")("-Q")
             .op("||")(cast((month + 2) // 3, String))
+        )
+    if grain == "week":
+        thursday = _thursday_of(column)
+        return (
+            func.strftime("%Y", thursday)
+            .op("||")("-W")
+            .op("||")(func.printf("%02d", _sqlite_iso_week(column)))
         )
     return func.strftime(_SQLITE_FORMATS[grain], column)
 
@@ -371,8 +392,6 @@ PartTranslator = Callable[[Any, str], ColumnElement[Any]]
 _SQLITE_PART_FORMATS = {
     "year": "%Y",
     "month": "%m",
-    "iso_week": "%V",
-    "day_of_week": "%u",
     "day_of_month": "%d",
     "hour": "%H",
 }
@@ -392,6 +411,11 @@ def _sqlite_part(column: Any, part: str) -> ColumnElement[Any]:
     no quarter: it is the month rounded up to three."""
     if part == "quarter":
         return (cast(func.strftime("%m", column), Integer) + 2) // 3
+    if part == "iso_week":
+        return _sqlite_iso_week(column)
+    if part == "day_of_week":
+        # `%w` counts Sunday as 0; ISO counts Monday as 1. (`%u` is SQLite 3.46 or later.)
+        return (cast(func.strftime("%w", column), Integer) + 6) % 7 + 1
     return cast(func.strftime(_SQLITE_PART_FORMATS[part], column), Integer)
 
 
