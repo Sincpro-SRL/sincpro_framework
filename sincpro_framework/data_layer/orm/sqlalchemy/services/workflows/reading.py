@@ -4,7 +4,7 @@ export, a short question — and the relations a specification names, once per p
 from collections.abc import Iterator, Sequence
 from typing import Any, cast, overload
 
-from sqlalchemy import Select, distinct, func, literal, select
+from sqlalchemy import Select, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
@@ -146,7 +146,7 @@ class Reading(Store):
         meta = describe(model)
         expression, _ = meta.accept(self._asked(model, meta, criteria))
         name = cast(Any, model).wire_name
-        statement = select(distinct(name)).where(name.not_in(readable))
+        statement = select(name).distinct().where(name.not_in(readable))
         clause = sql_translator.where_clause(model, expression)
         if clause is not None:
             statement = statement.where(clause)
