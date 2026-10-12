@@ -255,11 +255,15 @@ def test_the_week_grain_reads_the_same_on_both_dialects():
     weekly_sqlite = grouping_column(Thing, Level(field="made_at", grain=Grain.WEEK), "sqlite")
     weekly_pg = grouping_column(Thing, Level(field="made_at", grain=Grain.WEEK), "postgresql")
 
-    assert "%G-W%V" in str(
+    # The week is worked out from the Thursday of its week, not with `%G-W%V`, which SQLite only
+    # reads from 3.46: a Python built on an older library answers NULL for it. The weeks it
+    # computes are held to Python's `isocalendar` in test_model_driven_analytics.py.
+    rendered = str(
         weekly_sqlite.compile(
             dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}
         )
     )
+    assert "'weekday 4'" in rendered and "%V" not in rendered and "%G" not in rendered
     assert 'IYYY-"W"IW' in str(
         weekly_pg.compile(
             dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}

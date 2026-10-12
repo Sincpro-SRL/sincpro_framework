@@ -491,7 +491,7 @@ def test_numbers_are_ordered_as_numbers_in_memory_as_in_sql(bills: Any):
         ("postgresql", Part.ISO_WEEK, "EXTRACT(week FROM"),
         ("duckdb", Part.QUARTER, "date_part('quarter'"),
         ("duckdb", Part.DAY_OF_WEEK, "date_part('isodow'"),
-        ("sqlite", Part.DAY_OF_WEEK, "strftime('%u'"),
+        ("sqlite", Part.DAY_OF_WEEK, "strftime('%w'"),
     ],
 )
 def test_a_part_is_written_in_the_words_of_each_dialect(dialect, part, expected):
@@ -565,3 +565,70 @@ def test_a_record_read_with_its_computed_field_can_be_changed_and_saved_again():
     again = store.search(Bill, Criteria()).first()
 
     assert again is not None and again.balance == Decimal("0")
+
+
+# ── a SQLite that predates strftime's ISO formats ─────────────────────────────
+
+
+def test_the_iso_week_and_weekday_use_nothing_newer_than_sqlite_has_always_had():
+    """`%V`, `%G` and `%u` came with SQLite 3.46 (May 2024); a Python built on an older library
+    answers NULL for them. The week is computed from the Thursday of its week instead."""
+    from sqlalchemy.dialects import sqlite
+
+    from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
+        grouping_column,
+    )
+
+    for level in (
+        Level(field="posted_at", part=Part.ISO_WEEK),
+        Level(field="posted_at", part=Part.DAY_OF_WEEK),
+        Level(field="posted_at", grain=Grain.WEEK),
+    ):
+        rendered = str(
+            grouping_column(Bill, level, "sqlite").compile(
+                dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        )
+
+        assert not any(newer in rendered for newer in ("%V", "%G", "%u")), rendered
+
+
+def test_the_iso_week_and_weekday_agree_with_python_on_every_day_of_fifty_years():
+    from datetime import date, timedelta
+
+    from sqlalchemy import Column, DateTime, MetaData, Table, create_engine, insert
+
+    from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
+        _sqlite_grain,
+        _sqlite_part,
+    )
+
+    days = [date(1990, 1, 1) + timedelta(days=n) for n in range(18_628)]
+    table = Table("days", MetaData(), Column("posted_at", DateTime))
+    engine = create_engine("sqlite://")
+    table.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            insert(table), [{"posted_at": datetime(d.year, d.month, d.day, 13)} for d in days]
+        )
+        weeks = connection.execute(
+            select(
+                table.c.posted_at,
+                _sqlite_part(table.c.posted_at, "iso_week"),
+                _sqlite_part(table.c.posted_at, "day_of_week"),
+                _sqlite_grain(table.c.posted_at, "week"),
+            )
+        ).all()
+
+    wrong = [
+        row
+        for row in weeks
+        if (row[1], row[2], row[3])
+        != (
+            row[0].isocalendar()[1],
+            row[0].isoweekday(),
+            f"{row[0].isocalendar()[0]}-W{row[0].isocalendar()[1]:02d}",
+        )
+    ]
+
+    assert wrong == []

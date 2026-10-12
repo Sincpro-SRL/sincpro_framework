@@ -131,3 +131,7 @@ The goal: **define the model and get the analysis**, without writing a query. A 
   as a UTC instant; grain buckets are cut in UTC.
 - Date-part SQL for PostgreSQL and DuckDB is verified by compilation here and by the parity suite
   when a server is available, not by this repository's default run.
+- SQLite's `strftime` reads ISO formats (`%G`, `%V`, `%u`) only from 3.46 (May 2024), and a Python
+  built on an older library answers NULL for them. The framework therefore never uses them on
+  SQLite: the ISO week is computed from the Thursday of its week and the weekday from `%w`, and a
+  test compares both with Python's `isocalendar` over fifty years of days.
