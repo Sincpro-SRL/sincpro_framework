@@ -21,6 +21,9 @@ from sincpro_framework.ddd.criteria import (
     FromContext,
     FromField,
     Grain,
+    Grouping,
+    Level,
+    Measure,
     Operator,
     Period,
     Periods,
@@ -141,3 +144,19 @@ def test_a_window_of_days_is_two_bounds_of_the_statement(bills: Repository):
     )
 
     assert ids(bills.search(Bill, Criteria(where=last))) == ["B1"]
+
+
+def test_a_group_filter_may_read_the_servers_context_too(bills: Repository):
+    """`where_measures` filters the groups the rows made, and its value is read like any other."""
+    heavy = Grouping(
+        group_by=(Level(field="owner"),),
+        measures={"total": Measure(function="sum", field="amount")},
+        where_measures=Condition(
+            field="total", operator=Operator.GT, value=FromContext(key="floor")
+        ),
+    )
+
+    with carrying({"floor": 150}):
+        buckets = bills.group_by_levels(Bill, Criteria(grouping=heavy))
+
+    assert [one.value for one in buckets] == ["ana"]

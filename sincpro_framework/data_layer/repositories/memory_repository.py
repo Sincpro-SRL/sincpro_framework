@@ -47,8 +47,10 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     combined,
     conditions_of,
+    has_dynamic_values,
     matches,
     parse_order,
+    resolve,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity, utc_now
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -59,7 +61,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
     identity_of,
     model_and_collection,
 )
-from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
+from sincpro_framework.ddd.entity.entity_meta import Meta, ambient_resolution, describe_class
 from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
 from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
 from sincpro_framework.ddd.events.mixins.deliverable import (
@@ -247,15 +249,17 @@ def _tree(
     for record in rows:
         by_value.setdefault(getattr(record, field), []).append(record)
 
+    having = grouping.where_measures
+    if has_dynamic_values(having):
+        having = resolve(having, ambient_resolution())
+
     buckets = []
     for value, mine in by_value.items():
         opens = criteria.merged_with(
             Criteria(where=Condition(field=field, operator=Operator.EQ, value=value))
         ).model_copy(update={"grouping": Grouping()})
         measures = _measured(mine, grouping)
-        if grouping.where_measures is not None and not matches(
-            _Measured(count=len(mine), **measures), grouping.where_measures
-        ):
+        if having is not None and not matches(_Measured(count=len(mine), **measures), having):
             continue
         ids, cursor = _page_of_ids(mine, criteria, meta)
         buckets.append(

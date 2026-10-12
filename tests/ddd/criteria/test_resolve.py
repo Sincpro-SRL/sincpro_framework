@@ -20,6 +20,9 @@ from sincpro_framework.ddd.criteria import (
     FromContext,
     FromField,
     Grain,
+    Grouping,
+    Level,
+    Measure,
     Now,
     Operator,
     Param,
@@ -496,6 +499,24 @@ def test_a_column_is_compared_with_another_column_of_the_same_row():
     assert sorted(one.code for one in found) == ["b"]
 
 
+def test_a_column_against_another_that_holds_nothing_is_not_true_as_in_sql():
+    @dataclass
+    class Limit(Entity):
+        total: int = 0
+        credit_limit: int | None = None
+
+    repository = MemoryRepository()
+    repository.save(Limit(total=5, credit_limit=None))
+    repository.save(Limit(total=5, credit_limit=1))
+    over = Condition(
+        field="total", operator=Operator.GT, value=FromField(name="credit_limit")
+    )
+
+    found = AggregateRepository(repository, Limit).search(Criteria(where=over))
+
+    assert [one.credit_limit for one in found] == [1]
+
+
 def test_a_field_is_written_as_the_object_with_the_reserved_key():
     over = Condition(
         field="total", operator=Operator.GT, value=FromField(name="credit_limit")
@@ -567,3 +588,22 @@ def test_the_definition_publishes_the_dynamic_values_it_reads():
     assert published["today"].returns == "date"
     assert "this_month" in published["period"].choices["name"]
     assert published["today"].choices["start_of"] == [one.value for one in Grain]
+
+
+def test_a_memory_store_reads_a_group_filter_with_the_servers_context():
+    repository = MemoryRepository()
+    for number, owner, total in [("a", "ana", 100), ("b", "ana", 100), ("c", "beto", 10)]:
+        repository.save(Invoice(number=number, owner_id=owner, due=date(2026, 1, 1)))
+        repository.save(Credit(code=number, total=total))
+    heavy = Grouping(
+        group_by=(Level(field="code"),),
+        measures={"total": Measure(function="sum", field="total")},
+        where_measures=Condition(
+            field="total", operator=Operator.GT, value=FromContext(key="floor")
+        ),
+    )
+
+    with carrying({"floor": 50}):
+        buckets = repository.group_by_levels(Credit, Criteria(grouping=heavy))
+
+    assert sorted(str(one.value) for one in buckets) == ["a", "b"]
