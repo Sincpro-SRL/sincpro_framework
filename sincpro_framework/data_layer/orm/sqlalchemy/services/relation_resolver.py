@@ -134,6 +134,8 @@ def _by_foreign_key_on_related(
     clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
     ids = [getattr(parent, here) for parent in parents]
+    if not ids:
+        return {}, _nested(prepare, session, related, [], node, definition, dropped)
     key = getattr(related, there)
     rows = _partitioned(
         session, key, related, select(related).where(key.in_(ids)), clause, sorts, limit
@@ -159,7 +161,7 @@ def _by_foreign_key_here(prepare, session, meta, parents, relation, node, droppe
     dropped.extend(node_dropped)
     wanted = {getattr(parent, here) for parent in parents} - {None}
     if not wanted:
-        return {}, definition.only(node.specification)
+        return {}, _nested(prepare, session, related, [], node, definition, dropped)
     matched = getattr(related, there)
     statement = select(related).where(matched.in_(wanted))
     if clause is not None:
@@ -181,6 +183,8 @@ def _through_table(prepare, session, meta, parents, relation, node, limit, dropp
     clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
     ids = [getattr(parent, meta.identity) for parent in parents]
+    if not ids:
+        return {}, _nested(prepare, session, related, [], node, definition, dropped)
     table = relation.through
     if table is None or relation.related_key is None:
         raise ProgrammingError(
@@ -211,7 +215,7 @@ def _by_id_list(prepare, session, meta, parents, relation, node, limit, dropped)
     for parent in parents:
         wanted.update(getattr(parent, relation.identified_by) or [])
     if not wanted:
-        return {}, definition.only(node.specification)
+        return {}, _nested(prepare, session, related, [], node, definition, dropped)
     identity = getattr(related, definition.identity)
     statement = (
         select(related)
@@ -315,8 +319,10 @@ def resolve_relations(
     2. A relation nobody declared how to resolve is `not_expandable` too.
     3. Per named relation: one resolution for all the records, grouped by parent, assigned;
        then the node's own specification, recursively, over all the related records at once.
+    Final: the same definition whether the page holds records or none — a relation with no
+    parent to match is described without a query, so an empty answer says what a full one says.
     """
-    if specification is None or not records:
+    if specification is None:
         return meta
     fields = dict(meta.fields)
     for name, node in specification.root.items():
@@ -361,9 +367,9 @@ def resolve_relations(
             hold(record, name, value, Held.CUT if cut else Held.WHOLE, read)
         fields[name] = field.model_copy(
             update={
-                "identified_by": declared.identified_by,
-                "parent_field": declared.parent_field,
-                "related_field": declared.related_field,
+                "identified_by": declared.identified_by or field.identified_by,
+                "parent_field": declared.parent_field or field.parent_field,
+                "related_field": declared.related_field or field.related_field,
                 "definition": definition,
             }
         )

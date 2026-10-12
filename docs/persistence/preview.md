@@ -157,6 +157,13 @@ bus(QueryPreviewInvoice(id=invoice_id, values={"discount": "50"}, changed=["disc
 `fields` is the same hint `Meta` publishes, already evaluated for this record — what a client
 with no Criteria evaluator (a native app, an agent) shows.
 
+### Kept: the preview of a form that is not saved yet
+
+`Preview` keeps nothing. The same computation, kept as the caller's draft — and saved or dropped
+when the form says so — is `Edit` with `EditAction.KEEP`, answered by `EntityEdits`: the record
+with its derived fields, each field's state, the advice, and the draft version to name next.
+See [edits.md](edits.md).
+
 ## Nothing is written
 
 ```python
@@ -201,4 +208,5 @@ compared as values: `0` and `0.00` are one amount, not a change.
 - **An `@onchange` method per field**: derivations and advice answer the same questions without
   an imperative loop.
 - **Line commands** for a to-many field: a changed list comes back whole.
-- **Drafts** kept between requests: [Drafts](drafts.md).
+- **Drafts** kept between requests: [Drafts](../core/drafts.md); the form's whole life over them,
+  one command: [Edits](edits.md).

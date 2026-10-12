@@ -1,47 +1,69 @@
 # Drafts: what a form keeps between requests
 
 A form that takes more than one request — a long invoice, a wizard, a cart, the same record
-open in two tabs — keeps what the user typed somewhere before it is saved. `Drafts` is that
-place: optional, optimistic, and always with a TTL.
+open in two tabs — keeps what the user typed somewhere before it is saved. A draft is a context
+kept by whose it is: the context says whose, and keeps it where it keeps everything else — the
+process's memory, or the Redis of production. Optional, optimistic, and always with a TTL.
 
 ```python
-from datetime import timedelta
-
+from sincpro_framework.context import KeyValueContexts
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
-from sincpro_framework.ddd.editing.drafts import InMemoryDrafts
-from sincpro_framework.ddd import KeyValueDrafts
 
-drafts = KeyValueDrafts(RedisKeyValue(redis), ttl=timedelta(days=7))   # every replica
-drafts = InMemoryDrafts(ttl=timedelta(hours=1))                        # one process, tests
+billing.context_store(KeyValueContexts(RedisKeyValue(redis)))   # once: where the context is kept
+
+drafts = self.context.drafts()                     # in a Feature — or use_context().drafts()
+drafts = self.context.drafts(by=["session_id"])    # a session's instead of a user's
 ```
 
 | Call | What it does |
 |---|---|
-| `drafts.keep(key, values, origin_version, expected)` | keeps `values` under a new version, when `expected` is the version there now; `Draft` back — the one `read` gives until the next keep |
-| `drafts.read(key)` | the live `Draft`, or `None` (none, discarded, expired) |
-| `drafts.discard(key)` | drops it; a key with none is not an error |
-| `refuse_stale(draft, record)` | `StaleAggregate` when the record changed since the draft started |
+| `drafts.keep(subject, values, origin_version, expected)` | keeps `values` under a new version, when `expected` is the version there now; `Draft` back — the one `read` gives until the next keep |
+| `drafts.read(subject)` | the live `Draft`, or `None` (none, discarded, expired) |
+| `drafts.discard(subject)` | drops it; a key with none is not an error |
+| `refuse_stale(draft, record)` (`sincpro_framework.ddd`) | `StaleAggregate` when the record changed since the draft started |
 
 A `Draft` carries `key`, `values` (as JSON carries them: `"1150.50"` for a decimal, ISO text for
 a date), `version`, `origin_version` and `kept_at`. A version is opaque, like an ETag: compare
 it, hand it back as `expected`, never count with it.
 
+A form's whole life — keep, save, discard, find again — is one built-in command over these drafts:
+[Edits](../persistence/edits.md).
+
 ## Which draft
 
 | | A draft here | A stored record with `state=DRAFT` |
 |---|---|---|
-| Who sees it | whoever holds its key | everybody who can read the record |
+| Who sees it | whose it is: the user, the session — the context says | everybody who can read the record |
 | Survives | its TTL | until deleted |
 | Is a record | no: values a form typed | yes: it has an id, a number may wait for confirmation |
 | Example | an edit in progress, a wizard step, two tabs | Odoo's draft invoice, Frappe's `docstatus=0` |
 
 The second needs nothing from this module: it is a state of the aggregate.
 
-## The key
+## Whose it is
 
-The key is the caller's, and says whose draft of what: `invoice:{invoice_id}:{user_id}` for an
-edit, `invoice:new:{user_id}:{form_id}` for a record not created yet. A key that leaves the user
-out is one draft shared by everybody editing that record — sometimes what is wanted.
+The caller names only what the draft is about — `invoice:{invoice_id}` for an edit,
+`invoice:new:{form_id}` for a record not created yet. Whose it is comes from the context of the
+call, never from that name, so two users editing the same invoice never share a draft:
+
+| `drafts(...)` | Whose | Kept under |
+|---|---|---|
+| `drafts()` | the user | `tenant_id=acme/user_id=ana/invoice:7` |
+| `drafts(by=["session_id"])` | the session | `tenant_id=acme/session_id=s-1/cart` |
+| `drafts(by=["user_id", "pos_id"])` | the user at one point of sale | `user_id=ana/pos_id=4/cart` |
+
+A tenant in the context always takes part: a draft never crosses tenants. A key of `by` the context
+does not have is refused with `ContextRequired`, naming it — a draft nobody owns would be
+everybody's. One shared by everybody editing a record is `by=[]` in a context without a tenant.
+
+## Where it is kept
+
+The nearest `ContextStore` of the context keeps the drafts too, through `drafts()`: on the same
+storage, under `{prefix}:draft`. Set once — `bus.context_store(store)` for a bus,
+`use_context().root.set(ContextStore, store)` for the process — or handed to the call,
+`drafts(store=...)`. Each store keeps a draft `drafts_ttl` after its last keep, seven days unless
+told: `KeyValueContexts(RedisKeyValue(redis), drafts_ttl=timedelta(hours=1))`. A project's own
+`ContextStore` keeps drafts when it answers a `DraftStore` from `drafts()`.
 
 ## Versions and conflicts
 
@@ -56,7 +78,8 @@ drafts.keep(key, values_b, origin, expected=draft.version)   # tab A kept meanwh
 # DraftConflict: draft … is at version <A's>, not <the one B read>
 ```
 
-`DraftConflict` declares `FailureKind.CONFLICT`, so every wire answers it as a conflict — 409
+`DraftConflict` is a `ClientError` — the caller read before someone else wrote — and declares
+`FailureKind.CONFLICT`, so every wire answers it as a conflict — 409
 over REST; an API that takes the version in `If-Match` answers the same failure as its 412.
 
 A version never repeats for a key — not after a discard, not after an expiry — so a tab still
@@ -65,7 +88,7 @@ started after the old one expired.
 
 ## The TTL
 
-Every draft has one, given to the store, and every keep starts it again: an abandoned draft
+Every draft has one, the store's `drafts_ttl`, and every keep starts it again: an abandoned draft
 disappears on its own and the store never grows without end. Days for an edit people come back
 to, minutes or hours for a wizard.
 
@@ -77,15 +100,16 @@ Saving a draft is the project's Command. The draft never becomes the record by i
 @billing.feature(CommandActivateInvoiceDraft)
 class ActivateInvoiceDraft(Feature):
     def execute(self, dto: CommandActivateInvoiceDraft) -> None:
-        key = f"invoice:{dto.invoice_id}:{self.context['user_id']}"
-        draft = self.drafts.read(key)
+        drafts = self.context.drafts()
+        subject = f"invoice:{dto.invoice_id}"
+        draft = drafts.read(subject)
         if draft is None:
-            raise DraftConflict(key, dto.version, 0)
+            raise DraftConflict(subject, dto.version, 0)
         invoice = self.repository.get(Invoice, dto.invoice_id)
         refuse_stale(draft, invoice)                # somebody saved it since: StaleAggregate
         assign(invoice, draft.values)               # JSON read as each field's type
         self.repository.save(invoice)
-        self.drafts.discard(key)
+        drafts.discard(subject)
 ```
 
 `refuse_stale` compares the record's `version` with the draft's `origin_version` before the
@@ -94,6 +118,10 @@ field's type — `"1150.50"` becomes a `Decimal` — so the save sees what a typ
 mapping writes it as a new value and the save goes through.
 
 ## How the stores keep it
+
+`InMemoryContexts` keeps its drafts in an `InMemoryDrafts`, `KeyValueContexts` in a
+`KeyValueDrafts` over the same `KeyValueStore`; both are in `sincpro_framework.context`, for a
+test that wants one alone (`InMemoryDrafts(ttl, now=clock.now)`).
 
 `InMemoryDrafts` is a dict behind a lock, for one process and for tests. It remembers a key's
 last version for a TTL after its draft was last kept or discarded, then forgets it, so it does

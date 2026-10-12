@@ -12,7 +12,7 @@ from enum import StrEnum
 
 import pytest
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import ClientError, ProgrammingError, UseFramework
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.ddd import (
     AggregateNotFound,
@@ -239,9 +239,9 @@ def test_assign_reads_each_value_as_its_field_type_and_answers_what_changed():
 def test_assign_refuses_a_name_that_is_not_a_field_and_a_value_the_type_cannot_read():
     invoice = Invoice(partner_id="p1")
 
-    with pytest.raises(ProgrammingError, match="no field colour"):
+    with pytest.raises(ClientError, match="no field colour"):
         assign(invoice, {"colour": "red"})
-    with pytest.raises(ProgrammingError, match="Invoice.discount cannot take 'mucho'"):
+    with pytest.raises(ClientError, match="Invoice.discount cannot take 'mucho'"):
         assign(invoice, {"discount": "mucho"})
 
 
@@ -508,16 +508,16 @@ def test_assign_builds_the_lines_through_their_own_class_and_refuses_framework_f
 
     assert isinstance(ticket.lines[0], TicketLine)
     assert (ticket.lines[0].qty, ticket.lines[0].price) == (3, Decimal("5"))
-    with pytest.raises(ProgrammingError, match="version"):
+    with pytest.raises(ClientError, match="version"):
         assign(ticket, {"version": 1})
-    with pytest.raises(ProgrammingError, match="id"):
+    with pytest.raises(ClientError, match="id"):
         assign(ticket, {"id": "another"})
-    with pytest.raises(ProgrammingError, match="version"):
+    with pytest.raises(ClientError, match="version"):
         assign(ticket, {"lines": [{"qty": 1, "version": 4}]})
 
 
 def test_recompute_refuses_a_change_that_names_no_field():
-    with pytest.raises(ProgrammingError, match="nonexistent"):
+    with pytest.raises(ClientError, match="nonexistent"):
         recompute(Ticket(), ("nonexistent",))
 
 

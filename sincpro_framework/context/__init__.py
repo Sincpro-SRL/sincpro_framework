@@ -16,10 +16,12 @@ SCOPE (a block). `contextvars` says which node is current per thread and task; t
 copy-on-write, so threads never tear them.
 
     domain/          Level, EntrypointKind, Origin, ContextNode, Execution, the standard keys,
-                     the ports — ContextStore, ContextCodec
+                     Draft, the ports — ContextStore, ContextCodec, DraftStore
     infrastructure/  the node in play, executions, what scopes say, the shared store
-    adapters/        InMemoryContexts, KeyValueContexts (Redis, Valkey, Memcached), the codecs
-    entrypoint/      Context, use_context() and carrying(), requires_context and the providers,
+    adapters/        InMemoryContexts, KeyValueContexts (Redis, Valkey, Memcached), the codecs,
+                     and the drafts each keeps beside it: InMemoryDrafts, KeyValueDrafts
+    entrypoint/      Context, use_context() and carrying(), Drafts — whoever the context says —
+                     requires_context and the providers,
                      the threads and pools, what a bus holds (bus.context, self.context)
 
 Every name below is loaded when first asked for: the bus's own modules import this package, and it
@@ -31,8 +33,10 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sincpro_framework.context.adapters.codecs import PickleCodec, PlainCodec, TypedCodec
+    from sincpro_framework.context.adapters.drafts import InMemoryDrafts, KeyValueDrafts
     from sincpro_framework.context.adapters.stores import InMemoryContexts, KeyValueContexts
     from sincpro_framework.context.domain.codec import ContextCodec
+    from sincpro_framework.context.domain.drafts import Draft, DraftConflict, DraftStore
     from sincpro_framework.context.domain.execution import (
         CAUSATION_ID,
         CORRELATION_ID,
@@ -47,6 +51,7 @@ if TYPE_CHECKING:
     )
     from sincpro_framework.context.domain.level import EntrypointKind, Level, Origin
     from sincpro_framework.context.domain.store import ContextStore
+    from sincpro_framework.context.entrypoint.drafts import Drafts
     from sincpro_framework.context.entrypoint.facade import Context, carrying, use_context
     from sincpro_framework.context.entrypoint.providers import requires_context
     from sincpro_framework.context.entrypoint.threads import (
@@ -61,6 +66,12 @@ _WHERE = {
     "TypedCodec": "adapters.codecs",
     "InMemoryContexts": "adapters.stores",
     "KeyValueContexts": "adapters.stores",
+    "InMemoryDrafts": "adapters.drafts",
+    "KeyValueDrafts": "adapters.drafts",
+    "Draft": "domain.drafts",
+    "DraftConflict": "domain.drafts",
+    "DraftStore": "domain.drafts",
+    "Drafts": "entrypoint.drafts",
     "ContextCodec": "domain.codec",
     "CAUSATION_ID": "domain.execution",
     "CORRELATION_ID": "domain.execution",
@@ -91,11 +102,17 @@ __all__ = [
     "ContextExecutor",
     "ContextStore",
     "ContextThread",
+    "Draft",
+    "DraftConflict",
+    "DraftStore",
+    "Drafts",
     "EXECUTION_ID",
     "EntrypointKind",
     "Execution",
     "InMemoryContexts",
+    "InMemoryDrafts",
     "KeyValueContexts",
+    "KeyValueDrafts",
     "Level",
     "Origin",
     "PickleCodec",

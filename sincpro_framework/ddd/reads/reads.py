@@ -54,6 +54,9 @@ from typing import Any, cast, get_args, get_origin
 
 from pydantic import field_validator
 
+from sincpro_framework.context.domain.drafts import Draft
+from sincpro_framework.context.entrypoint.drafts import Drafts
+from sincpro_framework.context.entrypoint.facade import use_context
 from sincpro_framework.ddd.criteria import (
     All,
     Any_,
@@ -70,7 +73,11 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.editing.editing import adapter_of, assign, owned, recompute
 from sincpro_framework.ddd.editing.preview import Advice, previewing
-from sincpro_framework.ddd.entity.entity_collection import EntityCollection, identity_name
+from sincpro_framework.ddd.entity.entity_collection import (
+    Count,
+    EntityCollection,
+    identity_name,
+)
 from sincpro_framework.ddd.entity.entity_meta import (
     annotations_of,
     framework_fields,
@@ -79,6 +86,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import AggregateNotFound, RelationNotResolved
 from sincpro_framework.ddd.query import (
+    DraftState,
     Query,
     ResponsePaginatedQuery,
     ResponseRecord,
@@ -102,6 +110,10 @@ class Get[T, R: ResponseRecord](DataTransferObject):
     """The value of the entity's `DEFAULT_GET_ID` field: its identity unless it names a key."""
     criteria: Criteria = Criteria()
     """Over the entity's `DEFAULT_READING`: every part it names replaces the default."""
+    draft: bool = False
+    """The caller's own draft of the record when there is one (`ResponseRecord.draft` says so),
+    the stored record otherwise — a record only drafted so far is found too. Never someone
+    else's: whose a draft is, the context says."""
 
 
 class GetMany[T, R: ResponseRecords](DataTransferObject):
@@ -129,7 +141,16 @@ class LiteralSearch[T, R: ResponsePaginatedQuery](DataTransferObject):
 
 class Search[T, R: ResponsePaginatedQuery](Query):
     """A page by criteria: each record as the entity's `DEFAULT_READING` brings it, in its
-    `DEFAULT_ORDER`, unless the criteria names its own."""
+    `DEFAULT_ORDER`, unless the criteria names its own.
+
+    QueryListInvoices(criteria=…)                   the stored records
+    QueryListInvoices(criteria=…, drafts=True)      the caller's drafts of them, by the same criteria
+    """
+
+    drafts: bool = False
+    """The caller's drafts instead of the stored records: filtered and ordered by the same
+    criteria, the most recently kept first when it names no order — one page, an owner's drafts
+    being few. What a client asks after it lost its state: what was I editing?"""
 
 
 class DomainEvents[T, R: ResponsePaginatedQuery](Query):
@@ -305,9 +326,29 @@ class EntityReads[T](Feature):
             f"Preview, not {type(dto).__name__}"
         )
 
+    def drafts(self) -> Drafts:
+        """The drafts read and kept: the caller's, in the context's store. Override it to key
+        them by something else — `use_context().drafts(by=["session_id"])`."""
+        return use_context().drafts()
+
+    def draft_subject(self, entity: type, key: str) -> str:
+        """What a draft of a record is kept as: its key under its entity and its bounded context —
+        `billing.Invoice:F-7` — so two contexts that keep drafts in one store, each with an
+        `Invoice` of its own, never read each other's."""
+        bus = use_context().bus
+        return f"{bus.label if bus is not None else ''}.{entity.__name__}:{key}"
+
     def get(self, dto: Any) -> Any:
-        """The record found by its key, as the entity reads it, or `AggregateNotFound`."""
+        """The record found by its key, as the entity reads it, or `AggregateNotFound` — the
+        caller's draft of it instead when `draft` asks and one is kept."""
         entity, response = declared_by(type(dto))
+        if dto.draft:
+            kept = self.drafts().read(self.draft_subject(entity, dto.id))
+            if kept is not None:
+                criteria = self.by_identity(
+                    entity, Condition(field=key_of(entity), value=dto.id), 1, dto.criteria
+                )
+                return self.drafted(entity, response, dto.id, kept, criteria)
         criteria = self.by_identity(
             entity, Condition(field=key_of(entity), value=dto.id), 1, dto.criteria
         )
@@ -361,7 +402,77 @@ class EntityReads[T](Feature):
         """
         entity, response = declared_by(type(dto))
         criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
+        if dto.drafts:
+            return response.of(self.drafted_page(entity, criteria), criteria)
         return response.of(self.reads_from().search(entity, criteria), criteria)
+
+    def drafted(
+        self, entity: type, response: type, key: str, kept: Draft, criteria: Criteria
+    ) -> Any:
+        """A draft answered as the record it holds, the way the stored one is answered: cut by the
+        same criteria, with the same definition — and said to be a draft, stale when the stored
+        record moved on since the draft started."""
+        stored = self.stored(entity, key)
+        record = stored if stored is not None else keyed(blank(entity), entity, key)
+        assign(record, kept.values, True)
+        answer = response.of(record, self.described(entity, criteria), criteria)
+        answer.draft = DraftState(
+            version=kept.version,
+            origin_version=kept.origin_version,
+            kept_at=kept.kept_at,
+            stale=stored is not None and getattr(stored, "version", 0) != kept.origin_version,
+        )
+        return answer
+
+    def drafted_page(self, entity: type, criteria: Criteria) -> EntityCollection[Any]:
+        """The caller's drafts of `entity` as one page: each as the record it holds, kept by the
+        criteria's filter, in its order — the most recently kept first when it names none — cut
+        to its limit."""
+        drafts = self.drafts()
+        prefix = self.draft_subject(entity, "")
+        records = []
+        for subject in drafts.subjects():
+            kept = drafts.read(subject) if subject.startswith(prefix) else None
+            if kept is None:
+                continue
+            key = subject.removeprefix(prefix)
+            stored = self.stored(entity, key)
+            record = stored if stored is not None else keyed(blank(entity), entity, key)
+            assign(record, kept.values, True)
+            records.append(record)
+        page = EntityCollection(items=tuple(records)).filtered_by(criteria.expression)
+        for sort in reversed(criteria.order):
+            page = page.sorted_by(
+                lambda record, field=sort.field: getattr(record, field), sort.descending
+            )
+        if criteria.pagination is not None:
+            page = page.take(criteria.pagination.limit)
+        described = self.described(entity, criteria)
+        return EntityCollection(
+            items=page.items,
+            count=Count(value=len(page.items), exact=True),
+            meta=described.meta,
+            dropped=described.dropped,
+        )
+
+    def described(self, entity: type, criteria: Criteria) -> EntityCollection[Any]:
+        """What the store says of `entity` for `criteria` without reading a row: its definition and
+        what the criteria names that it cannot answer — what a draft, which the store does not
+        hold, is answered with, so it goes out as a stored record does."""
+        return self.reads_from().search(
+            entity,
+            criteria.model_copy(
+                update={"pagination": Pagination(limit=0), "count": CountMode.NONE}
+            ),
+        )
+
+    def stored(self, entity: type, key: str) -> Any:
+        """A copy of the stored record of `key`, as a preview reads it, or `None` when there is
+        none — a record only drafted so far."""
+        try:
+            return self.previewed(entity, key)
+        except AggregateNotFound:
+            return None
 
     def domain_events(self, dto: Any) -> Any:
         """The record's events, oldest first, each filtered by the record's type and identity.
@@ -565,6 +676,12 @@ def _awaiting(
 
 def _in_progress(value: Any, seen: dict[int, Any]) -> bool:
     return seen.get(id(value)) is value and dataclasses.is_dataclass(value)
+
+
+def keyed(record: Any, entity: type, key: str) -> Any:
+    """A new record answering `key`: what a caller named a record it is creating by."""
+    setattr(record, key_of(entity), key)
+    return record
 
 
 def blank(entity: type) -> Any:

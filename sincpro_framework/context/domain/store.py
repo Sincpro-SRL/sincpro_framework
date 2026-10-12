@@ -11,12 +11,19 @@ the flow and read by whoever continues it. Opt-in: by default a context travels 
 
 Implemented in memory (`InMemoryContexts`), over any `KeyValueStore` — Redis, Valkey, Memcached —
 (`KeyValueContexts`), or by a project over its own storage.
+
+**Drafts are kept beside the context.** `drafts()` answers the `DraftStore` on the same storage — the
+context of production is a Redis or the process's memory, and so are its drafts. A project's own
+store gives one when it keeps drafts too.
 """
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
+
+from sincpro_framework.context.domain.drafts import DraftStore
+from sincpro_framework.exceptions import ProgrammingError
 
 
 class ContextStore(ABC):
@@ -36,3 +43,11 @@ class ContextStore(ABC):
     @abstractmethod
     def version(self, key: str) -> int:
         """How many times `key` was kept — what a reader compares to know it changed."""
+
+    def drafts(self) -> DraftStore:
+        """The drafts kept on the same storage as the contexts — refused by a store that keeps
+        none."""
+        raise ProgrammingError(
+            f"{type(self).__name__} keeps no drafts: answer a DraftStore from its drafts(), or "
+            "keep the context in InMemoryContexts or KeyValueContexts"
+        )

@@ -64,7 +64,12 @@ class InvoiceReads(EntityReads[Invoice]):
 `ResponsePreview`: `values` (what differs from what the form sent, JSON), `fields` (each field's
 `readonly`/`required`/`visible` evaluated over the new record), `advice`.
 
-## 3. A hand-written edit Command reuses the same pieces
+## 3. A form that is not always saved: `Edit`
+
+The preview kept as the caller's draft, saved or discarded when the form says so, is the built-in
+`Edit` + `EntityEdits` ([edits.md](edits.md)) — no hand-written Command needed.
+
+## 4. A hand-written edit Command reuses the same pieces
 
 ```python
 invoice = self.repository.get(dto.id)
@@ -72,7 +77,7 @@ assign(invoice, dto.values)          # values read as each field's type, hints r
 self.repository.save(invoice)        # derivations recomputed, before_save hooks, version check
 ```
 
-## 4. Lines a form sends
+## 5. Lines a form sends
 
 - A new line comes without `id` and without the order's key: `assign` fills `order_id` from
   the SQL mapping (an echoed stale key is replaced). In `MemoryRepository` there is no mapping:

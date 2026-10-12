@@ -217,6 +217,8 @@ A to-many field changed by the form comes back whole when it differs, not as lin
 
 ### 6.3 Drafts: what a form keeps between requests, optional
 
+> Built since in `context`: a draft is a context kept by whose it is — `self.context.drafts()` by user, `by=["session_id"]` by session — in the context's own store (`bus.context_store`). The subject no longer carries the user. See [docs/core/drafts.md](../core/drafts.md).
+
 ```python
 drafts = KeyValueDrafts(RedisKeyValue(redis), ttl=timedelta(days=7))   # InMemoryDrafts(ttl=…) in tests
 

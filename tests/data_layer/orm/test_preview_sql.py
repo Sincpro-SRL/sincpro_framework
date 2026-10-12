@@ -11,7 +11,8 @@ from sqlalchemy import Column, ForeignKey, Integer, MetaData, Numeric, Text, eve
 from sqlalchemy.orm import registry
 from structlog.testing import capture_logs
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import ClientError, ProgrammingError, UseFramework
+from sincpro_framework.context import InMemoryContexts, InMemoryDrafts
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.numbering import DatabaseNumbering
@@ -30,10 +31,16 @@ from sincpro_framework.ddd import (
     Criteria,
     Derivations,
     Derive,
+    DraftState,
+    Edit,
+    EditAction,
+    EntityEdits,
     EntityReads,
-    InMemoryDrafts,
+    Get,
     Preview,
+    ResponseEdit,
     ResponsePreview,
+    ResponseRecord,
     Specification,
     StaleAggregate,
     assign,
@@ -209,7 +216,9 @@ def test_a_draft_is_activated_over_the_stored_sale_and_refused_once_someone_else
     with store.context() as repository:
         stored = repository.get(Sale, sale.id)
         assert stored is not None
-        draft = drafts.keep(f"sale:{sale.id}:ana", {"discount": "33"}, stored.version, 0)
+        draft = drafts.keep(
+            "user_id=ana", f"sale:{sale.id}", {"discount": "33"}, stored.version, 0
+        )
 
     with store.context() as repository:
         stored = repository.get(Sale, sale.id)
@@ -217,14 +226,16 @@ def test_a_draft_is_activated_over_the_stored_sale_and_refused_once_someone_else
         refuse_stale(draft, stored)
         assign(stored, draft.values)
         repository.save(stored)
-    drafts.discard(draft.key)
+    drafts.discard("user_id=ana", f"sale:{sale.id}")
 
     with store.context() as repository:
         activated = repository.get(Sale, sale.id)
         assert activated is not None
         assert (activated.discount, activated.total) == (Decimal("33.00"), Decimal("100.00"))
 
-    late = drafts.keep(f"sale:{sale.id}:beto", {"discount": "5"}, activated.version, 0)
+    late = drafts.keep(
+        "user_id=beto", f"sale:{sale.id}", {"discount": "5"}, activated.version, 0
+    )
     with store.context() as repository:
         someone = repository.get(Sale, sale.id)
         assert someone is not None
@@ -236,6 +247,210 @@ def test_a_draft_is_activated_over_the_stored_sale_and_refused_once_someone_else
         with pytest.raises(StaleAggregate, match="changed since draft"):
             refuse_stale(late, stored)
         assert stored.discount == Decimal("1.00")
+
+
+class ResponseEditSale(ResponseEdit):
+    sale: Sale
+
+
+class ResponseSale(ResponseRecord):
+    sale: Sale
+
+
+class CommandEditSale(Edit[Sale, ResponseEditSale]):
+    pass
+
+
+class QueryGetSale(Get[Sale, ResponseSale]):
+    pass
+
+
+def a_sales_desk(store: Repository) -> UseFramework:
+    bus = UseFramework("sales-desk", log_after_execution=False)
+    bus.add_dependency("repository", store)
+    bus.context_store(InMemoryContexts())
+
+    @bus.feature([QueryGetSale, CommandEditSale])
+    class SaleForms(EntityEdits[Sale]):
+        pass
+
+    return bus
+
+
+def edited(desk: UseFramework, dto: CommandEditSale) -> ResponseEditSale:
+    answer = desk(dto, ResponseEditSale)
+    assert answer is not None
+    return answer
+
+
+def drafted(answer: ResponseRecord) -> DraftState:
+    assert answer.draft is not None
+    return answer.draft
+
+
+def test_a_sale_is_edited_as_a_draft_and_saved_to_the_database(database):
+    """The form's whole life over a database: kept twice as the cashier's draft — the stored row
+    untouched — found again after the client lost it, then saved with its new total."""
+    store = Repository(database)
+    sale = a_stored_sale(store)
+    desk = a_sales_desk(store)
+
+    with desk.context({"user_id": "ana"}):
+        first = edited(
+            desk, CommandEditSale(id=sale.id, values={"customer_id": "c1", "discount": "5"})
+        )
+        second = edited(
+            desk,
+            CommandEditSale(
+                id=sale.id,
+                values={"customer_id": "c1", "discount": "25"},
+                changed=["discount"],
+                version=drafted(first).version,
+            ),
+        )
+        again = desk(QueryGetSale(id=sale.id, draft=True), ResponseSale)
+        assert again is not None
+    with store.context() as repository:
+        untouched = repository.get(Sale, sale.id)
+        assert untouched is not None and untouched.discount == Decimal("0.00")
+    assert (second.sale.total, again.sale.total) == (Decimal("108.00"), Decimal("108.00"))
+
+    with desk.context({"user_id": "ana"}):
+        saved = edited(
+            desk,
+            CommandEditSale(
+                id=sale.id, version=drafted(second).version, action=EditAction.SAVE
+            ),
+        )
+
+    with store.context() as repository:
+        stored = repository.get(Sale, sale.id)
+        assert stored is not None
+        assert (stored.discount, stored.total) == (Decimal("25.00"), Decimal("108.00"))
+    assert saved.draft is None
+
+
+def test_a_sale_created_from_a_form_is_stored_only_when_saved(database):
+    store = Repository(database)
+    desk = a_sales_desk(store)
+    sale_id = "0192a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
+    lines = [{"sale_id": sale_id, "product": "regla", "qty": 3, "price": "4.00"}]
+
+    with desk.context({"user_id": "ana"}):
+        kept = edited(
+            desk, CommandEditSale(id=sale_id, values={"customer_id": "c9", "lines": lines})
+        )
+        with store.context() as repository:
+            assert repository.get(Sale, sale_id) is None
+        edited(
+            desk,
+            CommandEditSale(
+                id=sale_id, version=drafted(kept).version, action=EditAction.SAVE
+            ),
+        )
+
+    with store.context() as repository:
+        stored = repository.get(Sale, sale_id)
+        assert stored is not None
+        assert (stored.customer_id, stored.total, len(stored.lines)) == (
+            "c9",
+            Decimal("12.00"),
+            1,
+        )
+
+
+def test_a_line_born_in_a_draft_keeps_its_id_through_every_keep_and_into_the_database(
+    database,
+):
+    """The answer of a keep names each new line by an id; the form edits that line by it on the
+    next keep, and the saved row is that same line."""
+    store = Repository(database)
+    desk = a_sales_desk(store)
+    sale_id = "0192b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+
+    with desk.context({"user_id": "ana"}):
+        first = edited(
+            desk,
+            CommandEditSale(
+                id=sale_id,
+                values={"customer_id": "c1", "lines": [{"product": "regla", "price": "4"}]},
+            ),
+        )
+        line_id = first.sale.lines[0].id
+        second = edited(
+            desk,
+            CommandEditSale(
+                id=sale_id,
+                values={"lines": [{"id": line_id, "qty": 5}]},
+                changed=["lines"],
+                version=drafted(first).version,
+            ),
+        )
+        edited(
+            desk,
+            CommandEditSale(
+                id=sale_id, version=drafted(second).version, action=EditAction.SAVE
+            ),
+        )
+
+    assert second.sale.lines[0].id == line_id and second.sale.total == Decimal("20.00")
+    with store.context() as repository:
+        stored = repository.get(Sale, sale_id)
+        assert stored is not None
+        assert [(line.id, line.qty) for line in stored.lines] == [(line_id, 5)]
+
+
+def test_a_page_with_no_rows_describes_the_model_as_a_page_with_rows_does(database):
+    """The definition of a read is the model's, not the rows': an empty answer names each
+    relation's keys and its own definition as a full one does — and a full one keeps the keys
+    the mapping inferred."""
+    store = Repository(database)
+    sale = a_stored_sale(store)
+    reading = Criteria(specification=Specification.model_validate({"lines": {}}))
+
+    with store.context() as repository:
+        full = repository.search(
+            Sale, reading.model_copy(update={"where": Condition(field="id", value=sale.id)})
+        )
+        empty = repository.search(
+            Sale, reading.model_copy(update={"where": Condition(field="id", value="nobody")})
+        )
+
+    assert full.items and not empty.items and empty.meta is not None
+    assert full.meta == empty.meta
+    lines = empty.meta.fields["lines"]
+    assert (lines.parent_field, lines.related_field) == ("id", "sale_id")
+    assert lines.definition is not None and "qty" in lines.definition.fields
+
+
+def test_a_drafted_sale_goes_out_with_its_lines_as_the_stored_one_does(database):
+    """Over a database, with a relation in the entity's reading: the draft answers the same
+    fields, the same lines and the same definition as the stored sale."""
+    store = Repository(database)
+    sale = a_stored_sale(store)
+    desk = a_sales_desk(store)
+
+    with desk.context({"user_id": "ana"}):
+        edited(
+            desk, CommandEditSale(id=sale.id, values={"customer_id": "c2", "discount": "5"})
+        )
+        stored = desk(QueryGetSale(id=sale.id), ResponseSale)
+        drafted_sale = desk(QueryGetSale(id=sale.id, draft=True), ResponseSale)
+    assert stored is not None and drafted_sale is not None
+    written, drafted_written = stored.model_dump(mode="json"), drafted_sale.model_dump(
+        mode="json"
+    )
+
+    assert sorted(drafted_written["sale"]) == sorted(written["sale"])
+    assert [sorted(line) for line in drafted_written["sale"]["lines"]] == [
+        sorted(line) for line in written["sale"]["lines"]
+    ]
+    assert drafted_written["entity_meta_data"] == written["entity_meta_data"] is not None
+    assert (written["sale"]["customer_id"], drafted_written["sale"]["customer_id"]) == (
+        "c1",
+        "c2",
+    )
+    assert "discount" not in drafted_written["sale"]  # the entity's reading names it not
 
 
 # ---------------------------------------------------------------------------------------------
@@ -621,7 +836,7 @@ def test_a_line_id_the_order_does_not_hold_is_refused_naming_it(order_store):
     with order_store.context() as repository:
         kept = repository.get(Order, order.id)
         assert kept is not None
-        with pytest.raises(ProgrammingError, match="gone-line"):
+        with pytest.raises(ClientError, match="gone-line"):
             assign(kept, {"lines": [{"id": "gone-line", "order_id": order.id, "qty": 1}]})
 
 
