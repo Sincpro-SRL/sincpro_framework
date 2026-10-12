@@ -140,6 +140,11 @@ class UseFramework(
 
         self._init_hosting(bundled_context_name)
 
+    @property
+    def name(self) -> str:
+        """The bounded context's name — its logger, its GlitchTip app, its OTel service."""
+        return self._logger_name
+
     def feature(
         self, dto: ioc.DTORegistration, replaces: type | None = None
     ) -> Callable[[ioc.T], ioc.T]:
@@ -235,11 +240,6 @@ class UseFramework(
         del self._registrations[kept:]
         self._registrations.append(lambda bus: bus.extend(extension))
 
-    @property
-    def name(self) -> str:
-        """The bounded context's name — its logger, its GlitchTip app, its OTel service."""
-        return self._logger_name
-
     def fresh(self) -> "UseFramework[TDeps]":
         """A new bus of this context, not built: the same settings and observability, and every
         Feature, ApplicationService, dependency, interceptor and error handler registered on this
@@ -293,6 +293,14 @@ class UseFramework(
             for _, app_service in app_service_registry.items():
                 app_service.add_attributes(**self.dynamic_dep_registry)
 
+    @property
+    def logger(self) -> LoggerProxy:
+        """Get the bundle context logger."""
+        if not self._is_logger_configured:
+            self._logger = create_logger(self._logger_name)
+            self._is_logger_configured = True
+        return self._logger  # type: ignore[return-value]
+
     def _assemble_handlers(self, bus: FrameworkBus) -> None:
         """Each handler wrapped by its interceptors, and who replaced whom — said once, in the
         build log."""
@@ -310,19 +318,6 @@ class UseFramework(
             )
         feature_bus.replacements = dict(replacements)
         app_service_bus.replacements = dict(replacements)
-
-    def build_root_bus(self):
-        """Build the root bus with the dependencies provided by the user — nothing, for a
-        reference to a context another service hosts (`is_reference`).
-
-        Under a lock, and only once: two threads that reach a not-yet-built bus at the same
-        time, as an async fan-out or an event fan-out does, would otherwise both build it and
-        one of them would execute against a half-wired registry.
-        """
-        with self._build_lock:
-            if self.is_reference or (self.was_initialized and self.bus is not None):
-                return
-            self._build_root_bus()
 
     def _build_root_bus(self):
         self._add_dependencies_provided_by_user()
@@ -361,6 +356,19 @@ class UseFramework(
         self.observability.start(self.logger)
         # Last, so a thread that reads the flag without the lock never sees a bus half wired.
         self.was_initialized = True
+
+    def build_root_bus(self):
+        """Build the root bus with the dependencies provided by the user — nothing, for a
+        reference to a context another service hosts (`is_reference`).
+
+        Under a lock, and only once: two threads that reach a not-yet-built bus at the same
+        time, as an async fan-out or an event fan-out does, would otherwise both build it and
+        one of them would execute against a half-wired registry.
+        """
+        with self._build_lock:
+            if self.is_reference or (self.was_initialized and self.bus is not None):
+                return
+            self._build_root_bus()
 
     def add_dependency(self, name, dep: Any):
         """
@@ -479,11 +487,3 @@ class UseFramework(
             return self.bus.execute(dto)
         with self._scope({}):
             return self.bus.execute(dto)
-
-    @property
-    def logger(self) -> LoggerProxy:
-        """Get the bundle context logger."""
-        if not self._is_logger_configured:
-            self._logger = create_logger(self._logger_name)
-            self._is_logger_configured = True
-        return self._logger  # type: ignore[return-value]

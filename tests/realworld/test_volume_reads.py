@@ -22,10 +22,10 @@ from sincpro_framework.ddd.criteria import (
     CountMode,
     Criteria,
     Operator,
+    Pagination,
+    matches,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.evaluate import matches
-from sincpro_framework.ddd.criteria.pagination import Pagination
 
 from .ledger import Account, Entries, Entry, Line, Lines
 from .population import POPULATION, Census

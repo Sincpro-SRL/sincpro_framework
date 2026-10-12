@@ -21,8 +21,7 @@ from sincpro_framework import (
     UseFramework,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.ddd.criteria import All, Condition, Criteria
-from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.criteria import All, Condition, Criteria, Pagination
 from sincpro_framework.ddd.exceptions import StaleAggregate
 from sincpro_framework.event_driven import (
     Publisher,

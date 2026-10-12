@@ -15,8 +15,7 @@ from sincpro_framework import ProgrammingError, UseFramework
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.repositories import MemoryRepository
-from sincpro_framework.ddd.criteria import Criteria
-from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.criteria import Criteria, Pagination
 from sincpro_framework.ddd.repositories import Hook, Hooks, IRepository
 
 from .models import Client, Note, Notes, mapper_registry

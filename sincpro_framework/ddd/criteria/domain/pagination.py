@@ -22,13 +22,13 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
-from sincpro_framework.ddd.criteria.strict import Strict
+from sincpro_framework.ddd.criteria.domain.strict import Strict
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 if TYPE_CHECKING:
     # Only appears in signatures — never in a model field nor at runtime — so a real import
     # buys nothing and closes the cycle: a criteria carries its pagination.
-    from sincpro_framework.ddd.criteria.criteria import Sort
+    from sincpro_framework.ddd.criteria.domain.sort import Sort
 
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 

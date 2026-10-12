@@ -36,6 +36,7 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Level,
     Operator,
+    Pagination,
     Pivot,
     PivotCell,
     Sort,
@@ -43,7 +44,6 @@ from sincpro_framework.ddd.criteria import (
     combined,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity import ArchivableMixin, EventSourcedMixin
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -510,6 +510,46 @@ class Reading(Store):
             return {"nowait": True}
         return True
 
+    def _one(self, session: Session, model: type, identity: Any, lock: Any) -> Any:
+        """The row of `identity`, through the session's identity map — or, for a mapped event
+        base, through a select narrowed to the names this process can read, so a row no class
+        is named like answers `None` instead of failing the read."""
+        readable = readable_names(model)
+        if readable is None:
+            if lock is None:
+                return session.get(model, identity)
+            return session.get(model, identity, with_for_update=lock)
+        key = sql_translator.column_attribute(model, identity_name(model))
+        statement = select(model).where(
+            key == identity, cast(Any, model).wire_name.in_(readable)
+        )
+        if lock is not None:
+            statement = statement.with_for_update(**(lock if isinstance(lock, dict) else {}))
+        return session.scalars(statement).first()
+
+    def _rebuilt(self, model: type[EventSourcedMixin], identity: Any) -> Any:
+        """An event-sourced entity: its events, in the order of its versions, applied.
+
+        An event of its history that no class of this process is named like is refused, naming
+        the entity: applying the others without it would answer a state that never existed.
+        """
+        about = Criteria(
+            where=combined(
+                Condition(field="entity_type", value=model.__name__),
+                Condition(field="entity_id", value=identity),
+            ),
+            order=parse_order("id"),
+        )
+        history = self.fetch_all(model.event_base, about)
+        if any(one.reason == UNKNOWN_EVENT for one in history.dropped):
+            raise ProgrammingError(
+                f"{model.__name__} {identity} has an event no class of this process is named "
+                "like; its state cannot be rebuilt without it — import or restore that event class"
+            )
+        events = list(history.items)
+        found = model.rebuilt(identity, events)
+        return None if found is None else self._read(found)
+
     def get[T](
         self,
         target: type[T],
@@ -556,46 +596,6 @@ class Reading(Store):
                     list(dropped),
                 )
         return cast(Any, read)
-
-    def _one(self, session: Session, model: type, identity: Any, lock: Any) -> Any:
-        """The row of `identity`, through the session's identity map — or, for a mapped event
-        base, through a select narrowed to the names this process can read, so a row no class
-        is named like answers `None` instead of failing the read."""
-        readable = readable_names(model)
-        if readable is None:
-            if lock is None:
-                return session.get(model, identity)
-            return session.get(model, identity, with_for_update=lock)
-        key = sql_translator.column_attribute(model, identity_name(model))
-        statement = select(model).where(
-            key == identity, cast(Any, model).wire_name.in_(readable)
-        )
-        if lock is not None:
-            statement = statement.with_for_update(**(lock if isinstance(lock, dict) else {}))
-        return session.scalars(statement).first()
-
-    def _rebuilt(self, model: type[EventSourcedMixin], identity: Any) -> Any:
-        """An event-sourced entity: its events, in the order of its versions, applied.
-
-        An event of its history that no class of this process is named like is refused, naming
-        the entity: applying the others without it would answer a state that never existed.
-        """
-        about = Criteria(
-            where=combined(
-                Condition(field="entity_type", value=model.__name__),
-                Condition(field="entity_id", value=identity),
-            ),
-            order=parse_order("id"),
-        )
-        history = self.fetch_all(model.event_base, about)
-        if any(one.reason == UNKNOWN_EVENT for one in history.dropped):
-            raise ProgrammingError(
-                f"{model.__name__} {identity} has an event no class of this process is named "
-                "like; its state cannot be rebuilt without it — import or restore that event class"
-            )
-        events = list(history.items)
-        found = model.rebuilt(identity, events)
-        return None if found is None else self._read(found)
 
     @overload
     def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...

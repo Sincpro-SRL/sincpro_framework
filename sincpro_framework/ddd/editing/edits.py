@@ -114,24 +114,36 @@ class EntityEdits[T](EntityReads[T]):
             ...
     """
 
-    def execute(self, dto: Any) -> Any:
-        if isinstance(dto, Edit):
-            return self.edit(dto)
-        return super().execute(dto)
-
-    def edit(self, dto: Any) -> Any:
-        """Each action is a method — `keep`, `save`, `discard` — to override and call `super()`."""
-        match dto.action:
-            case EditAction.SAVE:
-                return self.save(dto)
-            case EditAction.DISCARD:
-                return self.discard(dto)
-        return self.keep(dto)
-
     def change(self, record: Any, dto: Any, /) -> None:
         """What the edit does to the record: the form's values put on it, each read as its field's
         type. A command of the project's changes it with the domain's methods instead."""
         assign(record, dto.values)
+
+    def answered(
+        self,
+        entity: type,
+        response: type,
+        record: Any,
+        draft: Draft | None,
+        stale: bool,
+        advice: list[Advice],
+    ) -> Any:
+        """The record whole — what the form shows and sends back — with the model's definition,
+        each field's state, the advice and the draft it is now."""
+        answer = response(
+            **{response.record_field(): record},
+            entity_meta_data=self.described(entity, Criteria()).meta,
+            fields=states_of(record),
+            advice=list(advice),
+        )
+        if draft is not None:
+            answer.draft = DraftState(
+                version=draft.version,
+                origin_version=draft.origin_version,
+                kept_at=draft.kept_at,
+                stale=stale,
+            )
+        return answer
 
     def keep(self, dto: Any) -> Any:
         """The edit kept as the caller's draft; nothing is stored.
@@ -168,6 +180,16 @@ class EntityEdits[T](EntityReads[T]):
         return self.answered(
             entity, response, record, draft, stored is not None and current != origin, advice
         )
+
+    def writable(self, entity: type, key: str) -> Any:
+        """The stored record of `key` as the store holds it — the instance a save writes, read as
+        a preview reads it, with the relations its derivations read — or `None` when there is
+        none yet."""
+        criteria = self.by_identity(
+            entity, Condition(field=key_of(entity), value=key), 1, Criteria()
+        )
+        page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
+        return page.items[0] if page.items else None
 
     def save(self, dto: Any) -> Any:
         """The record stored and the caller's draft dropped.
@@ -214,38 +236,16 @@ class EntityEdits[T](EntityReads[T]):
         record = stored if stored is not None else keyed(blank(entity), entity, dto.id)
         return self.answered(entity, response, record, None, False, [])
 
-    def writable(self, entity: type, key: str) -> Any:
-        """The stored record of `key` as the store holds it — the instance a save writes, read as
-        a preview reads it, with the relations its derivations read — or `None` when there is
-        none yet."""
-        criteria = self.by_identity(
-            entity, Condition(field=key_of(entity), value=key), 1, Criteria()
-        )
-        page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
-        return page.items[0] if page.items else None
+    def edit(self, dto: Any) -> Any:
+        """Each action is a method — `keep`, `save`, `discard` — to override and call `super()`."""
+        match dto.action:
+            case EditAction.SAVE:
+                return self.save(dto)
+            case EditAction.DISCARD:
+                return self.discard(dto)
+        return self.keep(dto)
 
-    def answered(
-        self,
-        entity: type,
-        response: type,
-        record: Any,
-        draft: Draft | None,
-        stale: bool,
-        advice: list[Advice],
-    ) -> Any:
-        """The record whole — what the form shows and sends back — with the model's definition,
-        each field's state, the advice and the draft it is now."""
-        answer = response(
-            **{response.record_field(): record},
-            entity_meta_data=self.described(entity, Criteria()).meta,
-            fields=states_of(record),
-            advice=list(advice),
-        )
-        if draft is not None:
-            answer.draft = DraftState(
-                version=draft.version,
-                origin_version=draft.origin_version,
-                kept_at=draft.kept_at,
-                stale=stale,
-            )
-        return answer
+    def execute(self, dto: Any) -> Any:
+        if isinstance(dto, Edit):
+            return self.edit(dto)
+        return super().execute(dto)

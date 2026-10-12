@@ -14,8 +14,7 @@ from sincpro_framework import ProgrammingError
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.ddd.criteria import Criteria, Grouping, Level
-from sincpro_framework.ddd.criteria.pagination import Pagination
+from sincpro_framework.ddd.criteria import Criteria, Grouping, Level, Pagination
 from sincpro_framework.ddd.entity import EntityUpdated
 
 from .models import TrackedNote, TrackedNotes

@@ -32,8 +32,16 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
     Database,
 )
 from sincpro_framework.ddd.criteria import Criteria  # noqa: E402
-from sincpro_framework.ddd.criteria import Condition, Grouping, Level, Measure, Operator, Sort
-from sincpro_framework.ddd.criteria.pagination import Pagination  # noqa: E402
+from sincpro_framework.ddd.criteria import Pagination  # noqa: E402
+from sincpro_framework.ddd.criteria import (
+    Condition,
+    Grain,
+    Grouping,
+    Level,
+    Measure,
+    Operator,
+    Sort,
+)
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection  # noqa: E402
 
 DAYS = 365
@@ -143,7 +151,7 @@ def test_a_time_series_by_month_is_answered_by_the_file(store):
         Sales,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="at", grain="month"),),
+                group_by=(Level(field="at", grain=Grain.MONTH),),
                 measures={
                     "total": Measure(function="sum", field="amount"),
                     "biggest": Measure(function="max", field="amount"),
@@ -188,7 +196,7 @@ def test_a_bucket_of_a_file_opens_like_any_other(store):
     reading = Criteria(
         where=Condition(field="region", operator=Operator.EQ, value="north"),
         grouping=Grouping(
-            group_by=(Level(field="at", grain="month"),),
+            group_by=(Level(field="at", grain=Grain.MONTH),),
             measures={"total": Measure(function="sum", field="amount")},
         ),
     )

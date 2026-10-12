@@ -89,14 +89,6 @@ def unpacked(target: Any, _context: Any) -> None:
             known[one.name] = getattr(rebuilt, one.name)
 
 
-def mapped_before_built(cls: type, *_args: Any, **_kwargs: Any) -> Any:
-    """An event class declared after its base was mapped is mapped before its first instance
-    is built: SQLAlchemy cannot build an instance of a class it has not mapped."""
-    if not _is_mapped(cls):
-        map_new_event_classes()
-    return object.__new__(cls)
-
-
 def claim(table: Table, cls: type) -> None:
     """`cls` is what `cls.name` reads as in `table` — refused when another class holds the name.
 
@@ -117,21 +109,6 @@ def claim(table: Table, cls: type) -> None:
     held[cls.name] = cls  # type: ignore[attr-defined]
 
 
-def readable_names(model: type) -> list[str] | None:
-    """The names a read of `model` can turn into events, when `model` is a mapped base whose
-    table may hold rows no class of this process is named like; `None` for anything else.
-
-        in      LedgerEvent (mapped base)      →  out  ["Posted", "t.ledger.v1.event", …]
-        in      Posted, Account                →  out  None
-
-    A subclass needs nothing: its read is already narrowed to its own names.
-    """
-    if model not in bases:
-        return None
-    map_new_event_classes()
-    return sorted(_named.get(bases[model][1], {}))
-
-
 def map_new_event_classes() -> None:
     """Maps every subclass of a mapped base that is not mapped yet, parents before children."""
     for base, (mapper_registry, table) in list(bases.items()):
@@ -145,6 +122,29 @@ def map_new_event_classes() -> None:
                     cls, inherits=parent, polymorphic_identity=cls.name
                 )
             pending.extend(cls.__subclasses__())
+
+
+def mapped_before_built(cls: type, *_args: Any, **_kwargs: Any) -> Any:
+    """An event class declared after its base was mapped is mapped before its first instance
+    is built: SQLAlchemy cannot build an instance of a class it has not mapped."""
+    if not _is_mapped(cls):
+        map_new_event_classes()
+    return object.__new__(cls)
+
+
+def readable_names(model: type) -> list[str] | None:
+    """The names a read of `model` can turn into events, when `model` is a mapped base whose
+    table may hold rows no class of this process is named like; `None` for anything else.
+
+        in      LedgerEvent (mapped base)      →  out  ["Posted", "t.ledger.v1.event", …]
+        in      Posted, Account                →  out  None
+
+    A subclass needs nothing: its read is already narrowed to its own names.
+    """
+    if model not in bases:
+        return None
+    map_new_event_classes()
+    return sorted(_named.get(bases[model][1], {}))
 
 
 def is_mapped_event(cls: type) -> bool:

@@ -243,6 +243,25 @@ def _refused_in_preview(session: Session) -> None:
         refuse_writing_in_preview("a flush")
 
 
+def _reads_only(sql: str) -> bool:
+    """Whether a text statement is one read and nothing else.
+
+        SELECT … / WITH … SELECT … / -- a note\nSELECT …          →  True
+        WITH … UPDATE … / SELECT … FOR UPDATE / SELECT 1; DELETE …  →  False
+
+    Conservative on purpose: a single statement, starting with SELECT, or with WITH and no word
+    that writes anywhere in it, and no row lock. A rare read that trips it — a column named
+    `update` inside a WITH — is refused inside a preview; outside one nothing is asked.
+    """
+    body = LEADING_NOISE.sub("", sql).rstrip().rstrip(";")
+    if ";" in body or LOCKING.search(body):
+        return False
+    first = body.split(None, 1)[0].upper() if body else ""
+    if first == "SELECT":
+        return True
+    return first == "WITH" and WRITING.search(body) is None
+
+
 def _statement_refused_in_preview(state: Any) -> None:
     """A statement sent through a session inside `previewing()` that writes or locks is refused:
     an INSERT, UPDATE or DELETE, a text statement that is not a read, a read that locks rows.
@@ -270,23 +289,6 @@ def _statement_refused_in_preview(state: Any) -> None:
 LEADING_NOISE = re.compile(r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/|\()*", re.DOTALL)
 """Whitespace, comments and opening parentheses before a statement's first word."""
 LOCKING = re.compile(r"\bFOR\s+(?:NO\s+KEY\s+)?(?:UPDATE|SHARE|KEY\s+SHARE)\b", re.IGNORECASE)
+
+
 WRITING = re.compile(r"\b(?:INSERT|UPDATE|DELETE|MERGE)\b", re.IGNORECASE)
-
-
-def _reads_only(sql: str) -> bool:
-    """Whether a text statement is one read and nothing else.
-
-        SELECT … / WITH … SELECT … / -- a note\nSELECT …          →  True
-        WITH … UPDATE … / SELECT … FOR UPDATE / SELECT 1; DELETE …  →  False
-
-    Conservative on purpose: a single statement, starting with SELECT, or with WITH and no word
-    that writes anywhere in it, and no row lock. A rare read that trips it — a column named
-    `update` inside a WITH — is refused inside a preview; outside one nothing is asked.
-    """
-    body = LEADING_NOISE.sub("", sql).rstrip().rstrip(";")
-    if ";" in body or LOCKING.search(body):
-        return False
-    first = body.split(None, 1)[0].upper() if body else ""
-    if first == "SELECT":
-        return True
-    return first == "WITH" and WRITING.search(body) is None

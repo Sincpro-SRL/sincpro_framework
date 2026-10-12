@@ -164,6 +164,17 @@ def _told(error: Exception, kind: FailureKind, code: Any) -> str:
     )
 
 
+def refusal_metadata(
+    error: AuthError, framework: UseFramework
+) -> tuple[tuple[str, str], ...]:
+    """What a refused caller reads besides the code: why, and — for nobody known — where to get
+    a credential, as `www-authenticate`."""
+    metadata = [("sp-auth-refusal", json.dumps(refusal_body(error)))]
+    if isinstance(error, Unauthenticated):
+        metadata += [("www-authenticate", one) for one in challenges_of([framework])]
+    return tuple(metadata)
+
+
 def status_for(
     error: Exception, domain: str, subject: str, framework: UseFramework
 ) -> RichStatus:
@@ -210,17 +221,6 @@ def status_for(
     if isinstance(error, AuthError):
         trailing += refusal_metadata(error, framework)
     return RichStatus(code, message, trailing)
-
-
-def refusal_metadata(
-    error: AuthError, framework: UseFramework
-) -> tuple[tuple[str, str], ...]:
-    """What a refused caller reads besides the code: why, and — for nobody known — where to get
-    a credential, as `www-authenticate`."""
-    metadata = [("sp-auth-refusal", json.dumps(refusal_body(error)))]
-    if isinstance(error, Unauthenticated):
-        metadata += [("www-authenticate", one) for one in challenges_of([framework])]
-    return tuple(metadata)
 
 
 def deadline_exceeded(domain: str) -> RichStatus:

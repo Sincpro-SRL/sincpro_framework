@@ -51,6 +51,18 @@ class AuthProvider(ABC):
         permissions resolved at authentication are the answer."""
         return permission in identity.permissions
 
+    def _permits(
+        self,
+        identity: Identity,
+        permission: str,
+        resource: Any,
+        context: Mapping[str, Any] | None,
+    ) -> bool:
+        try:
+            return self.has_permission(identity, permission, resource, context)
+        except PermissionDenied:
+            return False
+
     def permitted(
         self,
         identity: Identity,
@@ -64,18 +76,6 @@ class AuthProvider(ABC):
         return [
             self._permits(identity, permission, resource, context) for resource in resources
         ]
-
-    def _permits(
-        self,
-        identity: Identity,
-        permission: str,
-        resource: Any,
-        context: Mapping[str, Any] | None,
-    ) -> bool:
-        try:
-            return self.has_permission(identity, permission, resource, context)
-        except PermissionDenied:
-            return False
 
     def scope(self, identity: Identity, aggregate: type) -> "Criteria | None":
         """Which records of `aggregate` the identity may read, as a filter the repository

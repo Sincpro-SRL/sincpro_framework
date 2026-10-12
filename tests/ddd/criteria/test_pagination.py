@@ -12,7 +12,7 @@ from datetime import date, datetime
 
 import pytest
 
-from sincpro_framework.ddd.criteria.pagination import CursorKeys
+from sincpro_framework.ddd.criteria import CursorKeys
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 

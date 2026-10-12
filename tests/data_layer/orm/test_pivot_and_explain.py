@@ -11,11 +11,12 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Re
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
+    Grain,
     Level,
+    Pagination,
     Specification,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .models import ROW_COUNT, Things
@@ -69,7 +70,7 @@ def test_a_pivot_cuts_a_date_on_either_axis(store: Repository):
     matrix = store.pivot(
         Things,
         rows=["owner"],
-        columns=[Level(field="made_at", grain="day")],
+        columns=[Level(field="made_at", grain=Grain.DAY)],
         n=("count", "size"),
     )
 

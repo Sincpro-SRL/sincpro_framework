@@ -75,6 +75,22 @@ class Writing(Store):
     """Writes take the aggregate, whole with the children it owns, because a write that skips the
     aggregate skips its rules; the two that skip it on purpose say so in their name."""
 
+    def _written(self, session: Session, records: list[Any]) -> None:
+        """Flushes the batch and names what the engine refused (`engine_errors.py`).
+
+        **Named for the whole batch, not for its first record.** One flush writes all of them
+        and the engine does not say which one lost, so naming a guess sends somebody to read
+        the wrong aggregate. The engine's own message does name the table; it is carried
+        through rather than summarised away.
+        """
+        with named(_named(records)):
+            if self._transaction.writes is Writes.SAVED and self._bound is not None:
+                # Only what this save named: a record changed beside it is not written in passing.
+                with only(session, records):
+                    session.flush(objects=records)
+            else:
+                session.flush()
+
     def record_changes(self, record: Any) -> Any:
         """Flushes what is pending for this aggregate and hands back the fact that was written.
 
@@ -102,21 +118,40 @@ class Writing(Store):
         )
         return after[-1] if len(after) > seen else None
 
-    def _written(self, session: Session, records: list[Any]) -> None:
-        """Flushes the batch and names what the engine refused (`engine_errors.py`).
+    def _not_kept(self, session: Session, events: list[Any]) -> list[Any]:
+        """The events not kept yet, each once — by id, in the order given."""
+        map_new_event_classes()
+        fresh: list[Any] = []
+        seen: set[str] = set()
+        with session.no_autoflush:
+            for event in events:
+                if event.id in seen or session.get(type(event), event.id) is not None:
+                    continue
+                seen.add(event.id)
+                fresh.append(event)
+        return fresh
 
-        **Named for the whole batch, not for its first record.** One flush writes all of them
-        and the engine does not say which one lost, so naming a guess sends somebody to read
-        the wrong aggregate. The engine's own message does name the table; it is carried
-        through rather than summarised away.
+    def _facts_kept(self, session: Session, records: list[Any]) -> None:
+        """What the records of this write recorded, kept in their context's event table in the
+        same session — after the flush, so the events recorded while flushing (change tracking's
+        `EntityUpdated`) are among them. An event whose class has no event table stays in memory.
+
+        **Read, never taken.** The aggregate keeps its events — `pull_events()` still hands them
+        to whoever wants them. An event is kept once by its id, so saving the same aggregate
+        again keeps only what is new.
         """
-        with named(_named(records)):
-            if self._transaction.writes is Writes.SAVED and self._bound is not None:
-                # Only what this save named: a record changed beside it is not written in passing.
-                with only(session, records):
-                    session.flush(objects=records)
-            else:
-                session.flush()
+        events = [
+            event
+            for one in records
+            if not isinstance(one, DomainEvent) and hasattr(one, "recorded_events")
+            for event in one.recorded_events()
+            if is_mapped_event(type(event))
+        ]
+        fresh = self._not_kept(session, events)
+        if fresh:
+            session.add_all(fresh)
+            with named(_named(fresh)):
+                session.flush(objects=fresh)
 
     def _carried_out(self, session: Session, plan: Plan) -> list[bool]:
         """Writes a plan in the one order every write needs, and answers what the before-moments
@@ -149,41 +184,6 @@ class Writing(Store):
         plan.written()
         self._facts_kept(session, [*plan.stored, *plan.removed])
         return newness
-
-    def _facts_kept(self, session: Session, records: list[Any]) -> None:
-        """What the records of this write recorded, kept in their context's event table in the
-        same session — after the flush, so the events recorded while flushing (change tracking's
-        `EntityUpdated`) are among them. An event whose class has no event table stays in memory.
-
-        **Read, never taken.** The aggregate keeps its events — `pull_events()` still hands them
-        to whoever wants them. An event is kept once by its id, so saving the same aggregate
-        again keeps only what is new.
-        """
-        events = [
-            event
-            for one in records
-            if not isinstance(one, DomainEvent) and hasattr(one, "recorded_events")
-            for event in one.recorded_events()
-            if is_mapped_event(type(event))
-        ]
-        fresh = self._not_kept(session, events)
-        if fresh:
-            session.add_all(fresh)
-            with named(_named(fresh)):
-                session.flush(objects=fresh)
-
-    def _not_kept(self, session: Session, events: list[Any]) -> list[Any]:
-        """The events not kept yet, each once — by id, in the order given."""
-        map_new_event_classes()
-        fresh: list[Any] = []
-        seen: set[str] = set()
-        with session.no_autoflush:
-            for event in events:
-                if event.id in seen or session.get(type(event), event.id) is not None:
-                    continue
-                seen.add(event.id)
-                fresh.append(event)
-        return fresh
 
     def _events_of_sourced(self, session: Session, records: list[Any]) -> list[Any]:
         """The records to write, an event-sourced entity standing for the events it recorded

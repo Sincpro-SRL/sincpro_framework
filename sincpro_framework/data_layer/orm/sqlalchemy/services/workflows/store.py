@@ -19,8 +19,8 @@ from sincpro_framework.ddd.criteria import (
     Operator,
     combined,
     conditions_of,
+    matches,
 )
-from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_meta import Meta
 from sincpro_framework.ddd.repositories.capabilities import StoreCapabilities
@@ -78,6 +78,11 @@ class Store(IRepository):
                 return joined.transaction
         return self._opened_with
 
+    def _dialect(self) -> str:
+        """The engine underneath, by name. Read for the one decision that depends on it:
+        whether it can compute a percentile."""
+        return self.database.engine.dialect.name
+
     @property
     def capabilities(self) -> StoreCapabilities:
         """Read off the engine underneath, because one class runs on several.
@@ -93,11 +98,6 @@ class Store(IRepository):
             savepoints=True,
             percentiles=dialect not in WITHOUT_PERCENTILES,
         )
-
-    def _dialect(self) -> str:
-        """The engine underneath, by name. Read for the one decision that depends on it:
-        whether it can compute a percentile."""
-        return self.database.engine.dialect.name
 
     def _asked(self, model: type, meta: Meta, criteria: Criteria) -> Any:
         """The filter that actually runs: what the caller asked, and what the repository adds.

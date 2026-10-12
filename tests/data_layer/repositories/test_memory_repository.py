@@ -16,14 +16,16 @@ from sincpro_framework.ddd.criteria import (
     All,
     Condition,
     Criteria,
+    Grain,
     Grouping,
     Level,
     Measure,
+    Offset,
     Operator,
+    Pagination,
     Sort,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Offset, Pagination
 from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
@@ -187,7 +189,9 @@ def test_a_date_grain_says_it_is_the_database_that_answers_it(ledger):
     with pytest.raises(ProgrammingError, match="date grain"):
         ledger.group_by_levels(
             Accounts,
-            Criteria(grouping=Grouping(group_by=(Level(field="created_at", grain="month"),))),
+            Criteria(
+                grouping=Grouping(group_by=(Level(field="created_at", grain=Grain.MONTH),))
+            ),
         )
 
 

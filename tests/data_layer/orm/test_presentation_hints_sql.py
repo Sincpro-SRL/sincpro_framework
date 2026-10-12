@@ -16,9 +16,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table impor
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.ddd import (
+    Condition,
     EntityReads,
     Get,
-    Is,
     Presentation,
     ResponseRecord,
     When,
@@ -43,7 +43,9 @@ class Sale(Entity):
     presentation = Presentation["Sale"](
         readonly=lambda s: (s.number,),
         readonly_when=lambda s: (
-            When(Is(s.state, Operator.NE, SaleState.DRAFT), s.customer_id, s.amount),
+            When(
+                Condition.on(s.state, Operator.NE, SaleState.DRAFT), s.customer_id, s.amount
+            ),
         ),
     )
 

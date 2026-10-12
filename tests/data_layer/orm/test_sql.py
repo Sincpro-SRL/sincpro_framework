@@ -21,12 +21,13 @@ from sincpro_framework.ddd.criteria import (
     Any_,
     Condition,
     Criteria,
+    Grain,
     Level,
     Not,
     Operator,
+    Pagination,
+    matches,
 )
-from sincpro_framework.ddd.criteria.evaluate import matches
-from sincpro_framework.ddd.criteria.pagination import Pagination
 
 from .models import ROW_COUNT, Thing, Things, a_thing
 
@@ -222,7 +223,7 @@ def test_a_date_grain_is_translated_for_postgres_as_well():
 
     from .models import Thing
 
-    monthly = grouping_column(Thing, Level(field="made_at", grain="month"), "postgresql")
+    monthly = grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "postgresql")
     rendered = str(
         monthly.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
     )
@@ -239,7 +240,7 @@ def test_a_dialect_with_no_grain_translation_is_refused_rather_than_guessed():
     from .models import Thing
 
     with pytest.raises(ProgrammingError, match="register_grain_translator"):
-        grouping_column(Thing, Level(field="made_at", grain="month"), "oracle")
+        grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "oracle")
 
 
 def test_the_week_grain_reads_the_same_on_both_dialects():
@@ -251,8 +252,8 @@ def test_the_week_grain_reads_the_same_on_both_dialects():
         bucket_range,
     )
 
-    weekly_sqlite = grouping_column(Thing, Level(field="made_at", grain="week"), "sqlite")
-    weekly_pg = grouping_column(Thing, Level(field="made_at", grain="week"), "postgresql")
+    weekly_sqlite = grouping_column(Thing, Level(field="made_at", grain=Grain.WEEK), "sqlite")
+    weekly_pg = grouping_column(Thing, Level(field="made_at", grain=Grain.WEEK), "postgresql")
 
     assert "%G-W%V" in str(
         weekly_sqlite.compile(

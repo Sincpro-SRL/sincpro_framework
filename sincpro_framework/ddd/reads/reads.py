@@ -68,9 +68,9 @@ from sincpro_framework.ddd.criteria import (
     Pagination,
     Specification,
     combined,
+    matches,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.evaluate import matches
 from sincpro_framework.ddd.editing.editing import adapter_of, assign, owned, recompute
 from sincpro_framework.ddd.editing.preview import Advice, previewing
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -243,6 +243,19 @@ def declared_by(dto: type) -> tuple[type, type]:
     )
 
 
+def held(record: Any) -> dict[str, Any]:
+    """Each field's value as the record holds it, read without resolving anything; a list is
+    copied, so what is later put in its place is compared with what was there."""
+    found: dict[str, Any] = {}
+    for name in annotations_of(type(record)):
+        try:
+            value = getattr(record, name)
+        except RelationNotResolved:
+            continue
+        found[name] = list(value) if isinstance(value, (list, EntityCollection)) else value
+    return found
+
+
 def events_of(response: type) -> type:
     """The event class a `DomainEvents` response holds: where its events are read.
 
@@ -307,25 +320,6 @@ class EntityReads[T](Feature):
             )
         return repository
 
-    def execute(self, dto: Any) -> Any:
-        match dto:
-            case Get():
-                return self.get(dto)
-            case GetMany():
-                return self.get_many(dto)
-            case LiteralSearch():
-                return self.literal_search(dto)
-            case DomainEvents():
-                return self.domain_events(dto)
-            case Search():
-                return self.search(dto)
-            case Preview():
-                return self.preview(dto)
-        raise ProgrammingError(
-            f"{type(self).__name__} answers Get, GetMany, LiteralSearch, Search, DomainEvents and "
-            f"Preview, not {type(dto).__name__}"
-        )
-
     def drafts(self) -> Drafts:
         """The drafts read and kept: the caller's, in the context's store. Override it to key
         them by something else — `use_context().drafts(by=["session_id"])`."""
@@ -337,6 +331,75 @@ class EntityReads[T](Feature):
         `Invoice` of its own, never read each other's."""
         bus = use_context().bus
         return f"{bus.label if bus is not None else ''}.{entity.__name__}:{key}"
+
+    def by_identity(
+        self, entity: type, where: Expression, limit: int, asked: Criteria
+    ) -> Criteria:
+        """The entity's `DEFAULT_READING` with every part `asked` names in its place, filtered
+        by key besides `asked`'s own filter, read as one page.
+
+        A page and not `repository.get`/`browse`, so the definition and the relations come
+        back the same way from every store and the answer is cut by the same specification.
+        """
+        read = (detail_of(entity) or Criteria()).replaced_by(asked)
+        return read.model_copy(
+            update={
+                "where": combined(where, read.expression),
+                "pagination": Pagination(limit=limit),
+                "count": CountMode.NONE,
+            }
+        )
+
+    def described(self, entity: type, criteria: Criteria) -> EntityCollection[Any]:
+        """What the store says of `entity` for `criteria` without reading a row: its definition and
+        what the criteria names that it cannot answer — what a draft, which the store does not
+        hold, is answered with, so it goes out as a stored record does."""
+        return self.reads_from().search(
+            entity,
+            criteria.model_copy(
+                update={"pagination": Pagination(limit=0), "count": CountMode.NONE}
+            ),
+        )
+
+    def previewed(self, entity: type, identity: str | None) -> Any:
+        """The record a preview starts from: a copy of the stored one found by its key, read as
+        its `DEFAULT_READING` brings it and with the relations its derivations read, or a new
+        one holding the class defaults (`None` where a field has none)."""
+        if identity is None:
+            return blank(entity)
+        criteria = self.by_identity(
+            entity, Condition(field=key_of(entity), value=identity), 1, Criteria()
+        )
+        page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
+        if not page.items:
+            raise AggregateNotFound(f"{entity.__name__} {identity} does not exist")
+        return copied(page.items[0])
+
+    def stored(self, entity: type, key: str) -> Any:
+        """A copy of the stored record of `key`, as a preview reads it, or `None` when there is
+        none — a record only drafted so far."""
+        try:
+            return self.previewed(entity, key)
+        except AggregateNotFound:
+            return None
+
+    def drafted(
+        self, entity: type, response: type, key: str, kept: Draft, criteria: Criteria
+    ) -> Any:
+        """A draft answered as the record it holds, the way the stored one is answered: cut by the
+        same criteria, with the same definition — and said to be a draft, stale when the stored
+        record moved on since the draft started."""
+        stored = self.stored(entity, key)
+        record = stored if stored is not None else keyed(blank(entity), entity, key)
+        assign(record, kept.values, True)
+        answer = response.of(record, self.described(entity, criteria), criteria)
+        answer.draft = DraftState(
+            version=kept.version,
+            origin_version=kept.origin_version,
+            kept_at=kept.kept_at,
+            stale=stored is not None and getattr(stored, "version", 0) != kept.origin_version,
+        )
+        return answer
 
     def get(self, dto: Any) -> Any:
         """The record found by its key, as the entity reads it, or `AggregateNotFound` — the
@@ -372,57 +435,11 @@ class EntityReads[T](Feature):
         page = self.reads_from().search(entity, criteria)
         return response.of(ids, page, criteria, identity)
 
-    def by_identity(
-        self, entity: type, where: Expression, limit: int, asked: Criteria
-    ) -> Criteria:
-        """The entity's `DEFAULT_READING` with every part `asked` names in its place, filtered
-        by key besides `asked`'s own filter, read as one page.
-
-        A page and not `repository.get`/`browse`, so the definition and the relations come
-        back the same way from every store and the answer is cut by the same specification.
-        """
-        read = (detail_of(entity) or Criteria()).replaced_by(asked)
-        return read.model_copy(
-            update={
-                "where": combined(where, read.expression),
-                "pagination": Pagination(limit=limit),
-                "count": CountMode.NONE,
-            }
-        )
-
     def literal_search(self, dto: Any) -> Any:
         """The short page a select shows for the literal."""
         entity, response = declared_by(type(dto))
         criteria = matching(entity, dto.text).replaced_by(dto.criteria)
         return response.of(self.reads_from().search(entity, criteria), criteria)
-
-    def search(self, dto: Any) -> Any:
-        """The page the criteria asks for, each record as the entity reads it unless the
-        criteria names what to bring. The store applies the entity's order when none is named.
-        """
-        entity, response = declared_by(type(dto))
-        criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
-        if dto.drafts:
-            return response.of(self.drafted_page(entity, criteria), criteria)
-        return response.of(self.reads_from().search(entity, criteria), criteria)
-
-    def drafted(
-        self, entity: type, response: type, key: str, kept: Draft, criteria: Criteria
-    ) -> Any:
-        """A draft answered as the record it holds, the way the stored one is answered: cut by the
-        same criteria, with the same definition — and said to be a draft, stale when the stored
-        record moved on since the draft started."""
-        stored = self.stored(entity, key)
-        record = stored if stored is not None else keyed(blank(entity), entity, key)
-        assign(record, kept.values, True)
-        answer = response.of(record, self.described(entity, criteria), criteria)
-        answer.draft = DraftState(
-            version=kept.version,
-            origin_version=kept.origin_version,
-            kept_at=kept.kept_at,
-            stale=stored is not None and getattr(stored, "version", 0) != kept.origin_version,
-        )
-        return answer
 
     def drafted_page(self, entity: type, criteria: Criteria) -> EntityCollection[Any]:
         """The caller's drafts of `entity` as one page: each as the record it holds, kept by the
@@ -455,24 +472,15 @@ class EntityReads[T](Feature):
             dropped=described.dropped,
         )
 
-    def described(self, entity: type, criteria: Criteria) -> EntityCollection[Any]:
-        """What the store says of `entity` for `criteria` without reading a row: its definition and
-        what the criteria names that it cannot answer — what a draft, which the store does not
-        hold, is answered with, so it goes out as a stored record does."""
-        return self.reads_from().search(
-            entity,
-            criteria.model_copy(
-                update={"pagination": Pagination(limit=0), "count": CountMode.NONE}
-            ),
-        )
-
-    def stored(self, entity: type, key: str) -> Any:
-        """A copy of the stored record of `key`, as a preview reads it, or `None` when there is
-        none — a record only drafted so far."""
-        try:
-            return self.previewed(entity, key)
-        except AggregateNotFound:
-            return None
+    def search(self, dto: Any) -> Any:
+        """The page the criteria asks for, each record as the entity reads it unless the
+        criteria names what to bring. The store applies the entity's order when none is named.
+        """
+        entity, response = declared_by(type(dto))
+        criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
+        if dto.drafts:
+            return response.of(self.drafted_page(entity, criteria), criteria)
+        return response.of(self.reads_from().search(entity, criteria), criteria)
 
     def domain_events(self, dto: Any) -> Any:
         """The record's events, oldest first, each filtered by the record's type and identity.
@@ -553,19 +561,24 @@ class EntityReads[T](Feature):
             }
         return response(values=values, fields=states_of(record), advice=list(advice))
 
-    def previewed(self, entity: type, identity: str | None) -> Any:
-        """The record a preview starts from: a copy of the stored one found by its key, read as
-        its `DEFAULT_READING` brings it and with the relations its derivations read, or a new
-        one holding the class defaults (`None` where a field has none)."""
-        if identity is None:
-            return blank(entity)
-        criteria = self.by_identity(
-            entity, Condition(field=key_of(entity), value=identity), 1, Criteria()
+    def execute(self, dto: Any) -> Any:
+        match dto:
+            case Get():
+                return self.get(dto)
+            case GetMany():
+                return self.get_many(dto)
+            case LiteralSearch():
+                return self.literal_search(dto)
+            case DomainEvents():
+                return self.domain_events(dto)
+            case Search():
+                return self.search(dto)
+            case Preview():
+                return self.preview(dto)
+        raise ProgrammingError(
+            f"{type(self).__name__} answers Get, GetMany, LiteralSearch, Search, DomainEvents and "
+            f"Preview, not {type(dto).__name__}"
         )
-        page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
-        if not page.items:
-            raise AggregateNotFound(f"{entity.__name__} {identity} does not exist")
-        return copied(page.items[0])
 
 
 def with_derived_relations(entity: type, criteria: Criteria) -> Criteria:
@@ -584,33 +597,29 @@ def with_derived_relations(entity: type, criteria: Criteria) -> Criteria:
     return criteria.model_copy(update={"specification": Specification(nodes)})
 
 
-def held(record: Any) -> dict[str, Any]:
-    """Each field's value as the record holds it, read without resolving anything; a list is
-    copied, so what is later put in its place is compared with what was there."""
-    found: dict[str, Any] = {}
-    for name in annotations_of(type(record)):
-        try:
-            value = getattr(record, name)
-        except RelationNotResolved:
-            continue
-        found[name] = list(value) if isinstance(value, (list, EntityCollection)) else value
-    return found
+def _in_progress(value: Any, seen: dict[int, Any]) -> bool:
+    return seen.get(id(value)) is value and dataclasses.is_dataclass(value)
 
 
-def copied(record: Any) -> Any:
-    """A new record holding what `record` holds, built through its own constructor — and so is
-    every record inside it — so nothing done to it reaches what a store keeps: a store in
-    memory hands back its own instances.
-
-    in      the stored Invoice(discount=0, lines=[line 1, line 2])
-    out     another Invoice(discount=0, lines=[another line 1, another line 2])
-
-    A relation nobody resolved is left at its default. A record met twice is copied once, and a
-    back-reference (a line pointing at its invoice) points at the copy.
-    """
-    seen: dict[int, Any] = {}
-    pending: dict[int, list[Callable[[Any], None]]] = {}
-    return _copied(record, seen, pending)
+def _awaiting(
+    built: Any,
+    name: str,
+    value: Any,
+    seen: dict[int, Any],
+    pending: dict[int, list[Callable[[Any], None]]],
+) -> None:
+    """Notes where `built` still holds an original whose copy is not finished: a back-reference,
+    set to the copy when that copy is built."""
+    if isinstance(value, list):
+        for at, one in enumerate(value):
+            if _in_progress(one, seen):
+                pending.setdefault(id(one), []).append(
+                    lambda copy_, held_=value, at_=at: held_.__setitem__(at_, copy_)
+                )
+    elif _in_progress(value, seen):
+        pending.setdefault(id(value), []).append(
+            lambda copy_, owner=built, field=name: setattr(owner, field, copy_)
+        )
 
 
 def _copied(
@@ -642,6 +651,22 @@ def _copied(
     return built
 
 
+def copied(record: Any) -> Any:
+    """A new record holding what `record` holds, built through its own constructor — and so is
+    every record inside it — so nothing done to it reaches what a store keeps: a store in
+    memory hands back its own instances.
+
+    in      the stored Invoice(discount=0, lines=[line 1, line 2])
+    out     another Invoice(discount=0, lines=[another line 1, another line 2])
+
+    A relation nobody resolved is left at its default. A record met twice is copied once, and a
+    back-reference (a line pointing at its invoice) points at the copy.
+    """
+    seen: dict[int, Any] = {}
+    pending: dict[int, list[Callable[[Any], None]]] = {}
+    return _copied(record, seen, pending)
+
+
 def _copied_value(
     value: Any, seen: dict[int, Any], pending: dict[int, list[Callable[[Any], None]]]
 ) -> Any:
@@ -651,31 +676,6 @@ def _copied_value(
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return _copied(value, seen, pending)
     return value
-
-
-def _awaiting(
-    built: Any,
-    name: str,
-    value: Any,
-    seen: dict[int, Any],
-    pending: dict[int, list[Callable[[Any], None]]],
-) -> None:
-    """Notes where `built` still holds an original whose copy is not finished: a back-reference,
-    set to the copy when that copy is built."""
-    if isinstance(value, list):
-        for at, one in enumerate(value):
-            if _in_progress(one, seen):
-                pending.setdefault(id(one), []).append(
-                    lambda copy_, held_=value, at_=at: held_.__setitem__(at_, copy_)
-                )
-    elif _in_progress(value, seen):
-        pending.setdefault(id(value), []).append(
-            lambda copy_, owner=built, field=name: setattr(owner, field, copy_)
-        )
-
-
-def _in_progress(value: Any, seen: dict[int, Any]) -> bool:
-    return seen.get(id(value)) is value and dataclasses.is_dataclass(value)
 
 
 def keyed(record: Any, entity: type, key: str) -> Any:
@@ -722,6 +722,10 @@ def dumped(record: Any) -> dict[str, Any]:
     return written
 
 
+def _holds(record: Any, condition: Any) -> bool:
+    return condition is not None and matches(record, condition)
+
+
 def states_of(record: Any) -> dict[str, FieldState]:
     """Each field's hints, evaluated over this record: what a client with no Criteria evaluator
     shows."""
@@ -737,7 +741,3 @@ def states_of(record: Any) -> dict[str, FieldState]:
         )
         for name in annotations_of(type(record))
     }
-
-
-def _holds(record: Any, condition: Any) -> bool:
-    return condition is not None and matches(record, condition)

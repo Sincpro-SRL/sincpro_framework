@@ -314,35 +314,10 @@ class Gateway:
             if operation.layer in self._layers
         ]
 
-    def operations(self) -> list[Published]:
-        """Every published use case, with the alias and bus it belongs to, in the layers asked —
-        on a gateway that names a wire, only its validated surface."""
-        if self.wire_name is None:
-            return self._published()
-        return [published for _, published in self._resolve_validated()]
-
-    def is_healthy(self) -> bool:
-        """Every bus is still built — what every wire's health check answers."""
-        return all(one.is_ready for one in self.buses())
-
-    # Declared exposure — the composition's word (PRD_14 §5, §7)
-
     @property
     def wire_name(self) -> str | None:
         """The wire this gateway resolves bindings for — its port's, else its class's."""
         return self._port.binding.wire if self._port is not None else type(self).wire
-
-    @property
-    def exposure(self) -> Exposure:
-        return self._exposure
-
-    @property
-    def groups(self) -> Mapping[str, Group]:
-        """Each context's group, by alias — `Group(alias=...)`, all defaults, where none was
-        set."""
-        return {
-            alias: self._groups.get(alias, Group(alias=alias)) for alias in self._catalogs
-        }
 
     def _binding_type(self) -> type[Binding]:
         if self._port is not None:
@@ -355,75 +330,7 @@ class Gateway:
             )
         return BUILT_IN_BINDINGS[wire]
 
-    def group(
-        self,
-        bus: UseFramework | str,
-        prefix: str | None = None,
-        tags: tuple[str, ...] = (),
-        version: str | None = None,
-        namespace: str | None = None,
-        package: str | None = None,
-    ) -> Self:
-        """The conventions of one bounded context on this wire — the bus, or its alias; every
-        alias it is added under. What a field leaves `None` is the wire's default."""
-        aliases = [
-            alias
-            for alias, catalog in self._catalogs.items()
-            if alias == bus or catalog.framework_instance is bus
-        ]
-        if not aliases:
-            named = bus if isinstance(bus, str) else bus.name
-            raise ProgrammingError(
-                f"group({named!r}): no bus of this gateway is {named!r} — add it first; it has "
-                f"{', '.join(self._catalogs) or 'none'}"
-            )
-        for alias in aliases:
-            self._groups[alias] = Group(
-                alias=alias,
-                prefix=prefix,
-                tags=tags,
-                version=version,
-                namespace=namespace,
-                package=package,
-            )
-        self._resolved = None
-        return self
-
-    def override(self, target: type, **fields: Any) -> Self:
-        """Change fields of the binding `target` — a Command or its handler — has on this wire,
-        over its decorator's; the last call wins. It shapes, it never publishes: `bind` does.
-        """
-        binding_type = self._binding_type()
-        unknown = sorted(set(fields) - set(binding_type.model_fields))
-        if unknown:
-            raise ProgrammingError(
-                f"override({target.__name__}): {binding_type.__name__} has no "
-                f"{', '.join(unknown)}"
-            )
-        self._composition.append((target, dict(fields)))
-        self._resolved = None
-        return self
-
-    def bind(self, target: type, binding: Binding) -> Self:
-        """Publish `target` — a Command or its handler — on this wire with `binding`, merged
-        field by field over its decorator's; the last call wins."""
-        binding_type = self._binding_type()
-        if not isinstance(binding, binding_type):
-            raise ProgrammingError(
-                f"bind({target.__name__}, {type(binding).__name__}): this gateway publishes "
-                f"{binding_type.wire} — bind a {binding_type.__name__}"
-            )
-        self._composition.append((target, binding))
-        self._resolved = None
-        return self
-
-    def _answered(self, target: type) -> bool:
-        """A Command a bus of this gateway answers, or the handler answering one."""
-        return any(
-            target is command or target is handler
-            for bus in self.buses()
-            for command, handler in bus.handlers().items()
-        )
+    # Declared exposure — the composition's word (PRD_14 §5, §7)
 
     def _composed_for(
         self, command: type, handler: type
@@ -537,6 +444,14 @@ class Gateway:
         problems.extend(self._access_problems(operation, wire))
         return Resolved[Any](operation=operation, group=group, binding=binding)
 
+    def _answered(self, target: type) -> bool:
+        """A Command a bus of this gateway answers, or the handler answering one."""
+        return any(
+            target is command or target is handler
+            for bus in self.buses()
+            for command, handler in bus.handlers().items()
+        )
+
     def _declaration_problems(self, today: date) -> list[str]:
         """What is wrong whatever wire builds it: every binding a handler of these buses declares
         for another wire, `@internal` with a binding, the stage combinations, and a composition naming a
@@ -643,6 +558,91 @@ class Gateway:
                     f"access {entry.access}"
                 )
         return resolved
+
+    def operations(self) -> list[Published]:
+        """Every published use case, with the alias and bus it belongs to, in the layers asked —
+        on a gateway that names a wire, only its validated surface."""
+        if self.wire_name is None:
+            return self._published()
+        return [published for _, published in self._resolve_validated()]
+
+    def is_healthy(self) -> bool:
+        """Every bus is still built — what every wire's health check answers."""
+        return all(one.is_ready for one in self.buses())
+
+    @property
+    def exposure(self) -> Exposure:
+        return self._exposure
+
+    @property
+    def groups(self) -> Mapping[str, Group]:
+        """Each context's group, by alias — `Group(alias=...)`, all defaults, where none was
+        set."""
+        return {
+            alias: self._groups.get(alias, Group(alias=alias)) for alias in self._catalogs
+        }
+
+    def group(
+        self,
+        bus: UseFramework | str,
+        prefix: str | None = None,
+        tags: tuple[str, ...] = (),
+        version: str | None = None,
+        namespace: str | None = None,
+        package: str | None = None,
+    ) -> Self:
+        """The conventions of one bounded context on this wire — the bus, or its alias; every
+        alias it is added under. What a field leaves `None` is the wire's default."""
+        aliases = [
+            alias
+            for alias, catalog in self._catalogs.items()
+            if alias == bus or catalog.framework_instance is bus
+        ]
+        if not aliases:
+            named = bus if isinstance(bus, str) else bus.name
+            raise ProgrammingError(
+                f"group({named!r}): no bus of this gateway is {named!r} — add it first; it has "
+                f"{', '.join(self._catalogs) or 'none'}"
+            )
+        for alias in aliases:
+            self._groups[alias] = Group(
+                alias=alias,
+                prefix=prefix,
+                tags=tags,
+                version=version,
+                namespace=namespace,
+                package=package,
+            )
+        self._resolved = None
+        return self
+
+    def override(self, target: type, **fields: Any) -> Self:
+        """Change fields of the binding `target` — a Command or its handler — has on this wire,
+        over its decorator's; the last call wins. It shapes, it never publishes: `bind` does.
+        """
+        binding_type = self._binding_type()
+        unknown = sorted(set(fields) - set(binding_type.model_fields))
+        if unknown:
+            raise ProgrammingError(
+                f"override({target.__name__}): {binding_type.__name__} has no "
+                f"{', '.join(unknown)}"
+            )
+        self._composition.append((target, dict(fields)))
+        self._resolved = None
+        return self
+
+    def bind(self, target: type, binding: Binding) -> Self:
+        """Publish `target` — a Command or its handler — on this wire with `binding`, merged
+        field by field over its decorator's; the last call wins."""
+        binding_type = self._binding_type()
+        if not isinstance(binding, binding_type):
+            raise ProgrammingError(
+                f"bind({target.__name__}, {type(binding).__name__}): this gateway publishes "
+                f"{binding_type.wire} — bind a {binding_type.__name__}"
+            )
+        self._composition.append((target, binding))
+        self._resolved = None
+        return self
 
     def verify(self) -> list[str]:
         """Every reason the surface would be refused — empty when it builds. Raises nothing."""

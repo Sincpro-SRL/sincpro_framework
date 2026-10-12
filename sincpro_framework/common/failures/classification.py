@@ -58,6 +58,24 @@ def refined_failure_kind(error: Exception) -> FailureKind:
     return FailureKind.INTERNAL
 
 
+def said_to_the_caller(error: Exception) -> str | None:
+    """What of a failure a client is allowed to read.
+
+    **A `ClientError` or a `DomainError` was written for whoever asked** — "an invoice has to balance" is the
+    answer, and hiding it helps nobody. Anything else is the inside of the process, and its
+    message routinely carries what must never leave it: a connection string with a password, a
+    statement with the value it was filtering on, a path on the server.
+
+        raise OperationalError("SELECT … WHERE token = 'secret'", …, "postgres://admin:hunter2@…")
+
+    That whole string used to reach the client as the error's `data`. The log still gets all of
+    it — the host's `logger.exception` runs either way — which is where it belongs.
+    """
+    from sincpro_framework.ddd.exceptions import DomainError
+
+    return str(error) if isinstance(error, (ClientError, DomainError)) else None
+
+
 def failure_reason(error: Exception, kind: FailureKind) -> str:
     """The stable, UPPER_SNAKE reason a client switches on: the error's class when the caller may
     read the error (`InvoiceNotFound` → `INVOICE_NOT_FOUND`), the kind otherwise — the class of
@@ -91,21 +109,3 @@ def json_safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:
     error envelope would crash the host instead of returning an invalid-params status.
     """
     return json.loads(json.dumps(error.errors(), default=str))
-
-
-def said_to_the_caller(error: Exception) -> str | None:
-    """What of a failure a client is allowed to read.
-
-    **A `ClientError` or a `DomainError` was written for whoever asked** — "an invoice has to balance" is the
-    answer, and hiding it helps nobody. Anything else is the inside of the process, and its
-    message routinely carries what must never leave it: a connection string with a password, a
-    statement with the value it was filtering on, a path on the server.
-
-        raise OperationalError("SELECT … WHERE token = 'secret'", …, "postgres://admin:hunter2@…")
-
-    That whole string used to reach the client as the error's `data`. The log still gets all of
-    it — the host's `logger.exception` runs either way — which is where it belongs.
-    """
-    from sincpro_framework.ddd.exceptions import DomainError
-
-    return str(error) if isinstance(error, (ClientError, DomainError)) else None

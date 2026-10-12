@@ -44,12 +44,6 @@ class SharedValues(Values):
             self._kept()
         self._refreshed()
 
-    @property
-    def current(self) -> Mapping[Any, Any]:
-        if time.monotonic() - self._checked >= self._every:
-            self._refreshed()
-        return self._current
-
     def _refreshed(self) -> None:
         self._checked = time.monotonic()
         version = self._store.version(self._key)
@@ -61,6 +55,12 @@ class SharedValues(Values):
         }
         self._current = MappingProxyType({**local_only, **kept})
         self._version = version
+
+    @property
+    def current(self) -> Mapping[Any, Any]:
+        if time.monotonic() - self._checked >= self._every:
+            self._refreshed()
+        return self._current
 
     def _kept(self) -> None:
         named = {key: value for key, value in self._current.items() if isinstance(key, str)}

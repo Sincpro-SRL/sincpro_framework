@@ -50,19 +50,6 @@ class DatabaseNumbering(INumbering):
         self.database = database
         self.table = table
 
-    def take(self, series: str, count: int = 1, scope: str = "") -> range:
-        refuse_writing_in_preview("take")
-        refuse_no_count(count)
-        with self._session() as session:
-            dialect = session.get_bind().dialect.name
-            upsert = WITH_UPSERT.get(dialect)
-            last = (
-                self._upserted(session, upsert, series, count, scope)
-                if upsert is not None
-                else self._updated_or_inserted(session, series, count, scope)
-            )
-        return range(last - count + 1, last + 1)
-
     @contextmanager
     def _session(self) -> Generator[Session]:
         """The unit of work in play — the numbers commit with what carries them — or, outside
@@ -123,3 +110,16 @@ class DatabaseNumbering(INumbering):
                     update(self.table).where(here).values(last=counter.last + count)
                 )
         return int(session.execute(select(counter.last).where(here)).scalar_one())
+
+    def take(self, series: str, count: int = 1, scope: str = "") -> range:
+        refuse_writing_in_preview("take")
+        refuse_no_count(count)
+        with self._session() as session:
+            dialect = session.get_bind().dialect.name
+            upsert = WITH_UPSERT.get(dialect)
+            last = (
+                self._upserted(session, upsert, series, count, scope)
+                if upsert is not None
+                else self._updated_or_inserted(session, series, count, scope)
+            )
+        return range(last - count + 1, last + 1)

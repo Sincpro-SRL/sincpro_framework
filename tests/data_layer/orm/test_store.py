@@ -16,10 +16,11 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    Offset,
     Operator,
+    Pagination,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Offset, Pagination
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.repositories.repository import IRepository
 

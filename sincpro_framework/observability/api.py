@@ -156,6 +156,30 @@ class Observability:
 
         return measured(self._bus, dto, handler, layer, who=self)
 
+    def _is_expected(self, error: BaseException) -> bool:
+        return isinstance(error, self.ignored_errors)
+
+    # -----------------------------------------------------------------------------------------
+    # One failure, reported once
+    # -----------------------------------------------------------------------------------------
+
+    def expects(self, error: BaseException) -> bool:
+        """Whether this bus was told (`ignore`) that `error` is traffic, not a bug — kept out of
+        GlitchTip, logged at info, and an `expected` outcome in the metrics."""
+        return self._is_expected(error)
+
+    def _outcome(self, error: BaseException) -> str:
+        """`expected` or the failure's kind — the value `sincpro.outcome` takes on the metrics,
+        so the span, the log line and GlitchTip say the same."""
+        try:
+            from sincpro_framework.observability.metrics.infrastructure.execution import (
+                outcome_of,
+            )
+
+            return outcome_of(error, self.expects(error))[OUTCOME]
+        except Exception:
+            return "internal"
+
     def record_error(
         self,
         error: Exception,
@@ -177,30 +201,6 @@ class Observability:
             ignored_exceptions=self.ignored_errors,
             outcome=outcome,
         )
-
-    # -----------------------------------------------------------------------------------------
-    # One failure, reported once
-    # -----------------------------------------------------------------------------------------
-
-    def _is_expected(self, error: BaseException) -> bool:
-        return isinstance(error, self.ignored_errors)
-
-    def expects(self, error: BaseException) -> bool:
-        """Whether this bus was told (`ignore`) that `error` is traffic, not a bug — kept out of
-        GlitchTip, logged at info, and an `expected` outcome in the metrics."""
-        return self._is_expected(error)
-
-    def _outcome(self, error: BaseException) -> str:
-        """`expected` or the failure's kind — the value `sincpro.outcome` takes on the metrics,
-        so the span, the log line and GlitchTip say the same."""
-        try:
-            from sincpro_framework.observability.metrics.infrastructure.execution import (
-                outcome_of,
-            )
-
-            return outcome_of(error, self.expects(error))[OUTCOME]
-        except Exception:
-            return "internal"
 
     def _describe(self, error: BaseException, dto: object) -> tuple[str, dict[str, Any]]:
         recorded = failure.failure_of(error)
@@ -376,6 +376,14 @@ class ProcessObservability:
         except Exception:
             return
 
+    def trace_ids(self) -> dict:
+        """``trace_id``/``span_id`` of the active span, for a process logger.
+
+        Hand it to ``logger.add_context_source(...)`` so an access log line, or a
+        line from uvicorn, lands on the same trace as the request that caused it.
+        """
+        return current_otel_context()
+
     def bind_logger(self, logger: Any) -> None:
         """Make a process logger stamp the ids of the request being served.
 
@@ -387,14 +395,6 @@ class ProcessObservability:
             logger.add_context_source(self.trace_ids)
         except Exception:
             return
-
-    def trace_ids(self) -> dict:
-        """``trace_id``/``span_id`` of the active span, for a process logger.
-
-        Hand it to ``logger.add_context_source(...)`` so an access log line, or a
-        line from uvicorn, lands on the same trace as the request that caused it.
-        """
-        return current_otel_context()
 
     def was_reported(self, error: BaseException) -> bool:
         """Whether a bus already logged ``error`` on its way out.

@@ -12,7 +12,9 @@ import sqlalchemy
 from sqlalchemy import (
     ColumnElement,
     DateTime,
+    Integer,
     Select,
+    String,
     Text,
     and_,
     cast,
@@ -32,13 +34,15 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
     Expression,
+    FromField,
+    Grain,
     Level,
     Not,
     Operator,
+    Pagination,
     Sort,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_meta import Meta
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.exceptions import ProgrammingError
@@ -163,9 +167,10 @@ def clause_over(
         case None:
             return None
         case Condition():
-            return _comparison(
-                resolve(expression.field), expression.operator, expression.value
-            )
+            value = expression.value
+            if isinstance(value, FromField):
+                value = resolve(value.name)
+            return _comparison(resolve(expression.field), expression.operator, value)
         case All():
             parts = (clause_over(resolve, part) for part in expression.all)
             return and_(*(one for one in parts if one is not None))
@@ -178,20 +183,6 @@ def clause_over(
             # `not owner = 'ana'` would leave out the records with no owner.
             inner = clause_over(resolve, expression.negate)
             return not_(inner.is_(true())) if inner is not None else None
-
-
-def where_clause(entity: type, expression: Expression | None) -> ColumnElement[bool] | None:
-    """A validated expression as a `WHERE` clause.
-
-        in      All([Condition(row_count, GT, 1000), Condition(name, LIKE, "labs")])
-        out     dataset.row_count > 1000 AND lower(dataset.name) LIKE '%labs%'
-
-        in      None
-        out     None                            no filter asked, no clause built
-
-    Every leaf has already been checked against the model, so nothing here refuses.
-    """
-    return clause_over(lambda field: column_attribute(entity, field), expression)
 
 
 def column_attribute(entity: type, field: str) -> Any:
@@ -211,6 +202,20 @@ def column_attribute(entity: type, field: str) -> Any:
     if column is None:
         return attribute
     return getattr(entity, mapper.get_property_by_column(column).key)
+
+
+def where_clause(entity: type, expression: Expression | None) -> ColumnElement[bool] | None:
+    """A validated expression as a `WHERE` clause.
+
+        in      All([Condition(row_count, GT, 1000), Condition(name, LIKE, "labs")])
+        out     dataset.row_count > 1000 AND lower(dataset.name) LIKE '%labs%'
+
+        in      None
+        out     None                            no filter asked, no clause built
+
+    Every leaf has already been checked against the model, so nothing here refuses.
+    """
+    return clause_over(lambda field: column_attribute(entity, field), expression)
 
 
 def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:
@@ -304,7 +309,7 @@ def capped_count(entity: type, clause: ColumnElement[bool] | None, cap: int) -> 
     return select(func.count()).select_from(inner.limit(cap + 1).subquery())
 
 
-GRAINS: tuple[str, ...] = ("day", "month", "week", "year")
+GRAINS: tuple[str, ...] = tuple(one.value for one in Grain)
 
 # How a date is cut to a grain, per engine. One of the few pieces that change with the
 # database — SQLite has `strftime`, Postgres `to_char` — so it is a registry the provider
@@ -325,10 +330,19 @@ _POSTGRESQL_FORMATS = {
     "month": "YYYY-MM",
     "day": "YYYY-MM-DD",
     "week": 'IYYY-"W"IW',
+    "quarter": 'YYYY-"Q"Q',
 }
 
 
 def _sqlite_grain(column: Any, grain: str) -> ColumnElement[Any]:
+    """SQLite has no quarter in `strftime`: it is the year, `-Q` and the month rounded up to three."""
+    if grain == "quarter":
+        month = cast(func.strftime("%m", column), Integer)
+        return (
+            func.strftime("%Y", column)
+            .op("||")("-Q")
+            .op("||")(cast((month + 2) // 3, String))
+        )
     return func.strftime(_SQLITE_FORMATS[grain], column)
 
 
@@ -337,6 +351,12 @@ def _duckdb_grain(column: Any, grain: str) -> ColumnElement[Any]:
     `strftime(column, format)` against SQLite's `strftime(format, column)`. Which is the whole
     reason this is a registry and not one function with an `if`.
     """
+    if grain == "quarter":
+        return (
+            func.strftime(column, "%Y")
+            .op("||")("-Q")
+            .op("||")(cast(func.quarter(column), String))
+        )
     return func.strftime(column, _SQLITE_FORMATS[grain])
 
 
@@ -393,6 +413,7 @@ def bucket_range(grain: str, value: str) -> tuple[datetime, datetime]:
         in   "month", "2026-09"     →  out  (2026-09-01, 2026-10-01)
         in   "day",   "2026-09-13"  →  out  (2026-09-13, 2026-09-14)
         in   "week",  "2026-W37"    →  out  (2026-09-14, 2026-09-21)
+        in   "quarter", "2026-Q3"   →  out  (2026-07-01, 2026-10-01)
 
     **The end is OUT**, and that is not a detail: with an inclusive `between`, a row saved at
     00:00:00 on the first of the next month would fall in both buckets, and the counts of the
@@ -405,6 +426,10 @@ def bucket_range(grain: str, value: str) -> tuple[datetime, datetime]:
         year, month = (int(part) for part in value.split("-"))
         start = datetime(year, month, 1)
         return start, datetime(year + (1 if month == 12 else 0), (month % 12) + 1, 1)
+    if grain == "quarter":
+        year, quarter = (int(part) for part in value.split("-Q"))
+        start = datetime(year, 3 * (quarter - 1) + 1, 1)
+        return start, datetime(year + (1 if quarter == 4 else 0), (3 * quarter) % 12 + 1, 1)
     if grain == "week":
         # ISO: "2026-W01" is the week holding the year's first Thursday, Monday to Sunday.
         year, week = (int(part) for part in value.split("-W"))

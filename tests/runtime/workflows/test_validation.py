@@ -113,7 +113,7 @@ def test_a_condition_on_a_reference_that_does_not_exist_is_refused():
             {
                 "id": "x",
                 "fail": "no",
-                "when": {"field": "$steps.ghost.total", "operator": ">", "value": 1},
+                "when": {"field": "steps.ghost.total", "operator": ">", "value": 1},
             }
         )
     )
@@ -129,7 +129,7 @@ def test_every_issue_comes_back_at_once():
             {
                 "id": "c",
                 "fail": "x",
-                "when": {"field": "$input.nope", "operator": "=", "value": 1},
+                "when": {"field": "input.nope", "operator": "=", "value": 1},
             },
         )
     )
@@ -149,7 +149,7 @@ def test_a_condition_in_a_grammar_criteria_does_not_speak_is_an_issue_not_a_cras
             {
                 "id": "x",
                 "fail": "no",
-                "when": {"and": [{"field": "$input.order_id", "operator": "=", "value": 1}]},
+                "when": {"and": [{"field": "input.order_id", "operator": "=", "value": 1}]},
             }
         )
     )
@@ -170,14 +170,29 @@ def test_a_wrong_input_type_does_not_hide_the_issues_of_the_steps():
     assert any("CommandNope" in one for one in issues)
 
 
-def test_the_value_of_a_condition_is_a_literal_never_a_reference():
+def test_the_value_of_a_condition_may_name_another_path_and_it_is_checked_like_a_field():
+    param = {"$": "param", "name": "input.nope"}
+    issues = _issues(
+        _with_steps(
+            {
+                "id": "x",
+                "fail": "no",
+                "when": {"field": "input.order_id", "operator": "=", "value": param},
+            }
+        )
+    )
+
+    assert any(one.startswith("x:when") and "$input.nope" in one for one in issues)
+
+
+def test_a_string_in_a_value_is_only_a_literal():
     issues = _issues(
         _with_steps(
             {
                 "id": "x",
                 "fail": "no",
                 "when": {
-                    "field": "$input.order_id",
+                    "field": "input.order_id",
                     "operator": "=",
                     "value": "$input.order_id",
                 },
@@ -185,7 +200,21 @@ def test_the_value_of_a_condition_is_a_literal_never_a_reference():
         )
     )
 
-    assert any(one.startswith("x:when") and "literal" in one for one in issues)
+    assert issues == []
+
+
+def test_a_field_written_with_the_old_dollar_is_told_how_to_be_written():
+    issues = _issues(
+        _with_steps(
+            {
+                "id": "x",
+                "fail": "no",
+                "when": {"field": "$input.order_id", "operator": "=", "value": 1},
+            }
+        )
+    )
+
+    assert any("written without the $" in one and "input.order_id" in one for one in issues)
 
 
 def test_a_field_on_a_step_of_another_kind_is_refused():
@@ -213,7 +242,7 @@ def test_a_node_that_mixes_all_and_any_is_refused_not_half_read():
                 "fail": "no",
                 "when": {
                     "all": [],
-                    "any": [{"field": "$steps.ghost.total", "operator": ">", "value": 1}],
+                    "any": [{"field": "steps.ghost.total", "operator": ">", "value": 1}],
                 },
             }
         )

@@ -184,6 +184,12 @@ def _kind_of_error(error: type) -> FailureKind:
     return FailureKind.DOMAIN
 
 
+def _declares_once(handler: type) -> bool:
+    from sincpro_framework.data_layer.caching import declares_once
+
+    return declares_once(handler)
+
+
 def problem_responses(
     bus: UseFramework, command: type, errors: Iterable[type] = ()
 ) -> dict[int | str, dict[str, Any]]:
@@ -211,12 +217,6 @@ def problem_responses(
         held["description"] = "; ".join(one for one in (held["description"], reason) if one)
         described[status] = held
     return described
-
-
-def _declares_once(handler: type) -> bool:
-    from sincpro_framework.data_layer.caching import declares_once
-
-    return declares_once(handler)
 
 
 class _PathIntoBody(APIRoute):
@@ -365,17 +365,6 @@ class FastApiWire(Wire[RestBinding]):
 
     # Building
 
-    def build(self, surface: Sequence[Resolved[RestBinding]]) -> dict[str, APIRouter]:
-        """One `APIRouter` per bounded context, its group's prefix on it."""
-        routers: dict[str, APIRouter] = {}
-        for one in surface:
-            alias = one.operation.alias
-            router = routers.get(alias)
-            if router is None:
-                router = routers[alias] = APIRouter(prefix=self.prefix_of(one.group))
-            self.add_route(router, one)
-        return routers
-
     def add_route(self, router: APIRouter, resolved: Resolved[RestBinding]) -> None:
         operation, binding = resolved.operation, resolved.binding
         command = operation.command
@@ -428,6 +417,17 @@ class FastApiWire(Wire[RestBinding]):
                 ),
                 **common,
             )
+
+    def build(self, surface: Sequence[Resolved[RestBinding]]) -> dict[str, APIRouter]:
+        """One `APIRouter` per bounded context, its group's prefix on it."""
+        routers: dict[str, APIRouter] = {}
+        for one in surface:
+            alias = one.operation.alias
+            router = routers.get(alias)
+            if router is None:
+                router = routers[alias] = APIRouter(prefix=self.prefix_of(one.group))
+            self.add_route(router, one)
+        return routers
 
 
 def _location(request: Request, template: str, answer: Any, prefix: str) -> str:

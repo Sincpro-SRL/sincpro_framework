@@ -75,23 +75,3 @@ def resolve_all(value: Any, scope: Mapping[str, Any]) -> Any:
         return [resolve_all(item, scope) for item in value]
     found = reference_in(value)
     return resolve(found, scope) if found else value
-
-
-def condition_fields(condition: Mapping[str, Any]) -> list[str]:
-    """Every `field` of a condition in the grammar of `Criteria` — its references."""
-    if "field" in condition:
-        return [str(condition["field"])]
-    if "negate" in condition:
-        return condition_fields(condition["negate"])
-    parts = [*condition.get("all", []), *condition.get("any", [])]
-    return [one for part in parts for one in condition_fields(part)]
-
-
-def condition_values(condition: Mapping[str, Any]) -> list[Any]:
-    """Every `value` of a condition — each a literal."""
-    if "field" in condition:
-        return [condition.get("value")]
-    if "negate" in condition:
-        return condition_values(condition["negate"])
-    parts = [*condition.get("all", []), *condition.get("any", [])]
-    return [one for part in parts for one in condition_values(part)]

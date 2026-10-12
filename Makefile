@@ -153,6 +153,23 @@ criteria-parity:
 	@poetry run python tests/ddd/criteria/test_criteria_parity.py
 	@echo "   the TypeScript package reads tests/ddd/criteria/criteria-parity.json: copy it over when it changes"
 
+# What a client needs to speak the filter language: the schema, the cases of what a filter answers
+# and the cases of what a dynamic value reads to. Written here, committed, and copied to the
+# TypeScript package when it is next door (CRITERIA_TS) — a file it produced itself would prove
+# only that the code agrees with itself.
+CRITERIA_TS ?= ../sincpro_criteria/packages/criteria
+
+criteria-contract:
+	@poetry run python tests/ddd/criteria/test_criteria_parity.py
+	@poetry run python tests/ddd/criteria/test_criteria_contract.py
+	@if [ -d "$(CRITERIA_TS)" ]; then \
+		cp tests/ddd/criteria/criteria.schema.json "$(CRITERIA_TS)/criteria.schema.json"; \
+		cp tests/ddd/criteria/criteria-parity.json tests/ddd/criteria/criteria-resolution.json "$(CRITERIA_TS)/tests/"; \
+		echo "   copied the contract into $(CRITERIA_TS)"; \
+	else \
+		echo "   $(CRITERIA_TS) not found: copy criteria.schema.json, criteria-parity.json and criteria-resolution.json by hand"; \
+	fi
+
 test:
 	poetry run pytest tests -m "not realworld" $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml
 
@@ -184,5 +201,5 @@ test_one:
 clean-coverage:
 	rm -rf htmlcov coverage.xml .coverage .coverage.*
 
-.PHONY: install start clean criteria-parity test test-realworld test-stress test-all test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
+.PHONY: install start clean criteria-parity criteria-contract test test-realworld test-stress test-all test-coverage test-coverage-open clean-coverage build format format-yaml format-all \
 	docs docs-init docs-view check-openwiki skills-install skills-update skills-validate

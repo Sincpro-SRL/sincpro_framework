@@ -47,7 +47,7 @@ a client builds the next criteria from the previous answer without a schema of i
 every project started and how every project ended with sixty methods and no pagination. And a
 full query DSL, which is a second SQL nobody can type-check.
 
-`ddd/criteria/criteria.py`, `orm/sqlalchemy/entrypoint/repository.py`, `orm/sqlalchemy/services/sql_translator.py`.
+`ddd/criteria/domain/criteria.py`, `orm/sqlalchemy/entrypoint/repository.py`, `orm/sqlalchemy/services/sql_translator.py`.
 
 ---
 
@@ -106,7 +106,7 @@ a `dataset_id` is a scalar, so the client already has it. Naming a bare relation
 record. The identity always travels; a record whose id did not come cannot be opened, refreshed
 or cached. `None` and `{}` are opposite answers: "asked nothing" and "asked, nothing survived".
 
-`ddd/criteria/criteria.py` (`Specification`), `Meta.only`, `ResponsePaginatedQuery.of`.
+`ddd/criteria/domain/criteria.py` (`Specification`), `Meta.only`, `ResponsePaginatedQuery.of`.
 
 ---
 

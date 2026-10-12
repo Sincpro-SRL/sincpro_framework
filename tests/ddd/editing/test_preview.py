@@ -17,11 +17,11 @@ from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRep
 from sincpro_framework.ddd import (
     AggregateNotFound,
     ArchivableMixin,
+    Condition,
     Criteria,
     Derivations,
     Derive,
     EntityReads,
-    Is,
     Presentation,
     Preview,
     ResponsePreview,
@@ -82,10 +82,10 @@ class Invoice(Entity):
     presentation = Presentation["Invoice"](
         readonly=lambda i: (i.number, i.subtotal, i.total),
         required_when=lambda i: (
-            When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+            When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
         ),
         visible_when=lambda i: (
-            When(Is(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+            When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
         ),
     )
 

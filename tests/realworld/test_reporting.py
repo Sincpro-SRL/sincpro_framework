@@ -14,12 +14,13 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    Grain,
     Grouping,
     Level,
     Measure,
+    Pagination,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Pagination
 from sincpro_framework.ddd.entity.entity_meta import FieldType, Operator
 
 from .ledger import ZERO, Account, Line, Lines
@@ -34,7 +35,7 @@ FOUR_LEVELS = Criteria(
             Level(field="journal_id"),
             Level(field="account_id"),
             Level(field="partner_id"),
-            Level(field="posted_at", grain="month"),
+            Level(field="posted_at", grain=Grain.MONTH),
         ),
         measures={
             "debit": Measure(function="sum", field="debit"),
@@ -231,7 +232,7 @@ def test_a_pivot_of_journals_by_month_matches_a_hand_written_group_by(
         matrix = ledger.pivot(
             Line,
             rows=["journal_id"],
-            columns=[Level(field="posted_at", grain="month")],
+            columns=[Level(field="posted_at", grain=Grain.MONTH)],
             criteria=Criteria(where=POSTED),
             debit=("sum", "debit"),
         )

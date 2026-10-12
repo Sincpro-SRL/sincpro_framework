@@ -157,6 +157,19 @@ class Catalog:
         self.revision += 1
         return self
 
+    def _json_safe(
+        self, entries: list[PackedFeatureOrAppService]
+    ) -> list[PackedFeatureOrAppService]:
+        """Context: derived from the packed entries, so a schema is computed once whichever
+        view a wire asks for first."""
+        result: list[PackedFeatureOrAppService] = []
+        for entry in entries:
+            if json_schema.is_binary_free(entry.json_schema, entry.dto):
+                result.append(entry)
+                continue
+            logger.warning("Skipping non-JSON Feature/ApplicationService [%s]", entry.name)
+        return result
+
     def _packed_use_cases(
         self, filter_binaries_schema: bool
     ) -> list[PackedFeatureOrAppService]:
@@ -176,19 +189,6 @@ class Catalog:
             *features,
             *app_services,
         ]
-
-    def _json_safe(
-        self, entries: list[PackedFeatureOrAppService]
-    ) -> list[PackedFeatureOrAppService]:
-        """Context: derived from the packed entries, so a schema is computed once whichever
-        view a wire asks for first."""
-        result: list[PackedFeatureOrAppService] = []
-        for entry in entries:
-            if json_schema.is_binary_free(entry.json_schema, entry.dto):
-                result.append(entry)
-                continue
-            logger.warning("Skipping non-JSON Feature/ApplicationService [%s]", entry.name)
-        return result
 
     def get_scalar_use_cases(
         self, filter_binaries_schema: bool = False

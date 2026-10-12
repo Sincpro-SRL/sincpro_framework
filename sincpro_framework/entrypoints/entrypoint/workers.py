@@ -89,6 +89,14 @@ class Process:
         except Exception:
             logger.exception(f"{type(loop).__name__} stopped")
 
+    def stop(self) -> None:
+        """Ask every loop to return, and wait until each thread has."""
+        self._stopped.set()
+        for loop in self._loops:
+            loop.stop()
+        for thread in self._threads:
+            thread.join()
+
     def _arm(self) -> dict[int, Any]:
         def on_signal(signum: int, frame: FrameType | None) -> None:
             logger.info(f"process stopping on signal {signum}")
@@ -116,11 +124,3 @@ class Process:
         finally:
             self.stop()
             self._disarm(previous)
-
-    def stop(self) -> None:
-        """Ask every loop to return, and wait until each thread has."""
-        self._stopped.set()
-        for loop in self._loops:
-            loop.stop()
-        for thread in self._threads:
-            thread.join()

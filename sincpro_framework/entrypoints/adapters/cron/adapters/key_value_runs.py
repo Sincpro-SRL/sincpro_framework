@@ -44,6 +44,9 @@ class KeyValueRuns(CronRuns):
     def _success_key(self, name: str) -> str:
         return f"{self.prefix}:success:{name}"
 
+    def last(self, name: str) -> Run | None:
+        return _decoded(self.store.get(self._last_key(name)))
+
     def claim(self, name: str, scheduled_for: datetime, key: str = "") -> bool:
         run = Run(
             name=name, scheduled_for=scheduled_for, key=key, started_at=datetime.now(UTC)
@@ -84,9 +87,6 @@ class KeyValueRuns(CronRuns):
             and latest.finished_at is None
             and latest.scheduled_for >= since
         )
-
-    def last(self, name: str) -> Run | None:
-        return _decoded(self.store.get(self._last_key(name)))
 
     def last_success(self, name: str) -> Run | None:
         return _decoded(self.store.get(self._success_key(name)))

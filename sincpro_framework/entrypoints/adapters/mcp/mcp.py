@@ -44,14 +44,6 @@ def _dto_parameters(
         yield field.name, field.type, default, factory
 
 
-def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | None" = None):
-    """A catalog entry as a function FastMCP registers — `tool_function` over its DTO, name,
-    description and bound run."""
-    return tool_function(
-        operation.dto, operation.name, operation.description, operation.run, bus
-    )
-
-
 def tool_function(
     dto: Any,
     name: str,
@@ -103,3 +95,11 @@ def tool_function(
     tool_fn.__annotations__ = annotations
     setattr(tool_fn, "__signature__", inspect.Signature(parameters))
     return tool_fn
+
+
+def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | None" = None):
+    """A catalog entry as a function FastMCP registers — `tool_function` over its DTO, name,
+    description and bound run."""
+    return tool_function(
+        operation.dto, operation.name, operation.description, operation.run, bus
+    )

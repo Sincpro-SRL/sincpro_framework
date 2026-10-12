@@ -21,8 +21,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sincpro_framework.ddd.criteria import expression_from
-from sincpro_framework.ddd.criteria.evaluate import matches
+from sincpro_framework.ddd.criteria import expression_from, matches
 
 PARITY = Path(__file__).resolve().parent / "criteria-parity.json"
 

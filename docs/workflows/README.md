@@ -89,7 +89,7 @@ bill_order = {
             "id": "approval",
             "execute": "CommandRequestApproval",
             "input": {"invoice_id": "$steps.invoice.invoice_id"},
-            "when": {"field": "$steps.order.total", "operator": ">=", "value": 10000},
+            "when": {"field": "steps.order.total", "operator": ">=", "value": 10000},
         },
     ],
     "output": {"invoice_id": "$steps.invoice.invoice_id"},
@@ -105,20 +105,24 @@ Path("workflows/bill_order.json").write_text(json.dumps(bill_order, indent=2))
 | `code` + `returns` | a snippet: reads `input`, `steps` (and `item`), returns a mapping with the fields it declares |
 | `for_each` + `steps` | runs its steps once per item of a list; `$item` is the item; answers `{"items": [...]}` |
 | `fail` | stops the run with its message — a veto |
-| `when` (on any step) | a condition in the grammar of `Criteria`, its fields references; not holding, the step is skipped |
+| `when` (on any step) | a condition in the grammar of `Criteria`, evaluated over what the run holds; not holding, the step is skipped |
 
 A value is a literal or a **whole** reference — `$input.<field>`, `$steps.<id>.<field>`,
 `$item.<field>`. There is no templating and no function inside a value: computing is a
 snippet's job, so every reference is checked against the schemas before anything runs.
 
 A `when` is one condition, or several with `all`, `any` and `negate` — the same tree a
-`Criteria` filter is:
+`Criteria` filter is. The run is the record it is evaluated over: a condition's `field` is a path
+into it, **without the `$`** (`steps.order.total`, `input.approved`, `item.quantity`), and its value
+is a literal or `{"$": "param", "name": "steps.order.total"}` to compare it with another path.
+An `all` or `any` stops at the first part that decides, so a path that was never reached is not
+asked for:
 
 ```python
 needs_approval = {
     "all": [
-        {"field": "$steps.order.total", "operator": ">", "value": 50000},
-        {"negate": {"field": "$input.approved", "operator": "=", "value": True}},
+        {"field": "steps.order.total", "operator": ">", "value": 50000},
+        {"negate": {"field": "input.approved", "operator": "=", "value": True}},
     ]
 }
 ```

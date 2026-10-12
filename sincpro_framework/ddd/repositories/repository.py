@@ -101,6 +101,10 @@ class _Hooks:
         _running.reset(self._token)
 
 
+def _is_hook_class(given: Any) -> bool:
+    return isinstance(given, type) and issubclass(given, Hook)
+
+
 def refuse_wiring_as_a_record(records: "tuple[Any, ...]") -> None:
     """Refuses wiring that was handed in where aggregates go.
 
@@ -119,10 +123,6 @@ def refuse_wiring_as_a_record(records: "tuple[Any, ...]") -> None:
             f"{named} was passed where aggregates go, so it would be stored as a record and "
             "never run — write it as `hooks=` instead"
         )
-
-
-def _is_hook_class(given: Any) -> bool:
-    return isinstance(given, type) and issubclass(given, Hook)
 
 
 def refuse_writing_in_preview(call: str) -> None:
@@ -190,6 +190,14 @@ class IRepository(ReadsAggregates, WritesAggregates):
         self._guard: "IRepository" = guard if guard is not None else self
         self._chain: HookChain = guard._chain if guard is not None else HookChain(hooks)
 
+    def _running_hooks(self) -> "_Hooks":
+        return _Hooks(self)
+
+    def after_read(self, record: Any) -> Any:
+        """Every aggregate this store hands back, before the caller sees it. Answer a record
+        to put in its place, or nothing to leave it alone. Empty here on purpose."""
+        return record
+
     def _read(self, record: Any) -> Any:
         """The chain's `after_read`, then the store's own hook — which closes the moment, so
         what it records is the record as everything else left it."""
@@ -215,6 +223,16 @@ class IRepository(ReadsAggregates, WritesAggregates):
             self._chain.fire(moment, record)
             getattr(self, moment)(record)
 
+    def after_search(self, collection: Any) -> Any:
+        """Each page a reading answered, once. Answer a collection to put in its place, or
+        nothing to leave it alone. Empty here on purpose.
+
+        **Once for the page, not once per row** — that is `after_read`, which still fires for
+        every aggregate in it. A rule about the set rather than about an aggregate belongs here:
+        counting what a reading cost, or refusing a page that came back too wide.
+        """
+        return collection
+
     def _searched(self, target: type, collection: Any) -> Any:
         """`after_search`, once for the page — the chain's hooks for this aggregate, then the
         store's own hook, the same order everything else runs in."""
@@ -227,9 +245,6 @@ class IRepository(ReadsAggregates, WritesAggregates):
             answered = self.after_search(collection)
             collection = collection if answered is None else answered
         return collection
-
-    def _running_hooks(self) -> "_Hooks":
-        return _Hooks(self)
 
     def _before_writes(self, records: list[Any]) -> list[bool]:
         """Every before-moment for a batch, and what it worked out about each record.
@@ -289,11 +304,6 @@ class IRepository(ReadsAggregates, WritesAggregates):
                 "Feature"
             )
 
-    def after_read(self, record: Any) -> Any:
-        """Every aggregate this store hands back, before the caller sees it. Answer a record
-        to put in its place, or nothing to leave it alone. Empty here on purpose."""
-        return record
-
     def before_save(self, record: Any) -> None:
         """Each aggregate about to be written. Raise to refuse the write."""
 
@@ -317,16 +327,6 @@ class IRepository(ReadsAggregates, WritesAggregates):
         aggregate cannot tell which of those it came from.
         """
         return record.record_changes() if hasattr(record, "record_changes") else None
-
-    def after_search(self, collection: Any) -> Any:
-        """Each page a reading answered, once. Answer a collection to put in its place, or
-        nothing to leave it alone. Empty here on purpose.
-
-        **Once for the page, not once per row** — that is `after_read`, which still fires for
-        every aggregate in it. A rule about the set rather than about an aggregate belongs here:
-        counting what a reading cost, or refusing a page that came back too wide.
-        """
-        return collection
 
     def before_create(self, record: Any) -> None:
         """…and this one had never been stored. Fired after `before_save`, never instead."""

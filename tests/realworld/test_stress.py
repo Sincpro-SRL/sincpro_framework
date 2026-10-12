@@ -10,13 +10,14 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    Grain,
     Grouping,
     Level,
     Measure,
     Operator,
+    Pagination,
     parse_order,
 )
-from sincpro_framework.ddd.criteria.pagination import Pagination
 
 from .contexts import CommandRebuildBalance, ResponseBalances
 from .ledger import Account, Line, Lines
@@ -79,7 +80,7 @@ def test_a_pivot_of_journals_by_month(ledger: Repository, census: Census, timed)
         matrix = ledger.pivot(
             Line,
             rows=["journal_id"],
-            columns=[Level(field="posted_at", grain="month")],
+            columns=[Level(field="posted_at", grain=Grain.MONTH)],
             criteria=Criteria(where=POPULATION),
             debit=("sum", "debit"),
         )

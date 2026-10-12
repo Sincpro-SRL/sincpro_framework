@@ -103,6 +103,11 @@ class Context(dict[Any, Any]):
         super().__setitem__(key, value)
         self._identity_written(key, value)
 
+    @property
+    def execution(self) -> Execution | None:
+        """The execution this node is, or stands in."""
+        return next((node.execution for node in self._node.chain() if node.execution), None)
+
     def _identity_written(self, key: Any, value: Any) -> None:
         """`correlation_id` names the flow from here on: the execution in play takes it. The other
         two are minted by the framework — written here they only name what a root is handed.
@@ -162,10 +167,10 @@ class Context(dict[Any, Any]):
         super().clear()
         super().update(values)
 
+    # --- writing this node ---------------------------------------------------------------------
+
     def clear(self) -> None:
         self.replace({})
-
-    # --- writing this node ---------------------------------------------------------------------
 
     def set(self, key: Any, value: Any) -> None:
         """This node says `key` — what it runs afterwards sees it; its caller and siblings do not."""
@@ -182,6 +187,43 @@ class Context(dict[Any, Any]):
         self._node.values.unset(key)
         super().clear()
         super().update(self._node.flattened())
+
+    # --- the tree -------------------------------------------------------------------------------
+
+    def store(self, given: ContextStore | None = None) -> ContextStore | None:
+        """The store a keep or a restore uses: the one given, else the nearest kept under
+        `ContextStore` — in a scope, on a bus, in the process."""
+        if given is not None:
+            return given
+        return self.get(ContextStore)
+
+    def _required_store(self, given: ContextStore | None) -> ContextStore:
+        found = self.store(given)
+        if found is None:
+            raise LookupError(
+                "no ContextStore to keep or restore with: pass store=..., or set one where it "
+                "should apply — use_context().root.set(ContextStore, store) for the process, "
+                "bus.context_store(store) for a bus"
+            )
+        return found
+
+    def restored(
+        self, keys: "str | list[str] | None", store: ContextStore | None = None
+    ) -> dict[str, Any]:
+        """What a store kept under each of `keys`, merged in order — the last one wins."""
+        if not keys:
+            return {}
+        found = self._required_store(store)
+        merged: dict[str, Any] = {}
+        for key in [keys] if isinstance(keys, str) else keys:
+            kept = found.restore(key)
+            if kept is None:
+                logger.warning(
+                    f"the context '{key}' was restored, but nothing is kept under it"
+                )
+                continue
+            merged.update(kept)
+        return standardized(merged)
 
     @contextmanager
     def scoped(
@@ -207,8 +249,6 @@ class Context(dict[Any, Any]):
             node.execution = running
         with entered(shared(node)):
             yield Context(node, self._owner)
-
-    # --- the tree -------------------------------------------------------------------------------
 
     @property
     def level(self) -> Level:
@@ -258,15 +298,12 @@ class Context(dict[Any, Any]):
     def hook(self) -> "Context | None":
         return self.at(Level.HOOK)
 
+    # --- beyond the process ----------------------------------------------------------------------
+
     @property
     def own(self) -> Mapping[Any, Any]:
         """What this node says itself."""
         return self._node.own
-
-    @property
-    def execution(self) -> Execution | None:
-        """The execution this node is, or stands in."""
-        return next((node.execution for node in self._node.chain() if node.execution), None)
 
     def origin(self, key: Any) -> Origin | None:
         """Where the value of `key` came from — `None` when nothing says it."""
@@ -276,8 +313,6 @@ class Context(dict[Any, Any]):
     def lineage(self) -> list["Context"]:
         """This node and every one above it, up to the process."""
         return [Context(node, self._owner) for node in self._node.chain()]
-
-    # --- beyond the process ----------------------------------------------------------------------
 
     def to_client(self) -> dict[str, Any]:
         """What a client — the frontend — may hold and send back: the travelling keys, a `Secret`
@@ -302,13 +337,6 @@ class Context(dict[Any, Any]):
         super().clear()
         super().update(ROOT.flattened())
 
-    def store(self, given: ContextStore | None = None) -> ContextStore | None:
-        """The store a keep or a restore uses: the one given, else the nearest kept under
-        `ContextStore` — in a scope, on a bus, in the process."""
-        if given is not None:
-            return given
-        return self.get(ContextStore)
-
     def keep(
         self, key: str, ttl: timedelta | None = None, store: ContextStore | None = None
     ) -> None:
@@ -317,24 +345,6 @@ class Context(dict[Any, Any]):
         found = self._required_store(store)
         found.keep(key, handed_on(_named(self)), ttl)
 
-    def restored(
-        self, keys: "str | list[str] | None", store: ContextStore | None = None
-    ) -> dict[str, Any]:
-        """What a store kept under each of `keys`, merged in order — the last one wins."""
-        if not keys:
-            return {}
-        found = self._required_store(store)
-        merged: dict[str, Any] = {}
-        for key in [keys] if isinstance(keys, str) else keys:
-            kept = found.restore(key)
-            if kept is None:
-                logger.warning(
-                    f"the context '{key}' was restored, but nothing is kept under it"
-                )
-                continue
-            merged.update(kept)
-        return standardized(merged)
-
     def drafts(
         self, by: Sequence[str] = BY_USER, store: ContextStore | None = None
     ) -> Drafts:
@@ -342,16 +352,6 @@ class Context(dict[Any, Any]):
         (`["session_id"]`) — kept where the context is kept: the store given, else the nearest
         `ContextStore`."""
         return Drafts(self._required_store(store).drafts(), self, by)
-
-    def _required_store(self, given: ContextStore | None) -> ContextStore:
-        found = self.store(given)
-        if found is None:
-            raise LookupError(
-                "no ContextStore to keep or restore with: pass store=..., or set one where it "
-                "should apply — use_context().root.set(ContextStore, store) for the process, "
-                "bus.context_store(store) for a bus"
-            )
-        return found
 
 
 def _named(values: Mapping[Any, Any]) -> dict[str, Any]:

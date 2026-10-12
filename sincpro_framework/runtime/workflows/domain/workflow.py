@@ -8,7 +8,7 @@
         "input": {"order_id": "$steps.order.order_id", "total": "$steps.order.total"}},
        {"id": "approval", "execute": "CommandRequestApproval",
         "input": {"invoice_id": "$steps.invoice.invoice_id"},
-        "when": {"field": "$steps.order.total", "operator": ">=", "value": 10000}}],
+        "when": {"field": "steps.order.total", "operator": ">=", "value": 10000}}],
      "output": {"invoice_id": "$steps.invoice.invoice_id"}}
 
 Context: a step is one of four kinds — `execute` a Command by name, run `code` (a snippet), repeat
@@ -63,8 +63,9 @@ class Step(DataTransferObject):
     """Stop the run with this message — a veto, a business rule that does not hold."""
 
     when: dict[str, Any] | None = None
-    """A condition in the grammar of `Criteria` whose fields are references; the step is skipped
-    when it does not hold."""
+    """A condition in the grammar of `Criteria`, evaluated over the run: a `field` is a path into it
+    (`steps.order.total`) and a value may be a `param` naming another; the step is skipped when it
+    does not hold."""
 
     @property
     def kinds(self) -> list[StepKind]:

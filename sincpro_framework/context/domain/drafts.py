@@ -74,6 +74,11 @@ class DraftStore(ABC):
     together here, so every store keys a draft the same way.
     """
 
+    @abstractmethod
+    def _keep(
+        self, key: str, values: Mapping[str, Any], origin_version: int, expected: int
+    ) -> Draft: ...
+
     def keep(
         self,
         owner: str,
@@ -93,10 +98,16 @@ class DraftStore(ABC):
         """
         return self._keep(f"{owner}/{subject}", values, origin_version, expected)
 
+    @abstractmethod
+    def _read(self, key: str) -> Draft | None: ...
+
     def read(self, owner: str, subject: str) -> Draft | None:
         """The live draft of `subject` for `owner`, or `None` when there is none, it was
         discarded or it expired."""
         return self._read(f"{owner}/{subject}")
+
+    @abstractmethod
+    def _discard(self, key: str) -> None: ...
 
     def discard(self, owner: str, subject: str) -> None:
         """Drop the draft of `subject` for `owner`; one with none is not an error."""
@@ -105,17 +116,6 @@ class DraftStore(ABC):
     @abstractmethod
     def subjects(self, owner: str) -> list[str]:
         """What `owner` has a live draft of, the most recently kept first."""
-
-    @abstractmethod
-    def _keep(
-        self, key: str, values: Mapping[str, Any], origin_version: int, expected: int
-    ) -> Draft: ...
-
-    @abstractmethod
-    def _read(self, key: str) -> Draft | None: ...
-
-    @abstractmethod
-    def _discard(self, key: str) -> None: ...
 
     def _milliseconds(self, moment: datetime) -> int:
         """Where a chain started from nothing begins: the clock, above any version a chain that

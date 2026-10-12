@@ -94,16 +94,6 @@ class Workflows:
         response = self.bus(operation.input.model_validate(fields))
         return response.model_dump() if response is not None else {}
 
-    def _workflow(self, name: str) -> tuple[Workflow, str]:
-        current = self.current
-        if name not in current.workflows:
-            known = ", ".join(current.workflows) or "none"
-            raise WorkflowFailed(
-                f"no workflow {name} — the ones in force are {known}",
-                WorkflowRun(workflow=name, version=current.version),
-            )
-        return current.workflows[name], current.version
-
     def _load(self) -> tuple[WorkflowSet | None, list[Issue]]:
         """The source's set, validated as a whole against the bus — or its issues."""
         version = self.source.version()
@@ -141,6 +131,16 @@ class Workflows:
                 raise WorkflowsInvalid(issues)
             self._current = loaded
         return self._current
+
+    def _workflow(self, name: str) -> tuple[Workflow, str]:
+        current = self.current
+        if name not in current.workflows:
+            known = ", ".join(current.workflows) or "none"
+            raise WorkflowFailed(
+                f"no workflow {name} — the ones in force are {known}",
+                WorkflowRun(workflow=name, version=current.version),
+            )
+        return current.workflows[name], current.version
 
     def reload(self) -> list[Issue]:
         """Load the source, validate the whole set against the bus, and put it in force — or

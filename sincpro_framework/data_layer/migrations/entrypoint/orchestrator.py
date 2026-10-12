@@ -150,6 +150,15 @@ class Migrations:
     def _manifest(self, context: ContextMigrations) -> Manifest:
         return read_manifest(context.folder, context.name)
 
+    def _chains(self) -> list[tuple[Chain, list[Step]]]:
+        chains: list[tuple[Chain, list[Step]]] = []
+        for context in self.contexts.values():
+            manifest = self._manifest(context)
+            for store in context.engines:
+                entry = manifest.stores.get(store)
+                chains.append((context.chain(store), entry.steps if entry else []))
+        return chains
+
     def _integrity_problems(self) -> list[str]:
         """What the manifests say is wrong with the code itself — no store is read."""
         problems: list[str] = []
@@ -194,15 +203,6 @@ class Migrations:
         problems = self._integrity_problems()
         if problems:
             raise MigrationRefused("; ".join(problems))
-
-    def _chains(self) -> list[tuple[Chain, list[Step]]]:
-        chains: list[tuple[Chain, list[Step]]] = []
-        for context in self.contexts.values():
-            manifest = self._manifest(context)
-            for store in context.engines:
-                entry = manifest.stores.get(store)
-                chains.append((context.chain(store), entry.steps if entry else []))
-        return chains
 
     def _statuses(self, chains: list[tuple[Chain, list[Step]]]) -> dict[str, ChainStatus]:
         statuses: dict[str, ChainStatus] = {}

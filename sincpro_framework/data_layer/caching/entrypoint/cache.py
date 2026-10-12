@@ -292,6 +292,13 @@ class Cache:
         schema = "" if codec is None else codec.schema
         return f"{prefix}value:{key_of(key, schema)}"
 
+    def _codec_required(self, codec: Codec[Any] | None) -> Codec[Any]:
+        if codec is None:
+            raise ProgrammingError(
+                "a Cache on a shared store keeps bytes: pass the Codec its values are kept with"
+            )
+        return codec
+
     def _tier(self, codec: Codec[Any] | None) -> _Tier:
         if self.store is None:
             return self._process
@@ -512,10 +519,3 @@ class Cache:
         store_tier = self._tier(codec)
         self._process.forget(hashed)
         store_tier.forget(hashed)
-
-    def _codec_required(self, codec: Codec[Any] | None) -> Codec[Any]:
-        if codec is None:
-            raise ProgrammingError(
-                "a Cache on a shared store keeps bytes: pass the Codec its values are kept with"
-            )
-        return codec
