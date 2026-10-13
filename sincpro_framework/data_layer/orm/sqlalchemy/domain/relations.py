@@ -112,6 +112,7 @@ class Relation(relations.Relation):
         related_field: str | None = None,
         owned: bool = True,
         orphans: Orphans = Orphans.REFUSE,
+        many: bool | None = None,
     ) -> None:
         super().__init__(
             kind,
@@ -121,6 +122,7 @@ class Relation(relations.Relation):
             scope=scope,
             parent_field=parent_field,
             related_field=related_field,
+            many=many,
         )
         self.through = through
         self.related_key = related_key
@@ -137,8 +139,13 @@ class Relation(relations.Relation):
         related_field: str | None = None,
         owned: bool = True,
         orphans: Orphans = Orphans.REFUSE,
+        many: bool | None = None,
     ) -> "Relation":
         """Same database: a column on one side holds the other side's identity.
+
+        `many` says the cardinality when the class cannot: an extension installing a relation on an
+        entity it does not own passes `many=False` and the attribute is typed `Related | None`,
+        where it used to write the entity's `__annotations__` itself.
 
         **A to-many is part of its root unless it says otherwise** — Evans' aggregate: `save`
         writes the children with the root's key on them, an assignment over a whole reading
@@ -159,6 +166,7 @@ class Relation(relations.Relation):
             related_field=related_field,
             owned=owned,
             orphans=orphans,
+            many=many,
         )
 
     @classmethod

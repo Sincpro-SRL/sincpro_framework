@@ -41,7 +41,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import (
     read_before,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
-    TYPE_ATTRIBUTE,
+    HIDDEN,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.data_layer.orm.sqlalchemy.services.upsert import unique_on
@@ -128,7 +128,7 @@ def _plain_column(mapper: Any) -> str | None:
         if (
             column.key not in keys
             and column.columns[0].key != version
-            and column.key != TYPE_ATTRIBUTE
+            and column.key not in HIDDEN
         ):
             return column.key
     return None

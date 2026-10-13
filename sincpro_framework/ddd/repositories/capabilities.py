@@ -6,6 +6,7 @@ the capabilities a store adds when it can honour them.
     WritesAggregates     save · remove · archive                               the baseline
     Analyzes             distinct · measures · group_by · group_by_levels
     WritesInBulk         upsert · update_all · remove_all
+    Extends              extend · reclassify
     Transacts            context · after_commit · after_rollback
 
     StoreCapabilities    what varies by engine inside one store: row locks, savepoints…
@@ -338,3 +339,19 @@ class Transacts(ABC):
     @abstractmethod
     def after_rollback(self, callback: Callable[[], Any]) -> None:
         """Runs `callback` once the unit of work was undone."""
+
+
+class Extends(ABC):
+    """A store that keeps what an extension adds apart from the entity, and can give a stored
+    record the rows of one it does not have yet."""
+
+    @abstractmethod
+    def extend(self, record: Any, extension: type) -> None:
+        """Gives the stored `record` the rows of `extension` it lacks, each holding the defaults
+        of its fields: the levels between the record's class and `extension`. The record is then
+        read again as the extension, and saved as any other. Nothing else changes."""
+
+    @abstractmethod
+    def reclassify(self, entity: type) -> int:
+        """Writes the stored type of every row of an entity whose store keeps it, worked out
+        from the extension rows that exist. Answers how many rows it set."""

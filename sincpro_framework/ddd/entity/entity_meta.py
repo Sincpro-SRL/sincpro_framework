@@ -398,6 +398,10 @@ class FieldMeta(DataTransferObject):
     computed: bool = False
     """The field is computed (`computed(sql=…)`), not a column: it is read-only and is filtered,
     ordered and grouped like one."""
+    owner: str | None = None
+    """The extension that adds this field, by class name (`MoveDelivery`); `None` for a field the
+    entity has itself. An extension's field may be absent on a record that has no extension, so
+    it is nullable and not sortable here whatever its column says."""
 
     ops: tuple[Operator, ...]
     """Included although derivable from `type`, so a consumer never has to carry the table."""

@@ -671,7 +671,7 @@ class Reading(Store):
             meta.field(field)
 
         clause, _, _, _ = self.prepare(model, criteria)
-        columns = [getattr(model, field) for field in by]
+        columns = [sql_translator.column_attribute(model, field) for field in by]
         statement = select(*columns, func.count().label("count")).select_from(model)
         if clause is not None:
             statement = statement.where(clause)
@@ -864,7 +864,7 @@ class Reading(Store):
         model, _ = model_and_collection(target)
         clause, sorts, meta, _ = self.prepare(model, criteria)
         meta.field(field)
-        statement = select(getattr(model, field)).select_from(model)
+        statement = select(sql_translator.column_attribute(model, field)).select_from(model)
         if clause is not None:
             statement = statement.where(clause)
         with self._session() as session:
@@ -888,7 +888,7 @@ class Reading(Store):
         model, _ = model_and_collection(target)
         clause, _, meta, _ = self.prepare(model, criteria)
         meta.field(field)
-        column = getattr(model, field)
+        column = sql_translator.column_attribute(model, field)
         statement = select(column).select_from(model).distinct().order_by(column)
         if clause is not None:
             statement = statement.where(clause)

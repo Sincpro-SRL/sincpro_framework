@@ -12,7 +12,11 @@ from sqlalchemy.schema import sort_tables
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.engine_errors import named
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.flushing import only
-from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator, upsert
+from sincpro_framework.data_layer.orm.sqlalchemy.services import (
+    extension_writing,
+    sql_translator,
+    upsert,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.cascade import (
     Plan,
     planned_removal,
@@ -23,7 +27,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     map_new_event_classes,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
-    TYPE_ATTRIBUTE,
+    HIDDEN,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.store import Store
@@ -37,7 +41,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
 )
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.exceptions import DuplicateAggregate, StaleAggregate
-from sincpro_framework.ddd.repositories.capabilities import Upserted
+from sincpro_framework.ddd.repositories.capabilities import Extends, Upserted
 from sincpro_framework.ddd.repositories.repository import (
     records_of,
     refuse_unarchivable,
@@ -74,7 +78,7 @@ def _by_dependency(records: list[Any]) -> list[list[Any]]:
     return [by_table[table] for table in sort_tables(by_table)]
 
 
-class Writing(Store):
+class Writing(Store, Extends):
     """Writes take the aggregate, whole with the children it owns, because a write that skips the
     aggregate skips its rules; the two that skip it on purpose say so in their name."""
 
@@ -240,6 +244,7 @@ class Writing(Store):
             return
         try:
             with self._session() as session:
+                extension_writing.complete_consolidated(session, records)
                 plan = planned_save(session, self._events_of_sourced(session, records))
                 newness = self._carried_out(session, plan)
         except DuplicateAggregate as error:
@@ -250,6 +255,16 @@ class Writing(Store):
                 ) from error
             raise
         self._announced(plan, newness)
+
+    def reclassify(self, entity: type) -> int:
+        """Writes the type of every row of a core that stores it, worked out from the rows its
+        extensions have. For a core that adopts the column once extensions already hold data, or
+        after rows were written outside the framework. Answers how many rows it set."""
+        refuse_writing_in_preview("reclassify")
+        self._refuse_reentrant_write()
+        self._refuse_read_only()
+        with self._session() as session:
+            return extension_writing.reclassify_rows(session, entity)
 
     def remove(self, record: Any) -> None:
         """Deletes one aggregate or several, read from this database.
@@ -271,9 +286,20 @@ class Writing(Store):
         if not records:
             return
         with self._session() as session:
+            extension_writing.remove_rows(session, records)
             plan = planned_removal(session, records)
             newness = self._carried_out(session, plan)
         self._announced(plan, newness)
+
+    def extend(self, record: Any, extension: type) -> None:
+        """Gives a stored record the rows of an extension it does not have: one per level between
+        its class and `extension`, each with the defaults of its fields. The record is then read
+        again as the extension and saved as any other."""
+        refuse_writing_in_preview("extend")
+        self._refuse_reentrant_write()
+        self._refuse_read_only()
+        with self._session() as session:
+            extension_writing.give_rows(session, record, extension)
 
     def archive(self, record: Any) -> None:
         """Stamps when it left and keeps the row — one aggregate or several.
@@ -337,7 +363,7 @@ class Writing(Store):
         columns = {
             prop.key
             for prop in sqlalchemy.inspect(model).column_attrs
-            if prop.key != TYPE_ATTRIBUTE
+            if prop.key not in HIDDEN
         }
         fixed = {describe(model).identity, "created_at", "version", "updated_at"}
         wrong = sorted(name for name in values if name not in columns or name in fixed)
@@ -407,7 +433,7 @@ class Writing(Store):
         names = {
             prop.key: prop.columns[0].name
             for prop in mapper.column_attrs
-            if prop.key != TYPE_ATTRIBUTE
+            if prop.key not in HIDDEN
         }
         identity = describe(model).identity
         fixed = {identity, "created_at", "version", "updated_at"}

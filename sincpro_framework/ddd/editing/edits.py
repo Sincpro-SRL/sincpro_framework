@@ -37,6 +37,7 @@ tab that kept first makes it lose with `DraftConflict`. A save with no draft is 
 values go straight to the store, refused when the record moved past `origin_version`.
 """
 
+import dataclasses
 from enum import StrEnum
 from typing import Any
 
@@ -47,6 +48,7 @@ from sincpro_framework.context.domain.drafts import Draft, DraftConflict
 from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.editing.editing import assign, form_values, recompute
 from sincpro_framework.ddd.editing.preview import Advice, previewing
+from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.exceptions import StaleAggregate
 from sincpro_framework.ddd.query import DraftState, ResponseRecord
 from sincpro_framework.ddd.reads.reads import (
@@ -60,6 +62,8 @@ from sincpro_framework.ddd.reads.reads import (
     states_of,
     with_derived_relations,
 )
+from sincpro_framework.ddd.repositories.capabilities import Extends
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -145,6 +149,27 @@ class EntityEdits[T](EntityReads[T]):
             )
         return answer
 
+    def shaped(self, entity: type, key: str, record: Any, *values: dict[str, Any]) -> Any:
+        """The record as the class its values need.
+
+            values with a field of an extension (`route`)    →  the extension's class
+            a new record                                      →  built as that class, under `key`
+            a stored record of another class                  →  a copy of it as that class
+
+        A form of the entity sends the fields of every extension installed, and the extension's
+        class is what holds them: `Move` has no field `route`, `MoveDelivery` does. Fields that
+        belong to siblings no one class holds are refused, naming them.
+        """
+        needed = extensions.class_for(entity, set().union(*values))
+        if record is None:
+            return keyed(blank(needed), entity, key)
+        if isinstance(record, needed):
+            return record
+        promoted = blank(needed)
+        for field in dataclasses.fields(record):
+            setattr(promoted, field.name, getattr(record, field.name))
+        return promoted
+
     def keep(self, dto: Any) -> Any:
         """The edit kept as the caller's draft; nothing is stored.
 
@@ -161,7 +186,9 @@ class EntityEdits[T](EntityReads[T]):
         kept = drafts.read(subject)
         with previewing() as advice:
             stored = self.stored(entity, dto.id)
-            record = stored if stored is not None else keyed(blank(entity), entity, dto.id)
+            record = self.shaped(
+                entity, dto.id, stored, kept.values if kept is not None else {}, dto.values
+            )
             if kept is not None:
                 assign(record, kept.values, True)
             self.change(record, dto)
@@ -217,8 +244,22 @@ class EntityEdits[T](EntityReads[T]):
                 f"{entity.__name__} {dto.id} changed since the edit started (version {origin}, "
                 f"now {current}): read it again"
             )
-        if record is None:
-            record = keyed(blank(entity), entity, dto.id)
+        wanted = extensions.class_for(
+            entity, set().union(kept.values if kept is not None else {}, dto.values)
+        )
+        if record is not None and not isinstance(record, wanted):
+            repository = self.reads_from()
+            if not isinstance(repository, Extends):
+                raise ProgrammingError(
+                    f"{type(repository).__name__} cannot give {entity.__name__} {dto.id} the "
+                    f"rows of {wanted.__name__}: it keeps no extensions apart from the entity"
+                )
+            repository.extend(record, wanted)
+            record = self.writable(entity, dto.id)
+        elif record is None:
+            record = self.shaped(
+                entity, dto.id, None, kept.values if kept is not None else {}, dto.values
+            )
         if kept is not None:
             assign(record, kept.values, True)
         self.change(record, dto)

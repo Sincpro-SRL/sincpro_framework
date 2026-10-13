@@ -315,4 +315,5 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 - Queries, listings, counts, measures: `sincpro-framework-criteria`
 - Domain events, change tracking, event sourcing, outbox: `sincpro-framework-domain-events`
 - Migrations of these tables: `sincpro-framework-operations`
+- A module in another repository adding fields to one of these entities: `sincpro-framework-extensions`
 - Bus, Features, `DependencyContextType`: `sincpro-framework` (router) and `sincpro-framework-core`

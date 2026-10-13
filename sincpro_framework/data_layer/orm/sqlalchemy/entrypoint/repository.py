@@ -23,10 +23,15 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.unit_of_work
     UnitOfWork,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.writing import Writing
-from sincpro_framework.ddd.repositories.capabilities import Analyzes, Transacts, WritesInBulk
+from sincpro_framework.ddd.repositories.capabilities import (
+    Analyzes,
+    Extends,
+    Transacts,
+    WritesInBulk,
+)
 
 
-class Repository(UnitOfWork, Reading, Writing, Analyzes, WritesInBulk, Transacts):
+class Repository(UnitOfWork, Reading, Writing, Analyzes, WritesInBulk, Transacts, Extends):
     """One database, read and written through one object. The baseline `ddd.Repository` and
     every capability on top of it — analyzes, writes in bulk, transacts — and more that is
     SQLAlchemy's own: a use case takes this instance, the abstractions hold others to less.

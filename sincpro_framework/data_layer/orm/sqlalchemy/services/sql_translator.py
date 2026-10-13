@@ -34,6 +34,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import QueryableAttribute
 from sqlalchemy.sql.elements import UnaryExpression
 
+from sincpro_framework.data_layer.orm.sqlalchemy.services import extension_typing
 from sincpro_framework.ddd.criteria import (
     All,
     Any_,
@@ -49,6 +50,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     parse_order,
 )
+from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity_meta import Meta
 from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.exceptions import ProgrammingError
@@ -241,6 +243,30 @@ def clause_over(
             return not_(inner.is_(true())) if inner is not None else None
 
 
+def stored_by_an_extension(entity: type, field: str) -> Any:
+    """What a field an extension below `entity` adds is, as a column of a statement over it.
+
+        in      Move, "route"     →  out  (SELECT route FROM move_delivery WHERE id = move.id)
+        in      Move, "zone"      →  out  move.zone              the extension keeps it in Move's table
+
+    A field the entity does not have, filtered, ordered or grouped by like one it does. A record
+    with no row of the extension holds NULL there. Reading it through a correlated subquery is
+    the price of not joining every extension in every statement; a report over millions of
+    rows reads the extension's class instead.
+    """
+    owner = extensions.owner_of(entity, field)
+    if owner is None:
+        return None
+    table, key = extension_typing.STORED_IN[owner.entity]
+    if key is None:
+        return table.c[field]
+    root_table = sqlalchemy.inspect(owner.root).local_table
+    root_key = list(root_table.primary_key.columns)[0]
+    return (
+        select(table.c[field]).where(key == root_key).correlate(root_table).scalar_subquery()
+    )
+
+
 def column_attribute(entity: type, field: str) -> Any:
     """The mapped attribute a field filters: itself, or the attribute its column is mapped to.
 
@@ -256,7 +282,8 @@ def column_attribute(entity: type, field: str) -> Any:
     mapper = sqlalchemy.inspect(entity)
     column = mapper.local_table.c.get(field)
     if column is None:
-        return attribute
+        stored = stored_by_an_extension(entity, field)
+        return attribute if stored is None else stored
     return getattr(entity, mapper.get_property_by_column(column).key)
 
 
@@ -303,7 +330,11 @@ def order_clauses(entity: type, sorts: tuple[Sort, ...]) -> list[UnaryExpression
     out     [dataset.row_count DESC, dataset.dataset_id DESC]
     """
     return [
-        getattr(entity, sort.field).desc() if sort.descending else getattr(entity, sort.field)
+        (
+            column_attribute(entity, sort.field).desc()
+            if sort.descending
+            else column_attribute(entity, sort.field)
+        )
         for sort in sorts
     ]
 
@@ -330,7 +361,7 @@ def resume_clause(
     if resumed is None:
         return None
 
-    columns = [getattr(model, sort.field) for sort in sorts]
+    columns = [column_attribute(model, sort.field) for sort in sorts]
     directions = {sort.descending for sort in sorts}
 
     if len(directions) == 1:
@@ -513,7 +544,7 @@ def grouping_column(model: type, level: Level, dialect: str = "sqlite") -> Colum
     Without a grain, grouping a catalogue by date answers one bucket per row: a listing with
     extra steps. A dialect with no translator is refused, naming how to register one.
     """
-    column = getattr(model, level.field)
+    column = column_attribute(model, level.field)
     if level.part is not None:
         part_translator = PART_TRANSLATORS.get(dialect)
         if part_translator is None:

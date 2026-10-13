@@ -41,5 +41,6 @@ so read it only when the framework repo is at hand.
 | Data analysis (Arrow/pandas/polars/DuckDB) | `data_layer/data_analysis/` | `sincpro-framework-analytics` | `docs/data_analysis/README.md` |
 | Runtime use cases (source on the bus) | `runtime/runtime_use_cases/` | `sincpro-framework-analytics` | `docs/runtime_use_cases/README.md` |
 | Workflows (Commands composed as JSON) | `runtime/workflows/` | `sincpro-framework-analytics` | `docs/workflows/README.md` |
+| Extensions of an entity you do not own | `ddd/entity/extensions.py`, `data_layer/orm/sqlalchemy/services/extension_*.py` | `sincpro-framework-extensions` | `docs/persistence/extensions.md`, `docs/spec/extensibility.md` |
 | System shapes (one DB / DB per context / facts as state) | — | `sincpro-framework-persistence`, `sincpro-framework-domain-events` | `docs/shapes.md` |
 | Testing utilities | `runtime/testing/` | [testing.md](testing.md) | `docs/persistence/testing.md` |

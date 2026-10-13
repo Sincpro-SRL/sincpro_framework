@@ -84,7 +84,7 @@ def measure_columns(
     for name, written in measures.items():
         measure = Measure.read(written)
         meta.field(measure.field)
-        column = getattr(model, measure.field)
+        column = sql_translator.column_attribute(model, measure.field)
 
         if measure.function == "count_distinct":
             columns.append(func.count(distinct(column)).label(name))
@@ -190,7 +190,7 @@ def ids_per_group(
         column.label(f"{sql_translator.GROUP_KEY}{index}")
         for index, column in enumerate(columns)
     ]
-    sort_columns = [getattr(model, sort.field) for sort in sorts]
+    sort_columns = [sql_translator.column_attribute(model, sort.field) for sort in sorts]
     position = (
         func.row_number()
         .over(partition_by=columns, order_by=order)

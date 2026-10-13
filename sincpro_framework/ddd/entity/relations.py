@@ -105,8 +105,13 @@ class Relation:
         scope: Criteria | None = None,
         parent_field: str | None = None,
         related_field: str | None = None,
+        many: bool | None = None,
     ) -> None:
         self.kind = kind
+        self.many = many
+        """To-many (`True`) or to-one (`False`), when the declaration says it. A relation an
+        extension installs on a class it does not own cannot be annotated there, so it says it
+        here and the data mapper writes the annotation."""
         self.related = related
         self.identified_by = identified_by
         self.resolver = resolver
@@ -145,6 +150,7 @@ class Relation:
         scope: Criteria | None = None,
         parent_field: str | None = None,
         related_field: str | None = None,
+        many: bool | None = None,
     ) -> "Relation":
         """Another bounded context: the command carries the reflected criteria, the bus answers
         a paged response whose records are the related aggregate."""
@@ -156,6 +162,7 @@ class Relation:
             scope=scope,
             parent_field=parent_field,
             related_field=related_field,
+            many=many,
         )
 
 

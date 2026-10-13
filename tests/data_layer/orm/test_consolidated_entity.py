@@ -156,3 +156,37 @@ def test_two_extensions_that_name_a_field_alike_are_refused_naming_both(engine_u
 
     with pytest.raises(ProgrammingError, match="move_delivery, move_fiscal"):
         map_aggregates(reg, {Clashing: Consolidated(Move, MoveDelivery, MoveFiscal)})
+
+
+def test_a_report_over_the_consolidated_record_groups_by_a_field_of_an_extension_in_a_join(
+    engine_url,
+):
+    from sincpro_framework.ddd.criteria import Grouping, Level, Measure
+
+    reg, md, (Move, MoveDelivery, MoveFiscal, MoveConsolidated) = world(engine_url)
+    map_aggregates(reg, {MoveConsolidated: Consolidated(Move, MoveDelivery, MoveFiscal)})
+    store = Repository(fresh(engine_url, md))
+    store.save(
+        MoveConsolidated(id="M1", number="F-1", total=Decimal("2"), route="R7", cufd="C1")
+    )
+    store.save(
+        MoveConsolidated(id="M2", number="F-2", total=Decimal("3"), route="R7", cufd="C2")
+    )
+    store.save(
+        MoveConsolidated(id="M3", number="F-3", total=Decimal("4"), route="R9", cufd="C3")
+    )
+    criteria = Criteria(
+        grouping=Grouping(
+            group_by=(Level(field="route"),),
+            measures={"total": Measure(function="sum", field="total")},
+        )
+    )
+
+    buckets = store.group_by_levels(MoveConsolidated, criteria)
+
+    assert {bucket.value: bucket.measures["total"] for bucket in buckets} == {
+        "R7": Decimal("5"),
+        "R9": Decimal("4"),
+    }
+    statement = str(store.statement(MoveConsolidated, Criteria()).compile())
+    assert "LEFT OUTER JOIN" in statement and "SELECT route FROM" not in statement
