@@ -94,3 +94,34 @@ def test_a_key_of_the_slot_is_grouped_and_measured_like_a_column(engine_url):
         "Z1": Decimal("3.5"),
         "Z2": Decimal("4"),
     }
+
+
+def test_a_module_maps_a_key_of_the_slot_of_an_entity_it_does_not_own(engine_url):
+    md = MetaData()
+    reg = registry(metadata=md)
+
+    @dataclass
+    class Invoice(Entity):
+        number: str = ""
+
+    table = entity_table(
+        "invoice", md, template_table.properties_column(), Column("number", Text)
+    )
+    map_aggregates(reg, {Invoice: table})  # the core, mapped alone
+    assert "zone" not in describe(Invoice).fields
+
+    map_aggregates(  # a module, later
+        reg, {}, properties={Invoice: {"zone": template_table.slot_field(table, "zone")}}
+    )
+
+    assert "zone" in describe(Invoice).fields
+    database = fresh(engine_url, md)
+    store = Repository(database)
+    record = Invoice(number="F-1")
+    store.save(record)
+    with database.engine.begin() as connection:
+        connection.execute(
+            update(table).where(table.c.id == record.id).values(properties={"zone": "Z1"})
+        )
+    found = store.search(Invoice, Criteria(where=Condition(field="zone", value="Z1")))
+    assert [one.number for one in found] == ["F-1"]

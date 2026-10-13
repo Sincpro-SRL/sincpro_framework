@@ -394,3 +394,17 @@ def test_a_core_that_stores_no_type_refuses_to_reclassify(engine_url):
 
     with pytest.raises(ProgrammingError, match="stores no type"):
         store.reclassify(Move)
+
+
+def test_the_core_is_filtered_by_a_column_an_extension_keeps_in_the_cores_own_table(
+    engine_url,
+):
+    Move, MoveZone, database = same_table_world(engine_url)
+    store = Repository(database)
+    store.save(Move(id="A", number="F-A"))
+    store.save(MoveZone(id="B", number="F-B", zone="Z1"))
+    store.save(MoveZone(id="C", number="F-C", zone="Z2"))
+
+    found = store.search(Move, Criteria(where=Condition(field="zone", value="Z2")))
+
+    assert [one.number for one in found] == ["F-C"] and not found.dropped

@@ -7,7 +7,7 @@ Updated in place with every change ([how a specification is kept](README.md)).
 **Status:** ✅ built and held by a test · 🟡 works with a workaround · ⬜ not built — a proposal.
 Every ✅ in this page is held by a test in `tests/data_layer/orm/` —
 `test_extending_an_entity.py`, `test_extension_types.py`, `test_consolidated_entity.py` and
-`test_shared_table_migrations.py` — which run on SQLite and, with `SINCPRO_POSTGRES_URL`, on PostgreSQL.
+`test_shared_table_migrations.py` — which run on SQLite and, with `SINCPRO_POSTGRES_URL`, on PostgreSQL. The CI runs SQLite only; PostgreSQL is run locally before a release (file by file: the whole directory in one process already failed before these tests).
 
 ## Requirements
 
@@ -199,6 +199,57 @@ nests under. `map_aggregates` fills it; everything that has to know whose a fiel
   default reading (`DEFAULT_READING`) may name any of them
   (`test_a_specification_that_names_a_field_of_an_extension_brings_it`). The store still reads which
   extension each row has; a core that must not pay for that answers only itself (`strict`).
+
+### Delegated answers: what they are for
+
+**The intent.** A screen or a client that shows an entity extended by several modules wants the
+entity's own fields at the top and what each module added under that module's own key. Then two
+modules can never collide on a field name, a client can ignore a module it does not know, and
+uninstalling a module removes one key and not fields scattered through the record. Flat is the
+default because it needs nothing from the client; delegated is for the client that groups by module.
+
+**It is a shape, not a storage mode.** It does not depend on where the extension keeps its columns
+(a table of its own, the entity's table): only on how an answer is written and how a form is read.
+It is chosen by the entity, for all of its extensions: `map_aggregates(reg, tables, delegated=[Move])`.
+
+```
+flat                                              delegated
+{"id": "C", "number": "F-C",                      {"id": "C", "number": "F-C",
+ "route": "R7", "carrier": "DHL"}                  "delivery": {"route": "R7"},
+                                                   "tracking": {"carrier": "DHL"},
+                                                   "fiscal": null}
+```
+
+| Rule | Why | Held by |
+|---|---|---|
+| The key of an extension is its class name without the root's (`MoveDelivery` under `Move` is `delivery`), in snake case | Nothing for a module to declare; readable | `test_an_answer_nests_each_extension_under_its_key_when_the_entity_delegates` |
+| Every extension is a sibling key of the root, a chain included: `tracking` is not inside `delivery` | A chain is one record with several parts; the client reads parts, not a tree | the same |
+| An extension the record does not have is `null` | The shape does not move with the row | the same |
+| A specification that names none of an extension's fields leaves its key out; one that names a field brings its key with that field | The same mask as flat, so a client narrows the same way | `test_a_specification_that_names_a_field_of_an_extension_brings_it` |
+| The schema describes each key as an object or `null`, with the extension's fields | A generated client types it | `test_the_schema_of_an_answer_describes_the_fields_of_the_extensions` |
+| `Edit` takes the record back as it was read: `{"delivery": {"route": "R9"}}` | A form reads and writes one shape | `test_a_form_that_read_a_delegated_record_sends_it_back_as_it_read_it` |
+| An extension sent as `null` writes nothing; flat values are still taken as they are | A form sends the whole record; a client that never groups still works | `test_an_extension_the_record_does_not_have_writes_nothing_when_the_form_sends_it_null`, `test_a_delegated_entity_takes_flat_values_as_they_are` |
+| A nested value with a field the extension does not have is refused, naming it | A typo is not silently dropped | `test_a_nested_value_with_a_field_the_extension_does_not_have_is_refused_naming_it` |
+| An entity that does not delegate does not take its extensions nested | The shape is the entity's choice | `test_an_entity_that_does_not_delegate_does_not_take_its_extensions_nested` |
+| `changed` may name `delivery` (all its fields), `delivery.route` or `route` | The derivations a form reports run in any of the shapes | `test_the_fields_a_form_reports_changed_are_taken_nested_or_flat` |
+| The answer to an `Edit` is nested too | A form never sees two shapes | `test_the_answer_to_an_edit_nests_the_extensions_when_the_entity_delegates` |
+| Two extensions that would nest under one key are refused, naming both | Two modules with a `MoveDelivery` would otherwise overwrite each other | `test_two_extensions_that_would_nest_under_one_key_are_refused_naming_both` |
+
+**Where it is, to change it.** The choice is `extensions.DELEGATED` (`ddd/entity/extensions.py`),
+with the key computed by `key_of` when an extension is registered. The answer is written by
+`_delegated` in `ddd/query.py`, after the record is cut by the specification; its schema is
+`_extended`, in the same file. A form is read back by `EntityEdits.flattened` and `nested_names`,
+in `ddd/editing/edits.py`, which turn the nested values into the flat ones the rest of `Edit`
+already takes. Nothing in the data layer knows about it.
+
+**What it does not do, and how it could grow.**
+
+- It is all or nothing per entity. Choosing per extension would need the choice to live on the
+  extension (`map_aggregates` has nowhere to say it today).
+- The key cannot be named; it is derived. A module that wants another word needs a place to say it.
+- An extension installed as a relation (`Relation.foreign_key` on a side table) is not part of
+  this: it is already one named relation, nested under its name when the specification names it.
+- Not every client needs it. The TypeScript client has not been taught either shape.
 
 ### Creating and editing through the core's commands
 
@@ -395,31 +446,36 @@ it needs and reacts to events.
 
 ## 10. A module today
 
-What a module that adds a table of its own and reaches it from the core's record writes — the
-relation says its own cardinality, so nothing is written on a class the module does not own:
+What a module that adds a table of its own and reaches it from the core's record writes. The
+extension is a plain dataclass, **not an `Entity`**: it takes the invoice's `id`, and the dates and
+version stay the invoice's, so the answer does not repeat them (`{"fiscal": {"id": …, "cufd": …}}`).
+The relation says its own cardinality, so nothing is written on a class the module does not own.
+A module that wants an entity with a life of its own — its own dates and version — makes an `Entity`
+of it, and then it carries its own.
 
 ```python
 from dataclasses import dataclass
 
-from sqlalchemy import Column, ForeignKeyConstraint, Text
+from sqlalchemy import Column, ForeignKey, Table, Text
 
 from sincpro_framework.data_layer.orm import Relation, map_aggregates
-from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.ddd import Entity
 
 
 @dataclass
-class InvoiceFiscal(Entity):
+class InvoiceFiscal:                 # not an Entity: id, dates and version are the invoice's
+    id: str = ""
     cufd: str = ""
     control_code: str = ""
 
 
 def install(registry, invoice_class, invoice_table):
-    table = entity_table("invoice_fiscal", registry.metadata,
-                         Column("cufd", Text), Column("control_code", Text))
-    table.append_constraint(
-        ForeignKeyConstraint(["id"], [invoice_table.c.id], ondelete="CASCADE"))
-
+    table = Table(
+        "invoice_fiscal",
+        registry.metadata,
+        Column("id", Text, ForeignKey(invoice_table.c.id, ondelete="CASCADE"), primary_key=True),
+        Column("cufd", Text),
+        Column("control_code", Text),
+    )
     map_aggregates(
         registry,
         {InvoiceFiscal: table},

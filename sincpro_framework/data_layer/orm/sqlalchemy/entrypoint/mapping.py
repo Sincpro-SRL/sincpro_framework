@@ -5,6 +5,7 @@ The machinery each one stands on is in `services/`."""
 from collections.abc import Collection, Mapping
 from typing import Any
 
+import sqlalchemy
 from sqlalchemy import Table, event
 from sqlalchemy.orm import registry
 
@@ -58,7 +59,9 @@ def map_aggregates(
 
     `properties` is per class and is what `map_imperatively` takes: how to map an attribute
     onto a column with another name, say `{"id": dataset_table.c.dataset_id}` for a table
-    that predates the `Entity` convention.
+    that predates the `Entity` convention. For a class that is already mapped it adds the
+    attributes it does not have yet, which is how a module maps a key of the JSON slot of an
+    entity it does not own.
 
     A field declared with `computed(sql=…)` is mapped as an expression over the table
     (`column_property`): it is read with the row, and filtered, ordered and grouped by like a
@@ -100,6 +103,7 @@ def map_aggregates(
     migrations compare each chain only with the columns it declares.
     """
     already = {mapper.class_ for mapper in mapper_registry.mappers}
+    mapped_before = set(already)
     extensions.DELEGATED.update(delegated)
     for entity, table in sorted(tables.items(), key=lambda item: len(item[0].__mro__)):
         if entity in already:
@@ -142,6 +146,14 @@ def map_aggregates(
         )
         already.add(entity)
 
+    for entity, added in (properties or {}).items():
+        if entity in mapped_before:
+            # an attribute a later module maps on an entity that is already mapped: a key of the
+            # JSON slot as a field, say
+            mapper = sqlalchemy.inspect(entity)
+            for name, prop in added.items():
+                if name not in mapper.attrs:
+                    mapper.add_property(name, prop)
     for entity, per_field in (overlay or {}).items():
         for field, changes in per_field.items():
             extensions.overlay(entity, field, dict(changes))

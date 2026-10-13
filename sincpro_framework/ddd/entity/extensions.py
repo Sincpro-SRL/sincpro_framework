@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from sincpro_framework.exceptions import ClientError
+from sincpro_framework.exceptions import ClientError, ProgrammingError
 
 
 def identity_of(entity: type) -> str:
@@ -70,6 +70,13 @@ def register(root: type, entity: type, fields: tuple[str, ...]) -> EntityExtensi
     )
     registered = EXTENSIONS.setdefault(root, [])
     registered[:] = [one for one in registered if one.entity is not entity]
+    clash = next((one for one in registered if one.key == found.key), None)
+    if clash is not None:
+        raise ProgrammingError(
+            f"{entity.__module__}.{entity.__name__} and {clash.entity.__module__}."
+            f"{clash.entity.__name__} would both be `{found.key}` in a delegated answer of "
+            f"{root.__name__}: rename one of them"
+        )
     registered.append(found)
     return found
 

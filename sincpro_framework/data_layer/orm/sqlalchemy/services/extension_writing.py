@@ -37,6 +37,19 @@ def type_as(session: Session, extension: type, identity: Any) -> None:
     )
 
 
+def retype(connection: Any, root: type, identity: Any) -> None:
+    """A core whose table stores the type of its rows works it out again for one record, from the
+    extension rows it has now: after a consolidated record wrote several of them at once."""
+    stored = extension_typing.STORED_TYPE.get(root)
+    if stored is None:
+        return
+    connection.execute(
+        update(stored.table)
+        .where(list(stored.table.primary_key.columns)[0] == identity)
+        .values({stored.name: extension_typing.derived(root)})
+    )
+
+
 def defaults_of(level: type, names: tuple[str, ...]) -> dict[str, Any]:
     """The default of each of these fields of a class: what a new row of the extension starts with."""
     return {
@@ -99,7 +112,7 @@ def complete_consolidated(session: Session, records: list[Any]) -> None:
                 continue
             values = {name: getattr(record, name) for name in names}
             session.execute(insert(table).values({key.name: identity, **values}))
-            type_as(session, level, identity)
+            retype(session, extension_typing.ROOT_OF.get(level, level), identity)
 
 
 def remove_rows(session: Session, records: list[Any]) -> None:

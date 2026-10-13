@@ -58,7 +58,7 @@ from sincpro_framework.ddd.criteria import (
     part_of,
     resolve,
 )
-from sincpro_framework.ddd.entity import ArchivableMixin, Entity, utc_now
+from sincpro_framework.ddd.entity import ArchivableMixin, Entity, extensions, utc_now
 from sincpro_framework.ddd.entity.computed import computations_of
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -68,7 +68,12 @@ from sincpro_framework.ddd.entity.entity_collection import (
     identity_of,
     model_and_collection,
 )
-from sincpro_framework.ddd.entity.entity_meta import Meta, ambient_resolution, describe_class
+from sincpro_framework.ddd.entity.entity_meta import (
+    FieldMeta,
+    Meta,
+    ambient_resolution,
+    describe_class,
+)
 from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
 from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
 from sincpro_framework.ddd.events.mixins.deliverable import (
@@ -82,6 +87,7 @@ from sincpro_framework.ddd.exceptions import (
 )
 from sincpro_framework.ddd.repositories.capabilities import (
     Analyzes,
+    Extends,
     StoreCapabilities,
     Upserted,
     WritesInBulk,
@@ -327,7 +333,21 @@ class _Measured:
         self.__dict__.update(values)
 
 
-class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, WritesInBulk):
+class _Lenient:
+    """A record as a filter reads it: a field its class does not have — an extension's, on a record
+    that is not one — is absent, as its column is NULL in the database. A field the aggregate never
+    had was already dropped before the filter ran."""
+
+    def __init__(self, record: Any) -> None:
+        self._record = record
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._record, name, None)
+
+
+class MemoryRepository(
+    ChangeTrackingRepositoryMixin, IRepository, Analyzes, WritesInBulk, Extends
+):
     """Every read and write the vocabulary can answer without a database. No `Transacts`: a
     test that needs a unit of work runs on SQLite."""
 
@@ -358,9 +378,41 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             self._stored.setdefault(type(record), {})[identity_of(record)] = record
         return self
 
+    def _extensions_held(self, aggregate: type) -> list[type]:
+        """The subclasses of `aggregate` this store holds records of, the shallowest first."""
+        return sorted(
+            (
+                kind
+                for kind, held in self._stored.items()
+                if held and kind is not aggregate and issubclass(kind, aggregate)
+            ),
+            key=lambda kind: len(kind.__mro__),
+        )
+
     def definition(self, aggregate: type) -> Meta:
-        """What may be asked about this aggregate, read off its annotations."""
-        return describe_class(aggregate, identity_name(aggregate))
+        """What may be asked about this aggregate, read off its annotations — and, once the store
+        holds a record of a subclass of it, the fields that subclass adds, each marked with it as
+        its owner and absent on a record that is not one, as the database does for an extension.
+        """
+        meta = describe_class(aggregate, identity_name(aggregate))
+        inherited = set(meta.fields)
+        added: dict[str, FieldMeta] = {}
+        for kind in self._extensions_held(aggregate):
+            for name, field in describe_class(kind, identity_name(kind)).fields.items():
+                if name not in inherited and name not in added:
+                    added[name] = FieldMeta.for_column(
+                        field.type, True, field.choices, field.exact
+                    ).model_copy(update={"owner": kind.__name__})
+        return meta.model_copy(update={"fields": {**meta.fields, **added}}) if added else meta
+
+    def _held_as(self, aggregate: type) -> list[dict[Any, Any]]:
+        """Everything stored as `aggregate` or as an extension of it: a record is read as the class
+        it was saved as, whoever asks."""
+        return [
+            held
+            for kind, held in self._stored.items()
+            if issubclass(kind, aggregate) and held
+        ] or [self._stored.setdefault(aggregate, {})]
 
     def _with_computed(self, record: Any) -> Any:
         """The record with its computed fields set from `python`, which is what a store in memory
@@ -414,7 +466,8 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             return sorted(found, key=identity_of)
         return [
             self._with_computed(record)
-            for record in self._stored.setdefault(aggregate, {}).values()
+            for held in self._held_as(aggregate)
+            for record in held.values()
         ]
 
     def _live(self, aggregate: type, criteria: Criteria) -> bool:
@@ -445,7 +498,7 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
         rows = [
             self._read(record) if handed_back else record
             for record in self._rows(aggregate)
-            if matches(record, expression)
+            if matches(_Lenient(record), expression)
         ]
         if self._live(aggregate, criteria):
             rows = [record for record in rows if not record.is_archived]
@@ -491,7 +544,9 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
                 aggregate.rebuilt(identity, self._events_about(aggregate, identity))
             )
         note_read(aggregate)
-        found = self._stored.setdefault(aggregate, {}).get(identity)
+        found = next(
+            (held[identity] for held in self._held_as(aggregate) if identity in held), None
+        )
         if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
             return None
         return self._read(found if found is None else self._with_computed(found))
@@ -505,7 +560,9 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
     def browse(self, target: type, ids: Sequence[Any]) -> Any:
         aggregate, holder = model_and_collection(target)
         note_read(aggregate)
-        stored = self._stored.setdefault(aggregate, {})
+        stored = {
+            key: record for held in self._held_as(aggregate) for key, record in held.items()
+        }
         found = [self._read(self._with_computed(stored[key])) for key in ids if key in stored]
         return self._searched(
             target,
@@ -888,6 +945,58 @@ class MemoryRepository(ChangeTrackingRepositoryMixin, IRepository, Analyzes, Wri
             self._forget(one)
         for one in records:
             self._after_remove(one)
+
+    def extended(
+        self, root: type, *extensions_: type, delegated: bool = False
+    ) -> "MemoryRepository":
+        """Says what extends `root` in this store, the way `map_aggregates` does for a database:
+        each class a subclass of it, with the fields it adds. A `Feature` tested here then reads,
+        creates and edits through the commands of `root` as it would against the engine.
+
+            repository = MemoryRepository().extended(Move, MoveDelivery, MoveTracking)
+
+        `delegated=True` writes the answers of `root` with each extension under its own key.
+        """
+        for extension in extensions_:
+            inherited = {one.name for one in dataclasses.fields(extension.__mro__[1])}
+            extensions.register(
+                root,
+                extension,
+                tuple(
+                    one.name
+                    for one in dataclasses.fields(extension)
+                    if one.name not in inherited
+                ),
+            )
+        if delegated:
+            extensions.DELEGATED.add(root)
+        return self
+
+    def extend(self, record: Any, extension: type) -> None:
+        """Gives a stored record the class of an extension: the record held is replaced by an
+        instance of `extension` with the same fields, and the fields it adds at their defaults. A
+        store of objects keeps what a class adds on the object, so there is no row to insert.
+        """
+        held = self._held_as(type(record))
+        identity = identity_of(record)
+        stored = next((rows for rows in held if identity in rows), None)
+        if stored is None or isinstance(record, extension):
+            return
+        promoted = extension(
+            **{
+                one.name: getattr(record, one.name)
+                for one in dataclasses.fields(extension)
+                if one.init and hasattr(record, one.name)
+            }
+        )
+        for one in dataclasses.fields(record):
+            setattr(promoted, one.name, getattr(record, one.name))
+        self._stored[type(record)].pop(identity, None)
+        self._stored.setdefault(extension, {})[identity] = promoted
+
+    def reclassify(self, entity: type) -> int:
+        """A store of objects keeps the type of a record in the record: there is none to write."""
+        return 0
 
     def archive(self, record: Any) -> None:
         """Stamps when it left and keeps the row — one aggregate or several."""

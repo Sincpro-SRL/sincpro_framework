@@ -190,3 +190,40 @@ def test_a_report_over_the_consolidated_record_groups_by_a_field_of_an_extension
     }
     statement = str(store.statement(MoveConsolidated, Criteria()).compile())
     assert "LEFT OUTER JOIN" in statement and "SELECT route FROM" not in statement
+
+
+def test_a_consolidated_record_created_in_a_core_that_stores_the_type_is_typed_by_its_rows(
+    engine_url,
+):
+    md = MetaData()
+    reg = registry(metadata=md)
+
+    @dataclass
+    class Move(Entity):
+        number: str = ""
+
+    @dataclass
+    class MoveDelivery(Move):
+        route: str = ""
+
+    @dataclass
+    class MoveAll(Entity):
+        number: str = ""
+        route: str = ""
+
+    move_t = entity_table("move", md, Column("number", Text), Column("extension_type", Text))
+    delivery_t = Table(
+        "move_delivery",
+        md,
+        Column("id", Text, ForeignKey("move.id"), primary_key=True),
+        Column("route", Text),
+    )
+    map_aggregates(reg, {Move: move_t})
+    map_aggregates(reg, {MoveDelivery: delivery_t})
+    map_aggregates(reg, {MoveAll: Consolidated(Move, MoveDelivery)})
+    store = Repository(fresh(engine_url, md))
+
+    store.save(MoveAll(id="M1", number="F-1", route="R7"))
+
+    read = store.get(Move, "M1")
+    assert type(read).__name__ == "MoveDelivery" and read.route == "R7"  # type: ignore[union-attr]

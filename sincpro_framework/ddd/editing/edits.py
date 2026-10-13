@@ -63,7 +63,7 @@ from sincpro_framework.ddd.reads.reads import (
     with_derived_relations,
 )
 from sincpro_framework.ddd.repositories.capabilities import Extends
-from sincpro_framework.exceptions import ProgrammingError
+from sincpro_framework.exceptions import ClientError, ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -277,8 +277,61 @@ class EntityEdits[T](EntityReads[T]):
         record = stored if stored is not None else keyed(blank(entity), entity, dto.id)
         return self.answered(entity, response, record, None, False, [])
 
+    def nested_names(self, entity: type, changed: list[str]) -> list[str]:
+        """The fields a form reports as changed, as flat names: `delivery` is every field of the
+        extension, `delivery.route` is `route`."""
+        if entity not in extensions.DELEGATED:
+            return changed
+        found: list[str] = []
+        for name in changed:
+            key, _, field = name.partition(".")
+            extension = next(
+                (one for one in extensions.EXTENSIONS.get(entity, []) if one.key == key), None
+            )
+            if extension is None:
+                found.append(name)
+            else:
+                found.extend([field] if field else extension.fields)
+        return found
+
+    def flattened(self, entity: type, values: dict[str, Any]) -> dict[str, Any]:
+        """The values of a form as the flat fields of one record.
+
+            {"number": "F-1", "delivery": {"route": "R7"}, "tracking": None}
+              →  {"number": "F-1", "route": "R7"}
+
+        An entity whose answers nest each extension under its key (`delegated=[Move]`) is read back
+        by a form in that shape, and sends it back as it read it. The nested values are the fields
+        of that extension; `None` is a record that has no such extension, and writes nothing. Flat
+        values are taken as they are, whatever the entity delegates, and a key that is not an
+        extension of it is left for `assign` to refuse as any unknown field.
+        """
+        if entity not in extensions.DELEGATED:
+            return values
+        flat = dict(values)
+        for one in extensions.EXTENSIONS.get(entity, []):
+            if one.key not in flat:
+                continue
+            nested = flat.pop(one.key)
+            if nested is None:
+                continue
+            unknown = sorted(set(nested) - set(one.fields))
+            if unknown:
+                raise ClientError(
+                    f"{one.key} has no field {', '.join(unknown)}: it has {', '.join(one.fields)}"
+                )
+            flat.update(nested)
+        return flat
+
     def edit(self, dto: Any) -> Any:
-        """Each action is a method — `keep`, `save`, `discard` — to override and call `super()`."""
+        """Each action is a method — `keep`, `save`, `discard` — to override and call `super()`.
+        The values arrive flat, whichever shape the form read the record in."""
+        entity, _ = declared_by(type(dto))
+        flat = self.flattened(entity, dto.values)
+        if flat != dto.values or self.nested_names(entity, dto.changed):
+            dto = dto.model_copy(
+                update={"values": flat, "changed": self.nested_names(entity, dto.changed)}
+            )
         match dto.action:
             case EditAction.SAVE:
                 return self.save(dto)

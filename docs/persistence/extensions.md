@@ -98,6 +98,36 @@ and the answer's schema describes it. A core that must not pay for that answers 
 `map_aggregates(…, strict=[Move])`. Writing the answer with each extension under its own key —
 `{"number": …, "delivery": {"route": …}}` — is `delegated=[Move]`.
 
+### The same answer, nested
+
+A client that groups by module asks the core to write each extension under its own key. It is a
+shape of the answer, chosen by the entity, and nothing about where the extension is stored:
+
+```python
+from sincpro_framework.ddd import ResponsePaginatedQuery
+
+
+class ResponseMoves(ResponsePaginatedQuery):
+    moves: list[Move]
+
+
+def written(delegated: bool):
+    if delegated:
+        map_aggregates(mapper_registry, {}, delegated=[Move])
+    page = store.search(Move, Criteria(where=Condition(field="id", value="B")))
+    answer = ResponseMoves.of(page, Criteria()).model_dump(mode="json")["moves"][0]
+    return {name: answer[name] for name in ("number", "route", "delivery") if name in answer}
+
+
+assert written(delegated=False) == {"number": "F-B", "route": "R7"}
+assert written(delegated=True) == {"number": "F-B", "delivery": {"route": "R7"}}
+```
+
+An extension the record does not have is `null`; the form reads the record in that shape and sends
+it back the same way to the core's `Edit`, which takes the nested values (and the flat ones). The
+rules, one by one with their tests, and where the code is, are in the
+[specification](../spec/extensibility.md#delegated-answers-what-they-are-for).
+
 ## Filtering by what the extension adds
 
 The core's criteria names a field of an extension like any other. A record without the extension

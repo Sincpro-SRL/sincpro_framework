@@ -24,6 +24,7 @@ OUTCOMES = ROOT / "docs" / "core" / "outcomes.md"
 CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
 EXTENSIONS = ROOT / "docs" / "persistence" / "extensions.md"
+EXTENSIONS_EXAMPLE = ROOT / "docs" / "persistence" / "extensions-example.md"
 WORKFLOWS = ROOT / "docs" / "workflows" / "README.md"
 DATA_ANALYSIS = ROOT / "docs" / "data_analysis" / "README.md"
 RUNTIME_USE_CASES = ROOT / "docs" / "runtime_use_cases" / "README.md"
@@ -68,6 +69,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         CRON,
         MIGRATIONS,
         EXTENSIONS,
+        EXTENSIONS_EXAMPLE,
         WORKFLOWS,
         DATA_ANALYSIS,
         RUNTIME_USE_CASES,

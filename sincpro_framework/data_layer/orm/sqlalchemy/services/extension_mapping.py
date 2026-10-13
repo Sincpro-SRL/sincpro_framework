@@ -19,7 +19,10 @@ from sqlalchemy import Column, Join, Table, event, or_
 from sqlalchemy.orm import Mapper, column_property, registry
 
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
-from sincpro_framework.data_layer.orm.sqlalchemy.services import extension_typing
+from sincpro_framework.data_layer.orm.sqlalchemy.services import (
+    extension_typing,
+    extension_writing,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.data_mapper import (
     parent_table,
     refuse_a_table_that_does_not_extend,
@@ -202,6 +205,15 @@ def map_consolidated(
             for level in consolidation.extensions
         )
     ]
+    if consolidation.core in extension_typing.STORED_TYPE:
+        identity_name = core_table.primary_key.columns.values()[0].key
+
+        def typed_after_insert(_mapper: Any, connection: Any, record: Any) -> None:
+            extension_writing.retype(
+                connection, consolidation.core, getattr(record, identity_name)
+            )
+
+        event.listen(mapper, "after_insert", typed_after_insert)
     return mapper
 
 

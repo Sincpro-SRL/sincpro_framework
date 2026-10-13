@@ -14,7 +14,7 @@ from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework
 from sincpro_framework.context.adapters.stores import InMemoryContexts
-from sincpro_framework.data_layer.orm import Consolidated, map_aggregates
+from sincpro_framework.data_layer.orm import Consolidated, Relation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
@@ -36,7 +36,7 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
 from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.exceptions import ClientError
+from sincpro_framework.exceptions import ClientError, ProgrammingError
 
 from .engines import fresh
 
@@ -353,6 +353,210 @@ def test_an_edit_of_a_draft_with_a_field_of_an_extension_is_kept_and_answered(en
 
     assert answer.move.route == "R3"  # type: ignore[attr-defined]
     assert world.store.get(world.MoveDelivery, "B").route == "R7"  # type: ignore[union-attr]  # nothing stored
+
+
+# ── delegated: a form reads the record nested and sends it back as it read it ────
+
+
+def nested_record(world: World, key: str) -> dict:
+    """What a client holds after reading a record of a delegated entity: the extensions under
+    their keys, `null` for the ones the record does not have."""
+    return {
+        name: value
+        for name, value in written(world, key).items()
+        if name not in ("id", "created_at", "updated_at", "version")
+    }
+
+
+def test_a_form_that_read_a_delegated_record_sends_it_back_as_it_read_it(engine_url):
+    world = World(engine_url, delegated=True).fill()
+    bus, Edit_, Response, _ = forms(world)
+    values = nested_record(world, "B")
+    assert values["delivery"] == {"route": "R7"} and values["tracking"] is None
+    values["number"], values["delivery"]["route"] = "F-B2", "R-NEW"
+
+    with bus.context({"user_id": "u1"}):
+        bus(Edit_(id="B", values=values, action=EditAction.SAVE), Response)
+
+    stored = world.store.get(world.MoveDelivery, "B")
+    assert stored is not None and (stored.number, stored.route) == ("F-B2", "R-NEW")
+
+
+def test_an_extension_the_record_does_not_have_writes_nothing_when_the_form_sends_it_null(
+    engine_url,
+):
+    world = World(engine_url, delegated=True).fill()
+    bus, Edit_, Response, _ = forms(world)
+    values = nested_record(world, "A")
+    assert values["delivery"] is None
+    values["number"] = "F-A2"
+
+    with bus.context({"user_id": "u1"}):
+        bus(Edit_(id="A", values=values, action=EditAction.SAVE), Response)
+
+    after = world.store.get(world.Move, "A")
+    assert type(after).__name__ == "Move" and after.number == "F-A2"  # type: ignore[union-attr]
+
+
+def test_a_delegated_form_creates_a_record_as_the_extension_its_nested_values_name(
+    engine_url,
+):
+    world = World(engine_url, delegated=True)
+    bus, Edit_, Response, _ = forms(world)
+
+    with bus.context({"user_id": "u1"}):
+        bus(
+            Edit_(
+                id="N",
+                values={
+                    "number": "F-N",
+                    "delivery": {"route": "R1"},
+                    "tracking": {"carrier": "UPS"},
+                },
+                action=EditAction.SAVE,
+            ),
+            Response,
+        )
+
+    made = world.store.get(world.Move, "N")
+    assert type(made).__name__ == "MoveTracking"
+    assert (made.route, made.carrier) == ("R1", "UPS")  # type: ignore[union-attr]
+
+
+def test_a_delegated_entity_takes_flat_values_as_they_are(engine_url):
+    world = World(engine_url, delegated=True).fill()
+    bus, Edit_, Response, _ = forms(world)
+
+    with bus.context({"user_id": "u1"}):
+        bus(Edit_(id="B", values={"route": "R-FLAT"}, action=EditAction.SAVE), Response)
+
+    assert world.store.get(world.MoveDelivery, "B").route == "R-FLAT"  # type: ignore[union-attr]
+
+
+def test_a_nested_value_with_a_field_the_extension_does_not_have_is_refused_naming_it(
+    engine_url,
+):
+    world = World(engine_url, delegated=True).fill()
+    bus, Edit_, Response, _ = forms(world)
+
+    with bus.context({"user_id": "u1"}), pytest.raises(
+        ClientError, match="delivery has no field cufd"
+    ):
+        bus(
+            Edit_(id="B", values={"delivery": {"cufd": "X"}}, action=EditAction.SAVE),
+            Response,
+        )
+
+
+def test_an_entity_that_does_not_delegate_does_not_take_its_extensions_nested(engine_url):
+    world = World(engine_url).fill()
+    bus, Edit_, Response, _ = forms(world)
+
+    with bus.context({"user_id": "u1"}), pytest.raises(
+        ClientError, match="no field delivery"
+    ):
+        bus(
+            Edit_(id="B", values={"delivery": {"route": "R1"}}, action=EditAction.SAVE),
+            Response,
+        )
+
+
+def test_the_answer_to_an_edit_nests_the_extensions_when_the_entity_delegates(engine_url):
+    world = World(engine_url, delegated=True).fill()
+    bus, Edit_, Response, _ = forms(world)
+
+    with bus.context({"user_id": "u1"}):
+        answer = bus(Edit_(id="B", values={"delivery": {"route": "R3"}}), Response)
+
+    shown = answer.model_dump(mode="json")["move"]
+    assert shown["delivery"] == {"route": "R3"} and "route" not in shown
+
+
+def test_the_fields_a_form_reports_changed_are_taken_nested_or_flat(engine_url):
+    world = World(engine_url, delegated=True).fill()
+    bus, Edit_, Response, _ = forms(world)
+
+    with bus.context({"user_id": "u1"}):
+        version = 0
+        for changed in (["delivery"], ["delivery.route"], ["route"]):
+            answer = bus(
+                Edit_(
+                    id="B",
+                    values={"delivery": {"route": "R3"}},
+                    changed=changed,
+                    version=version,
+                ),
+                Response,
+            )
+            version = answer.draft.version  # type: ignore[union-attr]
+            assert answer.move.route == "R3"  # type: ignore[attr-defined]
+
+
+def test_two_extensions_that_would_nest_under_one_key_are_refused_naming_both(engine_url):
+    world = World(engine_url, delegated=True)
+
+    @dataclass
+    class MoveDelivery(world.Move):  # another module's class, the same name
+        zone: str = ""
+
+    table = Table(
+        "move_delivery_zone",
+        world.md,
+        Column("id", Text, ForeignKey("move.id"), primary_key=True),
+        Column("zone", Text),
+    )
+
+    with pytest.raises(ProgrammingError, match="would both be `delivery`"):
+        map_aggregates(world.reg, {MoveDelivery: table})
+
+
+def test_an_extension_that_is_not_an_entity_does_not_repeat_the_dates_and_version_of_the_base(
+    engine_url,
+):
+    md = MetaData()
+    reg = registry(metadata=md)
+
+    @dataclass
+    class Move(Entity):
+        number: str = ""
+
+    @dataclass
+    class MoveFiscal:  # not an Entity: the id, dates and version are the move's
+        id: str = ""
+        cufd: str = ""
+
+    move_t = entity_table("move", md, Column("number", Text))
+    fiscal_t = Table(
+        "move_fiscal",
+        md,
+        Column("id", Text, ForeignKey("move.id"), primary_key=True),
+        Column("cufd", Text),
+    )
+    map_aggregates(
+        reg,
+        {Move: move_t, MoveFiscal: fiscal_t},
+        relations={
+            Move: {
+                "fiscal": Relation.foreign_key(
+                    MoveFiscal, parent_field="id", related_field="id", many=False
+                )
+            }
+        },
+    )
+    store = Repository(fresh(engine_url, md))
+    store.save(Move(id="M1", number="F-1"))
+    store.save(MoveFiscal(id="M1", cufd="C1"))
+    specification = Specification({"number": Criteria(), "fiscal": Criteria()})
+
+    class ResponseMoves(ResponsePaginatedQuery):
+        moves: list[Move]
+
+    page = store.search(Move, Criteria(specification=specification))
+    shown = ResponseMoves.of(page, Criteria(specification=specification)).model_dump(
+        mode="json"
+    )
+
+    assert shown["moves"][0]["fiscal"] == {"id": "M1", "cufd": "C1"}
 
 
 # ── removing and consolidating ─────────────────────────────────────────────────

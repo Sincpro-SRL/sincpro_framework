@@ -279,11 +279,13 @@ def column_attribute(entity: type, field: str) -> Any:
     attribute = getattr(entity, field, None)
     if isinstance(attribute, QueryableAttribute):
         return attribute
+    stored = stored_by_an_extension(entity, field)
+    if stored is not None:
+        return stored
     mapper = sqlalchemy.inspect(entity)
     column = mapper.local_table.c.get(field)
     if column is None:
-        stored = stored_by_an_extension(entity, field)
-        return attribute if stored is None else stored
+        return attribute
     return getattr(entity, mapper.get_property_by_column(column).key)
 
 
