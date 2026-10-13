@@ -12,6 +12,7 @@ and reverted. The orchestrator owns the order.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from pathlib import Path
 
 from sincpro_framework.data_layer.migrations.domain.step import Chain, Position, Step
@@ -45,6 +46,10 @@ class MigrationEngine(ABC):
     @abstractmethod
     def scaffold(self, chain: Chain, step: Step) -> Path:
         """Write the body of a new step under `chain.folder`, and answer its path."""
+
+    def coexist(self, neighbours: Sequence["MigrationEngine"]) -> None:
+        """Told, when `Migrations` is built, which other engines migrate beside this one — so it
+        can leave alone what they own. Most engines own their store alone and ignore it."""
 
     def drift(self, chain: Chain) -> list[str] | None:
         """What differs between the store and what the code declares; `None` when this engine

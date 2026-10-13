@@ -44,7 +44,7 @@ from sincpro_framework.runtime.testing.contracts.computed_fields import (
     ComputedFieldsContract,
 )
 
-from .engines import fresh
+from .engines import ENGINES, fresh
 
 
 class State(StrEnum):
@@ -116,14 +116,16 @@ def bill(row: tuple) -> Bill:
     )
 
 
-@pytest.fixture(params=["memory", "sql"])
+@pytest.fixture(params=["memory", *ENGINES])
 def bills(request: pytest.FixtureRequest) -> Any:
+    """The same rows in a memory store and in every engine the suite has: SQLite always, and
+    PostgreSQL when `SINCPRO_POSTGRES_URL` is given."""
     if request.param == "memory":
         store = MemoryRepository()
         for row in ROWS:
             store.save(bill(row))
         return store
-    store = Repository(fresh("sqlite://", analytics.metadata))
+    store = Repository(fresh(request.param, analytics.metadata))
     with store.context() as repository:
         for row in ROWS:
             repository.save(bill(row))
@@ -632,3 +634,25 @@ def test_the_iso_week_and_weekday_agree_with_python_on_every_day_of_fifty_years(
     ]
 
     assert wrong == []
+
+
+def test_the_median_is_the_same_number_in_memory_and_where_the_engine_has_percentiles(
+    bills: Any,
+):
+    if isinstance(bills, Repository) and bills.database.engine.dialect.name == "sqlite":
+        pytest.skip("SQLite has no percentile: it refuses by name, which is tested above")
+
+    got = {
+        one.value: one.measures["mid"]
+        for one in grouped(
+            bills,
+            Level(field="owner"),
+            measures={"mid": Measure(function="median", field="total")},
+        )
+    }
+
+    assert {owner: float(value) for owner, value in got.items()} == {
+        "ana": 75.0,
+        "beto": 105.0,
+        "caro": 70.0,
+    }

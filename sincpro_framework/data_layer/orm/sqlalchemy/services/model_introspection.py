@@ -22,6 +22,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     is_mapped_event,
     map_new_event_classes,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
+    TYPE_ATTRIBUTE,
+)
 from sincpro_framework.ddd.entity import Translated
 from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
@@ -93,12 +96,14 @@ def _is_shape(candidate: Any) -> bool:
 
 def _column_type(column: Any) -> Any:
     """What a mapped column holds when the class does not say it — a column the mapping adds
-    that no field declares, like a context's event table's delivery columns."""
+    that no field declares, like a context's event table's delivery columns, or an expression an
+    extension maps onto a class it does not own (`properties=`), which has no NOT NULL and so may
+    be absent."""
     try:
         python_type = column.type.python_type
     except NotImplementedError:
         return Any
-    return python_type | None if column.nullable else python_type
+    return python_type | None if getattr(column, "nullable", True) else python_type
 
 
 def _key_is_unique(entity: type, table: Any, key: str, identity: str) -> None:
@@ -171,6 +176,8 @@ def describe(entity: type) -> Meta:
 
     fields: dict[str, FieldMeta] = {}
     for column in mapper.columns:
+        if column.key == TYPE_ATTRIBUTE:
+            continue
         annotation = annotations.get(column.key) or _column_type(column)
         # A computed field is an expression, not a column: it has no NOT NULL, so its annotation
         # says whether it may be absent.

@@ -120,8 +120,18 @@ The goal: **define the model and get the analysis**, without writing a query. A 
 | Store | Status | Notes |
 |---|---|---|
 | Memory (`MemoryRepository`) | ✅ | the same vocabulary without a database; no relations, no units of work, no date **grains** (a grain is the adapter's), parts and fills yes |
-| SQLAlchemy | ✅ | SQLite always; PostgreSQL and DuckDB translators exist, with compile-level tests for the dialect-specific SQL; a suite against a server runs when `SINCPRO_POSTGRES_URL` is set |
+| SQLAlchemy | ✅ | SQLite always; PostgreSQL when `SINCPRO_POSTGRES_URL` is set — the analysis suite (`test_model_driven_analytics.py`) runs on both, with the same rows; DuckDB has translators and compile-level tests |
 | Another adapter (document, key-value) | ⬜ | the capabilities are declared; no second adapter yet |
+
+## 5b. Extending an entity you do not own
+
+Specified in [extensibility](extensibility.md): the rule (what an extension adds, the extension owns),
+what it may do to an entity, which mechanism to use when, how a release of the core or of an
+extension is survived, the measurements on PostgreSQL, and what is still missing. A mapped entity
+answers each row as the most derived extension it has (the type is worked out from the rows, never
+stored), an extension may keep its columns in the entity's own table, sibling extensions can be one
+`Consolidated` record, and the migrations of two chains that declare one table leave each other's
+columns alone. The memory store has none of it: an extension is a mapped class.
 
 ## 6. Known limits
 
@@ -129,8 +139,14 @@ The goal: **define the model and get the analysis**, without writing a query. A 
 - A record not yet read from a store holds the field's default (`None` once the class is mapped).
 - A date compared with an instant column is that date's midnight in the context's timezone,
   as a UTC instant; grain buckets are cut in UTC.
-- Date-part SQL for PostgreSQL and DuckDB is verified by compilation here and by the parity suite
-  when a server is available, not by this repository's default run.
+- Date-part SQL for DuckDB is verified by compilation only. PostgreSQL's runs against a server when
+  `SINCPRO_POSTGRES_URL` is set (it passes on PostgreSQL 17); this repository's default run is SQLite.
+- A membership test with 2,000 values or more (`in` / `not in`) travels on PostgreSQL as one array
+  parameter, `= ANY(:values)`, because a statement accepts 65,535 parameters; elsewhere it is an
+  ordinary `IN`.
+- Running the whole `tests/data_layer/orm` folder against PostgreSQL in one process fails for reasons
+  that predate this work (the same files fail at `c8c89aa`); run it file by file. `test_events_table.py`
+  fails on PostgreSQL either way.
 - SQLite's `strftime` reads ISO formats (`%G`, `%V`, `%u`) only from 3.46 (May 2024), and a Python
   built on an older library answers NULL for them. The framework therefore never uses them on
   SQLite: the ISO week is computed from the Thursday of its week and the weekday from `%w`, and a

@@ -14,6 +14,7 @@ The public API is what this package and `sincpro_framework.data_layer.orm` expor
 framework's own. Everything here knows SQLAlchemy; nothing in `sincpro_framework.ddd` does.
 """
 
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
     JsonText,
     TranslatedText,
@@ -53,6 +54,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
 )
 
 __all__ = [
+    "Consolidated",
     "Database",
     "DatabaseAggregateRepository",
     "DatabaseNumbering",

@@ -11,6 +11,7 @@ process is collecting, and every failure to the error tracker; see `observabilit
 """
 
 import re
+import weakref
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any
@@ -94,6 +95,10 @@ def _enforcing_foreign_keys(connection: Any, _record: Any) -> None:
     cursor.close()
 
 
+ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
+"""Every engine built here: what has to forget its compiled statements when a mapper changes."""
+
+
 class Database:
 
     def __init__(
@@ -130,6 +135,7 @@ class Database:
         self.url = url
         self.name = make_url(url).database or ""
         self.engine: Engine = create_engine(url, echo=echo, **engine_options)
+        ENGINES.add(self.engine)
         observe(self.engine, self.name, logger)
         if enforce_foreign_keys and self.engine.dialect.name == "sqlite":
             event.listen(self.engine, "connect", _enforcing_foreign_keys)

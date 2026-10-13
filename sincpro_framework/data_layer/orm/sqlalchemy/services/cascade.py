@@ -40,6 +40,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import (
     held,
     read_before,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
+    TYPE_ATTRIBUTE,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.data_layer.orm.sqlalchemy.services.upsert import unique_on
 from sincpro_framework.ddd.entity.entity_collection import identity_name, identity_of
@@ -122,7 +125,11 @@ def _plain_column(mapper: Any) -> str | None:
     keys = {column.key for column in mapper.primary_key}
     version = mapper.version_id_col.key
     for column in mapper.column_attrs:
-        if column.key not in keys and column.columns[0].key != version:
+        if (
+            column.key not in keys
+            and column.columns[0].key != version
+            and column.key != TYPE_ATTRIBUTE
+        ):
             return column.key
     return None
 

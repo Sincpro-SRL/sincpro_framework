@@ -22,6 +22,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     is_mapped_event,
     map_new_event_classes,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
+    TYPE_ATTRIBUTE,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.store import Store
 from sincpro_framework.ddd.criteria import (
@@ -331,7 +334,11 @@ class Writing(Store):
         self._refuse_read_only()
         model, _ = model_and_collection(target)
         clause = self._bulk_where(model, criteria, "update_all")
-        columns = {prop.key for prop in sqlalchemy.inspect(model).column_attrs}
+        columns = {
+            prop.key
+            for prop in sqlalchemy.inspect(model).column_attrs
+            if prop.key != TYPE_ATTRIBUTE
+        }
         fixed = {describe(model).identity, "created_at", "version", "updated_at"}
         wrong = sorted(name for name in values if name not in columns or name in fixed)
         if wrong:
@@ -397,7 +404,11 @@ class Writing(Store):
         mapper = sqlalchemy.inspect(model)
         table = cast(Table, mapper.local_table)
         dialect = self._dialect()
-        names = {prop.key: prop.columns[0].name for prop in mapper.column_attrs}
+        names = {
+            prop.key: prop.columns[0].name
+            for prop in mapper.column_attrs
+            if prop.key != TYPE_ATTRIBUTE
+        }
         identity = describe(model).identity
         fixed = {identity, "created_at", "version", "updated_at"}
         upsert.refuse(

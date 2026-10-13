@@ -7,6 +7,7 @@ specification is the thing a reader trusts today.
 | Specification | Covers |
 |---|---|
 | [Persistence](persistence.md) | The entity model, what a repository reads and writes, analysis from the model, and the status of every capability |
+| [Extensibility](extensibility.md) | How a module in another repository adds to an entity it does not own, how releases of the core and of the module are survived, what it costs, and what is missing |
 
 ## How a specification is kept
 

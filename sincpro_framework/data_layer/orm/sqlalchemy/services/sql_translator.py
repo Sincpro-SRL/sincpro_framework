@@ -4,19 +4,23 @@ Nothing here plans a query or builds a join — SQLAlchemy does that. Rewriting 
 what a different backend would cost. See `docs/persistence/reference.md`.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
 import sqlalchemy
 from sqlalchemy import (
+    Boolean,
     ColumnElement,
     DateTime,
     Integer,
     Select,
     String,
     Text,
+    all_,
     and_,
+    any_,
+    bindparam,
     cast,
     func,
     not_,
@@ -25,6 +29,8 @@ from sqlalchemy import (
     true,
     tuple_,
 )
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import QueryableAttribute
 from sqlalchemy.sql.elements import UnaryExpression
 
@@ -94,6 +100,56 @@ def _literal(value: Any) -> str:
     return _escaped(str(value).lower())
 
 
+MANY_MEMBERS = 2000
+"""From how many values a membership test stops being written one parameter per value. PostgreSQL
+accepts 65,535 parameters in a statement, and a question such as «the invoices of these deliveries»,
+answered by another context, can name far more than that."""
+
+
+class _ManyMembers(ColumnElement[bool]):
+    """`column IN (many values)`, written for the engine that will run it.
+
+    Where there is an array type (PostgreSQL) the values travel as ONE parameter,
+    `column = ANY(:values)`: no limit on how many, and a plan that does not grow with them.
+    Anywhere else it is the ordinary `IN`, which is what every engine reads.
+    """
+
+    inherit_cache = False
+    type = Boolean()
+
+    def __init__(self, column: Any, values: Sequence[Any], negated: bool) -> None:
+        self.column = column
+        self.values = list(values)
+        self.negated = negated
+
+
+@compiles(_ManyMembers)
+def _members_in_a_list(element: _ManyMembers, compiler: Any, **kw: Any) -> str:
+    chosen = (
+        element.column.not_in(element.values)
+        if element.negated
+        else element.column.in_(element.values)
+    )
+    return compiler.process(chosen, **kw)
+
+
+@compiles(_ManyMembers, "postgresql")
+def _members_in_an_array(element: _ManyMembers, compiler: Any, **kw: Any) -> str:
+    values = bindparam(None, element.values, type_=postgresql.ARRAY(element.column.type))
+    chosen = (
+        element.column != all_(values) if element.negated else element.column == any_(values)
+    )
+    return compiler.process(chosen, **kw)
+
+
+def _members(column: Any, values: Sequence[Any], negated: bool) -> ColumnElement[bool]:
+    """`column IN values` (or `NOT IN`), as one parameter per value up to `MANY_MEMBERS` and as
+    an array from there."""
+    if len(values) < MANY_MEMBERS or any(one is None for one in values):
+        return column.not_in(values) if negated else column.in_(values)
+    return _ManyMembers(column, values, negated)
+
+
 def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bool]:
     """One operator as the SQL comparison it means.
 
@@ -123,9 +179,9 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
                 return and_(_as_stored_text(column).is_not(None), column != value)
             return column != value
         case Operator.IN:
-            return column.in_(value)
+            return _members(column, value, negated=False)
         case Operator.NOT_IN:
-            return column.not_in(value)
+            return _members(column, value, negated=True)
         case Operator.GT:
             return column > value
         case Operator.GTE:
