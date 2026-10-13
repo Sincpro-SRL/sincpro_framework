@@ -27,6 +27,7 @@ except (
     raise ImportError(SQLALCHEMY_MISSING) from error
 
 from sincpro_framework.data_layer.orm.sqlalchemy import (
+    Consolidated,
     Database,
     DatabaseAggregateRepository,
     DatabaseNumbering,
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AlembicEngine",
+    "Consolidated",
     "Database",
     "DatabaseAggregateRepository",
     "DatabaseNumbering",

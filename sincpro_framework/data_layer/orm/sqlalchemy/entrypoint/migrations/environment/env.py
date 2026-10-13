@@ -19,6 +19,7 @@ context.configure(
     target_metadata=metadata,
     version_table=config.attributes["version_table"],
     include_name=only_tables_of(metadata),
+    include_object=config.attributes["include_object"],
     render_item=config.attributes["render_item"],
     render_as_batch=connection.dialect.name == "sqlite",
     sqlalchemy_module_prefix="sqlalchemy.",

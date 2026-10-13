@@ -270,3 +270,54 @@ def test_the_week_grain_reads_the_same_on_both_dialects():
         )
     )
     assert bucket_range("week", "2026-W01") == (datetime(2025, 12, 29), datetime(2026, 1, 5))
+
+
+# ── a membership test with very many values ───────────────────────────────────
+
+
+def test_a_long_list_of_values_travels_as_one_parameter_on_postgres():
+    """PostgreSQL accepts 65,535 parameters in a statement, and «the invoices of these deliveries»,
+    answered by another context, can name more than that: from MANY_MEMBERS on the values are one
+    array and `= ANY`, which also plans better than a list that grows with them."""
+    from sqlalchemy.dialects import postgresql
+
+    from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
+        MANY_MEMBERS,
+        where_clause,
+    )
+    from sincpro_framework.ddd.criteria import Condition, Operator
+
+    from .models import Thing
+
+    def rendered(count: int, operator: Operator = Operator.IN) -> str:
+        clause = where_clause(
+            Thing,
+            Condition(field="name", operator=operator, value=[f"n{i}" for i in range(count)]),
+        )
+        assert clause is not None
+        return str(clause.compile(dialect=postgresql.dialect()))
+
+    assert "ANY" in rendered(MANY_MEMBERS) and "IN" not in rendered(MANY_MEMBERS)
+    assert "ALL" in rendered(MANY_MEMBERS, Operator.NOT_IN)
+    assert "IN" in rendered(MANY_MEMBERS - 1) and "ANY" not in rendered(MANY_MEMBERS - 1)
+    assert rendered(MANY_MEMBERS).count("%(") == 1
+
+
+def test_a_long_list_of_values_is_an_ordinary_in_elsewhere(store):
+    from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
+        MANY_MEMBERS,
+    )
+    from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
+
+    from .models import Thing
+
+    names = [f"nobody{i}" for i in range(MANY_MEMBERS + 50)]
+
+    found = store.search(
+        Thing, Criteria(where=Condition(field="name", operator=Operator.IN, value=names))
+    )
+    everything = store.search(
+        Thing, Criteria(where=Condition(field="name", operator=Operator.NOT_IN, value=names))
+    )
+
+    assert len(found) == 0 and len(everything) == store.count(Thing).value

@@ -24,11 +24,10 @@ from dataclasses import MISSING, fields, is_dataclass
 from typing import Any
 
 import sqlalchemy
-from sqlalchemy import (
-    Table,
-)
+from sqlalchemy import Column, Join, Table
 from sqlalchemy.orm import column_property, object_session, registry
 
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import (
     RELATIONS,
 )
@@ -374,3 +373,49 @@ def refuse_a_table_that_does_not_extend(
             f"{entity.__name__} extends {parent.__name__}, so its table {table.name} holds only "
             f"its own columns and must reference {wanted} as its primary key"
         )
+
+
+SHARED_COLUMNS = frozenset({"id", "created_at", "updated_at", "version"})
+
+
+def consolidated_mapping(
+    mapper_registry: registry, entity: type, consolidation: Consolidated
+) -> tuple[Join, dict[str, Any], set[str], Table]:
+    """The join a consolidated class is mapped against, how each of its fields maps, and the
+    core's table (its key identifies the record, its version guards the write).
+
+        in      MoveConsolidated, Consolidated(Move, MoveDelivery, MoveFiscal)
+        out     move LEFT JOIN move_delivery LEFT JOIN move_fiscal,
+                {id: [move.id, move_delivery.id, move_fiscal.id], route: move_delivery.route, …}
+
+    The extensions are outer-joined: a record without a row of one reads it as empty. A field two
+    tables both have is refused, naming both, unless it is one the entity itself owns in every
+    table (`id`, `created_at`, `updated_at`, `version`), which is written to each.
+    """
+    tables = [parent_table(mapper_registry, one) for one in consolidation.entities]
+    core_table, *extension_tables = tables
+    key = list(core_table.primary_key.columns)[0]
+    joined: Join | Table = core_table
+    for table in extension_tables:
+        joined = joined.outerjoin(table, list(table.primary_key.columns)[0] == key)
+    wanted = {one.name for one in fields(entity)} if is_dataclass(entity) else set()
+    owners: dict[str, list[Column]] = {}
+    for table in tables:
+        for column in table.c:
+            owners.setdefault(column.name, []).append(column)
+    properties: dict[str, Any] = {}
+    unread = {name for name in owners if name not in wanted}
+    for name, columns in owners.items():
+        if name in unread:
+            continue
+        if len(columns) == 1:
+            properties[name] = columns[0]
+        elif name in SHARED_COLUMNS:
+            properties[name] = columns
+        else:
+            holders = ", ".join(column.table.name for column in columns)
+            raise ProgrammingError(
+                f"{entity.__name__} would read {name} from {holders}: a field of an entity, "
+                "an extension and another extension cannot share a name; rename one"
+            )
+    return joined, properties, unread, core_table  # type: ignore[return-value]

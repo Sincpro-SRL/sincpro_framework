@@ -5,6 +5,7 @@ tree — `combined`, `conditions_of`, `with_text` — lives here, and how it is 
 `entrypoint/evaluation.py` in memory, the ORM's translator in SQL.
 """
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -53,7 +54,7 @@ type Item = Annotated[
 is used. An object with the reserved key `"$"` is dynamic; any other is a literal."""
 
 type Value = Annotated[
-    Annotated[list[Item], Tag("list")] | Annotated[Item, Tag("item")],
+    Annotated[Sequence[Item], Tag("list")] | Annotated[Item, Tag("item")],
     Discriminator(value_kind),
 ]
 """What a condition compares: an item, or a list of them — `code in [<text typed>, "0"]`."""

@@ -16,7 +16,7 @@ show. `render_types` writes a type some other way.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -28,6 +28,7 @@ from alembic.config import Config
 from alembic.ddl.impl import DefaultImpl
 from alembic.runtime.environment import (
     IncludeNameFn,
+    IncludeObjectFn,
     NameFilterParentNames,
     NameFilterType,
     RenderItemFn,
@@ -91,6 +92,31 @@ def only_tables_of(metadata: MetaData) -> IncludeNameFn:
         return (f"{schema}.{name}" if schema else name) in metadata.tables
 
     return include_name
+
+
+def declared_elsewhere(mine: MetaData, others: Sequence[MetaData]) -> IncludeObjectFn:
+    """Autogenerate and drift leave alone a column of a table they share with another chain, when
+    that chain declares it and this one does not.
+
+        core chain        move(number, total)               an extension adds move.zone
+        extension chain   move(zone)                        the core owns move.number
+
+    Each chain compares only the columns it declares of a table another chain also declares: the
+    core's next step never drops `zone`, and the extension's first step never drops `number`. A
+    column nobody else declares is this chain's, and is dropped when it is no longer declared.
+    """
+
+    def include_object(
+        obj: Any, name: str | None, type_: str, reflected: bool, compare_to: Any
+    ) -> bool:
+        if type_ != "column" or not reflected or compare_to is not None or name is None:
+            return True
+        table = obj.table.name
+        return not any(
+            table in other.tables and name in other.tables[table].c for other in others
+        )
+
+    return include_object
 
 
 def _written_as(type_: TypeEngine[Any], render_types: RenderTypes) -> TypeEngine[Any] | None:
@@ -167,8 +193,18 @@ class AlembicEngine(MigrationEngine):
         self.metadata = metadata
         self.database = database
         self.render_types: RenderTypes = dict(render_types or {})
+        self.neighbours: list[MetaData] = []
         dialect = database.engine.dialect
         self.transactional = DefaultImpl.get_by_dialect(dialect).transactional_ddl
+
+    def coexist(self, neighbours: Sequence[MigrationEngine]) -> None:
+        """The other Alembic chains on this database: what they declare of a table is theirs."""
+        url = self.database.engine.url
+        self.neighbours = [
+            one.metadata
+            for one in neighbours
+            if isinstance(one, AlembicEngine) and one.database.engine.url == url
+        ]
 
     def _config(self, chain: Chain, connection: Connection) -> Config:
         config = Config()
@@ -179,6 +215,9 @@ class AlembicEngine(MigrationEngine):
         config.attributes["metadata"] = self.metadata
         config.attributes["version_table"] = version_table(chain)
         config.attributes["render_item"] = rendering_types(self.render_types)
+        config.attributes["include_object"] = declared_elsewhere(
+            self.metadata, self.neighbours
+        )
         return config
 
     def position(self, chain: Chain) -> Position:
@@ -246,6 +285,7 @@ class AlembicEngine(MigrationEngine):
                 opts={
                     "version_table": version_table(chain),
                     "include_name": only_tables_of(self.metadata),
+                    "include_object": declared_elsewhere(self.metadata, self.neighbours),
                 },
             )
             differences = compare_metadata(migration, self.metadata)

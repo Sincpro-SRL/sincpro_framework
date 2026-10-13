@@ -136,6 +136,9 @@ class Migrations:
             folders[context.folder.resolve()] = context.name
         self.contexts = {context.name: context for context in contexts}
         self.logger: LoggerProxy = create_logger("migrations")
+        everyone = [engine for context in contexts for engine in context.engines.values()]
+        for engine in everyone:
+            engine.coexist([one for one in everyone if one is not engine])
 
     def _context(self, name: str) -> ContextMigrations:
         if name not in self.contexts:
