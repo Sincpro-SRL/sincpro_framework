@@ -19,6 +19,7 @@ it is about to write and can see writes that never went through a repository at 
 from sincpro_framework.ddd.repositories.aggregate_repository import AggregateRepository
 from sincpro_framework.ddd.repositories.capabilities import (
     Analyzes,
+    Extends,
     ReadsAggregates,
     StoreCapabilities,
     Transacts,
@@ -46,5 +47,6 @@ __all__ = [
     "Transacts",
     "Upserted",
     "WritesAggregates",
+    "Extends",
     "WritesInBulk",
 ]

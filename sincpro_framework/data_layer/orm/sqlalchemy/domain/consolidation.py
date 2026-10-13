@@ -20,7 +20,3 @@ class Consolidated:
     def __init__(self, core: type, *extensions: type) -> None:
         self.core = core
         self.extensions = extensions
-
-    @property
-    def entities(self) -> tuple[type, ...]:
-        return (self.core, *self.extensions)

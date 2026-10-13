@@ -214,6 +214,7 @@ Anything that fits none of these: stop and ask. Do not invent a fourth kind of s
 | Permissions, identity, providers | `sincpro-framework-auth` |
 | Crons, a process and its loops, migrations | `sincpro-framework-operations` |
 | DataFrames, runtime use cases, workflows | `sincpro-framework-analytics` |
+| Add fields to an entity you do not own: a module's extension, `Consolidated`, `CONTRACT`, `ExtensionContract` | `sincpro-framework-extensions` |
 | Test a use case | [references/testing.md](references/testing.md) |
 | Everything, one line each | [references/capability-map.md](references/capability-map.md) |
 

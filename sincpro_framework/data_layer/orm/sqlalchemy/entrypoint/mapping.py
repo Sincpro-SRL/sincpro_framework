@@ -3,26 +3,22 @@ to its event table (`map_events`), and how another engine cuts a date (`register
 The machinery each one stands on is in `services/`."""
 
 from collections.abc import Collection, Mapping
-from dataclasses import fields as dataclass_fields
-from dataclasses import is_dataclass
 from typing import Any
 
+import sqlalchemy
 from sqlalchemy import Table, event
-from sqlalchemy.orm import column_property, registry
+from sqlalchemy.orm import registry
 
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import record_mapping
 from sincpro_framework.data_layer.orm.sqlalchemy.services import (
-    extension_typing,
+    extension_mapping,
     sql_translator,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.data_mapper import (
     computed_properties,
-    consolidated_mapping,
     inferred_foreign_keys,
     install,
-    parent_table,
-    refuse_a_table_that_does_not_extend,
     with_transient_defaults,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
@@ -33,35 +29,14 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     packed,
     unpacked,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
     GrainTranslator,
     PartTranslator,
 )
-from sincpro_framework.ddd.entity import Entity, relations
+from sincpro_framework.ddd.entity import Entity, extensions, relations
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.exceptions import ProgrammingError
-
-
-def own_columns(entity: type, parent: type, table: Table) -> list[str]:
-    """The columns of a shared table that an extension adds: its fields the parent does not have."""
-    if not is_dataclass(entity):
-        raise ProgrammingError(
-            f"{entity.__name__} must be a dataclass to share its parent's table"
-        )
-    inherited = (
-        {field.name for field in dataclass_fields(parent)} if is_dataclass(parent) else set()
-    )
-    found = [
-        field.name
-        for field in dataclass_fields(entity)
-        if field.name not in inherited and field.name in table.c
-    ]
-    if not found:
-        raise ProgrammingError(
-            f"{entity.__name__} shares {table.name} with {parent.__name__} but none of its own "
-            f"fields is a column of it: add the columns to the table"
-        )
-    return found
 
 
 def map_aggregates(
@@ -70,6 +45,10 @@ def map_aggregates(
     properties: dict[type, dict[str, Any]] | None = None,
     relations: dict[type, dict[str, relations.Relation]] | None = None,
     strict: Collection[type] = (),
+    delegated: Collection[type] = (),
+    uses: Mapping[type, Collection[str]] | None = None,
+    requires: Mapping[type, str] | None = None,
+    overlay: Mapping[type, Mapping[str, Mapping[str, Any]]] | None = None,
 ) -> None:
     """Maps each class to its table, once, switching on the version check for an `Entity`, and
     installs the relations on the classes: the declared ones, then the ones the foreign keys
@@ -80,7 +59,9 @@ def map_aggregates(
 
     `properties` is per class and is what `map_imperatively` takes: how to map an attribute
     onto a column with another name, say `{"id": dataset_table.c.dataset_id}` for a table
-    that predates the `Entity` convention.
+    that predates the `Entity` convention. For a class that is already mapped it adds the
+    attributes it does not have yet, which is how a module maps a key of the JSON slot of an
+    entity it does not own.
 
     A field declared with `computed(sql=…)` is mapped as an expression over the table
     (`column_property`): it is read with the row, and filtered, ordered and grouped by like a
@@ -98,9 +79,23 @@ def map_aggregates(
     delivery row — and the columns of the extension are read in one more statement per type
     found, not a join per extension. `strict` lists the classes that answer only themselves.
 
+    An answer writes the fields an extension adds flat, beside the entity's own. `delegated` lists
+    the classes whose answers nest them instead, each under the extension's key
+    (`{"number": …, "delivery": {"route": …}}`).
+
     A class mapped to `Consolidated(Core, ExtensionA, ExtensionB)` is one flat record of all of
     them, read through an outer join and written to each table, the core's first: the place where
     sibling extensions become one object, declared by the module that knows them all.
+
+    A module that adds to an entity it does not own says what it reads and what it was written
+    against. `uses={Move: ("total",)}` is checked once the call has mapped everything: a core that
+    renamed `total` stops the application where the module is mapped, naming the field.
+    `requires={Move: "2.1"}` is checked against the `CONTRACT` the core publishes on the entity
+    (`CONTRACT = "2.3"`): the same major and at least that minor, or the application does not start.
+
+    `overlay={Move: {"total": {"label": {"default": "Amount"}, "readonly": True}}}` changes how a
+    module shows a field of the core — its label, its help, read-only, required — and nothing else:
+    the field itself is the core's.
 
     An extension may also live in its **parent's own table** (`{Move: move, MoveDelivery: move}`):
     the columns it owns are columns of that table, and a row has the extension when any of them
@@ -108,106 +103,65 @@ def map_aggregates(
     migrations compare each chain only with the columns it declares.
     """
     already = {mapper.class_ for mapper in mapper_registry.mappers}
+    mapped_before = set(already)
+    extensions.DELEGATED.update(delegated)
     for entity, table in sorted(tables.items(), key=lambda item: len(item[0].__mro__)):
         if entity in already:
             continue
 
+        own = (properties or {}).get(entity, {})
         if isinstance(table, Consolidated):
-            joined, columns, unread, core_table = consolidated_mapping(
-                mapper_registry, entity, table
-            )
-            mapper = mapper_registry.map_imperatively(
-                entity,
-                joined,
-                properties={**columns, **(properties or {}).get(entity, {})},
-                exclude_properties=unread,
-                primary_key=list(core_table.primary_key.columns),
-                version_id_col=core_table.c.version,
-            )
-            event.listen(
-                mapper, "load", with_transient_defaults(entity, set(mapper.columns.keys()))
-            )
-            already.add(entity)
-            continue
-
-        options: dict[str, Any] = {}
-        computed = computed_properties(entity, table)
-        if computed or (properties and entity in properties):
-            options["properties"] = {**computed, **(properties or {}).get(entity, {})}
-        parent = next((base for base in entity.__mro__[1:] if base in already), None)
-        if parent is not None:
-            above = parent_table(mapper_registry, parent)
-            shared = table is above
-            root = extension_typing.ROOT_OF[parent]
-            if shared:
-                own = own_columns(entity, parent, table)
-                if root in strict or root in extension_typing.STRICT:
-                    raise ProgrammingError(
-                        f"{entity.__name__} keeps its columns in {table.name} and {root.__name__} "
-                        "answers only itself: a row would never be read as the extension"
-                    )
-                proof = extension_typing.has_a_column_set(table, own)
-            else:
-                refuse_a_table_that_does_not_extend(entity, table, parent, above)
-                proof = extension_typing.has_the_row_of(
-                    parent_table(mapper_registry, root), table
-                )
-            options["polymorphic_load"] = "selectin"
-            if not shared and root not in strict:
-                options["properties"] = {
-                    **options.get("properties", {}),
-                    extension_typing.TYPE_ATTRIBUTE: column_property(
-                        extension_typing.ExtensionType(root, within=entity)
-                    ),
-                }
-            options["inherits"] = parent
-            options["polymorphic_identity"] = extension_typing.identity_of(entity)
-            extension_typing.ROOT_OF[entity] = root
-            extension_typing.register(root, entity, len(entity.__mro__), proof)
+            mapper = extension_mapping.map_consolidated(mapper_registry, entity, table, own)
         else:
-            if issubclass(entity, Entity) and "version" in table.c:
-                options["version_id_col"] = table.c.version
-            if isinstance(table, Table):
-                options["polymorphic_on"] = extension_typing.TYPE_ATTRIBUTE
-                options["properties"] = {
+            options: dict[str, Any] = {}
+            computed = computed_properties(entity, table)
+            if computed or own:
+                options["properties"] = {**computed, **own}
+            parent = next((base for base in entity.__mro__[1:] if base in already), None)
+            if parent is None:
+                if issubclass(entity, Entity) and "version" in table.c:
+                    options["version_id_col"] = table.c.version
+                local, extra = table, (
+                    extension_mapping.root_options(entity, table, strict)
+                    if isinstance(table, Table)
+                    else {}
+                )
+            else:
+                local, extra = extension_mapping.extension_options(
+                    mapper_registry, entity, table, parent, strict
+                )
+            options = {
+                **options,
+                **extra,
+                "properties": {
                     **options.get("properties", {}),
-                    extension_typing.TYPE_ATTRIBUTE: column_property(
-                        extension_typing.ExtensionType(entity)
-                    ),
-                }
-                options["polymorphic_identity"] = extension_typing.identity_of(entity)
-                extension_typing.ROOT_OF[entity] = entity
-                if entity in strict:
-                    extension_typing.STRICT.add(entity)
-
-        # a subclass given the very table of its parent is single-table only if it names none
-        mapper = mapper_registry.map_imperatively(
-            entity,
-            (
-                None
-                if options.get("inherits")
-                and table is parent_table(mapper_registry, options["inherits"])
-                else table
-            ),
-            **options,
-        )
-        if (
-            parent is not None
-            and mapper.polymorphic_on is None
-            and extension_typing.ROOT_OF[entity] not in extension_typing.STRICT
-        ):
-            # SQLAlchemy hands a subclass the parent's discriminator only when it is a column of
-            # the subclass's own selectable; ours is an expression, so a read that starts at an
-            # extension would never go further down its chain.
-            mapper.polymorphic_on = mapper.get_property(
-                extension_typing.TYPE_ATTRIBUTE
-            ).columns[0]
-        record_mapping(table, entity)
+                    **extra.get("properties", {}),
+                },
+            }
+            mapper = mapper_registry.map_imperatively(entity, local, **options)
+            extension_mapping.finished(mapper, entity, parent)
+            record_mapping(table, entity)
         event.listen(
             mapper, "load", with_transient_defaults(entity, set(mapper.columns.keys()))
         )
         already.add(entity)
 
+    for entity, added in (properties or {}).items():
+        if entity in mapped_before:
+            # an attribute a later module maps on an entity that is already mapped: a key of the
+            # JSON slot as a field, say
+            mapper = sqlalchemy.inspect(entity)
+            for name, prop in added.items():
+                if name not in mapper.attrs:
+                    mapper.add_property(name, prop)
+    for entity, per_field in (overlay or {}).items():
+        for field, changes in per_field.items():
+            extensions.overlay(entity, field, dict(changes))
+    describe.cache_clear()  # what an entity is told about has changed with what extends it
+    for entity, names in (uses or {}).items():
+        extension_mapping.refuse_a_field_the_core_lacks(entity, names)
+    for entity, wanted in (requires or {}).items():
+        extension_mapping.refuse_a_contract_out_of_range(entity, wanted)
     for aggregate, declared in (relations or {}).items():
         install(aggregate, declared)
     # Every mapped class, not only this call's: a foreign key between a class mapped earlier

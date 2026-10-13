@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from functools import cache
-from typing import Any, Literal
+from typing import Any, Literal, get_args, get_origin
 
 from pydantic import (
     GetJsonSchemaHandler,
@@ -27,16 +27,23 @@ from pydantic import (
     TypeAdapter,
     model_serializer,
 )
+from pydantic.errors import PydanticInvalidForJsonSchema, PydanticSchemaGenerationError
 from pydantic_core import to_jsonable_python
 
 from sincpro_framework.ddd.criteria import Criteria, Specification
+from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
     EntityCollection,
     identity_name,
 )
-from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta, presentation_of
+from sincpro_framework.ddd.entity.entity_meta import (
+    FieldType,
+    Meta,
+    annotations_of,
+    presentation_of,
+)
 from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -89,7 +96,48 @@ def serialising() -> bool:
     return _SERIALISING.get()
 
 
+def _delegated(
+    record: Any, written: dict[str, Any], specification: Specification | None
+) -> dict[str, Any]:
+    """The fields of each extension under its own key, for a record whose entity asks for it.
+
+        {"number": "F-1", "route": "R7"}   →   {"number": "F-1", "delivery": {"route": "R7"}}
+
+    An extension the record does not have is `null`, so the shape does not depend on the row. A
+    specification that names none of an extension's fields leaves its key out.
+    """
+    root = next(
+        (
+            one
+            for one in extensions.DELEGATED
+            if isinstance(record, one) and one in extensions.EXTENSIONS
+        ),
+        None,
+    )
+    if root is None:
+        return written
+    for one in extensions.EXTENSIONS[root]:
+        if specification is not None and not set(one.fields) & set(specification.named):
+            for name in one.fields:
+                written.pop(name, None)
+            continue
+        nested = {name: written.pop(name) for name in one.fields if name in written}
+        written[one.key] = nested if isinstance(record, one.entity) else None
+    return written
+
+
 def _record(
+    record: Any,
+    specification: Specification | None,
+    meta: Meta | None,
+    mode: Literal["json", "python"],
+) -> dict[str, Any]:
+    """One record as the answer shows it: the cut it is given, with the fields of its
+    extensions flat or under their keys as its entity asks."""
+    return _delegated(record, _cut(record, specification, meta, mode), specification)
+
+
+def _cut(
     record: Any,
     specification: Specification | None,
     meta: Meta | None,
@@ -139,6 +187,52 @@ def _record(
                 if value is None
                 else _record(value, node.specification, related.definition, mode)
             )
+    return written
+
+
+def _extended(schema: dict[str, Any], declared: Any) -> dict[str, Any]:
+    """The schema of a record, with what the extensions of its class add.
+
+        Move + MoveDelivery(route)    →  {"allOf": [Move], "properties": {"route": …}}
+        delegated                     →  {"allOf": [Move], "properties": {"delivery": {…}}}
+
+    The fields are optional: a record with no extension row has none of them. A list of records
+    is patched in its items.
+    """
+    if get_origin(declared) is list:
+        (declared,) = get_args(declared)
+        if schema.get("type") == "array" and "items" in schema:
+            return {**schema, "items": _extended(schema["items"], declared)}
+    if not isinstance(declared, type):
+        return schema
+    added: dict[str, Any] = {}
+    for one in extensions.under(declared):
+        written: dict[str, Any] = {}
+        for name in one.fields:
+            try:
+                written[name] = TypeAdapter(annotations_of(one.entity)[name]).json_schema(
+                    mode="serialization"
+                )
+            except (PydanticSchemaGenerationError, PydanticInvalidForJsonSchema):
+                # a type pydantic cannot say: the field is there, untyped
+                written[name] = {}
+        if one.root in extensions.DELEGATED:
+            added[one.key] = {
+                "anyOf": [{"type": "object", "properties": written}, {"type": "null"}]
+            }
+        else:
+            added.update(written)
+    if not added:
+        return schema
+    return {"allOf": [schema], "properties": added}
+
+
+def _properties(
+    cls: Any, fields: dict[str, Any], handler: GetJsonSchemaHandler, holder: str
+) -> dict[str, Any]:
+    """The properties of an answer: each declared field, the one holding the records extended."""
+    written = {name: handler(one["schema"]) for name, one in fields.items()}
+    written[holder] = _extended(written[holder], cls.model_fields[holder].annotation)
     return written
 
 
@@ -274,7 +368,7 @@ class ResponsePaginatedQuery(DataTransferObject):
                 "carried a specification, each record holds the fields it named plus the "
                 "identity, and nothing else."
             ),
-            "properties": {name: handler(one["schema"]) for name, one in fields.items()},
+            "properties": _properties(cls, fields, handler, cls.records_field()),
             "required": sorted(fields),
         }
 
@@ -407,7 +501,7 @@ class ResponseRecord(DataTransferObject):
                 "One record with what the engine says about it. When the criteria carried a "
                 "specification, the record holds the fields it named plus the identity."
             ),
-            "properties": {name: handler(one["schema"]) for name, one in fields.items()},
+            "properties": _properties(cls, fields, handler, cls.record_field()),
             "required": sorted(fields),
         }
 
@@ -510,7 +604,7 @@ class ResponseRecords(DataTransferObject):
                 "have none. When the criteria carried a specification, each record holds the "
                 "fields it named plus the identity."
             ),
-            "properties": {name: handler(one["schema"]) for name, one in fields.items()},
+            "properties": _properties(cls, fields, handler, cls.records_field()),
             "required": sorted(fields),
         }
 

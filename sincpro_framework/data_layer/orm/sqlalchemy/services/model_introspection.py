@@ -23,9 +23,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     map_new_event_classes,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
-    TYPE_ATTRIBUTE,
+    HIDDEN,
 )
-from sincpro_framework.ddd.entity import Translated
+from sincpro_framework.ddd.entity import Translated, extensions
 from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
     FieldType,
@@ -176,7 +176,7 @@ def describe(entity: type) -> Meta:
 
     fields: dict[str, FieldMeta] = {}
     for column in mapper.columns:
-        if column.key == TYPE_ATTRIBUTE:
+        if column.key in HIDDEN:
             continue
         annotation = annotations.get(column.key) or _column_type(column)
         # A computed field is an expression, not a column: it has no NOT NULL, so its annotation
@@ -225,6 +225,19 @@ def describe(entity: type) -> Meta:
             related_field=there,
         )
 
+    for extension in extensions.under(entity):
+        added = describe(extension.entity).fields
+        for name in extension.fields:
+            if name in fields or name not in added:
+                continue
+            own = added[name]
+            absent = (
+                FieldMeta.for_column(own.type, True, own.choices, own.exact)
+                if own.relation is None and own.type is not FieldType.EMBEDDED
+                else own
+            )
+            fields[name] = absent.model_copy(update={"owner": extension.entity.__name__})
+
     labels, helps = field_translations(entity, "label"), field_translations(entity, "help")
     if labels or helps:
         fields = {
@@ -235,6 +248,10 @@ def describe(entity: type) -> Meta:
         }
 
     fields = hinted(with_computed(fields, entity), entity)
+    for ancestor in reversed(entity.__mro__):
+        for name, changes in extensions.OVERLAYS.get(ancestor, {}).items():
+            if name in fields:
+                fields[name] = fields[name].model_copy(update=changes)
     presented = presentation_of(entity)
     _key_is_unique(entity, mapper.local_table, presented.get_id, identity)
     return Meta(

@@ -7,7 +7,29 @@ Updated in place with every change ([how a specification is kept](README.md)).
 **Status:** ✅ built and held by a test · 🟡 works with a workaround · ⬜ not built — a proposal.
 Every ✅ in this page is held by a test in `tests/data_layer/orm/` —
 `test_extending_an_entity.py`, `test_extension_types.py`, `test_consolidated_entity.py` and
-`test_shared_table_migrations.py` — which run on SQLite and, with `SINCPRO_POSTGRES_URL`, on PostgreSQL.
+`test_shared_table_migrations.py` — which run on SQLite and, with `SINCPRO_POSTGRES_URL`, on PostgreSQL. The CI runs SQLite only; PostgreSQL is run locally before a release (file by file: the whole directory in one process already failed before these tests).
+
+## Requirements
+
+What this specification has to cover, as it was asked for, and where each one stands. The sections
+below say how; the last column says what holds it.
+
+| # | Requirement | Status | Held by |
+|---|---|---|---|
+| R1 | The core knows nothing of its extensions, and the commands it already has (`Get`, `Search`, `Edit`) keep working, unchanged, when a module is installed | ✅ | `test_the_same_get_of_the_core_returns_the_extension_flat_with_nothing_declared`, `test_a_new_record_with_the_fields_of_an_extension_is_created_as_that_extension` |
+| R2 | An extension owns its table, its migrations and its release; a release of the core does not destroy what it holds | ✅ | [§1](#1-the-rule), [§8](#8-when-a-release-comes) |
+| R3 | The storage is the module's choice: a table of its own, the entity's own table, a JSON slot, or another context | ✅ | [§5](#5-how-an-extension-is-declared-and-read) |
+| R4 | The same extension is a flat typed object (a chain), one flat record of several (siblings), or a nested part of the answer | ✅ | `test_extension_types.py`, `test_consolidated_entity.py`, `test_an_answer_nests_each_extension_under_its_key_when_the_entity_delegates` |
+| R5 | Reading the core brings every extension by default and can be narrowed: to the core alone, or to the fields asked for | ✅ | `strict`, the specification; [§5](#whose-a-field-is-and-what-a-client-is-told) |
+| R6 | Writing creates the core first and then each extension, in one transaction, through one repository per context | ✅ | `test_one_save_of_the_deepest_class_writes_every_level_in_one_transaction`, `test_extension_fields.py` |
+| R7 | The type checker follows it with no tool of its own: classes, not generated code, plugins or stubs | ✅ | [§6](#6-what-is-missing) (what was not built, on purpose) |
+| R8 | The migrations of the core and of a module run as independent chains, on a table they share too | ✅ | `test_shared_table_migrations.py` |
+| R9 | A client is told what an entity has, whose each field is, and how the answer is shaped | ✅ for the contract, ⬜ for the TypeScript client | `Meta.owner`, the answer's schema; [§6](#6-what-is-missing) |
+| R10 | A module declares what it reads and what it was written against, and the application does not start when that no longer holds | ✅ | `test_extension_contract.py` |
+| R11 | The module proves it in its own CI | ✅ | `ExtensionContract` |
+| R12 | The cost is known, and a core can make it constant | ✅ | [§7](#7-measured), [§5](#a-core-that-stores-the-type-of-its-rows) |
+| R13 | A customer defines fields at run time | ⬜ | [§6](#6-what-is-missing): a component of its own |
+| R14 | Code follows the framework's layers: the registry and the answer's shape in `ddd`, the mapper and the writes in `data_layer/orm/sqlalchemy/services`, `map_aggregates` a facade | ✅ | `tests/data_layer/orm/test_layers.py`, [§12](#12-where-it-lives) |
 
 ## 1. The rule
 
@@ -43,9 +65,9 @@ release then collides with all of them. We choose independence over that speed, 
 |---|---|---|
 | Add data about an existing record | ✅ | A 1:1 table keyed by the record's `id`, with the core class resolving it (`invoice.fiscal`) |
 | Add several, from several modules | ✅ | Each its own table and its own relation name; they do not collide |
-| Read it with the record, without a query per row | ✅ | A relation named in the specification: one more statement for the whole page |
+| Read it with the record, without a query per row | ✅ | A relation named in the specification: one more statement for the whole page. An extension that is a subclass needs no naming: the row comes back as the extension |
 | Add a value computed from the record | ✅ | An expression mapped from outside (`properties=`), filtered, ordered and grouped like a column |
-| Keep light fields in a JSON slot the core reserves | ✅ | The same, over a `JSON` column; filter and group like a column |
+| Keep light fields in a JSON slot the core reserves | ✅ | `properties_column()` on the core's table, `slot_field(table, "zone")` in the module's `properties=`: a field filtered, grouped and measured like a column (`tests/data_layer/orm/test_properties_slot.py`) |
 | Keep the data in **another context** and read it by the bus | ✅ | `Relation.bus`: one call to the other bus per page, carrying the page's keys |
 | Filter the entity by a field the other context owns | 🟡 | Ask that context for the ids, then `id in (…)`; a long list travels as one array on PostgreSQL |
 | Add a behaviour when the entity is saved or read | ✅ | Hooks (`extends=`, `replaces=`, ordering), interceptors, `replaces=` of a use case |
@@ -53,10 +75,12 @@ release then collides with all of them. We choose independence over that speed, 
 | Add columns to the entity's **own table** | ✅ | A subclass given its parent's table; see [§5](#5-how-an-extension-is-declared-and-read) |
 | Read the entity and get each row as the extension it has | ✅ | Downstream reading: the type is worked out from the rows, never stored |
 | Read several sibling extensions as one flat record | ✅ | `Consolidated(Core, A, B)`, declared by a module that knows them all |
-| Filter or group by a field of its own table | 🟡 | Only through a correlated subquery (15–30× slower) or a hand-written join |
+| Filter, group or measure the core by a field of an extension | ✅ | The core's criteria names it (`Condition(field="route")`); it is read through a correlated subquery, which costs 15–30× a join on a report over millions of rows, so such a report reads the extension's class. Ordering by it is refused: a record may lack the extension, so the field is nullable |
 | Reach the entity's own attributes from the extension (`delivery.move.total`) | ✅ | A back-reference; see below |
-| Declare the cardinality of what it installs | 🟡 | Today it writes `Invoice.__annotations__[name]` itself — see [§6](#6-what-is-missing) |
-| Change how a core field is shown (label, read-only, required) | ⬜ | An overlay on `Meta`, never an edit of the core's `presentation` |
+| Declare the cardinality of what it installs | ✅ | `Relation.foreign_key(…, many=False)`: the data mapper writes the annotation the module cannot (`test_a_relation_an_extension_installs_says_its_own_cardinality`) |
+| Change how a core field is shown (label, help, read-only, required) | ✅ | `map_aggregates(…, overlay={Core: {field: {…}}})`: an overlay on `Meta`, never an edit of the core's `presentation`; anything else about the field is refused as the core's |
+| Say what it reads from the core and what it was written against | ✅ | `uses={Core: ("total",)}` and `requires={Core: "2.1"}`, checked when the module is mapped; see [§8](#8-when-a-release-comes) |
+| Prove all of it in its own CI | ✅ | `ExtensionContract`, in `sincpro_framework.runtime.testing.contracts.extension` |
 | Remove, rename or retype a core field | ❌ | Never. The core is sealed; that is a major release of the core |
 
 ## 4. Which mechanism, when
@@ -152,6 +176,121 @@ Held by `tests/data_layer/orm/test_extension_types.py`: the chain, the late inst
 below, one save writing every level in one transaction, the strict core, the shared table and its
 two refusals. They run on SQLite and PostgreSQL.
 
+### Whose a field is, and what a client is told
+
+`ddd/entity/extensions.py` holds, per root entity, each extension, the fields it adds and the key it
+nests under. `map_aggregates` fills it; everything that has to know whose a field is asks it.
+
+- **`Meta`** lists the fields of every extension on the core, each with `owner` (`"MoveDelivery"`),
+  nullable and not sortable (`test_the_definition_of_the_core_says_whose_each_field_is`). The
+  extension's own definition has its fields with no owner.
+- **The answer's schema** — what OpenAPI and a generated client are built from — describes the
+  extensions' fields too: flat and optional, or as one nullable object per extension
+  (`test_the_schema_of_an_answer_describes_the_fields_of_the_extensions`).
+- **Flat by default.** A record is written as the class it is, so a `Get` or a `Search` written for
+  the core answers `route` the day a module installs `MoveDelivery`, with nothing declared
+  (`test_the_same_get_of_the_core_returns_the_extension_flat_with_nothing_declared`).
+- **Delegated by choice.** `map_aggregates(reg, tables, delegated=[Move])` writes each extension's
+  fields under its key — `MoveDelivery` under `Move` is `delivery` — and an extension the record does
+  not have is `null`, so the shape does not move with the row
+  (`test_an_answer_nests_each_extension_under_its_key_when_the_entity_delegates`).
+- **Only what is wanted.** A specification that names a field of an extension brings it; one that
+  does not, leaves it out. The core alone is a specification of the core's fields, and the entity's
+  default reading (`DEFAULT_READING`) may name any of them
+  (`test_a_specification_that_names_a_field_of_an_extension_brings_it`). The store still reads which
+  extension each row has; a core that must not pay for that answers only itself (`strict`).
+
+### Delegated answers: what they are for
+
+**The intent.** A screen or a client that shows an entity extended by several modules wants the
+entity's own fields at the top and what each module added under that module's own key. Then two
+modules can never collide on a field name, a client can ignore a module it does not know, and
+uninstalling a module removes one key and not fields scattered through the record. Flat is the
+default because it needs nothing from the client; delegated is for the client that groups by module.
+
+**It is a shape, not a storage mode.** It does not depend on where the extension keeps its columns
+(a table of its own, the entity's table): only on how an answer is written and how a form is read.
+It is chosen by the entity, for all of its extensions: `map_aggregates(reg, tables, delegated=[Move])`.
+
+```
+flat                                              delegated
+{"id": "C", "number": "F-C",                      {"id": "C", "number": "F-C",
+ "route": "R7", "carrier": "DHL"}                  "delivery": {"route": "R7"},
+                                                   "tracking": {"carrier": "DHL"},
+                                                   "fiscal": null}
+```
+
+| Rule | Why | Held by |
+|---|---|---|
+| The key of an extension is its class name without the root's (`MoveDelivery` under `Move` is `delivery`), in snake case | Nothing for a module to declare; readable | `test_an_answer_nests_each_extension_under_its_key_when_the_entity_delegates` |
+| Every extension is a sibling key of the root, a chain included: `tracking` is not inside `delivery` | A chain is one record with several parts; the client reads parts, not a tree | the same |
+| An extension the record does not have is `null` | The shape does not move with the row | the same |
+| A specification that names none of an extension's fields leaves its key out; one that names a field brings its key with that field | The same mask as flat, so a client narrows the same way | `test_a_specification_that_names_a_field_of_an_extension_brings_it` |
+| The schema describes each key as an object or `null`, with the extension's fields | A generated client types it | `test_the_schema_of_an_answer_describes_the_fields_of_the_extensions` |
+| `Edit` takes the record back as it was read: `{"delivery": {"route": "R9"}}` | A form reads and writes one shape | `test_a_form_that_read_a_delegated_record_sends_it_back_as_it_read_it` |
+| An extension sent as `null` writes nothing; flat values are still taken as they are | A form sends the whole record; a client that never groups still works | `test_an_extension_the_record_does_not_have_writes_nothing_when_the_form_sends_it_null`, `test_a_delegated_entity_takes_flat_values_as_they_are` |
+| A nested value with a field the extension does not have is refused, naming it | A typo is not silently dropped | `test_a_nested_value_with_a_field_the_extension_does_not_have_is_refused_naming_it` |
+| An entity that does not delegate does not take its extensions nested | The shape is the entity's choice | `test_an_entity_that_does_not_delegate_does_not_take_its_extensions_nested` |
+| `changed` may name `delivery` (all its fields), `delivery.route` or `route` | The derivations a form reports run in any of the shapes | `test_the_fields_a_form_reports_changed_are_taken_nested_or_flat` |
+| The answer to an `Edit` is nested too | A form never sees two shapes | `test_the_answer_to_an_edit_nests_the_extensions_when_the_entity_delegates` |
+| Two extensions that would nest under one key are refused, naming both | Two modules with a `MoveDelivery` would otherwise overwrite each other | `test_two_extensions_that_would_nest_under_one_key_are_refused_naming_both` |
+
+**Where it is, to change it.** The choice is `extensions.DELEGATED` (`ddd/entity/extensions.py`),
+with the key computed by `key_of` when an extension is registered. The answer is written by
+`_delegated` in `ddd/query.py`, after the record is cut by the specification; its schema is
+`_extended`, in the same file. A form is read back by `EntityEdits.flattened` and `nested_names`,
+in `ddd/editing/edits.py`, which turn the nested values into the flat ones the rest of `Edit`
+already takes. Nothing in the data layer knows about it.
+
+**What it does not do, and how it could grow.**
+
+- It is all or nothing per entity. Choosing per extension would need the choice to live on the
+  extension (`map_aggregates` has nowhere to say it today).
+- The key cannot be named; it is derived. A module that wants another word needs a place to say it.
+- An extension installed as a relation (`Relation.foreign_key` on a side table) is not part of
+  this: it is already one named relation, nested under its name when the specification names it.
+- Not every client needs it. The TypeScript client has not been taught either shape.
+
+### Creating and editing through the core's commands
+
+`Edit`, written once for the core, takes the fields of every extension installed:
+
+- A **new record** whose values carry a field of an extension is created as that extension — the
+  deepest class of a chain that holds them all (`test_a_new_record_with_the_fields_of_an_extension_is_created_as_that_extension`).
+- A **stored record without the extension**, edited with its fields, is given the rows first
+  (`Repository.extend`, a capability of its own: the levels between its class and the extension,
+  each with its fields' defaults) and then saved as the extension; the core's row is not touched
+  (`test_a_stored_record_without_the_extension_is_given_it_by_an_edit_that_names_its_fields`).
+- Fields of **siblings** that no class holds are refused naming them: send them in separate edits,
+  or map a consolidated record for the screen that needs them together
+  (`test_fields_of_sibling_extensions_that_no_class_holds_are_refused_naming_them`).
+- A draft keeps the extension's fields like any other and stores nothing.
+
+### Removing
+
+Removing a record read as an extension removes the rows of every level. Removing a plain instance of
+the core — one that came from a core that answers only itself — removes the rows of its extensions
+first, deepest first (`test_removing_a_plain_core_instance_takes_the_rows_of_its_extensions_with_it`,
+PostgreSQL included: it is the order its foreign keys demand).
+
+### A core that stores the type of its rows
+
+Working the type out asks every extension's table for each row it reads, so the cost is linear in
+the extensions installed. A core whose table declares a column named `extension_type` stores it
+instead: the framework writes the class a record is when it is inserted and when an extension is
+given to it (`extend`), and a read takes the column. Reading a page of 50 takes 3.4 ms with 200
+extensions installed, against 22.6 ms working it out and 4.8 ms with none.
+
+- The column is the core's choice, nullable, and not a field of the entity; a row with no value is
+  the core, and a value of a class no longer installed reads as the level that is being read.
+- Rows an extension wrote outside the framework, or rows that predate the column,
+  are typed by `reclassify(Core)`, one statement that writes every row's type from the extension
+  rows that exist.
+- An extension in the core's own table is still recognised by its columns; the stored type serves
+  the extensions with a table of their own.
+
+Held by the last tests of `tests/data_layer/orm/test_extension_types.py`.
+
 ### The consolidated record
 
 ```python
@@ -171,24 +310,26 @@ field lives. Two extensions that name a field alike are refused, naming both tab
 `created_at`, `updated_at` and `version` are written to each. Held by
 `tests/data_layer/orm/test_consolidated_entity.py`.
 
-Not covered: editing a consolidated record whose extension row does not exist yet (the update finds
-no row), and deleting one (which rows go).
+Editing a consolidated record that has no row of an extension, and changes a field of it, gives it
+the row first, holding what the record says (`test_a_consolidated_record_without_a_row_of_an_extension_is_edited_by_giving_it_the_row`);
+removing one removes the rows it has (`test_removing_a_consolidated_record_without_all_its_rows_removes_the_ones_it_has`).
+
+### Where it breaks, measured
+
+| Situation | What happens | Held by |
+|---|---|---|
+| A core release adds a field an extension already has | Refused where the extension is mapped, naming both tables. Before, SQLAlchemy joined the two columns under one attribute and a save wrote the extension's value over the core's | `test_a_core_release_that_adds_a_field_an_extension_has_is_refused_naming_both_tables` |
+| Many extensions on one core | The type expression asks every extension's table for each row it reads, so the cost is linear (a core that stores the type, [§5](#a-core-that-stores-the-type-of-its-rows), makes it constant): on PostgreSQL, 100,000 rows, a page of 50 takes 4.8 ms with none, 7.4 ms with 10, 9.8 ms with 50 and 22 ms with 200; a read by id 1.6, 3.6, 6.4 and 16 ms. Aggregations do not pay it: the expression is not read | measured, not held |
+| Ordering the core by a field of an extension | Refused, naming the nullable field | `test_a_field_of_an_extension_is_not_a_field_to_order_by_because_a_record_may_lack_it` |
 
 ## 6. What is missing
 
 | Piece | Status | What it needs |
 |---|---|---|
-| Declared cardinality of an installed relation | ⬜ | `Relation` says to-one or to-many; today the framework reads it from an annotation the extension cannot write |
-| A join generated to filter or group by an extension's field | ⬜ | The translator joins the extension's table when the criteria names it |
-| The flat shape of a delegated extension on the wire | ⬜ | Today a relation answers nested under its name, with the id and the audit columns repeated; the schema and the client do not describe it |
-| A request that says which extensions to bring (`only`, a named view) and a default per entity | ⬜ | The specification already narrows; the extensions are not yet part of it |
-| Create and Edit that split a flat payload by the owner of each field | ⬜ | Saving the deepest class or a consolidated record already writes every table; the command that receives a flat JSON does not |
-| A reserved JSON slot on extensible entities | ⬜ | The core ships a `properties` column on the entities it marks extensible, from the first release: adding it later is a migration of a large table |
-| Declared dependency of an extension on core fields | ⬜ | `uses=("total",)`, checked against the core's `Meta` when the module loads |
-| Contract version of an entity and a loader that checks it | ⬜ | The extension declares the core range it supports; the loader refuses to start outside it |
-| Compatibility kit | ⬜ | A test class the extension runs in its own CI against a core that is not installed yet, like `ComputedFieldsContract` |
-| Overlay of presentation on `Meta` | ⬜ | Label, read-only and required for a core field, from a module |
-| Fields a customer defines at run time | ⬜ | The definition as data (name, type, label); the slot holds the values |
+| A join instead of a subquery to filter or group the core by an extension's field | ⬜ on purpose | A correlated subquery is the one form that holds in a `WHERE`, a `HAVING`, a bulk update and a count alike (nineteen statements are built from one clause); a report over millions of rows reads a consolidated record, which is a join |
+| Create or edit sibling extensions in one command | ⬜ on purpose | Refused, naming them: no class holds fields of two siblings. A consolidated record, or two edits |
+| Fields a customer defines at run time | ⬜ | A component of its own: the definition stored as data (name, type, label) and the slot holding the values. Not started |
+| The TypeScript client reading `owner` and the extension fields | ⬜ | The contract carries them, and the package's `FieldMeta` needs `owner?: string`; the package was not touched |
 
 Not built on purpose: an accessor `move.ext(Type)` and generated stubs for what is installed. A
 class that is read by its own type already gives the type checker everything, and a chain of
@@ -237,6 +378,20 @@ machine. The strategies: **wide** is every extension field a column of the core 
 | removes an entity (major) | An extension that imports it fails at import. Not held by a test | — |
 | changes the type of `id` | **Forbidden.** The `id` is opaque text; it is what makes the rule work | — |
 
+**What a module says, and what the framework checks.** The core publishes a version on an entity
+(`CONTRACT = "2.3"`: a major that breaks, a minor that adds). A module declares the one it was
+written against and the fields it reads when it is mapped:
+
+```python
+map_aggregates(registry, {MoveDelivery: delivery_t},
+               requires={Move: "2.1"}, uses={Move: ("total",)})
+```
+
+The same major and at least that minor is a core it works with. Anything else stops the application
+from starting, naming the entity and both versions; so does a field the core no longer has, naming it.
+Held by `tests/data_layer/orm/test_extension_contract.py`. The module's own CI runs
+`ExtensionContract` against the core it will be installed on, before anyone upgrades.
+
 How the core makes a major survivable:
 
 1. **Expand, then contract.** To rename `total` to `amount`: one release adds `amount` and writes
@@ -245,9 +400,9 @@ How the core makes a major survivable:
 2. **The published surface of an entity is versioned.** Adding is free; removing or renaming is a
    major, with a deprecation period and a note of what changes.
 3. **The extension declares what it reads** (`uses=`) and the core range it supports, and the
-   loader checks both when the application starts — ⬜, see [§6](#6-what-is-missing).
+   loader checks both when the application starts — ✅.
 4. **The kit** lets the extension's own CI say, against the new core, whether it still works,
-   before anyone upgrades — ⬜.
+   before anyone upgrades — ✅ (`ExtensionContract`).
 
 ### The extension releases
 
@@ -256,7 +411,7 @@ How the core makes a major survivable:
 | adds a column to its table | None. Its own migration, on its own branch of the timeline |
 | is installed | Creates its tables. They reference the core's `id`, so the core's tables exist first |
 | is **uninstalled** | Drops its tables. The core does not notice (`test_an_extension_is_uninstalled_by_dropping_its_table_and_the_core_does_not_notice`) |
-| is released in a version that needs a newer core | The loader refuses to start — ⬜ |
+| is released in a version that needs a newer core | The application does not start, naming both versions (`requires`) |
 
 **A table two chains declare.** An extension that adds a column to the core's table has its own
 chain, and autogenerate compares a chain with the tables it declares: the extension declares
@@ -291,37 +446,42 @@ it needs and reacts to events.
 
 ## 10. A module today
 
-What works with the framework as it is, written the long way (the cardinality annotation is the
-workaround of [§6](#6-what-is-missing)):
+What a module that adds a table of its own and reaches it from the core's record writes. The
+extension is a plain dataclass, **not an `Entity`**: it takes the invoice's `id`, and the dates and
+version stay the invoice's, so the answer does not repeat them (`{"fiscal": {"id": …, "cufd": …}}`).
+The relation says its own cardinality, so nothing is written on a class the module does not own.
+A module that wants an entity with a life of its own — its own dates and version — makes an `Entity`
+of it, and then it carries its own.
 
 ```python
 from dataclasses import dataclass
 
-from sqlalchemy import Column, ForeignKeyConstraint, Text
+from sqlalchemy import Column, ForeignKey, Table, Text
 
 from sincpro_framework.data_layer.orm import Relation, map_aggregates
-from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.ddd import Entity
 
 
 @dataclass
-class InvoiceFiscal(Entity):
+class InvoiceFiscal:                 # not an Entity: id, dates and version are the invoice's
+    id: str = ""
     cufd: str = ""
     control_code: str = ""
 
 
 def install(registry, invoice_class, invoice_table):
-    table = entity_table("invoice_fiscal", registry.metadata,
-                         Column("cufd", Text), Column("control_code", Text))
-    table.append_constraint(
-        ForeignKeyConstraint(["id"], [invoice_table.c.id], ondelete="CASCADE"))
-
-    invoice_class.__annotations__["fiscal"] = InvoiceFiscal | None
+    table = Table(
+        "invoice_fiscal",
+        registry.metadata,
+        Column("id", Text, ForeignKey(invoice_table.c.id, ondelete="CASCADE"), primary_key=True),
+        Column("cufd", Text),
+        Column("control_code", Text),
+    )
     map_aggregates(
         registry,
         {InvoiceFiscal: table},
         relations={invoice_class: {
-            "fiscal": Relation.foreign_key(InvoiceFiscal, parent_field="id", related_field="id")}},
+            "fiscal": Relation.foreign_key(
+                InvoiceFiscal, parent_field="id", related_field="id", many=False)}},
     )
 ```
 
@@ -334,15 +494,41 @@ page[0].fiscal.cufd
 ```
 
 The type checker does not see `Invoice.fiscal`, because it is installed at run time. That is the
-cost of the long way, and what the stubs of [§6](#6-what-is-missing) remove.
+cost of a relation installed from outside; a subclass, a consolidated record or the extension's own
+class (`repository.get(InvoiceFiscal, id)`) are what a type checker follows.
 
 ## 11. Decisions pending
 
 | # | Question | Leaning |
 |---|---|---|
-| 1 | Does the core reserve `properties` on **every** entity or only on those it marks extensible? | Only the marked ones: a table nobody extends should not carry it |
+| 1 | Does the core reserve `properties` on **every** entity or only on those it marks extensible? | Only the marked ones (`properties_column()` is the core's to add): a table nobody extends should not carry it |
 | 2 | May a **customer** define fields at run time, or only a module's developer? | Both, with the definition stored as data |
 | 3 | Do the lines of the ledger, immutable once posted, keep extension fields in the slot or in a side table? | The slot: it avoids a second write per line |
-| 4 | When an extension has a row, should reading the core also bring its fields without being asked? | Yes by default for a single record; a list is configured per entity, because a page with a thousand extensions is a thousand statements |
-| 5 | What is the flat shape of a delegated extension on the wire, and who splits a flat payload on a write? | Flat by owner of each field in `Meta`; nested as an option |
-| 6 | Does the loader enforce the core range, or only warn? | Enforce: a half-working ERP is worse than one that does not start |
+| 4 | Does a list bring the fields of the extensions by default? | Yes, flat: the row is read as the extension it has. A core that must not pay for it answers only itself (`strict`) |
+| 5 | Flat or delegated? | Flat by default; `delegated=[Core]` per entity |
+| 6 | Does the loader enforce the core range, or only warn? | Enforced: a half-working ERP is worse than one that does not start |
+
+## 12. Where it lives
+
+```
+ddd/entity/extensions.py            the registry: which classes extend which, whose each field is,
+                                    the key a delegated answer nests it under, the overlays;
+                                    no SQLAlchemy
+ddd/query.py                        the answer: the fields of an extension flat or nested, the schema
+ddd/editing/edits.py                `Edit` creating and editing as the class the values need
+ddd/repositories/capabilities.py    `Extends`: `extend`, `reclassify`
+data_layer/orm/sqlalchemy/
+  entrypoint/mapping.py             `map_aggregates`: a facade over the services below
+  entrypoint/template_table/        `properties_column`, `slot_field`
+  services/extension_mapping.py     how the mapper is told a class extends another; the checks
+                                    (`uses`, `requires`, a clashing column); `Consolidated`
+  services/extension_typing.py      `ExtensionType`, the SQL expression that says what a row is
+  services/extension_writing.py     the rows of an extension: give, remove, complete, reclassify
+  services/sql_translator.py        a field of an extension as a column of a statement
+  entrypoint/migrations/engine.py   `declared_elsewhere`: each chain leaves the columns of another
+runtime/testing/contracts/extension.py   `ExtensionContract`
+```
+
+Dependencies run one way: `ddd` knows no table; the services know the registry; `map_aggregates`
+and `Repository` know the services. The registries that are module-level (`extensions.EXTENSIONS`,
+`extension_typing.PROOFS`) are filled by `map_aggregates`, never when a module is imported.

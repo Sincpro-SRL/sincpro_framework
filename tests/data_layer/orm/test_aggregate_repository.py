@@ -217,6 +217,8 @@ LEFT_TO_THE_STORE = {
         for hook in HOOKS
     },
     "capabilities": "the engine's, read through view.repository",
+    "extend": "names the extension it gives a record, which is not the aggregate a view is bound to",
+    "reclassify": "works out the stored type of an entity's rows, which is not a view of one aggregate",
     "fingerprint": "a cache key of the store, taken with the aggregate by QueryCache",
     "prepare": "the translator's preparation, not a question a Feature asks",
 }
