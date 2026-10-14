@@ -106,10 +106,7 @@ def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.trace.sampling import ParentBased
 
-    try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    except ImportError:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from sincpro_framework.observability.otlp import span_exporter
 
     provider = TracerProvider(
         # ``create`` merges OTEL_RESOURCE_ATTRIBUTES and the SDK defaults; the bare
@@ -121,7 +118,7 @@ def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
     )
     # The endpoint must be passed explicitly: without it the SDK ignores our conf and
     # falls back to its own env var or localhost:4317.
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+    provider.add_span_processor(BatchSpanProcessor(span_exporter(endpoint)))
     return provider
 
 

@@ -140,6 +140,12 @@ class DefaultFrameworkConfig(SincproConfig):
     """`$ENV:SENTRY_PYTHON_DSN` — Sentry DSN for error tracking."""
     otlp_endpoint: str | None = None
     """`$ENV:OTEL_EXPORTER_OTLP_ENDPOINT` — OpenTelemetry OTLP endpoint for the framework."""
+    otlp_headers: Secret[str] | None = None
+    """`$ENV:OTEL_EXPORTER_OTLP_HEADERS` — headers the OTLP exporters send, `key=value,key2=value2`
+    (a token among them, so masked). Unset: the exporter reads the same variable by itself."""
+    otlp_protocol: Literal["grpc", "http/protobuf"] | None = None
+    """`$ENV:OTEL_EXPORTER_OTLP_PROTOCOL` — `grpc` or `http/protobuf`. Unset: gRPC, and HTTP when
+    the gRPC exporter is not installed."""
     otlp_traces_sample_rate: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
     """`$ENV:OTEL_TRACES_SAMPLER_ARG` — OpenTelemetry traces sample rate for the framework."""
     otel_service_name: str | None = None

@@ -6,6 +6,8 @@ sincpro_framework_log_file_path: $ENV:SINCPRO_FRAMEWORK_LOG_FILE_PATH
 sentry_dsn: $ENV:SENTRY_PYTHON_DSN
 metrics_backend: $ENV:SINCPRO_METRICS_BACKEND
 otlp_endpoint: $ENV:OTEL_EXPORTER_OTLP_ENDPOINT
+otlp_headers: $ENV:OTEL_EXPORTER_OTLP_HEADERS
+otlp_protocol: $ENV:OTEL_EXPORTER_OTLP_PROTOCOL
 otlp_traces_sample_rate: $ENV:OTEL_TRACES_SAMPLER_ARG
 otel_service_name: $ENV:OTEL_SERVICE_NAME
 otel_metrics_exporter: $ENV:OTEL_METRICS_EXPORTER

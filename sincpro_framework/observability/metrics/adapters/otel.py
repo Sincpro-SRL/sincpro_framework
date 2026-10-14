@@ -48,14 +48,11 @@ def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> An
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
 
-    try:
-        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-    except ImportError:
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    from sincpro_framework.observability.otlp import metric_exporter
 
     provider = MeterProvider(
         resource=Resource.create(attributes),
-        metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=endpoint))],
+        metric_readers=[PeriodicExportingMetricReader(metric_exporter(endpoint))],
     )
     opentelemetry.metrics.set_meter_provider(provider)
     return provider
