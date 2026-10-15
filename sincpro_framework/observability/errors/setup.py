@@ -5,6 +5,7 @@ host (Odoo, FastAPI) already installed, and the host's own errors would start
 reporting under sincpro's release.
 """
 
+import inspect
 from typing import Any, Optional
 
 from sincpro_framework.observability.domain import (
@@ -38,6 +39,36 @@ def dsn() -> str:
     return ""
 
 
+def privacy_options() -> dict[str, Any]:
+    """No user data attached by the framework, in the spelling the installed SDK accepts.
+
+    Newer sentry-sdk deprecates `send_default_pii` for the top-level `data_collection`
+    (it warns on every Client, even with False); older ones only know `send_default_pii`.
+    """
+    try:
+        from sentry_sdk.consts import (
+            ClientConstructor,  # pyright: ignore[reportMissingImports]
+        )
+
+        accepts_data_collection = (
+            "data_collection" in inspect.signature(ClientConstructor.__init__).parameters
+        )
+    except Exception:
+        accepts_data_collection = False
+
+    if not accepts_data_collection:
+        return {"send_default_pii": False}
+    return {
+        "data_collection": {
+            "user_info": False,
+            "database_query_data": False,
+            "queues": False,
+            "graphql": {"document": False, "variables": False},
+            "gen_ai": {"inputs": False, "outputs": False},
+        }
+    }
+
+
 def client_for(release: str) -> Optional[Any]:
     """The framework's own client for a release. Never touches the host's client."""
     if not SDK_AVAILABLE or not release:
@@ -56,7 +87,7 @@ def client_for(release: str) -> Optional[Any]:
         "release": release,
         "traces_sample_rate": 0.0,
         "auto_enabling_integrations": False,
-        "send_default_pii": False,
+        **privacy_options(),
     }
     environment = tenant()
     if environment:

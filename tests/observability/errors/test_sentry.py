@@ -540,3 +540,32 @@ def test_appservice_feature_error_is_sent_once_from_where_it_happened(monkeypatc
     assert state.contexts["sincpro"]["chain"] == "ParentDTO → ChildDTO"
     assert state.release == "payment-cybersource"
     assert state.inits == []
+
+
+def test_privacy_falls_back_to_send_default_pii_on_older_sdk(monkeypatch):
+    from sincpro_framework.observability.errors.setup import privacy_options
+
+    state = CaptureState()
+    _install_fake_sentry(monkeypatch, state)
+
+    assert privacy_options() == {"send_default_pii": False}
+
+
+def test_privacy_uses_data_collection_when_the_sdk_accepts_it(monkeypatch):
+    import sys
+    import types
+
+    from sincpro_framework.observability.errors.setup import privacy_options
+
+    class ClientConstructor:
+        def __init__(self, dsn=None, data_collection=None, send_default_pii=None):
+            pass
+
+    consts = types.ModuleType("sentry_sdk.consts")
+    consts.ClientConstructor = ClientConstructor  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sentry_sdk.consts", consts)
+
+    options = privacy_options()
+
+    assert "send_default_pii" not in options
+    assert options["data_collection"]["user_info"] is False
