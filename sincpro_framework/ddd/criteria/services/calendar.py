@@ -5,9 +5,9 @@ find the range a named period covers. Pure: what is asked is in the arguments, t
 import calendar
 from datetime import UTC, date, datetime, timedelta
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
 from sincpro_framework.ddd.criteria.domain.values import Grain, Period, Periods, Span
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 PERIOD_STARTS: dict[Periods, tuple[Grain, int]] = {
     Periods.TODAY: (Grain.DAY, 0),
@@ -79,7 +79,9 @@ def moved(day: date | datetime, span: Span, resolution: ResolutionContext) -> da
     """
     if not isinstance(day, datetime):
         if span.hours or span.minutes:
-            raise InvalidCriteria("a date has no hours or minutes; use `now` to move by them")
+            raise exceptions.InvalidCriteria(
+                "a date has no hours or minutes; use `now` to move by them"
+            )
         return on_calendar(day, span)
 
     wall = on_calendar(day.astimezone(resolution.timezone).replace(tzinfo=None), span)

@@ -15,7 +15,8 @@ import sys
 from types import ModuleType
 from typing import get_type_hints
 
-from sincpro_framework.runtime.runtime_use_cases.domain import RuntimeUseCase, UseCaseRefused
+from sincpro_framework.runtime.runtime_use_cases import exceptions
+from sincpro_framework.runtime.runtime_use_cases.domain import RuntimeUseCase
 from sincpro_framework.sincpro_abstractions import ApplicationService, Feature
 from sincpro_framework.use_bus import UseFramework
 
@@ -50,10 +51,10 @@ def _handler_in(module: ModuleType) -> type:
         key=lambda handler: handler.__name__,
     )
     if not handlers:
-        raise UseCaseRefused("it defines no Feature or ApplicationService")
+        raise exceptions.UseCaseRefused("it defines no Feature or ApplicationService")
     if len(handlers) > 1:
         names = ", ".join(handler.__name__ for handler in handlers)
-        raise UseCaseRefused(
+        raise exceptions.UseCaseRefused(
             f"it defines {names} — one Feature or ApplicationService per use case"
         )
     return handlers[0]
@@ -65,7 +66,7 @@ def _command_of(handler: type) -> type:
         get_type_hints(handler.execute).get(parameters[1]) if len(parameters) > 1 else None
     )
     if not isinstance(command, type):
-        raise UseCaseRefused(
+        raise exceptions.UseCaseRefused(
             f"{handler.__name__}.execute(self, dto: ...) must say which Command it answers"
         )
     return command
@@ -82,22 +83,22 @@ def _replaced(
     if use_case.replaces is None:
         if answering is not None:
             qualified = f"{answering.__module__}.{answering.__qualname__}"
-            raise UseCaseRefused(
+            raise exceptions.UseCaseRefused(
                 f"{answering.__name__} answers {command.__name__} in code — say "
                 f'replaces="{qualified}" to answer it instead'
             )
         return None
     if answering is None:
-        raise UseCaseRefused(
+        raise exceptions.UseCaseRefused(
             f"it replaces {use_case.replaces}, but nothing answers {command.__name__}"
         )
     if f"{answering.__module__}.{answering.__qualname__}" != use_case.replaces:
-        raise UseCaseRefused(
+        raise exceptions.UseCaseRefused(
             f"it replaces {use_case.replaces}, but {answering.__name__} answers "
             f"{command.__name__}"
         )
     if _kind(answering) != _kind(handler):
-        raise UseCaseRefused(
+        raise exceptions.UseCaseRefused(
             f"{answering.__name__} is an {_kind(answering)}; {handler.__name__}, a "
             f"{_kind(handler)}, cannot replace it"
         )
@@ -117,4 +118,6 @@ def load(bus: UseFramework, context: str, use_case: RuntimeUseCase) -> None:
         register = bus.feature if issubclass(handler, Feature) else bus.app_service
         register(command, replaces=_replaced(bus, use_case, handler, command))(handler)
     except Exception as error:
-        raise UseCaseRefused(f"{use_case.name} v{use_case.version}: {error}") from error
+        raise exceptions.UseCaseRefused(
+            f"{use_case.name} v{use_case.version}: {error}"
+        ) from error

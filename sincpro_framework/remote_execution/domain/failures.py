@@ -1,69 +1,18 @@
-"""What a call to a bounded context hosted elsewhere raises, and how an error crosses back.
+"""How an exception crosses back from a bounded context hosted elsewhere, and is raised here as itself.
 
-    ContextUnavailable     it did not run — nobody answered, or the service there does not host
-                           the context; a retry may succeed
-    ContextOutcomeUnknown  it may have run — the call was sent and no answer came back
-    ContextTimeout         the deadline passed after the call was sent: an outcome unknown
-    DTODoesNotFit          a DTO or an answer does not fit the class that rebuilds it
-    ContextFailed          the host raised a class this process never imported
-
-Context: everything else the hosting service raises arrives as itself — its class, its `args`
-and its attributes (`ContextRequired.missing`, a `DomainError`'s fields) as JSON values, rebuilt
-here without calling its `__init__`, so a class whose constructor takes more than a message
-travels too. An error is the one thing still found by `module.qualname`: it is no message, has
-no identity, and is raised only when this process already imported its class.
+Context: everything the hosting service raises arrives as itself — its class, its `args` and its
+attributes (`ContextRequired.missing`, a `DomainError`'s fields) as JSON values, rebuilt here without
+calling its `__init__`, so a class whose constructor takes more than a message travels too. An error
+is the one thing still found by `module.qualname`: it is no message, has no identity, and is raised
+only when this process already imported its class.
 """
 
 import json
 import sys
 from typing import Any
 
-from pydantic import ValidationError
-
 from sincpro_framework.common.serialization import read_values, values_of
-from sincpro_framework.exceptions import (
-    ClientError,
-    ExternalServiceError,
-    OutcomeUnknownError,
-    ServiceUnavailableError,
-)
-
-
-class ContextFailed(ExternalServiceError):
-    """The hosting service raised something this process cannot raise as itself — its class is
-    not imported here. `kind` names it."""
-
-    def __init__(self, kind: str, message: str) -> None:
-        super().__init__(f"{kind}: {message}")
-        self.kind = kind
-        self.message = message
-
-
-class ContextUnavailable(ServiceUnavailableError):
-    """It did not run: nobody answered where the context is hosted, or the service there does
-    not host it. A retry may succeed."""
-
-
-class ContextOutcomeUnknown(OutcomeUnknownError):
-    """It may have run: the call was sent and no answer came back. Verify — or retry with an
-    idempotency key — before doing it again or undoing it."""
-
-
-class ContextTimeout(ContextOutcomeUnknown):
-    """The hosting service did not answer before the call's deadline."""
-
-
-class DTODoesNotFit(ClientError):
-    """A DTO or an answer does not fit the class that rebuilds it — a required field missing, a
-    value of another type. `fields` says which, each with why."""
-
-    def __init__(self, what: str, error: ValidationError) -> None:
-        self.fields = [
-            f"{'.'.join(str(one) for one in detail['loc']) or '(root)'}: {detail['msg']}"
-            for detail in error.errors()
-        ]
-        super().__init__(f"{what} does not fit — {'; '.join(self.fields)}")
-
+from sincpro_framework.remote_execution.domain import exceptions
 
 DETAILS_LIMIT = 4096
 """Bytes an error's details may take — they ride in a header or trailing metadata, which every
@@ -144,6 +93,6 @@ def raised_as_itself(
             return raised(message)
         except Exception:
             pass
-    return ContextFailed(
+    return exceptions.ContextFailed(
         f"{module}.{kind}" if kind else "an error that named no class", message
     )

@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
@@ -17,7 +17,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.ddd import (
     TEXT,
-    AggregateNotFound,
     Any,
     Condition,
     Criteria,
@@ -30,8 +29,9 @@ from sincpro_framework.ddd import (
     Sort,
     Specification,
     detail_of,
-    matching,
 )
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework.ddd import matching
 from sincpro_framework.ddd.entity import Entity
 
 
@@ -181,7 +181,7 @@ def test_get_through_the_bus_brings_the_declared_detail_with_its_relation(ledger
 
     assert written["ledger"]["code"] == "1.2.3"
     assert [one["amount"] for one in written["ledger"]["entries"]["items"]] == [4]
-    with pytest.raises(AggregateNotFound):
+    with pytest.raises(ddd_exceptions.AggregateNotFound):
         bus(QueryGetLedger(id="gone"), ResponseLedger)
 
 
@@ -254,6 +254,6 @@ def test_a_key_other_than_the_identity_must_be_unique_on_disk():
         },
     )
 
-    with pytest.raises(ProgrammingError, match="loose_code.code is not unique"):
+    with pytest.raises(exceptions.ProgrammingError, match="loose_code.code is not unique"):
         describe(Coded)
     assert describe(Unique).get_id == "code"

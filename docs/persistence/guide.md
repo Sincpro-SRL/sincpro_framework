@@ -184,7 +184,7 @@ assert repository.get(Invoice, first.id).state == "posted"
 instead of silently overwriting the first:
 
 ```python
-from sincpro_framework.ddd import StaleAggregate
+from sincpro_framework.ddd import exceptions
 
 mine = repository.get(Invoice, first.id)
 theirs = repository.get(Invoice, first.id)
@@ -195,7 +195,7 @@ theirs.total = 999
 try:
     repository.save(theirs)
     raise AssertionError("the stale write should have been refused")
-except StaleAggregate:
+except exceptions.StaleAggregate:
     pass
 ```
 
@@ -414,7 +414,7 @@ for its Command. Its moments are the methods it implements; it reads the bus's d
 attributes, like a Feature, and `self.context` is the request in play:
 
 ```python
-from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd import Hook, Hooks
 
 
@@ -434,7 +434,7 @@ invoicing_hooks = Hooks(None)
 class TotalIsPositive(Hook):
     def before_save(self, invoice: Invoice) -> None:
         if invoice.total <= 0:
-            raise DomainError(f"invoice {invoice.number} has no total")
+            raise exceptions.DomainError(f"invoice {invoice.number} has no total")
 
 
 @invoicing_hooks.on(Invoice, after=TotalIsPositive)
@@ -457,7 +457,7 @@ assert fresh.number == "F-101"
 try:
     numbered.save(Invoice(number="F-006", customer_id=ana.id, total=0))
     raise AssertionError("the hook should have refused it")
-except DomainError:
+except exceptions.DomainError:
     pass
 ```
 
@@ -671,7 +671,7 @@ class CustomerAccount(EventSourcedMixin, Entity):
 
     def withdraw(self, amount: int) -> None:
         if amount > self.balance:
-            raise DomainError("not enough money in the account")
+            raise exceptions.DomainError("not enough money in the account")
         self.happened(MoneyWithdrawn(amount=amount))
 
     def apply(self, event: DomainEvent) -> None:   # how each event moves the state
@@ -707,7 +707,7 @@ theirs.withdraw(10)
 try:
     repository.save(theirs)
     raise AssertionError("the second writer must rebuild first")
-except StaleAggregate:
+except exceptions.StaleAggregate:
     pass
 ```
 

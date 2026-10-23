@@ -16,7 +16,6 @@ from collections.abc import Generator
 from contextlib import contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.domain.exceptions import Unauthenticated
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.entrypoint.transports import (
     authenticated_as,
@@ -26,6 +25,7 @@ from sincpro_framework.auth.infrastructure.security_context import (
     as_identity,
     current_identity,
 )
+from sincpro_framework.entrypoints.adapters.mcp import exceptions
 from sincpro_framework.entrypoints.adapters.mcp.mcp import FASTMCP_MISSING
 
 if TYPE_CHECKING:
@@ -93,7 +93,7 @@ def token_verifier(
             )
             try:
                 identity = await asyncio.to_thread(access.authenticate, credentials)
-            except Unauthenticated:
+            except exceptions.Unauthenticated:
                 return None
             if identity.is_anonymous:
                 return None

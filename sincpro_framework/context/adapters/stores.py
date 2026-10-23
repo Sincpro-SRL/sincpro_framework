@@ -4,9 +4,9 @@
     KeyValueContexts(RedisKeyValue(redis))              every replica and service sharing Redis
     KeyValueContexts(store, TypedCodec(SIATContext))    the types back, the same codebase
 
-Each keeps the drafts of the flows it serves beside the contexts (`drafts()`): in the same memory,
-or on the same `KeyValueStore` under a prefix of their own, each lasting `drafts_ttl` from its last
-keep.
+Each keeps, beside the contexts, the entries the framework keeps with a version — the drafts and the
+pipeline runs: in the same memory, or on the same `KeyValueStore` under `{prefix}:kept`, each lasting
+`kept_ttl` from its last keep. Nothing else is set for them.
 
 `KeyValueContexts` stands on `KeyValueStore`, so Redis, Valkey and Memcached are the adapters
 `sincpro_framework.data_layer.caching` already has — behind their extras, nothing new to install. A key is
@@ -14,27 +14,34 @@ written in one `SET`; its version is an atomic `INCR` beside it.
 """
 
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any
 
 from sincpro_framework.common.store import KeyValueStore
 from sincpro_framework.context.adapters.codecs import PlainCodec
-from sincpro_framework.context.adapters.drafts import InMemoryDrafts, KeyValueDrafts
+from sincpro_framework.context.adapters.entries import InMemoryEntries, KeyValueEntries
 from sincpro_framework.context.domain.codec import ContextCodec
-from sincpro_framework.context.domain.drafts import DraftStore
-from sincpro_framework.context.domain.store import ContextStore
+from sincpro_framework.context.domain.store import ContextStore, Entry
+from sincpro_framework.sincpro_logger import logger
 
-DRAFTS_TTL = timedelta(days=7)
-"""How long a draft lasts after its last keep, unless the store is told otherwise."""
+KEPT_TTL = timedelta(days=7)
+"""How long a draft or a pipeline run lasts after its last keep, unless the store is told
+otherwise."""
 
 
 class InMemoryContexts(ContextStore):
-    def __init__(self, drafts_ttl: timedelta = DRAFTS_TTL) -> None:
+    def __init__(
+        self,
+        kept_ttl: timedelta = KEPT_TTL,
+        now: Callable[[], datetime] = partial(datetime.now, UTC),
+    ) -> None:
+        """`now` is the clock an entry's TTL is judged by — a `ManualClock.now` in tests."""
         self._kept: dict[str, tuple[dict[str, Any], datetime | None]] = {}
         self._versions: dict[str, int] = {}
         self._lock = threading.Lock()
-        self._drafts = InMemoryDrafts(drafts_ttl)
+        self._entries = InMemoryEntries(kept_ttl, now)
 
     def keep(self, key: str, values: Mapping[str, Any], ttl: timedelta | None = None) -> None:
         until = None if ttl is None else datetime.now(UTC) + ttl
@@ -61,8 +68,17 @@ class InMemoryContexts(ContextStore):
         with self._lock:
             return self._versions.get(key, 0)
 
-    def drafts(self) -> DraftStore:
-        return self._drafts
+    def keep_entry(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
+        return self._entries.keep(key, values, expected)
+
+    def entry(self, key: str) -> Entry | None:
+        return self._entries.read(key)
+
+    def discard_entry(self, key: str) -> None:
+        self._entries.discard(key)
+
+    def entries(self, folder: str) -> list[str]:
+        return self._entries.listed(folder)
 
 
 class KeyValueContexts(ContextStore):
@@ -71,13 +87,16 @@ class KeyValueContexts(ContextStore):
         store: KeyValueStore,
         codec: ContextCodec | None = None,
         prefix: str = "sincpro:context",
-        drafts_ttl: timedelta = DRAFTS_TTL,
+        kept_ttl: timedelta = KEPT_TTL,
+        now: Callable[[], datetime] = partial(datetime.now, UTC),
     ) -> None:
-        """`codec` is how a context is written — plain JSON by default, readable by any language."""
+        """`codec` is how a context is written — plain JSON by default, readable by any language.
+        The entries are kept under `{prefix}:kept`, apart from every context a project keeps by
+        name; `now` is the clock their TTL is judged by."""
         self.store = store
         self.codec = codec or PlainCodec()
         self.prefix = prefix
-        self._drafts = KeyValueDrafts(store, drafts_ttl, prefix=f"{prefix}:draft")
+        self._entries = KeyValueEntries(store, kept_ttl, prefix=f"{prefix}:kept", now=now)
 
     def _key(self, key: str) -> str:
         return f"{self.prefix}:{key}"
@@ -105,5 +124,32 @@ class KeyValueContexts(ContextStore):
         counted = self.store.get(self._version_key(key))
         return 0 if counted is None else int(counted)
 
-    def drafts(self) -> DraftStore:
-        return self._drafts
+    def keep_entry(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
+        return self._entries.keep(key, values, expected)
+
+    def entry(self, key: str) -> Entry | None:
+        return self._entries.read(key)
+
+    def discard_entry(self, key: str) -> None:
+        self._entries.discard(key)
+
+    def entries(self, folder: str) -> list[str]:
+        return self._entries.listed(folder)
+
+
+_process: InMemoryContexts | None = None
+_process_lock = threading.Lock()
+
+
+def process_contexts() -> InMemoryContexts:
+    """Where the drafts and the pipeline runs are kept when no context store is set: this
+    process's memory — lost with it and not shared by its replicas. Said once in the logs."""
+    global _process
+    with _process_lock:
+        if _process is None:
+            _process = InMemoryContexts()
+            logger.warning(
+                "drafts and pipeline runs are kept in this process's memory: set a context store "
+                "(bus.context_store(...)) to keep them across restarts and replicas"
+            )
+        return _process

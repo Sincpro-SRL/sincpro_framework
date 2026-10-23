@@ -13,6 +13,7 @@ from sqlalchemy import event
 
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
@@ -22,7 +23,6 @@ from sincpro_framework.ddd.criteria import (
     parse_order,
 )
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
-from sincpro_framework.ddd.exceptions import RelationNotResolved
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 
 from .related_models import (
@@ -270,7 +270,7 @@ def test_naming_a_relation_bare_brings_the_whole_record_and_no_relation_of_its_o
     author = page[0].author
 
     assert author is not None and author.name and author.id
-    with pytest.raises(RelationNotResolved):
+    with pytest.raises(exceptions.RelationNotResolved):
         author.books
 
 
@@ -296,7 +296,7 @@ def test_without_a_specification_nothing_is_resolved_and_touching_it_refuses(she
     book = shelf.search(Books).first()
     assert book is not None
 
-    with pytest.raises(RelationNotResolved):
+    with pytest.raises(exceptions.RelationNotResolved):
         book.author
 
 
@@ -487,8 +487,8 @@ def test_a_relation_that_resolves_to_nothing_says_so_instead_of_raising_a_key_er
         entity_table,
     )
     from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
+    from sincpro_framework.ddd import exceptions
     from sincpro_framework.ddd.entity import Entity
-    from sincpro_framework.ddd.exceptions import RelationNotResolved
 
     @dataclass
     class Head(Entity):
@@ -517,5 +517,5 @@ def test_a_relation_that_resolves_to_nothing_says_so_instead_of_raising_a_key_er
 
     with repository.context() as unit:
         stored = unit.get(Head, head.id)
-        with pytest.raises(RelationNotResolved, match="resolved to nothing"):
+        with pytest.raises(exceptions.RelationNotResolved, match="resolved to nothing"):
             stored.tails  # type: ignore[attr-defined]  # noqa: B018

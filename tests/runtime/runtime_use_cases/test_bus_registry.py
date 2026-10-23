@@ -14,7 +14,7 @@ from sincpro_framework.runtime.runtime_use_cases import (
     BusRegistry,
     InMemoryUseCases,
     RuntimeUseCase,
-    UseCaseRefused,
+    exceptions,
 )
 from tests.runtime.runtime_use_cases.billing import (
     CHECKOUT,
@@ -117,7 +117,7 @@ def test_a_broken_source_is_refused_and_the_bus_stays(source: str, reason: str):
     bus = registry.current
 
     registry.store.save(RuntimeUseCase(name="quote", source=source, version=2))
-    with pytest.raises(UseCaseRefused, match=reason) as refused:
+    with pytest.raises(exceptions.UseCaseRefused, match=reason) as refused:
         registry.reload()
 
     assert "quote v2" in str(refused.value)
@@ -130,7 +130,7 @@ def test_answering_a_command_of_the_code_needs_replaces():
 
     registry.store.save(RuntimeUseCase(name="tax", source=TAX_WITH_EXEMPTION))
     with pytest.raises(
-        UseCaseRefused,
+        exceptions.UseCaseRefused,
         match=r'ComputeTax answers CommandComputeTax in code — say replaces="tests.runtime.runtime_use_cases.billing.ComputeTax"',
     ):
         registry.reload()
@@ -158,7 +158,9 @@ def test_replacing_what_does_not_answer_the_command_is_refused():
             name="tax", source=TAX_WITH_EXEMPTION, replaces="billing.features.OldTax"
         )
     )
-    with pytest.raises(UseCaseRefused, match="ComputeTax answers CommandComputeTax"):
+    with pytest.raises(
+        exceptions.UseCaseRefused, match="ComputeTax answers CommandComputeTax"
+    ):
         registry.reload()
 
 
@@ -184,7 +186,7 @@ def test_check_refuses_a_draft_without_saving_it_or_touching_the_bus():
     registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     bus = registry.current
 
-    with pytest.raises(UseCaseRefused, match="line 1"):
+    with pytest.raises(exceptions.UseCaseRefused, match="line 1"):
         registry.check(
             RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=2)
         )
@@ -249,7 +251,9 @@ def test_check_loads_a_draft_where_its_version_in_force_stands():
     )
     renamed = QUOTE.replace("CommandQuote", "CommandPrice")
 
-    with pytest.raises(UseCaseRefused, match="double v1: cannot import name 'CommandQuote'"):
+    with pytest.raises(
+        exceptions.UseCaseRefused, match="double v1: cannot import name 'CommandQuote'"
+    ):
         registry.check(RuntimeUseCase(name="quote", source=renamed, version=2))
 
 
@@ -276,7 +280,7 @@ def test_a_feature_cannot_replace_an_application_service():
     registry.store.save(
         RuntimeUseCase(name="as_feature", source=FEATURE_FOR_CHECKOUT, replaces=replaced)
     )
-    with pytest.raises(UseCaseRefused, match="Checkout is an ApplicationService"):
+    with pytest.raises(exceptions.UseCaseRefused, match="Checkout is an ApplicationService"):
         registry.reload()
 
 
@@ -343,7 +347,7 @@ def test_put_of_what_does_not_load_saves_nothing_and_leaves_the_bus():
     registry = _registry(RuntimeUseCase(name="quote", source=QUOTE))
     bus = registry.current
 
-    with pytest.raises(UseCaseRefused, match="quote v2"):
+    with pytest.raises(exceptions.UseCaseRefused, match="quote v2"):
         registry.put(RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=2))
 
     assert registry.store.active() == [RuntimeUseCase(name="quote", source=QUOTE)]
@@ -398,7 +402,7 @@ def test_the_registry_says_which_versions_answer_even_when_the_store_moved_on():
     registry.store.save(
         RuntimeUseCase(name="quote", source="raise RuntimeError('boom')\n", version=2)
     )
-    with pytest.raises(UseCaseRefused):
+    with pytest.raises(exceptions.UseCaseRefused):
         registry.reload()
 
     assert registry.in_force[0] == quote_v1

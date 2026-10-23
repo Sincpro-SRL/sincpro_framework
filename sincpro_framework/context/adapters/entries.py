@@ -1,61 +1,110 @@
-"""The draft stores the framework ships — the ones each context store gives (`ContextStore.drafts()`).
+"""What a context store keeps beside its contexts with a version: a draft, a pipeline run — the
+machinery each store implements once.
 
-    InMemoryDrafts(ttl)                    one process: tests, a single worker
-    KeyValueDrafts(RedisKeyValue(redis), ttl)   every replica sharing Redis, Valkey or Memcached
+    InMemoryEntries(ttl)                       one process: tests, a single worker
+    KeyValueEntries(RedisKeyValue(redis), ttl)  every replica sharing Redis, Valkey or Memcached
 
-The same contract on both: a keep wins only over the version it read, every draft lasts a TTL from
-its last keep, and a version is never handed out twice for a key.
+The same contract on both: a keep wins only over the version it read, every entry lasts a TTL from
+its last keep, and a version is never handed out twice for a key — not after a discard, not after
+an expiry — so a writer still holding an old one cannot win. An entry's key names its folder,
+everything before its last `:`, and `listed(folder)` answers the live entries of one.
+
+Context: what lives here is not a concept a project sees. `InMemoryContexts` and `KeyValueContexts`
+are built on it; a project reaches it through the context store — `keep_entry`, `entry`,
+`discard_entry`, `entries` — and through `use_context().drafts()` and `use_context().pipelines()`.
 """
 
-import json
 import threading
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any
 
+from pydantic_core import to_jsonable_python
+
 from sincpro_framework.common.store import KeyValueStore
-from sincpro_framework.context.domain.drafts import Draft, DraftConflict, DraftStore
+from sincpro_framework.context.domain import exceptions
+from sincpro_framework.context.domain.store import Entry
+
+LISTED = 1000
+"""How many entries of one folder a key-value store can list, the most recently kept first."""
 
 
-class InMemoryDrafts(DraftStore):
+class Entries(ABC):
+    """What every store of entries does; the version arithmetic is written once, here."""
+
+    @abstractmethod
+    def keep(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
+        """`values` under `key` with a new version, when `expected` is the live version — `0` for
+        none; anything else raises `EntryConflict`. The TTL starts again."""
+
+    @abstractmethod
+    def read(self, key: str) -> Entry | None:
+        """The live entry, or `None` when there is none, it was discarded or it expired."""
+
+    @abstractmethod
+    def discard(self, key: str) -> None:
+        """Drop the entry, its version spent; one with none is not an error."""
+
+    @abstractmethod
+    def listed(self, folder: str) -> list[str]:
+        """The keys of the live entries of `folder`, the most recently kept first."""
+
+    def _milliseconds(self, moment: datetime) -> int:
+        """Where a chain started from nothing begins: the clock, above any version a chain that
+        ended a TTL ago could have reached."""
+        return int(moment.timestamp() * 1000)
+
+    def _check(self, key: str, expected: int, current: int, live: bool) -> None:
+        """A keep wins only over what it read: the live version, or `0` when none is live."""
+        if expected != (current if live else 0):
+            raise exceptions.EntryConflict(key, expected, current if live else 0)
+
+    def _entry(
+        self, key: str, values: Mapping[str, Any], version: int, now: datetime
+    ) -> Entry:
+        return Entry(
+            key=key, values=to_jsonable_python(dict(values)), version=version, kept_at=now
+        )
+
+
+class InMemoryEntries(Entries):
     def __init__(
         self, ttl: timedelta, now: Callable[[], datetime] = partial(datetime.now, UTC)
     ) -> None:
         """`now` is the clock expiry is judged by — a `ManualClock.now` in tests.
 
-        The last version of a key is remembered for a TTL after its draft was last kept or
-        discarded, then forgotten, so a process holding drafts for months does not hold every
+        The last version of a key is remembered for a TTL after its entry was last kept or
+        discarded, then forgotten, so a process holding entries for months does not hold every
         key it ever saw. A chain started after that begins at the clock's milliseconds, and
         always above any version this store handed out for any key, so a version never repeats
         — not under a clock that stands still, not with a TTL shorter than the keeps it holds.
         """
         self.ttl = ttl
         self.now = now
-        self._kept: dict[str, tuple[Draft, datetime]] = {}
+        self._kept: dict[str, tuple[Entry, datetime]] = {}
         self._versions: dict[str, tuple[int, datetime]] = {}
         self._floor = 0
         self._lock = threading.Lock()
 
-    def _live(self, key: str) -> Draft | None:
+    def _live(self, key: str) -> Entry | None:
         found = self._kept.get(key)
         if found is None:
             return None
-        draft, until = found
+        entry, until = found
         if until <= self.now():
             del self._kept[key]
             return None
-        return draft
+        return entry
 
     def _forget_expired(self, moment: datetime) -> None:
-        """Drop the versions nobody can still present: remembered past their TTL, no draft."""
+        """Drop the versions nobody can still present: remembered past their TTL, no entry."""
         for key in [key for key, (_, until) in self._versions.items() if until <= moment]:
             if self._live(key) is None:
                 del self._versions[key]
 
-    def _keep(
-        self, key: str, values: Mapping[str, Any], origin_version: int, expected: int
-    ) -> Draft:
+    def keep(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
         with self._lock:
             moment = self.now()
             self._forget_expired(moment)
@@ -68,30 +117,29 @@ class InMemoryDrafts(DraftStore):
                 else remembered[0] + 1
             )
             self._floor = max(self._floor, version)
-            draft = self._drafted(key, values, version, origin_version, moment)
-            self._kept[key] = (draft, moment + self.ttl)
+            entry = self._entry(key, values, version, moment)
+            self._kept[key] = (entry, moment + self.ttl)
             self._versions[key] = (version, moment + self.ttl)
-            return draft.model_copy(deep=True)
+            return entry.model_copy(deep=True)
 
-    def _read(self, key: str) -> Draft | None:
+    def read(self, key: str) -> Entry | None:
         """A copy: changing what a caller holds never changes what is kept."""
         with self._lock:
             live = self._live(key)
             return None if live is None else live.model_copy(deep=True)
 
-    def subjects(self, owner: str) -> list[str]:
+    def listed(self, folder: str) -> list[str]:
         with self._lock:
-            mine = f"{owner}/"
             live = [
-                draft
+                entry
                 for key in list(self._kept)
-                if key.startswith(mine) and (draft := self._live(key)) is not None
+                if key.rsplit(":", 1)[0] == folder and (entry := self._live(key)) is not None
             ]
-        live.sort(key=lambda draft: draft.kept_at, reverse=True)
-        return [draft.key.removeprefix(mine) for draft in live]
+        live.sort(key=lambda entry: entry.kept_at, reverse=True)
+        return [entry.key for entry in live]
 
-    def _discard(self, key: str) -> None:
-        """The version is remembered a TTL more: a tab holding the draft still loses."""
+    def discard(self, key: str) -> None:
+        """The version is remembered a TTL more: a tab holding the entry still loses."""
         with self._lock:
             if self._kept.pop(key, None) is not None:
                 version, _ = self._versions[key]
@@ -100,15 +148,15 @@ class InMemoryDrafts(DraftStore):
 
 GONE = b"gone"
 """What a discard writes as the next version of a key: the slot is spent like any other, so the
-number is never handed out again and a tab holding the draft before it loses."""
+number is never handed out again and a tab holding the entry before it loses."""
 
 DEAD = b"dead"
 """What a keep writes in the first slot of a start it judged stopped: the slot is spent, so the
 keep that took the start mark, if it was only slow, loses its `add` there instead of writing a
-draft nobody can reach. Read as no draft, like `GONE`."""
+entry nobody can reach. Read as no entry, like `GONE`."""
 
 SPENT = (GONE, DEAD)
-"""What a slot holds when no draft is live there."""
+"""What a slot holds when no entry is live there."""
 
 RESTART_WINDOW = timedelta(seconds=10)
 """How long a chain being started from nothing may take to write its first slot before the
@@ -118,15 +166,15 @@ ran on a clock that far behind — loses with `DraftConflict`. No keep is lost i
 whatever the clocks say."""
 
 
-class KeyValueDrafts(DraftStore):
+class KeyValueEntries(Entries):
     def __init__(
         self,
         store: KeyValueStore,
         ttl: timedelta,
-        prefix: str = "sincpro:draft",
+        prefix: str = "sincpro:kept",
         now: Callable[[], datetime] = partial(datetime.now, UTC),
     ) -> None:
-        """A draft is a chain of slots, one key per version, each written once with the store's
+        """A entry is a chain of slots, one key per version, each written once with the store's
         atomic `add`: of two keeps naming the same version, exactly one writes the next slot,
         and a slot is never deleted — its TTL removes it — so its number is never handed out
         again. Two keys say where the chain was last seen, the head and the chain, so the store
@@ -135,7 +183,7 @@ class KeyValueDrafts(DraftStore):
 
         A chain nothing is left of starts again at the clock's milliseconds, above anything a
         tab could still hold from before the expiry. Correctness — no keep answered and then
-        lost, no two drafts on one version — never depends on the clocks: every slot is won
+        lost, no two entries on one version — never depends on the clocks: every slot is won
         with `add`, and a start judged stopped has its first slot spent as `DEAD`. The clocks
         decide liveness (`RESTART_WINDOW`: a start slower than that loses with
         `DraftConflict`) and that a chain started over a fully expired one does not reuse its
@@ -145,44 +193,29 @@ class KeyValueDrafts(DraftStore):
         self.prefix = prefix
         self.now = now
 
-    def _index(self, owner: str) -> str:
-        return f"{self.prefix}:{owner}:subjects"
+    def _listing(self, folder: str) -> str:
+        return f"{self.prefix}:{folder}:listed"
 
-    def _listed(self, owner: str) -> list[str]:
-        held = self.store.get(self._index(owner))
-        return [] if held is None else list(json.loads(held))
+    def _last_listed(self, folder: str) -> int:
+        """The last position taken in `folder`'s list: from where it was last seen, probed forward
+        past the ones taken since — a hint that lags, or was evicted, hides nothing."""
+        held = self.store.get(self._listing(folder))
+        last = 0 if held is None else int(held)
+        while self.store.get(f"{self._listing(folder)}:{last + 1}") is not None:
+            last += 1
+        return last
 
-    def keep(
-        self,
-        owner: str,
-        subject: str,
-        values: Mapping[str, Any],
-        origin_version: int,
-        expected: int,
-    ) -> Draft:
-        """The draft kept, and `subject` listed for `owner` — the list lasting the TTL from its
-        last keep, like the drafts it names."""
-        draft = super().keep(owner, subject, values, origin_version, expected)
-        listed = self._listed(owner)
-        self.store.set(
-            self._index(owner),
-            json.dumps([subject, *(one for one in listed if one != subject)]).encode(),
-            self.ttl,
-        )
-        return draft
-
-    def discard(self, owner: str, subject: str) -> None:
-        super().discard(owner, subject)
-        listed = self._listed(owner)
-        if subject in listed:
-            remaining = [one for one in listed if one != subject]
-            self.store.set(self._index(owner), json.dumps(remaining).encode(), self.ttl)
-
-    def subjects(self, owner: str) -> list[str]:
-        """Context: the list is rewritten on every keep and discard, so two keeps of one owner
-        at the same instant may each list only its own subject until the next keep; a draft is
-        never lost by it — it is read by its subject all the same."""
-        return [one for one in self._listed(owner) if self.read(owner, one) is not None]
+    def _list(self, key: str) -> None:
+        """`key` named in its folder's list, in a position won with the store's atomic `add` —
+        as a version is — so keeps that list at the same instant, on any replica, never lose one
+        another, and every key of the list carries the TTL."""
+        folder = key.rsplit(":", 1)[0]
+        position = self._last_listed(folder) + 1
+        while not self.store.add(
+            f"{self._listing(folder)}:{position}", key.encode(), self.ttl
+        ):
+            position += 1
+        self.store.set(self._listing(folder), str(position).encode(), self.ttl)
 
     def _head(self, key: str) -> str:
         return f"{self.prefix}:{key}:head"
@@ -218,7 +251,7 @@ class KeyValueDrafts(DraftStore):
            an older one is a start that stopped, and its first slot is spent as `DEAD`.
         3. The slots after it are probed until one is missing: a keep that won its `add` and
            has not moved the pointers yet is the latest.
-        Final: the version, its slot (`GONE` or `DEAD` when no draft is live there) and
+        Final: the version, its slot (`GONE` or `DEAD` when no entry is live there) and
         whether a start is in progress; the pointers raised when they lagged or one was lost.
         """
         head, chain = self.store.get_many([self._head(key), self._chain(key)])
@@ -254,6 +287,27 @@ class KeyValueDrafts(DraftStore):
             self._point(key, version)
         return version, found, starting
 
+    def read(self, key: str) -> Entry | None:
+        _, found, _ = self._latest(key)
+        if found is None or found in SPENT:
+            return None
+        return Entry.model_validate_json(found)
+
+    def listed(self, folder: str) -> list[str]:
+        """The live entries of `folder`, the most recently kept first — of the last `LISTED`
+        named in it."""
+        last = self._last_listed(folder)
+        names = self.store.get_many(
+            [
+                f"{self._listing(folder)}:{one}"
+                for one in range(last, max(0, last - LISTED), -1)
+            ]
+        )
+        keys = list(dict.fromkeys(one.decode() for one in names if one is not None))
+        live = [(key, entry) for key in keys if (entry := self.read(key)) is not None]
+        live.sort(key=lambda pair: pair[1].kept_at, reverse=True)
+        return [key for key, _ in live]
+
     def _restart(self, key: str, latest: int, expected: int) -> int:
         """Where a chain nothing is left of begins again. Only one of the keeps that saw the
         same nothing may start it: they meet on the start mark, which says where the chain
@@ -263,12 +317,10 @@ class KeyValueDrafts(DraftStore):
         if not self.store.add(
             self._start(key, latest), f"{version}:{moment}".encode(), self.ttl
         ):
-            raise DraftConflict(key, expected, 0)
+            raise exceptions.EntryConflict(key, expected, 0)
         return version
 
-    def _keep(
-        self, key: str, values: Mapping[str, Any], origin_version: int, expected: int
-    ) -> Draft:
+    def keep(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
         """1. The latest version and whether it is live; a chain another keep is starting
            right now makes this one lose.
         2. `expected` has to be that version, or `0` when none is live.
@@ -282,37 +334,33 @@ class KeyValueDrafts(DraftStore):
         live = found is not None and found not in SPENT
         self._check(key, expected, latest, live)
         if starting:
-            raise DraftConflict(key, expected, 0)
+            raise exceptions.EntryConflict(key, expected, 0)
         moment = self.now()
         if found is not None:
             version = latest + 1
-            draft = self._drafted(key, values, version, origin_version, moment)
+            entry = self._entry(key, values, version, moment)
             if not self.store.add(
-                self._slot(key, version), draft.model_dump_json().encode(), self.ttl
+                self._slot(key, version), entry.model_dump_json().encode(), self.ttl
             ):
-                raise DraftConflict(key, expected, version)
+                raise exceptions.EntryConflict(key, expected, version)
         else:
             version = self._restart(key, latest, expected)
-            draft = self._drafted(key, values, version, origin_version, moment)
+            entry = self._entry(key, values, version, moment)
             while not self.store.add(
-                self._slot(key, version), draft.model_dump_json().encode(), self.ttl
+                self._slot(key, version), entry.model_dump_json().encode(), self.ttl
             ):
                 if self.store.get(self._slot(key, version)) == DEAD:
-                    raise DraftConflict(key, expected, 0)
+                    raise exceptions.EntryConflict(key, expected, 0)
                 version += 1
-                draft = self._drafted(key, values, version, origin_version, moment)
+                entry = self._entry(key, values, version, moment)
         self._point(key, version)
-        return draft
+        if not live:
+            self._list(key)
+        return entry
 
-    def _read(self, key: str) -> Draft | None:
-        _, found, _ = self._latest(key)
-        if found is None or found in SPENT:
-            return None
-        return Draft.model_validate_json(found)
-
-    def _discard(self, key: str) -> None:
+    def discard(self, key: str) -> None:
         """The next slot is written as `GONE`, so the number is spent and a tab holding the
-        draft before it loses. A keep that wins that slot first is discarded in turn."""
+        entry before it loses. A keep that wins that slot first is discarded in turn."""
         while True:
             latest, found, _ = self._latest(key)
             if found is None or found in SPENT:

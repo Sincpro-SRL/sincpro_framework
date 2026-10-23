@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sincpro_framework.data_layer.migrations.domain.step import MigrationRefused, Step
+from sincpro_framework.data_layer.migrations.domain import exceptions
+from sincpro_framework.data_layer.migrations.domain.step import Step
 
 MANIFEST = "meta_migration.json"
 FORMAT = 1
@@ -113,7 +114,9 @@ def _v2_digest(path: Path) -> str:
     try:
         tree = ast.parse(_text(path))
     except SyntaxError as error:
-        raise MigrationRefused(f"{path} is not Python that parses: {error}") from error
+        raise exceptions.MigrationRefused(
+            f"{path} is not Python that parses: {error}"
+        ) from error
     _collapse_docstrings(tree)
     statements = [
         ast.dump(statement)
@@ -184,7 +187,7 @@ def read_manifest(folder: Path, context: str) -> Manifest:
         return Manifest(context)
     raw = json.loads(path.read_text())
     if raw["format"] != FORMAT or raw["context"] != context:
-        raise MigrationRefused(
+        raise exceptions.MigrationRefused(
             f"{path} is format {raw['format']} of context {raw['context']}; this code reads "
             f"format {FORMAT} of context {context} — a folder per context, and the framework "
             "that wrote it"

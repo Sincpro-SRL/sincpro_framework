@@ -2,9 +2,10 @@ from typing import Any, Callable, Dict, Optional, Tuple, Type, overload
 
 from sincpro_log.logger import LoggerProxy
 
+from .bus_pipeline.incomes.incomes import Incomes
 from .bus_pipeline.interceptors.interceptor import Interceptor
+from .bus_pipeline.outcomes.outcomes import Outcomes
 from .context.entrypoint.providers import ContextProvider
-from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 from .observability import Observability
 from .sincpro_abstractions import (
     ApplicationService,
@@ -30,12 +31,22 @@ class FeatureBus(Bus):
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability
+    incomes: Incomes
+    outcomes: Outcomes
     new_execution_id: Callable[[], str]
     context_owner: object
     context_providers: list[ContextProvider]
 
     def __init__(
-        self, logger_bus: LoggerProxy = ..., observability: Observability | None = ...
+        self,
+        logger_bus: LoggerProxy = ...,
+        observability: Observability | None = ...,
+        incomes: Incomes | None = ...,
+        outcomes: Outcomes | None = ...,
+        context_owner: object = ...,
+        context_providers: list[ContextProvider] | None = ...,
+        new_execution_id: Callable[[], str] | None = ...,
+        log_after_execution: bool = ...,
     ) -> None: ...
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature handler for a specific DTO type."""
@@ -76,12 +87,22 @@ class ApplicationServiceBus(Bus):
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
     observability: Observability
+    incomes: Incomes
+    outcomes: Outcomes
     new_execution_id: Callable[[], str]
     context_owner: object
     context_providers: list[ContextProvider]
 
     def __init__(
-        self, logger_bus: LoggerProxy = ..., observability: Observability | None = ...
+        self,
+        logger_bus: LoggerProxy = ...,
+        observability: Observability | None = ...,
+        incomes: Incomes | None = ...,
+        outcomes: Outcomes | None = ...,
+        context_owner: object = ...,
+        context_providers: list[ContextProvider] | None = ...,
+        new_execution_id: Callable[[], str] | None = ...,
+        log_after_execution: bool = ...,
     ) -> None: ...
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -115,8 +136,8 @@ class FrameworkBus(Bus):
     app_service_bus: ApplicationServiceBus
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
-    dto_registry: Dict[str, Any]
     observability: Observability
+    outcomes: Outcomes
 
     def __init__(
         self,
@@ -124,6 +145,8 @@ class FrameworkBus(Bus):
         app_service_bus: ApplicationServiceBus,
         logger_bus: LoggerProxy = ...,
         observability: Observability | None = ...,
+        outcomes: Outcomes | None = ...,
+        log_after_execution: bool = ...,
     ) -> None: ...
     @overload
     def execute(self, dto: TypeDTO, return_type: Type[TypeDTOResponse]) -> TypeDTOResponse:

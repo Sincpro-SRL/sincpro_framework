@@ -34,11 +34,8 @@ from sincpro_framework.context.domain.execution import CHAIN_KEYS, IDENTITY_HEAD
 from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.data_layer.caching import IDEMPOTENCY_KEY, declares_once
 from sincpro_framework.data_layer.caching.domain.idempotent_command import IdempotentCommand
-from sincpro_framework.entrypoints.adapters.fastapi.problems import (
-    BUSES_STATE,
-    TRACE_STATE,
-    IdempotencyKeyMissing,
-)
+from sincpro_framework.entrypoints.adapters.fastapi import exceptions
+from sincpro_framework.entrypoints.adapters.fastapi.problems import BUSES_STATE, TRACE_STATE
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import trace_id_of
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -155,7 +152,7 @@ def bus_call(
         async def call(dto: Any) -> Any:
             setattr(request.state, BUSES_STATE, [bus])
             if context.idempotency_key is None and requires_idempotency_key(bus, type(dto)):
-                raise IdempotencyKeyMissing(
+                raise exceptions.IdempotencyKeyMissing(
                     f"{type(dto).__name__} runs once per request: send an Idempotency-Key "
                     "header"
                 )

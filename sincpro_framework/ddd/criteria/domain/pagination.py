@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     # buys nothing and closes the cycle: a criteria carries its pagination.
     from sincpro_framework.ddd.criteria.domain.sort import Sort
 
-from sincpro_framework.ddd.exceptions import InvalidCriteria
+from sincpro_framework.ddd import exceptions
 
 DEFAULT_LIMIT = 50
 
@@ -136,10 +136,10 @@ class CursorKeys(DataTransferObject):
             payload = json.loads(base64.urlsafe_b64decode(padded))
             keys, minted_under = payload["k"], payload["o"]
         except (ValueError, KeyError, TypeError, binascii.Error) as error:
-            raise InvalidCriteria(f"cursor is not readable: {error}") from error
+            raise exceptions.InvalidCriteria(f"cursor is not readable: {error}") from error
 
         if minted_under != ordering:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "this cursor belongs to a different ordering; start from the first page"
             )
         return cls(keys=tuple(_untagged(key) for key in keys), ordering=ordering)

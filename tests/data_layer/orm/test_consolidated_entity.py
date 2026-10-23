@@ -11,12 +11,12 @@ import pytest
 from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text, text
 from sqlalchemy.orm import registry
 
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import Consolidated, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.criteria import Condition, Criteria
-from sincpro_framework.exceptions import ProgrammingError
 
 from .engines import fresh
 
@@ -154,7 +154,7 @@ def test_two_extensions_that_name_a_field_alike_are_refused_naming_both(engine_u
     class Clashing(Entity):
         route: str = ""
 
-    with pytest.raises(ProgrammingError, match="move_delivery, move_fiscal"):
+    with pytest.raises(exceptions.ProgrammingError, match="move_delivery, move_fiscal"):
         map_aggregates(reg, {Clashing: Consolidated(Move, MoveDelivery, MoveFiscal)})
 
 

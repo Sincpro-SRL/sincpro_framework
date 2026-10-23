@@ -18,11 +18,8 @@ from collections.abc import Iterable
 from types import ModuleType
 from typing import Any
 
-from sincpro_framework.runtime.runtime_use_cases.domain import (
-    RuntimeUseCase,
-    UseCaseRefused,
-    UseCaseStore,
-)
+from sincpro_framework.runtime.runtime_use_cases import exceptions
+from sincpro_framework.runtime.runtime_use_cases.domain import RuntimeUseCase, UseCaseStore
 from sincpro_framework.runtime.runtime_use_cases.loading import load, module_name
 from sincpro_framework.use_bus import UseFramework
 
@@ -148,7 +145,7 @@ class BusRegistry:
                 raise
             self._swapped_in(bus, modules, use_cases)
 
-    def check_all(self) -> list[UseCaseRefused]:
+    def check_all(self) -> list[exceptions.UseCaseRefused]:
         """Every active stored use case loaded against the code as it is now, and the ones that
         do not load — what CI runs, as `migrations check` guards the schema. Nothing is swapped
         in; an empty list is a store the code still answers.
@@ -158,17 +155,17 @@ class BusRegistry:
         with self._lock:
             use_cases = self.store.active()
             bus = self.bus.fresh()
-            refusals: list[UseCaseRefused] = []
+            refusals: list[exceptions.UseCaseRefused] = []
             for use_case in use_cases:
                 try:
                     load(bus, self.context, use_case)
-                except UseCaseRefused as refused:
+                except exceptions.UseCaseRefused as refused:
                     refusals.append(refused)
             if not refusals:
                 try:
                     bus.build_root_bus()
                 except Exception as error:
-                    refusals.append(UseCaseRefused(f"the generation: {error}"))
+                    refusals.append(exceptions.UseCaseRefused(f"the generation: {error}"))
             self._settle_modules(module_name(self.context, one) for one in use_cases)
             return refusals
 

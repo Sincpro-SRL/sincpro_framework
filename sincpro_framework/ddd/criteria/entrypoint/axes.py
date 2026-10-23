@@ -9,13 +9,13 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.criteria import Criteria
 from sincpro_framework.ddd.criteria.domain.expression import Expression
 from sincpro_framework.ddd.criteria.domain.grouping import Grouping, Level, Measure
 from sincpro_framework.ddd.criteria.domain.values import PART_VALUES, Part
 from sincpro_framework.ddd.criteria.services.axes import ONE, bounds_of, label_of
 from sincpro_framework.ddd.criteria.services.calendar import on_calendar, snapped
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 def empty_measure(measure: Measure) -> Any:
@@ -77,7 +77,7 @@ def axis_values(
             return list(range(known[0], known[1] + 1))
         span = bounds_of(where, level.field)
         if span is None:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{level.field}' filled by year needs the filter to bound it at both ends"
             )
         return list(range(span[0].year, (span[1] - timedelta(microseconds=1)).year + 1))
@@ -85,7 +85,7 @@ def axis_values(
     if level.grain is not None:
         span = bounds_of(where, level.field)
         if span is None:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{level.field}' filled by {level.grain.value} needs the filter to bound it at "
                 "both ends: the groups of an axis with no ends cannot be listed"
             )
@@ -101,7 +101,7 @@ def axis_values(
         return [False, True]
     if choices:
         return list(choices)
-    raise InvalidCriteria(
+    raise exceptions.InvalidCriteria(
         f"'{level.field}' cannot be filled: it has no choices to list. Fill an enum, a boolean, "
         "a date part, or a date grain that the filter bounds"
     )
@@ -117,13 +117,13 @@ def check_levels(criteria: Criteria, grouping: Grouping) -> None:
     """
     for level in grouping.group_by:
         if level.part is not None and criteria.pagination.asked:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{level.field}' is grouped by a part of the date ({level.part.value}); a "
                 "group of a part has no rows to page, because «every "
                 f"{level.part.value}» is not a condition on the date"
             )
         if level.fill and (grouping.where_measures is not None or grouping.paged):
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{level.field}' is filled, and a filter or a page over the groups cannot "
                 "place the groups that have no rows: drop `fill`, or the filter and the page"
             )
@@ -140,7 +140,7 @@ def check_measures(grouping: Grouping, types: Mapping[str, str]) -> None:
             measure.function in ("bool_and", "bool_or")
             and types.get(measure.field) != "boolean"
         ):
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{measure.function}' folds a boolean field; '{measure.field}' is a "
                 f"{types.get(measure.field, 'field that does not exist')}"
             )

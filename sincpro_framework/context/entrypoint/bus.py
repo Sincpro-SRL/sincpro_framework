@@ -19,7 +19,6 @@ from collections.abc import Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
-from sincpro_framework.context.domain.keys import standardized
 from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.context.domain.node import ContextNode
 from sincpro_framework.context.domain.store import ContextStore
@@ -47,7 +46,7 @@ class FrameworkContext:
     ) -> None:
         self._is_entered: bool = False
         self.framework = framework_instance
-        self.context: dict[Any, Any] = standardized(context or {})
+        self.context: dict[Any, Any] = dict(context or {})
         self.global_scope = global_scope
         self.kind = kind
         self.restore = restore

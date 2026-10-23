@@ -10,14 +10,14 @@ from decimal import Decimal
 
 import pytest
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Grain, Measure
-from sincpro_framework.ddd.exceptions import InvalidCriteria as _InvalidCriteria
 
 
 def test_a_fold_only_takes_a_known_aggregate():
     """The function name reaches SQL: anything outside the closed list is refused here."""
     assert Measure(function="sum", field="row_count").function == "sum"
-    with pytest.raises(_InvalidCriteria, match="not a measure"):
+    with pytest.raises(exceptions.InvalidCriteria, match="not a measure"):
         Measure(function="pg_sleep", field="row_count")
 
 
@@ -39,7 +39,6 @@ from sincpro_framework.ddd.criteria import (
     conditions_of,
 )
 from sincpro_framework.ddd.criteria.domain.pagination import DEFAULT_LIMIT
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 # ── the filter ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +98,7 @@ def test_groups_nest_without_limit():
 
 def test_a_filter_that_is_neither_form_is_refused():
     """An API that accepts anything and guesses is one that fails in silence."""
-    with pytest.raises(InvalidCriteria, match="'all', 'any' or 'negate'"):
+    with pytest.raises(exceptions.InvalidCriteria, match="'all', 'any' or 'negate'"):
         Criteria.model_validate({"where": {"row_count__gt": 1000}})
 
 
@@ -113,7 +112,7 @@ def test_the_filter_travels_in_a_url_as_its_own_json():
 
 
 def test_unreadable_json_is_refused_naming_the_problem():
-    with pytest.raises(InvalidCriteria, match="does not read as JSON"):
+    with pytest.raises(exceptions.InvalidCriteria, match="does not read as JSON"):
         Criteria.model_validate({"where": "this is not json"})
 
 
@@ -175,9 +174,9 @@ def test_the_grouping_declares_its_levels_and_its_folds():
 
 
 def test_a_misspelt_level_or_fold_is_refused():
-    with pytest.raises(InvalidCriteria, match="a level is written"):
+    with pytest.raises(exceptions.InvalidCriteria, match="a level is written"):
         Criteria.model_validate({"grouping": {"group_by": ["produced_by"]}})
-    with pytest.raises(InvalidCriteria, match="a measure is written"):
+    with pytest.raises(exceptions.InvalidCriteria, match="a measure is written"):
         Criteria.model_validate(
             {"grouping": {"group_by": [{"field": "a"}], "measures": {"n": "sum:row_count"}}}
         )

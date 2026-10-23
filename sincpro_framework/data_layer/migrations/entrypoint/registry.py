@@ -12,8 +12,9 @@ per store — `<folder>/<store>/`.
 from collections.abc import Mapping
 from pathlib import Path
 
+from sincpro_framework.data_layer.migrations.domain import exceptions
 from sincpro_framework.data_layer.migrations.domain.engine import MigrationEngine
-from sincpro_framework.data_layer.migrations.domain.step import Chain, MigrationRefused
+from sincpro_framework.data_layer.migrations.domain.step import Chain
 
 
 class ContextMigrations:
@@ -33,7 +34,7 @@ class ContextMigrations:
 
     def chain(self, store: str) -> Chain:
         if store not in self._engines:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"'{self.name}' has no store {store}: its stores are {', '.join(self._engines)}"
             )
         return Chain(self.name, store, self.folder / store)

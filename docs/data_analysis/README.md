@@ -102,7 +102,7 @@ frame answers the filter it holds and one more condition by itself — values wr
 read as each column's type:
 
 ```python
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 
 sales = cache.fetch_all(repository, InvoiceLine, posted)
 assert (len(sales), sales.complete, repository.reads) == (1_875, True, 4)
@@ -114,7 +114,7 @@ assert all(line["journal"] == "SAL" for line in sal.rows())
 
 try:
     first.narrow({"field": "journal", "operator": "=", "value": "SAL"})
-except ProgrammingError:
+except exceptions.ProgrammingError:
     pass  # a frame that stopped at a page cannot tell which rows it is missing
 ```
 

@@ -17,6 +17,7 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import (
     All,
     Any_,
@@ -28,7 +29,6 @@ from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
 from sincpro_framework.ddd.criteria.domain.values import FromField
 from sincpro_framework.ddd.criteria.entrypoint.resolution import has_dynamic_values, resolve
 from sincpro_framework.ddd.criteria.services.comparison import compare
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 def holds(
@@ -64,7 +64,7 @@ def holds(
             return any(holds(part, read, resolution) for part in expression.any)
         case Not():
             return not holds(expression.negate, read, resolution)
-    raise InvalidCriteria(f"not a filter expression: {expression!r}")
+    raise exceptions.InvalidCriteria(f"not a filter expression: {expression!r}")
 
 
 def matches(record: Any, expression: Expression | None) -> bool:

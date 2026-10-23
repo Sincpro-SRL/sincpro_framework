@@ -17,12 +17,8 @@ from sincpro_framework.common.naming import registered_name
 from sincpro_framework.common.transport.addresses import HostedAt
 from sincpro_framework.common.transport.grpc import grpc
 from sincpro_framework.observability.tracing.propagation import trace_carrier
-from sincpro_framework.remote_execution.domain.errors import (
-    ContextOutcomeUnknown,
-    ContextTimeout,
-    ContextUnavailable,
-    raised_as_itself,
-)
+from sincpro_framework.remote_execution.domain import exceptions
+from sincpro_framework.remote_execution.domain.failures import raised_as_itself
 from sincpro_framework.remote_execution.domain.payload import Payload
 
 SERVICE = "sincpro.Contexts"
@@ -57,13 +53,17 @@ def _raised(error: Any, context: str, hosted_at: HostedAt) -> Exception:
     code, details = error.code(), error.details() or ""
     where = f"{context} at {hosted_at.address}"
     if code == grpc.StatusCode.DEADLINE_EXCEEDED:
-        return ContextTimeout(f"{where} did not answer within {hosted_at.timeout:g}s")
+        return exceptions.ContextTimeout(
+            f"{where} did not answer within {hosted_at.timeout:g}s"
+        )
     if code == grpc.StatusCode.UNAVAILABLE:
         if ACCEPTED_HEADER in dict(error.initial_metadata() or ()):
-            return ContextOutcomeUnknown(f"{where} took the call and was lost: {details}")
-        return ContextUnavailable(f"{where} is not answering: {details}")
+            return exceptions.ContextOutcomeUnknown(
+                f"{where} took the call and was lost: {details}"
+            )
+        return exceptions.ContextUnavailable(f"{where} is not answering: {details}")
     if code in (grpc.StatusCode.UNIMPLEMENTED, grpc.StatusCode.NOT_FOUND):
-        return ContextUnavailable(f"{where}: {details}")
+        return exceptions.ContextUnavailable(f"{where}: {details}")
     trailing = dict(error.trailing_metadata() or ())
     return raised_as_itself(
         trailing.get(ERROR_MODULE),

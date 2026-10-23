@@ -14,7 +14,7 @@ event published by the Feature, not a hook.
 ## A hook is a class registered for its aggregate
 
 ```python
-from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd import Hook, Hooks
 
 
@@ -34,7 +34,7 @@ invoicing_hooks = Hooks(None)
 class TotalIsPositive(Hook):
     def before_save(self, invoice: Invoice) -> None:
         if invoice.total <= 0:
-            raise DomainError(f"invoice {invoice.number} has no total")
+            raise exceptions.DomainError(f"invoice {invoice.number} has no total")
 
 
 @invoicing_hooks.on(Invoice, after=TotalIsPositive)
@@ -131,7 +131,7 @@ claims_hooks = Hooks(None)
 class WrittenOnce(Hook):
     def before_save(self, record: Claim) -> None:
         if not record.is_new:
-            raise DomainError(f"{type(record).__name__} is written once and never replaced")
+            raise exceptions.DomainError(f"{type(record).__name__} is written once and never replaced")
 
 
 Repository(database, claims_hooks)

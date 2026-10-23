@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.ddd.exceptions import StaleAggregate
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 
 from .contexts import lines_of
 from .ledger import Account, Entry
@@ -42,7 +42,7 @@ def test_a_batch_keeps_the_groups_that_posted_and_undoes_only_the_one_that_did_n
             try:
                 with unit.savepoint():
                     post_in_place(unit, entry.id)
-            except ProgrammingError as error:
+            except exceptions.ProgrammingError as error:
                 refused.append((entry.id, str(error)))
 
     assert [entry_id for entry_id, _ in refused] == [bad.id]
@@ -80,7 +80,7 @@ def test_the_second_of_two_writers_in_one_process_is_stale(
     first.name = "renamed by the first"
     ledger.save(first)
     second.name = "renamed by the second"
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         ledger.save(second)
 
     stored = ledger.get(Account, account_id)
@@ -135,7 +135,7 @@ def test_updated_at_is_the_creation_on_the_insert_and_stamped_on_the_update(
 def test_a_lock_outside_a_unit_of_work_is_refused(
     ledger: Repository, masters: dict[str, list]
 ):
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         ledger.get(Account, masters["accounts"][0].id, for_update=True)
 
 

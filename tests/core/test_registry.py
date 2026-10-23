@@ -2,13 +2,8 @@
 
 import pytest
 
-from sincpro_framework import UseFramework
-from sincpro_framework.registry import (
-    BusAlreadyRegistered,
-    BusNotRegistered,
-    Registry,
-    registry,
-)
+from sincpro_framework import UseFramework, exceptions
+from sincpro_framework.registry import Registry, registry
 
 
 def _bus(name: str) -> UseFramework:
@@ -41,7 +36,7 @@ def test_a_different_bus_under_the_same_name_is_refused():
     held = Registry()
     held.add(_bus("billing"))
 
-    with pytest.raises(BusAlreadyRegistered) as refused:
+    with pytest.raises(exceptions.BusAlreadyRegistered) as refused:
         held.add(_bus("billing"))
 
     assert refused.value.name == "billing"
@@ -51,7 +46,7 @@ def test_a_different_bus_under_the_same_name_is_refused():
 def test_an_unknown_name_says_it_is_not_registered():
     held = Registry()
 
-    with pytest.raises(BusNotRegistered) as missing:
+    with pytest.raises(exceptions.BusNotRegistered) as missing:
         held.get("billing")
 
     assert missing.value.name == "billing"
@@ -79,7 +74,7 @@ def test_a_reference_is_not_held_and_one_this_process_serves_is():
 
     assert remote.is_reference
     assert held.all() == () and "registry-remote" not in held
-    with pytest.raises(BusNotRegistered):
+    with pytest.raises(exceptions.BusNotRegistered):
         held.get("registry-remote")
 
     served = _bus("registry-served")
@@ -98,7 +93,7 @@ def test_a_bus_pointed_elsewhere_after_it_was_added_leaves_the_registry():
     billing.hosted_by("grpc://billing-service:50051?timeout=5")
 
     assert held.all() == ()
-    with pytest.raises(BusNotRegistered):
+    with pytest.raises(exceptions.BusNotRegistered):
         held.get("registry-leaves")
 
 

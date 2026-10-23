@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import Idempotency
@@ -61,7 +61,7 @@ def _bus(declare_on_handler, command: type = CommandIssueInvoice, answers: objec
 
 
 def _refused(gateway: Gateway) -> str:
-    with pytest.raises(ProgrammingError) as refused:
+    with pytest.raises(exceptions.ProgrammingError) as refused:
         gateway.surface()
     return str(refused.value)
 
@@ -275,9 +275,9 @@ def test_every_reason_is_said_at_once_and_nothing_is_published():
     assert "GET on a Command that is not a Query" in said
     assert "rpc. prefix is reserved" in said
     assert "has no AccessControl" in said
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         gateway.operations()
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         gateway.manifest()
 
 

@@ -62,14 +62,14 @@ The framework enforces no hint. A rule the server keeps is a normal hook, ordere
 
 ```python
 from sincpro_framework.ddd import matches, presentation_of
-from sincpro_framework.ddd.exceptions import ConstraintViolation
+from sincpro_framework.ddd import exceptions
 
 @billing_hooks.on(Invoice)
 class PaymentNeedsItsReference(BillingHook):
     def before_save(self, invoice: Invoice) -> None:
         for name, condition in presentation_of(Invoice).required_when.items():
             if matches(invoice, condition) and not getattr(invoice, name):
-                raise ConstraintViolation(f"{name} is required for this invoice")
+                raise exceptions.ConstraintViolation(f"{name} is required for this invoice")
 ```
 
 A state lock ("a confirmed invoice keeps its partner") is better written as the aggregate's

@@ -1,19 +1,25 @@
-"""`BusOutcomesMixin`: what a `UseFramework` mixes in to hear how its executions ended — a
-function, or a `Publisher` that hands each outcome on."""
+"""`BusOutcomesMixin`: what a `UseFramework` mixes in to hear how its use cases ended — a function,
+or a `Publisher` that hands each outcome on."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.bus_pipeline.outcomes.listeners import (
-    completions,
-    failures,
-    to_publisher,
-)
+from sincpro_framework.bus_pipeline.listeners import to_publisher
+from sincpro_framework.bus_pipeline.outcomes.outcomes import Outcomes
 
 
 class BusOutcomesMixin:
-    """What a `UseFramework` adds to hear its outcomes."""
+    """What a `UseFramework` adds to hear how its use cases ended."""
 
-    _logger_name: str
+    _registrations: list[Callable[[Any], Any]]
+
+    if TYPE_CHECKING:
+
+        @property
+        def name(self) -> str: ...
+
+    def _init_outcomes(self) -> None:
+        self._outcomes = Outcomes(self.name)
 
     def on_completion[L: Callable[..., Any]](self, listener: L) -> L:
         """Hear every use case of this bus that answered — an `ExecutionCompleted` with the DTO and
@@ -23,11 +29,13 @@ class BusOutcomesMixin:
             def done(completed: ExecutionCompleted) -> None: ...
 
         Context: one per Feature and ApplicationService that returned, the Features an
-        ApplicationService runs included; none when an error handler answered instead. A listener
-        that raises is logged and reaches nothing else. Every bus of the process:
+        ApplicationService runs included; none when an error handler answered instead. It
+        observes: it cannot change the answer, and one that raises is logged and reaches nothing
+        else. A generation of this bus (`fresh`) hears it too. Every bus of the process:
         `sincpro_framework.bus_pipeline.outcomes.listeners.completions.subscribe(listener)`.
         """
-        completions.subscribe(listener, self._logger_name)
+        self._outcomes.completed.subscribe(listener)
+        self._registrations.append(lambda bus: bus.on_completion(listener))
         return listener
 
     def publish_completions(self, to: Any) -> None:
@@ -36,7 +44,8 @@ class BusOutcomesMixin:
 
             billing.publish_completions(to=Publisher(FastStreamQueue(kafka)))
         """
-        completions.subscribe(to_publisher(to), self._logger_name)
+        self._outcomes.completed.subscribe(to_publisher(to))
+        self._registrations.append(lambda bus: bus.publish_completions(to))
 
     def on_failure[L: Callable[..., Any]](self, listener: L) -> L:
         """Hear every failure of this bus that escaped its call — an `ExecutionFailed`, in this
@@ -46,10 +55,13 @@ class BusOutcomesMixin:
             def alert(failure: ExecutionFailed) -> None: ...
 
         Context: emitted once, where the caller receives the exception, never when an error
-        handler answered instead. A listener that raises is logged and reaches nothing else. Every
-        bus of the process: `sincpro_framework.bus_pipeline.outcomes.listeners.failures.subscribe(listener)`.
+        handler answered instead. It observes: it cannot change what the call raised, and one that
+        raises is logged and reaches nothing else. A generation of this bus (`fresh`) hears it
+        too. Every bus of the process:
+        `sincpro_framework.bus_pipeline.outcomes.listeners.failures.subscribe(listener)`.
         """
-        failures.subscribe(listener, self._logger_name)
+        self._outcomes.failed.subscribe(listener)
+        self._registrations.append(lambda bus: bus.on_failure(listener))
         return listener
 
     def publish_failures(self, to: Any) -> None:
@@ -59,4 +71,5 @@ class BusOutcomesMixin:
 
             billing.publish_failures(to=Publisher(FastStreamQueue(kafka)))
         """
-        failures.subscribe(to_publisher(to), self._logger_name)
+        self._outcomes.failed.subscribe(to_publisher(to))
+        self._registrations.append(lambda bus: bus.publish_failures(to))

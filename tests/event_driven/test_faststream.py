@@ -12,12 +12,7 @@ from faststream import Context, StreamMessage
 from faststream.kafka import KafkaBroker, TestKafkaBroker
 from faststream.rabbit import RabbitBroker, TestRabbitBroker
 
-from sincpro_framework import (
-    DataTransferObject,
-    Feature,
-    ProgrammingError,
-    ServiceUnavailableError,
-)
+from sincpro_framework import DataTransferObject, Feature, exceptions
 from sincpro_framework.entrypoints.adapters.faststream import subscribe
 from sincpro_framework.event_driven import (
     AsyncPublisher,
@@ -84,7 +79,7 @@ def test_a_broker_that_does_not_take_the_event_is_unavailable(heard):
     async def scenario() -> None:
         await AsyncPublisher(queue).publish(TicketClosed(reason="down"))
 
-    with pytest.raises(ServiceUnavailableError) as raised:
+    with pytest.raises(exceptions.ServiceUnavailableError) as raised:
         asyncio.run(scenario())
 
     assert isinstance(raised.value.__cause__, ConnectionRefusedError)
@@ -93,7 +88,7 @@ def test_a_broker_that_does_not_take_the_event_is_unavailable(heard):
 def test_sync_publishing_needs_the_loop_the_queue_owns(heard):
     queue = FastStreamQueue(KafkaBroker())
 
-    with pytest.raises(ProgrammingError, match="start()"):
+    with pytest.raises(exceptions.ProgrammingError, match="start()"):
         queue.put(TicketClosed(reason="nobody started it"))
 
 

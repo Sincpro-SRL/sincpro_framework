@@ -12,9 +12,9 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.domain.exceptions import AuthError
 from sincpro_framework.auth.domain.identity import Credentials
 from sincpro_framework.context.domain.level import EntrypointKind
+from sincpro_framework.entrypoints.adapters.rpc import exceptions
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     ERROR_DATA_SCHEMA,
     INVALID_PARAMS,
@@ -30,7 +30,6 @@ from sincpro_framework.entrypoints.domain.bindings import RpcBinding
 from sincpro_framework.entrypoints.domain.layers import Scalar
 from sincpro_framework.entrypoints.domain.surface import Resolved
 from sincpro_framework.entrypoints.services.scalar_executor import execute
-from sincpro_framework.exceptions import ClientError
 from sincpro_framework.observability import process
 from sincpro_framework.sincpro_logger import logger
 
@@ -45,21 +44,6 @@ PARSE, INVALID, UNKNOWN_METHOD = PROTOCOL_ERRORS
 
 type MethodIndex = Mapping[str, Resolved[RpcBinding]]
 """Each published method by its name — what a request's `method` is looked up in."""
-
-
-class MethodNotFound(ClientError):
-    def __init__(self, method: str):
-        self.method = method
-        super().__init__(method)
-
-
-class InvalidParams(ClientError):
-    """Params the method cannot take whatever their values — by position, on a by-name API."""
-
-    def __init__(self, reason: str, message: str):
-        self.reason = reason
-        self.message = message
-        super().__init__(message)
 
 
 def jsonrpc_error(
@@ -124,13 +108,13 @@ def dispatch_method(
         return discover()
     resolved = methods.get(method)
     if resolved is None:
-        raise MethodNotFound(method)
+        raise exceptions.MethodNotFound(method)
     if params is None:
         payload: Scalar = {}
     elif isinstance(params, dict):
         payload = params
     else:
-        raise InvalidParams(
+        raise exceptions.InvalidParams(
             "PARAMS_BY_POSITION", "params must be a JSON object: this API is by-name only"
         )
     operation = resolved.operation
@@ -172,12 +156,12 @@ def invalid_request_of(request: Any) -> dict[str, Any] | None:
 
 def failure_of(method: str, error: Exception) -> Answer:
     """What a failed method is answered with — logged unless expected or already reported."""
-    if isinstance(error, MethodNotFound):
+    if isinstance(error, exceptions.MethodNotFound):
         return protocol_error(UNKNOWN_METHOD, "METHOD_NOT_FOUND", method=method)
-    if isinstance(error, InvalidParams):
+    if isinstance(error, exceptions.InvalidParams):
         data = error_data("invalid", error.reason, False, message=error.message)
         return INVALID_PARAMS, "Invalid params", data
-    expected = isinstance(error, (ValidationError, AuthError))
+    expected = isinstance(error, (ValidationError, exceptions.AuthError))
     if not expected and not process.was_reported(error):
         logger.exception("JSON-RPC method [%s] failed", method)
     return answer_for(error)

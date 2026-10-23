@@ -43,8 +43,8 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `ErrorHandler` | `(error) -> answer`, or re-raise to delegate | function | `from sincpro_framework.error_handler import ErrorHandler` |
 | `add_global_error_handler` / `add_feature_error_handler` / `add_app_service_error_handler` | Append a handler to one of three chains | registry | methods of `UseFramework` |
 | `ignore_sentry_exceptions(*types)` | Marks error types as expected traffic: not sent to Sentry, outcome `expected` | setting | method of `UseFramework` |
-| `ProgrammingError` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework.exceptions import ProgrammingError` |
-| `BusAlreadyBuilt` | Raised when registering an interceptor/handler/dependency after the bus built | DTO | `from sincpro_framework.exceptions import BusAlreadyBuilt` |
+| `ProgrammingError` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework import exceptions` → `exceptions.ProgrammingError` |
+| `BusAlreadyBuilt` | Raised when registering an interceptor/handler/dependency after the bus built | DTO | `from sincpro_framework import exceptions` → `exceptions.BusAlreadyBuilt` |
 | `describe` / `features` | What answers a Command and which interceptors wrap it | function | `from sincpro_framework.introspection import describe, features` |
 
 Look-alikes: `bus.context(...)` **opens** a context; `self.context` **reads** it inside a handler;
@@ -155,14 +155,14 @@ or answer by itself, and never changes either's class. They run outermost first,
 Command is executed** (`bus(dto)`, `self.feature_bus(dto)`, a workflow step, a cron tick).
 
 ```python
-from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import exceptions
 from sincpro_framework import CallNext
 
 
 @billing.interceptor(CommandCreateInvoice)
 def credit_check(dto, call_next: CallNext[ResponseCreateInvoice]) -> ResponseCreateInvoice:
     if dto.customer_id in blocked:
-        raise DomainError(f"{dto.customer_id} has no credit")
+        raise exceptions.DomainError(f"{dto.customer_id} has no credit")
     return call_next(dto)
 ```
 
@@ -208,14 +208,38 @@ framework.add_app_service_error_handler(handler)
 
 Depth: [references/errors.md](references/errors.md).
 
-**Hearing what a call did** (`sincpro_framework.bus_pipeline.outcomes`). Every Feature and ApplicationService
-that answered emits an `ExecutionCompleted` — the DTO, the response, the execution, the flow's
-context; none when an error handler answered for it. When no handler answered and the exception
-reaches the caller, an `ExecutionFailed` goes with it — once, where it left the call, with its
-`kind` and `retry_after`; the exception carries `failure_id`. Listen with `@bus.on_completion` /
-`@bus.on_failure` (one bus), `completions.subscribe(fn)` / `failures.subscribe(fn)` (the process),
-or `bus.publish_completions(to=…)` / `bus.publish_failures(to=…)` (a queue). Nobody listening costs
-nothing. Depth: `docs/core/outcomes.md`.
+**Hearing what a call did.** Three layers hang on the path, none of which changes what the call
+answers — that is an interceptor's or an error handler's. Each is heard the same three ways: a
+function on one bus, a subscription for the whole process, a `Publisher` for a queue. Nobody
+listening costs nothing; a listener that raises is logged and ignored; one may be added at any time
+and a `fresh()` generation hears it too.
+
+- **Income** (`sincpro_framework.bus_pipeline.incomes`): every Feature and ApplicationService that
+  begins emits an `ExecutionStarted` — the DTO as it was handed, the flow's context — after the
+  context providers and **before the interceptors**. `@bus.on_start`, `starts.subscribe(fn)`,
+  `bus.publish_starts(to=…)`. Depth: `docs/core/incomes.md`.
+- **Outcome** (`sincpro_framework.bus_pipeline.outcomes`): every one that answered emits an
+  `ExecutionCompleted` — the DTO, the response; none when an error handler answered for it. When no
+  handler answered and the exception reaches the caller, an `ExecutionFailed` goes with it — once,
+  where it left the call, naming the use case where it first failed, with its `kind` and
+  `retry_after`; the exception carries `failure_id`. `@bus.on_completion` / `@bus.on_failure`,
+  `completions.subscribe(fn)` / `failures.subscribe(fn)`, `bus.publish_completions(to=…)` /
+  `bus.publish_failures(to=…)`. Depth: `docs/core/outcomes.md`.
+
+**Running a job of steps** (`sincpro_framework.pipelines`). A `Pipeline` is an ApplicationService that is
+the order of its steps, declared as data — `class RunNightly(Pipeline, ApplicationService): steps =
+[CommandCollect, CommandBill]; always = CommandClose` — registered with `@bus.app_service(Command)`.
+Each step is a Feature of the same bus, filled from the input by the names of its fields; `ok=False`
+or an exception ends the run, `always` runs last with `ok` and `failure`. The bus attaches an
+interceptor (`PipelineRecorder`) that keeps the run — a `PipelineRun` — in the context
+(`use_context().pipelines()`), beside the drafts; the same `run_id` again starts over, or goes on
+with `resume = Resume.CONTINUE`. `by = "<field>"` picks one of several recipes; `records = False`
+leaves the recorder out. Nothing is refused: no tenant, no store or a step the bus does not answer
+is said in the logs. Depth: `docs/core/pipelines.md`.
+
+An income and its outcome name the same `execution_id`. What a listener must not do: keep state a
+process depends on (it may not run) or change the answer. The whole path, step by step:
+`docs/core/execution-path.md`.
 
 
 ## References

@@ -24,10 +24,10 @@ import time
 from decimal import Decimal
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.ddd.exceptions import DomainError
+from sincpro_framework.ddd import exceptions
 
 
-class InvoiceRefused(DomainError):
+class InvoiceRefused(exceptions.DomainError):
     pass
 
 
@@ -132,10 +132,10 @@ from billing_two_processes import (
 )
 from sincpro_framework.remote_execution.domain.payload import Payload
 from sincpro_framework.remote_execution import ContextTimeout
-from sincpro_framework.remote_execution.domain import errors
+from sincpro_framework.remote_execution.domain import failures
 
 wire: list[bytes] = []
-write, read, read_details = Payload.as_json, Payload.from_json.__func__, errors.read_values
+write, read, read_details = Payload.as_json, Payload.from_json.__func__, failures.read_values
 
 
 def written(self):
@@ -156,7 +156,7 @@ def details(raw):
 
 Payload.as_json = written
 Payload.from_json = classmethod(received)
-errors.read_values = details
+failures.read_values = details
 
 pdf = bytes(range(256)) * 400
 with billing.context({"user_id": 7}):

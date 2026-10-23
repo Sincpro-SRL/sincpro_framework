@@ -9,12 +9,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from sincpro_framework import FailureKind, ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     TEXT,
-    AggregateNotFound,
     All,
     Any,
     Condition,
@@ -30,8 +29,9 @@ from sincpro_framework.ddd import (
     Search,
     Sort,
     Specification,
-    presentation_of,
 )
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework.ddd import presentation_of
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import describe_class
 from sincpro_framework.ddd.reads.reads import declared_by
@@ -135,10 +135,10 @@ def test_get_narrowed_by_the_caller_keeps_the_identity_and_what_it_named():
 def test_a_missing_record_is_not_found_on_every_wire():
     bus = bus_with(CAJA)
 
-    with pytest.raises(AggregateNotFound) as raised:
+    with pytest.raises(ddd_exceptions.AggregateNotFound) as raised:
         bus(QueryGetAccount(id="gone"), ResponseAccount)
 
-    assert refined_failure_kind(raised.value) is FailureKind.NOT_FOUND
+    assert refined_failure_kind(raised.value) is exceptions.FailureKind.NOT_FOUND
 
 
 def test_a_literal_search_is_the_short_page_of_identity_and_display():
@@ -205,7 +205,7 @@ def test_without_a_repository_the_feature_says_which_dependency_it_needs():
     class AccountReads(EntityReads[Account]):
         pass
 
-    with pytest.raises(ProgrammingError, match="'repository'"):
+    with pytest.raises(exceptions.ProgrammingError, match="'repository'"):
         bus(QueryGetAccount(id="x"), ResponseAccount)
 
 
@@ -213,7 +213,9 @@ def test_a_dto_that_does_not_name_its_entity_is_refused():
     class QueryBare(Get):  # type: ignore[type-arg]
         pass
 
-    with pytest.raises(ProgrammingError, match="Get\\[Account, ResponseAccount\\]"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="Get\\[Account, ResponseAccount\\]"
+    ):
         declared_by(QueryBare)
 
 
@@ -337,7 +339,7 @@ def test_get_finds_a_record_by_the_key_the_entity_names():
     answer = bus(QueryGetLedger(id="1.2"), ResponseLedger)
 
     assert answer.ledger.id == BANK.id
-    with pytest.raises(AggregateNotFound):
+    with pytest.raises(ddd_exceptions.AggregateNotFound):
         bus(QueryGetLedger(id=BANK.id), ResponseLedger)
 
 
@@ -373,7 +375,7 @@ def test_a_caller_filter_adds_to_the_key_instead_of_replacing_it():
     bus = ledgers(CASH, CLOSED)
     only_active = Criteria(where=Condition(field="active", value=True))
 
-    with pytest.raises(AggregateNotFound):
+    with pytest.raises(ddd_exceptions.AggregateNotFound):
         bus(QueryGetLedger(id="1.3", criteria=only_active), ResponseLedger)
     assert (
         bus(QueryGetLedger(id="1.1", criteria=only_active), ResponseLedger).ledger.code
@@ -446,9 +448,9 @@ def test_a_key_that_is_not_a_scalar_field_of_its_own_is_refused():
         def DEFAULT_GET_ID(cls) -> str:
             return "on"
 
-    with pytest.raises(ProgrammingError, match="not a field of Unknown"):
+    with pytest.raises(exceptions.ProgrammingError, match="not a field of Unknown"):
         _described(Unknown)
-    with pytest.raises(ProgrammingError, match="a boolean field"):
+    with pytest.raises(exceptions.ProgrammingError, match="a boolean field"):
         _described(Flag)
 
 
@@ -465,9 +467,9 @@ def test_a_reading_must_be_a_specification_of_its_fields():
         def DEFAULT_READING(cls) -> Specification:
             return Specification({"title": Criteria()})
 
-    with pytest.raises(ProgrammingError, match="never which records"):
+    with pytest.raises(exceptions.ProgrammingError, match="never which records"):
         _described(Filtered)
-    with pytest.raises(ProgrammingError, match="title"):
+    with pytest.raises(exceptions.ProgrammingError, match="title"):
         _described(Misnamed)
 
 
@@ -501,17 +503,17 @@ def test_a_literal_search_is_a_where_holding_text_on_fields_that_answer_it():
                 where=Condition(field="size", operator=Operator.STARTS_WITH, value=TEXT)
             )
 
-    with pytest.raises(ProgrammingError, match="never uses TEXT"):
+    with pytest.raises(exceptions.ProgrammingError, match="never uses TEXT"):
         _described(NoText)
-    with pytest.raises(ProgrammingError, match="sets order"):
+    with pytest.raises(exceptions.ProgrammingError, match="sets order"):
         _described(Paged)
-    with pytest.raises(ProgrammingError, match="cannot answer"):
+    with pytest.raises(exceptions.ProgrammingError, match="cannot answer"):
         _described(PrefixOnNumber)
 
 
 def test_a_default_declared_as_anything_but_a_class_method_is_refused():
     with pytest.raises(
-        ProgrammingError, match="Declare it as `@classmethod def DEFAULT_GET_ID"
+        exceptions.ProgrammingError, match="Declare it as `@classmethod def DEFAULT_GET_ID"
     ):
 
         @dataclass
@@ -519,7 +521,7 @@ def test_a_default_declared_as_anything_but_a_class_method_is_refused():
             code: str = ""
             DEFAULT_GET_ID = "code"  # type: ignore[assignment]
 
-    with pytest.raises(ProgrammingError, match="DEFAULT_ORDER is staticmethod"):
+    with pytest.raises(exceptions.ProgrammingError, match="DEFAULT_ORDER is staticmethod"):
 
         @dataclass
         class Static(Entity):
@@ -527,7 +529,7 @@ def test_a_default_declared_as_anything_but_a_class_method_is_refused():
             def DEFAULT_ORDER() -> tuple[Sort, ...]:  # type: ignore[override]
                 return ()
 
-    with pytest.raises(ProgrammingError, match="DEFAULT_DISPLAY is a field"):
+    with pytest.raises(exceptions.ProgrammingError, match="DEFAULT_DISPLAY is a field"):
 
         @dataclass
         class Annotated(Entity):

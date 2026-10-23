@@ -13,9 +13,10 @@ from faststream import AckPolicy
 from faststream.kafka import KafkaBroker
 from faststream.rabbit import RabbitBroker
 
-from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.ddd import DomainEvent
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints import Exposure
 from sincpro_framework.entrypoints.adapters.faststream import (
     QueueGateway,
@@ -58,7 +59,6 @@ SALES = "urn:svc:sales"
 def billing_bus(ran: list[str], name: str = "billing") -> UseFramework:
     """`IssueInvoice` consumed from its channel, from sales only; `Reconcile` not on the queue.
     The amount picks what happens: negative a domain refusal, 0 an inside failure."""
-    from sincpro_framework.ddd.exceptions import DomainError
 
     bus = UseFramework(name, log_after_execution=False)
 
@@ -67,7 +67,7 @@ def billing_bus(ran: list[str], name: str = "billing") -> UseFramework:
     class IssueInvoice(Feature):
         def execute(self, dto: CommandIssueInvoice) -> None:
             if dto.amount < 0:
-                raise DomainError("an invoice cannot be negative")
+                raise ddd_exceptions.DomainError("an invoice cannot be negative")
             if dto.amount == 0:
                 raise RuntimeError("the database went away")
             ran.append(f"issued {dto.customer_id}:{dto.amount}")
@@ -204,7 +204,7 @@ def test_two_handlers_on_one_command_channel_are_refused():
         f"command channel {ISSUE_CHANNEL} is consumed by billing:CommandIssueInvoice, "
         "copy:CommandIssueInvoice" in problems
     )
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         gateway.build()
 
 

@@ -90,7 +90,7 @@ Each one is a pattern to copy and adapt, not a piece of the framework.
 ### Veto: a credit check
 
 ```python
-from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import exceptions
 
 billing = new_billing()
 blocked = {"moroso"}
@@ -101,14 +101,14 @@ def credit_check(
     dto: CommandCreateInvoice, call_next: CallNext[ResponseCreateInvoice]
 ) -> ResponseCreateInvoice:
     if dto.customer_id in blocked:
-        raise DomainError(f"{dto.customer_id} has no credit")
+        raise exceptions.DomainError(f"{dto.customer_id} has no credit")
     return call_next(dto)
 
 
 try:
     billing(CommandCreateInvoice(customer_id="moroso", total=100))
     raise AssertionError("the credit check should have refused it")
-except DomainError:
+except exceptions.DomainError:
     pass
 ```
 
@@ -213,7 +213,7 @@ assert lookups == ["coffee"]
 ### Retry: a lost race tries again on fresh data
 
 ```python
-from sincpro_framework.ddd import StaleAggregate
+from sincpro_framework.ddd import exceptions
 
 
 class CommandPostEntry(DataTransferObject):
@@ -229,7 +229,7 @@ class PostEntry(Feature):
     def execute(self, dto: CommandPostEntry) -> None:
         attempts.append(len(attempts) + 1)
         if len(attempts) < 3:
-            raise StaleAggregate(f"entry {dto.entry_id} changed meanwhile")
+            raise exceptions.StaleAggregate(f"entry {dto.entry_id} changed meanwhile")
 
 
 @ledger.interceptor(CommandPostEntry)
@@ -237,7 +237,7 @@ def retry_when_stale(dto: CommandPostEntry, call_next: CallNext[None]) -> None:
     for attempt in range(3):
         try:
             return call_next(dto)
-        except StaleAggregate:
+        except exceptions.StaleAggregate:
             if attempt == 2:
                 raise
     return None

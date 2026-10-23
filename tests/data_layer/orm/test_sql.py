@@ -12,7 +12,7 @@ from datetime import datetime
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
     grouping_column,
 )
@@ -239,7 +239,7 @@ def test_a_dialect_with_no_grain_translation_is_refused_rather_than_guessed():
 
     from .models import Thing
 
-    with pytest.raises(ProgrammingError, match="register_grain_translator"):
+    with pytest.raises(exceptions.ProgrammingError, match="register_grain_translator"):
         grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "oracle")
 
 

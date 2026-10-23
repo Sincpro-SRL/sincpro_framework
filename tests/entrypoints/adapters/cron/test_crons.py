@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.entrypoints.adapters.cron import (
     Cron,
     CronGateway,
@@ -22,7 +22,6 @@ from sincpro_framework.entrypoints.adapters.cron import (
     RunOutcome,
     Tick,
 )
-from sincpro_framework.exceptions import BusAlreadyBuilt, DependencyNotRegistered
 from sincpro_framework.runtime.testing import ManualClock
 
 START = datetime(2026, 9, 26, 1, 59, tzinfo=UTC)
@@ -496,7 +495,9 @@ def test_a_dependency_the_cron_declares_but_the_registry_lacks_fails_the_build()
 
         def run(self, tick: Tick) -> None: ...
 
-    with pytest.raises(DependencyNotRegistered, match="NeedsSiat needs siat.*cron-missing"):
+    with pytest.raises(
+        exceptions.DependencyNotRegistered, match="NeedsSiat needs siat.*cron-missing"
+    ):
         crons.build()
 
 
@@ -575,7 +576,7 @@ def test_a_dependency_the_context_base_declares_but_the_registry_lacks_fails_the
     class NeedsSiat(BillingCron):
         def run(self, tick: Tick) -> None: ...
 
-    with pytest.raises(DependencyNotRegistered, match="NeedsSiat needs siat"):
+    with pytest.raises(exceptions.DependencyNotRegistered, match="NeedsSiat needs siat"):
         crons.build()
 
 
@@ -583,7 +584,7 @@ def test_a_cron_registered_after_the_build_is_refused():
     crons = Crons("cron-late")
     crons.build()
 
-    with pytest.raises(BusAlreadyBuilt, match="cron Late"):
+    with pytest.raises(exceptions.BusAlreadyBuilt, match="cron Late"):
 
         @crons.cron(every=timedelta(minutes=1))
         class Late(Cron):

@@ -14,6 +14,7 @@ decides only where a calendar boundary falls: «the start of the day» in La Paz
 before anything is compared.
 """
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import (
     All,
     Condition,
@@ -26,7 +27,6 @@ from sincpro_framework.ddd.criteria.domain.values import RESOLVABLE, Period
 from sincpro_framework.ddd.criteria.domain.walk import mapped
 from sincpro_framework.ddd.criteria.services.calendar import range_of
 from sincpro_framework.ddd.criteria.services.reading import item_of
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 def _resolved(condition: Condition, resolution: ResolutionContext) -> Expression:
@@ -34,7 +34,7 @@ def _resolved(condition: Condition, resolution: ResolutionContext) -> Expression
     value = condition.value
     if isinstance(value, Period):
         if condition.operator is not Operator.BETWEEN:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"a period is a range and takes the operator 'between'; "
                 f"'{condition.field}' asked it with '{condition.operator.value}'"
             )

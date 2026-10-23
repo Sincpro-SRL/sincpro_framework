@@ -25,11 +25,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary, WeakSet
 
-from sincpro_framework.auth.domain.exceptions import (
-    AuthError,
-    PermissionDenied,
-    Unauthenticated,
-)
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import (
     AnyOf,
@@ -48,7 +44,6 @@ from sincpro_framework.auth.services.guard import (
 )
 from sincpro_framework.context.infrastructure.tree import executing_context
 from sincpro_framework.ddd.repositories.hooks import Hooks
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
@@ -124,7 +119,7 @@ class AccessControl[P: Permission]:
         needed — `any_of` for one among several. On a Feature, an ApplicationService or a Hook.
         """
         if not requirements:
-            raise ProgrammingError("requires() names at least one permission")
+            raise exceptions.ProgrammingError("requires() names at least one permission")
 
         def declared[T: type](cls: T) -> T:
             return self.declarations.add(
@@ -154,7 +149,7 @@ class AccessControl[P: Permission]:
         for provider in self.providers:
             if provider.name == identity.provider:
                 return provider
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{identity.subject} was vouched for by '{identity.provider}', a provider this "
             "AccessControl does not hold"
         )
@@ -193,16 +188,16 @@ class AccessControl[P: Permission]:
         permission: str,
         resource: Any,
         context: Mapping[str, Any] | None,
-    ) -> PermissionDenied | None:
+    ) -> exceptions.PermissionDenied | None:
         provider = self._provider_of(identity)
         try:
             if provider is None:
                 allowed = permission in identity.permissions
             else:
                 allowed = provider.has_permission(identity, permission, resource, context)
-        except PermissionDenied as denied:
+        except exceptions.PermissionDenied as denied:
             return denied
-        return None if allowed else PermissionDenied(identity.subject, permission)
+        return None if allowed else exceptions.PermissionDenied(identity.subject, permission)
 
     def _denial(
         self,
@@ -210,7 +205,7 @@ class AccessControl[P: Permission]:
         requirement: Requirement,
         resource: Any,
         context: Mapping[str, Any] | None,
-    ) -> PermissionDenied | None:
+    ) -> exceptions.PermissionDenied | None:
         if not isinstance(requirement, AnyOf):
             return self._has(identity, requirement.value, resource, context)
         denials = [
@@ -220,7 +215,7 @@ class AccessControl[P: Permission]:
         if any(one is None for one in denials):
             return None
         reasons = " and ".join(one.reason for one in denials if one is not None)
-        return PermissionDenied(identity.subject, str(requirement), reasons)
+        return exceptions.PermissionDenied(identity.subject, str(requirement), reasons)
 
     def refusal(
         self,
@@ -229,12 +224,12 @@ class AccessControl[P: Permission]:
         what: str,
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
-    ) -> AuthError | None:
+    ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may."""
         if declaration.kind == "public" or identity.kind == IdentityKind.SYSTEM:
             return None
         if identity.is_anonymous:
-            return Unauthenticated(f"authenticate to run {what}")
+            return exceptions.Unauthenticated(f"authenticate to run {what}")
         for requirement in declaration.requirements:
             denied = self._denial(identity, requirement, resource, context)
             if denied is not None:
@@ -255,7 +250,7 @@ class AccessControl[P: Permission]:
         if identity.kind == IdentityKind.SYSTEM:
             return
         if identity.is_anonymous:
-            raise Unauthenticated(f"authenticate to {permission.value}")
+            raise exceptions.Unauthenticated(f"authenticate to {permission.value}")
         denied = self._denial(identity, permission, resource, executing_context())
         if denied is not None:
             raise denied
@@ -273,7 +268,7 @@ class AccessControl[P: Permission]:
             return provider.permitted(
                 identity, permission.value, resources, executing_context()
             )
-        except PermissionDenied:
+        except exceptions.PermissionDenied:
             return [False] * len(resources)
 
     def scope_of(self, aggregate: type) -> "Criteria | None":
@@ -288,7 +283,7 @@ class AccessControl[P: Permission]:
         if identity.kind == IdentityKind.SYSTEM:
             return None
         if identity.is_anonymous:
-            raise Unauthenticated(f"authenticate to read {aggregate.__name__}")
+            raise exceptions.Unauthenticated(f"authenticate to read {aggregate.__name__}")
         provider = self._provider_of(identity)
         return None if provider is None else provider.scope(identity, aggregate)
 
@@ -313,12 +308,12 @@ class AccessControl[P: Permission]:
             logger.warning("access control is disabled: nothing it guards is checked")
         if isinstance(target, Hooks):
             if any(target is one for one in self._hooks):
-                raise ProgrammingError("AccessControl already guards this Hooks")
+                raise exceptions.ProgrammingError("AccessControl already guards this Hooks")
             target.gate(self._hook_guard)
             self._hooks.append(target)
             return
         if target in self._roots:
-            raise ProgrammingError(f"AccessControl already guards '{target.name}'")
+            raise exceptions.ProgrammingError(f"AccessControl already guards '{target.name}'")
         target.extend(self.attach)
         target.logger.add_context_source(self._identity_for_logs)
         self._roots.append(target)

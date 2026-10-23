@@ -20,6 +20,7 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Any_,
@@ -29,7 +30,6 @@ from sincpro_framework.ddd.criteria import (
     Not,
     holds,
 )
-from sincpro_framework.exceptions import ProgrammingError
 
 WIDER = {
     frozenset({"integer", "number"}): "number",
@@ -245,7 +245,7 @@ class DataFrame:
         says about the rest: its cursor, and whether it was the last."""
         if len(self) and len(page) and page.columns != self.columns:
             missing = sorted(set(self.columns) ^ set(page.columns))
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"the page has other columns than the frame: {', '.join(missing)}"
             )
         if self.key not in page.columns:
@@ -270,7 +270,7 @@ class DataFrame:
         """The rows that also answer `where` — with no read, since every row is here. Refused on
         a frame that stopped at a page."""
         if not self.complete:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"this frame holds {len(self)} rows of a read that has more — fetch_all it before "
                 "narrowing, or read the narrower filter as its own query"
             )

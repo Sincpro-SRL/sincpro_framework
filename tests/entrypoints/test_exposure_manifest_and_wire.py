@@ -12,9 +12,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Permission
-from sincpro_framework.auth.domain.exceptions import Unauthenticated
+from sincpro_framework.auth.domain import exceptions as auth_exceptions
 from sincpro_framework.ddd import Query
 from sincpro_framework.entrypoints import Gateway, Group, declare
 from sincpro_framework.entrypoints.domain.bindings import Binding, Deprecation
@@ -217,7 +217,7 @@ def test_a_project_wire_is_resolved_validated_and_built_by_the_gateway():
 def test_a_project_wire_still_runs_through_the_access_guard():
     gateway = Gateway([_cli_billing()], port=CliWire())
 
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         gateway.build()("manifest-billing issueinvoice", customer_id=1)
 
 
@@ -226,7 +226,7 @@ def test_a_project_wire_refuses_its_own_clashes_through_the_build():
         CommandIssueInvoice, command="billing show"
     )
 
-    with pytest.raises(ProgrammingError, match="'billing show' answered by"):
+    with pytest.raises(exceptions.ProgrammingError, match="'billing show' answered by"):
         gateway.build()
 
 

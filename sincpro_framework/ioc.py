@@ -11,10 +11,12 @@ from dependency_injector import containers, providers
 from dependency_injector.providers import Dict, Factory, Object, Singleton
 from sincpro_log.logger import LoggerProxy
 
+from sincpro_framework import exceptions
 from sincpro_framework.common.naming import registered_name
 
 from .bus import ApplicationServiceBus, FeatureBus, FrameworkBus
-from .exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
+from .bus_pipeline.incomes.incomes import Incomes
+from .bus_pipeline.outcomes.outcomes import Outcomes
 from .observability import Observability
 from .sincpro_abstractions import DataTransferObject
 
@@ -39,6 +41,8 @@ class FrameworkContainer(containers.DeclarativeContainer):
 
     logger_bus: Object[LoggerProxy] = providers.Object()
     observability: Object[Observability] = providers.Object()
+    incomes: Object[Incomes] = providers.Object()
+    outcomes: Object[Outcomes] = providers.Object()
     injected_dependencies: Dict = providers.Dict()
     dto_registry: Dict = Dict({})
     replacements: Dict = providers.Dict({})
@@ -47,13 +51,13 @@ class FrameworkContainer(containers.DeclarativeContainer):
     # atomic layer
     feature_registry: Dict = providers.Dict({})
     feature_bus: Singleton[FeatureBus] = providers.Singleton(
-        FeatureBus, logger_bus, observability  # type: ignore[arg-type]
+        FeatureBus, logger_bus, observability, incomes, outcomes  # type: ignore[arg-type]
     )
 
     # orchestration layer
     app_service_registry: Dict = providers.Dict({})
     app_service_bus: Singleton[ApplicationServiceBus] = providers.Singleton(
-        ApplicationServiceBus, logger_bus, observability  # type: ignore[arg-type]
+        ApplicationServiceBus, logger_bus, observability, incomes, outcomes  # type: ignore[arg-type]
     )
 
     # Facade
@@ -63,6 +67,7 @@ class FrameworkContainer(containers.DeclarativeContainer):
         app_service_bus=app_service_bus,
         logger_bus=logger_bus,  # type: ignore[arg-type]
         observability=observability,  # type: ignore[arg-type]
+        outcomes=outcomes,  # type: ignore[arg-type]
     )
 
 
@@ -121,14 +126,14 @@ def _register_service(
                 if service_type == ServiceType.FEATURE
                 else "an application service"
             )
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already "
                 f"registered as {answered_as}"
             )
 
         homonym = published.get(dto_name)
         if homonym is not None and homonym is not data_transfer_object:
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"Two use cases of this bus are named {dto_name}: "
                 f"{homonym.__module__}.{homonym.__qualname__} and "
                 f"{data_transfer_object.__module__}.{data_transfer_object.__qualname__}. A bus "
@@ -138,7 +143,7 @@ def _register_service(
 
         existing = framework_container.dto_registry.kwargs.get(identity)
         if existing is not None and existing is not data_transfer_object:
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"The message identity [{identity}] is already used by "
                 f"{existing.__module__}.{existing.__qualname__}; "
                 f"{data_transfer_object.__module__}.{data_transfer_object.__qualname__} needs a "
@@ -209,7 +214,7 @@ def _replace_service(
     for data_transfer_object in data_transfer_objects:
         current = registry.kwargs.get(data_transfer_object)
         if current is None:
-            raise UnknownDTOToExecute(
+            raise exceptions.UnknownDTOToExecute(
                 f"{replacement.__name__} replaces {replaced.__name__}, but nothing answers "
                 f"{data_transfer_object.__name__} yet — register the core handler first"
             )
@@ -219,11 +224,11 @@ def _replace_service(
         if replaced_as in framework_container.replacements.kwargs.get(
             data_transfer_object, ()
         ):
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"{replacement.__name__} replaces {replaced.__name__}, but "
                 f"{answering.__name__} already did — replace {answering.__name__} or remove it"
             )
-        raise DTOAlreadyRegistered(
+        raise exceptions.DTOAlreadyRegistered(
             f"{replacement.__name__} replaces {replaced.__name__}, but "
             f"{data_transfer_object.__name__} is handled by {answering.__name__}"
         )

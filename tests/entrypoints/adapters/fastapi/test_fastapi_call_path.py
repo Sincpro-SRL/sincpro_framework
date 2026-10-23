@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 from pydantic import model_validator
 
-from sincpro_framework import DataTransferObject, FailureKind, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth import (
     AccessControl,
     Identity,
@@ -27,8 +27,9 @@ from sincpro_framework.auth import (
     current_identity,
 )
 from sincpro_framework.common.store import InMemoryKeyValue
-from sincpro_framework.data_layer.caching import AlreadyInProgress, Idempotency, KeyReused
-from sincpro_framework.ddd.exceptions import DomainError, StaleAggregate
+from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.adapters.fastapi import (
     PROBLEM_JSON,
@@ -82,25 +83,25 @@ class CommandFail(DataTransferObject):
     how: str
 
 
-class InvoiceNotFound(DomainError):
-    failure_kind = FailureKind.NOT_FOUND
+class InvoiceNotFound(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.NOT_FOUND
 
 
-class QuotaSpent(DomainError):
-    failure_kind = FailureKind.EXHAUSTED
+class QuotaSpent(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.EXHAUSTED
     retry_after = 30
 
 
 class LedgerDown(Exception):
-    failure_kind = FailureKind.UNAVAILABLE
+    failure_kind = exceptions.FailureKind.UNAVAILABLE
 
 
 FAILURES: dict[str, Exception] = {
     "not_found": InvoiceNotFound("invoice F-9 does not exist"),
-    "conflict": StaleAggregate("invoice F-1 was written by someone else"),
-    "in_progress": AlreadyInProgress("still running"),
-    "key_reused": KeyReused("another payload"),
-    "domain": DomainError("an invoice has to balance"),
+    "conflict": ddd_exceptions.StaleAggregate("invoice F-1 was written by someone else"),
+    "in_progress": caching_exceptions.AlreadyInProgress("still running"),
+    "key_reused": caching_exceptions.KeyReused("another payload"),
+    "domain": ddd_exceptions.DomainError("an invoice has to balance"),
     "exhausted": QuotaSpent("the monthly quota is spent"),
     "unavailable": LedgerDown("ledger at 10.0.0.3 refused"),
     "internal": RuntimeError("postgres://admin:hunter2@db — never to the caller"),

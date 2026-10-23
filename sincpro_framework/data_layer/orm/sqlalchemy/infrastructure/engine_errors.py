@@ -22,26 +22,19 @@ from typing import Any
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm.exc import StaleDataError
 
-from sincpro_framework.ddd.exceptions import (
-    ConstraintViolation,
-    DomainError,
-    DuplicateAggregate,
-    StaleAggregate,
-    TimedOut,
-    TransactionConflict,
-)
+from sincpro_framework.data_layer import exceptions
 
-Fact = tuple[type[DomainError] | type[TimedOut], str]
+Fact = tuple[type[exceptions.DomainError] | type[exceptions.TimedOut], str]
 
-DUPLICATE: Fact = (DuplicateAggregate, "collides with a record already stored")
-FOREIGN_KEY: Fact = (ConstraintViolation, "breaks a foreign key")
-RULE: Fact = (ConstraintViolation, "breaks a rule the table holds")
+DUPLICATE: Fact = (exceptions.DuplicateAggregate, "collides with a record already stored")
+FOREIGN_KEY: Fact = (exceptions.ConstraintViolation, "breaks a foreign key")
+RULE: Fact = (exceptions.ConstraintViolation, "breaks a rule the table holds")
 CONFLICT: Fact = (
-    TransactionConflict,
+    exceptions.TransactionConflict,
     "lost to another transaction; run the unit of work again on a fresh read",
 )
 BOUND: Fact = (
-    TimedOut,
+    exceptions.TimedOut,
     "stopped at a bound it was given — a lock it was told not to wait for, or its timeout",
 )
 
@@ -106,7 +99,7 @@ def named(subject: str) -> Generator[None]:
     try:
         yield
     except StaleDataError as error:
-        raise StaleAggregate(
+        raise exceptions.StaleAggregate(
             f"{subject} changed since it was read; read it again before writing — {error}"
         ) from error
     except DBAPIError as error:

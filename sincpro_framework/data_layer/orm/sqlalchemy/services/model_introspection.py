@@ -17,6 +17,7 @@ from typing import Any, TypeGuard, cast
 from sqlalchemy import UniqueConstraint, inspect
 from sqlalchemy.exc import NoInspectionAvailable
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     is_mapped_event,
@@ -43,7 +44,6 @@ from sincpro_framework.ddd.entity.entity_meta import (
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import key_pair
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:
@@ -125,7 +125,7 @@ def _key_is_unique(entity: type, table: Any, key: str, identity: str) -> None:
     }
     if column.primary_key or column.unique or (key,) in alone:
         return
-    raise ProgrammingError(
+    raise exceptions.ProgrammingError(
         f"{entity.__name__}.DEFAULT_GET_ID answers {key}, and {table.name}.{key} is not "
         f"unique: a Get reads one record by it. Declare the column unique=True."
     )
@@ -161,7 +161,7 @@ def describe(entity: type) -> Meta:
         map_new_event_classes()  # an event class declared after its base was mapped
         mapper = inspect(entity)
     if mapper is None:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{entity.__name__} is not a mapped aggregate; there is nothing to query"
         )
 

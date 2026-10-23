@@ -14,7 +14,6 @@ import pytest
 from sincpro_framework.data_layer.migrations import (
     ContextMigrations,
     InMemoryEngine,
-    MigrationRefused,
     Migrations,
 )
 from sincpro_framework.data_layer.migrations.adapters.manifest import (
@@ -23,6 +22,7 @@ from sincpro_framework.data_layer.migrations.adapters.manifest import (
     read_manifest,
     write_manifest,
 )
+from sincpro_framework.data_layer.migrations.domain import exceptions
 
 GENERATED = '''"""create partner
 
@@ -118,7 +118,7 @@ def test_a_body_that_does_something_else_changes_its_checksum(tmp_path, edit):
 def test_a_python_body_that_does_not_parse_is_refused_naming_it(tmp_path):
     body = _body(tmp_path, "def upgrade(:\n")
 
-    with pytest.raises(MigrationRefused, match="step.py"):
+    with pytest.raises(exceptions.MigrationRefused, match="step.py"):
         checksum(body)
 
 

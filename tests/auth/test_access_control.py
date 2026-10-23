@@ -18,8 +18,8 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.auth import (
     AccessControl,
@@ -27,15 +27,14 @@ from sincpro_framework.auth import (
     Credentials,
     Identity,
     Permission,
-    PermissionDenied,
     RolePermissions,
     StaticProvider,
-    Unauthenticated,
     WhenDenied,
     as_identity,
     as_system,
     current_identity,
 )
+from sincpro_framework.auth.domain import exceptions as auth_exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Condition, Criteria, Entity
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
@@ -171,27 +170,29 @@ def test_what_the_identity_holds_runs(billing: UseFramework) -> None:
 
 
 def test_what_it_lacks_is_denied_naming_the_permission(billing: UseFramework) -> None:
-    with as_identity(NOBODY_SPECIAL), pytest.raises(PermissionDenied) as refused:
+    with as_identity(NOBODY_SPECIAL), pytest.raises(
+        auth_exceptions.PermissionDenied
+    ) as refused:
         billing(CommandIssueInvoice())
     assert refused.value.requirement == BillingPermission.ISSUE_INVOICE
     assert refused.value.subject == "user:2"
 
 
 def test_nobody_is_asked_to_authenticate(billing: UseFramework) -> None:
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         billing(CommandIssueInvoice())
 
 
 def test_any_of_is_met_by_one(billing: UseFramework) -> None:
     with granting(BillingPermission.AUDIT):
         billing(CommandReadInvoices())
-    with as_identity(NOBODY_SPECIAL), pytest.raises(PermissionDenied):
+    with as_identity(NOBODY_SPECIAL), pytest.raises(auth_exceptions.PermissionDenied):
         billing(CommandReadInvoices())
 
 
 def test_public_needs_nobody_and_authenticated_needs_anybody(billing: UseFramework) -> None:
     billing(CommandHealth())
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         billing(CommandMyProfile())
     with as_identity(NOBODY_SPECIAL):
         assert _by(billing(CommandMyProfile())) == "user:2"
@@ -207,7 +208,7 @@ def test_what_declares_nothing_is_not_checked(billing: UseFramework) -> None:
 def test_a_strict_bus_refuses_what_declares_nothing_entered_from_outside() -> None:
     billing = _billing(AccessControl[BillingPermission](strict=True))
     with as_identity(ACCOUNTANT):
-        with pytest.raises(PermissionDenied):
+        with pytest.raises(auth_exceptions.PermissionDenied):
             billing(CommandPrice())
         billing(CommandHealth())
 
@@ -269,7 +270,7 @@ def test_a_nested_use_case_that_declares_its_own_permission_is_checked_again() -
             return self.feature_bus.execute(CommandReadInvoices(), Answer)
 
     auth.on(billing)
-    with as_identity(ACCOUNTANT), pytest.raises(PermissionDenied) as refused:
+    with as_identity(ACCOUNTANT), pytest.raises(auth_exceptions.PermissionDenied) as refused:
         billing(CommandCheckout())
     assert refused.value.requirement == BillingPermission.AUDIT
 
@@ -290,7 +291,7 @@ def test_a_replacement_that_declares_nothing_keeps_what_it_replaces_required() -
             return Answer(by="bolivia")
 
     auth.on(billing)
-    with as_identity(NOBODY_SPECIAL), pytest.raises(PermissionDenied):
+    with as_identity(NOBODY_SPECIAL), pytest.raises(auth_exceptions.PermissionDenied):
         billing(CommandIssueInvoice())
     with as_identity(ACCOUNTANT):
         assert _by(billing(CommandIssueInvoice())) == "bolivia"
@@ -314,12 +315,14 @@ def test_an_interceptor_that_answers_by_itself_never_answers_before_the_guard() 
         return Answer(by="cache")
 
     auth.on(billing)
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         billing(CommandIssueInvoice())
 
 
 def test_an_identity_written_into_the_context_is_not_who_acts(billing: UseFramework) -> None:
-    with billing.context({"identity": ACCOUNTANT}) as forged, pytest.raises(Unauthenticated):
+    with billing.context({"identity": ACCOUNTANT}) as forged, pytest.raises(
+        auth_exceptions.Unauthenticated
+    ):
         forged(CommandIssueInvoice())
 
 
@@ -340,7 +343,7 @@ def test_who_acts_follows_the_execution_into_a_thread(billing: UseFramework) -> 
 def test_declared_both_public_and_required_is_refused(
     auth: AccessControl[BillingPermission],
 ) -> None:
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
 
         @auth.public
         @auth.requires(BillingPermission.READ_INVOICES)
@@ -365,7 +368,7 @@ class _HeaderKeys(AuthProvider):
         if key is None:
             return None
         if key not in self.keys:
-            raise Unauthenticated("unknown key")
+            raise auth_exceptions.Unauthenticated("unknown key")
         return Identity.user(self.keys[key], tenant="bo")
 
     def has_permission(
@@ -376,7 +379,9 @@ class _HeaderKeys(AuthProvider):
         context: Mapping[str, Any] | None = None,
     ) -> bool:
         if resource is not None and getattr(resource, "total", 0) > 10_000:
-            raise PermissionDenied(identity.subject, permission, "above the limit")
+            raise auth_exceptions.PermissionDenied(
+                identity.subject, permission, "above the limit"
+            )
         return (identity.subject, permission) in self.api
 
     def scope(self, identity: Identity, aggregate: type) -> Criteria | None:
@@ -406,7 +411,7 @@ def test_the_first_provider_that_recognizes_the_credentials_answers() -> None:
     )
     assert (by_token.subject, by_token.provider) == ("user:9", "static")
     assert auth.authenticate(Credentials(transport="http")).is_anonymous
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         auth.authenticate(Credentials(transport="http", headers={"x-api-key": "stolen"}))
 
 
@@ -417,7 +422,7 @@ def test_the_identitys_own_provider_is_asked_with_the_resource() -> None:
     identity = auth.authenticate(Credentials(transport="http", headers={"x-api-key": "k-1"}))
     with as_identity(identity):
         billing(CommandIssueInvoice())
-        with pytest.raises(PermissionDenied) as refused:
+        with pytest.raises(auth_exceptions.PermissionDenied) as refused:
             auth.check(BillingPermission.ISSUE_INVOICE, Invoice(total=50_000))
     assert refused.value.reason == "above the limit"
     assert ("has_permission", "user:1", "billing.invoice.issue") in recording.asked
@@ -501,7 +506,7 @@ def test_a_hook_that_requires_a_permission_refuses_the_write() -> None:
 
     auth.on(hooks)
     invoices = MemoryRepository(hooks=hooks)
-    with as_identity(ACCOUNTANT), pytest.raises(PermissionDenied):
+    with as_identity(ACCOUNTANT), pytest.raises(auth_exceptions.PermissionDenied):
         invoices.save(Invoice(total=1))
     with granting(BillingPermission.WRITE_INVOICE):
         invoices.save(Invoice(total=1))
@@ -587,7 +592,7 @@ def test_a_replacement_made_in_a_combination_keeps_what_it_replaces_required() -
 
     auth.on(core)
     invoices = MemoryRepository(hooks=core.combined_with(client))
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         invoices.save(Invoice(total=1))
     with granting(BillingPermission.WRITE_INVOICE):
         invoices.save(Invoice(total=1))
@@ -598,7 +603,7 @@ def test_a_copy_made_before_the_collection_is_guarded_is_guarded_too() -> None:
     core, _ = _guarded_core_hooks(auth)
     invoices = MemoryRepository(hooks=core.without())
     auth.on(core)
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         invoices.save(Invoice(total=1))
 
 
@@ -609,7 +614,7 @@ def test_a_collection_guarded_twice_is_refused_and_a_combination_asks_once() -> 
     client = Hooks(None)
     auth.on(core)
     auth.on(client)
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         auth.on(core)
     writer = Identity.user("user:1", permissions={BillingPermission.WRITE_INVOICE})
     with as_identity(writer.model_copy(update={"provider": recording.name})):
@@ -621,10 +626,10 @@ def test_a_collection_guarded_twice_is_refused_and_a_combination_asks_once() -> 
 
 def test_reads_scoped_by_identity_are_refused_to_nobody() -> None:
     auth = AccessControl[BillingPermission](providers=[_keys()])
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         auth.scope_of(Invoice)
     with as_identity(Identity.user("user:1").model_copy(update={"provider": "elsewhere"})):
-        with pytest.raises(ProgrammingError):
+        with pytest.raises(exceptions.ProgrammingError):
             auth.scope_of(Invoice)
 
 
@@ -667,7 +672,7 @@ def test_describing_and_verifying_build_nothing_and_close_nothing() -> None:
 
 def test_nobody_calling_a_strict_bus_is_asked_to_authenticate() -> None:
     billing = _billing(AccessControl[BillingPermission](strict=True))
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         billing(CommandPrice())
 
 
@@ -686,7 +691,7 @@ def test_the_system_is_granted_every_check_scope_and_batch() -> None:
 def test_nobody_is_refused_a_check_with_unauthenticated(
     auth: AccessControl[BillingPermission],
 ) -> None:
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(auth_exceptions.Unauthenticated):
         auth.check(BillingPermission.ISSUE_INVOICE)
     assert auth.permitted(BillingPermission.ISSUE_INVOICE, [None, None]) == [False, False]
 
@@ -702,7 +707,9 @@ def test_an_identity_opened_by_hand_answers_with_its_own_permissions(
 def test_a_provider_that_refuses_a_whole_batch_refuses_each() -> None:
     class RefusesBatches(_HeaderKeys):
         def permitted(self, identity, permission, resources, context=None) -> list[bool]:
-            raise PermissionDenied(identity.subject, permission, "no batch for you")
+            raise auth_exceptions.PermissionDenied(
+                identity.subject, permission, "no batch for you"
+            )
 
     auth = AccessControl[BillingPermission](
         providers=[RefusesBatches({"k-1": "user:1"}, set())]
@@ -744,11 +751,11 @@ def test_wiring_mistakes_are_refused_where_they_are_made() -> None:
     auth = AccessControl[BillingPermission]()
     billing = UseFramework("billing", log_after_execution=False)
     auth.on(billing)
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         auth.on(billing)
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         auth.requires()
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
 
         @auth.requires(BillingPermission.AUDIT, when_denied=WhenDenied.SKIP)
         @auth.requires(BillingPermission.READ_INVOICES)

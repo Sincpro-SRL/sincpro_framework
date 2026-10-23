@@ -30,10 +30,9 @@ from sincpro_framework.data_layer.migrations import (
     Chain,
     ChainState,
     ContextMigrations,
-    MigrationFailed,
-    MigrationRefused,
     Migrations,
 )
+from sincpro_framework.data_layer.migrations.domain import exceptions
 from sincpro_framework.data_layer.orm import AlembicEngine, Database, JsonText, version_table
 
 
@@ -183,7 +182,7 @@ def downgrade() -> None:
 ''')
     migrations.hash()
 
-    with pytest.raises(MigrationFailed, match="half done"):
+    with pytest.raises(exceptions.MigrationFailed, match="half done"):
         migrations.upgrade()
 
     assert "t1" in _tables(database)  # SQLite does not take DDL back
@@ -209,7 +208,7 @@ def test_a_store_with_several_heads_is_refused(tmp_path, database):
     with database.engine.begin() as connection:
         connection.exec_driver_sql(f"INSERT INTO {table} (version_num) VALUES ('other')")
 
-    with pytest.raises(MigrationRefused, match="common/main.*several heads"):
+    with pytest.raises(exceptions.MigrationRefused, match="common/main.*several heads"):
         migrations.status()
 
 
@@ -219,7 +218,7 @@ def test_a_revision_on_a_store_that_is_behind_is_refused_and_records_nothing(
     migrations = _migrations(tmp_path, database, _common_tables())
     migrations.revision("common", "main", "create partner")
 
-    with pytest.raises(MigrationRefused, match="common/main.*upgrade"):
+    with pytest.raises(exceptions.MigrationRefused, match="common/main.*upgrade"):
         migrations.revision("common", "main", "second")
 
     assert [step.message for step, _ in migrations.status().timeline] == ["create partner"]
@@ -354,7 +353,7 @@ def test_adopt_refuses_a_database_that_differs_from_the_code(tmp_path):
     _baseline(tmp_path, declared)
     migrations = _context(tmp_path, AlembicEngine(declared, database))
 
-    with pytest.raises(MigrationRefused, match="run.stage is declared"):
+    with pytest.raises(exceptions.MigrationRefused, match="run.stage is declared"):
         migrations.adopt("execution", "main")
 
     assert migrations.status().chains["execution/main"].position.head is None
@@ -365,5 +364,5 @@ def test_adopt_refuses_a_store_that_already_stands_on_a_step(tmp_path, database)
     migrations.revision("execution", "main", "create run")
     migrations.upgrade()
 
-    with pytest.raises(MigrationRefused, match="already stands on"):
+    with pytest.raises(exceptions.MigrationRefused, match="already stands on"):
         migrations.adopt("execution", "main")

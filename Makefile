@@ -96,7 +96,7 @@ format-yaml:
 	fi
 
 format-python:
-	poetry run autoflake --in-place --remove-unused-variables --remove-all-unused-imports --ignore-init-module-imports  -r sincpro_framework
+	poetry run autoflake --in-place --remove-unused-variables --remove-all-unused-imports --ignore-init-module-imports --exclude exceptions.py -r sincpro_framework
 	poetry run autoflake --in-place --remove-unused-variables --remove-all-unused-imports --ignore-init-module-imports  -r tests
 	poetry run isort sincpro_framework
 	poetry run isort tests

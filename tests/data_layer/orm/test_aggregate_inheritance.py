@@ -19,7 +19,7 @@ from sincpro_framework.data_layer.orm import (
     template_table,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
-from sincpro_framework.ddd import Criteria, Entity, EntityCollection, StaleAggregate
+from sincpro_framework.ddd import Criteria, Entity, EntityCollection, exceptions
 
 
 @dataclass
@@ -86,7 +86,7 @@ def test_a_subclass_is_versioned_like_its_parent(repository: Repository):
     theirs.total = 999
 
     assert _stored(repository, invoice.id).version == 2
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(exceptions.StaleAggregate):
         repository.save(theirs)
 
 

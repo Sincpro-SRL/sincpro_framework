@@ -50,13 +50,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.types import TypeEngine
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.migrations.domain.engine import MigrationEngine
-from sincpro_framework.data_layer.migrations.domain.step import (
-    Chain,
-    MigrationRefused,
-    Position,
-    Step,
-)
+from sincpro_framework.data_layer.migrations.domain.step import Chain, Position, Step
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 
 RenderTypes = Mapping[type[TypeEngine[Any]], TypeEngine[Any]]
@@ -231,7 +227,7 @@ class AlembicEngine(MigrationEngine):
                 connection.execute(select(dirty.c.head)).first() is not None
             )
         if len(heads) > 1:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{chain.key} has several heads in {version_table(chain)}: {', '.join(heads)} — "
                 "look at the store, then resolve it at the one it stands on"
             )
@@ -273,7 +269,7 @@ class AlembicEngine(MigrationEngine):
                     version_path=str(chain.folder),
                 )
         except CommandError as error:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{chain.key}: {error} — upgrade it before writing a new step"
             ) from error
         return Path(cast(Script, script).path)

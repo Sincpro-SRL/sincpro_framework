@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from sincpro_log.logger import LoggerProxy
 
+from sincpro_framework import exceptions
 from sincpro_framework.bus_pipeline.interceptors.interceptor import (
     Interceptor,
     InterceptorRegistration,
     interceptors_for,
 )
 from sincpro_framework.common.ordering import DEFAULT_SEQUENCE, name_of, ordered
-from sincpro_framework.exceptions import BusAlreadyBuilt, UnknownDTOToExecute
 
 if TYPE_CHECKING:
     from sincpro_framework.bus import FrameworkBus
@@ -21,10 +21,12 @@ class BusInterceptorsMixin:
     """What a `UseFramework` adds to wrap its use cases."""
 
     was_initialized: bool
-    _logger_name: str
     _registrations: list[Callable[[Any], Any]]
 
     if TYPE_CHECKING:
+
+        @property
+        def name(self) -> str: ...
 
         @property
         def logger(self) -> LoggerProxy: ...
@@ -60,8 +62,8 @@ class BusInterceptorsMixin:
 
         def register(interceptor: T) -> T:
             if self.was_initialized:
-                raise BusAlreadyBuilt(
-                    f"interceptor {interceptor.__qualname__} registered late: '{self._logger_name}' is already built, so it would "
+                raise exceptions.BusAlreadyBuilt(
+                    f"interceptor {interceptor.__qualname__} registered late: '{self.name}' is already built, so it would "
                     "never be used — register it before the first execution"
                 )
             self._interceptors.append(
@@ -86,8 +88,8 @@ class BusInterceptorsMixin:
         """Switch off an interceptor registered on this bus — it wraps nothing from then on.
         Refused once the bus is built, like registering one."""
         if self.was_initialized:
-            raise BusAlreadyBuilt(
-                f"switching off interceptor {interceptor.__qualname__} registered late: '{self._logger_name}' is already built, so it would "
+            raise exceptions.BusAlreadyBuilt(
+                f"switching off interceptor {interceptor.__qualname__} registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the first execution"
             )
         self._interceptors_off.append(interceptor)
@@ -131,9 +133,9 @@ class BusInterceptorsMixin:
         for registration in interceptors:
             for command in registration.commands:
                 if command not in answered:
-                    raise UnknownDTOToExecute(
+                    raise exceptions.UnknownDTOToExecute(
                         f"interceptor {registration.name} wraps {command.__name__}, which no "
-                        f"Feature or ApplicationService on '{self._logger_name}' answers"
+                        f"Feature or ApplicationService on '{self.name}' answers"
                     )
         feature_bus.interceptors = {
             command: interceptors_for(command, interceptors)

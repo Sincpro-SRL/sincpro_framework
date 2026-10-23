@@ -33,16 +33,15 @@ from sincpro_framework.auth import (
     IdentityMiddleware,
     InMemoryApiKeys,
     Permission,
-    PermissionDenied,
     ServiceTokenProvider,
     StaticProvider,
-    Unauthenticated,
     as_identity,
     as_system,
     credentials_from_asgi,
     current_identity,
 )
 from sincpro_framework.auth.adapters.service_token_provider import HEADER
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.entrypoint.transports import identity_headers
 from sincpro_framework.common.serialization import rebuilt
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
@@ -267,7 +266,7 @@ def test_an_mcp_tool_call_acts_as_whoever_the_request_says(
     _as_mcp_http_call(monkeypatch, _bearer("t-issuer"))
     assert issue() == {"by": "user:1"}
     _as_mcp_http_call(monkeypatch, _bearer("t-clerk"))
-    with pytest.raises(PermissionDenied):
+    with pytest.raises(exceptions.PermissionDenied):
         issue()
 
 
@@ -344,7 +343,7 @@ def test_the_identity_crosses_to_another_service_signed_and_nothing_else_does() 
         sent = identity_headers("hosted-billing")
     assert set(sent) == {HEADER}
     assert hosted(sent).by == "user:1"
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(exceptions.Unauthenticated):
         hosted({})
     with as_system("cron"):
         assert identity_headers("hosted-billing") == {}
@@ -375,7 +374,7 @@ def test_an_api_key_is_kept_by_its_digest_and_read_from_where_clients_send_it() 
         identity = provider.authenticate(credentials)
         assert identity is not None and identity.kind == IdentityKind.SERVICE
     store.revoke(secret)
-    with pytest.raises(Unauthenticated, match="revoked"):
+    with pytest.raises(exceptions.Unauthenticated, match="revoked"):
         provider.authenticate(Credentials(transport="http", headers={"x-api-key": secret}))
 
 
@@ -391,7 +390,7 @@ def test_a_service_token_is_refused_tampered_expired_or_for_another_audience() -
         ServiceTokenProvider("orders", {"old": "other"}).token_for(ISSUER),
         "not-a-token",
     ):
-        with pytest.raises(Unauthenticated):
+        with pytest.raises(exceptions.Unauthenticated):
             issuer.authenticate(Credentials(transport="service", headers={HEADER: bad}))
     rotated = ServiceTokenProvider("orders", {"2026-08": "older", **keys})
     assert rotated.authenticate(

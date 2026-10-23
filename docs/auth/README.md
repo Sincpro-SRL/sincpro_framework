@@ -31,18 +31,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import (
-    AccessControl,
-    AuthProvider,
-    Credentials,
-    Identity,
-    Permission,
-    PermissionDenied,
-    Unauthenticated,
-    WhenDenied,
-    as_identity,
-    as_system,
-)
+from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied, as_identity, as_system
+from sincpro_framework.auth.domain import exceptions
 
 
 class BillingPermission(Permission):
@@ -78,7 +68,7 @@ class TenantKeys(AuthProvider):
         if key is None:
             return None                                  # not mine: the next provider is tried
         if key not in self.keys:
-            raise Unauthenticated("unknown key")         # mine, and it fails
+            raise exceptions.Unauthenticated("unknown key")         # mine, and it fails
         return Identity.user(self.keys[key], tenant="bo")
 
     def has_permission(
@@ -89,7 +79,7 @@ class TenantKeys(AuthProvider):
         context: Mapping[str, Any] | None = None,
     ) -> bool:
         if resource is not None and getattr(resource, "amount", 0) > 10_000:
-            raise PermissionDenied(identity.subject, permission, "above the approval limit")
+            raise exceptions.PermissionDenied(identity.subject, permission, "above the approval limit")
         return (identity.subject, permission) in self.grants
 
 
@@ -217,12 +207,12 @@ with as_identity(called_with("k-accountant")):
 with as_identity(called_with("k-clerk")):
     try:
         billing(CommandIssueInvoice(total=10))
-    except PermissionDenied as refused:
+    except exceptions.PermissionDenied as refused:
         assert refused.requirement == BillingPermission.ISSUE_INVOICE
 
 try:
     billing(CommandIssueInvoice(total=10))
-except Unauthenticated:
+except exceptions.Unauthenticated:
     pass
 
 assert auth.authenticate(Credentials(transport="http")).is_anonymous
@@ -293,7 +283,7 @@ with as_identity(called_with("k-accountant")):
 with as_identity(called_with("k-clerk")):
     try:
         invoices.save(Invoice(total=1))
-    except PermissionDenied:
+    except exceptions.PermissionDenied:
         pass
 ```
 

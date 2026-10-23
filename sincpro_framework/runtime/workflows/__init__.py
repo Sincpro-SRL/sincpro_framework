@@ -23,7 +23,11 @@ from sincpro_framework.runtime.workflows.adapters.sources import (
     FileWorkflows,
     InMemoryWorkflows,
 )
-from sincpro_framework.runtime.workflows.domain.issue import Issue, WorkflowsInvalid
+from sincpro_framework.runtime.workflows.domain.exceptions import (
+    WorkflowFailed,
+    WorkflowsInvalid,
+)
+from sincpro_framework.runtime.workflows.domain.issue import Issue
 from sincpro_framework.runtime.workflows.domain.run import (
     CommandRunWorkflow,
     Limits,
@@ -31,7 +35,6 @@ from sincpro_framework.runtime.workflows.domain.run import (
     RunStatus,
     StepRun,
     StepStatus,
-    WorkflowFailed,
     WorkflowRun,
 )
 from sincpro_framework.runtime.workflows.domain.snippets import SnippetEngine

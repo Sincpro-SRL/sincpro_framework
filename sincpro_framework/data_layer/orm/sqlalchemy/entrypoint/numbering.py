@@ -29,11 +29,11 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.unit_in_play import in_play
 from sincpro_framework.ddd.repositories.numbering import INumbering, refuse_no_count
 from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 WITH_UPSERT: dict[str, Callable[[Table], Any]] = {
@@ -57,7 +57,7 @@ class DatabaseNumbering(INumbering):
         unit = in_play(self.database)
         if unit is not None:
             if unit.transaction.read_only:
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     "this unit of work was opened read_only=True; taking a number writes"
                 )
             yield unit.session

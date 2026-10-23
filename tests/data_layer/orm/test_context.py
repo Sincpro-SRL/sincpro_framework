@@ -10,7 +10,7 @@ engine.
 import pytest
 from sqlalchemy import func, select
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import register_grain_translator
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
@@ -34,7 +34,7 @@ def titled(store, title: str) -> Notes:
 
 
 def test_the_session_exists_only_inside_a_unit_of_work(store):
-    with pytest.raises(ProgrammingError, match="only inside context"):
+    with pytest.raises(exceptions.ProgrammingError, match="only inside context"):
         store.session
 
     with store.context() as repository:
@@ -92,9 +92,11 @@ def test_flush_makes_a_write_visible_to_the_next_read_before_the_commit(store):
 
 
 def test_a_lock_is_refused_outside_a_unit_of_work(store):
-    with pytest.raises(ProgrammingError, match="for_update only means something inside"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="for_update only means something inside"
+    ):
         store.get(Thing, "th_0001", for_update=True)
-    with pytest.raises(ProgrammingError, match="for_update"):
+    with pytest.raises(exceptions.ProgrammingError, match="for_update"):
         store.search(Things, for_update=True)
 
 
@@ -142,6 +144,6 @@ def test_a_provider_registers_the_grain_translation_for_its_engine():
     finally:
         del GRAIN_TRANSLATORS["acmedb"]
 
-    with pytest.raises(ProgrammingError, match="register_grain_translator"):
+    with pytest.raises(exceptions.ProgrammingError, match="register_grain_translator"):
         grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "acmedb")
     assert Operator.GT in Operator

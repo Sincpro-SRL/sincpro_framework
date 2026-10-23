@@ -37,6 +37,7 @@ from pydantic import Field, PydanticSchemaGenerationError, TypeAdapter, computed
 from pydantic_core import PydanticSerializationError
 
 from sincpro_framework.context.entrypoint.facade import use_context
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     MULTI_VALUED,
     RESOLVERS,
@@ -68,15 +69,9 @@ from sincpro_framework.ddd.entity.presentation import (
     When,
     field_name,
 )
-from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 TRUTHY = frozenset({"1", "true", "yes", "on", "t"})
-
-
-class Unreadable(ValueError):
-    """A value that will not become the type its field holds."""
 
 
 class FieldType(StrEnum):
@@ -150,7 +145,7 @@ class FieldType(StrEnum):
                 case _:
                     return raw
         except ValueError as error:
-            raise Unreadable(str(error)) from error
+            raise exceptions.Unreadable(str(error)) from error
 
 
 COMPARABLE: tuple[Operator, ...] = (
@@ -267,7 +262,7 @@ def annotations_of(declared: type) -> dict[str, Any]:
     try:
         hints = get_type_hints(declared, vars(sys.modules[declared.__module__]))
     except NameError as error:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{declared.__name__} names a type that cannot be resolved at runtime: {error}"
         ) from error
     return {
@@ -529,7 +524,7 @@ class FieldMeta(DataTransferObject):
             try:
                 return Decimal(str(raw))
             except ArithmeticError as error:
-                raise Unreadable(f"{raw!r} is not a decimal") from error
+                raise exceptions.Unreadable(f"{raw!r} is not a decimal") from error
         return self.type.read(raw, timezone)
 
     def read(self, condition: Condition, timezone: tzinfo = UTC) -> Condition:
@@ -551,7 +546,7 @@ class FieldMeta(DataTransferObject):
         if condition.operator is Operator.BETWEEN:
             given = condition.value
             if not isinstance(given, list) or len(given) != 2:
-                raise Unreadable(
+                raise exceptions.Unreadable(
                     f"'between' compares against two bounds; got {condition.value!r}"
                 )
             return condition.model_copy(
@@ -586,7 +581,7 @@ def ambient_resolution() -> ResolutionContext:
     try:
         timezone = ZoneInfo(zone)
     except ZoneInfoNotFoundError as error:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"the context's timezone {zone!r} is not a timezone name"
         ) from error
     return ResolutionContext(
@@ -668,7 +663,7 @@ class Meta(DataTransferObject):
 
         try:
             return field.read(condition, timezone), None
-        except Unreadable:
+        except exceptions.Unreadable:
             return None, Dropped(field=condition.field, reason="bad_value")
 
     def field(self, name: str) -> FieldMeta:
@@ -681,7 +676,7 @@ class Meta(DataTransferObject):
         """
         found = self.fields.get(name)
         if found is None:
-            raise InvalidCriteria(f"'{name}': no such field on {self.aggregate}")
+            raise exceptions.InvalidCriteria(f"'{name}': no such field on {self.aggregate}")
         return found
 
     def orderable(self, name: str) -> FieldMeta:
@@ -696,7 +691,7 @@ class Meta(DataTransferObject):
         """
         found = self.field(name)
         if not found.sortable:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"cannot order by '{name}': it is nullable, and a page ordered by a nullable "
                 "column silently drops the rows that hold no value"
             )
@@ -890,12 +885,12 @@ KEY_TYPES = frozenset({FieldType.TEXT, FieldType.INTEGER, FieldType.UUID})
 def _get_id_checked(owner: str, answered: object, annotations: dict[str, Any]) -> str:
     """`DEFAULT_GET_ID`: a text, integer or uuid field of the entity's own."""
     if not isinstance(answered, str) or answered not in annotations:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_GET_ID answers {answered!r}, which is not a field of {owner}"
         )
     kind = logical_type(annotations[answered])
     if kind not in KEY_TYPES:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_GET_ID answers {answered}, a {kind} field: a record is found by "
             f"a text, integer or uuid field"
         )
@@ -907,12 +902,12 @@ def _display_checked(owner: str, answered: object, annotations: dict[str, Any]) 
     if answered == "":
         return ""
     if not isinstance(answered, str) or answered not in annotations:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_DISPLAY answers {answered!r}, which is not a field of {owner}"
         )
     kind = logical_type(annotations[answered])
     if kind.is_relational or kind in (FieldType.EMBEDDED, FieldType.UNKNOWN):
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_DISPLAY answers {answered}, a {kind} field: what is shown beside "
             f"the identity is a value of the record itself"
         )
@@ -926,12 +921,12 @@ def _order_checked(
     entries = tuple(answered) if isinstance(answered, (list, tuple)) else (answered,)
     for entry in entries:
         if not isinstance(entry, Sort):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f'{owner}.DEFAULT_ORDER answers Sort, as in (Sort(field="code"),); '
                 f"it was given {entry!r}"
             )
         if entry.field not in annotations:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.DEFAULT_ORDER orders by {entry.field}, which is not a field of {owner}"
             )
     return cast(tuple[Sort, ...], entries)
@@ -949,13 +944,13 @@ def _reading_checked(
     if answered is None:
         return None
     if not isinstance(answered, Specification):
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_READING answers a Specification — what of each record, never "
             f"which records —; it was given {type(answered).__name__}"
         )
     unknown = sorted(set(answered.root) - set(annotations))
     if unknown:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_READING names {', '.join(unknown)}, "
             f"which {'is' if len(unknown) == 1 else 'are'} not a field of {owner}"
         )
@@ -974,25 +969,25 @@ def _search_checked(
     if answered is None:
         return None
     if not isinstance(answered, Criteria):
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH answers a Criteria whose where holds TEXT; "
             f"it was given {type(answered).__name__}"
         )
     extra = sorted(answered.model_fields_set - {"where"})
     if extra:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH sets {', '.join(extra)}: a template is a where "
             f"alone — the page, the order and what each record brings are the read's own"
         )
     conditions = conditions_of(answered.where)
     if not any(holds_text(one) for one in conditions):
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH never uses TEXT: a template says where the typed "
             f'text goes, as in Condition(field="name", operator=Operator.LIKE, value=TEXT)'
         )
     for one in conditions:
         if one.field not in annotations:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.DEFAULT_LITERAL_SEARCH searches {one.field}, "
                 f"which is not a field of {owner}"
             )
@@ -1002,7 +997,7 @@ def _search_checked(
         if (one.operator is Operator.STARTS_WITH and kind is not FieldType.TEXT) or (
             one.operator is Operator.LIKE and kind not in TEXT_TYPES
         ):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.DEFAULT_LITERAL_SEARCH searches {one.field} by "
                 f"{one.operator.value}, which a {kind} field cannot answer"
             )
@@ -1017,20 +1012,20 @@ def _while(
     covered: dict[str, list[Expression]] = {}
     for entry in _entries(answered):
         if not isinstance(entry, When):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.presentation {part} takes When, as in "
                 f"lambda a: [When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id)]; "
                 f"it was given {entry!r}"
             )
         if not isinstance(entry.condition, (Condition, All, Any_, Not)):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.presentation {part} takes a condition as Condition, All, Any or Not, "
                 f"as in When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id); "
                 f"it was given {entry.condition!r}"
             )
         for leaf in conditions_of(entry.condition):
             if leaf.field not in annotations:
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     f"{owner}.presentation {part} asks about {leaf.field}, "
                     f"which is not a field of {owner}"
                 )
@@ -1197,13 +1192,15 @@ def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
     }
     for name, derivation in read.items():
         if name in derivation.depends:
-            raise ProgrammingError(f"{owner}.derivations computes {name} from itself")
+            raise exceptions.ProgrammingError(
+                f"{owner}.derivations computes {name} from itself"
+            )
     ordered: list[str] = []
     while waiting:
         free = [name for name, needs in waiting.items() if not needs]
         if not free:
             cycle = " → ".join(sorted(waiting))
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.derivations depend on each other in a cycle: {cycle}"
             )
         for name in free:
@@ -1238,16 +1235,16 @@ def derivations_of(declared: type) -> tuple[Derivation, ...]:
     read: dict[str, Derivation] = {}
     for entry in _entries(declaration.declared(fields)):
         if not isinstance(entry, Derive):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.derivations takes Derive, as in lambda i: "
                 f"[Derive(i.total, depends=i.subtotal, by={owner}.total_of)]; "
                 f"it was given {entry!r}"
             )
         name = field_name(entry.field, "Derive(i.total, ...)")
         if name in read:
-            raise ProgrammingError(f"{owner}.derivations computes {name} twice")
+            raise exceptions.ProgrammingError(f"{owner}.derivations computes {name} twice")
         if not callable(entry.by):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{owner}.derivations computes {name} by {entry.by!r}, which is not callable"
             )
         read[name] = Derivation(

@@ -17,8 +17,8 @@ from enum import StrEnum
 
 from pydantic import ConfigDict
 
+from sincpro_framework import exceptions
 from sincpro_framework.common.failures import PERMANENT
-from sincpro_framework.exceptions import FailureKind
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -30,7 +30,9 @@ class Settlement(StrEnum):
     DEAD_LETTER = "dead_letter"
 
 
-SECURITY_KINDS = frozenset({FailureKind.UNAUTHENTICATED, FailureKind.PERMISSION_DENIED})
+SECURITY_KINDS = frozenset(
+    {exceptions.FailureKind.UNAUTHENTICATED, exceptions.FailureKind.PERMISSION_DENIED}
+)
 """Kinds that are also a security event — logged as one."""
 
 
@@ -40,7 +42,7 @@ class Verdict(DataTransferObject):
     model_config = ConfigDict(frozen=True)
 
     settlement: Settlement
-    kind: FailureKind | None = None
+    kind: exceptions.FailureKind | None = None
     reason: str | None = None
     """UPPER_SNAKE, stable: the error's class when the producer may read it, the kind
     otherwise, or the gateway's own (`PRODUCER_NOT_ALLOWED`, `EXPIRED`, `UNDECODABLE`)."""
@@ -49,14 +51,18 @@ class Verdict(DataTransferObject):
     """The message's type — the Command or event it was consumed as, when known."""
 
 
-def settlement_of(kind: FailureKind) -> Settlement:
+def settlement_of(kind: exceptions.FailureKind) -> Settlement:
     """The queue column of PRD_15 §1.3: dead-letter what fails the same way again, retry the
     rest."""
     return Settlement.DEAD_LETTER if kind in PERMANENT else Settlement.RETRY
 
 
 def failed(
-    kind: FailureKind, reason: str, attempts: int, max_attempts: int, command: str | None
+    kind: exceptions.FailureKind,
+    reason: str,
+    attempts: int,
+    max_attempts: int,
+    command: str | None,
 ) -> Verdict:
     """The verdict on a failure — a retry past `max_attempts` becomes a dead letter, its
     reason kept."""

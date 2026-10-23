@@ -10,8 +10,9 @@ from datetime import datetime
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Condition,
@@ -29,7 +30,6 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
-from sincpro_framework.ddd.exceptions import InvalidCriteria, StaleAggregate
 
 
 @dataclass
@@ -136,9 +136,9 @@ def test_the_short_readings_answer_the_same_as_the_adapter(ledger, accounts):
         Accounts, "balance", Criteria(where=Condition(field="kind", value="debt"))
     )
     assert ledger.distinct(Accounts, "kind") == ["asset", "debt"]
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         ledger.get_by(Accounts, kind="asset")
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         ledger.one(Accounts)
 
 
@@ -149,7 +149,7 @@ def test_folds_are_answered_over_the_whole_result_set(ledger, accounts):
         "all": sum(one.balance for one in accounts),
         "top": max(one.balance for one in accounts),
     }
-    with pytest.raises(InvalidCriteria):
+    with pytest.raises(ddd_exceptions.InvalidCriteria):
         ledger.measures(Accounts, None, evil="pg_sleep:balance")
 
 
@@ -186,7 +186,7 @@ def test_a_page_asked_gives_every_group_its_ids(ledger):
 
 
 def test_a_date_grain_says_it_is_the_database_that_answers_it(ledger):
-    with pytest.raises(ProgrammingError, match="date grain"):
+    with pytest.raises(exceptions.ProgrammingError, match="date grain"):
         ledger.group_by_levels(
             Accounts,
             Criteria(
@@ -209,7 +209,7 @@ def test_saving_raises_the_version_and_refuses_a_stale_write(ledger):
     assert mine.version == 2 and isinstance(mine.updated_at, datetime)
 
     theirs.balance = 7
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         ledger.save(theirs)
 
 
@@ -437,7 +437,7 @@ def test_archive_refuses_an_aggregate_that_cannot_say_it_was_archived(ledger):
     class Plain(Entity):
         label: str = ""
 
-    with pytest.raises(ProgrammingError, match="cannot be archived"):
+    with pytest.raises(exceptions.ProgrammingError, match="cannot be archived"):
         ledger.archive(Plain())
 
 
@@ -447,7 +447,7 @@ def test_a_mixed_batch_is_refused_whole_rather_than_half_archived(ledger, accoun
     class Plain(Entity):
         label: str = ""
 
-    with pytest.raises(ProgrammingError, match="cannot be archived"):
+    with pytest.raises(exceptions.ProgrammingError, match="cannot be archived"):
         ledger.archive([accounts[0], Plain()])
 
     assert not accounts[0].is_archived  # the archivable one was not touched either
@@ -463,9 +463,9 @@ def test_a_row_lock_is_refused_rather_than_quietly_ignored():
     account = Account(code="1010")
     repository.save(account)
 
-    with pytest.raises(ProgrammingError, match="unit of work"):
+    with pytest.raises(exceptions.ProgrammingError, match="unit of work"):
         repository.get(Account, account.id, for_update=True)
-    with pytest.raises(ProgrammingError, match="unit of work"):
+    with pytest.raises(exceptions.ProgrammingError, match="unit of work"):
         repository.search(Accounts, for_update=True)
 
     assert repository.get(Account, account.id, for_update=False) is not None
@@ -559,7 +559,7 @@ def test_a_stale_write_is_refused_the_way_the_engine_refuses_it():
     repository.save(theirs)  # moves the version
 
     mine.balance = 999
-    with pytest.raises(StaleAggregate, match="changed since it was read"):
+    with pytest.raises(ddd_exceptions.StaleAggregate, match="changed since it was read"):
         repository.save(mine)
 
     stored = repository.get(Account, account.id)

@@ -13,11 +13,8 @@ A stored handler may `replaces=` one in code, as a Feature in code does. The cor
 store contract and a store in memory; `sincpro_framework.data_layer.orm` a table.
 """
 
-from sincpro_framework.runtime.runtime_use_cases.domain import (
-    RuntimeUseCase,
-    UseCaseRefused,
-    UseCaseStore,
-)
+from sincpro_framework.runtime.runtime_use_cases.domain import RuntimeUseCase, UseCaseStore
+from sincpro_framework.runtime.runtime_use_cases.exceptions import UseCaseRefused
 from sincpro_framework.runtime.runtime_use_cases.in_memory import InMemoryUseCases
 from sincpro_framework.runtime.runtime_use_cases.registry import BusRegistry
 

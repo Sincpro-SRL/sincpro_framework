@@ -17,6 +17,7 @@ from typing import Any, cast, get_args, get_origin
 
 from pydantic import TypeAdapter, ValidationError
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection, identity_name
 from sincpro_framework.ddd.entity.entity_meta import (
     Derivation,
@@ -26,8 +27,6 @@ from sincpro_framework.ddd.entity.entity_meta import (
     related_class,
     without_optional,
 )
-from sincpro_framework.ddd.exceptions import RelationNotResolved
-from sincpro_framework.exceptions import ClientError, ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 UNREAD = object()
@@ -45,7 +44,7 @@ def _current(record: Any, name: str) -> Any:
     and assigning over it is a replacement, as `record.lines = [...]` is."""
     try:
         return getattr(record, name, None)
-    except RelationNotResolved:
+    except exceptions.RelationNotResolved:
         return UNREAD
 
 
@@ -80,10 +79,12 @@ def assign(record: Any, values: Mapping[str, Any], adopt: bool = False) -> tuple
     annotations = annotations_of(owner)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise ClientError(f"{owner.__name__} has no field {', '.join(unknown)} to assign")
+        raise exceptions.ClientError(
+            f"{owner.__name__} has no field {', '.join(unknown)} to assign"
+        )
     written = sorted(set(values) & framework_fields(owner))
     if written:
-        raise ClientError(
+        raise exceptions.ClientError(
             f"{owner.__name__}.{', '.join(written)} is written by the framework, not assigned"
         )
     changed: list[str] = []
@@ -171,8 +172,8 @@ def _held_by_identity(record: Any, name: str, kind: type, value: list[Any]) -> d
         return {}
     try:
         current = getattr(record, name)
-    except RelationNotResolved as error:
-        raise ProgrammingError(
+    except exceptions.RelationNotResolved as error:
+        raise exceptions.ProgrammingError(
             f"{type(record).__name__}.{name} names records by {identity}, and they were not "
             "read: read them inside context(), or name them in the criteria's specification"
         ) from error
@@ -217,7 +218,7 @@ def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> A
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise ClientError(
+        raise exceptions.ClientError(
             f"{owner.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
         ) from error
 
@@ -232,10 +233,12 @@ def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     annotations = annotations_of(kind)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise ClientError(f"{kind.__name__} has no field {', '.join(unknown)} to assign")
+        raise exceptions.ClientError(
+            f"{kind.__name__} has no field {', '.join(unknown)} to assign"
+        )
     written = sorted(set(values) & framework_fields(kind))
     if written:
-        raise ClientError(
+        raise exceptions.ClientError(
             f"{kind.__name__}.{', '.join(written)} is written by the framework, not assigned"
         )
     read = {
@@ -245,7 +248,9 @@ def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     try:
         built = kind(**read)
     except TypeError as error:
-        raise ClientError(f"{kind.__name__} cannot be built from {dict(values)!r}: {error}")
+        raise exceptions.ClientError(
+            f"{kind.__name__} cannot be built from {dict(values)!r}: {error}"
+        )
     if adopted:
         setattr(built, identity, adopted)
     return built
@@ -262,7 +267,7 @@ def _edited_or_built(
         if found is None and adopt:
             return _built(kind, values, adopt)
         if found is None:
-            raise ClientError(
+            raise exceptions.ClientError(
                 f"{kind.__name__} {values[identity]} is not held here: an edited record is one "
                 "the field already holds, and a new one comes without its identity"
             )
@@ -286,7 +291,7 @@ def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> A
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise ClientError(
+        raise exceptions.ClientError(
             f"{kind.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
         ) from error
 
@@ -377,7 +382,7 @@ def _ran(
         try:
             value = _computed(derivation, record)
             before = getattr(record, derivation.field, None)
-        except RelationNotResolved:
+        except exceptions.RelationNotResolved:
             if not tolerant:
                 raise
             continue
@@ -429,7 +434,9 @@ def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
     owner = type(record)
     unknown = sorted(set(changed) - set(annotations_of(owner))) if changed else []
     if unknown:
-        raise ClientError(f"{owner.__name__} has no field {', '.join(unknown)} to recompute")
+        raise exceptions.ClientError(
+            f"{owner.__name__} has no field {', '.join(unknown)} to recompute"
+        )
     return _tree(record, set(changed), False, set())
 
 

@@ -22,12 +22,8 @@ from typing import Any
 
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.common.transport.addresses import HostedAt, Wire
-from sincpro_framework.remote_execution.domain.errors import (
-    ContextOutcomeUnknown,
-    ContextTimeout,
-    ContextUnavailable,
-    raised_as_itself,
-)
+from sincpro_framework.remote_execution.domain import exceptions
+from sincpro_framework.remote_execution.domain.failures import raised_as_itself
 from sincpro_framework.remote_execution.domain.payload import Payload
 
 PATH = "/sincpro/contexts/execute"
@@ -82,7 +78,9 @@ class HttpTransport:
             return connection
         except (OSError, http.client.HTTPException) as error:
             self._forget()
-            raise ContextUnavailable(f"{where} is not answering: {error}") from None
+            raise exceptions.ContextUnavailable(
+                f"{where} is not answering: {error}"
+            ) from None
         except BaseException:
             self._forget()
             raise
@@ -103,12 +101,12 @@ class HttpTransport:
                 return Payload.from_json(body)
         except TimeoutError:
             self._forget()
-            raise ContextTimeout(
+            raise exceptions.ContextTimeout(
                 f"{where} did not answer within {self.hosted_at.timeout:g}s"
             ) from None
         except (OSError, http.client.HTTPException) as error:
             self._forget()
-            raise ContextOutcomeUnknown(
+            raise exceptions.ContextOutcomeUnknown(
                 f"{where} took the call and was lost: {error}"
             ) from None
         except BaseException:
@@ -116,7 +114,7 @@ class HttpTransport:
             raise
         message = body.decode(errors="replace")
         if answer.status == 404:
-            raise ContextUnavailable(f"{where}: {message}")
+            raise exceptions.ContextUnavailable(f"{where}: {message}")
         details = answer.getheader(ERROR_DETAILS_HEADER)
         raise raised_as_itself(
             answer.getheader(ERROR_MODULE_HEADER),

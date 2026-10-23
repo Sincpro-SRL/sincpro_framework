@@ -30,6 +30,7 @@ from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, ValidationError
 
+from sincpro_framework import exceptions
 from sincpro_framework.auth.entrypoint.access_control import access_control_of
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.ddd.events import DomainEvent
@@ -57,7 +58,6 @@ from sincpro_framework.entrypoints.entrypoint.catalog import (
 )
 from sincpro_framework.entrypoints.entrypoint.internal import is_internal
 from sincpro_framework.entrypoints.infrastructure.registry import registry
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.introspection import inspector
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
@@ -324,7 +324,7 @@ class Gateway:
             return self._port.binding
         wire = type(self).wire
         if wire is None or wire not in BUILT_IN_BINDINGS:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{type(self).__name__} names no wire the framework knows ({wire!r}): give it "
                 "a Wire port, or set its `wire`"
             )
@@ -524,7 +524,7 @@ class Gateway:
     def _resolve(self) -> tuple[list[tuple[Resolved[Any], Published]], list[str]]:
         wire = self.wire_name
         if wire is None:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{type(self).__name__} names no wire: it publishes its catalog as PRD_12 did, "
                 "and has no declared surface to resolve"
             )
@@ -545,7 +545,7 @@ class Gateway:
             return self._resolved
         resolved, problems = self._resolve()
         if problems:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{type(self).__name__} ({self.wire_name}) refuses its surface:\n- "
                 + "\n- ".join(problems)
             )
@@ -600,7 +600,7 @@ class Gateway:
         ]
         if not aliases:
             named = bus if isinstance(bus, str) else bus.name
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"group({named!r}): no bus of this gateway is {named!r} — add it first; it has "
                 f"{', '.join(self._catalogs) or 'none'}"
             )
@@ -623,7 +623,7 @@ class Gateway:
         binding_type = self._binding_type()
         unknown = sorted(set(fields) - set(binding_type.model_fields))
         if unknown:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"override({target.__name__}): {binding_type.__name__} has no "
                 f"{', '.join(unknown)}"
             )
@@ -636,7 +636,7 @@ class Gateway:
         field by field over its decorator's; the last call wins."""
         binding_type = self._binding_type()
         if not isinstance(binding, binding_type):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"bind({target.__name__}, {type(binding).__name__}): this gateway publishes "
                 f"{binding_type.wire} — bind a {binding_type.__name__}"
             )

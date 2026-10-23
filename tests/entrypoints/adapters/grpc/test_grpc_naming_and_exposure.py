@@ -20,8 +20,8 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
@@ -147,7 +147,7 @@ def test_two_methods_answering_one_name_after_stripping_fail_the_build() -> None
         def execute(self, dto: QueryInvoice) -> None:
             return None
 
-    with pytest.raises(ProgrammingError) as refused:
+    with pytest.raises(exceptions.ProgrammingError) as refused:
         GrpcGateway({"clashing": bus}, unguarded=True).methods()
 
     said = str(refused.value)
@@ -160,12 +160,12 @@ def test_a_name_that_is_no_proto_identifier_fails_the_build() -> None:
         CommandIssueInvoice, method="issue-invoice"
     )
 
-    with pytest.raises(ProgrammingError, match="issue-invoice"):
+    with pytest.raises(exceptions.ProgrammingError, match="issue-invoice"):
         gateway.methods()
 
 
 def test_a_bus_nobody_guards_is_refused_unless_said() -> None:
-    with pytest.raises(ProgrammingError, match="unguarded=True"):
+    with pytest.raises(exceptions.ProgrammingError, match="unguarded=True"):
         GrpcGateway({"billing": _billing()}).methods()
 
 

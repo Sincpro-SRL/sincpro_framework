@@ -14,12 +14,11 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity, Hook, Hooks
-from sincpro_framework.exceptions import BusAlreadyBuilt
 
 
 class CommandPing(DataTransferObject):
@@ -45,7 +44,7 @@ def _built() -> UseFramework:
 def test_a_feature_registered_after_the_build_is_refused():
     bus = _built()
 
-    with pytest.raises(BusAlreadyBuilt, match="CommandLate.*already built"):
+    with pytest.raises(exceptions.BusAlreadyBuilt, match="CommandLate.*already built"):
 
         @bus.feature(CommandLate)
         class Late(Feature):
@@ -56,7 +55,7 @@ def test_a_feature_registered_after_the_build_is_refused():
 def test_an_application_service_registered_after_the_build_is_refused():
     bus = _built()
 
-    with pytest.raises(BusAlreadyBuilt, match="CommandLate.*already built"):
+    with pytest.raises(exceptions.BusAlreadyBuilt, match="CommandLate.*already built"):
 
         @bus.app_service(CommandLate)
         class Late(ApplicationService):
@@ -67,7 +66,7 @@ def test_an_application_service_registered_after_the_build_is_refused():
 def test_a_dependency_added_after_the_build_is_refused():
     bus = _built()
 
-    with pytest.raises(BusAlreadyBuilt, match="clock.*already built"):
+    with pytest.raises(exceptions.BusAlreadyBuilt, match="clock.*already built"):
         bus.add_dependency("clock", object())
 
 
@@ -78,7 +77,7 @@ def test_a_hook_decorated_after_a_repository_read_the_collection_is_refused():
     hooks = Hooks(None)
     MemoryRepository(hooks=hooks).save(Note())  # its first use reads the collection
 
-    with pytest.raises(ProgrammingError, match="LateAudit.*already read"):
+    with pytest.raises(exceptions.ProgrammingError, match="LateAudit.*already read"):
 
         @hooks.on(Note)
         class LateAudit(Hook):

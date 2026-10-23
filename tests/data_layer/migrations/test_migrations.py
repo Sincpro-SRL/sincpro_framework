@@ -14,11 +14,10 @@ from sincpro_framework.data_layer.migrations import (
     ChainState,
     ContextMigrations,
     InMemoryEngine,
-    MigrationFailed,
-    MigrationRefused,
     Migrations,
     Position,
 )
+from sincpro_framework.data_layer.migrations.domain import exceptions
 
 
 def _project(tmp_path: Path, transactional: bool = True):
@@ -139,7 +138,7 @@ def test_a_downgrade_that_would_cross_an_irreversible_step_reverts_nothing(tmp_p
     migrations.revision("billing", "main", "3")
     migrations.upgrade()
 
-    with pytest.raises(MigrationRefused, match="drop legacy.*irreversible"):
+    with pytest.raises(exceptions.MigrationRefused, match="drop legacy.*irreversible"):
         migrations.downgrade(to=first.id)
 
     assert engine.reverted == []
@@ -158,7 +157,9 @@ def test_a_store_ahead_of_the_code_is_refused_naming_what_it_does_not_know(tmp_p
     engine.record(migrations.chain("common", "main"), Position(newer))
 
     assert migrations.status().chains["common/main"].state == ChainState.AHEAD
-    with pytest.raises(MigrationRefused, match=f"common/main.*{newer}.*newer release"):
+    with pytest.raises(
+        exceptions.MigrationRefused, match=f"common/main.*{newer}.*newer release"
+    ):
         migrations.upgrade()
 
 
@@ -169,7 +170,9 @@ def test_a_store_on_a_step_the_code_never_had_is_ahead_whatever_that_steps_id(tm
     engine.record(migrations.chain("common", "main"), Position(older))
 
     assert migrations.status().chains["common/main"].state == ChainState.AHEAD
-    with pytest.raises(MigrationRefused, match=f"{older}.*newer release.*abandoned"):
+    with pytest.raises(
+        exceptions.MigrationRefused, match=f"{older}.*newer release.*abandoned"
+    ):
         migrations.upgrade()
 
 
@@ -203,7 +206,7 @@ def test_a_failing_transactional_step_stops_the_run_and_leaves_its_store_where_i
     migrations.revision("common", "main", "3")
     engine.fail_on(broken.id)
 
-    with pytest.raises(MigrationFailed, match="billing/main.*2"):
+    with pytest.raises(exceptions.MigrationFailed, match="billing/main.*2"):
         migrations.upgrade()
 
     assert _keys(engine.applied) == ["common:1"]
@@ -218,11 +221,11 @@ def test_a_failing_non_transactional_step_leaves_its_store_dirty_until_resolved(
     broken = migrations.revision("common", "main", "2")
     engine.fail_on(broken.id)
 
-    with pytest.raises(MigrationFailed):
+    with pytest.raises(exceptions.MigrationFailed):
         migrations.upgrade()
 
     assert migrations.status().chains["common/main"].state == ChainState.DIRTY
-    with pytest.raises(MigrationRefused, match="common/main.*dirty.*resolve"):
+    with pytest.raises(exceptions.MigrationRefused, match="common/main.*dirty.*resolve"):
         migrations.upgrade()
 
     migrations.resolve("common", "main", at=first.id)  # a human looked: step 2 did not land
@@ -301,7 +304,7 @@ def test_a_start_shared_by_two_steps_is_refused_naming_both(tmp_path):
     second = migrations.revision("common", "main", "2")
     migrations.upgrade()
 
-    with pytest.raises(MigrationRefused, match=f"{first.id}.*{second.id}"):
+    with pytest.raises(exceptions.MigrationRefused, match=f"{first.id}.*{second.id}"):
         migrations.downgrade(to=first.id[:8])
 
 
@@ -310,10 +313,10 @@ def test_the_dirty_refusal_names_the_step_that_failed_and_the_command_to_resolve
     first = migrations.revision("common", "main", "1")
     broken = migrations.revision("common", "main", "add index")
     engine.fail_on(broken.id)
-    with pytest.raises(MigrationFailed):
+    with pytest.raises(exceptions.MigrationFailed):
         migrations.upgrade()
 
-    with pytest.raises(MigrationRefused) as refusal:
+    with pytest.raises(exceptions.MigrationRefused) as refusal:
         migrations.upgrade()
 
     message = str(refusal.value)
@@ -326,7 +329,7 @@ def test_upgrade_refuses_a_body_edited_since_it_was_hashed(tmp_path):
     step = migrations.revision("common", "main", "1")
     (migrations.chain("common", "main").folder / step.file).write_text("edited\n")
 
-    with pytest.raises(MigrationRefused, match="changed since it was hashed"):
+    with pytest.raises(exceptions.MigrationRefused, match="changed since it was hashed"):
         migrations.upgrade()
 
     assert engine.applied == []
@@ -338,7 +341,7 @@ def test_a_downgrade_to_a_step_that_is_not_applied_is_refused(tmp_path):
     migrations.upgrade()
     pending = migrations.revision("billing", "main", "2")
 
-    with pytest.raises(MigrationRefused, match=f"{pending.id}.*not applied"):
+    with pytest.raises(exceptions.MigrationRefused, match=f"{pending.id}.*not applied"):
         migrations.downgrade(to=pending.id)
 
     assert engine.reverted == []
@@ -350,7 +353,9 @@ def test_hash_refuses_a_step_its_store_already_applied(tmp_path):
     migrations.upgrade()
     (migrations.chain("common", "main").folder / step.file).write_text("edited\n")
 
-    with pytest.raises(MigrationRefused, match=f"{step.key}.*already applied.*new step"):
+    with pytest.raises(
+        exceptions.MigrationRefused, match=f"{step.key}.*already applied.*new step"
+    ):
         migrations.hash()
 
 
@@ -370,7 +375,9 @@ def test_a_manifest_written_by_another_context_is_refused(tmp_path):
     manifest["context"] = "billing"
     manifest_path.write_text(json.dumps(manifest))
 
-    with pytest.raises(MigrationRefused, match="meta_migration.json.*billing.*common"):
+    with pytest.raises(
+        exceptions.MigrationRefused, match="meta_migration.json.*billing.*common"
+    ):
         migrations.status()
 
 
@@ -417,14 +424,14 @@ def test_adopt_is_refused_by_an_engine_that_cannot_tell_drift(tmp_path):
     migrations, _ = _project(tmp_path)
     migrations.revision("common", "main", "baseline")
 
-    with pytest.raises(MigrationRefused, match="resolve common main --at"):
+    with pytest.raises(exceptions.MigrationRefused, match="resolve common main --at"):
         migrations.adopt("common", "main")
 
 
 def test_adopt_is_refused_for_a_chain_without_steps(tmp_path):
     migrations, _ = _project(tmp_path)
 
-    with pytest.raises(MigrationRefused, match="baseline"):
+    with pytest.raises(exceptions.MigrationRefused, match="baseline"):
         migrations.adopt("common", "main")
 
 
@@ -467,5 +474,5 @@ def test_the_plan_refuses_what_the_command_would_refuse(tmp_path):
     migrations.revision("common", "main", "drop legacy", irreversible=True)
     migrations.upgrade()
 
-    with pytest.raises(MigrationRefused, match="irreversible"):
+    with pytest.raises(exceptions.MigrationRefused, match="irreversible"):
         migrations.downgrade_plan(to="base")

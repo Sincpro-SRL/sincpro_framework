@@ -11,9 +11,9 @@ from sincpro_framework.runtime.workflows import (
     InMemoryWorkflows,
     Limits,
     StepStatus,
-    WorkflowFailed,
     Workflows,
 )
+from sincpro_framework.runtime.workflows.domain import exceptions
 from tests.runtime.workflows.conftest import BILL_ORDER, billing_bus
 
 
@@ -148,7 +148,9 @@ def test_fail_stops_the_run_with_its_message_and_nothing_after_it_runs(calls):
     }
     workflows = _workflows(calls, guarded)
 
-    with pytest.raises(WorkflowFailed, match="orders over 10000 need a manager") as failure:
+    with pytest.raises(
+        exceptions.WorkflowFailed, match="orders over 10000 need a manager"
+    ) as failure:
         workflows.run("guarded", {"order_id": 1})
 
     assert calls == []
@@ -167,7 +169,7 @@ def test_a_failing_command_fails_the_run_naming_the_step_with_the_trace_attached
     }
     workflows = _workflows(calls, wrong)
 
-    with pytest.raises(WorkflowFailed, match="wrong.*order") as failure:
+    with pytest.raises(exceptions.WorkflowFailed, match="wrong.*order") as failure:
         workflows.run("wrong", {})
 
     assert failure.value.run.steps[0].status == StepStatus.FAILED
@@ -176,7 +178,7 @@ def test_a_failing_command_fails_the_run_naming_the_step_with_the_trace_attached
 def test_the_input_of_a_run_is_checked_against_what_the_workflow_declares(calls):
     workflows = _workflows(calls, BILL_ORDER)
 
-    with pytest.raises(WorkflowFailed, match="order_id"):
+    with pytest.raises(exceptions.WorkflowFailed, match="order_id"):
         workflows.run("bill_order", {})
 
 
@@ -199,7 +201,7 @@ def test_a_run_that_takes_more_steps_than_allowed_is_stopped(calls):
     }
     workflows = Workflows(billing_bus(calls), InMemoryWorkflows([many]), Limits(max_steps=2))
 
-    with pytest.raises(WorkflowFailed, match="more than 2 steps"):
+    with pytest.raises(exceptions.WorkflowFailed, match="more than 2 steps"):
         workflows.run("many", {"order_id": 1})
 
 
@@ -210,7 +212,7 @@ def test_a_snippet_that_raises_shows_its_own_line_in_the_traceback(calls):
     }
     workflows = _workflows(calls, broken)
 
-    with pytest.raises(WorkflowFailed) as failure:
+    with pytest.raises(exceptions.WorkflowFailed) as failure:
         workflows.run("broken", {})
 
     step = failure.value.run.steps[0]
@@ -237,7 +239,7 @@ def test_a_dry_run_answers_commands_from_the_responses_given_and_runs_nothing(ca
 def test_a_dry_run_without_a_response_for_a_command_fails_naming_it(calls):
     workflows = _workflows(calls, BILL_ORDER)
 
-    with pytest.raises(WorkflowFailed, match="CommandGetOrder.*no response"):
+    with pytest.raises(exceptions.WorkflowFailed, match="CommandGetOrder.*no response"):
         workflows.dry_run("bill_order", {"order_id": 7}, responses={})
 
 
@@ -306,7 +308,7 @@ def test_a_veto_records_its_message_as_the_reason_not_a_traceback(calls):
     vetoed = {"name": "vetoed", "steps": [{"id": "stop", "fail": "not today"}]}
     workflows = _workflows(calls, vetoed)
 
-    with pytest.raises(WorkflowFailed) as failure:
+    with pytest.raises(exceptions.WorkflowFailed) as failure:
         workflows.run("vetoed", {})
 
     step = failure.value.run.steps[0]
@@ -533,7 +535,7 @@ def test_a_for_each_over_more_items_than_allowed_is_stopped(calls):
     }
     workflows = Workflows(billing_bus(calls), InMemoryWorkflows([loop]), Limits(max_items=1))
 
-    with pytest.raises(WorkflowFailed, match="2 items, more than 1"):
+    with pytest.raises(exceptions.WorkflowFailed, match="2 items, more than 1"):
         workflows.run("too_many", {"order_id": 1})
 
 
@@ -550,7 +552,7 @@ def test_a_workflow_that_runs_itself_stops_at_the_depth_allowed(calls):
     workflows = Workflows(billing, InMemoryWorkflows([again]), Limits(max_depth=3))
     workflows.expose()
 
-    with pytest.raises(WorkflowFailed, match="nested more than 3 deep"):
+    with pytest.raises(exceptions.WorkflowFailed, match="nested more than 3 deep"):
         workflows.run("again", {})
 
 

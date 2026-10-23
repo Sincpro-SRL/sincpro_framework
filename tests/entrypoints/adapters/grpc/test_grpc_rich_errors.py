@@ -15,26 +15,21 @@ from google.protobuf.struct_pb2 import Struct
 from google.rpc import error_details_pb2  # pyright: ignore[reportMissingImports]
 from grpc_status import rpc_status  # pyright: ignore[reportMissingImports]
 
-from sincpro_framework import (
-    DataTransferObject,
-    FailureKind,
-    Feature,
-    UseFramework,
-)
-from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
-from sincpro_framework.data_layer.caching import AlreadyInProgress, KeyReused
-from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
+from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import scalar_to_struct
 from sincpro_framework.entrypoints.domain.surface import Exposure
 
 
-class InvoiceNotFound(DomainError):
-    failure_kind = FailureKind.NOT_FOUND
+class InvoiceNotFound(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.NOT_FOUND
 
 
-class QuotaSpent(DomainError):
-    failure_kind = FailureKind.EXHAUSTED
+class QuotaSpent(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.EXHAUSTED
     retry_after = 7.0
 
 
@@ -45,14 +40,14 @@ class LedgerDown(Exception):
 
 
 RAISED: dict[str, Exception] = {
-    "unauthenticated": Unauthenticated("token expired"),
-    "permission_denied": PermissionDenied("user:1", "invoices:issue"),
-    "domain": DomainError("an invoice has to balance"),
-    "stale": StaleAggregate("invoice F-1 was written by someone else"),
-    "duplicate": DuplicateAggregate("invoice F-1 already exists"),
+    "unauthenticated": auth_exceptions.Unauthenticated("token expired"),
+    "permission_denied": auth_exceptions.PermissionDenied("user:1", "invoices:issue"),
+    "domain": ddd_exceptions.DomainError("an invoice has to balance"),
+    "stale": ddd_exceptions.StaleAggregate("invoice F-1 was written by someone else"),
+    "duplicate": ddd_exceptions.DuplicateAggregate("invoice F-1 already exists"),
     "not_found": InvoiceNotFound("invoice F-9 does not exist"),
-    "in_progress": AlreadyInProgress("key k-1 is running"),
-    "key_reused": KeyReused("key k-1 was used for another payload"),
+    "in_progress": caching_exceptions.AlreadyInProgress("key k-1 is running"),
+    "key_reused": caching_exceptions.KeyReused("key k-1 was used for another payload"),
     "exhausted": QuotaSpent("quota spent"),
     "unavailable": LedgerDown("postgres://admin:hunter2@ledger"),
     "internal": RuntimeError("postgres://admin:hunter2@db"),

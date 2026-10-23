@@ -19,12 +19,12 @@ Several numbers at once are one write, not several.
 
 from abc import ABC, abstractmethod
 
-from sincpro_framework.exceptions import ProgrammingError
+from sincpro_framework.ddd import exceptions
 
 
 def refuse_no_count(count: int) -> None:
     if count < 1:
-        raise ProgrammingError(f"take at least one number, not {count}")
+        raise exceptions.ProgrammingError(f"take at least one number, not {count}")
 
 
 class INumbering(ABC):

@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from sincpro_framework.context.domain.keys import standardized
 from sincpro_framework.context.domain.node import ContextNode
 
 REQUIRES = "__requires_context__"
@@ -70,7 +69,7 @@ def provided(node: ContextNode, providers: Sequence[ContextProvider]) -> None:
             continue
         answered = provider.function(MappingProxyType(seen))
         if answered:
-            node.values.update(standardized(answered))
+            node.values.update(answered)
 
 
 def missing(node: ContextNode, keys: Iterable[str]) -> list[str]:

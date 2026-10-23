@@ -81,5 +81,5 @@ warned about and only an entrance's are taken.
 | `tenant_ids` | every tenant it may act across (Odoo's `allowed_company_ids`) |
 | `correlation_id` · `causation_id` · `execution_id` | the identity |
 
-`"user.id"` and `"tenant"` are read as the standard keys with a warning the first time. Logs, spans
+Each key is a member of `ContextKey` (a `StrEnum`: `ContextKey.USER_ID` is `"user_id"`). Logs, spans
 and metrics keep their names: `tenant`, `user_id`.

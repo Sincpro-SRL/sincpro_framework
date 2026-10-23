@@ -3,8 +3,13 @@
 from importlib.metadata import version as installed_version
 from typing import Any, Dict, List
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.exceptions import UnknownDTOToExecute
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    UseFramework,
+    exceptions,
+)
 from sincpro_framework.observability import ObservabilityIdentity
 from sincpro_framework.observability.domain import framework_identity
 from sincpro_framework.observability.domain import installed_version as dist_version
@@ -334,11 +339,11 @@ def test_framework_error_uses_framework_release(monkeypatch):
     try:
         app(GhostDTO())
         raise AssertionError("expected UnknownDTOToExecute")
-    except UnknownDTOToExecute:
+    except exceptions.UnknownDTOToExecute:
         pass
 
     assert len(state.errors) == 1
-    assert isinstance(state.errors[0], UnknownDTOToExecute)
+    assert isinstance(state.errors[0], exceptions.UnknownDTOToExecute)
     assert state.tags["sincpro.kind"] == "framework"
     assert state.release == framework_identity().release
 
@@ -356,7 +361,7 @@ def test_framework_error_is_not_affected_by_ignore_list(monkeypatch):
     try:
         app(GhostDTO())
         raise AssertionError("expected UnknownDTOToExecute")
-    except UnknownDTOToExecute:
+    except exceptions.UnknownDTOToExecute:
         pass
 
     assert len(state.errors) == 1

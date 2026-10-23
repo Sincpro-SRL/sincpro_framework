@@ -30,7 +30,7 @@ from sincpro_framework.remote_execution.adapters.grpc import (
     SERVICE,
     chunks_of,
 )
-from sincpro_framework.remote_execution.domain.errors import error_details
+from sincpro_framework.remote_execution.domain.failures import error_details
 from sincpro_framework.remote_execution.entrypoint.execution import (
     execute_hosted,
 )

@@ -12,13 +12,8 @@ Nothing here imports pytest.
 from collections.abc import Sequence
 from typing import Any
 
-from sincpro_framework.auth import (
-    AuthProvider,
-    Credentials,
-    Identity,
-    PermissionDenied,
-    Unauthenticated,
-)
+from sincpro_framework.auth import AuthProvider, Credentials, Identity
+from sincpro_framework.runtime.testing import exceptions
 
 
 class AuthProviderContract:
@@ -64,7 +59,7 @@ class AuthProviderContract:
     def test_rejected_credentials_raise_unauthenticated(self) -> None:
         try:
             self.make_provider().authenticate(self.rejected())
-        except Unauthenticated:
+        except exceptions.Unauthenticated:
             return
         except Exception as other:
             raise AssertionError(
@@ -77,7 +72,7 @@ class AuthProviderContract:
         provider = self.make_provider()
         try:
             granted = provider.has_permission(Identity.anonymous(), "any.permission")
-        except PermissionDenied:
+        except exceptions.PermissionDenied:
             return
         if granted:
             raise AssertionError("an anonymous identity was granted a permission")

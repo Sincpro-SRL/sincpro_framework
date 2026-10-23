@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     All,
@@ -24,12 +24,12 @@ from sincpro_framework.ddd import (
     Presentation,
     ResponseRecord,
     When,
-    presentation_of,
 )
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework.ddd import presentation_of
 from sincpro_framework.ddd.criteria import Any_, Operator, expression_from, matches
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
-from sincpro_framework.ddd.exceptions import ConstraintViolation, InvalidCriteria
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
 
@@ -301,7 +301,9 @@ def test_a_project_that_wants_a_rule_writes_its_hook_and_reads_the_same_conditio
         def before_save(self, invoice: Invoice) -> None:
             for name, condition in presentation_of(Invoice).required_when.items():
                 if matches(invoice, condition) and not getattr(invoice, name):
-                    raise ConstraintViolation(f"{name} is required for this invoice")
+                    raise ddd_exceptions.ConstraintViolation(
+                        f"{name} is required for this invoice"
+                    )
 
     repository = MemoryRepository(hooks=hooks)
 
@@ -309,9 +311,9 @@ def test_a_project_that_wants_a_rule_writes_its_hook_and_reads_the_same_conditio
     repository.save(
         Invoice(partner_id="p1", payment=Payment.CARD, card_reference="**** 4242")
     )
-    with pytest.raises(ConstraintViolation, match="card_reference"):
+    with pytest.raises(ddd_exceptions.ConstraintViolation, match="card_reference"):
         repository.save(Invoice(partner_id="p1", payment=Payment.CARD))
-    with pytest.raises(ConstraintViolation, match="bank_account"):
+    with pytest.raises(ddd_exceptions.ConstraintViolation, match="bank_account"):
         repository.save(Invoice(partner_id="p1", payment=Payment.TRANSFER))
 
 
@@ -341,7 +343,7 @@ def test_a_condition_on_a_field_that_does_not_exist_is_refused_when_the_class_is
             visible_when=lambda b: (When(Condition.on(b.stat, Operator.EQ, "x"), b.state),),  # type: ignore[attr-defined]
         )
 
-    with pytest.raises(ProgrammingError, match="stat"):
+    with pytest.raises(exceptions.ProgrammingError, match="stat"):
         describe_class(Broken, "id")
 
 
@@ -355,7 +357,7 @@ def test_a_condition_written_with_a_name_the_entity_lacks_is_refused_even_as_pla
         )
 
     with pytest.raises(
-        ProgrammingError, match="asks about stat, which is not a field of Typo"
+        exceptions.ProgrammingError, match="asks about stat, which is not a field of Typo"
     ):
         describe_class(Typo, "id")
 
@@ -363,7 +365,7 @@ def test_a_condition_written_with_a_name_the_entity_lacks_is_refused_even_as_pla
 def test_a_condition_on_takes_a_name_and_nothing_else():
     assert Condition.on("state", Operator.EQ, "x") == Condition(field="state", value="x")
 
-    with pytest.raises(InvalidCriteria, match="read through the entity"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="read through the entity"):
         Condition.on(3, Operator.EQ, "x")
 
 
@@ -377,7 +379,7 @@ def test_a_condition_written_as_a_bare_value_is_refused_showing_the_form():
             readonly_when=lambda l: (When(l.state == "done", l.notes),),  # type: ignore[arg-type]
         )
 
-    with pytest.raises(ProgrammingError, match="Condition, All, Any or Not"):
+    with pytest.raises(exceptions.ProgrammingError, match="Condition, All, Any or Not"):
         describe_class(Loose, "id")
 
 
@@ -390,7 +392,7 @@ def test_a_hint_list_that_is_not_made_of_when_is_refused():
             visible_when=lambda m: (m.state,),  # type: ignore[arg-type,return-value]
         )
 
-    with pytest.raises(ProgrammingError, match="takes When"):
+    with pytest.raises(exceptions.ProgrammingError, match="takes When"):
         describe_class(Mixed, "id")
 
 

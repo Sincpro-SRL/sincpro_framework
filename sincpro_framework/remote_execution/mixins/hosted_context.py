@@ -22,9 +22,8 @@ from sincpro_log.logger import LoggerProxy
 from sincpro_framework.common.serialization import rebuilt
 from sincpro_framework.common.transport.addresses import HostedAt
 from sincpro_framework.context.infrastructure.tree import handed_on
-from sincpro_framework.exceptions import SincproFrameworkNotBuilt
 from sincpro_framework.remote_execution.adapters.transport import transport_for
-from sincpro_framework.remote_execution.domain.errors import DTODoesNotFit
+from sincpro_framework.remote_execution.domain import exceptions
 from sincpro_framework.remote_execution.entrypoint.hosts import (
     Attach,
     OpenHost,
@@ -36,13 +35,15 @@ from sincpro_framework.remote_execution.infrastructure.configuration import conf
 class HostedContextMixin:
     """What a `UseFramework` adds to be reached where its context is hosted, or to host it."""
 
-    _logger_name: str
     _registrations: list[Callable[[Any], Any]]
     handler_of: Callable[[type], "type | None"]
     _inherited_context: Callable[[], dict[str, Any]]
     current_context: Callable[[], Any]
 
     if TYPE_CHECKING:
+
+        @property
+        def name(self) -> str: ...
 
         @property
         def logger(self) -> LoggerProxy: ...
@@ -55,7 +56,7 @@ class HostedContextMixin:
         shows every context it reaches elsewhere."""
         self._hosted_at = hosted_at
         self.logger.info(
-            f"{self._logger_name} is hosted at {hosted_at}: this bus forwards every call"
+            f"{self.name} is hosted at {hosted_at}: this bus forwards every call"
         )
 
     def _init_hosting(self, bundled_context_name: str) -> None:
@@ -83,11 +84,11 @@ class HostedContextMixin:
         this bus was given — caused by that execution and in its flow (`handed_on`)."""
         hosted_at = self._hosted_at
         if hosted_at is None:
-            raise SincproFrameworkNotBuilt(
-                f"'{self._logger_name}' is not hosted by another service"
+            raise exceptions.SincproFrameworkNotBuilt(
+                f"'{self.name}' is not hosted by another service"
             )
         context = handed_on({**self._inherited_context(), **self.current_context()})
-        answer = transport_for(hosted_at).execute(self._logger_name, dto, context)
+        answer = transport_for(hosted_at).execute(self.name, dto, context)
         response = (
             return_type
             if return_type is not None
@@ -96,8 +97,8 @@ class HostedContextMixin:
         try:
             return rebuilt(answer.data, response)
         except ValidationError as error:
-            raise DTODoesNotFit(
-                f"the answer of {self._logger_name} at {hosted_at.address}", error
+            raise exceptions.DTODoesNotFit(
+                f"the answer of {self.name} at {hosted_at.address}", error
             ) from None
 
     @property

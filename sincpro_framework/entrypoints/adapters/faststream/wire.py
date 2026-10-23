@@ -20,13 +20,13 @@ from typing import Any, Literal
 from faststream import Context, StreamMessage
 from pydantic import BaseModel, ConfigDict, Field
 
+from sincpro_framework import exceptions
 from sincpro_framework.auth.domain.identity import Credentials
 from sincpro_framework.auth.entrypoint.transports import authenticated_as
 from sincpro_framework.common.failures import failure_reason, refined_failure_kind
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.context.adapters.propagation import extract
-from sincpro_framework.context.domain.execution import CAUSATION_ID, CORRELATION_ID
-from sincpro_framework.context.domain.keys import TENANT_ID
+from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.data_layer.caching import IdempotencyRecords, KeyValueRecords
 from sincpro_framework.ddd.events import DomainEvent
@@ -59,7 +59,6 @@ from sincpro_framework.entrypoints.domain.bindings import QueueBinding
 from sincpro_framework.entrypoints.domain.surface import Group, Operation, Resolved, Wire
 from sincpro_framework.entrypoints.infrastructure import json_schema
 from sincpro_framework.event_driven.adapters.faststream.queue import Broker
-from sincpro_framework.exceptions import FailureKind
 from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,
@@ -120,12 +119,12 @@ def queue_context(envelope: Envelope, headers: Mapping[str, str]) -> dict[str, A
     """
     carried: dict[str, Any] = extract(headers)
     if envelope.correlationid:
-        carried[CORRELATION_ID] = envelope.correlationid
+        carried[ContextKey.CORRELATION_ID] = envelope.correlationid
     if envelope.causationid:
-        carried[CAUSATION_ID] = envelope.causationid
+        carried[ContextKey.CAUSATION_ID] = envelope.causationid
     tenant = headers.get("tenant") or headers.get("x-tenant")
-    if tenant and TENANT_ID not in carried:
-        carried[TENANT_ID] = carried["tenant"] = tenant
+    if tenant and ContextKey.TENANT_ID not in carried:
+        carried[ContextKey.TENANT_ID] = tenant
     return carried
 
 
@@ -409,7 +408,7 @@ class QueueWire(Wire[QueueBinding]):
         envelope: Envelope,
         identity: str | None,
         attempts: int,
-        refused: Callable[[FailureKind, str], Verdict],
+        refused: Callable[[exceptions.FailureKind, str], Verdict],
     ) -> Verdict:
         """One context's run of a delivery.
 
@@ -428,13 +427,13 @@ class QueueWire(Wire[QueueBinding]):
             if claimed == Claimed.COMPLETED:
                 return Verdict(settlement=Settlement.REPLAY, attempts=attempts, command=name)
             if claimed == Claimed.IN_PROGRESS:
-                return refused(FailureKind.IN_PROGRESS, "IN_PROGRESS")
+                return refused(exceptions.FailureKind.IN_PROGRESS, "IN_PROGRESS")
             if claimed == Claimed.KEY_REUSED:
-                return refused(FailureKind.KEY_REUSED, "KEY_REUSED")
+                return refused(exceptions.FailureKind.KEY_REUSED, "KEY_REUSED")
         try:
             await self._run(resolved, dto, text_headers(message.headers), envelope)
         except TimeoutError:
-            return refused(FailureKind.UNAVAILABLE, "TIME_LIMIT")
+            return refused(exceptions.FailureKind.UNAVAILABLE, "TIME_LIMIT")
         except Exception as error:
             if self.inbox is not None and owner is not None:
                 await self.inbox.release(key, owner)
@@ -564,7 +563,7 @@ class QueueWire(Wire[QueueBinding]):
         )
         identity = self.options.identify(message, envelope)
 
-        def refused(kind: FailureKind, reason: str) -> Verdict:
+        def refused(kind: exceptions.FailureKind, reason: str) -> Verdict:
             return failed(kind, reason, attempts, max_attempts, name)
 
         verdict: Verdict | None = None
@@ -572,9 +571,11 @@ class QueueWire(Wire[QueueBinding]):
             one.binding.producers and identity not in one.binding.producers
             for one in handlers
         ):
-            verdict = refused(FailureKind.PERMISSION_DENIED, "PRODUCER_NOT_ALLOWED")
+            verdict = refused(
+                exceptions.FailureKind.PERMISSION_DENIED, "PRODUCER_NOT_ALLOWED"
+            )
         elif self._expired(envelope):
-            verdict = refused(FailureKind.INVALID, "EXPIRED")
+            verdict = refused(exceptions.FailureKind.INVALID, "EXPIRED")
         if verdict is not None:
             await self._settle(message, verdict, channel, envelope)
             return verdict
@@ -586,7 +587,7 @@ class QueueWire(Wire[QueueBinding]):
                 else _decoded(command, message.body)
             )
         except Exception:
-            verdict = refused(FailureKind.INVALID, "UNDECODABLE")
+            verdict = refused(exceptions.FailureKind.INVALID, "UNDECODABLE")
             await self._settle(message, verdict, channel, envelope)
             return verdict
 
@@ -604,7 +605,7 @@ class QueueWire(Wire[QueueBinding]):
             try:
                 as_known = dto if isinstance(dto, own) else _decoded(own, message.body)
             except Exception:
-                verdicts.append(refused(FailureKind.INVALID, "UNDECODABLE"))
+                verdicts.append(refused(exceptions.FailureKind.INVALID, "UNDECODABLE"))
                 continue
             verdicts.append(
                 await self._handled(

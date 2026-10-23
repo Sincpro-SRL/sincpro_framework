@@ -36,6 +36,11 @@ class BusContextMixin:
     observability: "Observability"
     _registrations: list[Callable[[Any], Any]]
 
+    if TYPE_CHECKING:
+
+        @property
+        def name(self) -> str: ...
+
     def _init_context_storage(self) -> None:
         self._published = Values()
         """What this bus publishes for every execution of its own — its `Level.BUS` node's values."""
@@ -44,18 +49,12 @@ class BusContextMixin:
         self._shared_context: SharedContext | None = None
         """The store this bus shares its context through — `bus.context_store(store)`."""
 
-    @property
-    def _context_label(self) -> str:
-        return getattr(self, "_logger_name", "")
-
     def _entered_here(self) -> bool:
         """Whether the node in play stands in a scope of this bus already."""
         return any(node.owner is self and node.level in SCOPES for node in current().chain())
 
     def _bus_node(self, parent: ContextNode) -> ContextNode:
-        return ContextNode(
-            Level.BUS, parent, self._published, self._context_label, owner=self
-        )
+        return ContextNode(Level.BUS, parent, self._published, self.name, owner=self)
 
     @contextmanager
     def _scope(
@@ -81,7 +80,7 @@ class BusContextMixin:
             kind = kind or EntrypointKind.DIRECT
             if sharing is not None:
                 parent, values = sharing.entrance(values, handed, parent)
-        node = ContextNode(level, parent, values, self._context_label, owner=self, kind=kind)
+        node = ContextNode(level, parent, values, self.name, owner=self, kind=kind)
         if sharing is not None:
             sharing.kept(node, new_entity_id())
         with entered(node):

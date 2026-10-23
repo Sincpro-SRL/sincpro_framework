@@ -1,53 +1,97 @@
-"""`Drafts`: the drafts of whoever the context says — a user, a session, any keys a project chooses.
+"""`Drafts`: the drafts of whoever the context says, kept in the context's store.
 
     use_context().drafts()                          this user's — within this tenant when there is one
     use_context().drafts(by=["session_id"])         this session's
     use_context().drafts(by=["user_id", "pos_id"])  this user's on this point of sale
+    use_context().drafts(by=[])                     nobody's: shared by everybody of the tenant
 
-Context: whose a draft is comes from the context of the call, never from the key the caller writes,
-so one user's draft is never read by another for a key spelled the same. A tenant in the context
-always takes part: a draft never crosses tenants. A key `by` names that the context does not have is
-refused (`ContextRequired`) — a draft nobody owns would be everybody's.
+A draft is an entry of the context's store, under one namespace and one owner:
+
+    SINCPRO_ENTITY_DRAFT_CONTEXT : tenant_id=acme,tenant_ids=,user_id=ana : billing.Invoice%3A<uuid>
+    └─ namespace                   └─ owner (`owner_of`)                   └─ the subject, encoded
+
+The desktop, the browser and the phone of one user, in one tenant, read and write the same draft of
+one record: it belongs to no execution and no session — unless a project says so with `by`. It lasts
+the store's `kept_ttl` from its last keep, and outlives every browser that closed.
+
+Context: whose a draft is comes from the context of the call, never from the subject the caller
+writes, so one user's draft is never read by another for a subject spelled the same. The tenant
+keys always take part, so a draft never crosses tenants; a context that says no tenant and no user —
+a service keyed by its own ids — keeps its drafts all the same.
 """
 
 from collections.abc import Mapping, Sequence
 from typing import Any
+from urllib.parse import quote, unquote
 
-from sincpro_framework.context.domain.drafts import Draft, DraftStore
-from sincpro_framework.context.domain.keys import TENANT_ID, USER_ID
-from sincpro_framework.exceptions import ContextRequired
+from sincpro_framework.context.domain import exceptions
+from sincpro_framework.context.domain.drafts import Draft
+from sincpro_framework.context.domain.keys import ContextKey
+from sincpro_framework.context.domain.store import ContextStore, Entry
+from sincpro_framework.context.entrypoint.owner import owner_of
 
-BY_USER = (USER_ID,)
-"""Whose a draft is unless told otherwise: the user's."""
+BY_USER = (ContextKey.USER_ID,)
+"""Whose a draft is unless told otherwise, beside the tenant: the user's."""
 
 
 class Drafts:
-    """The drafts of one owner — the values of `by`, and the tenant, read from a context."""
+    """The drafts of one owner — the tenant keys, and the values of `by`, read from a context."""
 
     def __init__(
-        self, store: DraftStore, context: Mapping[Any, Any], by: Sequence[str] = BY_USER
+        self, store: ContextStore, context: Mapping[Any, Any], by: Sequence[str] = BY_USER
     ) -> None:
-        missing = [key for key in by if context.get(key) in (None, "")]
-        if missing:
-            raise ContextRequired("drafts", missing)
-        tenant = context.get(TENANT_ID)
-        named = ([] if tenant in (None, "") or TENANT_ID in by else [TENANT_ID]) + list(by)
         self.store = store
-        self.owner = "/".join(f"{key}={context[key]}" for key in named)
-        """Whose these drafts are: `tenant_id=acme/user_id=ana`."""
+        self.owner = owner_of(context, by)
+        """Whose these drafts are: `tenant_id=acme,tenant_ids=,user_id=ana`."""
+        self.folder = f"{ContextKey.ENTITY_DRAFT_CONTEXT}:{self.owner}"
+
+    def _key(self, subject: str) -> str:
+        return f"{self.folder}:{quote(subject, safe='')}"
+
+    def _draft(self, subject: str, entry: Entry) -> Draft:
+        return Draft(
+            key=subject,
+            values=entry.values["values"],
+            version=entry.version,
+            origin_version=entry.values["origin_version"],
+            kept_at=entry.kept_at,
+        )
 
     def keep(
         self, subject: str, values: Mapping[str, Any], origin_version: int, expected: int
     ) -> Draft:
-        """`values` as the draft of `subject` — see `DraftStore.keep`."""
-        return self.store.keep(self.owner, subject, values, origin_version, expected)
+        """`values` as the draft of `subject`, under a new version.
+
+            in      "invoice:7", {"discount": Decimal("50")}, origin 3, expected 0
+            out     Draft(version=…, origin_version=3, values={"discount": "50"})
+
+        `expected` is the version the caller read, `0` for none; anything else raises
+        `DraftConflict`. The TTL starts again. The draft answered is the one `read` answers
+        until the next keep.
+        """
+        try:
+            kept = self.store.keep_entry(
+                self._key(subject),
+                {"values": dict(values), "origin_version": origin_version},
+                expected,
+            )
+        except exceptions.EntryConflict as conflict:
+            raise exceptions.DraftConflict(
+                subject, conflict.expected, conflict.current
+            ) from None
+        return self._draft(subject, kept)
 
     def read(self, subject: str) -> Draft | None:
-        return self.store.read(self.owner, subject)
+        """The live draft of `subject`, or `None` when there is none, it was discarded or it
+        expired."""
+        found = self.store.entry(self._key(subject))
+        return None if found is None else self._draft(subject, found)
 
     def discard(self, subject: str) -> None:
-        self.store.discard(self.owner, subject)
+        """Drop the draft of `subject`; a tab still holding it cannot bring it back. One with
+        none is not an error."""
+        self.store.discard_entry(self._key(subject))
 
     def subjects(self) -> list[str]:
         """What this owner has a live draft of, the most recently kept first."""
-        return self.store.subjects(self.owner)
+        return [unquote(key.rsplit(":", 1)[1]) for key in self.store.entries(self.folder)]

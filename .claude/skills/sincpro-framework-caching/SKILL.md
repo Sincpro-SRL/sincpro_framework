@@ -161,10 +161,11 @@ caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by=
 ## Idempotency — a write runs once per key
 
 ```python
-from sincpro_framework.data_layer.caching import AlreadyInProgress, Idempotency, KeyReused
+from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.data_layer.caching.domain import exceptions
 
 idempotency = Idempotency(InMemoryKeyValue())          # RedisKeyValue(...) on replicas
-receipts.ignore_sentry_exceptions(AlreadyInProgress, KeyReused)
+receipts.ignore_sentry_exceptions(exceptions.AlreadyInProgress, exceptions.KeyReused)
 
 @receipts.feature(CommandIssueReceipt)
 @idempotency.once(

@@ -10,11 +10,10 @@ from dataclasses import dataclass
 
 import pytest
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.repositories import Hook, Hooks
-from sincpro_framework.exceptions import DependencyNotRegistered
 
 NOTHING_TO_WALK = "sincpro_framework.ddd.value_object"
 """A module rather than a package, so building a collection here imports nothing: these tests
@@ -93,11 +92,11 @@ def test_a_hook_refuses_a_write_by_raising_and_nothing_lands():
     class MustBePositive(BillingHook):
         def before_save(self, invoice: Invoice) -> None:
             if invoice.total < 0:
-                raise ProgrammingError("a total cannot be negative")
+                raise exceptions.ProgrammingError("a total cannot be negative")
 
     repository = MemoryRepository(hooks=hooks)
 
-    with pytest.raises(ProgrammingError, match="negative"):
+    with pytest.raises(exceptions.ProgrammingError, match="negative"):
         repository.save(Invoice(total=-1))
     assert repository.count(Invoice).value == 0
 
@@ -184,7 +183,7 @@ def test_every_moment_fires_once_per_record_on_a_write_and_a_removal():
 def test_a_hook_that_implements_no_moment_is_refused_where_it_is_registered():
     hooks, _bus = given()
 
-    with pytest.raises(ProgrammingError, match="implements none of"):
+    with pytest.raises(exceptions.ProgrammingError, match="implements none of"):
 
         @hooks.on(Invoice)
         class DoesNothing(BillingHook):
@@ -203,7 +202,7 @@ def test_a_hook_that_writes_is_refused_instead_of_recursing():
     repository = MemoryRepository(hooks=hooks)
     bus.add_dependency("repository", repository)
 
-    with pytest.raises(ProgrammingError, match="does not write"):
+    with pytest.raises(exceptions.ProgrammingError, match="does not write"):
         repository.save(Invoice())
 
 
@@ -218,14 +217,14 @@ def test_a_batch_is_refused_whole_the_way_the_engine_refuses_it():
         def before_save(self, invoice: Invoice) -> None:
             self.audit_log.append(("before", invoice.total))
             if invoice.total == 2:
-                raise ProgrammingError("not this one")
+                raise exceptions.ProgrammingError("not this one")
 
         def after_save(self, invoice: Invoice) -> None:
             self.audit_log.append(("after", invoice.total))
 
     repository = MemoryRepository(hooks=hooks)
 
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         repository.save([Invoice(total=one) for one in (1, 2, 3)])
 
     assert bus.deps.audit_log == [("before", 1), ("before", 2)]
@@ -268,14 +267,14 @@ def test_a_hook_reads_the_registered_dependencies_as_its_own_attributes():
     class ChecksWithBilling(BillingHook):
         def before_save(self, invoice: Invoice) -> None:
             if not self.billing.allows(invoice.total):
-                raise ProgrammingError(f"billing refused {invoice.total}")
+                raise exceptions.ProgrammingError(f"billing refused {invoice.total}")
             self.audit_log.append(invoice.total)
 
     repository = MemoryRepository(hooks=hooks)
     repository.save(Invoice(total=10))
 
     assert bus.deps.audit_log == [10]
-    with pytest.raises(ProgrammingError, match="refused 500"):
+    with pytest.raises(exceptions.ProgrammingError, match="refused 500"):
         repository.save(Invoice(total=500))
 
 
@@ -330,7 +329,7 @@ def test_a_collection_never_given_a_bus_says_where_to_give_it():
         def before_save(self, invoice: Invoice) -> None:
             self.audit_log.append(1)
 
-    with pytest.raises(DependencyNotRegistered, match=r"hooks\.inject\(bus\)"):
+    with pytest.raises(exceptions.DependencyNotRegistered, match=r"hooks\.inject\(bus\)"):
         MemoryRepository(hooks=hooks).save(Invoice())
 
 
@@ -548,9 +547,9 @@ def test_a_collection_or_a_hook_passed_where_aggregates_go_is_refused():
     class Watches(BillingHook):
         def before_save(self, invoice: Invoice) -> None: ...
 
-    with pytest.raises(ProgrammingError, match="hooks="):
+    with pytest.raises(exceptions.ProgrammingError, match="hooks="):
         MemoryRepository(hooks)
-    with pytest.raises(ProgrammingError, match="hooks="):
+    with pytest.raises(exceptions.ProgrammingError, match="hooks="):
         MemoryRepository(Watches)
 
 
@@ -719,10 +718,10 @@ def test_the_window_closes_when_a_hook_raises():
     class RefusesNegatives(BillingHook):
         def before_save(self, invoice: Invoice) -> None:
             if invoice.total < 0:
-                raise ProgrammingError("no")
+                raise exceptions.ProgrammingError("no")
 
     repository = MemoryRepository(hooks=hooks)
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         repository.save(Invoice(total=-1))
 
     repository.save(Invoice(total=1))  # the same repository writes again
@@ -758,12 +757,12 @@ def test_a_hook_executes_a_query_on_the_bus_it_was_given():
         def before_save(self, invoice: Invoice) -> None:
             ceiling = self.bus(QueryCeiling(), ResponseCeiling).ceiling
             if invoice.total > ceiling:
-                raise ProgrammingError(f"over {ceiling}")
+                raise exceptions.ProgrammingError(f"over {ceiling}")
 
     repository = MemoryRepository(hooks=hooks)
     repository.save(Invoice(total=10))
 
-    with pytest.raises(ProgrammingError, match="over 50"):
+    with pytest.raises(exceptions.ProgrammingError, match="over 50"):
         repository.save(Invoice(total=90))
 
 
@@ -792,7 +791,7 @@ def test_a_command_from_a_hook_that_writes_back_through_its_repository_is_refuse
         def execute(self, dto: CommandStoreOrder) -> None:
             self.repository.save(Order(id="from-the-hook"))
 
-    with pytest.raises(ProgrammingError, match="does not write"):
+    with pytest.raises(exceptions.ProgrammingError, match="does not write"):
         repository.save(Invoice())
 
 
@@ -809,7 +808,7 @@ def test_a_hook_whose_collection_has_no_bus_says_where_to_give_it():
         def before_save(self, invoice: Invoice) -> None:
             self.bus(QueryAnything())
 
-    with pytest.raises(DependencyNotRegistered, match=r"hooks\.inject\(bus\)"):
+    with pytest.raises(exceptions.DependencyNotRegistered, match=r"hooks\.inject\(bus\)"):
         MemoryRepository(hooks=hooks).save(Invoice())
 
 

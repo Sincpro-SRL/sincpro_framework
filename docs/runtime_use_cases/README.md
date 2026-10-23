@@ -103,7 +103,7 @@ swaps in a generation with what the store holds, and answers `False`, with no bu
 nothing changed:
 
 ```python
-from sincpro_framework.runtime.runtime_use_cases import UseCaseRefused
+from sincpro_framework.runtime.runtime_use_cases import exceptions
 
 draft = RuntimeUseCase(name="quote", source=QUOTE.replace("1.13", "1.16"), version=2)
 registry.check(draft)
@@ -118,7 +118,7 @@ answering = registry.current
 
 try:
     registry.check(RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=3))
-except UseCaseRefused as refused:
+except exceptions.UseCaseRefused as refused:
     assert "quote v3" in str(refused) and "line 1" in str(refused)
 assert registry.current is answering and registry.generation == 2
 ```
@@ -141,7 +141,7 @@ assert registry.execute("billing.CommandQuote", {"amount": 100}).total == Decima
 
 try:
     registry.put(RuntimeUseCase(name="quote", source="class Quote(Feature)\n", version=5))
-except UseCaseRefused:
+except exceptions.UseCaseRefused:
     pass
 assert store.active()[0].version == 4 and not registry.reload()
 assert [(one.name, one.version) for one in registry.in_force] == [("quote", 4)]

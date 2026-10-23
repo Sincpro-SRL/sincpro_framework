@@ -20,10 +20,11 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.auth import Identity, as_identity
+from sincpro_framework.context import ContextKey
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
 from sincpro_framework.observability.tracing.attributes import traces
 from sincpro_framework.sincpro_conf import settings
@@ -188,10 +189,10 @@ def test_one_process_two_executions_each_reports_its_own_tenant(
                 raise GatewayDown("down")
 
     with capture_logs() as logs:
-        with framework.context({"tenant": "acme"}), pytest.raises(GatewayDown):
+        with framework.context({ContextKey.TENANT_ID: "acme"}), pytest.raises(GatewayDown):
             framework(CommandCharge(amount=-1))
         acme_tags = dict(sentry.tags)
-        with framework.context({"tenant": "bo"}):
+        with framework.context({ContextKey.TENANT_ID: "bo"}):
             framework(CommandCharge(amount=1))
 
     spans = [s for s in otel_setup.get_finished_spans() if s.name == "billing/CommandCharge"]
@@ -263,7 +264,7 @@ def test_the_authenticated_identity_gives_the_tenant_and_the_user_when_the_conte
     with as_identity(Identity.user("user:42", tenant="bo")), pytest.raises(GatewayDown):
         framework(CommandCharge(amount=1))
     with as_identity(Identity.user("user:7", tenant="bo")), framework.context(
-        {"tenant": "acme"}
+        {ContextKey.TENANT_ID: "acme"}
     ):
         with pytest.raises(GatewayDown):
             framework(CommandCharge(amount=2))
@@ -287,7 +288,7 @@ def test_a_key_set_midway_by_the_handler_or_an_interceptor_counts(
 
     @framework.interceptor(CommandCharge)
     def tenant_from_the_command(dto, call_next):  # type: ignore[no-untyped-def]
-        with framework.context({"tenant": f"t-{dto.amount}"}):
+        with framework.context({ContextKey.TENANT_ID: f"t-{dto.amount}"}):
             return call_next(dto)
 
     @framework.feature(CommandCharge)
@@ -333,7 +334,7 @@ def test_a_nested_bus_and_a_thread_inherit_the_tenant(deployed, otel_setup):
             worker.start()
             worker.join()
 
-    with billing.context({"tenant": "acme"}):
+    with billing.context({ContextKey.TENANT_ID: "acme"}):
         billing(CommandCharge(amount=1))
 
     assert _span(otel_setup, "payments/CommandPay").attributes["tenant"] == "acme"
@@ -453,7 +454,7 @@ def test_the_decorators_read_the_typed_context(deployed, recorder, otel_setup):
 
 
 def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_import():
-    with pytest.raises(ProgrammingError, match="has no field 'compny'"):
+    with pytest.raises(exceptions.ProgrammingError, match="has no field 'compny'"):
         of(BillingContext)["compny"]
 
     class OtherContext(TypedDict, total=False):
@@ -462,7 +463,7 @@ def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_im
     class BillingFeature(Feature[CommandCharge, ResponseCharge, BillingContext]):
         pass
 
-    with pytest.raises(ProgrammingError, match="not the context"):
+    with pytest.raises(exceptions.ProgrammingError, match="not the context"):
 
         @metrics.counts(by=of(OtherContext)["region"])
         class Charge(BillingFeature):
@@ -483,6 +484,5 @@ def test_a_queue_message_hands_its_correlation_and_tenant_to_the_context():
     assert queue_context(envelope, {"tenant": "acme"}) == {
         "correlation_id": "corr-1",
         "tenant_id": "acme",
-        "tenant": "acme",  # what this wire wrote before tenant_id was the standard key
     }
     assert queue_context(Envelope(), {}) == {}

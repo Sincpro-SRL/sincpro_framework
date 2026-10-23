@@ -21,8 +21,8 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.strict import Strict
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 class Grain(StrEnum):
@@ -257,18 +257,20 @@ class Period(Strict):
         counted = [one for one in (self.last, self.next) if one is not None]
         if self.name is not None:
             if self.unit is not None or counted or self.include_current:
-                raise InvalidCriteria(
+                raise exceptions.InvalidCriteria(
                     "a named period takes nothing else; `unit`, `last`, `next` and "
                     "`include_current` describe a window"
                 )
             return self
         if self.unit is None or len(counted) != 1:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "a period is a name, or a unit with `last` or `next`: "
                 '{"$": "period", "unit": "day", "last": 30}'
             )
         if counted[0] < 1:
-            raise InvalidCriteria(f"a period counts at least one unit; got {counted[0]}")
+            raise exceptions.InvalidCriteria(
+                f"a period counts at least one unit; got {counted[0]}"
+            )
         return self
 
 
@@ -302,7 +304,7 @@ def item_kind(value: Any) -> str:
         return "dynamic"
     if isinstance(value, dict) and "$" in value:
         if value["$"] not in {one.value for one in ValueKind}:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{value['$']}' is not a value the engine resolves; "
                 f"use one of {', '.join(one.value for one in ValueKind)}"
             )

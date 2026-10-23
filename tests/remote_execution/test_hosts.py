@@ -16,11 +16,8 @@ from types import ModuleType
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.remote_execution import (
-    Attach,
-    ContextUnavailable,
-    serve_contexts,
-)
+from sincpro_framework.remote_execution import Attach, serve_contexts
+from sincpro_framework.remote_execution.domain import exceptions
 
 HOSTED = """
 import os
@@ -93,7 +90,7 @@ def test_a_thread_host_answers_until_it_is_stopped():
     assert caller(CommandPing(), ResponsePing).pid == os.getpid()
 
     host.stop(0)
-    with pytest.raises(ContextUnavailable):
+    with pytest.raises(exceptions.ContextUnavailable):
         caller(CommandPing(), ResponsePing)
 
 
@@ -124,7 +121,7 @@ def test_a_process_host_answers_from_its_own_process_by_import_path(hosted_modul
     finally:
         host.stop(1)
 
-    with pytest.raises(ContextUnavailable):
+    with pytest.raises(exceptions.ContextUnavailable):
         hosted_module.billing(hosted_module.CommandWhere(), hosted_module.ResponseWhere)
 
 

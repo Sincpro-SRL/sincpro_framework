@@ -181,14 +181,14 @@ A project's exception subclasses `DomainError` and declares `failure_kind`. Ever
 its own code (REST status, JSON-RPC code, gRPC status):
 
 ```python
-from sincpro_framework.ddd.exceptions import DomainError
-from sincpro_framework import FailureKind
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework import exceptions
 
-class ExtractionError(DomainError):
-    failure_kind = FailureKind.INVALID       # REST 422, message in `detail`
+class ExtractionError(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.INVALID       # REST 422, message in `detail`
 
-class EngineUnavailable(DomainError):
-    failure_kind = FailureKind.UNAVAILABLE   # REST 503
+class EngineUnavailable(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.UNAVAILABLE   # REST 503
 ```
 
 Only a `DomainError`'s message reaches the caller. A plain `Exception` with `failure_kind` gets

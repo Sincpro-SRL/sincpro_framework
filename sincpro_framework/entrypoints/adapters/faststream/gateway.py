@@ -24,6 +24,7 @@ from typing import Any, cast
 
 from faststream import StreamMessage
 
+from sincpro_framework import exceptions
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.entrypoints.adapters.faststream.envelope import type_name
 from sincpro_framework.entrypoints.adapters.faststream.verdicts import Verdict
@@ -51,7 +52,6 @@ from sincpro_framework.entrypoints.entrypoint.gateway import (
 )
 from sincpro_framework.entrypoints.infrastructure.registry import registry
 from sincpro_framework.event_driven.adapters.faststream.queue import Broker
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.use_bus import UseFramework
 
 
@@ -161,9 +161,9 @@ class QueueGateway(Gateway):
             )
             problem = self._wire._access_problem(resolved)
             if problem:
-                raise ProgrammingError(problem)
+                raise exceptions.ProgrammingError(problem)
             return resolved
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"consume(as_={command.__name__}): no bus of this gateway answers it"
         )
 

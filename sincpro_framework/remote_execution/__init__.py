@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, Any
 from sincpro_framework.common.transport.addresses import (
     HostedAt,
     HostedContext,
-    InvalidAddress,
     Wire,
 )
-from sincpro_framework.remote_execution.domain.errors import (
+from sincpro_framework.common.transport.exceptions import InvalidAddress
+from sincpro_framework.remote_execution.domain.exceptions import (
     ContextFailed,
     ContextOutcomeUnknown,
     ContextTimeout,

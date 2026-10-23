@@ -22,7 +22,7 @@ from pydantic import ConfigDict
 
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context.adapters.propagation import inject
-from sincpro_framework.context.domain.execution import CAUSATION_ID, CORRELATION_ID
+from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.infrastructure.tree import handed_on, live_context
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.event_driven.adapters.faststream.queue import EVENT_HEADER
@@ -175,8 +175,8 @@ def cloud_event_headers(
             source=source,
             type=type or (None if message is None else type_name(message, context)),
             subject=subject,
-            correlationid=chain.get(CORRELATION_ID),
-            causationid=chain.get(CAUSATION_ID),
+            correlationid=chain.get(ContextKey.CORRELATION_ID),
+            causationid=chain.get(ContextKey.CAUSATION_ID),
         )
     carrier = trace_carrier()
     envelope = envelope.model_copy(

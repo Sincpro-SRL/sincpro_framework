@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity
 
@@ -20,14 +20,15 @@ from sincpro_framework.ddd.entity import ArchivableMixin, Entity
 @pytest.mark.parametrize("reserved", ["id", "created_at", "updated_at", "version"])
 def test_an_entity_field_named_like_one_the_framework_writes_is_refused(reserved):
     with pytest.raises(
-        ProgrammingError, match=f"Spec.{reserved} redeclares Entity.{reserved}"
+        exceptions.ProgrammingError, match=f"Spec.{reserved} redeclares Entity.{reserved}"
     ):
         type("Spec", (Entity,), {"__annotations__": {reserved: int}, reserved: 3})
 
 
 def test_the_refusal_names_what_the_field_is_and_how_to_rename_it():
     with pytest.raises(
-        ProgrammingError, match=r"\(the optimistic lock\)\. Rename it, e\.g\. `revision`"
+        exceptions.ProgrammingError,
+        match=r"\(the optimistic lock\)\. Rename it, e\.g\. `revision`",
     ):
 
         @dataclass
@@ -38,7 +39,7 @@ def test_the_refusal_names_what_the_field_is_and_how_to_rename_it():
 
 def test_a_field_a_framework_mixin_writes_is_reserved_too():
     with pytest.raises(
-        ProgrammingError, match="Folder.archived_at redeclares ArchivableMixin"
+        exceptions.ProgrammingError, match="Folder.archived_at redeclares ArchivableMixin"
     ):
 
         @dataclass
@@ -77,7 +78,7 @@ def test_an_event_sets_its_envelope_defaults_as_the_framework_intends():
 
 
 def test_an_event_typing_name_is_refused_on_every_python():
-    with pytest.raises(ProgrammingError, match="declares 'name' as a typed field"):
+    with pytest.raises(exceptions.ProgrammingError, match="declares 'name' as a typed field"):
 
         @dataclass(kw_only=True)
         class InvoicePosted(DomainEvent):

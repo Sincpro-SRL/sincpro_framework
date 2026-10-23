@@ -70,7 +70,9 @@ dependency of the project):
 ```python
 import jwt                                            # the project's dependency
 
-from sincpro_framework.auth import AuthProvider, Credentials, Identity, RolePermissions, Unauthenticated
+from sincpro_framework.auth import AuthProvider, Credentials, Identity, RolePermissions
+
+from sincpro_framework.auth.domain import exceptions
 
 
 class KeycloakProvider(AuthProvider):
@@ -89,7 +91,7 @@ class KeycloakProvider(AuthProvider):
             key = self.keys.get_signing_key_from_jwt(token).key
             claims = jwt.decode(token, key, algorithms=["RS256"], audience=self.audience)
         except jwt.PyJWTError as error:
-            raise Unauthenticated(f"invalid token: {error}") from error
+            raise exceptions.Unauthenticated(f"invalid token: {error}") from error
         identity = Identity.user(
             f"user:{claims['sub']}",
             tenant=claims.get("tenant"),

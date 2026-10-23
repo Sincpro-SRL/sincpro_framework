@@ -8,7 +8,7 @@ and the child builds its own.
 import multiprocessing
 from typing import Any
 
-from sincpro_framework.ddd.exceptions import StaleAggregate
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.event_driven import (
     Publisher,
     Subscriber,
@@ -50,7 +50,7 @@ def move_account(
         if order == "first":
             first_saved.set()
         outcomes.put((order, "saved"))
-    except StaleAggregate:
+    except exceptions.StaleAggregate:
         outcomes.put((order, "StaleAggregate"))
     except Exception as error:  # pragma: no cover - reported, then asserted on
         outcomes.put((order, type(error).__name__))

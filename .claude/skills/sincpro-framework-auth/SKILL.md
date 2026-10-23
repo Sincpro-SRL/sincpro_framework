@@ -135,9 +135,8 @@ Silent ones first — the runtime says nothing.
 ## Permissions and a provider
 
 ```python
-from sincpro_framework.auth import (
-    AccessControl, AuthProvider, Credentials, Identity, Permission, Unauthenticated, WhenDenied,
-)
+from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied
+from sincpro_framework.auth.domain import exceptions
 
 
 class BillingPermission(Permission):
@@ -156,7 +155,7 @@ class TenantKeys(AuthProvider):
         if key is None:
             return None                                  # not mine: the next provider is tried
         if key not in self.keys:
-            raise Unauthenticated("unknown key")         # mine, and it fails
+            raise exceptions.Unauthenticated("unknown key")         # mine, and it fails
         return Identity.user(self.keys[key], tenant="bo", permissions={BillingPermission.ISSUE_INVOICE})
 
 

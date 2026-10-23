@@ -13,6 +13,7 @@
     context.feature · context.hook · context.bus · context.at(Level.ENTRYPOINT)
     context.own · context.origin("tenant_id") · context.lineage() · context.execution
     context.drafts() · context.drafts(by=["session_id"])   kept where the context is kept
+    context.pipelines() · context.pipelines(by=["user_id"])   the runs of its pipelines, the same
 
 **Two ways to write, on purpose.** As a mapping — `context[key] = value`, `update`, `del` — a write
 lands on the scope of the call: the `bus.context(...)` block, or the call itself; every execution of
@@ -25,15 +26,11 @@ Feature's own value, reaching what it runs and never its siblings or its caller.
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
-from typing import Any, overload
+from typing import TYPE_CHECKING, Any, overload
 
-from sincpro_framework.context.domain.execution import (
-    CAUSATION_ID,
-    CORRELATION_ID,
-    EXECUTION_ID,
-    Execution,
-)
-from sincpro_framework.context.domain.keys import standardized, travelling
+from sincpro_framework.context.adapters.stores import process_contexts
+from sincpro_framework.context.domain.execution import Execution
+from sincpro_framework.context.domain.keys import ContextKey, travelling
 from sincpro_framework.context.domain.level import EntrypointKind, Level, Origin
 from sincpro_framework.context.domain.node import REMOVED, ContextNode
 from sincpro_framework.context.domain.store import ContextStore
@@ -51,6 +48,9 @@ from sincpro_framework.context.infrastructure.tree import (
     shared,
 )
 from sincpro_framework.sincpro_logger import logger
+
+if TYPE_CHECKING:
+    from sincpro_framework.pipelines.runs import PipelineRuns
 
 
 class Context(dict[Any, Any]):
@@ -112,9 +112,12 @@ class Context(dict[Any, Any]):
         """`correlation_id` names the flow from here on: the execution in play takes it. The other
         two are minted by the framework — written here they only name what a root is handed.
         """
-        if key == CORRELATION_ID:
+        if key == ContextKey.CORRELATION_ID:
             recorrelated(self._node, value)
-        elif key in (EXECUTION_ID, CAUSATION_ID) and self.execution is not None:
+        elif (
+            key in (ContextKey.EXECUTION_ID, ContextKey.CAUSATION_ID)
+            and self.execution is not None
+        ):
             logger.warning(
                 f"'{key}' was written to the context of a running execution: it is minted by the "
                 "framework, and only an entrance's value is taken (for a root execution)"
@@ -223,7 +226,7 @@ class Context(dict[Any, Any]):
                 )
                 continue
             merged.update(kept)
-        return standardized(merged)
+        return merged
 
     @contextmanager
     def scoped(
@@ -239,7 +242,7 @@ class Context(dict[Any, Any]):
         Opened from any level, the block sees that level only — what the nodes under it said is
         left out — and stays in the execution in play: `use_context().parent.scoped()`,
         `use_context(Level.ENTRYPOINT).scoped()`."""
-        given = {**self.restored(restore, store), **standardized(values or {})}
+        given = {**self.restored(restore, store), **(values or {})}
         level = Level.SCOPE if self._node.nearest(Level.ENTRYPOINT) else Level.ENTRYPOINT
         if level is Level.ENTRYPOINT:
             kind = kind or EntrypointKind.DIRECT
@@ -345,13 +348,30 @@ class Context(dict[Any, Any]):
         found = self._required_store(store)
         found.keep(key, handed_on(_named(self)), ttl)
 
+    def _keeping(self, given: ContextStore | None) -> ContextStore:
+        """Where the drafts and the pipeline runs are kept: the store given, else the nearest
+        `ContextStore` — a bus's, the process's — else this process's memory, said once."""
+        found = self.store(given)
+        return found if found is not None else process_contexts()
+
     def drafts(
         self, by: Sequence[str] = BY_USER, store: ContextStore | None = None
     ) -> Drafts:
-        """The drafts of whoever this context says — the user by default, any keys of it with `by`
-        (`["session_id"]`) — kept where the context is kept: the store given, else the nearest
-        `ContextStore`."""
-        return Drafts(self._required_store(store).drafts(), self, by)
+        """The drafts of whoever this context says — its tenant and its user by default, any keys
+        of it with `by` (`["session_id"]`) — kept where the context is kept."""
+        return Drafts(self._keeping(store), self, by)
+
+    def pipelines(
+        self, by: Sequence[str] = (), store: ContextStore | None = None
+    ) -> "PipelineRuns":
+        """The runs of the pipelines of whoever this context says — its tenant, and the keys of
+        `by` — kept where the context is kept.
+
+        Context: the pipelines are a component built on the context, so they are loaded when first
+        asked for — the context never imports them at import time."""
+        from sincpro_framework.pipelines.runs import PipelineRuns
+
+        return PipelineRuns(self._keeping(store), self, by)
 
 
 def _named(values: Mapping[Any, Any]) -> dict[str, Any]:
@@ -380,5 +400,5 @@ def carrying(
 ) -> Generator[None, None, None]:
     """Every bus executed inside the block starts from `context` — what a caller that is not a bus,
     a cron or a worker, hands the buses it calls."""
-    with entered(child(Level.SCOPE, standardized(context), kind=kind)):
+    with entered(child(Level.SCOPE, dict(context), kind=kind)):
         yield

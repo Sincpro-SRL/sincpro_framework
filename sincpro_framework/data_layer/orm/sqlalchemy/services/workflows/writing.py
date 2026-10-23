@@ -9,6 +9,7 @@ from sqlalchemy import Table, delete, update
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import sort_tables
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.engine_errors import named
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.flushing import only
@@ -40,14 +41,12 @@ from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import DuplicateAggregate, StaleAggregate
 from sincpro_framework.ddd.repositories.capabilities import Extends, Upserted
 from sincpro_framework.ddd.repositories.repository import (
     records_of,
     refuse_unarchivable,
     refuse_writing_in_preview,
 )
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def _named(records: list[Any]) -> str:
@@ -113,7 +112,7 @@ class Writing(Store, Extends):
         own event, rather than being folded back into this one.
         """
         if self._bound is None:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 "record_changes needs the unit of work holding this aggregate — outside "
                 "context() there is nothing pending to write down, and a plain save() is "
                 "what settles it"
@@ -247,9 +246,9 @@ class Writing(Store, Extends):
                 extension_writing.complete_consolidated(session, records)
                 plan = planned_save(session, self._events_of_sourced(session, records))
                 newness = self._carried_out(session, plan)
-        except DuplicateAggregate as error:
+        except exceptions.DuplicateAggregate as error:
             if "entity_version" in str(error):
-                raise StaleAggregate(
+                raise exceptions.StaleAggregate(
                     f"{_named(records)} changed since it was rebuilt: another writer appended "
                     "its next event first; rebuild it and try again"
                 ) from error
@@ -325,14 +324,14 @@ class Writing(Store, Extends):
         out — and refused whole when any condition could not be answered, because a dropped
         condition widens a write where it only widened a read."""
         if criteria.pagination.asked:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{verb} writes every row its filter matches; a page cannot bound it — "
                 "narrow the filter instead"
             )
         meta = describe(model)
         expression, dropped = meta.accept(self._asked(model, meta, criteria))
         if dropped:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{verb} cannot answer {', '.join(one.field for one in dropped)} on "
                 f"{model.__name__}; a write never runs wider than it was asked"
             )
@@ -368,7 +367,7 @@ class Writing(Store, Extends):
         fixed = {describe(model).identity, "created_at", "version", "updated_at"}
         wrong = sorted(name for name in values if name not in columns or name in fixed)
         if wrong:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a column, "
                 "or one the framework keeps"
             )

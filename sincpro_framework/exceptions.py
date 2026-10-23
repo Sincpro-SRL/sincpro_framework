@@ -141,3 +141,22 @@ class ContextRequired(ProgrammingError):
         )
         self.use_case = use_case
         self.missing = missing
+
+
+class BusAlreadyRegistered(ProgrammingError):
+    """A second, different bus was added under a name this process already holds."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(
+            f"a bus named {name!r} is already registered in this process; "
+            "a context registers once"
+        )
+        self.name = name
+
+
+class BusNotRegistered(ProgrammingError, LookupError):
+    """`get` was asked for a name nobody added."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"no bus named {name!r} is registered in this process")
+        self.name = name

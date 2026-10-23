@@ -8,7 +8,7 @@ data, so a guard kept on the instance let the idiomatic write walk straight out 
 
 import pytest
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.ddd.criteria import Condition, Criteria
@@ -57,7 +57,9 @@ def test_a_hook_that_writes_through_the_repository_is_refused(database: Database
 
     repository, _bus = _wired(database, hooks)
 
-    with pytest.raises(ProgrammingError, match="wrote through the same repository"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="wrote through the same repository"
+    ):
         repository.save(a_thing(1))
 
 
@@ -78,7 +80,9 @@ def test_a_hook_cannot_escape_the_guard_by_opening_a_unit_of_work(database: Data
 
     repository, _bus = _wired(database, hooks)
 
-    with pytest.raises(ProgrammingError, match="wrote through the same repository"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="wrote through the same repository"
+    ):
         repository.save(a_thing(1))
     assert depth["reached"] == 1
 
@@ -101,7 +105,9 @@ def test_a_hook_cannot_escape_the_guard_by_narrowing(database: Database):
 
     repository, _bus = _wired(database, hooks)
 
-    with pytest.raises(ProgrammingError, match="wrote through the same repository"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="wrote through the same repository"
+    ):
         repository.save(a_thing(1))
     assert depth["reached"] == 1
 

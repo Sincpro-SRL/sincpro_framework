@@ -360,7 +360,7 @@ with bus.context({"user_id": "u1"}):
 Fields of two siblings that no class holds are refused, naming them:
 
 ```python
-from sincpro_framework.exceptions import ClientError
+from sincpro_framework import exceptions
 
 with bus.context({"user_id": "u1"}):
     try:
@@ -370,7 +370,7 @@ with bus.context({"user_id": "u1"}):
             ),
             ResponseEditMove,
         )
-    except ClientError as refused:
+    except exceptions.ClientError as refused:
         assert "no one class holds" in str(refused)
     else:
         raise AssertionError("siblings were taken as one class")

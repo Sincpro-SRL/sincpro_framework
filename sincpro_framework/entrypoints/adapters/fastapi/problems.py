@@ -27,11 +27,6 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from sincpro_framework.auth.domain.exceptions import (
-    AuthError,
-    PermissionDenied,
-    Unauthenticated,
-)
 from sincpro_framework.auth.entrypoint.transports import challenges_of
 from sincpro_framework.common.failures import (
     failure_reason,
@@ -39,8 +34,7 @@ from sincpro_framework.common.failures import (
     retry_after,
     said_to_the_caller,
 )
-from sincpro_framework.entrypoints.adapters.rest.routing import InvalidRequest
-from sincpro_framework.exceptions import ClientError, FailureKind
+from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import trace_id_of
 from sincpro_framework.sincpro_logger import logger
@@ -57,53 +51,47 @@ INSTALLED = "sincpro_problem_handlers"
 BUSES_STATE = "sincpro_buses"
 TRACE_STATE = "sincpro_trace_id"
 
-STATUS_OF: Mapping[FailureKind, int] = {
-    FailureKind.INVALID: 422,
-    FailureKind.UNAUTHENTICATED: 401,
-    FailureKind.PERMISSION_DENIED: 403,
-    FailureKind.NOT_FOUND: 404,
-    FailureKind.CONFLICT: 409,
-    FailureKind.IN_PROGRESS: 409,
-    FailureKind.KEY_REUSED: 422,
-    FailureKind.DOMAIN: 422,
-    FailureKind.EXHAUSTED: 429,
-    FailureKind.UNAVAILABLE: 503,
-    FailureKind.UNKNOWN_OUTCOME: 504,
-    FailureKind.INTERNAL: 500,
+STATUS_OF: Mapping[exceptions.FailureKind, int] = {
+    exceptions.FailureKind.INVALID: 422,
+    exceptions.FailureKind.UNAUTHENTICATED: 401,
+    exceptions.FailureKind.PERMISSION_DENIED: 403,
+    exceptions.FailureKind.NOT_FOUND: 404,
+    exceptions.FailureKind.CONFLICT: 409,
+    exceptions.FailureKind.IN_PROGRESS: 409,
+    exceptions.FailureKind.KEY_REUSED: 422,
+    exceptions.FailureKind.DOMAIN: 422,
+    exceptions.FailureKind.EXHAUSTED: 429,
+    exceptions.FailureKind.UNAVAILABLE: 503,
+    exceptions.FailureKind.UNKNOWN_OUTCOME: 504,
+    exceptions.FailureKind.INTERNAL: 500,
 }
 """The REST column of PRD_15 §1.3 — one row per kind, so no refusal turns into a crash."""
 
-TITLE_OF: Mapping[FailureKind, str] = {
-    FailureKind.INVALID: "The request does not validate",
-    FailureKind.UNAUTHENTICATED: "Who is calling is not known",
-    FailureKind.PERMISSION_DENIED: "Not allowed",
-    FailureKind.NOT_FOUND: "Not found",
-    FailureKind.CONFLICT: "The write collided",
-    FailureKind.IN_PROGRESS: "The same request is still running",
-    FailureKind.KEY_REUSED: "The idempotency key was used for another request",
-    FailureKind.DOMAIN: "The domain refused the request",
-    FailureKind.EXHAUSTED: "Too many requests",
-    FailureKind.UNAVAILABLE: "Unavailable for now",
-    FailureKind.UNKNOWN_OUTCOME: "It may have run — verify before retrying",
-    FailureKind.INTERNAL: "Internal error",
+TITLE_OF: Mapping[exceptions.FailureKind, str] = {
+    exceptions.FailureKind.INVALID: "The request does not validate",
+    exceptions.FailureKind.UNAUTHENTICATED: "Who is calling is not known",
+    exceptions.FailureKind.PERMISSION_DENIED: "Not allowed",
+    exceptions.FailureKind.NOT_FOUND: "Not found",
+    exceptions.FailureKind.CONFLICT: "The write collided",
+    exceptions.FailureKind.IN_PROGRESS: "The same request is still running",
+    exceptions.FailureKind.KEY_REUSED: "The idempotency key was used for another request",
+    exceptions.FailureKind.DOMAIN: "The domain refused the request",
+    exceptions.FailureKind.EXHAUSTED: "Too many requests",
+    exceptions.FailureKind.UNAVAILABLE: "Unavailable for now",
+    exceptions.FailureKind.UNKNOWN_OUTCOME: "It may have run — verify before retrying",
+    exceptions.FailureKind.INTERNAL: "Internal error",
 }
 
-KIND_OF_STATUS: Mapping[int, FailureKind] = {
-    401: FailureKind.UNAUTHENTICATED,
-    403: FailureKind.PERMISSION_DENIED,
-    404: FailureKind.NOT_FOUND,
-    409: FailureKind.CONFLICT,
-    429: FailureKind.EXHAUSTED,
-    503: FailureKind.UNAVAILABLE,
-    504: FailureKind.UNKNOWN_OUTCOME,
+KIND_OF_STATUS: Mapping[int, exceptions.FailureKind] = {
+    401: exceptions.FailureKind.UNAUTHENTICATED,
+    403: exceptions.FailureKind.PERMISSION_DENIED,
+    404: exceptions.FailureKind.NOT_FOUND,
+    409: exceptions.FailureKind.CONFLICT,
+    429: exceptions.FailureKind.EXHAUSTED,
+    503: exceptions.FailureKind.UNAVAILABLE,
+    504: exceptions.FailureKind.UNKNOWN_OUTCOME,
 }
 """The kind of an `HTTPException` a route or Starlette raised — by its status."""
-
-
-class IdempotencyKeyMissing(ClientError):
-    """A use case that runs once, whose Command says nothing of what identifies it, called
-    without an `Idempotency-Key` header — answered 400: the retry could not be told from a new
-    request."""
 
 
 class ProblemError(BaseModel):
@@ -163,7 +151,7 @@ def _challenges(request: Request) -> list[str]:
 
 def _body(
     request: Request,
-    kind: FailureKind,
+    kind: exceptions.FailureKind,
     status: int,
     reason: str,
     detail: str | None,
@@ -206,24 +194,37 @@ def problem_of(request: Request, error: Exception) -> JSONResponse:
         return _answer(
             _body(
                 request,
-                FailureKind.INVALID,
+                exceptions.FailureKind.INVALID,
                 status,
                 "UNREADABLE" if unreadable else "INVALID",
                 None,
                 errors=_errors(error.errors()),
             )
         )
-    if isinstance(error, InvalidRequest | IdempotencyKeyMissing):
-        reason = "IDEMPOTENCY_KEY_MISSING" if isinstance(error, IdempotencyKeyMissing) else ""
+    if isinstance(error, exceptions.InvalidRequest | exceptions.IdempotencyKeyMissing):
+        reason = (
+            "IDEMPOTENCY_KEY_MISSING"
+            if isinstance(error, exceptions.IdempotencyKeyMissing)
+            else ""
+        )
         return _answer(
             _body(
-                request, FailureKind.INVALID, 400, reason or "UNREADABLE", str(error) or None
+                request,
+                exceptions.FailureKind.INVALID,
+                400,
+                reason or "UNREADABLE",
+                str(error) or None,
             )
         )
     if isinstance(error, starlette.exceptions.HTTPException):
         status = error.status_code
         kind = KIND_OF_STATUS.get(
-            status, FailureKind.INTERNAL if status >= 500 else FailureKind.INVALID
+            status,
+            (
+                exceptions.FailureKind.INTERNAL
+                if status >= 500
+                else exceptions.FailureKind.INVALID
+            ),
         )
         phrase = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ""
         detail = error.detail if isinstance(error.detail, str) else None
@@ -255,21 +256,25 @@ def problem_of(request: Request, error: Exception) -> JSONResponse:
             None,
             errors=_errors(error.errors(include_url=False)),
         )
-    elif isinstance(error, AuthError):
+    elif isinstance(error, exceptions.AuthError):
         body = _body(
             request,
             kind,
             status,
             reason,
             error.reason,
-            step_up=error.step_up if isinstance(error, Unauthenticated) else None,
-            requirement=error.requirement if isinstance(error, PermissionDenied) else None,
+            step_up=(
+                error.step_up if isinstance(error, exceptions.Unauthenticated) else None
+            ),
+            requirement=(
+                error.requirement if isinstance(error, exceptions.PermissionDenied) else None
+            ),
         )
     else:
         body = _body(request, kind, status, reason, said_to_the_caller(error))
     if status == 401:
         headers["WWW-Authenticate"] = ", ".join(_challenges(request))
-    if kind == FailureKind.INTERNAL and not process.was_reported(error):
+    if kind == exceptions.FailureKind.INTERNAL and not process.was_reported(error):
         logger.exception("REST %s %s failed", request.method, request.url.path)
     return _answer(body, headers)
 

@@ -1,7 +1,8 @@
 # Outcomes: what a call did, as events anyone may listen to
 
 Every use case that answers says so with an `ExecutionCompleted` — the DTO it was handed, the response
-it gave. When an exception leaves a call, an `ExecutionFailed` goes out with it. Alerts, an audit, a
+it gave. When an exception leaves a call, an `ExecutionFailed` goes out with it. How a use case begins is its
+[income](incomes.md). Alerts, an audit, a
 projection in another service, whatever undoes a step: each listens, none is written into a Feature.
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
@@ -70,19 +71,19 @@ assert raised.value.failure_id == failure.id          # the exception names the 
 | `escaped_from` | the bus whose caller received the exception |
 | `dto` | the DTO as it was handed, as JSON values |
 | `error_type`, `error` | the exception's class and message |
-| `kind` | the `FailureKind` every wire answers it with (`from sincpro_framework import FailureKind`): `domain`, `conflict`, `unavailable`, `internal`… |
+| `kind` | the `FailureKind` every wire answers it with (`from sincpro_framework import exceptions` → `exceptions.FailureKind`): `domain`, `conflict`, `unavailable`, `internal`… |
 | `retry_after` | seconds to wait before sending the same call again — `None` when sending it again will not help |
 | `execution_id` · `causation_id` · `correlation_id` | the execution that failed, and its flow — what its log line, span and error report carry |
 | `context` | what the flow carried — the keys that travel, a `Secret` as its value |
 
-It is a `DomainEvent` (`sincpro.execution.v1.failed`): it is published, kept and carried like any
-other.
+It is a `DomainEvent` (`sincpro.execution.v1.failed`), so a bus or a queue receives it like any
+event; it is not a fact of the domain: it is announced to listeners and written nowhere.
 
 A listener that retries or compensates decides with what the caller was told. An error declares its
 own kind:
 
 ```python
-from sincpro_framework import FailureKind
+from sincpro_framework import exceptions
 
 
 class CommandSendInvoice(DataTransferObject):
@@ -90,7 +91,7 @@ class CommandSendInvoice(DataTransferObject):
 
 
 class SiatDown(Exception):
-    failure_kind = FailureKind.UNAVAILABLE                # a later retry may succeed
+    failure_kind = exceptions.FailureKind.UNAVAILABLE                # a later retry may succeed
     retry_after = 30                                      # seconds; one when it says nothing
 
 
@@ -227,3 +228,17 @@ listener handing outcomes to a bus would otherwise hear its own hearing without 
 **Announced when the use case answered**, not when a transaction commits: a completion inside a unit
 of work that its caller rolls back afterwards was still announced. What must follow the commit goes
 through the context's event table and its relay.
+
+## What outcomes are, and are not
+
+Outcomes **observe** the execution path ([execution path](execution-path.md)): they say what a call
+did and never change it. A listener that raises is logged and ignored; it runs in the call's
+thread, is not retried and is not durable. A listener may be added at any time, and a generation of
+the bus (`fresh`) hears what the bus does.
+
+- To **change** what a call answers — veto it, adjust it, answer instead — use an
+  [interceptor](interceptors.md) or an error handler.
+- To keep **state** a process depends on, or what must follow a commit, use the context's event
+  table and its relay ([events](../events/README.md)); a listener may not run.
+- To send them **out of the process**, hand them to a `Publisher` (`publish_completions`,
+  `publish_failures`): from there on they travel as any event, by `event_driven`.

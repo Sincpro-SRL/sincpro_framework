@@ -18,10 +18,11 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
-from sincpro_framework.ddd.exceptions import DomainError
+from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.observability.metrics import (
     InMemoryRecorder,
     Recorder,
@@ -56,7 +57,7 @@ class ResponseIssueInvoice(DataTransferObject):
     lines: int
 
 
-class InvoiceRefused(DomainError):
+class InvoiceRefused(ddd_exceptions.DomainError):
     pass
 
 
@@ -221,7 +222,9 @@ def test_a_use_case_says_what_it_measures(recorder):
 def test_an_attribute_the_dto_does_not_have_is_refused_where_it_is_written():
     """A metric named by a field reference cannot drift from the code: a renamed field fails
     at import, not as a silent empty series in a dashboard."""
-    with pytest.raises(ProgrammingError, match="CommandIssueInvoice has no field 'curency'"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="CommandIssueInvoice has no field 'curency'"
+    ):
         of(CommandIssueInvoice).curency  # type: ignore[attr-defined]
 
 
@@ -239,7 +242,7 @@ def test_an_unbounded_label_is_accepted_with_a_warning():
 
 
 def test_only_a_number_is_summed_or_measured():
-    with pytest.raises(ProgrammingError, match="currency is not a number"):
+    with pytest.raises(exceptions.ProgrammingError, match="currency is not a number"):
         metrics.sums(of(CommandIssueInvoice).currency)
 
 
@@ -247,7 +250,7 @@ def test_a_path_of_another_dto_than_the_use_cases_is_refused():
     class CommandOther(DataTransferObject):
         amount: int
 
-    with pytest.raises(ProgrammingError, match="CommandOther is neither"):
+    with pytest.raises(exceptions.ProgrammingError, match="CommandOther is neither"):
 
         @metrics.sums(of(CommandOther).amount)
         class IssueInvoice(Feature):
@@ -255,7 +258,7 @@ def test_a_path_of_another_dto_than_the_use_cases_is_refused():
 
 
 def test_a_label_is_a_field_reference_never_a_value():
-    with pytest.raises(ProgrammingError, match="of\\(Command\\)"):
+    with pytest.raises(exceptions.ProgrammingError, match="of\\(Command\\)"):
         metrics.counts(by=Currency.BOB)  # type: ignore[arg-type]
 
 
@@ -427,10 +430,9 @@ def _outcome_of_a_run(bus: UseFramework, recorder: InMemoryRecorder) -> dict[str
 def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
     """`failure_kind = NOT_FOUND` on an error is what its callers already read on every wire:
     a dashboard that says `domain` for it hides the one kind it is looking for."""
-    from sincpro_framework import FailureKind
 
-    class InvoiceNotFound(DomainError):
-        failure_kind = FailureKind.NOT_FOUND
+    class InvoiceNotFound(ddd_exceptions.DomainError):
+        failure_kind = exceptions.FailureKind.NOT_FOUND
 
     outcome = _outcome_of_a_run(_failing(InvoiceNotFound("F-9")), recorder)
 
@@ -438,9 +440,10 @@ def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
 
 
 def test_a_duplicate_that_did_not_wait_is_in_progress_not_internal(recorder):
-    from sincpro_framework.data_layer.caching import AlreadyInProgress
 
-    outcome = _outcome_of_a_run(_failing(AlreadyInProgress("still running")), recorder)
+    outcome = _outcome_of_a_run(
+        _failing(caching_exceptions.AlreadyInProgress("still running")), recorder
+    )
 
     assert outcome["sincpro.outcome"] == "in_progress"
 

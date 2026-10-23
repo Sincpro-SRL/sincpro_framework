@@ -57,6 +57,7 @@ from pydantic import field_validator
 from sincpro_framework.context.domain.drafts import Draft
 from sincpro_framework.context.entrypoint.drafts import Drafts
 from sincpro_framework.context.entrypoint.facade import use_context
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Any_,
@@ -84,7 +85,6 @@ from sincpro_framework.ddd.entity.entity_meta import (
     presentation_of,
 )
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import AggregateNotFound, RelationNotResolved
 from sincpro_framework.ddd.query import (
     DraftState,
     Query,
@@ -95,7 +95,6 @@ from sincpro_framework.ddd.query import (
 )
 from sincpro_framework.ddd.reads.defaults import detail_of, matching
 from sincpro_framework.ddd.repositories.repository import IRepository
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject, Feature
 
 
@@ -237,7 +236,7 @@ def declared_by(dto: type) -> tuple[type, type]:
         arguments = generic.get("args", ()) if generic else ()
         if len(arguments) == 2 and all(isinstance(one, type) for one in arguments):
             return arguments[0], arguments[1]
-    raise ProgrammingError(
+    raise exceptions.ProgrammingError(
         f"{dto.__name__} does not name its entity and response: "
         f"class {dto.__name__}(Get[Account, ResponseAccount])"
     )
@@ -250,7 +249,7 @@ def held(record: Any) -> dict[str, Any]:
     for name in annotations_of(type(record)):
         try:
             value = getattr(record, name)
-        except RelationNotResolved:
+        except exceptions.RelationNotResolved:
             continue
         found[name] = list(value) if isinstance(value, (list, EntityCollection)) else value
     return found
@@ -265,7 +264,7 @@ def events_of(response: type) -> type:
     arguments = get_args(annotation) if get_origin(annotation) is list else ()
     held = arguments[0] if arguments else None
     if not (isinstance(held, type) and issubclass(held, DomainEvent)):
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{response.__name__} holds {annotation!r}, not events: `DomainEvents` answers "
             f"`events: list[<the context's DomainEvent>]`"
         )
@@ -290,7 +289,7 @@ def history_of(*records: Any) -> Criteria:
     in      issue, run_1, run_2    →  out  any of those three pairs
     """
     if not records:
-        raise ProgrammingError("history_of needs at least one record")
+        raise exceptions.ProgrammingError("history_of needs at least one record")
     pairs = [
         subject(type(one).__name__, str(getattr(one, identity_name(type(one)))))
         for one in records
@@ -314,7 +313,7 @@ class EntityReads[T](Feature):
         bounded context named it otherwise."""
         repository = getattr(self, "repository", None)
         if not isinstance(repository, IRepository):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{type(self).__name__} reads from the dependency named 'repository', and the "
                 "bus has none: add it, or override reads_from()"
             )
@@ -372,7 +371,7 @@ class EntityReads[T](Feature):
         )
         page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
         if not page.items:
-            raise AggregateNotFound(f"{entity.__name__} {identity} does not exist")
+            raise exceptions.AggregateNotFound(f"{entity.__name__} {identity} does not exist")
         return copied(page.items[0])
 
     def stored(self, entity: type, key: str) -> Any:
@@ -380,7 +379,7 @@ class EntityReads[T](Feature):
         none — a record only drafted so far."""
         try:
             return self.previewed(entity, key)
-        except AggregateNotFound:
+        except exceptions.AggregateNotFound:
             return None
 
     def drafted(
@@ -417,7 +416,7 @@ class EntityReads[T](Feature):
         )
         page = self.reads_from().search(entity, criteria)
         if not page.items:
-            raise AggregateNotFound(f"{entity.__name__} {dto.id} does not exist")
+            raise exceptions.AggregateNotFound(f"{entity.__name__} {dto.id} does not exist")
         return response.of(page.items[0], page, criteria)
 
     def get_many(self, dto: Any) -> Any:
@@ -499,7 +498,7 @@ class EntityReads[T](Feature):
         events = events_of(response)
         key = dto.id.strip()
         if not key:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{type(dto).__name__} needs the {entity.__name__}'s key: a blank one would read "
                 "every event about no record"
             )
@@ -514,7 +513,7 @@ class EntityReads[T](Feature):
                 ),
             )
             if not found.items:
-                raise AggregateNotFound(f"{entity.__name__} {key} does not exist")
+                raise exceptions.AggregateNotFound(f"{entity.__name__} {key} does not exist")
             identity = str(getattr(found.items[0], identity_name(entity)))
         where = subject(entity.__name__, identity)
         wanted: list[str] = [dto.names] if isinstance(dto.names, str) else list(dto.names)
@@ -575,7 +574,7 @@ class EntityReads[T](Feature):
                 return self.search(dto)
             case Preview():
                 return self.preview(dto)
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{type(self).__name__} answers Get, GetMany, LiteralSearch, Search, DomainEvents and "
             f"Preview, not {type(dto).__name__}"
         )
@@ -639,7 +638,7 @@ def _copied(
             continue
         try:
             value = getattr(record, one.name)
-        except RelationNotResolved:
+        except exceptions.RelationNotResolved:
             continue
         values[one.name] = _copied_value(value, seen, pending)
     built = entity(**values)
@@ -711,7 +710,7 @@ def dumped(record: Any) -> dict[str, Any]:
     for name, annotation in annotations.items():
         try:
             value = getattr(record, name)
-        except RelationNotResolved:
+        except exceptions.RelationNotResolved:
             continue
         if isinstance(value, EntityCollection):
             value = list(value)

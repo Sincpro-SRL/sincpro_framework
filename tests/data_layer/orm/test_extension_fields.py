@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text, text
 from sqlalchemy.orm import registry
 
-from sincpro_framework import UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.context.adapters.stores import InMemoryContexts
 from sincpro_framework.data_layer.orm import Consolidated, Relation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
@@ -26,6 +26,7 @@ from sincpro_framework.ddd import (
     ResponseRecord,
     Search,
 )
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Grouping,
@@ -35,8 +36,6 @@ from sincpro_framework.ddd.criteria import (
     Specification,
 )
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
-from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.exceptions import ClientError, ProgrammingError
 
 from .engines import fresh
 
@@ -149,7 +148,7 @@ def test_a_field_of_an_extension_is_not_a_field_to_order_by_because_a_record_may
 ):
     world = World(engine_url).fill()
 
-    with pytest.raises(InvalidCriteria, match="nullable"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="nullable"):
         world.store.search(world.Move, Criteria(order=(Sort(field="route"),)))
 
 
@@ -336,7 +335,7 @@ def test_fields_of_sibling_extensions_that_no_class_holds_are_refused_naming_the
     bus, Edit_, Response, _ = forms(world)
 
     with bus.context({"user_id": "u1"}), pytest.raises(
-        ClientError, match="no one class holds"
+        exceptions.ClientError, match="no one class holds"
     ):
         bus(
             Edit_(id="X", values={"route": "R1", "cufd": "C1"}, action=EditAction.SAVE),
@@ -440,7 +439,7 @@ def test_a_nested_value_with_a_field_the_extension_does_not_have_is_refused_nami
     bus, Edit_, Response, _ = forms(world)
 
     with bus.context({"user_id": "u1"}), pytest.raises(
-        ClientError, match="delivery has no field cufd"
+        exceptions.ClientError, match="delivery has no field cufd"
     ):
         bus(
             Edit_(id="B", values={"delivery": {"cufd": "X"}}, action=EditAction.SAVE),
@@ -453,7 +452,7 @@ def test_an_entity_that_does_not_delegate_does_not_take_its_extensions_nested(en
     bus, Edit_, Response, _ = forms(world)
 
     with bus.context({"user_id": "u1"}), pytest.raises(
-        ClientError, match="no field delivery"
+        exceptions.ClientError, match="no field delivery"
     ):
         bus(
             Edit_(id="B", values={"delivery": {"route": "R1"}}, action=EditAction.SAVE),
@@ -506,7 +505,7 @@ def test_two_extensions_that_would_nest_under_one_key_are_refused_naming_both(en
         Column("zone", Text),
     )
 
-    with pytest.raises(ProgrammingError, match="would both be `delivery`"):
+    with pytest.raises(exceptions.ProgrammingError, match="would both be `delivery`"):
         map_aggregates(world.reg, {MoveDelivery: table})
 
 

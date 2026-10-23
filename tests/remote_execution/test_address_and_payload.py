@@ -18,12 +18,8 @@ from pydantic import ValidationError
 
 from sincpro_framework import DataTransferObject, sincpro_conf
 from sincpro_framework.common.serialization import pack, unpack
-from sincpro_framework.remote_execution import (
-    HostedAt,
-    HostedContext,
-    InvalidAddress,
-    Wire,
-)
+from sincpro_framework.common.transport import exceptions
+from sincpro_framework.remote_execution import HostedAt, HostedContext, Wire
 from sincpro_framework.remote_execution.infrastructure.configuration import (
     _configured,
     configured_host,
@@ -148,7 +144,8 @@ def test_a_wrong_environment_names_the_variable(monkeypatch):
     _configured.cache_clear()
     try:
         with pytest.raises(
-            InvalidAddress, match="SINCPRO_CONTEXT_MAP: billing: 'grpc://billing-svc'"
+            exceptions.InvalidAddress,
+            match="SINCPRO_CONTEXT_MAP: billing: 'grpc://billing-svc'",
         ):
             configured_host("billing")
     finally:
@@ -176,23 +173,23 @@ def test_an_unknown_option_is_a_warning_and_the_address_still_serves(caplog):
     ],
 )
 def test_an_address_no_wire_reaches_is_refused_saying_what_to_write(written, said):
-    with pytest.raises(InvalidAddress) as refused:
+    with pytest.raises(exceptions.InvalidAddress) as refused:
         HostedAt.parse(written)
 
     assert said in str(refused.value)
 
 
 def test_an_environment_entry_that_names_no_context_is_refused():
-    with pytest.raises(InvalidAddress, match="is not <context>=<address>"):
+    with pytest.raises(exceptions.InvalidAddress, match="is not <context>=<address>"):
         HostedContext.parse_all("billing")
-    with pytest.raises(InvalidAddress, match="is not <context>=<address>"):
+    with pytest.raises(exceptions.InvalidAddress, match="is not <context>=<address>"):
         HostedContext.parse_all("=grpc://b:1")
 
 
 def test_an_address_built_in_code_is_checked_as_one_read():
-    with pytest.raises(InvalidAddress, match="'smtp' is not a wire"):
+    with pytest.raises(exceptions.InvalidAddress, match="'smtp' is not a wire"):
         HostedAt("smtp", "b:1")  # type: ignore[arg-type]
-    with pytest.raises(InvalidAddress, match="is not <host>:<port>"):
+    with pytest.raises(exceptions.InvalidAddress, match="is not <host>:<port>"):
         HostedAt(Wire.GRPC, "no-port")
 
 

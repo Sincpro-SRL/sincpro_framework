@@ -17,7 +17,7 @@ from datetime import datetime
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.ddd.criteria import Criteria, Specification
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -63,7 +63,7 @@ def test_holding_a_cursor_makes_it_partial():
     page = Rows(items=(Row("a", 2),), cursor="eyJrIjpbXX0")
 
     assert page.is_partial
-    with pytest.raises(ProgrammingError, match="sum_by"):
+    with pytest.raises(exceptions.ProgrammingError, match="sum_by"):
         page.sum_by(lambda row: row.size)
 
 
@@ -71,7 +71,7 @@ def test_a_floor_count_makes_it_partial():
     page = Rows(items=(Row("a", 2),), count=Count(value=10_000, exact=False))
 
     assert page.is_partial
-    with pytest.raises(ProgrammingError, match="self.repository.measures"):
+    with pytest.raises(exceptions.ProgrammingError, match="self.repository.measures"):
         page.average_by(lambda row: row.size)
 
 
@@ -130,7 +130,7 @@ def test_an_empty_collection_is_falsy():
 def test_ensure_one_says_how_many_there_actually_were():
     assert rows("a").ensure_one().row_id == "a"
 
-    with pytest.raises(ProgrammingError, match="found 2"):
+    with pytest.raises(exceptions.ProgrammingError, match="found 2"):
         rows("a", "b").ensure_one()
 
 

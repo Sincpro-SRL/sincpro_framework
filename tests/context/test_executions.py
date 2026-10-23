@@ -15,19 +15,17 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context import (
-    CAUSATION_ID,
-    CORRELATION_ID,
-    EXECUTION_ID,
-    Execution,
-    Level,
-    carrying,
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    UseFramework,
+    exceptions,
 )
+from sincpro_framework.context import ContextKey, Execution, Level, carrying
 from sincpro_framework.context.infrastructure.tree import current_execution
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
-from sincpro_framework.exceptions import BusAlreadyBuilt
 from sincpro_framework.observability.correlation import execution_context
 
 
@@ -127,7 +125,11 @@ def test_two_calls_are_two_flows(seen):
 
 def test_a_root_takes_the_identity_it_was_handed(seen):
     sales, _ = _buses(seen)
-    handed = {CORRELATION_ID: "flow-7", CAUSATION_ID: "gateway-1", EXECUTION_ID: "req-42"}
+    handed = {
+        ContextKey.CORRELATION_ID: "flow-7",
+        ContextKey.CAUSATION_ID: "gateway-1",
+        ContextKey.EXECUTION_ID: "req-42",
+    }
     with sales.context(handed):
         sales(CommandConfirmSale())
 
@@ -143,7 +145,7 @@ def test_a_root_takes_the_identity_it_was_handed(seen):
 
 def test_a_correlation_alone_names_the_flow(seen):
     sales, _ = _buses(seen)
-    with sales.context({CORRELATION_ID: "flow-from-a-header"}):
+    with sales.context({ContextKey.CORRELATION_ID: "flow-from-a-header"}):
         sales(CommandCheckCredit())
 
     assert seen[0].causation_id is None
@@ -152,7 +154,7 @@ def test_a_correlation_alone_names_the_flow(seen):
 
 def test_a_caller_beside_the_buses_hands_its_identity(seen):
     sales, _ = _buses(seen)
-    with carrying({CORRELATION_ID: "cron-flow"}):
+    with carrying({ContextKey.CORRELATION_ID: "cron-flow"}):
         sales(CommandCheckCredit())
 
     assert seen[0].correlation_id == "cron-flow"
@@ -172,7 +174,7 @@ def test_a_generator_given_after_the_build_is_refused(seen):
     sales, _ = _buses(seen)
     sales(CommandCheckCredit())
 
-    with pytest.raises(BusAlreadyBuilt):
+    with pytest.raises(exceptions.BusAlreadyBuilt):
         sales.execution_ids(lambda: "late")
 
 
@@ -261,10 +263,10 @@ def test_every_signal_reads_the_executions_own_identity():
         def execute(self, dto: CommandConfirmSale) -> None:
             self.feature_bus.execute(CommandCheckCredit())
 
-    with bus.context({CORRELATION_ID: "flow-9", EXECUTION_ID: "req-1"}):
+    with bus.context({ContextKey.CORRELATION_ID: "flow-9", ContextKey.EXECUTION_ID: "req-1"}):
         bus(CommandConfirmSale())
 
     [(keys, check)] = said
-    assert keys[EXECUTION_ID] == check.execution_id != "req-1"
-    assert keys[CAUSATION_ID] == "req-1"
-    assert keys[CORRELATION_ID] == "flow-9"
+    assert keys[ContextKey.EXECUTION_ID] == check.execution_id != "req-1"
+    assert keys[ContextKey.CAUSATION_ID] == "req-1"
+    assert keys[ContextKey.CORRELATION_ID] == "flow-9"

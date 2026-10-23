@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, cast
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import Held, hold
 from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator
@@ -44,7 +45,6 @@ from sincpro_framework.ddd.entity.relations import (
     limit_of,
     resolve_elsewhere,
 )
-from sincpro_framework.exceptions import ProgrammingError
 
 Prepare = Callable[[type, Criteria], tuple[Any, tuple, Meta, list[Dropped]]]
 """What turns a criteria into its WHERE, its ordering, its definition and what it dropped — the
@@ -187,7 +187,7 @@ def _through_table(prepare, session, meta, parents, relation, node, limit, dropp
         return {}, _nested(prepare, session, related, [], node, definition, dropped)
     table = relation.through
     if table is None or relation.related_key is None:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{relation.related.__name__}: a many-to-many needs the table in between and "
             "the key on it pointing at the related aggregate"
         )
@@ -251,7 +251,7 @@ def _scoped(declared: relations.Relation, node: Criteria) -> Criteria:
     if declared.scope.expression is not None and is_mapped(declared.related):
         kept, unknown = describe(declared.related).accept(declared.scope.expression)
         if unknown or kept is None:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{declared.related.__name__} cannot answer the scope its relation declares "
                 f"({', '.join(one.field for one in unknown) or 'nothing survived'}); "
                 "resolving it wide is not an option"

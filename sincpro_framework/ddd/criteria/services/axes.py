@@ -4,6 +4,7 @@ date field to. Pure: the dates come in as arguments."""
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import (
     All,
     Condition,
@@ -11,7 +12,6 @@ from sincpro_framework.ddd.criteria.domain.expression import (
     Operator,
 )
 from sincpro_framework.ddd.criteria.domain.values import Grain, Span
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 ONE: dict[Grain, Span] = {
     Grain.DAY: Span(days=1),
@@ -49,7 +49,7 @@ def _as_datetime(value: Any) -> datetime:
         return datetime.combine(value, time.min)
     if isinstance(value, str):
         return datetime.fromisoformat(value).replace(tzinfo=None)
-    raise InvalidCriteria(f"a date range is bounded by dates; got {value!r}")
+    raise exceptions.InvalidCriteria(f"a date range is bounded by dates; got {value!r}")
 
 
 def bounds_of(expression: Expression | None, field: str) -> tuple[datetime, datetime] | None:

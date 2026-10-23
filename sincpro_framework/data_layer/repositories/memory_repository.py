@@ -35,6 +35,7 @@ from copy import copy
 from decimal import Decimal
 from typing import Any, overload
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.ddd.criteria import (
     Bucket,
     Condition,
@@ -80,11 +81,6 @@ from sincpro_framework.ddd.events.mixins.deliverable import (
     DELIVERY_FIELDS,
     DeliverableEventMixin,
 )
-from sincpro_framework.ddd.exceptions import (
-    DuplicateAggregate,
-    InvalidCriteria,
-    StaleAggregate,
-)
 from sincpro_framework.ddd.repositories.capabilities import (
     Analyzes,
     Extends,
@@ -105,7 +101,6 @@ from sincpro_framework.ddd.repositories.repository import (
     refuse_wiring_as_a_record,
     refuse_writing_in_preview,
 )
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def _percentile(values: list[Any], fraction: float) -> Any:
@@ -430,7 +425,7 @@ class MemoryRepository(
         for name in names:
             computation = computations_of(aggregate).get(name)
             if computation is not None and computation.python is None:
-                raise InvalidCriteria(
+                raise exceptions.InvalidCriteria(
                     f"{aggregate.__name__}.{name} is computed in SQL and has no `python`: a "
                     "memory store cannot filter, order or group by it — give "
                     "`computed(python=…)` its value over a record"
@@ -722,11 +717,13 @@ class MemoryRepository(
     def get_by(self, target: type, **values: Any) -> Any:
         """One record by a natural key: the values that identify it besides its id."""
         if not values:
-            raise InvalidCriteria("get_by needs at least one value, e.g. code='1010'")
+            raise exceptions.InvalidCriteria(
+                "get_by needs at least one value, e.g. code='1010'"
+            )
         found = self.fetch_all(target, _by(values))
         if len(found) > 1:
             named = ", ".join(f"{field}={value!r}" for field, value in values.items())
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{len(found)} records answer to {named}; a natural key names one"
             )
         return found.first()
@@ -758,7 +755,7 @@ class MemoryRepository(
         out     {'rows': 4012933}
         """
         if not measures:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "measures needs at least one measure, e.g. rows=('sum', 'row_count')"
             )
         aggregate, _holder = model_and_collection(target)
@@ -790,7 +787,7 @@ class MemoryRepository(
         for level in grouping.group_by:
             meta.field(level.field)
             if level.grain is not None:
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     f"a memory repository cannot cut '{level.field}' to a {level.grain}; "
                     "a date grain is answered by the database adapter"
                 )
@@ -819,7 +816,7 @@ class MemoryRepository(
     def group_by_levels(self, target: type, criteria: Criteria | None = None) -> list[Bucket]:
         criteria = criteria or Criteria()
         if not criteria.grouping.asked:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "grouping by nothing answers one bucket holding everything, which is a count "
                 "and not a grouping; name at least one field in criteria.grouping"
             )
@@ -848,7 +845,7 @@ class MemoryRepository(
                     if other.id != event.id
                 }
                 if event.entity_version in taken:
-                    raise StaleAggregate(
+                    raise exceptions.StaleAggregate(
                         f"{type(one).__name__} changed since it was rebuilt: another writer "
                         "appended its next event first; rebuild it and try again"
                     )
@@ -887,7 +884,7 @@ class MemoryRepository(
         if isinstance(record, Entity):
             held = stored.get(identity)
             if held is not None and held is not record and held.version != record.version:
-                raise StaleAggregate(
+                raise exceptions.StaleAggregate(
                     f"{type(record).__name__} changed since it was read; "
                     "read it again before writing"
                 )
@@ -1015,13 +1012,13 @@ class MemoryRepository(
         """The records a write by criteria reaches, refused as the engine refuses it: a page
         cannot bound it, and a condition the aggregate cannot answer would widen it."""
         if criteria.pagination.asked:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{verb} writes every record its filter matches; a page cannot bound it"
             )
         rows, dropped = self._matching(model, criteria, handed_back=False)
         unanswered = [one.field for one in dropped if one.reason != "not_expandable"]
         if unanswered:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{verb} cannot answer {', '.join(unanswered)} on {model.__name__}; a write "
                 "never runs wider than it was asked"
             )
@@ -1043,7 +1040,7 @@ class MemoryRepository(
             or meta.fields[name].type.is_relational
         )
         if wrong:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a field, "
                 "or one the framework keeps"
             )
@@ -1081,7 +1078,7 @@ class MemoryRepository(
             {"id", "created_at", "version", "updated_at"} & set(update or ())
         )
         if kept_by_framework:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"upsert cannot overwrite {', '.join(kept_by_framework)}: the framework keeps it"
             )
         latest: dict[Any, Any] = {}
@@ -1097,7 +1094,9 @@ class MemoryRepository(
             meta = self.definition(model)
             unknown = [name for name in [*on, *(update or ())] if name not in meta.fields]
             if unknown:
-                raise ProgrammingError(f"{model.__name__} has no field {', '.join(unknown)}")
+                raise exceptions.ProgrammingError(
+                    f"{model.__name__} has no field {', '.join(unknown)}"
+                )
             keyed = None not in tuple(getattr(one, name) for name in on)
             held = next(
                 (
@@ -1110,7 +1109,7 @@ class MemoryRepository(
             )
             twin = self._stored.get(model, {}).get(identity_of(one))
             if held is None and twin is not None:
-                raise DuplicateAggregate(
+                raise exceptions.DuplicateAggregate(
                     f"{model.__name__} {identity_of(one)} is already stored under another "
                     f"{', '.join(on)}"
                 )

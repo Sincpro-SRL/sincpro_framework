@@ -42,6 +42,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from sincpro_framework.context.infrastructure.tree import chain_for
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.editing.editing import recompute_whole
 from sincpro_framework.ddd.editing.preview import is_previewing
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -54,7 +55,6 @@ from sincpro_framework.ddd.repositories.capabilities import (
     WritesAggregates,
 )
 from sincpro_framework.ddd.repositories.hooks import Hook, HookChain, Hooks
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def records_of(given: Any) -> list[Any]:
@@ -119,7 +119,7 @@ def refuse_wiring_as_a_record(records: "tuple[Any, ...]") -> None:
     wrong = [one for one in records if isinstance(one, (Hooks, Hook)) or _is_hook_class(one)]
     if wrong:
         named = wrong[0].__name__ if isinstance(wrong[0], type) else type(wrong[0]).__name__
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{named} was passed where aggregates go, so it would be stored as a record and "
             "never run — write it as `hooks=` instead"
         )
@@ -135,7 +135,7 @@ def refuse_writing_in_preview(call: str) -> None:
     number or hold a lock that nobody asked for — silently, behind a form. Refused loudly.
     """
     if is_previewing():
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{call} inside a preview: a preview stores nothing — the Command that saves does"
         )
 
@@ -149,7 +149,7 @@ def refuse_locking(for_update: bool) -> None:
     a Feature pass every test and then lose the race in production.**
     """
     if for_update:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             "for_update needs a unit of work to hold the lock until, and this store has "
             "none — the row would be released before the caller could act on it"
         )
@@ -165,7 +165,7 @@ def refuse_unarchivable(records: list[Any]) -> None:
 
     wrong = {type(one).__name__ for one in records if not isinstance(one, ArchivableMixin)}
     if wrong:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{', '.join(sorted(wrong))} cannot be archived: it does not inherit "
             "ArchivableMixin, so there is nowhere to stamp when it left — `remove` deletes it"
         )
@@ -298,7 +298,7 @@ class IRepository(ReadsAggregates, WritesAggregates):
         a hook is the same recursion by a longer route — so they share one guard.
         """
         if id(self._guard) in _running.get(frozenset()):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 "a repository hook wrote through the same repository; a rule validates, "
                 "computes or refuses, it does not write — what needs several aggregates is a "
                 "Feature"

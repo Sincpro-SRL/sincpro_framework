@@ -37,7 +37,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ValidationError
 
 from sincpro_framework.auth.entrypoint.access_control import access_control_of
-from sincpro_framework.ddd.exceptions import DuplicateAggregate, StaleAggregate
+from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.calling import (
     bus_call,
     requires_idempotency_key,
@@ -68,7 +68,6 @@ from sincpro_framework.entrypoints.domain.surface import (
     Wire,
 )
 from sincpro_framework.entrypoints.entrypoint.gateway import DEFAULT_LAYERS, Buses, Gateway
-from sincpro_framework.exceptions import FailureKind, ProgrammingError
 from sincpro_framework.use_bus import UseFramework
 
 type Profile = Literal["resource", "rpc"]
@@ -175,13 +174,13 @@ def operation_extra(bus: UseFramework, command: type) -> dict[str, Any]:
     return extra
 
 
-def _kind_of_error(error: type) -> FailureKind:
+def _kind_of_error(error: type) -> exceptions.FailureKind:
     declared = getattr(error, "failure_kind", None)
-    if isinstance(declared, str) and declared in FailureKind._value2member_map_:
-        return FailureKind(declared)
-    if issubclass(error, StaleAggregate | DuplicateAggregate):
-        return FailureKind.CONFLICT
-    return FailureKind.DOMAIN
+    if isinstance(declared, str) and declared in exceptions.FailureKind._value2member_map_:
+        return exceptions.FailureKind(declared)
+    if issubclass(error, exceptions.StaleAggregate | exceptions.DuplicateAggregate):
+        return exceptions.FailureKind.CONFLICT
+    return exceptions.FailureKind.DOMAIN
 
 
 def _declares_once(handler: type) -> bool:
@@ -561,7 +560,7 @@ class FastApiGateway(Gateway):
         wrap: Mapping[type | str, Wrapper] | None = None,
     ) -> "FastApiGateway":
         if wrap:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 "FastApiGateway: wrap decorates the dictionary-in call this wire never makes — "
                 "the route validates the DTO once and calls the bus; use an interceptor"
             )
@@ -598,7 +597,9 @@ class FastApiGateway(Gateway):
                 for alias, catalog in self.catalogs.items()
             )
         ):
-            raise ProgrammingError(f"router({bus!r}): no bus of this gateway is {bus!r}")
+            raise exceptions.ProgrammingError(
+                f"router({bus!r}): no bus of this gateway is {bus!r}"
+            )
         built = self._wire.build(surface)
         if bus is not None and len(built) == 1:
             return next(iter(built.values()))

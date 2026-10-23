@@ -8,7 +8,8 @@ new version of a stored use case inheriting — or refused for — what the prev
 
 import pytest
 
-from sincpro_framework.auth import PermissionDenied, Unauthenticated, as_system
+from sincpro_framework.auth import as_system
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.runtime.runtime_use_cases import (
     BusRegistry,
     InMemoryUseCases,
@@ -41,7 +42,7 @@ def test_a_stored_use_case_is_guarded_by_what_it_declares() -> None:
     )
     with granting(BillingPermission.QUOTE):
         assert registry.execute(QUOTE, {"amount": 2}).total == 4
-    with granting(BillingPermission.TAX), pytest.raises(PermissionDenied):
+    with granting(BillingPermission.TAX), pytest.raises(exceptions.PermissionDenied):
         registry.execute(QUOTE, {"amount": 2})
     with as_system("test"):
         assert registry.execute(QUOTE, {"amount": 2}).total == 4
@@ -49,7 +50,7 @@ def test_a_stored_use_case_is_guarded_by_what_it_declares() -> None:
 
 def test_the_use_cases_in_code_stay_guarded_on_a_new_generation() -> None:
     registry = _registry(RuntimeUseCase(name="quote", source=quote("")))
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(exceptions.Unauthenticated):
         registry.current(CommandComputeTax(amount=100), ResponseComputeTax)
     with granting(BillingPermission.TAX):
         answer = registry.current(CommandComputeTax(amount=100), ResponseComputeTax)

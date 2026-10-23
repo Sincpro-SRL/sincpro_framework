@@ -12,8 +12,8 @@ from datetime import date, datetime
 
 import pytest
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import CursorKeys
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 def round_trip(keys: tuple, ordering: str = "-id") -> tuple:
@@ -45,12 +45,12 @@ def test_a_date_comes_back_a_date():
 def test_a_cursor_from_another_ordering_is_refused():
     token = CursorKeys(keys=("ds_1",), ordering="-registered_at").token()
 
-    with pytest.raises(InvalidCriteria, match="different ordering"):
+    with pytest.raises(exceptions.InvalidCriteria, match="different ordering"):
         CursorKeys.read(token, "-row_count")
 
 
 def test_a_corrupted_token_says_so_rather_than_crashing():
-    with pytest.raises(InvalidCriteria, match="not readable"):
+    with pytest.raises(exceptions.InvalidCriteria, match="not readable"):
         CursorKeys.read("not-a-cursor!!", "-id")
 
 

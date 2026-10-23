@@ -29,6 +29,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
+from sincpro_framework import exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
@@ -48,7 +49,6 @@ from sincpro_framework.event_driven.domain.failure import (
     HandlingFailure,
     Holds,
 )
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
@@ -109,7 +109,9 @@ class EventRelay:
         or anything with its `publish(event)`. `on_failure` is `DEFAULT_FAILURE_POLICY` unless
         given. `clock` is the time, for a test to move."""
         if batch < 1:
-            raise ProgrammingError(f"a relay reads at least one event, not {batch}")
+            raise exceptions.ProgrammingError(
+                f"a relay reads at least one event, not {batch}"
+            )
         self.repository = repository
         self.source = source
         self.publisher = publisher

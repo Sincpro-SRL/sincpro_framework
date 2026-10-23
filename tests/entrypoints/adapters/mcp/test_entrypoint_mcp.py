@@ -18,8 +18,8 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.common.store import InMemoryKeyValue
@@ -130,7 +130,7 @@ def test_catalog_publishes_every_use_case_of_every_bus() -> None:
 
 
 def test_an_unguarded_bus_must_be_said_unguarded() -> None:
-    with pytest.raises(ProgrammingError, match="has no AccessControl"):
+    with pytest.raises(exceptions.ProgrammingError, match="has no AccessControl"):
         McpGateway([_billing()]).server()
 
 
@@ -199,7 +199,7 @@ def test_a_declared_name_twice_is_refused_at_build() -> None:
     twice = McpGateway(
         [_declaring("one", "facturar"), _declaring("two", "facturar")], unguarded=True
     )
-    with pytest.raises(ProgrammingError, match="tool facturar answered by"):
+    with pytest.raises(exceptions.ProgrammingError, match="tool facturar answered by"):
         twice.server()
 
 

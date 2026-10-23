@@ -16,8 +16,8 @@ from sincpro_framework import (
     DataTransferObject,
     Feature,
     UseFramework,
+    exceptions,
 )
-from sincpro_framework.exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 from sincpro_framework.introspection import app_services, describe, features
 
 
@@ -130,7 +130,7 @@ def test_replacing_a_class_that_is_not_the_one_registered_is_refused():
             return None
 
     with pytest.raises(
-        DTOAlreadyRegistered, match="Wrong replaces NotRegistered.*ComputeTax"
+        exceptions.DTOAlreadyRegistered, match="Wrong replaces NotRegistered.*ComputeTax"
     ):
 
         @billing.feature(CommandComputeTax, replaces=NotRegistered)
@@ -148,7 +148,7 @@ def test_a_second_replacement_of_the_same_handler_names_the_first():
             return ResponseComputeTax(tax=16)
 
     with pytest.raises(
-        DTOAlreadyRegistered, match="Peru replaces ComputeTax.*Bolivia already"
+        exceptions.DTOAlreadyRegistered, match="Peru replaces ComputeTax.*Bolivia already"
     ):
 
         @billing.feature(CommandComputeTax, replaces=ComputeTax)
@@ -164,7 +164,9 @@ def test_replacing_before_the_core_registered_is_refused():
         def execute(self, dto: Any) -> None:
             return None
 
-    with pytest.raises(UnknownDTOToExecute, match="nothing answers CommandComputeTax yet"):
+    with pytest.raises(
+        exceptions.UnknownDTOToExecute, match="nothing answers CommandComputeTax yet"
+    ):
 
         @billing.feature(CommandComputeTax, replaces=ComputeTax)
         class Early(Feature):
@@ -191,7 +193,9 @@ def test_a_refused_replacement_over_several_commands_replaces_none_of_them():
         def execute(self, dto: CommandCheckout) -> None:
             return None
 
-    with pytest.raises(DTOAlreadyRegistered, match="CommandCheckout is handled by Checkout"):
+    with pytest.raises(
+        exceptions.DTOAlreadyRegistered, match="CommandCheckout is handled by Checkout"
+    ):
 
         @billing.feature([CommandComputeTax, CommandCheckout], replaces=ComputeTax)
         class Both(Feature):
@@ -204,7 +208,7 @@ def test_a_refused_replacement_over_several_commands_replaces_none_of_them():
 def test_without_replaces_a_second_handler_is_still_refused():
     billing, _ = _billing()
 
-    with pytest.raises(DTOAlreadyRegistered):
+    with pytest.raises(exceptions.DTOAlreadyRegistered):
 
         @billing.feature(CommandComputeTax)
         class Duplicate(Feature):

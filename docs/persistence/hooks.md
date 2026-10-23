@@ -4,7 +4,7 @@ A hook runs **inside the write**, on one aggregate: it validates, computes or re
 class, registered for its aggregate the way a Feature is registered for its Command.
 
 ```python
-from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import exceptions
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -53,7 +53,7 @@ billing_hooks = Hooks(None).inject(billing)
 class InvoiceMustBalance(BillingHook):
     def before_save(self, invoice: Invoice) -> None:
         if not self.billing.allows(invoice.total):
-            raise DomainError(f"billing refused {invoice.total}")
+            raise exceptions.DomainError(f"billing refused {invoice.total}")
         self.trail.append("balances")
 
 
@@ -233,7 +233,7 @@ class RespectsTheCreditLimit(SalesHook):
         customer = self.customers.get(Customer, order.customer_id)  # another repository
         rate = self.bus(QueryExchangeRate(currency=order.currency), ResponseExchangeRate).rate
         if customer is None or order.total * rate > customer.credit_limit:
-            raise DomainError(f"over the credit limit, asked by {self.context.get('user_id')}")
+            raise exceptions.DomainError(f"over the credit limit, asked by {self.context.get('user_id')}")
 
 
 orders = MemoryRepository(hooks=sales_hooks)
@@ -242,7 +242,7 @@ with sales.context({"user_id": "ana"}):
     try:
         orders.save(SalesOrder(customer_id="c1", total=200, currency="USD"))  # 1 400 BOB
         raise AssertionError("over the limit")
-    except DomainError as refused:
+    except exceptions.DomainError as refused:
         assert "asked by ana" in str(refused)
 ```
 
@@ -431,7 +431,7 @@ Everything else works, and is said in the log as a warning:
 | a replacement that covers other aggregates than what it replaces | it covers its own |
 
 ```python
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 
 refusals = Hooks(None)
 try:
@@ -441,7 +441,7 @@ try:
         def before_save(self, invoice: Invoice) -> None: ...
 
     raise AssertionError("extends needs a subclass")
-except ProgrammingError as refused:
+except exceptions.ProgrammingError as refused:
     assert "has to be a subclass" in str(refused)
 ```
 

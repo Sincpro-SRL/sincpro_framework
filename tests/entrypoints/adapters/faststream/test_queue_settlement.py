@@ -22,7 +22,7 @@ from faststream.message import AckStatus
 from faststream.rabbit import RabbitBroker, TestRabbitBroker
 from faststream.redis import RedisBroker, TestRedisBroker
 
-from sincpro_framework import Feature, ProgrammingError, UseFramework
+from sincpro_framework import Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
@@ -31,7 +31,7 @@ from sincpro_framework.data_layer.caching import (
     RecordState,
 )
 from sincpro_framework.ddd import DomainEvent
-from sincpro_framework.ddd.exceptions import StaleAggregate
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints.adapters.faststream import (
     ATTEMPTS_HEADER,
     DEAD_LETTER_FROM,
@@ -258,7 +258,7 @@ def test_a_conflict_is_retried():
         class IssueInvoice(Feature):
             def execute(self, dto: CommandIssueInvoice) -> None:
                 ran.append("tried")
-                raise StaleAggregate("a newer invoice was saved")
+                raise ddd_exceptions.StaleAggregate("a newer invoice was saved")
 
         return [bus]
 
@@ -652,7 +652,9 @@ def test_consume_refuses_a_command_no_bus_answers():
     async def scenario() -> None:
         await gateway.consume(None, as_=Unknown)  # type: ignore[arg-type]
 
-    with pytest.raises(ProgrammingError, match="no bus of this gateway answers it"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="no bus of this gateway answers it"
+    ):
         asyncio.run(scenario())
 
 

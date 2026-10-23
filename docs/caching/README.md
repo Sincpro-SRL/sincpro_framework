@@ -349,12 +349,8 @@ claim so the retry runs.
 
 ```python
 from sincpro_framework import Feature, UseFramework
-from sincpro_framework.data_layer.caching import (
-    AlreadyInProgress,
-    Idempotency,
-    IdempotencyPolicy,
-    KeyReused,
-)
+from sincpro_framework.data_layer.caching import Idempotency, IdempotencyPolicy
+from sincpro_framework.data_layer.caching.domain import exceptions
 
 
 class CommandIssueReceipt(DataTransferObject):
@@ -371,7 +367,7 @@ class ResponseIssueReceipt(DataTransferObject):
 
 receipts = UseFramework("receipts", log_after_execution=False)
 idempotency = Idempotency(InMemoryKeyValue())                # RedisKeyValue(...) on replicas
-receipts.ignore_sentry_exceptions(AlreadyInProgress, KeyReused)  # duplicates are not bugs
+receipts.ignore_sentry_exceptions(exceptions.AlreadyInProgress, exceptions.KeyReused)  # duplicates are not bugs
 issued: list[int] = []
 
 
@@ -393,7 +389,7 @@ with receipts.context({"tenant_id": "acme"}):
     retry = receipts(CommandIssueReceipt(request_id="r-1", total=10), ResponseIssueReceipt)
     try:
         receipts(CommandIssueReceipt(request_id="r-1", total=99), ResponseIssueReceipt)
-    except KeyReused:
+    except exceptions.KeyReused:
         pass
 
 assert first == retry and issued == [10]

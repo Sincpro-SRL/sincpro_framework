@@ -24,9 +24,9 @@ from typing import Any
 from sincpro_framework.auth.domain.identity import Credentials
 from sincpro_framework.auth.entrypoint.transports import challenges_of, credentials_from_asgi
 from sincpro_framework.context.domain.level import EntrypointKind
+from sincpro_framework.entrypoints.adapters.rest import exceptions
 from sincpro_framework.entrypoints.adapters.rest.openapi import openapi_document
 from sincpro_framework.entrypoints.adapters.rest.routing import (
-    InvalidRequest,
     RestRoute,
     build_routes,
     failure_answer,
@@ -125,9 +125,11 @@ class RestGateway(Gateway):
             try:
                 payload = json.loads(raw.decode("utf-8")) if raw else {}
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
-                raise InvalidRequest(f"the body is not JSON: {error}") from error
+                raise exceptions.InvalidRequest(f"the body is not JSON: {error}") from error
             if not isinstance(payload, dict):
-                raise InvalidRequest("the body is a JSON object of the DTO's fields")
+                raise exceptions.InvalidRequest(
+                    "the body is a JSON object of the DTO's fields"
+                )
         return {**payload, **request.path_params}
 
     def routes(
@@ -153,7 +155,7 @@ class RestGateway(Gateway):
             async def answer(request: Request) -> JSONResponse:
                 try:
                     payload = await gateway._payload(request, route)
-                except InvalidRequest as error:
+                except exceptions.InvalidRequest as error:
                     status, body = failure_answer(error)
                     return JSONResponse({"error": body}, status_code=status)
                 context = merge_http_context(request.headers) or None

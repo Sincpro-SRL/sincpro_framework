@@ -7,6 +7,7 @@ from typing import Any, cast, overload
 from sqlalchemy import Select, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator
 from sincpro_framework.data_layer.orm.sqlalchemy.services.aggregation import (
@@ -53,10 +54,8 @@ from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.entity.entity_meta import Meta
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
 from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 DEFAULT_COUNT_CAP = 10_000
@@ -489,19 +488,19 @@ class Reading(Store):
         """
         if not for_update:
             if skip_locked or nowait:
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     "skip_locked and nowait say how to take a row lock; ask for one with "
                     "for_update=True"
                 )
             return None
         refuse_writing_in_preview("a read that locks rows")
         if self._bound is None:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 "for_update only means something inside context(): the lock is held "
                 "until the block commits"
             )
         if skip_locked and nowait:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 "skip_locked passes over a held row and nowait fails on it; ask for one"
             )
         if skip_locked:
@@ -542,7 +541,7 @@ class Reading(Store):
         )
         history = self.fetch_all(model.event_base, about)
         if any(one.reason == UNKNOWN_EVENT for one in history.dropped):
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{model.__name__} {identity} has an event no class of this process is named "
                 "like; its state cannot be rebuilt without it — import or restore that event class"
             )
@@ -659,7 +658,7 @@ class Reading(Store):
         `EntityCollection.grouped`, which buckets a page.
         """
         if not by:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "group_by needs at least one field; grouping by nothing answers one bucket "
                 "holding everything, which is a count and not a grouping"
             )
@@ -696,7 +695,7 @@ class Reading(Store):
         """
         criteria = criteria or Criteria()
         if not criteria.grouping.asked:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "grouping by nothing answers one bucket holding everything, which is a count "
                 "and not a grouping; name at least one field in criteria.grouping"
             )
@@ -729,7 +728,7 @@ class Reading(Store):
         This is where a `EntityCollection` sends anyone who tried to measure a page.
         """
         if not measures:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "measures needs at least one measure, e.g. rows=('sum', 'row_count')"
             )
 
@@ -830,7 +829,9 @@ class Reading(Store):
         would be the bug.
         """
         if not values:
-            raise InvalidCriteria("get_by needs at least one value, e.g. code='1010'")
+            raise exceptions.InvalidCriteria(
+                "get_by needs at least one value, e.g. code='1010'"
+            )
         asked = Criteria(
             where=combined(
                 *(
@@ -845,7 +846,7 @@ class Reading(Store):
         page = self.search(target, asked)
         if len(page) > 1:
             named = ", ".join(f"{field}={value!r}" for field, value in values.items())
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{len(page)} records answer to {named}; a natural key names one"
             )
         return page.first()
@@ -939,7 +940,7 @@ class Reading(Store):
         Decimal('18240.50')
         """
         if not rows or not columns:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "a pivot needs a field on each axis; one axis alone is a grouping"
             )
         criteria = criteria or Criteria()

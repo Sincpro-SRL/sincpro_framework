@@ -19,14 +19,9 @@ The draft is not the record. Activating it is the project's Command: read the st
 is `StaleAggregate` — then `assign(record, draft.values)`, save it and discard the draft.
 """
 
-from abc import ABC, abstractmethod
-from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from pydantic_core import to_jsonable_python
-
-from sincpro_framework.exceptions import ClientError, FailureKind
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -44,101 +39,3 @@ class Draft(DataTransferObject):
     """The stored record's version when the draft started (`0` for a new record): what
     `refuse_stale` compares with the record read at activation."""
     kept_at: datetime
-
-
-class DraftConflict(ClientError):
-    """A keep named a version that is no longer the draft's: another tab, another device, kept
-    in between, or the draft expired. The caller read before someone else wrote: read again,
-    merge or reload, and keep with the version read.
-
-    `current` is the version there now — `0` when there is no live draft.
-    """
-
-    failure_kind = FailureKind.CONFLICT
-
-    def __init__(self, key: str, expected: int, current: int) -> None:
-        super().__init__(
-            f"draft {key} is at version {current}, not {expected}: read it again before keeping"
-        )
-        self.key = key
-        self.expected = expected
-        self.current = current
-
-
-class DraftStore(ABC):
-    """Where drafts are kept: each by whose it is (`owner`, what a `Drafts` reads from the context)
-    and what it is about (`subject`). Each `ContextStore` gives the one kept beside it
-    (`ContextStore.drafts()`).
-
-    An adapter implements the four abstract methods over one whole key; whose and what are put
-    together here, so every store keys a draft the same way.
-    """
-
-    @abstractmethod
-    def _keep(
-        self, key: str, values: Mapping[str, Any], origin_version: int, expected: int
-    ) -> Draft: ...
-
-    def keep(
-        self,
-        owner: str,
-        subject: str,
-        values: Mapping[str, Any],
-        origin_version: int,
-        expected: int,
-    ) -> Draft:
-        """`values` as the draft of `subject` for `owner`, under a new version.
-
-            in      "user_id=ana", "invoice:7", {"discount": Decimal("50")}, origin 3, expected 0
-            out     Draft(version=…, origin_version=3, values={"discount": "50"})
-
-        `expected` is the version the caller read, `0` for none; anything else raises
-        `DraftConflict`. The TTL starts again. The draft answered is the one `read` answers
-        until the next keep.
-        """
-        return self._keep(f"{owner}/{subject}", values, origin_version, expected)
-
-    @abstractmethod
-    def _read(self, key: str) -> Draft | None: ...
-
-    def read(self, owner: str, subject: str) -> Draft | None:
-        """The live draft of `subject` for `owner`, or `None` when there is none, it was
-        discarded or it expired."""
-        return self._read(f"{owner}/{subject}")
-
-    @abstractmethod
-    def _discard(self, key: str) -> None: ...
-
-    def discard(self, owner: str, subject: str) -> None:
-        """Drop the draft of `subject` for `owner`; one with none is not an error."""
-        self._discard(f"{owner}/{subject}")
-
-    @abstractmethod
-    def subjects(self, owner: str) -> list[str]:
-        """What `owner` has a live draft of, the most recently kept first."""
-
-    def _milliseconds(self, moment: datetime) -> int:
-        """Where a chain started from nothing begins: the clock, above any version a chain that
-        ended a TTL ago could have reached."""
-        return int(moment.timestamp() * 1000)
-
-    def _check(self, key: str, expected: int, current: int, live: bool) -> None:
-        """A keep wins only over what it read: the live version, or `0` when none is live."""
-        if expected != (current if live else 0):
-            raise DraftConflict(key, expected, current if live else 0)
-
-    def _drafted(
-        self,
-        key: str,
-        values: Mapping[str, Any],
-        version: int,
-        origin_version: int,
-        now: datetime,
-    ) -> Draft:
-        return Draft(
-            key=key,
-            values=to_jsonable_python(dict(values)),
-            version=version,
-            origin_version=origin_version,
-            kept_at=now,
-        )

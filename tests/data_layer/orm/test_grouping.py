@@ -11,6 +11,7 @@ from datetime import datetime
 import pytest
 
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import bucket_range
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Any_,
@@ -29,7 +30,6 @@ from sincpro_framework.ddd.criteria import (
     parse_order,
 )
 from sincpro_framework.ddd.entity.entity_collection import Count
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .models import Things
 
@@ -99,14 +99,14 @@ def test_every_level_named_is_answered_and_nothing_below_the_last(store):
 
 def test_grouping_by_nothing_is_refused(store):
     """A bucket holding everything is a count, not a grouping."""
-    with pytest.raises(InvalidCriteria, match="at least one field"):
+    with pytest.raises(exceptions.InvalidCriteria, match="at least one field"):
         store.group_by_levels(Things, Criteria())
 
 
 def test_grouping_by_a_field_that_does_not_exist_is_refused(store):
     """Unlike a filter, this is NOT dropped in silence: a grouping by a missing field does not
     answer less, it answers something else."""
-    with pytest.raises(InvalidCriteria):
+    with pytest.raises(exceptions.InvalidCriteria):
         store.group_by_levels(
             Things, Criteria(grouping=Grouping(group_by=(Level(field="nope"),)))
         )
@@ -124,7 +124,7 @@ def test_a_date_is_grouped_at_the_grain_asked_for(store):
 
 
 def test_a_grain_that_does_not_exist_is_refused_naming_the_ones_that_do():
-    with pytest.raises(InvalidCriteria, match="granularity.*quarter"):
+    with pytest.raises(exceptions.InvalidCriteria, match="granularity.*quarter"):
         Level(field="made_at", grain="fortnight")  # type: ignore[arg-type]
 
 
@@ -214,7 +214,7 @@ def test_the_end_of_a_bucket_is_the_start_of_the_next():
 
 
 def test_a_range_grain_that_does_not_exist_is_refused_too():
-    with pytest.raises(InvalidCriteria, match="granularity"):
+    with pytest.raises(exceptions.InvalidCriteria, match="granularity"):
         bucket_range("fortnight", "2026-Q3")
 
 
@@ -350,7 +350,7 @@ def test_having_reads_what_the_groups_folded(store, things):
 
 
 def test_having_over_something_no_group_folded_is_refused(store):
-    with pytest.raises(InvalidCriteria, match="is not something a group folded"):
+    with pytest.raises(exceptions.InvalidCriteria, match="is not something a group folded"):
         store.group_by_levels(
             Things,
             Criteria(
@@ -393,7 +393,7 @@ def test_groups_can_be_ordered_by_how_many_they_hold(store):
 
 
 def test_ordering_groups_by_something_that_is_not_one_is_refused(store):
-    with pytest.raises(InvalidCriteria, match="ordered by a level"):
+    with pytest.raises(exceptions.InvalidCriteria, match="ordered by a level"):
         store.group_by_levels(
             Things,
             Criteria(
@@ -577,13 +577,13 @@ class TestTheTwoMeasuresThatAreNotAPlainFunction:
             )
         )
 
-        with pytest.raises(InvalidCriteria, match="does not compute percentiles"):
+        with pytest.raises(exceptions.InvalidCriteria, match="does not compute percentiles"):
             store.group_by_levels(Things, reading)
 
     def test_a_measure_that_takes_no_argument_refuses_one(self):
-        with pytest.raises(InvalidCriteria, match="takes no argument"):
+        with pytest.raises(exceptions.InvalidCriteria, match="takes no argument"):
             Measure(function="sum", field="size", argument=0.5)
 
     def test_a_percentile_without_its_fraction_is_not_a_percentile(self):
-        with pytest.raises(InvalidCriteria, match="between 0 and 1"):
+        with pytest.raises(exceptions.InvalidCriteria, match="between 0 and 1"):
             Measure(function="percentile", field="size")

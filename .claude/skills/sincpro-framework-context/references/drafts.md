@@ -20,7 +20,7 @@ billing.context_store(InMemoryContexts())                        # one process, 
 ```
 
 Nothing else to register: the context store keeps the drafts beside the contexts, each lasting
-`drafts_ttl` (seven days) after its last keep.
+`kept_ttl` (seven days) after its last keep.
 
 ## 2. Keep and read, naming the version read
 

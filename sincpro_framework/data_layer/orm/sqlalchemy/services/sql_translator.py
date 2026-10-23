@@ -34,6 +34,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import QueryableAttribute
 from sqlalchemy.sql.elements import UnaryExpression
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.services import extension_typing
 from sincpro_framework.ddd.criteria import (
     All,
@@ -52,8 +53,6 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity_meta import Meta
-from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def _as_stored_text(column: Any) -> Any:
@@ -210,7 +209,7 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
                 _as_stored_text(column).like(f'%"{_escaped(value)}"%', escape=LIKE_ESCAPE)
             )
         case _:
-            raise InvalidCriteria(f"no SQL translation for operator '{operator}'")
+            raise exceptions.InvalidCriteria(f"no SQL translation for operator '{operator}'")
 
 
 def clause_over(
@@ -550,7 +549,7 @@ def grouping_column(model: type, level: Level, dialect: str = "sqlite") -> Colum
     if level.part is not None:
         part_translator = PART_TRANSLATORS.get(dialect)
         if part_translator is None:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"no date part translator for dialect {dialect!r}; the built-in ones are "
                 f"{sorted(PART_TRANSLATORS)} — add yours with register_part_translator()"
             )
@@ -559,13 +558,13 @@ def grouping_column(model: type, level: Level, dialect: str = "sqlite") -> Colum
         return column
 
     if level.grain not in GRAINS:
-        raise InvalidCriteria(
+        raise exceptions.InvalidCriteria(
             f"{level.grain!r} is not a granularity; use one of {sorted(GRAINS)}"
         )
 
     translator = GRAIN_TRANSLATORS.get(dialect)
     if translator is None:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"no date grain translator for dialect {dialect!r}; the built-in ones are "
             f"{sorted(GRAIN_TRANSLATORS)} — add yours with register_grain_translator()"
         )
@@ -605,7 +604,9 @@ def bucket_range(grain: str, value: str) -> tuple[datetime, datetime]:
         start = datetime.fromisoformat(value)
         return start, start + timedelta(days=1)
 
-    raise InvalidCriteria(f"{grain!r} is not a granularity; use one of {sorted(GRAINS)}")
+    raise exceptions.InvalidCriteria(
+        f"{grain!r} is not a granularity; use one of {sorted(GRAINS)}"
+    )
 
 
 def bucket_condition(level: Level, value: Any) -> Expression:

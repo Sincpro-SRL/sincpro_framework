@@ -8,6 +8,7 @@ SQL and never added up here.
 import pytest
 
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
@@ -17,7 +18,6 @@ from sincpro_framework.ddd.criteria import (
     Specification,
     parse_order,
 )
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .models import ROW_COUNT, Things
 
@@ -79,11 +79,11 @@ def test_a_pivot_cuts_a_date_on_either_axis(store: Repository):
 
 
 def test_a_pivot_needs_both_axes_and_a_fold_it_knows(store: Repository):
-    with pytest.raises(InvalidCriteria, match="a field on each axis"):
+    with pytest.raises(exceptions.InvalidCriteria, match="a field on each axis"):
         store.pivot(Things, rows=["owner"], columns=[], weight=("sum", "size"))
-    with pytest.raises(InvalidCriteria, match="is not a measure"):
+    with pytest.raises(exceptions.InvalidCriteria, match="is not a measure"):
         store.pivot(Things, rows=["owner"], columns=["size"], evil=("pg_sleep", "size"))
-    with pytest.raises(InvalidCriteria):
+    with pytest.raises(exceptions.InvalidCriteria):
         store.pivot(Things, rows=["nope"], columns=["size"], weight=("sum", "size"))
 
 

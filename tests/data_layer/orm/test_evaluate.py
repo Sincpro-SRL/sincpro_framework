@@ -9,6 +9,7 @@ from every comparison, and a Python evaluator that answered `None != 'x'` as tru
 import pytest
 
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Any_,
@@ -20,7 +21,6 @@ from sincpro_framework.ddd.criteria import (
     matches,
 )
 from sincpro_framework.ddd.entity.entity_collection import Count
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .models import ROW_COUNT, Thing, Things, a_thing
 
@@ -107,7 +107,7 @@ def test_a_null_answers_nothing_but_the_null_question():
 def test_an_operator_nobody_translated_is_refused():
     condition = Condition.model_construct(field="size", value=1, operator="nope")
 
-    with pytest.raises(InvalidCriteria, match="no in-memory evaluation"):
+    with pytest.raises(exceptions.InvalidCriteria, match="no in-memory evaluation"):
         matches(a_thing(1), condition)
 
 

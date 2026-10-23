@@ -5,7 +5,7 @@ a key reused with another payload, as the IETF `Idempotency-Key` draft does), ne
 report.
 """
 
-from sincpro_framework.exceptions import ClientError, FailureKind
+from sincpro_framework.exceptions import ClientError, FailureKind, ProgrammingError
 
 
 class AlreadyInProgress(ClientError):

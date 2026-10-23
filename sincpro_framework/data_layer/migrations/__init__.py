@@ -18,11 +18,13 @@ timeline and its commands, the command line.
 
 from sincpro_framework.data_layer.migrations.adapters.in_memory import InMemoryEngine
 from sincpro_framework.data_layer.migrations.domain.engine import MigrationEngine
+from sincpro_framework.data_layer.migrations.domain.exceptions import (
+    MigrationFailed,
+    MigrationRefused,
+)
 from sincpro_framework.data_layer.migrations.domain.step import (
     Chain,
     ChainState,
-    MigrationFailed,
-    MigrationRefused,
     Position,
     Step,
 )

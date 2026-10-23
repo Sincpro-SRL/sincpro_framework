@@ -26,7 +26,7 @@ from typing import Any
 import pytest
 from starlette.testclient import TestClient
 
-from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     INVALID_PARAMS,
@@ -224,7 +224,7 @@ def _spec_bus(ran: list[tuple[str, Any]]) -> UseFramework:
     class Refuses(Feature):
         def execute(self, dto: Refuse) -> None:
             ran.append(("refuse", None))
-            raise ProgrammingError("never")
+            raise exceptions.ProgrammingError("never")
 
     spec.build_root_bus()
     return spec

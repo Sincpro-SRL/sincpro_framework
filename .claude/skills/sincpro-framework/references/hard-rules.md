@@ -154,15 +154,15 @@ All of them are `FrameworkError`s; anything else is a crash — `internal`, repo
 traceback, nothing of it told to the caller.
 
 ```python
-from sincpro_framework import ClientError, FailureKind
-from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework import exceptions
 
 
-class InvoiceNotFound(ClientError):
-    failure_kind = FailureKind.NOT_FOUND
+class InvoiceNotFound(exceptions.ClientError):
+    failure_kind = exceptions.FailureKind.NOT_FOUND
 
 
-class InvoiceDoesNotBalance(DomainError):
+class InvoiceDoesNotBalance(ddd_exceptions.DomainError):
     pass
 ```
 

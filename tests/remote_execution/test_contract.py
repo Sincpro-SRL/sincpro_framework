@@ -21,24 +21,18 @@ from structlog.testing import capture_logs
 from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
-    FailureKind,
     Feature,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.context import requires_context
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.exceptions import DomainError
 from sincpro_framework.entrypoints.entrypoint.catalog import Catalog
 from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
-from sincpro_framework.exceptions import ContextRequired, UnknownDTOToExecute
 from sincpro_framework.introspection.operations import operations_of
-from sincpro_framework.remote_execution import (
-    ContextFailed,
-    ContextTimeout,
-    ContextUnavailable,
-    DTODoesNotFit,
-)
+from sincpro_framework.remote_execution.domain import exceptions as remote_exceptions
 from sincpro_framework.sincpro_conf import settings
 from tests.remote_execution.hosting import TRANSPORTS, host_over
 
@@ -101,7 +95,7 @@ class StockPicked(DomainEvent):
     sku: str = ""
 
 
-class OverCredit(DomainError):
+class OverCredit(ddd_exceptions.DomainError):
     """A refusal with fields of its own, and a constructor that takes them."""
 
     def __init__(self, customer: str, limit: Decimal) -> None:
@@ -329,11 +323,13 @@ def test_a_dto_missing_a_required_field_does_not_fit_and_says_which(remote):
     class Broken(DataTransferObject):
         quantity: int
 
-    with pytest.raises(DTODoesNotFit, match="sku: Field required") as refused:
+    with pytest.raises(
+        remote_exceptions.DTODoesNotFit, match="sku: Field required"
+    ) as refused:
         remote.shop(_same_name_as(CommandQuote, Broken)(quantity=1))
 
     assert refused.value.fields == ["sku: Field required"]
-    assert refined_failure_kind(refused.value) == FailureKind.INVALID
+    assert refined_failure_kind(refused.value) == exceptions.FailureKind.INVALID
 
 
 def test_an_answer_missing_a_field_the_caller_needs_does_not_fit_and_says_which(remote):
@@ -341,7 +337,9 @@ def test_an_answer_missing_a_field_the_caller_needs_does_not_fit_and_says_which(
         total: Decimal
         discount: Decimal
 
-    with pytest.raises(DTODoesNotFit, match="the answer of contract-shop .* discount"):
+    with pytest.raises(
+        remote_exceptions.DTODoesNotFit, match="the answer of contract-shop .* discount"
+    ):
         remote.shop(CommandQuote(sku="P-1"), ResponseQuoteNewer)
 
 
@@ -352,7 +350,9 @@ def test_a_dto_the_host_does_not_answer_is_unknown_there(remote):
     class CommandRenamed(DataTransferObject):
         sku: str
 
-    with pytest.raises(UnknownDTOToExecute, match="does not answer .*CommandRenamed"):
+    with pytest.raises(
+        exceptions.UnknownDTOToExecute, match="does not answer .*CommandRenamed"
+    ):
         remote.shop(CommandRenamed(sku="P-1"))
 
 
@@ -470,7 +470,7 @@ def test_an_error_arrives_as_itself_with_its_attributes(service):
         service.shop(CommandFail(how="domain"))
     with pytest.raises(ValueError, match="quantity is negative"):
         service.shop(CommandFail(how="builtin"))
-    with pytest.raises(ContextRequired) as required:
+    with pytest.raises(exceptions.ContextRequired) as required:
         service.shop(CommandGated())
 
     assert refused.value.customer == "acme" and Decimal(refused.value.limit) == Decimal("100")
@@ -478,7 +478,9 @@ def test_an_error_arrives_as_itself_with_its_attributes(service):
 
 
 def test_an_error_whose_class_only_the_host_knows_is_context_failed(remote):
-    with pytest.raises(ContextFailed, match="raised where it runs") as failed:
+    with pytest.raises(
+        remote_exceptions.ContextFailed, match="raised where it runs"
+    ) as failed:
         remote.shop(CommandFail(how="only-here"))
 
     assert failed.value.kind.endswith("OnlyHere")
@@ -494,19 +496,19 @@ def test_a_host_that_is_down_did_not_run_it(scheme):
     shop = _shop("A", Heard(), engine=providers.Singleton(Exploding))
     shop.hosted_by(f"{scheme}://127.0.0.1:9?timeout=1")
 
-    with pytest.raises(ContextUnavailable) as unavailable:
+    with pytest.raises(remote_exceptions.ContextUnavailable) as unavailable:
         shop(CommandQuote(sku="P-1"))
 
-    assert refined_failure_kind(unavailable.value) == FailureKind.UNAVAILABLE
+    assert refined_failure_kind(unavailable.value) == exceptions.FailureKind.UNAVAILABLE
 
 
 def test_a_deadline_passed_after_the_call_was_sent_may_have_run(remote):
     remote.shop.hosted_by(f"{remote.shop.hosted_at}".replace("timeout=5", "timeout=0.2"))
 
-    with pytest.raises(ContextTimeout, match="within 0.2s") as late:
+    with pytest.raises(remote_exceptions.ContextTimeout, match="within 0.2s") as late:
         remote.shop(CommandSlow(seconds=1))
 
-    assert refined_failure_kind(late.value) == FailureKind.UNKNOWN_OUTCOME
+    assert refined_failure_kind(late.value) == exceptions.FailureKind.UNKNOWN_OUTCOME
 
 
 # ---------------------------------------------------------------------------------------------

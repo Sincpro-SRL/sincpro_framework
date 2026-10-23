@@ -21,6 +21,7 @@ from typing import Any, cast
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
+from sincpro_framework import exceptions
 from sincpro_framework.common.ordering import name_of
 from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.context.entrypoint.facade import carrying
@@ -39,11 +40,6 @@ from sincpro_framework.entrypoints.adapters.cron.domain import (
     Trigger,
 )
 from sincpro_framework.event_driven import DeliveryFailurePolicy, EventRelay, Publisher
-from sincpro_framework.exceptions import (
-    BusAlreadyBuilt,
-    DependencyAlreadyRegistered,
-    DependencyNotRegistered,
-)
 from sincpro_framework.observability import Observability
 
 
@@ -118,12 +114,12 @@ class Crons[TDeps]:
 
     def add_dependency(self, name: str, dependency: Any) -> None:
         if self._built:
-            raise BusAlreadyBuilt(
+            raise exceptions.BusAlreadyBuilt(
                 f"dependency {name} registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the gateway starts"
             )
         if name in self._dependencies:
-            raise DependencyAlreadyRegistered(
+            raise exceptions.DependencyAlreadyRegistered(
                 f"'{self.name}' already has a dependency {name}"
             )
         self._dependencies[name] = dependency
@@ -152,7 +148,7 @@ class Crons[TDeps]:
 
         def register(cron_class: C) -> C:
             if self._built:
-                raise BusAlreadyBuilt(
+                raise exceptions.BusAlreadyBuilt(
                     f"cron {cron_class.__name__} registered late: '{self.name}' is already built, so it would "
                     "never be used — register it before the gateway starts"
                 )
@@ -220,7 +216,7 @@ class Crons[TDeps]:
         """Switch a registered cron off — the one in force where it was registered: it never
         runs, and no status shows it. One not registered is a warning."""
         if self._built:
-            raise BusAlreadyBuilt(
+            raise exceptions.BusAlreadyBuilt(
                 f"switching off {cron_class.__name__} registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the gateway starts"
             )
@@ -252,7 +248,7 @@ class Crons[TDeps]:
             declared = _declared_dependencies(definition.cron_class)
             missing = sorted(declared - set(self._dependencies))
             if missing:
-                raise DependencyNotRegistered(
+                raise exceptions.DependencyNotRegistered(
                     f"{definition.cron_class.__name__} needs {', '.join(missing)}, which "
                     f"'{self.name}' does not have — add_dependency it before the gateway starts"
                 )

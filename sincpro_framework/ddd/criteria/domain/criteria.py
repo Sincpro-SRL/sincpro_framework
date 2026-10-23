@@ -20,6 +20,7 @@ from pydantic import (
     field_validator,
 )
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import (
     Expression,
     combined,
@@ -29,7 +30,6 @@ from sincpro_framework.ddd.criteria.domain.grouping import Grouping, Level, Meas
 from sincpro_framework.ddd.criteria.domain.pagination import Cursor, Pagination
 from sincpro_framework.ddd.criteria.domain.sort import Sort, parse_order
 from sincpro_framework.ddd.criteria.domain.strict import Strict, tolerates
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -196,7 +196,9 @@ class Criteria(Strict):
             try:
                 value = json.loads(value)
             except ValueError as error:
-                raise InvalidCriteria(f"'where' does not read as JSON: {error}") from error
+                raise exceptions.InvalidCriteria(
+                    f"'where' does not read as JSON: {error}"
+                ) from error
 
         return expression_from(value, tolerates(info))
 

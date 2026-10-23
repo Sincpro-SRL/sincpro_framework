@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import Boolean, Column, DateTime, MetaData, Numeric, Text, select
 from sqlalchemy.orm import registry
 
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.entity import (
@@ -24,6 +25,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.entit
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity, computed
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Condition,
@@ -38,8 +40,6 @@ from sincpro_framework.ddd.criteria import (
     Sort,
 )
 from sincpro_framework.ddd.entity.entity_meta import describe_class
-from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.runtime.testing.contracts.computed_fields import (
     ComputedFieldsContract,
 )
@@ -250,7 +250,7 @@ def test_a_computed_field_is_never_written():
 
 
 def test_a_computed_field_over_a_column_the_table_lacks_is_refused_when_mapped():
-    with pytest.raises(ProgrammingError, match="Broken.nonsense.*does not have"):
+    with pytest.raises(exceptions.ProgrammingError, match="Broken.nonsense.*does not have"):
         map_aggregates(registry(metadata=MetaData()), {Broken: broken_table})
 
 
@@ -262,7 +262,9 @@ def test_a_memory_store_refuses_a_field_it_has_no_python_for():
         Criteria(order=(Sort(field="doubled"),)),
         Criteria(grouping=Grouping(group_by=(Level(field="doubled"),))),
     ):
-        with pytest.raises(InvalidCriteria, match="SqlOnly.doubled is computed in SQL"):
+        with pytest.raises(
+            ddd_exceptions.InvalidCriteria, match="SqlOnly.doubled is computed in SQL"
+        ):
             (
                 store.search(SqlOnly, criteria)
                 if not criteria.grouping.asked
@@ -319,9 +321,9 @@ def test_an_ordinary_group_can_be_opened(bills: Any):
 
 
 def test_a_level_takes_a_grain_or_a_part_and_not_both():
-    with pytest.raises(InvalidCriteria, match="a grain.*or a part"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="a grain.*or a part"):
         Level(field="posted_at", grain=Grain.MONTH, part=Part.MONTH)
-    with pytest.raises(InvalidCriteria, match="not a part of a date"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="not a part of a date"):
         Level(field="posted_at", part="fortnight")  # type: ignore[arg-type]
 
 
@@ -331,7 +333,7 @@ def test_a_page_of_ids_per_group_is_refused_for_a_part(bills: Any):
         grouping=Grouping(group_by=(Level(field="posted_at", part=Part.MONTH),)),
     )
 
-    with pytest.raises(InvalidCriteria, match="has no rows to page"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="has no rows to page"):
         bills.group_by_levels(Bill, asked)
 
 
@@ -385,7 +387,7 @@ def test_a_filled_level_is_listed_under_every_parent(bills: Any):
 
 
 def test_a_level_with_nothing_to_list_cannot_be_filled(bills: Any):
-    with pytest.raises(InvalidCriteria, match="cannot be filled"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="cannot be filled"):
         grouped(bills, Level(field="owner", fill=True))
 
 
@@ -395,7 +397,7 @@ def test_a_filled_level_cannot_be_filtered_or_paged_by_its_groups(bills: Any):
         where_measures=Condition(field="count", operator=Operator.GT, value=0),
     )
 
-    with pytest.raises(InvalidCriteria, match="is filled"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="is filled"):
         bills.group_by_levels(Bill, Criteria(grouping=having))
 
 
@@ -421,7 +423,9 @@ def test_a_date_grain_is_filled_between_the_bounds_the_filter_gives():
 def test_a_date_grain_with_no_bounds_cannot_be_filled():
     store = Repository(fresh("sqlite://", analytics.metadata))
 
-    with pytest.raises(InvalidCriteria, match="needs the filter to bound it at both ends"):
+    with pytest.raises(
+        ddd_exceptions.InvalidCriteria, match="needs the filter to bound it at both ends"
+    ):
         grouped(store, Level(field="posted_at", grain=Grain.MONTH, fill=True))
 
 
@@ -449,7 +453,7 @@ def test_all_or_any_of_a_boolean(bills: Any):
 
 
 def test_a_boolean_fold_is_refused_for_anything_that_is_not_a_boolean(bills: Any):
-    with pytest.raises(InvalidCriteria, match="folds a boolean"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="folds a boolean"):
         grouped(
             bills,
             Level(field="owner"),
@@ -459,7 +463,7 @@ def test_a_boolean_fold_is_refused_for_anything_that_is_not_a_boolean(bills: Any
 
 def test_the_median_is_the_half_percentile_and_needs_no_argument():
     assert Measure(function="median", field="total").argument is None
-    with pytest.raises(InvalidCriteria, match="takes no argument"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="takes no argument"):
         Measure(function="median", field="total", argument=0.5)
 
 
@@ -470,7 +474,7 @@ def test_the_median_is_answered_in_memory_and_refused_where_sql_has_no_percentil
     assert grouped(memory, Level(field="owner"), measures=median)[0].measures == {"mid": 75.0}
 
     sqlite = Repository(fresh("sqlite://", analytics.metadata))
-    with pytest.raises(InvalidCriteria, match="does not compute percentiles"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="does not compute percentiles"):
         grouped(sqlite, Level(field="owner"), measures=median)
 
 
@@ -519,7 +523,7 @@ def test_a_dialect_with_no_part_translation_is_refused_naming_how_to_add_one():
         grouping_column,
     )
 
-    with pytest.raises(ProgrammingError, match="register_part_translator"):
+    with pytest.raises(exceptions.ProgrammingError, match="register_part_translator"):
         grouping_column(Bill, Level(field="posted_at", part=Part.MONTH), "oracle")
 
 

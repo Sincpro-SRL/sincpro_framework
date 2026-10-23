@@ -8,8 +8,8 @@ cannot both write version two, and a unit of work either commits everything or n
 
 import pytest
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Condition, Criteria, Pagination
-from sincpro_framework.ddd.exceptions import DuplicateAggregate, StaleAggregate
 
 from .models import ROW_COUNT, Note, Notes, Thing, Things, a_thing
 
@@ -73,7 +73,7 @@ def test_the_second_writer_of_the_same_version_is_refused(store):
     store.save(first)
 
     second.title = "second loses"
-    with pytest.raises(StaleAggregate, match="changed since it was read"):
+    with pytest.raises(exceptions.StaleAggregate, match="changed since it was read"):
         store.save(second)
     assert store.get(Note, note.id).title == "first wins"
 
@@ -91,7 +91,7 @@ def test_an_aggregate_without_a_version_is_still_updated(store):
 
 def test_a_record_built_by_hand_with_a_taken_id_is_a_duplicate(store):
     """Not a merge: the update path is to read the record and change it."""
-    with pytest.raises(DuplicateAggregate, match="collides"):
+    with pytest.raises(exceptions.DuplicateAggregate, match="collides"):
         store.save(
             Thing(
                 thing_id="th_0001", name="twin", size=0, tags=[], made_at=a_thing(1).made_at
@@ -117,7 +117,7 @@ def test_removing_a_stale_entity_is_refused_too(store):
     fresh.title = "moved on"
     store.save(fresh)
 
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(exceptions.StaleAggregate):
         store.remove(stale)
     assert store.get(Note, note.id) is not None
 

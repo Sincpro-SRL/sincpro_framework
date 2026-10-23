@@ -24,6 +24,7 @@ from sincpro_framework.entrypoints.adapters.fastapi.calling import (
     bus_call,
     request_context,
 )
+from sincpro_framework.entrypoints.adapters.fastapi.exceptions import IdempotencyKeyMissing
 from sincpro_framework.entrypoints.adapters.fastapi.gateway import (
     FastApiGateway,
     FastApiWire,
@@ -32,7 +33,6 @@ from sincpro_framework.entrypoints.adapters.fastapi.gateway import (
 )
 from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     PROBLEM_JSON,
-    IdempotencyKeyMissing,
     Problem,
     ProblemError,
     ProblemMiddleware,
