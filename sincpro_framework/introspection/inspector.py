@@ -74,8 +74,12 @@ class DtoMetadata(DataTransferObject):
 
 
 def built_bus(framework_instance: UseFramework) -> FrameworkBus:
+    """The generation answering now — brought up to date first, when something was registered
+    after it was built."""
     if not framework_instance.was_initialized or framework_instance.bus is None:
         raise ValueError(NOT_BUILT)
+    framework_instance.build_root_bus()
+    assert framework_instance.bus is not None
     return framework_instance.bus
 
 

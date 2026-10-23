@@ -35,8 +35,8 @@ def thirty_days_by_default(dto, call_next: CallNext[ResponseCreateInvoice]) -> R
   the interceptor. An interceptor that never calls `call_next` answers alone and is not checked.
 - An exception in an interceptor goes to the same error chain as the handler's and is reported
   with `error_at` on the interceptor's line.
-- Interceptors are fixed when the bus is built: `BusAlreadyBuilt` afterwards; a Command nobody
-  answers raises `UnknownDTOToExecute` at build. The decorator only runs when its module is
+- Registered after the bus was built, an interceptor wraps from the next execution; a Command
+  nobody answers raises `UnknownDTOToExecute` when the generation is built. The decorator only runs when its module is
   imported: import the interceptors module from the context's `__init__.py`.
 
 ## Recipes

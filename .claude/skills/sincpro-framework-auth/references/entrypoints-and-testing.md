@@ -19,9 +19,9 @@ identity is what the host opened.
 - **Gateway build rule:** a published use case on a guarded bus must declare something
   (`@auth.requires`, `@auth.authenticated` or `@auth.public`), or the gateway build fails. A bus
   with no `AccessControl` needs `unguarded=True` on the gateway.
-- **Order:** `auth.on(bus)` before the bus is built — a first call and `bus.with_trace(...)` build
-  it; afterwards `auth.on` raises `BusAlreadyBuilt`. And before any gateway: a gateway reads the
-  bus's `AccessControl` when it is built, so one built earlier sees an unguarded bus.
+- **Order:** `auth.on(bus)` before any gateway — a gateway reads the bus's `AccessControl` when
+  it is built, so one built earlier sees an unguarded bus. On a bus already executed, `auth.on`
+  guards from the next execution; until then nothing is checked.
 - **A call to another service** carries who it acts for: the caller's provider issues a short JWT
   (`credentials_for`) in its own header; the host verifies it with the same keys. Only subject,
   kind, tenant and permissions travel — never claims. The system identity does not cross services,

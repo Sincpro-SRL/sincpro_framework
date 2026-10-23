@@ -34,11 +34,11 @@ The previous text of this page described version 2.4.1. Its history is in git.
 
 | Package | What it is | Where to read |
 |---|---|---|
-| `sincpro_abstractions.py`, `use_bus.py`, `bus.py`, `ioc.py`, `dependencies.py` | The bus: `DataTransferObject`, `Feature`, `ApplicationService`, registering, building, routing and running a call; the typed dependencies | [core](../core/README.md) |
+| `sincpro_abstractions.py`, `use_bus.py`, `bus.py`, `ioc.py`, `dependencies.py` | The bus: `DataTransferObject`, `Feature`, `ApplicationService`, registering, building, routing and running a call; the typed dependencies | [core](../core/README.md), [features](../core/features.md), [extending a bus](../core/extending.md) |
 | `context/` | The flow of a call: who and for which tenant, a tree from the process to each execution, the execution's identity, providers, stores, drafts | [context](../core/context-manager.md), [drafts](../core/drafts.md) |
 | `bus_pipeline/` | The three layers on the path of a call: what wraps a handler (interceptors, control), and what is announced about it when it begins (incomes) and when it ends (outcomes), both observation | [interceptors](../core/interceptors.md), [incomes](../core/incomes.md), [outcomes](../core/outcomes.md) |
 | `pipelines/` | An ApplicationService that is the order of its steps (`Pipeline`), and the interceptor the bus attaches to keep each run in the context | [pipelines](../core/pipelines.md) |
-| `error_handler.py` | The error chains of the three layers | [core](../core/README.md), [exceptions](../core/exceptions.md) |
+| `error_handler.py` | The error chains of the three layers | [error handlers](../core/error-handlers.md), [exceptions](../core/exceptions.md) |
 | `observability/` | The signals sent to external backends: traces, errors, logs, metrics | [observability](../observability/README.md) |
 | `ddd/`, `data_layer/orm` | The domain vocabulary — entities, `Criteria`, relations, `DomainEvent` — and the stores that persist it | [persistence](../persistence/README.md) |
 | `event_driven/` | Delivering events: `Publisher`, queues, `Subscriber`, the relay | [events](../events/README.md) |
@@ -48,7 +48,7 @@ The previous text of this page described version 2.4.1. Its history is in git.
 | `data_layer/caching`, `data_layer/migrations`, `data_layer/data_analysis` | A key-value store, query caching and idempotency; the schema timeline of every context; reads kept as frames | [caching](../caching/README.md), [migrations](../migrations/README.md), [data analysis](../data_analysis/README.md) |
 | `settings/` | One document resolved into typed shapes | [settings](../core/settings.md) |
 | `introspection/` | Reads a built bus's registries; what entrypoints build their catalogs on | [entrypoints](../entrypoints/README.md) |
-| `runtime/` | Use cases loaded as source, workflows (experimental), the doubles and checks for a project's tests | [runtime use cases](../runtime_use_cases/README.md), [workflows](../workflows/README.md) |
+| `runtime/` | Use cases loaded as source, the doubles and checks for a project's tests | [runtime use cases](../runtime_use_cases/README.md) |
 | `aio/` | The async facade of a bus (`get_async_bus`) | [core](../core/README.md) |
 
 ## Two kinds of hook on the path

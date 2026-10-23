@@ -8,7 +8,7 @@ is a `Pipeline` brings it. What a project may leave out is its `records = False`
 from typing import TYPE_CHECKING
 
 from sincpro_framework.bus_pipeline.interceptors.interceptor import InterceptorRegistration
-from sincpro_framework.pipelines.pipeline import Pipeline
+from sincpro_framework.pipelines.pipeline import Await, Pipeline
 from sincpro_framework.pipelines.recorder import PipelineRecorder
 from sincpro_framework.sincpro_logger import logger
 
@@ -19,8 +19,6 @@ ENDING = ("ok", "failure")
 class BusPipelinesMixin:
     """What a `UseFramework` adds to attach the recorder of its pipelines."""
 
-    _interceptors: list[InterceptorRegistration]
-
     if TYPE_CHECKING:
 
         @property
@@ -30,15 +28,16 @@ class BusPipelinesMixin:
 
         def app_service_handlers(self) -> dict[type, type]: ...
 
-    def _attach_pipelines(self) -> None:
+    def _pipeline_recorders(self) -> list[InterceptorRegistration]:
         """1. Each ApplicationService that is a `Pipeline` and records.
         2. What its recipes ask is said in the logs, never refused: a step this bus does not
            answer, a field the input lacks.
-        Final: the recorder wraps its Command and the steps this bus answers — an interceptor
-        cannot wrap what the bus does not answer.
+        Final: one recorder per pipeline, wrapping its Command and the steps this bus answers — an
+        interceptor cannot wrap what the bus does not answer.
 
-        Context: attached at build and not registered, so a `fresh()` generation attaches its own
-        when it is built."""
+        Context: read at every build and never registered, so each generation of the bus wraps
+        its handlers with recorders of its own."""
+        recorders: list[InterceptorRegistration] = []
         features = self.feature_handlers()
         pipelines = self.app_service_handlers()
         answered = {*features, *pipelines}
@@ -49,7 +48,16 @@ class BusPipelinesMixin:
                 and handler.records
             ):
                 continue
-            steps = [step for recipe in handler.recipes() for step in recipe]
+            declared = [step for recipe in handler.recipes() for step in recipe]
+            for waits in declared:
+                if isinstance(waits, Await) and waits.name not in getattr(
+                    command, "model_fields", {}
+                ):
+                    logger.warning(
+                        f"pipeline {handler.__name__}: it waits for '{waits.name}', which "
+                        f"{command.__name__} has no field to be run again with"
+                    )
+            steps = [step for step in declared if isinstance(step, type)]
             if handler.always is not None:
                 steps.append(handler.always)
             wrapped: list[type] = [command]
@@ -71,6 +79,7 @@ class BusPipelinesMixin:
                             f"pipeline {handler.__name__}: step {step.__name__} needs '{field}', "
                             f"which {command.__name__} does not have"
                         )
-            self._interceptors.append(
+            recorders.append(
                 InterceptorRegistration(PipelineRecorder(handler, command), tuple(wrapped))
             )
+        return recorders

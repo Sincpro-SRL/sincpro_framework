@@ -97,8 +97,8 @@ def config_billing_framework(name: str) -> UseFramework[BillingDependencies]:
 
 A queue needs a subscriber, a subscriber needs the buses, and a bus needs the publisher the queue is
 behind. Handed a function, `SyncQueue` asks for nothing until somebody publishes — by then every
-bus is registered — and keeps the subscriber it built. `add_dependency` is refused once the bus is
-built, so register the publisher before the first execution.
+bus is registered — and keeps the subscriber it built. A publisher registered with
+`add_dependency` after the first execution reaches the handlers from the next one.
 
 ## The two queues
 

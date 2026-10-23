@@ -129,3 +129,24 @@ def test_a_name_never_registered_is_refused():
     ):
         with override_dependencies(framework, gatewy=FakeGateway()):
             pass
+
+
+class CommandRefund(DataTransferObject):
+    pass
+
+
+def test_a_use_case_registered_inside_the_block_keeps_the_real_one_after():
+    framework = _framework()
+    assert _charge(framework) == "real"
+
+    with override_dependencies(framework, gateway=FakeGateway()):
+
+        @framework.feature(CommandRefund)
+        class Refund(Feature):
+            def execute(self, dto: CommandRefund) -> ResponseCharge:
+                return ResponseCharge(result=self.gateway.charge())
+
+        assert framework(CommandRefund(), ResponseCharge).result == "fake"
+
+    assert framework(CommandRefund(), ResponseCharge).result == "real"
+    assert _charge(framework) == "real"

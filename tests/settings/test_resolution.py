@@ -383,3 +383,96 @@ def test_a_context_that_redeclares_a_shared_field_owns_it(document: str):
     settings = build_config_obj(Payments, document, "sincpro_payments_sdk")
 
     assert settings.environment == "TEST" and settings.qr.environment == "PROD"
+
+
+# --- other sources ----------------------------------------------------------------------------
+
+VAULTED = """
+billing:
+  token: $SSM:/billing/prod/token
+  timeout: $SSM:/billing/prod/timeout
+  region: $SSM:/billing/prod/missing
+  database: $SECRET:billing/db
+"""
+
+
+class Billing(SincproConfig):
+    token: Secret[str]
+    timeout: int = 30
+    region: str = "us-east-1"
+    database: str = ""
+
+
+TOKEN = {"/billing/prod/token": "t-1"}
+
+
+def _vaulted(tmp_path: Path) -> str:
+    path = tmp_path / "billing.yml"
+    path.write_text(VAULTED)
+    return str(path)
+
+
+def test_a_value_is_read_from_the_source_its_sentinel_names(tmp_path):
+    parameters = {"/billing/prod/token": "t-1", "/billing/prod/timeout": "45"}
+
+    built = build_config_obj(
+        Billing,
+        _vaulted(tmp_path),
+        "billing",
+        sources={"SSM": parameters.get, "SECRET": {"billing/db": "pg://db"}.get},
+    )
+
+    assert built.token.get_secret_value() == "t-1"
+    assert (built.timeout, built.region, built.database) == (45, "us-east-1", "pg://db")
+
+
+def test_a_source_the_build_was_not_handed_keeps_the_value_as_written_and_says_so(
+    tmp_path, caplog
+):
+    with caplog.at_level(logging.WARNING, logger="sincpro_framework"):
+        built = build_config_obj(
+            Billing, _vaulted(tmp_path), "billing", sources={"SSM": TOKEN.get}
+        )
+
+    assert (built.timeout, built.database) == (30, "$SECRET:billing/db")
+    assert any("pass sources={'SECRET'" in line for line in caplog.messages)
+
+
+def test_a_source_that_fails_never_stops_the_start(tmp_path, caplog):
+    def unreachable(name: str) -> str | None:
+        if name == "/billing/prod/token":
+            return "t-1"
+        raise ConnectionError("no route to the parameter store")
+
+    with caplog.at_level(logging.WARNING, logger="sincpro_framework"):
+        built = build_config_obj(
+            Billing,
+            _vaulted(tmp_path),
+            "billing",
+            sources={"SSM": unreachable, "SECRET": unreachable},
+        )
+
+    assert (built.timeout, built.region) == (30, "$SSM:/billing/prod/missing")
+    assert any("ConnectionError" in line for line in caplog.messages)
+
+
+def test_a_value_the_field_cannot_accept_falls_back_as_an_environment_value_does(tmp_path):
+    built = build_config_obj(
+        Billing,
+        _vaulted(tmp_path),
+        "billing",
+        sources={"SSM": {**TOKEN, "/billing/prod/timeout": "soon"}.get, "SECRET": {}.get},
+    )
+
+    assert built.timeout == 30
+
+
+def test_where_a_value_came_from_names_its_source(tmp_path):
+    from sincpro_framework.settings import describe_settings
+
+    built = build_config_obj(
+        Billing, _vaulted(tmp_path), "billing", sources={"SSM": TOKEN.get, "SECRET": {}.get}
+    )
+
+    described = {one.path: one.source for one in describe_settings(built)}
+    assert described["timeout"] == "ssm /billing/prod/timeout"

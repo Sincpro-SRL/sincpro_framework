@@ -88,8 +88,8 @@ assert computed == ["c1"]
 assert caching.depends_on(QueryBalance(customer_id="c1")) == set()  # kept per tenant: asked outside it
 ```
 
-`on` registers an interceptor around the Query, so it is decided before the bus is built and
-reaches the Query however it is executed — HTTP, MCP, another ApplicationService. Only Queries:
+`on` registers an interceptor around the Query, so it reaches the Query however it is
+executed — HTTP, MCP, another ApplicationService. Only Queries:
 a Command decides from the database, never from a cache.
 
 **The key** is the bus, the Query and its values written canonically, the hash of the response's

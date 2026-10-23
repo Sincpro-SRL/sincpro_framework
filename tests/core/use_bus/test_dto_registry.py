@@ -52,7 +52,7 @@ def test_two_classes_sharing_a_name_are_refused_naming_both():
 
 
 def test_a_feature_and_an_application_service_sharing_a_name_are_refused_too():
-    """Workflows and the catalog know a Feature and an ApplicationService by one name space."""
+    """The catalog and the wires know a Feature and an ApplicationService by one name space."""
     from sincpro_framework import ApplicationService
 
     CommandA = _make_command()

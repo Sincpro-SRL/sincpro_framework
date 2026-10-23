@@ -45,6 +45,10 @@ class CommandReconcile(DataTransferObject):
     pass
 
 
+class CommandArchive(DataTransferObject):
+    pass
+
+
 def _billing(name: str = "billing") -> UseFramework:
     bus = UseFramework(name, log_after_execution=False)
 
@@ -151,6 +155,35 @@ def test_a_catalog_narrowed_after_the_surface_resolved_is_seen():
     gateway.catalogs["billing"].exclude(CommandIssueInvoice)
 
     assert _commands(gateway) == []
+
+
+def test_a_use_case_registered_on_the_bus_after_the_surface_resolved_is_seen():
+    """The bus answers it from the next execution; the gateway publishes it from the next read
+    of its surface — nothing serves a stale catalog."""
+    bus = _billing()
+    gateway = RestSurface(unguarded=True).add(bus)
+    assert _commands(gateway) == ["CommandIssueInvoice"]
+
+    @bus.feature(CommandArchive)
+    @rest.post("/archives")
+    class Archive(Feature):
+        def execute(self, dto: CommandArchive) -> None:
+            return None
+
+    assert _commands(gateway) == ["CommandArchive", "CommandIssueInvoice"]
+    names = [one.name for one in gateway.catalogs["billing"].get_scalar_use_cases()]
+    assert "CommandArchive" in names
+
+
+def test_a_wiring_error_is_still_raised_where_the_bus_is_mounted():
+    bus = _billing()
+
+    @bus.interceptor(CommandArchive)
+    def lost(dto: Any, call_next: Any) -> Any:
+        return call_next(dto)
+
+    with pytest.raises(exceptions.UnknownDTOToExecute, match="lost.*CommandArchive"):
+        RestSurface(unguarded=True).add(bus)
 
 
 def test_bind_publishes_an_unbound_use_case_keyed_by_its_command_or_handler():

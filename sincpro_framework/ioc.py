@@ -97,16 +97,26 @@ def _register_service(
 
     1. Refused before it is registered:
        1.1 a DTO this layer already answers;
-       1.2 two use cases of the bus with one class name — every wire and workflow publishes a
+       1.2 a DTO the other layer answers — a Command is answered by one handler, so the bus
+           could not route it;
+       1.3 two use cases of the bus with one class name — every wire and workflow publishes a
            use case by its name, so only one of them would reach a client;
-       1.3 two DTOs under one identity (`registered_name`) — the remote bus, the queues and the
+       1.4 two DTOs under one identity (`registered_name`) — the remote bus, the queues and the
            Subscriber route by it.
     2. Final: the DTO in `dto_registry` by its identity, its handler in the layer's registry.
     """
-    layer = (
-        framework_container.feature_registry
+    layer, other, other_as = (
+        (
+            framework_container.feature_registry,
+            framework_container.app_service_registry,
+            "an application service",
+        )
         if service_type == ServiceType.FEATURE
-        else framework_container.app_service_registry
+        else (
+            framework_container.app_service_registry,
+            framework_container.feature_registry,
+            "a feature",
+        )
     )
     published = {
         one.__name__: one
@@ -129,6 +139,13 @@ def _register_service(
             raise exceptions.DTOAlreadyRegistered(
                 f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already "
                 f"registered as {answered_as}"
+            )
+
+        if data_transfer_object in other.kwargs:
+            raise exceptions.DTOAlreadyRegistered(
+                f"The DTO: [{dto_name} from {data_transfer_object.__module__}] is already "
+                f"registered as {other_as}: a Command is answered by a Feature or an "
+                "ApplicationService, never both"
             )
 
         homonym = published.get(dto_name)

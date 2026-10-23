@@ -101,19 +101,21 @@ class BusGuard:
     def __init__(self, access: "AccessControl[Any]", bus: "UseFramework") -> None:
         self.access = access
         self.bus = bus
-        self._declared: dict[type, Declaration | None] = {}
+        self._declared: dict[tuple[type, type | None], Declaration | None] = {}
+        """By Command and the handler answering it — a handler registered later with `replaces=`
+        is read on its own."""
         self.__qualname__ = f"AccessControl.guard[{bus.name}]"
         """What the build log and introspection call the interceptor."""
 
     def declaration_of(self, command: type) -> Declaration | None:
-        if command not in self._declared:
-            handler = self.bus.handler_of(command)
-            self._declared[command] = (
+        handler = self.bus.handler_of(command)
+        if (command, handler) not in self._declared:
+            self._declared[command, handler] = (
                 None
                 if handler is None
                 else self.access.declarations.of(handler, self.bus.replaced_for(command))
             )
-        return self._declared[command]
+        return self._declared[command, handler]
 
     def _decided_run(self, command: type, call_next: Callable[[Any], Any], dto: Any) -> Any:
         token = _decided.set(command.__name__)

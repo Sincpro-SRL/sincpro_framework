@@ -1,4 +1,5 @@
 import pytest
+from structlog.testing import capture_logs
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 
@@ -90,3 +91,70 @@ def test_deps_are_isolated_per_instance():
 
     assert framework_a.deps.adapter_1 is first
     assert framework_b.deps.adapter_1 is second
+
+
+class Counted(DataTransferObject):
+    by: str
+
+
+class OtherAdapter:
+    def ping(self) -> str:
+        return "other"
+
+
+def _pinging(name: str) -> UseFramework:
+    framework = UseFramework(name, log_after_execution=False)
+
+    @framework.feature(CommandNoop)
+    class Ping(Feature):
+        adapter: FakeAdapter
+
+        def execute(self, dto: CommandNoop) -> Counted:
+            return Counted(by=self.adapter.ping())
+
+    return framework
+
+
+def test_a_second_dependency_under_a_taken_name_is_refused_naming_what_is_there():
+    framework = UseFramework("deps-taken", log_after_execution=False)
+    framework.add_dependency("adapter", FakeAdapter())
+
+    with pytest.raises(
+        exceptions.DependencyAlreadyRegistered, match="adapter.*FakeAdapter.*replaces="
+    ):
+        framework.add_dependency("adapter", OtherAdapter())
+
+
+def test_a_dependency_replaced_after_the_build_answers_from_the_next_execution():
+    framework = _pinging("deps-replaced")
+    real = FakeAdapter()
+    framework.add_dependency("adapter", real)
+    assert framework(CommandNoop(), Counted).by == "pong"
+
+    framework.add_dependency("adapter", OtherAdapter(), replaces=real)
+
+    assert framework(CommandNoop(), Counted).by == "other"
+    assert isinstance(framework.deps.adapter, OtherAdapter)
+
+
+def test_replacing_what_is_not_registered_works_with_a_warning():
+    framework = _pinging("deps-replaced-mismatch")
+    framework.add_dependency("adapter", FakeAdapter())
+
+    with capture_logs() as logs:
+        framework.add_dependency("adapter", OtherAdapter(), replaces=OtherAdapter())
+
+    assert framework(CommandNoop(), Counted).by == "other"
+    warned = [line["event"] for line in logs if line["log_level"] == "warning"]
+    assert any(
+        "replaces OtherAdapter, but FakeAdapter is registered" in one for one in warned
+    )
+
+
+def test_a_fresh_bus_repeats_the_replacement():
+    framework = _pinging("deps-replaced-fresh")
+    real = FakeAdapter()
+    framework.add_dependency("adapter", real)
+    framework.add_dependency("adapter", OtherAdapter(), replaces=real)
+
+    assert framework.fresh()(CommandNoop(), Counted).by == "other"

@@ -44,7 +44,8 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `add_global_error_handler` / `add_feature_error_handler` / `add_app_service_error_handler` | Append a handler to one of three chains | registry | methods of `UseFramework` |
 | `ignore_sentry_exceptions(*types)` | Marks error types as expected traffic: not sent to Sentry, outcome `expected` | setting | method of `UseFramework` |
 | `ProgrammingError` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework import exceptions` → `exceptions.ProgrammingError` |
-| `BusAlreadyBuilt` | Raised when registering an interceptor/handler/dependency after the bus built | DTO | `from sincpro_framework import exceptions` → `exceptions.BusAlreadyBuilt` |
+| `extend(module.attach)` | Install a module: a function (or an object's `attach`) that registers on the bus; before or after the build — after, it answers from the next execution | method | method of `UseFramework`; guide `docs/core/extending.md` |
+| `add_dependency(name, dep, replaces=old)` | Put another adapter in the place of a registered one; without `replaces`, a taken name raises `DependencyAlreadyRegistered` | method | method of `UseFramework` |
 | `describe` / `features` | What answers a Command and which interceptors wrap it | function | `from sincpro_framework.introspection import describe, features` |
 
 Look-alikes: `bus.context(...)` **opens** a context; `self.context` **reads** it inside a handler;
@@ -169,8 +170,9 @@ def credit_check(dto, call_next: CallNext[ResponseCreateInvoice]) -> ResponseCre
 - Adjust the input with `dto.model_copy(update=...)`; what reaches `call_next` must be the same
   Command class, and what comes back the class the handler answered, else
   `ProgrammingError`.
-- Fixed when the bus is built: registering after raises `BusAlreadyBuilt`; naming a Command nobody
-  answers raises `UnknownDTOToExecute` at build.
+- Registered after the bus was built, an interceptor wraps from the next execution (a new
+  generation of the bus); naming a Command nobody answers raises `UnknownDTOToExecute` when that
+  generation is built.
 - Ordering: `before=[fn]`, `after=[fn]`, `sequence=` (lower first, 10 default), then registration
   order. `bus.without_interceptor(fn)` switches one off.
 
@@ -224,7 +226,10 @@ and a `fresh()` generation hears it too.
   where it left the call, naming the use case where it first failed, with its `kind` and
   `retry_after`; the exception carries `failure_id`. `@bus.on_completion` / `@bus.on_failure`,
   `completions.subscribe(fn)` / `failures.subscribe(fn)`, `bus.publish_completions(to=…)` /
-  `bus.publish_failures(to=…)`. Depth: `docs/core/outcomes.md`.
+  `bus.publish_failures(to=…)`. Every one of them hears less when told: `use_cases=[Command, ...]`,
+  `when=Condition(field="context.tenant_id", value="acme")` (any criteria filter over the event by
+  path — `kind`, `dto.amount`, `response.total`; a list must all hold; also as JSON), and the
+  decorator takes them (`@bus.on_failure(use_cases=[...])`). Depth: `docs/core/outcomes.md`.
 
 **Running a job of steps** (`sincpro_framework.pipelines`). A `Pipeline` is an ApplicationService that is
 the order of its steps, declared as data — `class RunNightly(Pipeline, ApplicationService): steps =
@@ -235,7 +240,11 @@ interceptor (`PipelineRecorder`) that keeps the run — a `PipelineRun` — in t
 (`use_context().pipelines()`), beside the drafts; the same `run_id` again starts over, or goes on
 with `resume = Resume.CONTINUE`. `by = "<field>"` picks one of several recipes; `records = False`
 leaves the recorder out. Nothing is refused: no tenant, no store or a step the bus does not answer
-is said in the logs. Depth: `docs/core/pipelines.md`.
+is said in the logs. When it needs more, one line each: `retry = Retry()` runs again a step whose
+failure is worth it by its kind (unavailable, conflict, in progress — never `ok=False` nor a domain
+refusal); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
+`run_id` is run with the input's `approval` filled; `GetRun[Command]` / `FindRuns[Command]` answered
+by a `PipelineReads` Feature read the runs on any wire. Depth: `docs/core/pipelines.md`.
 
 An income and its outcome name the same `execution_id`. What a listener must not do: keep state a
 process depends on (it may not run) or change the answer. The whole path, step by step:

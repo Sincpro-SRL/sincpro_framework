@@ -203,6 +203,11 @@ A shape read at a section without a dot (a flat `config.py`) gets its section ex
   reads `PAYMENTS__QR__TIMEOUT` (→ `qr.timeout`) and `PAYMENTS__ENVIRONMENT`, as if the file said
   `$ENV:` there. A variable by path wins over the file. Without `env_prefix`, nothing is read by
   path, so two SDKs in one process never read each other's variables.
+- **Other sources**, by their own sentinel: `$SSM:/billing/token`, `$SECRET:billing/db#password`,
+  read from what the build is handed — `build_config_obj(Shape, path, key, sources={"SSM":
+  ParameterStore(), "SECRET": SecretsManager()})` (`sincpro_framework.settings.adapters.aws`, extra
+  `[aws]`) or any function `name -> value | None`. A source not handed in, or one that fails, keeps
+  the value as written with a warning — settings never stop the start.
 
 ## Secrets
 

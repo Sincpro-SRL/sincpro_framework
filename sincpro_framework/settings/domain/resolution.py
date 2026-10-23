@@ -18,6 +18,7 @@ from typing import Any, Union, get_args, get_origin
 from pydantic.fields import FieldInfo
 
 from sincpro_framework.settings.domain.config import (
+    SENTINEL,
     SincproConfig,
     is_secret,
     logger,
@@ -69,8 +70,11 @@ def _source(value: Any, where: str, field: FieldInfo) -> str:
     """Where a written value comes from — for `$ENV:NAME`, what the variable really gave: the
     variable, or the field's default when it is unset or holds what the field cannot accept.
     """
-    if not (isinstance(value, str) and value.startswith(ENV_SENTINEL)):
+    found = SENTINEL.match(value) if isinstance(value, str) else None
+    if found is None:
         return where
+    if found.group(1) != "ENV":
+        return f"{found.group(1).lower()} {found.group(2)}"
     name = value[len(ENV_SENTINEL) :]
     held = os.getenv(name)
     if held is None:
@@ -156,11 +160,11 @@ def values_of(
             sources[at] = _source(section[name], f"file {file} at {where or '(root)'}", field)
             written = section[name]
             if is_secret(field.annotation) and not (
-                isinstance(written, str) and written.startswith(ENV_SENTINEL)
+                isinstance(written, str) and SENTINEL.match(written)
             ):
                 logger.warning(
                     f"[{at}] is a secret written in {file}: secrets belong in the environment "
-                    f"— write $ENV:<NAME> there instead"
+                    f"or a vault — write $ENV:<NAME> (or $SSM:, $SECRET:) there instead"
                 )
             continue
         shared = is_shared(shape, name)

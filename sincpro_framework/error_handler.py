@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, TypeAlias
 from sincpro_framework.common.ordering import DEFAULT_SEQUENCE, Placement, name_of, ordered
 
 if TYPE_CHECKING:
-    from sincpro_framework.bus import FrameworkBus
     from sincpro_framework.ioc import FrameworkContainer
 
 ErrorHandler: TypeAlias = Callable[[Exception], Any]
@@ -69,10 +68,11 @@ class BusErrorHandlersMixin:
     application service — each in the order every extension point uses, handed to the buses
     when they are built."""
 
-    was_initialized: bool
-    bus: "FrameworkBus | None"
-    _registrations: list[Callable[[Any], Any]]
     _sp_container: "FrameworkContainer"
+
+    if TYPE_CHECKING:
+
+        def _registered(self, replay: Callable[[Any], Any], what: str) -> None: ...
 
     def _init_error_handlers(self) -> None:
         self._global_error_handlers: list[Placement] = []
@@ -84,20 +84,15 @@ class BusErrorHandlersMixin:
         self.app_service_error_handler: Optional[ErrorHandler] = None
 
     def _add_error_handlers_provided_by_user(self):
-        if self.global_error_handler:
-            self._sp_container.framework_bus.add_attributes(
-                handle_error=self.global_error_handler
-            )
-
-        if self.feature_error_handler:
-            self._sp_container.feature_bus.add_attributes(
-                handle_error=self.feature_error_handler
-            )
-
-        if self.app_service_error_handler:
-            self._sp_container.app_service_bus.add_attributes(
-                handle_error=self.app_service_error_handler
-            )
+        """Each chain handed to the bus it answers for — `None` too, so a generation built after
+        every handler of a chain was switched off answers with none."""
+        self._sp_container.framework_bus.add_attributes(
+            handle_error=self.global_error_handler
+        )
+        self._sp_container.feature_bus.add_attributes(handle_error=self.feature_error_handler)
+        self._sp_container.app_service_bus.add_attributes(
+            handle_error=self.app_service_error_handler
+        )
 
     def _error_chain_notes(self) -> list[str]:
         """What the three chains were asked and could not do as said — told when the bus is
@@ -128,14 +123,10 @@ class BusErrorHandlersMixin:
 
     def _apply_error_chains(self) -> None:
         """Each chain in the order every extension point uses — first to run is the first to
-        see the error — and handed to the bus at once when it is already built."""
+        see the error — handed to the buses when the next generation is built."""
         self.global_error_handler = self._error_chain(self._global_error_handlers)
         self.feature_error_handler = self._error_chain(self._feature_error_handlers)
         self.app_service_error_handler = self._error_chain(self._app_service_error_handlers)
-        if self.was_initialized and self.bus is not None:
-            self.bus.handle_error = self.global_error_handler
-            self.bus.feature_bus.handle_error = self.feature_error_handler
-            self.bus.app_service_bus.handle_error = self.app_service_error_handler
 
     def _add_error_handler(
         self,
@@ -145,18 +136,26 @@ class BusErrorHandlersMixin:
         before: Sequence[ErrorHandler],
         after: Sequence[ErrorHandler],
         sequence: int,
+        replay: Callable[[Any], Any],
     ) -> None:
+        """Context: registered after the bus was built, the handler answers from the next
+        execution."""
         if not callable(handler):
             raise TypeError("The handler must be a callable")
         placements.append(Placement(handler, sequence, tuple(before), tuple(after), replaces))
         self._apply_error_chains()
+        self._registered(replay, f"error handler {name_of(handler)}")
 
     def without_error_handler(self, handler: ErrorHandler) -> None:
         """Switch off an error handler of any of the three kinds — one registered later too;
-        one never registered is a warning when the bus is built."""
+        one never registered is a warning when the bus is built. After the bus was built, from
+        the next execution."""
         self._error_handlers_off.append(handler)
-        self._registrations.append(lambda bus: bus.without_error_handler(handler))
         self._apply_error_chains()
+        self._registered(
+            lambda bus: bus.without_error_handler(handler),
+            f"switching off error handler {name_of(handler)}",
+        )
 
     def add_global_error_handler(
         self,
@@ -200,12 +199,15 @@ class BusErrorHandlersMixin:
             app.add_global_error_handler(logger)
         """
         self._add_error_handler(
-            self._global_error_handlers, handler, replaces, before, after, sequence
-        )
-        self._registrations.append(
+            self._global_error_handlers,
+            handler,
+            replaces,
+            before,
+            after,
+            sequence,
             lambda bus: bus.add_global_error_handler(
                 handler, replaces, before, after, sequence
-            )
+            ),
         )
 
     def add_feature_error_handler(
@@ -223,12 +225,15 @@ class BusErrorHandlersMixin:
         on.
         """
         self._add_error_handler(
-            self._feature_error_handlers, handler, replaces, before, after, sequence
-        )
-        self._registrations.append(
+            self._feature_error_handlers,
+            handler,
+            replaces,
+            before,
+            after,
+            sequence,
             lambda bus: bus.add_feature_error_handler(
                 handler, replaces, before, after, sequence
-            )
+            ),
         )
 
     def add_app_service_error_handler(
@@ -246,10 +251,13 @@ class BusErrorHandlersMixin:
         on.
         """
         self._add_error_handler(
-            self._app_service_error_handlers, handler, replaces, before, after, sequence
-        )
-        self._registrations.append(
+            self._app_service_error_handlers,
+            handler,
+            replaces,
+            before,
+            after,
+            sequence,
             lambda bus: bus.add_app_service_error_handler(
                 handler, replaces, before, after, sequence
-            )
+            ),
         )

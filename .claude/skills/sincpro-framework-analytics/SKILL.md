@@ -1,13 +1,13 @@
 ---
 name: sincpro-framework-analytics
-description: Read data and compose behaviour with sincpro_framework — DataFrames fed from a Criteria for pandas/polars/DuckDB, use cases stored as source and loaded onto the bus without a deploy, and Commands composed as JSON workflows. Use whenever a task analyses data, exports to a dataframe, loads/replaces a use case at runtime, or builds a workflow/automation out of existing Commands.
+description: Read data and change behaviour with sincpro_framework — DataFrames fed from a Criteria for pandas/polars/DuckDB, and use cases stored as source and loaded onto the bus without a deploy. Use whenever a task analyses data, exports to a dataframe, or loads/replaces a use case at runtime.
 ---
 
 # sincpro-framework-analytics
 
-Three opt-in utilities around a bounded context's bus: **data analysis** (what a `Criteria` read,
-held as a frame for dataframe libraries), **runtime use cases** (a Feature stored as source and
-loaded without a deploy) and **workflows** (existing Commands composed as JSON, experimental). This
+Two opt-in utilities around a bounded context's bus: **data analysis** (what a `Criteria` read,
+held as a frame for dataframe libraries) and **runtime use cases** (a Feature stored as source and
+loaded without a deploy). This
 skill stands alone; the deep docs it names live in the framework repository, not in the package.
 
 ## Context
@@ -20,9 +20,6 @@ skill stands alone; the deep docs it names live in the framework repository, not
   ApplicationService kept as Python source in a store, loaded onto a new generation of the bus. It
   is not a sandbox (stored source runs with the service's permissions) and not configuration (that
   is settings). When a deploy is cheap, code reviewed in a PR is simpler.
-- **Workflows** compose Commands one bus already answers, as JSON — for a node editor or an agent
-  to validate, preview and run. It is not a durable workflow engine (no persistence, resume,
-  retry, compensation or timers), not a transaction, and spans one bus.
 
 ## Abstractions
 
@@ -38,25 +35,14 @@ skill stands alone; the deep docs it names live in the framework repository, not
 | `SqlUseCases` / `use_case_table` | Store in a table of the context's database / that table on its `MetaData` | adapter / function | `from sincpro_framework.data_layer.orm import SqlUseCases, template_table` → `template_table.use_case_table` (extra `[sqlalchemy]`) |
 | `BusRegistry` | The code's bus plus the stored use cases, as generations: `current`, `generation`, `in_force`, `execute`, `reload`, `check`, `put`, `check_all` | registry | `from sincpro_framework.runtime.runtime_use_cases import BusRegistry` |
 | Generation | `bus.fresh()` (every code registration replayed) + stored sources, built, swapped in whole | function | `UseFramework.fresh()` |
-| `Workflows` | The workflows of one bus: `run`, `reload`, `refresh`, `validate`, `dry_run`, `catalog`, `schema`, `draw`, `expose` | registry | `from sincpro_framework.runtime.workflows import Workflows` |
-| `Workflow` / `Step` | A definition / one step (`execute`, `code`, `for_each`, `fail`, `when`) | DTO | `from sincpro_framework.runtime.workflows import Workflow, Step` |
-| `WorkflowSource` | Where definitions come from: `load()`, `version()` | port (abstract) | `from sincpro_framework.runtime.workflows import WorkflowSource` |
-| `FileWorkflows` / `InMemoryWorkflows` | One `<name>.json` per workflow in a folder / a list | adapter | `from sincpro_framework.runtime.workflows import FileWorkflows, InMemoryWorkflows` |
-| `SnippetEngine` / `PythonSnippets` | What runs a `code` step / Python in this process (default) | port / adapter | `from sincpro_framework.runtime.workflows import SnippetEngine, PythonSnippets` |
-| `Limits` | `max_steps=1000`, `max_items=1000`, `max_depth=5` | setting | `from sincpro_framework.runtime.workflows import Limits` |
-| `WorkflowRun` / `StepRun` / `StepStatus` / `RunStatus` | The trace of a run / of a step / `RAN`, `SKIPPED`, `FAILED` / `SUCCEEDED`, `FAILED` | DTO | `from sincpro_framework.runtime.workflows import ...` |
-| `CommandRunWorkflow` / `ResponseRunWorkflow` | The Command `expose()` registers on the bus; a gateway serves it once bound (`gateway.bind(CommandRunWorkflow, McpBinding())`) | DTO | `from sincpro_framework.runtime.workflows import ...` |
-| `Issue` | One validation problem: `workflow`, `step`, `path`, `message` | DTO (frozen dataclass) | `from sincpro_framework.runtime.workflows import Issue` |
 
 Exceptions: `ProgrammingError` (narrowing a frame that stopped at a page), `ProgrammingError`
 (`data_analysis`); `UseCaseRefused` (a stored use case that does not load — the bus stays as it
-was); `WorkflowFailed` (a run stopped; `error.run` is the trace), `WorkflowsInvalid` (the first
-load found issues).
+was).
 
 Look-alikes: `QueryCache` (in-process frames for analysis) vs `QueryCaching` in
-`sincpro_framework.data_layer.caching` (a bus Query's answer, shared by replicas). `workflows.Step` (a
-workflow step) vs `migrations.Step` (a migration). A **runtime use case** *is* a use case on the
-bus; a **workflow** only *calls* use cases. `registry.current` (the generation answering) vs the
+`sincpro_framework.data_layer.caching` (a bus Query's answer, shared by replicas). A **runtime use case** *is* a use case
+on the bus. `registry.current` (the generation answering) vs the
 context's bus `billing` (the code only, never sees a stored use case).
 
 ## Architecture
@@ -66,9 +52,7 @@ context's bus `billing` (the code only, never sees a stored use case).
 imported only when asked for. polars, pandas and DuckDB are the project's own dependencies — they
 take a frame through the Arrow PyCapsule interface. `sincpro_framework.runtime.runtime_use_cases` (`domain`
 RuntimeUseCase + `UseCaseStore` port, `in_memory`, `loading`, `registry` BusRegistry) is stdlib; the
-SQL store is `sincpro_framework.data_layer.orm` (`[sqlalchemy]`). `sincpro_framework.runtime.workflows`
-(`domain/` vocabulary + `WorkflowSource`/`SnippetEngine` ports, `adapters/` files, memory, Python
-snippets, `validation`, `runner`, `registry` Workflows) needs nothing beyond the bus.
+SQL store is `sincpro_framework.data_layer.orm` (`[sqlalchemy]`).
 
 **In a consumer service** (one `UseFramework` bus per bounded context, created in
 `infrastructure/framework.py` before `services/` is imported):
@@ -77,15 +61,12 @@ snippets, `validation`, `runner`, `registry` Workflows) needs nothing beyond the
 myapp/
   domains/billing/
     __init__.py               # 1. billing = config_billing_framework(...)  2. from . import services
-                              # 3. billing_workflows.expose()  (registers CommandRunWorkflow; before any build)
     infrastructure/
       framework.py            # the bus factory
       dependencies.py         # add_dependency("frames", invalidate_on_commit(database, QueryCache(...), InvoiceLine))
       tables.py               # MetaData, incl. use_case_table(metadata, "billing_runtime_use_case")
-      workflows.py            # billing_workflows = Workflows(billing, FileWorkflows(Path(__file__).parents[1] / "workflows"))
       runtime_use_cases.py    # billing_registry = BusRegistry(billing, SqlUseCases(database, use_cases))
-    services/                 # Features: a Query reading frames; the Commands workflows execute
-    workflows/bill_order.json # one definition per file, reviewed in a PR
+    services/                 # Features: a Query reading frames
   entrypoints/                # gateways only; a handler resolving billing_registry.current per request
 ```
 
@@ -109,14 +90,6 @@ registry.put(use_case)   |   store.save(...) then registry.reload()
 request → registry.execute("billing.CommandQuote", payload)
 ```
 
-**One workflow run:**
-
-```
-workflows.run(name, input) → the set in force (validated as a whole against the bus's catalog)
-  → per step: when holds? → resolve $refs → bus(Command by name) | snippet | for_each | fail
-  → WorkflowRun trace;  a failing step → WorkflowFailed(run=trace), earlier steps stay done
-```
-
 ## Mistakes an agent makes
 
 - **Treating `cache.fetch(...)` as all the data** — it holds `pages=1` page of the `Criteria`'s
@@ -136,13 +109,6 @@ workflows.run(name, input) → the set in force (validated as a whole against th
   `reload()` (`False` when nothing changed). Call it from a cron, or after each save.
 - **Building a stored Command from its class, or keeping one across a reload** — a stored Command
   is a new class per generation, answered only by that generation's bus. Reach it by name.
-- **Treating a workflow as a transaction or a durable engine** — a failure leaves the earlier
-  steps done; nothing retries, resumes or compensates. What must succeed or fail together is an
-  ApplicationService.
-- **Editing workflow files and expecting them live** — call `refresh()` (cheap; from a cron). A set
-  with any issue is never put in force: `refresh()` answers `False`, `reload()` answers the issues.
-- **Referencing a step a `when` can skip** — `validate()` passes, the run fails at the reference.
-  Give dependents the same `when`, or compute a default in a snippet.
 - **`expose()` after the bus is built** — `catalog()`, `validate()`, `current` and the first
   execution build it; `expose()` then raises. Call it in the context's `__init__.py`, right after
   `services` is imported — never from `entrypoints/`, which never registers on a bus.
@@ -181,28 +147,10 @@ code: keep it behind the review a deploy has. Full detail:
 [references/runtime-use-cases.md](references/runtime-use-cases.md); deep doc in the framework
 repo: `docs/runtime_use_cases/README.md`, PRD_06 and PRD_07.
 
-## Workflows — how (experimental)
-
-```python
-from pathlib import Path
-
-from sincpro_framework.runtime.workflows import FileWorkflows, Workflows
-
-workflows = Workflows(billing, FileWorkflows(Path(__file__).parent / "workflows"))
-workflows.expose()                                    # CommandRunWorkflow on the bus, before it is built
-run = workflows.run("bill_order", {"order_id": 1})    # run.steps is the trace
-```
-
-For an agent writing one: `Workflows.schema()`, `workflows.catalog()`, `validate(draft)` (every
-issue at once), `dry_run(draft, input, responses=...)` (nothing runs on the bus), `draw(name)`
-(Mermaid). Full detail: [references/workflows.md](references/workflows.md); deep doc in the
-framework repo: `docs/workflows/README.md`, PRD_06.
-
 ## References
 
 - [references/data-analysis.md](references/data-analysis.md) — `QueryCache`, `DataFrame`, narrow, hand-off
 - [references/runtime-use-cases.md](references/runtime-use-cases.md) — `BusRegistry`, generations, stores
-- [references/workflows.md](references/workflows.md) — the JSON vocabulary, validation, dry run
 
 ## Related
 

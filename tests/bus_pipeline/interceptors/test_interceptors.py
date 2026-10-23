@@ -241,15 +241,19 @@ def test_one_interceptor_can_name_several_commands():
 # ---------------------------------------------------------------------------------------------
 
 
-def test_registering_after_the_bus_was_built_is_refused():
+def test_an_interceptor_registered_after_the_bus_was_built_wraps_from_the_next_execution():
     billing = _billing()
     _create(billing)
+    seen: list[str] = []
 
-    with pytest.raises(exceptions.BusAlreadyBuilt, match="late"):
+    @billing.interceptor(CommandCreateInvoice)
+    def late(dto: Any, call_next: CallNext[Any]) -> Any:
+        seen.append(dto.customer_id)
+        return call_next(dto)
 
-        @billing.interceptor(CommandCreateInvoice)
-        def late(dto: Any, call_next: CallNext[Any]) -> Any:
-            return call_next(dto)
+    _create(billing, "beta")
+
+    assert seen == ["beta"]
 
 
 def test_naming_a_command_nobody_answers_is_refused_when_the_bus_is_built():

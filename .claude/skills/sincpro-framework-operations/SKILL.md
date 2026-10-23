@@ -230,4 +230,3 @@ deep doc in the framework repo: `docs/migrations/README.md`, PRD_05.
 - A cron executes Commands on the bus; reuse is a Command on the bus (`sincpro-framework`)
 - The `KeyValueStore` providers behind `KeyValueRuns`, and idempotent Commands: `sincpro-framework-caching`
 - The tables a migration creates: `sincpro-framework-persistence`
-- Workflows refreshed by a cron: `sincpro-framework-analytics`

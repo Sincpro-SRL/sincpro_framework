@@ -126,21 +126,33 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def build_root_bus(self) -> None:
-        """Build the root bus with the dependencies provided by the user."""
+        """Bring the bus up to date now: build it, or build a new generation when something was
+        registered after the last one. The first execution does it by itself; called on purpose,
+        a wiring error surfaces at that line."""
         ...
 
-    def add_dependency(self, name: str, dep: Any) -> None:
+    @property
+    def revision(self) -> int:
+        """How many registrations reached this bus after it was built — what a snapshot of the
+        bus compares to know it is still true."""
+        ...
+
+    def add_dependency(self, name: str, dep: Any, replaces: Any = None) -> None:
         """
         Add a dependency to the framework.
 
         The dependency will be injected as an attribute into all Features and ApplicationServices.
+        Added after the bus was built, it reaches them from the next execution.
 
         Args:
             name: The attribute name for the dependency
             dep: The dependency instance, function, or class
+            replaces: The object registered under `name` now, when `dep` takes its place; not
+                the one registered — or nothing — is a warning, and `dep` takes the name
 
         Raises:
-            DependencyAlreadyRegistered: If the dependency name is already registered
+            DependencyAlreadyRegistered: If the name is already registered and `replaces` is not
+                given
         """
         ...
 
@@ -168,14 +180,16 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         self, dto: DTORegistration, replaces: type | None = None
     ) -> Callable[[T], T]:
         """Register the decorated class as the Feature that answers `dto`; with `replaces`,
-        instead of the Feature registered now, which is skipped from then on."""
+        instead of the Feature registered now, which is skipped from then on. Registered after
+        the bus was built, it answers from the next execution."""
         ...
 
     def app_service[T: type](
         self, dto: DTORegistration, replaces: type | None = None
     ) -> Callable[[T], T]:
         """Register the decorated class as the ApplicationService that answers `dto`; with
-        `replaces`, instead of the one registered now."""
+        `replaces`, instead of the one registered now. Registered after the bus was built, it
+        answers from the next execution."""
         ...
 
     def handler_of(self, dto: type) -> type | None:
@@ -200,7 +214,9 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def extend(self, extension: Callable[[UseFramework[TDeps]], None]) -> None:
-        """Wire a component into this bus and into every generation `fresh()` makes of it."""
+        """Wire a component into this bus and into every bus `fresh()` makes of it — `extension(bus)`
+        registers its interceptors, dependencies or handlers. After the bus was built, the
+        extension answers from the next execution, whole."""
         ...
 
     @property
@@ -266,41 +282,89 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     ) -> Callable[[T], T]:
         """Run the decorated function around every execution of these Commands (all of this
         bus's when none is named) — outermost first, by before/after, sequence, registration;
-        `replaces` runs it in the place of another. Refused after build.
+        `replaces` runs it in the place of another. Registered after the build, it wraps from
+        the next execution.
         """
         ...
 
     def without_interceptor(self, interceptor: Interceptor) -> None:
-        """Switch off an interceptor registered on this bus; refused after build."""
+        """Switch off an interceptor registered on this bus; after the build, from the next
+        execution."""
         ...
 
-    def on_start[L: Callable[..., Any]](self, listener: L) -> L:
-        """Hear every use case of this bus that begins — an `ExecutionStarted`."""
+    @overload
+    def on_start[L: Callable[..., Any]](
+        self, listener: L, use_cases: Iterable[type | str] | None = None, when: Any = None
+    ) -> L:
+        """Hear every use case of this bus that begins — an `ExecutionStarted`. `use_cases` / `when` hear less."""
         ...
 
-    def publish_starts(self, to: Any) -> None:
-        """Hand every use case of this bus that begins to `to`, a Publisher."""
+    @overload
+    def on_start[L: Callable[..., Any]](
+        self,
+        listener: None = None,
+        use_cases: Iterable[type | str] | None = None,
+        when: Any = None,
+    ) -> Callable[[L], L]:
+        """The same, as a decorator with `use_cases` / `when`."""
         ...
 
-    def on_completion[L: Callable[..., Any]](self, listener: L) -> L:
-        """Hear every use case of this bus that answered — an `ExecutionCompleted`."""
+    def publish_starts(
+        self, to: Any, use_cases: Iterable[type | str] | None = None, when: Any = None
+    ) -> None:
+        """Hand every use case of this bus that begins to `to`, a Publisher. `use_cases` / `when` hand on less."""
         ...
 
-    def publish_completions(self, to: Any) -> None:
-        """Hand every use case of this bus that answered to `to`, a Publisher."""
+    @overload
+    def on_completion[L: Callable[..., Any]](
+        self, listener: L, use_cases: Iterable[type | str] | None = None, when: Any = None
+    ) -> L:
+        """Hear every use case of this bus that answered — an `ExecutionCompleted`. `use_cases` / `when` hear less."""
         ...
 
-    def on_failure[L: Callable[..., Any]](self, listener: L) -> L:
-        """Hear every failure of this bus that escaped its call — an `ExecutionFailed`."""
+    @overload
+    def on_completion[L: Callable[..., Any]](
+        self,
+        listener: None = None,
+        use_cases: Iterable[type | str] | None = None,
+        when: Any = None,
+    ) -> Callable[[L], L]:
+        """The same, as a decorator with `use_cases` / `when`."""
         ...
 
-    def publish_failures(self, to: Any) -> None:
-        """Hand every failure of this bus that escaped its call to `to`, a Publisher."""
+    def publish_completions(
+        self, to: Any, use_cases: Iterable[type | str] | None = None, when: Any = None
+    ) -> None:
+        """Hand every use case of this bus that answered to `to`, a Publisher. `use_cases` / `when` hand on less."""
+        ...
+
+    @overload
+    def on_failure[L: Callable[..., Any]](
+        self, listener: L, use_cases: Iterable[type | str] | None = None, when: Any = None
+    ) -> L:
+        """Hear every failure of this bus that escaped its call — an `ExecutionFailed`. `use_cases` / `when` hear less."""
+        ...
+
+    @overload
+    def on_failure[L: Callable[..., Any]](
+        self,
+        listener: None = None,
+        use_cases: Iterable[type | str] | None = None,
+        when: Any = None,
+    ) -> Callable[[L], L]:
+        """The same, as a decorator with `use_cases` / `when`."""
+        ...
+
+    def publish_failures(
+        self, to: Any, use_cases: Iterable[type | str] | None = None, when: Any = None
+    ) -> None:
+        """Hand every failure of this bus that escaped its call to `to`, a Publisher. `use_cases` / `when` hand on less."""
         ...
 
     def execution_ids(self, generator: Callable[[], str]) -> None:
         """Mint every `execution_id` of this bus with `generator` instead of a UUID v7; an id
-        given from outside still wins for a root execution. Refused after build."""
+        given from outside still wins for a root execution. Given after the build, it mints from
+        the next execution."""
         ...
 
     def without_error_handler(self, handler: ErrorHandler) -> None:

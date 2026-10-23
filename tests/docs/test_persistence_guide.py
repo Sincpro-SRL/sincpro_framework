@@ -19,6 +19,9 @@ GUIDE = ROOT / "docs" / "persistence" / "guide.md"
 HOOKS = ROOT / "docs" / "persistence" / "hooks.md"
 TRANSACTIONS = ROOT / "docs" / "persistence" / "transactions.md"
 INTERCEPTORS = ROOT / "docs" / "core" / "interceptors.md"
+EXTENDING = ROOT / "docs" / "core" / "extending.md"
+FEATURES = ROOT / "docs" / "core" / "features.md"
+ERROR_HANDLERS = ROOT / "docs" / "core" / "error-handlers.md"
 CONTEXT = ROOT / "docs" / "core" / "context-manager.md"
 OUTCOMES = ROOT / "docs" / "core" / "outcomes.md"
 INCOMES = ROOT / "docs" / "core" / "incomes.md"
@@ -27,7 +30,6 @@ CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
 EXTENSIONS = ROOT / "docs" / "persistence" / "extensions.md"
 EXTENSIONS_EXAMPLE = ROOT / "docs" / "persistence" / "extensions-example.md"
-WORKFLOWS = ROOT / "docs" / "workflows" / "README.md"
 DATA_ANALYSIS = ROOT / "docs" / "data_analysis" / "README.md"
 RUNTIME_USE_CASES = ROOT / "docs" / "runtime_use_cases" / "README.md"
 BROKERS = ROOT / "docs" / "events" / "brokers.md"
@@ -66,6 +68,9 @@ def _failing_line(error: Exception, path: Path) -> int:
         HOOKS,
         TRANSACTIONS,
         INTERCEPTORS,
+        EXTENDING,
+        FEATURES,
+        ERROR_HANDLERS,
         CONTEXT,
         OUTCOMES,
         INCOMES,
@@ -74,7 +79,6 @@ def _failing_line(error: Exception, path: Path) -> int:
         MIGRATIONS,
         EXTENSIONS,
         EXTENSIONS_EXAMPLE,
-        WORKFLOWS,
         DATA_ANALYSIS,
         RUNTIME_USE_CASES,
         BROKERS,

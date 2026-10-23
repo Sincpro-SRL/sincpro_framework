@@ -110,12 +110,15 @@ its implementations by) is the adapter's, in its folder. Detail: [context-bounda
 
 `@bus.feature(Command)` runs at import time against the instance. Import `services` **after**
 `config_*_framework(...)`. The bus is built by its first execution or by the first gateway it is
-added to; after that every registration raises `BusAlreadyBuilt` — register everything first,
-build gateways last. See [bootstrap.md](bootstrap.md).
+added to, and a wiring error surfaces there. A registration after that still answers — from the
+next execution, on a new generation of the bus — so a module can be installed at any time
+(`docs/core/extending.md`); registering first and building gateways last keeps wiring errors at
+startup. See [bootstrap.md](bootstrap.md).
 
 ## 6. `self` holds dependencies, not request data
 
-A handler instance is built once and reused by every execution, on every thread. Anything written to
+A handler instance is built once per generation of the bus and reused by every execution, on every
+thread; a registration after the build makes a new generation with new instances. Anything written to
 `self` inside `execute` is shared between concurrent calls. `self.context` is the exception — it is
 isolated per call.
 
@@ -185,12 +188,47 @@ router module happened to be imported. To publish an existing use case, decorate
 `services/` (`@rest.post(...)`, `@mcp()`, …) and add the bus to a gateway —
 `sincpro-framework-entrypoints`.
 
+## 10. Handlers inherit the context's own bases
+
+Every bounded context wraps `Feature` and `ApplicationService` once, in its `framework.py`, with
+its `DependencyContextType` — and `Hook` too when it has repository hooks. Its handlers inherit
+those bases, never the framework's directly:
+
+```python
+# framework.py
+from sincpro_framework import ApplicationService as _ApplicationService
+from sincpro_framework import Feature as _Feature
+
+from .dependencies import DependencyContextType
+
+
+class Feature(_Feature, DependencyContextType):
+    """Base Feature of this bounded context."""
+
+
+class ApplicationService(_ApplicationService, DependencyContextType):
+    """Base ApplicationService of this bounded context."""
+
+
+# services/issue_invoice.py
+from my_context import Feature                   # the context's own, not sincpro_framework's
+```
+
+- The base is where the context's dependencies are typed, once: every handler gets `self.<dep>`
+  with autocomplete, and a dependency renamed is renamed in one place.
+- Both bases exist even before the context has an ApplicationService.
+- `as _Feature` / `as _ApplicationService` / `as _Hook` are the one accepted import alias: the
+  context's base takes the framework's name, so the framework's needs another on that line only.
+- Typing `self.context` uses the third parameter, `Feature[Command, Response, Context]` — all three
+  parameters or none; `Feature[Command, Response]` is a `TypeError`.
+
 ## Review checklist
 
 - Every use case is `@bus.feature` / `@bus.app_service`; nothing dispatches by hand.
 - No import of a handler class or a function from another service module.
 - No function in `services/` or `domain/` whose first argument is a bus or a client.
 - `dependencies.py` registers named instances; `DependencyContextType` names match.
+- Every handler inherits the context's own `Feature` / `ApplicationService` / `Hook` from `framework.py`.
 - Nothing request-scoped is written to `self`.
 - Errors subclass the base that says who caused them (`ClientError`, `DomainError`, …), with `failure_kind` when it differs; no exception handler in the project.
 - `entrypoints/` holds gateways only.

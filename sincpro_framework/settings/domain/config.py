@@ -8,10 +8,22 @@ Context: a shape is any `SincproConfig` class. A field whose value is `$ENV:NAME
 variable; one it cannot accept falls back to the field's default with a log line, so a typo in
 one deployment variable never takes the process down at import. `env_prefix` opts a root shape
 into the environment by path (`PAYMENTS__QR__TIMEOUT`). Nothing is frozen unless a shape asks.
+
+Another source is read the same way, by its own sentinel, once the project hands it over:
+
+    token: $SSM:/billing/prod/token                      # in the file
+    build_config_obj(Billing, "conf/billing.yml", "billing", sources={"SSM": ParameterStore()})
+
+A source is any function from a name to its value, `None` when it holds none — the same rules
+apply to what it answers as to the environment's. A source the build was not handed, or one that
+fails (no client, no permission, no network), never stops the start: the value stays as written,
+with a warning — and falls back to the default when the field cannot take it.
 """
 
 import logging
 import os
+import re
+from collections.abc import Callable
 from types import UnionType
 from typing import Annotated, Any, ClassVar, Literal, TypeVar, Union, get_args, get_origin
 
@@ -22,12 +34,19 @@ from pydantic import (
     PrivateAttr,
     Secret,
     TypeAdapter,
+    ValidationInfo,
     model_validator,
 )
 
 from sincpro_framework.common.transport.addresses import HostedContext
 
 logger = logging.getLogger("sincpro_framework")
+
+SENTINEL = re.compile(r"^\$([A-Z][A-Z0-9_]*):(.+)$")
+"""`$ENV:NAME`, `$SSM:/path`, `$SECRET:name#key` — a value read from a source, by its name."""
+
+type SettingSource = Callable[[str], str | None]
+"""A name to its value — `None` when the source holds none: a parameter store, a vault."""
 
 
 def usable_env_value(value: str, field_info) -> bool:
@@ -75,43 +94,66 @@ class SincproConfig(BaseModel):
         )
 
     @model_validator(mode="before")
-    def resolve_env_variables(cls, values):
-        """Load all environment variables that start with $ENV:
-        If the environment variable is not set, an info log is emitted and the default value is used
+    def resolve_env_variables(cls, values, info: ValidationInfo):
+        """Read every value written as a sentinel: `$ENV:NAME` from the environment, any other
+        (`$SSM:/path`) from the source the build was handed under that name. A value the source
+        does not hold, or the field cannot accept, falls back to the default with a log line.
         """
+        if not isinstance(values, dict):
+            return values
+        given: dict[str, SettingSource] = (info.context or {}).get("sources", {})
         for field_name, value in values.items():
-            if isinstance(value, str) and value.startswith("$ENV:"):
-                env_var_name = value.split("$ENV:")[1]
-                env_value = os.getenv(env_var_name)
-
-                field_info = cls.model_fields.get(field_name, None)
-
-                if env_value is not None:
-                    if field_info is None or usable_env_value(env_value, field_info):
-                        values[field_name] = env_value
-                    else:
-                        logger.info(
-                            f"Environment variable [{env_var_name}] holds [{env_value!r}], "
-                            f"which field [{field_name}] cannot accept. "
-                            f"Using default value: {field_info.default}"
-                        )
-                        values[field_name] = field_info.default
+            found = SENTINEL.match(value) if isinstance(value, str) else None
+            if found is None:
+                continue
+            source_name, name = found.groups()
+            said = (
+                f"Environment variable [{name}]"
+                if source_name == "ENV"
+                else f"[${source_name}:{name}]"
+            )
+            if source_name == "ENV":
+                held = os.getenv(name)
+            elif source_name in given:
+                try:
+                    held = given[source_name](name)
+                except Exception as error:  # noqa: BLE001 - settings never stop the start
+                    logger.warning(
+                        f"[{field_name}] could not be read from ${source_name}: "
+                        f"({type(error).__name__}: {error}) — it keeps {value!r} as written"
+                    )
+                    held = value
+            else:
+                logger.warning(
+                    f"[{field_name}] reads ${source_name}:, a source this build was not "
+                    f"handed — it keeps {value!r} as written; pass "
+                    f"sources={{'{source_name}': ...}} to build_config_obj to read it"
+                )
+                held = value
+            field_info = cls.model_fields.get(field_name, None)
+            if held is not None:
+                if field_info is None or usable_env_value(held, field_info):
+                    values[field_name] = held
                 else:
-                    if field_info and field_info.default is not None:
-                        default_value = field_info.default
-                        logger.info(
-                            f"Environment variable [{env_var_name}] is not set for field [{field_name}]. "
-                            f"Using default value: {default_value}"
-                        )
-                        values[field_name] = default_value
-                    elif field_info is not None and field_info.default is None:
-                        # Optional field (default=None) — env var is optional, use None silently
-                        values[field_name] = None
-                    else:
-                        logger.info(
-                            f"Environment variable [{env_var_name}] is not set for field [{field_name}] "
-                            f"and no default value was provided. This might cause issues."
-                        )
+                    logger.info(
+                        f"{said} holds [{held!r}], which field [{field_name}] cannot accept. "
+                        f"Using default value: {field_info.default}"
+                    )
+                    values[field_name] = field_info.default
+            elif field_info and field_info.default is not None:
+                logger.info(
+                    f"{said} is not set for field [{field_name}]. "
+                    f"Using default value: {field_info.default}"
+                )
+                values[field_name] = field_info.default
+            elif field_info is not None and field_info.default is None:
+                # Optional field (default=None) — the source is optional, use None silently
+                values[field_name] = None
+            else:
+                logger.info(
+                    f"{said} is not set for field [{field_name}] "
+                    f"and no default value was provided. This might cause issues."
+                )
         return values
 
 

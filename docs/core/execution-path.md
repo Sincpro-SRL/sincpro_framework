@@ -10,13 +10,14 @@ behave differently, the table says so.
 ```text
 UseFramework.__call__
   1. a reference to a context hosted elsewhere forwards the call (remote_execution)
-  2. the bus is built under a lock the first time it is called
+  2. the bus is built under a lock the first time it is called — and again, as a new
+     generation, when something was registered after the last build
   3. outside a scope of this bus, one opens: the bus's node (Level.BUS) and, when no entrance
      opened the flow, an entrypoint (EntrypointKind.DIRECT)
 
 FrameworkBus.execute                       the facade; marks the outermost call
   4. routes by the DTO's class to the Feature bus or the ApplicationService bus
-     (a DTO registered in both is refused)
+     (a DTO is refused in both where it is registered)
 
 FeatureBus.execute / ApplicationServiceBus.execute        the same steps, one level each
   5. opens the execution's node: its execution_id, causation_id and correlation_id
@@ -107,14 +108,25 @@ an inbound wire.
 
 ## What can be registered, and when
 
-| Registration | Refused once the bus is built | Repeated by `fresh()` |
+Anything can be registered at any time; nothing registered is ignored.
+
+| Registration | Registered after the bus was built | Repeated by `fresh()` |
 |---|---|---|
-| `feature`, `app_service`, `add_dependency`, `extend` | yes | yes |
-| `interceptor`, `without_interceptor`, `execution_ids` | yes | yes |
-| error handlers (`add_*_error_handler`, `without_error_handler`) | no: handed to the built bus at once | yes |
-| `context_provider`, `context_schema`, `context_store` | no | yes |
-| income and outcome listeners (`on_start`, `on_completion`, `on_failure`, `publish_*`) | no: they are read when something is announced | yes |
-| the recorder of a `Pipeline` | attached when the bus is built, not registered | each generation attaches its own |
+| `feature`, `app_service` (with or without `replaces=`), `add_dependency` (with or without `replaces=`), `extend` | answers from the next execution | yes |
+| `interceptor`, `without_interceptor`, `execution_ids` | answers from the next execution | yes |
+| error handlers (`add_*_error_handler`, `without_error_handler`) | answers from the next execution | yes |
+| `context_provider`, `context_schema`, `context_store` | read by each execution as it opens | yes |
+| income and outcome listeners (`on_start`, `on_completion`, `on_failure`, `publish_*`) | read when something is announced | yes |
+| the recorder of a `Pipeline` | — attached by each generation when it is built, not registered | each generation attaches its own |
+
+**A generation.** What the built bus holds — its handlers, wrapped by their interceptors, with
+their dependencies and error handlers — is one generation. A registration that reaches it asks for
+a new one, logged in one line; the next execution builds it, with new handler instances, and takes
+the place of the one answering. A request already running finishes on the generation it started
+on. A generation that cannot be built raises at the execution that asked for it, and the one
+answering stays. `build_root_bus()` brings the bus up to date at a line of its own;
+`revision` counts the registrations that reached a built bus, what a snapshot of it — a catalog
+of its use cases — compares. How a module uses all of this: [Extending a bus](extending.md).
 
 Listeners also exist for the whole process (`starts`, `completions`, `failures`): every bus of it
 tells them too.

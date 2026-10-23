@@ -31,6 +31,7 @@ key.
 | `InMemoryKeyValue` | Store in this process; standard library only. One replica | adapter | `sincpro_framework.data_layer.caching` |
 | `RedisKeyValue(client, prefix=)` | Store on Redis or Valkey — extra `[redis]` | adapter | `sincpro_framework.data_layer.caching.adapters.redis` |
 | `MemcachedKeyValue(client, prefix=)` | Store on Memcached (pymemcache) — extra `[memcached]` | adapter | `sincpro_framework.data_layer.caching.adapters.memcached` |
+| `DynamoKeyValue(table, client=, prefix=)` | Store on an Amazon DynamoDB table (key `key`, TTL on `expires_at`) — extra `[aws]`; contexts, drafts, pipeline runs, cron ticks and idempotency all run on it | adapter | `sincpro_framework.data_layer.caching.adapters.dynamodb` |
 | `QueryCaching` | Keeps Query answers per bus, tagged by the aggregates the repository saw them read; `.on(bus, Query, policy)` installs an interceptor | registry | `sincpro_framework.data_layer.caching` |
 | `CachePolicy` | One Query's `ttl`, `vary_by`, `stale_for`, `jitter`, `early_expiry`, `depends_on`, `max_bytes`, `wait_for_others` | setting | `sincpro_framework.data_layer.caching` |
 | `invalidate_on_commit(database, caching)` | Invalidates every aggregate a SQL commit wrote, after the commit | function | `sincpro_framework.data_layer.orm` |
@@ -90,8 +91,8 @@ entrypoints/
   consumer.py                 # Subscriber(..., caching.invalidated_by({InvoiceIssued: [Invoice]}))
 ```
 
-`caching.on` needs the handler already registered (else `TypeError`) and the bus not built yet
-(else `BusAlreadyBuilt`). `@idempotency.once` needs the `Idempotency` instance at import time.
+`caching.on` needs the handler already registered (else `TypeError`); called after the bus was
+built, it caches from the next execution. `@idempotency.once` needs the `Idempotency` instance at import time.
 
 **The flow of one call:**
 

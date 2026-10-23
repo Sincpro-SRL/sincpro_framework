@@ -45,9 +45,10 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `@bus.feature(SomeEvent)` | The subscription itself: an ordinary Feature registered for the event class | decorator | (`UseFramework`) |
 | `RecordingQueue` | Test queue that keeps what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.runtime.testing` |
 | `FastStreamQueue` | A `Queue` that sends to Kafka/RabbitMQ/Redis/NATS — extra `[faststream]` | adapter | `sincpro_framework.event_driven.adapters.faststream` |
-| `subscribe(broker, subscriber)` | Consumer side: one subscription per channel of the events the buses registered, acknowledged manually | function | `sincpro_framework.entrypoints.adapters.faststream` |
+| `SnsQueue` / `SqsQueue` / `EventBridgeQueue` | A `Queue` that sends to Amazon SNS, SQS or EventBridge — the envelope beside the body, filter attributes, FIFO — extra `[aws]` | adapter | `sincpro_framework.event_driven.adapters.aws` |
+| `subscribe(broker, subscriber)` | Consumer side: one subscription per channel of the events the buses registered, acknowledged manually | function | `sincpro_framework.entrypoints.adapters.queue` |
 | `keyed_by_entity` / `by_event_name` | Kafka message key = `entity_id` / channel = event name | function | `sincpro_framework.event_driven.adapters.faststream` |
-| `QueueOptions` | Consumer settlement: `inbox`, `max_attempts`, dead-letter suffix, `subscription_of` | setting | `sincpro_framework.entrypoints.adapters.faststream` |
+| `QueueOptions` | Consumer settlement: `inbox`, `max_attempts`, dead-letter suffix, `subscription_of` | setting | `sincpro_framework.entrypoints.adapters.queue` |
 | `event_table(name, metadata)` / `map_events(registry, base, table)` | One event table per context; subclasses selected by wire name, extra fields in JSON payload | function | `sincpro_framework.data_layer.orm` |
 | `event_columns()` | Low-level envelope columns; prefer the complete `event_table` for context event storage | function | `sincpro_framework.data_layer.orm` |
 | `RepositoryQueue` | Stores a published event through the repository for later relay delivery | adapter | `sincpro_framework.event_driven` |
