@@ -229,6 +229,45 @@ listener handing outcomes to a bus would otherwise hear its own hearing without 
 of work that its caller rolls back afterwards was still announced. What must follow the commit goes
 through the context's event table and its relay.
 
+## Hearing less
+
+A listener hears every use case of its bus. When it should hear fewer, it says so where it is added
+— the same two options on every way to listen (`on_start`, `on_completion`, `on_failure`, their
+`publish_*`, and the process's `subscribe`):
+
+| Step | Written | Hears |
+|---|---|---|
+| 1 | `bus.on_failure(alert)` | everything |
+| 2 | `bus.on_failure(alert, use_cases=[CommandIssueInvoice])` | the use cases named — by Command, or by name `billing.CommandIssueInvoice` |
+| 3 | `bus.on_failure(alert, when=Condition(...))` | what a filter of [criteria](../persistence/criteria.md) holds for |
+| 4 | `bus.on_failure(alert)`, and `alert` decides | anything a function can tell |
+
+```python
+from sincpro_framework.ddd.criteria import Condition, Operator
+
+large: list[str] = []
+warehouse.on_completion(
+    lambda completed: large.append(completed.dto["order_id"]),
+    use_cases=[CommandReserveStock],
+    when=[
+        Condition(field="context.tenant_id", value="acme"),
+        Condition(field="dto.order_id", operator=Operator.STARTS_WITH, value="O-1"),
+    ],
+)
+
+with warehouse.context({"tenant_id": "acme"}):
+    warehouse(CommandReserveStock(order_id="O-10"))
+    warehouse(CommandReserveStock(order_id="O-20"))
+warehouse(CommandReserveStock(order_id="O-11"))          # no tenant: not heard
+
+assert large == ["O-10"]
+```
+
+`when` reads the event's fields by path — `use_case`, `bus`, `kind`, `error_type`, `dto.<field>`,
+`context.<key>`, `response.<field>` — and a path the event does not hold reads `None`. A list must
+all hold; a filter may also be its JSON (`{"field": "dto.amount", "operator": ">", "value": 100}`), as
+a configuration file holds it. The criteria vocabulary is imported only by whoever writes a filter.
+
 ## What outcomes are, and are not
 
 Outcomes **observe** the execution path ([execution path](execution-path.md)): they say what a call

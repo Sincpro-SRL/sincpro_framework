@@ -3,7 +3,7 @@
 The domain keeps two verbs: `publish(event)`, and registering an event on a bus. Which broker
 carries it — a topic, a queue, a channel, a subject — and with which partitions, retries or
 acknowledgements is the broker's configuration. [FastStream](https://faststream.ag2.ai) speaks to
-each one with the same API, and `sincpro_framework.event_driven.adapters.faststream` sends and `sincpro_framework.entrypoints.adapters.faststream` listens:
+each one with the same API, and `sincpro_framework.event_driven.adapters.faststream` sends and `sincpro_framework.entrypoints.adapters.queue` listens:
 
 - `FastStreamQueue(broker)` is one more `Queue`: `put` for synchronous code, `aput` for async.
 - `subscribe(broker, Subscriber(...))` gives every event the buses registered its subscription.
@@ -47,7 +47,7 @@ class BookPayment(Feature):
 from faststream.kafka import KafkaBroker, TestKafkaBroker
 
 from sincpro_framework.event_driven import Publisher, Subscriber
-from sincpro_framework.entrypoints.adapters.faststream import subscribe
+from sincpro_framework.entrypoints.adapters.queue import subscribe
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
 
 broker = KafkaBroker("kafka:9092")

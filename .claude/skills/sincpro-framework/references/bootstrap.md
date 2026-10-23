@@ -100,9 +100,9 @@ After the services, in this order:
 1. What needs the handlers or configures the bus: `my_framework.ignore_sentry_exceptions(...)`,
    interceptors, error handlers, `auth.on(my_framework)` (`sincpro-framework-core`,
    `sincpro-framework-auth`).
-2. Gateways, in `entrypoints/`, last. Adding a bus to a gateway builds it, and the first execution
-   builds it too. A built bus refuses every later registration — Feature, dependency, interceptor —
-   with `BusAlreadyBuilt`.
+2. Gateways, in `entrypoints/`, last. Adding a bus to a gateway builds it — a wiring error surfaces
+   there — and the first execution builds it too. A registration after that answers from the next
+   execution, on a new generation of the bus.
 
 A process with several contexts registers each bus once the instance exists
 (`from sincpro_framework.registry import registry` then `registry.add(billing)`). The entrypoint

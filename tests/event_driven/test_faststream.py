@@ -13,7 +13,7 @@ from faststream.kafka import KafkaBroker, TestKafkaBroker
 from faststream.rabbit import RabbitBroker, TestRabbitBroker
 
 from sincpro_framework import DataTransferObject, Feature, exceptions
-from sincpro_framework.entrypoints.adapters.faststream import subscribe
+from sincpro_framework.entrypoints.adapters.queue import subscribe
 from sincpro_framework.event_driven import (
     AsyncPublisher,
     Publisher,
@@ -162,7 +162,7 @@ def test_only_the_events_the_buses_registered_get_a_subscription(heard):
 from faststream import AckPolicy, BaseMiddleware  # noqa: E402
 from faststream.message import AckStatus  # noqa: E402
 
-from sincpro_framework.entrypoints.adapters.faststream import QueueOptions  # noqa: E402
+from sincpro_framework.entrypoints.adapters.queue import QueueOptions  # noqa: E402
 
 from .models import failing_bus  # noqa: E402
 

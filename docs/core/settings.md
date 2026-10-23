@@ -100,6 +100,38 @@ same fallback, same log line. Without `env_prefix` nothing is read by path — a
 in the process changes nothing — so two SDKs in one process (siat_soap and payments inside Odoo)
 never read each other's variables.
 
+## Other sources: a parameter store, a vault
+
+A value may be read from anywhere else by a sentinel of its own, once the build is handed what reads
+it — a function from a name to its value, `None` when it holds none:
+
+```yaml
+billing:
+  token: $SSM:/billing/prod/token              # AWS Systems Manager Parameter Store
+  database: $SECRET:billing/prod/db#password   # AWS Secrets Manager — a key of its JSON
+  region: $VAULT:billing/region                # a source of the project's own
+```
+
+```python
+from sincpro_framework.settings.adapters.aws import ParameterStore, SecretsManager
+
+settings = build_config_obj(
+    BillingSettings, "conf/billing.yml", "billing",
+    sources={"SSM": ParameterStore(), "SECRET": SecretsManager(), "VAULT": vault.read},
+)
+```
+
+| What happens | The field |
+|---|---|
+| the source holds the name | takes its value — unless the field cannot accept it: the default, with a log line |
+| the source does not hold it (`None`) | its default, as an unset variable |
+| the source fails — no client, no permission, no network | **keeps the value as written**, with a warning |
+| the build was not handed that source | **keeps the value as written**, with a warning naming `sources=` |
+
+Settings never stop a process from starting: what could not be read is said, and the process goes
+on. `$ENV:` needs no source. The AWS sources are the `[aws]` extra, make their client at the first
+read and ask each name once.
+
 ## Secrets
 
 ```python
@@ -110,7 +142,7 @@ settings.cybersource.api_secret.get_secret_value()   # read on purpose
 ```
 
 A secret written literally in the file works, and logs a warning naming its path: secrets belong
-in the environment, through `$ENV:`.
+in the environment or a vault, through `$ENV:` or a source (`$SSM:`, `$SECRET:`).
 
 ## Mutable unless a shape asks
 

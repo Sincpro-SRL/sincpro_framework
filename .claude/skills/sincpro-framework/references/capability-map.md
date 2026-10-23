@@ -29,7 +29,7 @@ so read it only when the framework repo is at hand.
 | Change tracking | `ddd/entity/mixins/` | `sincpro-framework-domain-events` | `docs/events/change-tracking.md` |
 | Event sourcing + event store | `ddd/entity/mixins/event_sourced.py`, `data_layer/orm/` (`template_table.event_table`, `map_events`) | `sincpro-framework-domain-events` | `docs/shapes.md` §3 |
 | Outbox + relay | `ddd/events/mixins/`, `event_driven/entrypoint/relay.py`, `entrypoints/adapters/cron/registry.py` | `sincpro-framework-domain-events` | `docs/events/change-tracking.md` |
-| Brokers (Kafka/RabbitMQ/Redis/NATS) | `event_driven/adapters/faststream/`, `entrypoints/adapters/faststream/` | `sincpro-framework-domain-events` | `docs/events/brokers.md` |
+| Brokers (Kafka/RabbitMQ/Redis/NATS) | `event_driven/adapters/faststream/`, `entrypoints/adapters/queue/` | `sincpro-framework-domain-events` | `docs/events/brokers.md` |
 | Cache + idempotency | `data_layer/caching/` | `sincpro-framework-caching` | `docs/caching/README.md` |
 | Traces / errors / logs / metrics | `observability/` | `sincpro-framework-observability` | `docs/observability/` |
 | Entrypoints (REST/FastAPI/RPC/gRPC/MCP/queue) | `entrypoints/` | `sincpro-framework-entrypoints` | `docs/entrypoints/` |
@@ -40,7 +40,6 @@ so read it only when the framework repo is at hand.
 | Migrations across contexts | `data_layer/migrations/` | `sincpro-framework-operations` | `docs/migrations/README.md` |
 | Data analysis (Arrow/pandas/polars/DuckDB) | `data_layer/data_analysis/` | `sincpro-framework-analytics` | `docs/data_analysis/README.md` |
 | Runtime use cases (source on the bus) | `runtime/runtime_use_cases/` | `sincpro-framework-analytics` | `docs/runtime_use_cases/README.md` |
-| Workflows (Commands composed as JSON) | `runtime/workflows/` | `sincpro-framework-analytics` | `docs/workflows/README.md` |
 | Extensions of an entity you do not own | `ddd/entity/extensions.py`, `data_layer/orm/sqlalchemy/services/extension_*.py` | `sincpro-framework-extensions` | `docs/persistence/extensions.md`, `docs/spec/extensibility.md` |
 | System shapes (one DB / DB per context / facts as state) | — | `sincpro-framework-persistence`, `sincpro-framework-domain-events` | `docs/shapes.md` |
 | Testing utilities | `runtime/testing/` | [testing.md](testing.md) | `docs/persistence/testing.md` |

@@ -53,8 +53,11 @@ The wires of this package are the transports above. A program that stays up and 
 **Inside the framework.** `entrypoints/exposure/` holds the decorators, bindings and the registry,
 importing only the application layer. `entrypoints/gateway.py` is the one base every wire extends.
 It reads catalogs, applies precedence, validates (fails closed) and hands the surface to the
-wire's port. Each wire (`fastapi/`, `rpc/`, `grpc/`, `mcp/`, `faststream/`) is an optional extra
+wire's port. Each wire (`fastapi/`, `rpc/`, `grpc/`, `mcp/`, `queue/`) is an optional extra
 that translates the surface into its library's objects. The core never imports a web library.
+The queue wire runs on any `Broker`: a FastStream one (`[faststream]`) or `SqsBroker` (`[aws]`);
+`sincpro_framework.entrypoints.adapters.aws_lambda.sqs_handler([bus])` is a Lambda fed by SQS on
+the same wire (`docs/aws/README.md`).
 
 **Inside a service:**
 
@@ -134,8 +137,8 @@ app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /
 - **`group(bus, prefix="")` to drop the alias, without knowing it.** `prefix=None` (the default)
   gives `/{alias}`, `prefix=""` gives no segment, and `version` comes before both:
   `/{version}{prefix}{path}`.
-- **Creating the gateway before `auth.on(bus)` / interceptors.** The gateway builds the bus, and
-  later registration raises `BusAlreadyBuilt`.
+- **Creating the gateway before `auth.on(bus)` / interceptors.** The gateway reads the bus's
+  access when it is built, and a wiring error of what comes later waits for the next execution.
 - **Turning off `health_path` / `metrics_path` and rewriting `/health`.** `app()` gives
   `/healthz`, plus `/metrics` when Prometheus records. Add a readiness route only for checks of
   your own (a binary, a model).
@@ -258,8 +261,9 @@ handler inherits, wire by wire, the binding of the one it replaces.
 
 ## The rules that matter
 
-- **Gateways are made last.** Adding a bus to a gateway builds it, and a built bus takes nothing
-  more — register `auth.on(bus)`, interceptors and handlers first (`BusAlreadyBuilt` otherwise).
+- **Gateways are made last.** Adding a bus to a gateway builds it, and a wiring error surfaces
+  there — register `auth.on(bus)`, interceptors and handlers first. What is registered later answers
+  from the next execution.
 - **The build fails closed.** A published use case on a guarded bus must declare
   `@auth.requires` / `@auth.public`; a bus with no `AccessControl` needs `unguarded=True`. A
   `{field}` in a path must be a Command field. Wrong hints, reserved names, `@internal` + a binding,

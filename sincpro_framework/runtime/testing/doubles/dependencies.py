@@ -1,10 +1,9 @@
 """Replace a registered dependency with a double for the length of a test — and find the ones a
 handler declares that nobody registered.
 
-Context: a Feature is built once per ``UseFramework`` and reused by every execution, and it
-receives its dependencies when the bus is built. Registering a second value under the same
-name raises, and changing ``dynamic_dep_registry`` after the build reaches nothing. So a test
-that wants the production wiring with one adapter swapped had no supported way to ask for it.
+Context: a handler receives its dependencies when its generation of the bus is built. A double
+takes the place of the real one with `add_dependency(..., replaces=)`, so the next execution
+runs on a generation built with it, and the real one comes back the same way.
 """
 
 import inspect
@@ -38,15 +37,15 @@ def override_dependencies(
 ) -> Generator[UseFramework, None, None]:
     """Every Feature and ApplicationService of ``framework`` sees ``doubles`` inside the block.
 
-    Context: meant for tests. It swaps the attribute on the instances the bus already holds,
-    so it is visible to every thread using that bus; do not use it to change behaviour under
-    live traffic.
+    Context: meant for tests. Each double takes the place of the real one for the executions
+    that start inside the block; one already running keeps what it had.
 
     1. Refuse a name that was never registered — a typo would otherwise leave the real
        adapter in place and the test would silently talk to it.
-    2. Build the bus, so the handlers that will run are the ones being patched.
-    3. Swap the registry entry (``framework.deps``) and the attribute on every handler.
-    Final: restore what was there before, even when the block raises. Overrides nest.
+    2. Refuse a bus hosted by another service: nothing of it runs here.
+    3. Each double in the place of what is registered (``framework.deps`` answers it).
+    Final: what was there before, back in its place, even when the block raises. Overrides
+    nest.
 
     Example::
 
@@ -60,21 +59,20 @@ def override_dependencies(
             f"Cannot override {', '.join(unknown)}: not registered with add_dependency. "
             f"Available: {available}"
         )
+    if framework.is_reference:
+        raise exceptions.SincproFrameworkNotBuilt(
+            f"'{framework.name}' is hosted by another service: nothing of it is built here, so "
+            "it has no dependency to replace — replace it where it runs"
+        )
 
-    handlers = _built_handlers(framework)
     previous = {name: framework.dynamic_dep_registry[name] for name in doubles}
-
-    def _apply(values: dict[str, Any]) -> None:
-        framework.dynamic_dep_registry.update(values)
-        for handler in handlers:
-            for name, value in values.items():
-                setattr(handler, name, value)
-
-    _apply(doubles)
+    for name, double in doubles.items():
+        framework.add_dependency(name, double, replaces=previous[name])
     try:
         yield framework
     finally:
-        _apply(previous)
+        for name, real in previous.items():
+            framework.add_dependency(name, real, replaces=doubles[name])
 
 
 def _declared(handler: type) -> set[str]:

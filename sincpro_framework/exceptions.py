@@ -125,8 +125,9 @@ class SincproFrameworkNotBuilt(ProgrammingError):
 
 
 class BusAlreadyBuilt(ProgrammingError):
-    """Something was registered on a bus that is already built, where it would never run —
-    register it before the first execution."""
+    """Something was registered where it would never run, because what reads it is already
+    built — a cron on a cron registry already serving. A `UseFramework` never raises it: what is
+    registered on one after its build answers from the next execution."""
 
 
 class ContextRequired(ProgrammingError):

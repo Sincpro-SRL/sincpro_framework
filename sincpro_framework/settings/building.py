@@ -10,6 +10,7 @@ framework what it set.
 """
 
 import os
+from collections.abc import Mapping
 from typing import Type
 
 from sincpro_framework.settings.adapters.environment import with_environment_by_path
@@ -17,6 +18,7 @@ from sincpro_framework.settings.adapters.yaml_file import load_yaml_file
 from sincpro_framework.settings.domain.config import (
     DefaultFrameworkConfig,
     FrameworkSettings,
+    SettingSource,
     SincproConfig,
     TypeSincproConfigModel,
 )
@@ -69,6 +71,7 @@ def build_config_obj(
     class_config_obj: Type[TypeSincproConfigModel],
     config_path: str,
     sub_key: str | None = None,
+    sources: Mapping[str, SettingSource] | None = None,
 ) -> TypeSincproConfigModel:
     """Build a config object from a dictionary
     if sub_key is provided, it will return the sub_key of the config — a dotted path reaches a
@@ -78,7 +81,8 @@ def build_config_obj(
     2. The section `sub_key` names, and the sections above it inside the project's own.
     3. The shape's values: its section, its nested shapes, the cascade (`values_of`).
     4. Final: validated whole in one call — every problem one error, by path — with where each
-       value came from kept for `describe_settings`.
+       value came from kept for `describe_settings`. A value written `$<SOURCE>:name` is read
+       from `sources[SOURCE]` — `$ENV:` needs none.
     """
     document = load_yaml_file(config_path)
     prefix = class_config_obj.env_prefix
@@ -88,10 +92,12 @@ def build_config_obj(
     section, above = locate(document, sub_key, config_path)
 
     print(f"read yaml file {config_path} for config {class_config_obj.__name__}")
-    sources: dict[str, str] = {}
-    values = values_of(class_config_obj, section, sub_key or "", config_path, above, sources)
-    built = class_config_obj(**values)
-    _keep_sources(built, sources, "")
+    came_from: dict[str, str] = {}
+    values = values_of(
+        class_config_obj, section, sub_key or "", config_path, above, came_from
+    )
+    built = class_config_obj.model_validate(values, context={"sources": dict(sources or {})})
+    _keep_sources(built, came_from, "")
     if isinstance(built, FrameworkSettings):
         _hand_to_the_framework(built)
     return built

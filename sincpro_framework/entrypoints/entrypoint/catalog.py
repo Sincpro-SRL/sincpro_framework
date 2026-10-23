@@ -64,10 +64,18 @@ class Catalog:
         self._exclude: set[str] = set()
         self._wrappers: dict[str, Wrapper] = {}
         self._packed: dict[bool, list[PackedFeatureOrAppService]] = {}
-        self.revision = 0
-        """Bumped by every include/exclude/wrap — what a gateway's resolved surface checks."""
-        """What `get_scalar_use_cases` answered, by its filter — a built bus's handlers do not
-        change, so the schemas are computed once; `include` / `exclude` / `wrap` let it go."""
+        """What `get_scalar_use_cases` answered, by its filter — the schemas computed once;
+        `include` / `exclude` / `wrap`, or something registered on the bus, let it go."""
+        self._packed_from = framework_instance.revision
+        """The bus's revision the packed answers were read from."""
+        self._changes = 0
+        """Bumped by every include/exclude/wrap."""
+
+    @property
+    def revision(self) -> int:
+        """Grows with every include/exclude/wrap and with every registration on the bus after it
+        was built — what a gateway's resolved surface checks."""
+        return self._changes + self.framework_instance.revision
 
     @staticmethod
     def _names(*dtos: type | str) -> set[str]:
@@ -141,20 +149,20 @@ class Catalog:
     def include(self, *dtos: type | str) -> Self:
         self._include = self._names(*dtos)
         self._packed.clear()
-        self.revision += 1
+        self._changes += 1
         return self
 
     def exclude(self, *dtos: type | str) -> Self:
         self._exclude = self._names(*dtos)
         self._packed.clear()
-        self.revision += 1
+        self._changes += 1
         return self
 
     def wrap(self, dto: type | str, wrapper: Wrapper) -> Self:
         key = dto if isinstance(dto, str) else dto.__name__
         self._wrappers[key] = wrapper
         self._packed.clear()
-        self.revision += 1
+        self._changes += 1
         return self
 
     def _json_safe(
@@ -207,6 +215,9 @@ class Catalog:
         4. Final: drop binary-schema entries when filter_binaries_schema is True — the answer
            kept, so a wire that asks on every request computes it once.
         """
+        if self._packed_from != self.framework_instance.revision:
+            self._packed.clear()
+            self._packed_from = self.framework_instance.revision
         kept = self._packed.get(filter_binaries_schema)
         if kept is not None:
             return list(kept)

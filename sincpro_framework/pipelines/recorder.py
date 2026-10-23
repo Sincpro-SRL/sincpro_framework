@@ -25,7 +25,7 @@ from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.entrypoint.facade import use_context
 from sincpro_framework.context.infrastructure.tree import current_execution
-from sincpro_framework.pipelines.pipeline import Resume
+from sincpro_framework.pipelines.pipeline import Await, Resume
 from sincpro_framework.pipelines.run import (
     PipelineRun,
     PipelineState,
@@ -57,11 +57,40 @@ class PipelineRecorder:
         )
         return holder.run
 
-    def _close(self, holder: RunInProgress, error: str) -> PipelineRun:
-        """The run finished: failed by what escaped, or by a step that failed; else succeeded."""
-        failed = next(
-            (step for step in holder.run.steps if step.status is StepStatus.FAILED), None
-        )
+    def _decisions(self, dto: Any, holder: RunInProgress) -> tuple[dict[str, Any], list[Any]]:
+        """What the input decided for each `Await` of its recipe, and the steps with each await
+        marked: passed when decided, waiting where the run stopped."""
+        decided = dict(holder.run.decisions)
+        for waits in self.pipeline.recipe_of(dto):
+            if isinstance(waits, Await) and getattr(dto, waits.name, None) not in (None, ""):
+                decided[waits.name] = getattr(dto, waits.name)
+        steps = [one.model_copy() for one in holder.run.steps]
+        for one in steps:
+            name = one.command.removeprefix("await:")
+            if not one.command.startswith("await:"):
+                continue
+            if name in decided:
+                one.status = StepStatus.SUCCEEDED
+            elif name == holder.waiting_for:
+                one.status = StepStatus.WAITING
+        return decided, steps
+
+    def _close(self, dto: Any, holder: RunInProgress, error: str) -> PipelineRun:
+        """The run finished — failed by what escaped, or by a step that failed; else succeeded —
+        or stopped, waiting at an `Await`."""
+        decided, steps = self._decisions(dto, holder)
+        if holder.waiting_for and not error:
+            return self._keep(
+                holder,
+                {
+                    "state": PipelineState.WAITING,
+                    "waiting_for": holder.waiting_for,
+                    "decisions": decided,
+                    "steps": steps,
+                    "current": None,
+                },
+            )
+        failed = next((step for step in steps if step.status is StepStatus.FAILED), None)
         why = error or (
             failed.error or f"{failed.command} failed" if failed is not None else ""
         )
@@ -69,6 +98,9 @@ class PipelineRecorder:
             holder,
             {
                 "state": PipelineState.FAILED if why else PipelineState.SUCCEEDED,
+                "waiting_for": None,
+                "decisions": decided,
+                "steps": steps,
                 "current": None,
                 "error": why,
                 "finished_at": datetime.now(UTC),
@@ -82,12 +114,17 @@ class PipelineRecorder:
         recipe = [*self.pipeline.recipe_of(dto)]
         if self.pipeline.always is not None:
             recipe.append(self.pipeline.always)
-        names = [registered_name(step, bus) for step in recipe]
+        names = [
+            step.step if isinstance(step, Await) else registered_name(step, bus)
+            for step in recipe
+        ]
         version = hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
         run_id = str(getattr(dto, "run_id", "") or new_entity_id())
         runs = self._runs()
         before = runs.read(name, run_id)
-        continuing = before is not None and self.pipeline.resume is Resume.CONTINUE
+        continuing = before is not None and (
+            self.pipeline.resume is Resume.CONTINUE or before.state is PipelineState.WAITING
+        )
         if continuing and before is not None and before.version != version:
             logger.warning(
                 f"pipeline run {run_id} of {name} was kept under another recipe: it starts over"
@@ -100,6 +137,7 @@ class PipelineRecorder:
                 update={
                     "state": PipelineState.RUNNING,
                     "current": None,
+                    "waiting_for": None,
                     "error": "",
                     "finished_at": None,
                     "correlation_id": correlation,
@@ -139,9 +177,9 @@ class PipelineRecorder:
         try:
             response = call_next(dto)
         except Exception as error:
-            self._close(holder, str(error) or type(error).__name__)
+            self._close(dto, holder, str(error) or type(error).__name__)
             raise
-        closed = self._close(holder, "")
+        closed = self._close(dto, holder, "")
         return closed if isinstance(response, PipelineRun) else response
 
     def _mark(
@@ -154,18 +192,33 @@ class PipelineRecorder:
         wait: float | None = None,
     ) -> None:
         """The first step of that name that is waiting (to start) or running (to end) takes
-        `status`; one the recipe never named is added."""
+        `status` — to start again, the one that just failed, when the pipeline retries it; one
+        the recipe never named is added."""
         waiting = StepStatus.PENDING if status is StepStatus.RUNNING else StepStatus.RUNNING
         now = datetime.now(UTC)
         steps = [one.model_copy() for one in holder.run.steps]
-        found = next(
-            (one for one in steps if one.command == step and one.status is waiting), None
+        found = (
+            next(
+                (
+                    one
+                    for one in reversed(steps)
+                    if one.command == step and one.status is StepStatus.FAILED
+                ),
+                None,
+            )
+            if status is StepStatus.RUNNING and holder.run.current == step
+            else None
         )
+        if found is None:
+            found = next(
+                (one for one in steps if one.command == step and one.status is waiting), None
+            )
         if found is None:
             found = StepState(command=step)
             steps.append(found)
         if status is StepStatus.RUNNING:
             found.started_at = now
+            found.attempts += 1
         else:
             found.finished_at = now
         found.status, found.error, found.kind, found.retry_after = status, error, kind, wait

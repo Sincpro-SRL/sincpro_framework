@@ -20,7 +20,6 @@ from sincpro_framework import (
     DataTransferObject,
     Feature,
     UseFramework,
-    exceptions,
 )
 from sincpro_framework.context import ContextKey, Execution, Level, carrying
 from sincpro_framework.context.infrastructure.tree import current_execution
@@ -170,12 +169,16 @@ def test_a_bus_mints_its_ids_with_the_generator_it_was_given(seen):
     assert len(seen[3].execution_id) == 32  # the warehouse keeps its own generator
 
 
-def test_a_generator_given_after_the_build_is_refused(seen):
+def test_a_generator_given_after_the_build_mints_from_the_next_execution(seen):
     sales, _ = _buses(seen)
     sales(CommandCheckCredit())
 
-    with pytest.raises(exceptions.BusAlreadyBuilt):
-        sales.execution_ids(lambda: "late")
+    sales.execution_ids(lambda: "late")
+    sales(CommandCheckCredit())
+
+    first, late = seen
+    assert first.execution_id != "late"
+    assert late.execution_id == "late"
 
 
 # --- across threads, tasks and events -----------------------------------------------------------

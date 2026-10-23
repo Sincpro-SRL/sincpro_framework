@@ -223,9 +223,11 @@ middleware, interceptors and plugins:
   name — the name its logs and error tracker use too. For a wire third parties or agents build
   on, name the alias yourself (`add("billing", bus)`): renaming the bus then never moves a URL, a
   gRPC package or a tool.
-- **Gateways are made last.** Adding a bus to a gateway builds it, and a built bus takes nothing
-  more — so `auth.on(bus)`, the interceptors and the handlers are registered first, the gateways
-  at the end of the composition. Done the other way, `BusAlreadyBuilt` says what came too late.
+- **Gateways are made last.** Adding a bus to a gateway builds it, so a wiring error surfaces
+  there, at startup. `auth.on(bus)`, the interceptors and the handlers registered first are all
+  checked at that line; one registered later still answers — from the next execution, and the
+  gateway publishes it from its next read — but its error, if it has one, waits for that
+  execution.
 - **What the client sends is the client's.** JSON-RPC opens the `context` a request carries, and
   every wire opens the DTO's fields as they came; the framework validates the DTO and never takes
   identity from either. A use case that decides on a context value validates it.

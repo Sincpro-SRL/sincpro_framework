@@ -95,33 +95,29 @@ class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT])
     Features automatically receive injected dependencies as attributes through the framework's
     dependency injection system. These dependencies can be accessed via self.dependency_name.
 
-    One instance is built per UseFramework and serves every execution, on every thread: keep
-    request data in local variables, never on ``self``. ``self.context`` is per execution.
+    One instance is built per generation of its UseFramework and serves every execution, on
+    every thread: keep request data in local variables, never on ``self``. ``self.context`` is
+    per execution.
 
-    For better IDE support with typed dependencies, inherit with specific DTO types:
+    Every bounded context wraps it once, in its ``framework.py``, with the dependencies it
+    registers — and its Features inherit that base, never this one:
 
-    Example:
-        @framework.feature(MyInputDTO)
-        class MyFeature(Feature[MyInputDTO, MyResponseDTO]):
-            # Type your injected dependencies for IDE autocomplete
-            database_adapter: DatabaseAdapter
-            external_service: ExternalService
+        # framework.py
+        from sincpro_framework import Feature as _Feature
 
-            def execute(self, dto: MyInputDTO) -> MyResponseDTO:
-                # Access context with the new API
-                correlation_id = self.context.get("correlation_id")
-                user_id = self.context.get("user_id")
+        class Feature(_Feature, DependencyContextType):
+            ...                                         # the base of this bounded context
 
-                result = self.database_adapter.query(dto.param)
-                return MyResponseDTO(result=result)
+        # services/issue_invoice.py
+        @billing.feature(CommandIssueInvoice)
+        class IssueInvoice(Feature):
+            def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
+                tenant_id = self.context.get("tenant_id")       # this execution's context
+                number = self.numbering.next(tenant_id)         # a typed dependency
+                return ResponseIssueInvoice(number=number)
 
-    For backward compatibility, you can also use untyped Feature:
-
-        @framework.feature(MyInputDTO)
-        class MyFeature(Feature):
-            def execute(self, dto: MyInputDTO) -> MyResponseDTO:
-                # This still works but with less IDE support
-                return MyResponseDTO(result="example")
+    ``self.context`` is typed with the third parameter — ``Feature[Command, Response, Context]``;
+    the parameters are given all three or none.
     """
 
     def __init__(self, *args, **kwargs):
@@ -152,8 +148,8 @@ class ApplicationService(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse,
     They have access to all injected dependencies (same as Features) plus an exclusive
     feature_bus for executing other Features.
 
-    Like a Feature, one instance serves every execution: request data stays in local
-    variables, never on ``self``.
+    Like a Feature, one instance serves every execution of a generation of the bus: request data
+    stays in local variables, never on ``self``.
 
     ApplicationServices are ideal for:
     - Non-atomic operations requiring multiple steps
@@ -161,34 +157,20 @@ class ApplicationService(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse,
     - Complex business workflows with multiple decision points
     - Aggregating data from multiple sources
 
-    For better IDE support with typed dependencies, inherit with specific DTO types:
+    Every bounded context wraps it once, in its ``framework.py``, as it wraps ``Feature``:
 
-    Example:
-        @framework.app_service(MyOrchestrationDTO)
-        class MyApplicationService(ApplicationService[MyOrchestrationDTO, MyResponseDTO]):
-            # Type your injected dependencies for IDE autocomplete
-            external_service: ExternalService
+        # framework.py
+        from sincpro_framework import ApplicationService as _ApplicationService
 
-            def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
-                # Access context with the new API
-                correlation_id = self.context.get("correlation_id")
-                user_id = self.context.get("user_id")
+        class ApplicationService(_ApplicationService, DependencyContextType):
+            ...                                         # the base of this bounded context
 
-                # Execute Features through feature_bus with proper typing
-                step1_result = self.feature_bus.execute(Step1DTO(...), Step1ResponseDTO)
-                step2_result = self.feature_bus.execute(Step2DTO(...), Step2ResponseDTO)
-
-                # Use injected dependencies for additional operations
-                final_result = self.external_service.combine(step1_result, step2_result)
-                return MyResponseDTO(result=final_result)
-
-    For backward compatibility, you can also use untyped ApplicationService:
-
-        @framework.app_service(MyOrchestrationDTO)
-        class MyApplicationService(ApplicationService):
-            def execute(self, dto: MyOrchestrationDTO) -> MyResponseDTO:
-                # This still works but with less IDE support
-                return MyResponseDTO(result="example")
+        # services/checkout.py
+        @shop.app_service(CommandCheckout)
+        class Checkout(ApplicationService):
+            def execute(self, dto: CommandCheckout) -> ResponseCheckout:
+                reserved = self.feature_bus(CommandReserve(sku=dto.sku), ResponseReserve)
+                return ResponseCheckout(total=reserved.quantity * self.prices.of(dto.sku))
     """
 
     feature_bus: "FeatureBus"

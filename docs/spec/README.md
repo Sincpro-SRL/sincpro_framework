@@ -8,6 +8,7 @@ specification is the thing a reader trusts today.
 |---|---|
 | [Persistence](persistence.md) | The entity model, what a repository reads and writes, analysis from the model, and the status of every capability |
 | [Extensibility](extensibility.md) | How a module in another repository adds to an entity it does not own, how releases of the core and of the module are survived, what it costs, and what is missing |
+| [Integration](integration.md) | What an execution announces and who hears it, events out and messages in on any broker, shared stores, settings sources, jobs of several steps — and the rule that every one is written simple first |
 
 ## How a specification is kept
 

@@ -114,8 +114,8 @@ boundary and what earns a place in `common/`:
 2. **`from . import services`** — decorators register against that instance at import time.
 3. **Things that need the handlers** — `auth.on(billing)`, interceptors, error handlers,
    `ignore_sentry_exceptions(...)`.
-4. **Gateways last** — adding a bus to a gateway builds it (so does its first execution); a built
-   bus refuses every later registration with `BusAlreadyBuilt`.
+4. **Gateways last** — adding a bus to a gateway builds it (so does its first execution), and a
+   wiring error surfaces there; a registration after that answers from the next execution.
 
 Full skeleton: [references/bootstrap.md](references/bootstrap.md).
 
@@ -153,6 +153,10 @@ HTTP / MCP / RPC / cron / test / another context
 6. **`self` holds only injected dependencies.** One handler instance serves every call on every
    thread; request data lives in locals. `self.context` is per call.
 7. **`entrypoints/` never registers a use case or creates a bus.** It builds gateways.
+8. **Handlers inherit the context's own bases.** `framework.py` wraps `Feature` and
+   `ApplicationService` (and `Hook` when there are hooks) with the context's
+   `DependencyContextType`; every handler imports `Feature` from its context, never from
+   `sincpro_framework`.
 
 Reasoning and review checklist: [references/hard-rules.md](references/hard-rules.md).
 
@@ -168,7 +172,8 @@ Silent ones first: the top rows work in a demo and fail in production without ra
 | Importing a Feature class (or a helper function) from another service | Bypasses the bus: no span, no error report, no interceptors | Import that use case's DTOs and execute them on the bus |
 | A function `def x(feature_bus, ...)` or `def x(client, ...)` exported from `services/` or `domain/` | Hidden dispatcher; orchestration nobody traces | Execute the Command; shared I/O is an adapter |
 | Writing request data to `self` in `execute` | Concurrent calls read each other's data | Locals; pass values as arguments |
-| Registering after the first execution or after a gateway was built | `BusAlreadyBuilt` at import or at startup | Follow the bootstrap order above |
+| `class X(sincpro_framework.Feature)` in `services/`, or `Feature[Command, Response]` with two parameters | No typed dependencies — `self.<dep>` without autocomplete, a rename missed; two parameters is a `TypeError` | Inherit the context's `Feature` from `framework.py`; type `self.context` with all three parameters or none |
+| Registering after the first execution or after a gateway was built, expecting the error at startup | The registration answers from the next execution, and its wiring error waits for it | Follow the bootstrap order above; `bus.build_root_bus()` after installing modules |
 | An ApplicationService calling another ApplicationService | `feature_bus` only knows Features: `UnknownDTOToExecute` at runtime | Compose Features; or make the outer use case the only ApplicationService |
 | Swallowing an exception in an error handler that only logs | The handler's return becomes the answer: `None` | Re-raise to delegate (`sincpro-framework-core`) |
 | Reaching into another context's `services/` or adapters instead of its bus | Couples to internals; the context cannot be extracted as a service | `add_dependency("common", common)` and `self.common(Command(...), Response)` |

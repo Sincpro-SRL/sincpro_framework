@@ -3,7 +3,7 @@
 The domain keeps two verbs: `publish(event)` and registering an event on a bus. Which broker carries
 it, with which partitions/retries/acknowledgements, is the broker's configuration. Sending lives in
 `sincpro_framework.event_driven.adapters.faststream`; listening is an entrypoint in
-`sincpro_framework.entrypoints.adapters.faststream`.
+`sincpro_framework.entrypoints.adapters.queue`.
 
 ```bash
 pip install sincpro-framework[faststream] "faststream[kafka]"     # or [rabbit], [redis], [nats]
@@ -16,7 +16,7 @@ from faststream.kafka import KafkaBroker              # or RabbitBroker, RedisBr
 
 from sincpro_framework.event_driven import Publisher, Subscriber
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
-from sincpro_framework.entrypoints.adapters.faststream import subscribe
+from sincpro_framework.entrypoints.adapters.queue import subscribe
 
 broker = KafkaBroker("kafka:9092")
 
@@ -59,7 +59,7 @@ FastStreamQueue(broker, channel_of=lambda _event: "billing")
 ```python
 from sincpro_framework.data_layer.caching import KeyValueRecords
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue          # [redis]
-from sincpro_framework.entrypoints.adapters.faststream import QueueOptions
+from sincpro_framework.entrypoints.adapters.queue import QueueOptions
 
 subscribe(broker, Subscriber(accounting),
           options=QueueOptions(inbox=KeyValueRecords(RedisKeyValue(redis_client)), max_attempts=5))

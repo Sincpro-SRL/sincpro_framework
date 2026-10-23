@@ -476,8 +476,8 @@ def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_im
 
 def test_a_queue_message_hands_its_correlation_and_tenant_to_the_context():
     pytest.importorskip("faststream")
-    from sincpro_framework.entrypoints.adapters.faststream.envelope import Envelope
-    from sincpro_framework.entrypoints.adapters.faststream.wire import queue_context
+    from sincpro_framework.entrypoints.adapters.queue.wire import queue_context
+    from sincpro_framework.event_driven.adapters.envelope import Envelope
 
     envelope = Envelope(correlationid="corr-1")
 

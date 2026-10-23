@@ -162,7 +162,7 @@ def test_an_event_crosses_a_broker_with_the_publishers_context():
 
 def test_a_command_sent_to_a_broker_carries_the_senders_chain():
     pytest.importorskip("faststream")
-    from sincpro_framework.entrypoints.adapters.faststream import cloud_event_headers
+    from sincpro_framework.entrypoints.adapters.queue import cloud_event_headers
 
     headers, sender = _inside_an_execution(
         lambda: cloud_event_headers(CommandRemote(), source="identity-tests")
@@ -175,8 +175,8 @@ def test_a_command_sent_to_a_broker_carries_the_senders_chain():
 
 def test_a_consumer_restores_what_the_message_carried():
     pytest.importorskip("faststream")
-    from sincpro_framework.entrypoints.adapters.faststream.envelope import Envelope
-    from sincpro_framework.entrypoints.adapters.faststream.wire import queue_context
+    from sincpro_framework.entrypoints.adapters.queue.wire import queue_context
+    from sincpro_framework.event_driven.adapters.envelope import Envelope
 
     header = written(
         {ContextKey.TENANT_ID: "acme", ContextKey.TENANT_IDS: ["acme", "beta"], "plan": "pro"}

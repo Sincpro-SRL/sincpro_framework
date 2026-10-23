@@ -3,10 +3,9 @@ reference, `replaces=` in place, `without_*` to switch one off, and one order fo
 `before`/`after`, then `sequence` (lower first), then the order they were registered. What works,
 only not as said, is a warning; only what cannot work is refused."""
 
-import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
+from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.introspection import features
 
 
@@ -136,15 +135,17 @@ def test_an_interceptor_switched_off_does_not_run():
     assert seen == ["credit", "pay"]
 
 
-def test_switching_off_an_interceptor_after_the_bus_is_built_is_refused():
+def test_switching_off_an_interceptor_after_the_bus_is_built_applies_from_the_next_execution():
     seen: list[str] = []
     payments = _payments(seen)
     audit = _named(seen, "audit")
     payments.interceptor(CommandPay)(audit)
     payments(CommandPay(amount=1), ResponsePay)
 
-    with pytest.raises(exceptions.BusAlreadyBuilt):
-        payments.without_interceptor(audit)
+    payments.without_interceptor(audit)
+    payments(CommandPay(amount=2), ResponsePay)
+
+    assert seen == ["audit", "pay", "pay"]
 
 
 def test_a_fresh_bus_keeps_the_replacements_and_what_was_switched_off():

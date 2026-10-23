@@ -19,10 +19,10 @@ with billing.context({"tenant_id": "acme"}):
 assert first == again
 ```
 
-`on` registers an interceptor around the Query, so it is decided **before the bus is built** and
+`on` registers an interceptor around the Query, so it
 reaches the Query however it is executed — HTTP, MCP, another ApplicationService. It needs the
 handler already registered (`TypeError` otherwise) and its `execute` to declare a return type;
-after the bus is built it is refused (`BusAlreadyBuilt`). **Only Queries** — nothing refuses a
+called after the bus was built, it caches from the next execution. **Only Queries** — nothing refuses a
 Command, but a Command decides from the database, never a cache.
 
 ## The key

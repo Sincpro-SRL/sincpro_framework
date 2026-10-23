@@ -185,7 +185,7 @@ class IssueInvoice(Feature):
 class CreditReport(Feature): ...
 
 
-auth.on(billing)                                     # before the bus is built
+auth.on(billing)                                     # before any gateway
 ```
 
 - The decorators only mark classes, in any order around `@billing.feature`; the marks are read at

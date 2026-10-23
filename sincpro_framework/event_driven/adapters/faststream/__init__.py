@@ -6,7 +6,7 @@
     queue = FastStreamQueue(broker).start()       # a Queue: Publisher(queue).publish(event)
 
 The listening side is an entrypoint — what outsiders make this process do — and lives with the
-queue entrypoint: `from sincpro_framework.entrypoints.adapters.faststream import subscribe`. The broker's
+queue entrypoint: `from sincpro_framework.entrypoints.adapters.queue import subscribe`. The broker's
 own driver is the service's: `faststream[kafka]`, `faststream[rabbit]`, `faststream[redis]` or
 `faststream[nats]`.
 """
@@ -21,13 +21,13 @@ try:
 except ImportError as error:  # pragma: no cover - tests/core/test_core_without_extras.py
     raise ImportError(FASTSTREAM_MISSING) from error
 
+from sincpro_framework.event_driven.adapters.envelope import EVENT_HEADER  # noqa: E402
 from sincpro_framework.event_driven.adapters.faststream.queue import (  # noqa: E402 - after the guard
-    EVENT_HEADER,
-    Broker,
     FastStreamQueue,
     by_event_name,
     keyed_by_entity,
 )
+from sincpro_framework.event_driven.domain.broker import Broker  # noqa: E402
 
 __all__ = [
     "EVENT_HEADER",

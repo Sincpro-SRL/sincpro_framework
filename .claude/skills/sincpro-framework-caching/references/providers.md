@@ -51,7 +51,7 @@ A codec, a freshness or an eviction of yours proves itself the same way, with
 
 - `IdempotencyRecords` / `KeyValueRecords(store)` — where an idempotency claim and answer live.
 - The queue entrypoint's inbox uses the same port (`QueueOptions` from
-  `sincpro_framework.entrypoints.adapters.faststream`, see `sincpro-framework-entrypoints`):
+  `sincpro_framework.entrypoints.adapters.queue`, see `sincpro-framework-entrypoints`):
   `QueueOptions(inbox=KeyValueRecords(RedisKeyValue(...)))` across replicas, `inbox=None` off.
 - A transactional `IdempotencyRecords` of yours proves itself with
   `sincpro_framework.runtime.testing.IdempotencyRecordsContract`.

@@ -1,9 +1,15 @@
-# Queues — Commands and events from a broker, on FastStream
+# Queues — Commands and events from a broker
 
 `QueueGateway` is the queue **entrypoint**: what other services may make this process do through
-Kafka, RabbitMQ, Redis or NATS. It sits on FastStream (`[faststream]` extra plus the broker's own
-driver, e.g. `faststream[kafka]`) and adds what a public consumer needs: declared exposure, the
-producer's identity, an inbox, explicit settling, dead letters, CloudEvents and AsyncAPI.
+a broker — Kafka, RabbitMQ, Redis or NATS through FastStream (`[faststream]` extra plus the broker's
+own driver, e.g. `faststream[kafka]`), or Amazon SQS through `SqsBroker` (`[aws]`, see
+[aws/](../aws/README.md)). It adds what a public consumer needs: declared exposure, the producer's
+identity, an inbox, explicit settling, dead letters, CloudEvents and AsyncAPI.
+
+Nothing of the wire is a broker's: a broker is anything with `subscriber`, `publish`, `start` and
+`stop`, its messages anything with a body, headers and `ack` / `nack` / `reject`
+(`sincpro_framework.event_driven.domain.broker`). A broker that is not FastStream's says how it
+settles with a `flavour` — that is all `SqsBroker` adds.
 
 It is not the event-driven module. `Publisher` and `FastStreamQueue` ([events/brokers.md](../events/brokers.md))
 stay how a fact **leaves** a process. `subscribe()` stays the one-line way to hear events — it is
@@ -12,7 +18,7 @@ gateway is what you use when a broker is also a door into your Commands.
 
 ```text
 from faststream.kafka import KafkaBroker
-from sincpro_framework.entrypoints.adapters.faststream import QueueGateway
+from sincpro_framework.entrypoints.adapters.queue import QueueGateway
 
 broker = KafkaBroker("kafka:9092")
 gateway = QueueGateway(broker, [billing, accounting])
@@ -149,8 +155,9 @@ stages. On records that commit inside the use case's own transaction, effects ar
 within that database. On a key-value store they are best effort: a replica that dies between the
 use case and `complete` runs the message again once the claim expires.
 
-The id is the CloudEvents `id`, else a DomainEvent's own `id`, else FastStream's message id. So
-events published by `FastStreamQueue` (which writes no envelope) are still run once.
+The id is the CloudEvents `id`, else a DomainEvent's own `id`, else the broker's message id.
+`FastStreamQueue` and the AWS queues write the envelope (`cloud_event_headers`), so an event they
+publish is run once by its own id.
 
 ### Time limits, TTL, order
 
@@ -172,7 +179,7 @@ the prefixes `ce_` (Kafka binding), `ce-` (HTTP) and `cloudEvents:` / `cloudEven
 producer stamps them with:
 
 ```text
-from sincpro_framework.entrypoints.adapters.faststream import cloud_event_headers
+from sincpro_framework.entrypoints.adapters.queue import cloud_event_headers
 headers = cloud_event_headers(command, source="urn:svc:sales", id=request_id)
 await broker.publish(command.model_dump_json().encode(), "billing.invoices.issue", headers=headers)
 ```

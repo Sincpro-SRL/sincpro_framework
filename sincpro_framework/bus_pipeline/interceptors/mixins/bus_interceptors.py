@@ -1,6 +1,7 @@
 """`BusInterceptorsMixin`: what a `UseFramework` mixes in to wrap its use cases — registering an
 interceptor, switching one off, and wrapping each handler when the bus is built."""
 
+from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from sincpro_log.logger import LoggerProxy
@@ -20,8 +21,7 @@ if TYPE_CHECKING:
 class BusInterceptorsMixin:
     """What a `UseFramework` adds to wrap its use cases."""
 
-    was_initialized: bool
-    _registrations: list[Callable[[Any], Any]]
+    _build_lock: RLock
 
     if TYPE_CHECKING:
 
@@ -30,6 +30,8 @@ class BusInterceptorsMixin:
 
         @property
         def logger(self) -> LoggerProxy: ...
+
+        def _registered(self, replay: Callable[[Any], Any], what: str) -> None: ...
 
     def _init_interceptors(self) -> None:
         self._interceptors: list[InterceptorRegistration] = []
@@ -55,55 +57,53 @@ class BusInterceptorsMixin:
         Context: the first to run is the outermost. They run by `before`/`after`, then
         `sequence` (lower first), then the order they were registered — the order every
         extension point uses, see `sincpro_framework.common.ordering`; a replacement takes the place
-        of what it replaces and wraps the same Commands. Fixed when the bus is built; one
-        registered later would never run, so it is refused. See `sincpro_framework.bus_pipeline.interceptors.interceptor`
+        of what it replaces and wraps the same Commands. Registered after the bus was built, it
+        wraps from the next execution. See `sincpro_framework.bus_pipeline.interceptors.interceptor`
         for what an interceptor may and may not do.
         """
 
         def register(interceptor: T) -> T:
-            if self.was_initialized:
-                raise exceptions.BusAlreadyBuilt(
-                    f"interceptor {interceptor.__qualname__} registered late: '{self.name}' is already built, so it would "
-                    "never be used — register it before the first execution"
+            with self._build_lock:
+                self._interceptors.append(
+                    InterceptorRegistration(
+                        interceptor, commands, sequence, tuple(before), tuple(after), replaces
+                    )
                 )
-            self._interceptors.append(
-                InterceptorRegistration(
-                    interceptor, commands, sequence, tuple(before), tuple(after), replaces
+                self._registered(
+                    lambda bus: bus.interceptor(
+                        *commands,
+                        replaces=replaces,
+                        before=before,
+                        after=after,
+                        sequence=sequence,
+                    )(interceptor),
+                    f"interceptor {name_of(interceptor)}",
                 )
-            )
-            self._registrations.append(
-                lambda bus: bus.interceptor(
-                    *commands,
-                    replaces=replaces,
-                    before=before,
-                    after=after,
-                    sequence=sequence,
-                )(interceptor)
-            )
             return interceptor
 
         return register
 
     def without_interceptor(self, interceptor: Interceptor) -> None:
-        """Switch off an interceptor registered on this bus — it wraps nothing from then on.
-        Refused once the bus is built, like registering one."""
-        if self.was_initialized:
-            raise exceptions.BusAlreadyBuilt(
-                f"switching off interceptor {interceptor.__qualname__} registered late: '{self.name}' is already built, so it would "
-                "never be used — register it before the first execution"
+        """Switch off an interceptor registered on this bus — it wraps nothing from then on, or
+        from the next execution when the bus was already built."""
+        with self._build_lock:
+            self._interceptors_off.append(interceptor)
+            self._registered(
+                lambda bus: bus.without_interceptor(interceptor),
+                f"switching off interceptor {name_of(interceptor)}",
             )
-        self._interceptors_off.append(interceptor)
-        self._registrations.append(lambda bus: bus.without_interceptor(interceptor))
 
-    def _ordered_interceptors(self) -> list[InterceptorRegistration]:
-        """The interceptors in the order they wrap, outermost first — see
-        `sincpro_framework.common.ordering`. What was asked and could not be done as said — a
-        replacement that wraps other Commands than the one it replaces, one that replaces or
-        switches off what is not registered — is a warning, never a refusal."""
-        by_interceptor = {one.interceptor: one for one in self._interceptors}
-        result = ordered(
-            [one.placement for one in self._interceptors], self._interceptors_off
-        )
+    def _ordered_interceptors(
+        self, attached: Sequence[InterceptorRegistration]
+    ) -> list[InterceptorRegistration]:
+        """The interceptors in the order they wrap, outermost first — the ones registered, then
+        `attached` at build — see `sincpro_framework.common.ordering`. What was asked and could
+        not be done as said — a replacement that wraps other Commands than the one it replaces,
+        one that replaces or switches off what is not registered — is a warning, never a
+        refusal."""
+        registrations = [*self._interceptors, *attached]
+        by_interceptor = {one.interceptor: one for one in registrations}
+        result = ordered([one.placement for one in registrations], self._interceptors_off)
         for note in result.notes:
             self.logger.warning(f"interceptor: {note}")
         for replacement, chain in result.replaced.items():
@@ -124,12 +124,15 @@ class BusInterceptorsMixin:
             self.logger.info(f"interceptor {name_of(switched_off)} is switched off")
         return [by_interceptor[one] for one in result.items]
 
-    def _wrap_handlers(self, bus: "FrameworkBus") -> None:
-        """Each handler's interceptors, outermost first — refused when one wraps a Command no
-        Feature or ApplicationService of this bus answers."""
+    def _wrap_handlers(
+        self, bus: "FrameworkBus", attached: Sequence[InterceptorRegistration]
+    ) -> None:
+        """Each handler's interceptors, outermost first — the ones registered and those
+        `attached` at build, as the recorders of the pipelines are — refused when one wraps a
+        Command no Feature or ApplicationService of this bus answers."""
         feature_bus, app_service_bus = bus.feature_bus, bus.app_service_bus
         answered = {*feature_bus.feature_registry, *app_service_bus.app_service_registry}
-        interceptors = self._ordered_interceptors()
+        interceptors = self._ordered_interceptors(attached)
         for registration in interceptors:
             for command in registration.commands:
                 if command not in answered:

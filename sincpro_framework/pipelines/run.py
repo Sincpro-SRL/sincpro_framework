@@ -13,12 +13,14 @@ from typing import Any
 
 from pydantic import Field
 
-from sincpro_framework import exceptions
+from sincpro_framework.pipelines import exceptions
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class PipelineState(StrEnum):
     RUNNING = "running"
+    WAITING = "waiting"
+    """Stopped at an `Await`, until the same run is run again with what it waits for."""
     SUCCEEDED = "succeeded"
     FAILED = "failed"
 
@@ -26,6 +28,7 @@ class PipelineState(StrEnum):
 class StepStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
+    WAITING = "waiting"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
 
@@ -43,6 +46,8 @@ class StepState(DataTransferObject):
     kind: exceptions.FailureKind | None = None
     """What kind of failure, as every wire classifies it: what decides whether to try again."""
     retry_after: float | None = None
+    attempts: int = 0
+    """How many times it was started — more than one when the pipeline retried it."""
 
 
 class PipelineRun(DataTransferObject):
@@ -67,6 +72,10 @@ class PipelineRun(DataTransferObject):
     steps: list[StepState] = Field(default_factory=list)
     error: str = ""
     """Why it failed: the message of the step or of what escaped; empty otherwise."""
+    waiting_for: str | None = None
+    """The `Await` it stopped at, while it is `WAITING`."""
+    decisions: dict[str, Any] = Field(default_factory=dict)
+    """What each `Await` it passed was answered with, by its name."""
     correlation_id: str | None = None
     """The flow of the execution that ran it, to follow it in logs and traces."""
     started_at: datetime
@@ -82,3 +91,5 @@ class RunInProgress:
     under this type, so its steps write over it: one write per change, and no read."""
 
     run: PipelineRun
+    waiting_for: str | None = None
+    """The `Await` the pipeline stopped at — what the recorder closes the run as waiting for."""

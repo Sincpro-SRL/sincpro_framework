@@ -212,6 +212,143 @@ assert did == ["collect"]
 
 A recipe the input does not pick is a `ProgrammingError` that says which ones it has: it cannot run.
 
+## When it needs more
+
+A pipeline grows with what it needs, never before — each step one line:
+
+| Written | What it adds |
+|---|---|
+| `steps = [...]` | the order; everything below is a default |
+| `retry = Retry()` | a step that failed in a way worth it runs again |
+| `Await("approval")` in the steps | the run waits for a decision, and goes on with it |
+| `PipelineReads` | the runs read through the bus, on any wire |
+
+### Retrying a step
+
+```python
+from datetime import timedelta
+
+from sincpro_framework.exceptions import FailureKind
+from sincpro_framework.pipelines import Retry
+
+
+class GatewayBusy(Exception):
+    failure_kind = FailureKind.UNAVAILABLE         # as every wire classifies it
+    retry_after = 0                                # what the error says to wait, in seconds
+
+
+busy = {"times": 2}
+retrying = UseFramework("billing-retry", log_after_execution=False)
+retrying.context_store(InMemoryContexts())
+
+
+@retrying.feature(CommandCollect)
+class CollectWhenFree(Feature):
+    def execute(self, dto: CommandCollect) -> StepAnswer:
+        if busy["times"]:
+            busy["times"] -= 1
+            raise GatewayBusy("the gateway is busy")
+        return StepAnswer()
+
+
+@retrying.app_service(CommandRunNightly)
+class RunCollect(Pipeline, ApplicationService):
+    steps = [CommandCollect]
+    retry = Retry(attempts=3, max_wait=timedelta(seconds=10))
+
+
+collected = retrying(CommandRunNightly(run_id="r-1"))
+
+assert collected.state is PipelineState.SUCCEEDED and collected.steps[0].attempts == 3
+```
+
+Only what is worth running again as it is runs again — a service unavailable, a conflict, a claim
+in progress, an exhausted quota (`Retry.on`). A step that answers `ok=False`, or a rule of the
+business that refused it, is never retried. Each wait is what the error says (`retry_after`) — a
+second when it says nothing — grown by `backoff`, never above `max_wait`: a step that needs longer
+is a run to continue later, from a cron.
+
+### Waiting for a decision
+
+```python
+from sincpro_framework.pipelines import Await
+
+
+class CommandRunApproved(DataTransferObject):
+    run_id: str
+    day: str = "today"
+    approval: str = ""                             # the decision the run waits for
+
+
+approvals = UseFramework("billing-approvals", log_after_execution=False)
+approvals.context_store(InMemoryContexts())
+billed: list[str] = []
+
+
+@approvals.feature(CommandCollect)
+class CollectOnce(Feature):
+    def execute(self, dto: CommandCollect) -> StepAnswer:
+        billed.append("collect")
+        return StepAnswer()
+
+
+@approvals.feature(CommandBill)
+class BillApproved(Feature):
+    def execute(self, dto: CommandBill) -> StepAnswer:
+        billed.append("bill")
+        return StepAnswer()
+
+
+@approvals.app_service(CommandRunApproved)
+class RunApproved(Pipeline, ApplicationService):
+    steps = [CommandCollect, Await("approval"), CommandBill]
+
+
+first = approvals(CommandRunApproved(run_id="2026-10-24"))
+assert (first.state, first.waiting_for) == (PipelineState.WAITING, "approval")
+
+then = approvals(CommandRunApproved(run_id="2026-10-24", approval="ana"))
+assert then.state is PipelineState.SUCCEEDED and then.decisions == {"approval": "ana"}
+assert billed == ["collect", "bill"]                # collect was not run again
+```
+
+The run stops at the `Await` as `WAITING` — `always` waits too: the run has not ended — and is
+kept as any run. The decision comes in through the pipeline's own Command, the same `run_id` with
+the field of the await's name filled, so whatever already publishes that Command — a REST route,
+an MCP tool, a queue — decides; and every later step with a field of that name is given it. A run
+called again without it still waits. An `Await` the input has no field for cannot be decided, and
+is a `ProgrammingError` when the run reaches it.
+
+### Reading the runs
+
+```python
+from sincpro_framework.pipelines import FindRuns, GetRun, PipelineReads, ResponseRuns
+
+
+class QueryApprovedRun(GetRun[CommandRunApproved]): ...
+
+
+class QueryApprovedRuns(FindRuns[CommandRunApproved]): ...
+
+
+reading = approvals.fresh()
+
+
+@reading.feature([QueryApprovedRun, QueryApprovedRuns])
+class ApprovedRuns(PipelineReads): ...
+
+
+reading(CommandRunApproved(run_id="2026-10-25"))
+pending = reading(QueryApprovedRuns(state=PipelineState.WAITING), ResponseRuns)
+
+assert [one.run_id for one in pending.runs] == ["2026-10-25"]
+assert reading(QueryApprovedRun(run_id="2026-10-25")).waiting_for == "approval"
+```
+
+Each read names its pipeline by its Command; one `PipelineReads` answers the reads of every pipeline
+of its bus. Whose runs are read is the context's, as when they were kept — set `owned_by` on the
+Feature as on the pipeline. A run that is not kept is `RunNotFound` (`not_found`, 404 on REST).
+
 ## What is left to the project
 
 - **`records = False`** leaves the recorder out: the pipeline is then only the order of its steps.

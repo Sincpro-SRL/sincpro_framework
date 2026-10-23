@@ -145,6 +145,13 @@ class UseFramework(
         self.was_initialized: bool = False
         self._build_lock = threading.RLock()
         self.bus: FrameworkBus | None = None
+        self._revision: int = 0
+        """How many registrations reached this bus after it was built — each asks for a new
+        generation."""
+        self._built_revision: int = -1
+        """The revision the generation answering was built from."""
+        self._extending: bool = False
+        """While an extension runs: what it registers asks for one generation, all together."""
 
         self._init_hosting(bundled_context_name)
 
@@ -152,6 +159,39 @@ class UseFramework(
     def name(self) -> str:
         """The bounded context's name — its logger, its GlitchTip app, its OTel service."""
         return self._name
+
+    @property
+    def revision(self) -> int:
+        """How many registrations reached this bus after it was built. What keeps a snapshot of
+        the bus — a catalog of its use cases — compares it to know the snapshot is still true.
+        """
+        return self._revision
+
+    @property
+    def logger(self) -> LoggerProxy:
+        """Get the bundle context logger."""
+        if not self._is_logger_configured:
+            self._logger = create_logger(self.name)
+            self._is_logger_configured = True
+        return self._logger  # type: ignore[return-value]
+
+    def _registered(self, replay: Callable[["UseFramework[TDeps]"], Any], what: str) -> None:
+        """Keep `replay` to repeat this registration on a generation `fresh()` makes; and when the
+        bus is already built, ask for a new generation — the next execution builds it.
+
+        Context: called under `_build_lock`, with the registration already made, so a build never
+        reads half of one. Inside an extension, the extension asks once for everything it
+        registered.
+        """
+        with self._build_lock:
+            self._registrations.append(replay)
+            if not self.was_initialized or self._extending:
+                return
+            self._revision += 1
+            self.logger.info(
+                f"{what} registered after '{self.name}' was built: it answers from the next "
+                "execution, on a new generation of the bus"
+            )
 
     def feature(
         self, dto: ioc.DTORegistration, replaces: type | None = None
@@ -161,18 +201,18 @@ class UseFramework(
             @billing.feature(CommandComputeTax, replaces=ComputeTax)
 
         Context: `replaces` names the Feature registered now; that one is skipped from then on,
-        and the build log and introspection say who replaced it.
+        and the build log and introspection say who replaced it. Registered after the bus was
+        built, it answers from the next execution.
         """
-        if self.was_initialized:
-            raise exceptions.BusAlreadyBuilt(
-                f"Feature for {', '.join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))} registered late: '{self.name}' is already built, so it would "
-                "never be used — register it before the first execution"
-            )
         register = ioc.inject_feature_to_bus(self._sp_container, dto, replaces, self.name)
 
         def registered(handler: ioc.T) -> ioc.T:
-            answer = register(handler)
-            self._registrations.append(lambda bus: bus.feature(dto, replaces)(handler))
+            with self._build_lock:
+                answer = register(handler)
+                self._registered(
+                    lambda bus: bus.feature(dto, replaces)(handler),
+                    f"Feature {handler.__name__}",
+                )
             return answer
 
         return registered
@@ -181,17 +221,17 @@ class UseFramework(
         self, dto: ioc.DTORegistration, replaces: type | None = None
     ) -> Callable[[ioc.T], ioc.T]:
         """Register the decorated class as the ApplicationService that answers `dto`; with
-        `replaces`, instead of the one registered now."""
-        if self.was_initialized:
-            raise exceptions.BusAlreadyBuilt(
-                f"ApplicationService for {', '.join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))} registered late: '{self.name}' is already built, so it would "
-                "never be used — register it before the first execution"
-            )
+        `replaces`, instead of the one registered now. Registered after the bus was built, it
+        answers from the next execution."""
         register = ioc.inject_app_service_to_bus(self._sp_container, dto, replaces, self.name)
 
         def registered(handler: ioc.T) -> ioc.T:
-            answer = register(handler)
-            self._registrations.append(lambda bus: bus.app_service(dto, replaces)(handler))
+            with self._build_lock:
+                answer = register(handler)
+                self._registered(
+                    lambda bus: bus.app_service(dto, replaces)(handler),
+                    f"ApplicationService {handler.__name__}",
+                )
             return answer
 
         return registered
@@ -234,19 +274,23 @@ class UseFramework(
             billing.extend(access_control.attach)
 
         Context: what `extension` registers is not kept one by one; the extension is, so a
-        generation runs it again against itself. A component bound to the bus it was wired into
-        — an interceptor that reads its bus — is then bound to the generation, not to this one.
-        Refused once the bus is built, like what it registers.
+        `fresh()` bus runs it again against itself, and a component bound to the bus it was
+        wired into — an interceptor that reads its bus — is bound to that one. After the bus was
+        built, the extension answers from the next execution, whole: it runs under the build
+        lock, so no execution builds a generation with half of it.
         """
-        if self.was_initialized:
-            raise exceptions.BusAlreadyBuilt(
-                f"extension {getattr(extension, '__qualname__', extension)} registered late: '{self.name}' is already built, so it would "
-                "never be used — register it before the first execution"
+        with self._build_lock:
+            kept = len(self._registrations)
+            outer, self._extending = self._extending, True
+            try:
+                extension(self)
+            finally:
+                self._extending = outer
+                del self._registrations[kept:]
+            self._registered(
+                lambda bus: bus.extend(extension),
+                f"extension {getattr(extension, '__qualname__', extension)}",
             )
-        kept = len(self._registrations)
-        extension(self)
-        del self._registrations[kept:]
-        self._registrations.append(lambda bus: bus.extend(extension))
 
     def fresh(self) -> "UseFramework[TDeps]":
         """A new bus of this context, not built: the same settings and observability, and every
@@ -301,14 +345,6 @@ class UseFramework(
             for _, app_service in app_service_registry.items():
                 app_service.add_attributes(**self.dynamic_dep_registry)
 
-    @property
-    def logger(self) -> LoggerProxy:
-        """Get the bundle context logger."""
-        if not self._is_logger_configured:
-            self._logger = create_logger(self.name)
-            self._is_logger_configured = True
-        return self._logger  # type: ignore[return-value]
-
     def _create_buses_with_their_settings(self) -> None:
         """What each bus is created with, known only once every registration is in: the context it
         runs in (this bus, its providers, who mints the execution ids) and whether it logs each
@@ -331,9 +367,9 @@ class UseFramework(
         )
 
     def _assemble_handlers(self, bus: FrameworkBus) -> None:
-        """Each handler wrapped by its interceptors, and who replaced whom — said once, in the
-        build log."""
-        self._wrap_handlers(bus)
+        """Each handler wrapped by its interceptors and the recorders of the pipelines, and who
+        replaced whom — said once, in the build log."""
+        self._wrap_handlers(bus, self._pipeline_recorders())
         feature_bus, app_service_bus = bus.feature_bus, bus.app_service_bus
         replacements = self._sp_container.replacements()
         for command, replaced in replacements.items():
@@ -349,61 +385,95 @@ class UseFramework(
         app_service_bus.replacements = dict(replacements)
 
     def _build_root_bus(self):
+        """A generation of this bus: new buses and new handler instances, built from every
+        registration in now. It takes the place of the one answering; a request already running
+        keeps the generation it started on, to the end.
+
+        1. The two buses the container keeps once are dropped, so this generation creates its
+           own — and its own handlers — and nothing the running one holds is touched.
+        2. Dependencies, error chains and the settings each bus is created with.
+        3. The handlers wrapped by their interceptors and bound to this bus's context.
+        Final: the generation answers from here; observability starts with the first one. A build
+        that raises leaves the generation that was answering as it was.
+        """
+        self._sp_container.feature_bus.reset()
+        self._sp_container.app_service_bus.reset()
         self._add_dependencies_provided_by_user()
         self._add_error_handlers_provided_by_user()
         for note in self._error_chain_notes():
             self.logger.warning(f"error handler: {note}")
-        self._attach_pipelines()
         self._create_buses_with_their_settings()
 
-        self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
-        self._assemble_handlers(self.bus)
-        self._bind_context_to_handlers()
+        bus: FrameworkBus = self._sp_container.framework_bus()  # type: ignore[assignment]
+        self._assemble_handlers(bus)
+        self._bind_context_to_handlers(bus)
 
         # The container already injects this into the three buses; kept as a guard so
         # the guarantee does not depend on the provider still being the one the
         # framework_bus Factory captured.
-        self.bus.observability = self.observability
+        bus.observability = self.observability
 
-        self.observability.start(self.logger)
+        if self.bus is None:
+            self.observability.start(self.logger)
+        self.bus = bus
+        self._built_revision = self._revision
         # Last, so a thread that reads the flag without the lock never sees a bus half wired.
         self.was_initialized = True
 
     def build_root_bus(self):
-        """Build the root bus with the dependencies provided by the user — nothing, for a
-        reference to a context another service hosts (`is_reference`).
+        """Bring the bus up to date now: build it, or build a new generation when something was
+        registered after the last one — nothing, for a reference to a context another service
+        hosts (`is_reference`).
 
-        Under a lock, and only once: two threads that reach a not-yet-built bus at the same
-        time, as an async fan-out or an event fan-out does, would otherwise both build it and
-        one of them would execute against a half-wired registry.
+        Context: the first execution does it by itself. Called on purpose, it surfaces a wiring
+        error at that line — an entrypoint mounting the bus, a warm-up — instead of at the first
+        request. Under a lock: two threads that reach a bus out of date at the same time, as an
+        async fan-out or an event fan-out does, build one generation, never two.
         """
         with self._build_lock:
-            if self.is_reference or (self.was_initialized and self.bus is not None):
+            if self.is_reference or (
+                self.bus is not None and self._built_revision == self._revision
+            ):
                 return
             self._build_root_bus()
 
-    def add_dependency(self, name, dep: Any):
+    def add_dependency(self, name, dep: Any, replaces: Any = None):
         """
         Add a dependency to the framework where
         The Feature and App Service have as attribute
 
-        Context: refused once the bus is built (`BusAlreadyBuilt`) — the
-        Features were already wired, so a dependency added later would never
-        reach them.
+            billing.add_dependency("cache", RedisCache(...), replaces=memory_cache)
+
+        Context: `replaces` names the object registered under `name` now, and `dep` takes its
+        place; a second one under a name already taken, without it, is refused naming what is
+        there. Replacing something that is not what is registered — or nothing — works, with a
+        warning. Added after the bus was built, it reaches the handlers from the next execution.
         """
-        if self.was_initialized:
-            raise exceptions.BusAlreadyBuilt(
-                f"dependency {name} registered late: '{self.name}' is already built, so it would "
-                "never be used — register it before the first execution"
+        with self._build_lock:
+            registered = self.dynamic_dep_registry.get(name)
+            if name in self.dynamic_dep_registry and replaces is None:
+                error = exceptions.DependencyAlreadyRegistered(
+                    f"The dependency {name} is already injected "
+                    f"({type(registered).__module__}.{type(registered).__qualname__}): to put "
+                    f"another in its place, add_dependency({name!r}, ..., replaces=<the one "
+                    "registered>)"
+                )
+                self.observability.record_error(error, "", "framework", kind="framework")
+                raise error
+            if replaces is not None and replaces is not registered:
+                self.logger.warning(
+                    f"dependency {name}: replaces {type(replaces).__qualname__}, but "
+                    + (
+                        f"{type(registered).__qualname__} is registered"
+                        if name in self.dynamic_dep_registry
+                        else "nothing is registered"
+                    )
+                    + f" — {type(dep).__qualname__} takes the name"
+                )
+            self.dynamic_dep_registry[name] = dep
+            self._registered(
+                lambda bus: bus.add_dependency(name, dep, replaces), f"dependency {name}"
             )
-        if name in self.dynamic_dep_registry:
-            error = exceptions.DependencyAlreadyRegistered(
-                f"The dependency {name} is already injected"
-            )
-            self.observability.record_error(error, "", "framework", kind="framework")
-            raise error
-        self.dynamic_dep_registry[name] = dep
-        self._registrations.append(lambda bus: bus.add_dependency(name, dep))
 
     @property
     def deps(self) -> TDeps:
@@ -444,24 +514,24 @@ class UseFramework(
 
     def execution_ids(self, generator: Callable[[], str]) -> None:
         """Mint the `execution_id` of every execution of this bus with `generator` instead of a
-        UUID v7 — a ULID, a UUID v4, a Snowflake id. Before the bus is built.
+        UUID v7 — a ULID, a UUID v4, a Snowflake id. Given after the bus was built, it mints from
+        the next execution.
 
             billing.execution_ids(lambda: str(ulid.new()))
 
         Context: an id given from outside — `bus.context({"execution_id": …})`, a header — still
         wins for a root execution; the generator only mints the ones nobody gave.
         """
-        if self.was_initialized:
-            raise exceptions.BusAlreadyBuilt(
-                f"an execution id generator registered late: '{self.name}' is already built, so it would "
-                "never be used — register it before the first execution"
-            )
         if not callable(generator):
             raise TypeError(
                 f"execution_ids takes a function that returns a str, not {generator!r}"
             )
-        self._execution_ids = generator
-        self._registrations.append(lambda bus: bus.execution_ids(generator))
+        with self._build_lock:
+            self._execution_ids = generator
+            self._registered(
+                lambda bus: bus.execution_ids(generator),
+                f"execution id generator {getattr(generator, '__qualname__', generator)}",
+            )
 
     def get_async_bus(self) -> AsyncBus:
         """Return a stateless async facade over this framework's bus.
@@ -486,10 +556,12 @@ class UseFramework(
         when this bus is a reference to it (`is_reference`)."""
         if self.is_reference:
             return self._executed_where_hosted(dto, return_type)
-        if not self.was_initialized:
+        if self.bus is None or self._built_revision != self._revision:
             self.build_root_bus()
 
-        if self.bus is None:
+        # Read once: the whole execution runs on the generation answering when it starts.
+        bus = self.bus
+        if bus is None:
             error = exceptions.SincproFrameworkNotBuilt(
                 "Check the decorators are rigistering the features and app services, check the imports of each "
                 "feature and app service"
@@ -498,6 +570,6 @@ class UseFramework(
             raise error
 
         if self._entered_here():
-            return self.bus.execute(dto)
+            return bus.execute(dto)
         with self._scope({}):
-            return self.bus.execute(dto)
+            return bus.execute(dto)

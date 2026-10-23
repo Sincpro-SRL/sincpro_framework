@@ -10,38 +10,22 @@ works from any synchronous caller and waits until the broker took the message �
 surfaces where it was published. Never started, the queue is for a service that is already
 async and connected the broker itself: `aput` publishes on the caller's loop.
 
-What travels is the event as JSON, on the channel named after it, with the event's wire name,
-the publishing trace and the publishing execution's context (`sincpro-context`: caused by it, in
-its flow) as headers — read where the event is published, before it is handed to the queue's loop.
+What travels is the event as JSON, on the channel named after it, with its envelope
+(`cloud_event_headers`: its id, wire name, chain, the publishing trace and the publishing
+execution's context) as headers — read where the event is published, before it is handed to the
+queue's loop. `source` names this service in the envelope, what a consumer's `producers=` checks.
 Topics, partitions, exchanges, retries and acks are the broker's configuration, not this queue's.
 """
 
 import asyncio
 import threading
-from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, Protocol
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from sincpro_framework import exceptions
-from sincpro_framework.context.adapters.propagation import inject
-from sincpro_framework.context.infrastructure.tree import live_context
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.observability.tracing.propagation import trace_carrier
-
-EVENT_HEADER = "sincpro-event"
-"""The event's wire name, so a channel several events share still routes each to its class."""
-
-
-class Broker(Protocol):
-    """What the queue and `subscribe` use of a FastStream broker — every one of them has it."""
-
-    def publish(self, message: Any, *args: Any, **kwargs: Any) -> Awaitable[Any]: ...
-
-    def subscriber(self, *args: Any, **kwargs: Any) -> Callable[..., Any]: ...
-
-    def start(self) -> Coroutine[Any, Any, Any]: ...
-
-    def stop(self) -> Coroutine[Any, Any, Any]: ...
-
+from sincpro_framework.event_driven.adapters.envelope import cloud_event_headers
+from sincpro_framework.event_driven.domain.broker import Broker
 
 type ChannelOf = Callable[[DomainEvent], str]
 type OptionsOf = Callable[[DomainEvent], dict[str, Any]]
@@ -62,11 +46,13 @@ class FastStreamQueue:
         broker: Broker,
         channel_of: ChannelOf = by_event_name,
         options_of: OptionsOf | None = None,
+        source: str = "",
     ) -> None:
         """`channel_of` names where an event goes — its wire name by default; `options_of` adds
         what one broker takes and another does not, such as Kafka's `key` — nothing by
-        default."""
+        default; `source` is this service in the envelope."""
         self.broker = broker
+        self.source = source
         self.channel_of = channel_of
         self.options_of = options_of
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -107,7 +93,7 @@ class FastStreamQueue:
     def _headers(self, event: DomainEvent) -> dict[str, str]:
         """Read where the event is published: the queue's loop runs in a thread of its own, where
         neither the trace nor the execution's context is."""
-        return {**inject(live_context()), **trace_carrier(), EVENT_HEADER: event.name}
+        return cloud_event_headers(event, source=self.source)
 
     async def _publish(self, event: DomainEvent, headers: dict[str, str]) -> None:
         """Context: the event is written and its channel chosen here, before the broker is

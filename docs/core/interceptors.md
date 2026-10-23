@@ -80,8 +80,9 @@ assert answer.due_days == 30
   `ProgrammingError`, naming the interceptor.
 - An exception in an interceptor is reported like one in the handler, with `error_at` on the
   interceptor's line.
-- Interceptors are fixed when the bus is built: registering one afterwards raises
-  `BusAlreadyBuilt`, and naming a Command nobody answers raises when the bus is built.
+- An interceptor registered after the bus was built wraps from the next execution — a module
+  can add one at any time ([Extending a bus](extending.md)). Naming a Command nobody answers
+  raises when the bus is built.
 
 ## Recipes
 

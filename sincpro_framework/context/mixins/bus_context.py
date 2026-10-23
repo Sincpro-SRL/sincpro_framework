@@ -125,12 +125,11 @@ class BusContextMixin:
         typed = self._context_schema.validate_python(named)
         return {**values, **(typed if isinstance(typed, Mapping) else typed.__dict__)}
 
-    def _bind_context_to_handlers(self) -> None:
-        if self.bus is None:
-            return
-        for feature in self.bus.feature_bus.feature_registry.values():
+    def _bind_context_to_handlers(self, bus: "FrameworkBus") -> None:
+        """Each handler of `bus` — the generation being built — reads its context from this one."""
+        for feature in bus.feature_bus.feature_registry.values():
             feature.bind_to_framework(self)
-        for app_service in self.bus.app_service_bus.app_service_registry.values():
+        for app_service in bus.app_service_bus.app_service_registry.values():
             app_service.bind_to_framework(self)
 
     def context(

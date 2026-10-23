@@ -131,7 +131,6 @@ not prove that the refactored APIs were published.
     - [Migrations](#migrations)
     - [Data analysis](#data-analysis)
     - [Runtime use cases](#runtime-use-cases)
-    - [Workflows (experimental)](#workflows-experimental)
     - [Persistence and the ORM](#persistence-and-the-orm)
 3. [Features vs. Application Service](#-features-vs-application-service)
 4. [Example Usage for a Payment Gateway](#-example-usage-for-a-payment-gateway)
@@ -159,9 +158,8 @@ not prove that the refactored APIs were published.
 13. [Migrations](#migrations-1) — every context and store on one timeline, one command
 14. [Data analysis](#data-analysis-1) — a query read once, merged page by page, handed to pandas, polars or DuckDB
 15. [Runtime use cases](#runtime-use-cases-1) — use cases stored as source, loaded onto the bus without a deploy
-16. [Workflows (experimental)](#workflows-experimental-1) — Commands composed as data, for a node editor's preview
-17. [Documentation](#-documentation)
-18. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
+16. [Documentation](#-documentation)
+17. [Entrypoints: exposing the bus](docs/entrypoints/README.md) — transport, not domain
     - [MCP tools](docs/entrypoints/mcp.md)
     - [JSON-RPC](docs/entrypoints/rpc.md)
     - [gRPC](docs/entrypoints/grpc.md)
@@ -329,7 +327,7 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 
 - Provides centralized error handling at three independent levels: **global**, **app service**, and **feature**.
 - First registered handler executes first. On re-raise, the framework delegates to the next handler in the chain.
-- Handlers can be registered **at any point** — before or after the first execution — and take effect immediately.
+- Handlers can be registered **at any point** — before or after the first execution; after, they answer from the next execution. See [docs/core/error-handlers.md](docs/core/error-handlers.md).
 - Ensures consistent error management, improving overall reliability.
 
 ### 🚌 Bus Pattern for Component Communication
@@ -437,13 +435,6 @@ See [Runtime use cases](#runtime-use-cases-1) for the full section.
   the bus while the service runs; a stored handler may `replaces=` one in code.
 - A new generation of the bus is built, checked and swapped in whole; a refused one leaves the
   bus as it was.
-
-### Workflows (experimental)
-
-See [Workflows (experimental)](#workflows-experimental-1) for the full section.
-
-- The Commands a bus answers composed as JSON — `execute`, `code`, `for_each`, `fail`, `when` —
-  validated against the live bus, run with a trace, drawn as a graph for a node editor.
 
 ### Persistence and the ORM
 
@@ -657,9 +648,10 @@ def register_dependencies(framework: UseFramework[DependencyContextType]) -> Use
 
 ### `framework.py` — Wiring with DependencyContextType
 
-Combine the framework base classes with `DependencyContextType` using multiple inheritance so that
-every Feature, ApplicationService and repository hook in this bounded context automatically
-inherits the typed attributes. Each also takes the request's context type as a parameter —
+**A rule for every bounded context:** combine the framework base classes with
+`DependencyContextType` using multiple inheritance, and let every Feature, ApplicationService and
+repository hook of the context inherit these bases — never `sincpro_framework`'s directly — so each
+one inherits the typed attributes. Each also takes the request's context type as a parameter —
 `Feature[Command, Response, MyContext]`, `Hook[MyContext]` — for a typed `self.context`.
 
 ```python
@@ -756,8 +748,9 @@ framework's own attributes (`feature_bus`, `context`, the logger) are never repo
 
 ### Handler Lifetime — one instance serves every execution
 
-A `Feature` or `ApplicationService` is built **once** per `UseFramework` and reused by every
-execution, on every thread. Anything written to `self` inside `execute` is therefore shared:
+A `Feature` or `ApplicationService` is built **once** per generation of its `UseFramework` and
+reused by every execution, on every thread — a registration after the bus was built makes a new
+generation, with new instances. Anything written to `self` inside `execute` is therefore shared:
 two concurrent calls overwrite each other's value, and the next call sees the last one.
 
 ```python
@@ -1016,7 +1009,7 @@ This structured approach ensures high-quality, maintainable software that can ad
 
 ## ⚠️ Error Handling
 
-The framework provides three independent error handler scopes: **global** (framework bus), **feature**, and **app service**. Register a handler with the corresponding method — handlers can be added before or after the first execution and always take effect immediately.
+The framework provides three independent error handler scopes: **global** (framework bus), **feature**, and **app service**. Register a handler with the corresponding method — handlers can be added before or after the first execution; after, they answer from the next execution. The whole component: [docs/core/error-handlers.md](docs/core/error-handlers.md).
 
 ### Basic usage
 
@@ -1050,7 +1043,7 @@ framework.add_global_error_handler(global_handler)
 
 ### Registration lifecycle
 
-Handlers can be registered at any point — before the bus is built or after — and take effect immediately:
+Handlers can be registered at any point — before the bus is built or after; after, they answer from the next execution:
 
 ```python
 framework = UseFramework("my_app")
@@ -1059,7 +1052,7 @@ framework.add_global_error_handler(base_handler)  # before first execution
 
 framework(some_dto)  # first call triggers build
 
-framework.add_global_error_handler(extra_handler)  # after build — also works
+framework.add_global_error_handler(extra_handler)  # after build — from the next execution
 ```
 
 ---
@@ -1314,27 +1307,6 @@ registry.execute("sincpro_runtime.billing.quote.CommandQuote", {"amount": 100})
 | Store | `UseCaseStore` (`active`, `save`) — `InMemoryUseCases` in the core, `SqlUseCases` in `orm` (`[sqlalchemy]`), or yours |
 
 The whole of it, runnable: [docs/runtime_use_cases/](docs/runtime_use_cases/README.md).
-
-## Workflows (experimental)
-
-The Commands a bus answers composed as JSON — what a node editor previews and an agent tries. The
-vocabulary may change.
-
-```python
-from sincpro_framework.runtime.workflows import FileWorkflows, Workflows
-
-workflows = Workflows(billing, FileWorkflows(Path("workflows")))    # one <name>.json each
-run = workflows.run("bill_order", {"order_id": 1})                    # a trace of every step
-workflows.draw("bill_order")                                          # the graph, as Mermaid
-```
-
-| | |
-|---|---|
-| Steps | `execute` a Command, `code` (a snippet), `for_each`, `fail` — each with an optional `when` |
-| References | whole values only: `$input.x`, `$steps.<id>.x`, `$item.x` — checked before anything runs |
-| For agents | `Workflows.schema()`, `catalog()`, `validate()` (every issue at once), `dry_run()`, `draw()` |
-
-The whole of it, runnable: [docs/workflows/](docs/workflows/README.md).
 
 ## 📖 Documentation
 

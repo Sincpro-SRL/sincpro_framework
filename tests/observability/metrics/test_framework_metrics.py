@@ -78,7 +78,7 @@ class TicketClosed(DomainEvent):
 def test_every_queue_delivery_is_counted_by_how_it_was_settled(recorder):
     from faststream.kafka import KafkaBroker, TestKafkaBroker
 
-    from sincpro_framework.entrypoints.adapters.faststream import QueueGateway, QueueOptions
+    from sincpro_framework.entrypoints.adapters.queue import QueueGateway, QueueOptions
 
     bus = UseFramework("support", log_after_execution=False)
 

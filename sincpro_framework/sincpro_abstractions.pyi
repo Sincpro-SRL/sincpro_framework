@@ -65,13 +65,15 @@ class Feature(ABC, Generic[TypeDTO, TypeDTOResponse, ContextT], metaclass=abc.AB
     Features automatically receive injected dependencies as attributes through the framework's
     dependency injection system. These dependencies can be accessed via self.dependency_name.
 
-    For better IDE support with typed dependencies, inherit with specific DTO types:
+    Every bounded context wraps it once, in its framework.py, and its Features inherit that base:
 
-        class MyFeature(Feature[MyInputDTO, MyResponseDTO]):
-            # Type your injected dependencies for IDE autocomplete
-            database_adapter: DatabaseAdapter
+        from sincpro_framework import Feature as _Feature
 
-            def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
+        class Feature(_Feature, DependencyContextType):
+            ...                                  # the base of this bounded context
+
+    `self.context` is typed with a third parameter, `Feature[Command, Response, Context]` — the
+    parameters are given all three or none.
     """
 
     context: ContextT
@@ -95,13 +97,12 @@ class ApplicationService(
     ApplicationServices have access to all injected dependencies (same as Features)
     plus an exclusive feature_bus for executing other Features.
 
-    For better IDE support with typed dependencies, inherit with specific DTO types:
+    Every bounded context wraps it once, in its framework.py, as it wraps Feature:
 
-        class MyService(ApplicationService[MyInputDTO, MyResponseDTO]):
-            # Type your injected dependencies for IDE autocomplete
-            external_service: ExternalService
+        from sincpro_framework import ApplicationService as _ApplicationService
 
-            def execute(self, dto: MyInputDTO) -> MyResponseDTO: ...
+        class ApplicationService(_ApplicationService, DependencyContextType):
+            ...                                  # the base of this bounded context
     """
 
     context: ContextT

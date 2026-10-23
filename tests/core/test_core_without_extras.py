@@ -29,6 +29,8 @@ BLOCKED = (
     "redis",
     "pymemcache",
     "prometheus_client",
+    "boto3",
+    "botocore",
 )
 
 PROGRAM = r"""
@@ -43,7 +45,6 @@ for name in BLOCKED:
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.entrypoints.adapters.cron import Cron, CronGateway, Crons, InMemoryRuns, Tick
 from sincpro_framework.data_layer.migrations import ContextMigrations, InMemoryEngine, Migrations
-from sincpro_framework.runtime.workflows import InMemoryWorkflows, Workflows
 from sincpro_framework.data_layer.data_analysis import DataFrame
 from sincpro_framework.runtime.runtime_use_cases import BusRegistry, InMemoryUseCases, RuntimeUseCase
 from sincpro_framework.runtime.testing import ManualClock
@@ -109,9 +110,6 @@ with tempfile.TemporaryDirectory() as folder:
     migrations = Migrations([context])
     migrations.revision("core", "main", "first")
     assert [step.message for step in migrations.upgrade()] == ["first"]
-
-workflow = {"name": "ping", "steps": [{"id": "ping", "execute": "CommandPing"}], "output": {"pong": "$steps.ping.pong"}}
-assert Workflows(bus, InMemoryWorkflows([workflow])).run("ping", {}).output == {"pong": True}
 
 frame = DataFrame.from_rows([{"id": "a", "pong": True}, {"id": "b", "pong": False}])
 assert frame.narrow({"field": "pong", "operator": "=", "value": True}).column("id") == ["a"]
@@ -400,7 +398,7 @@ assert refined_failure_kind(PermissionDenied("a", "b", "c")) == FailureKind.PERM
 
 for module, extra in (
     ("sincpro_framework.entrypoints.adapters.fastapi", "fastapi"),
-    ("sincpro_framework.entrypoints.adapters.faststream", "faststream"),
+    ("sincpro_framework.event_driven.adapters.faststream", "faststream"),
     ("sincpro_framework.common.transport.grpc", "grpc"),
 ):
     try:
@@ -409,6 +407,29 @@ for module, extra in (
         assert f"sincpro-framework[{extra}]" in str(error), (module, error)
     else:
         raise AssertionError(f"{module} imported without its extra")
+
+import sincpro_framework.entrypoints.adapters.queue  # any broker: FastStream is one of them
+
+from sincpro_framework.data_layer.caching.adapters.dynamodb import DynamoKeyValue
+from sincpro_framework.entrypoints.adapters.queue import SqsBroker
+from sincpro_framework.event_driven.adapters.aws import EventBridgeQueue, SnsQueue, SqsQueue
+from sincpro_framework.settings.adapters.aws import ParameterStore, SecretsManager
+
+for build in (
+    lambda: DynamoKeyValue("table"),
+    lambda: SnsQueue("arn:aws:sns:us-east-1:1:topic"),
+    lambda: SqsQueue("https://sqs/queue"),
+    lambda: EventBridgeQueue(),
+    lambda: SqsBroker(),
+    lambda: ParameterStore()("token"),
+    lambda: SecretsManager()("billing/db"),
+):
+    try:
+        build()
+    except ImportError as error:
+        assert "sincpro-framework[aws]" in str(error), error
+    else:
+        raise AssertionError("an AWS adapter was built without boto3")
 
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.mcp import McpGateway

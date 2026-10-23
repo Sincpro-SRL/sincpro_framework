@@ -1,9 +1,9 @@
-"""Something registered where it can no longer run is refused, not ignored.
+"""Something registered after the bus was built is never ignored: it answers from the next
+execution, or — where it can no longer run — it is refused at the line that registered it.
 
-A bus is fixed when it is built, and a repository reads its hooks when it is built. A Feature, a
-dependency or a hook registered afterwards used to be accepted and then never used — the Feature
-answered `UnknownDTOToExecute` although the container listed it. Each of them now says so at the
-line that registered it.
+A Feature, an ApplicationService or a dependency registered after the build reaches the next
+execution: the bus builds a new generation of itself then. A repository reads its hooks once, so
+a hook registered after that read is refused.
 """
 
 import importlib
@@ -41,33 +41,44 @@ def _built() -> UseFramework:
     return bus
 
 
-def test_a_feature_registered_after_the_build_is_refused():
+def test_a_feature_registered_after_the_build_answers_from_the_next_execution():
     bus = _built()
 
-    with pytest.raises(exceptions.BusAlreadyBuilt, match="CommandLate.*already built"):
+    @bus.feature(CommandLate)
+    class Late(Feature):
+        def execute(self, dto: CommandLate) -> str:
+            return "late"
 
-        @bus.feature(CommandLate)
-        class Late(Feature):
-            def execute(self, dto: CommandLate) -> None:
-                return None
+    assert bus(CommandLate()) == "late"
 
 
-def test_an_application_service_registered_after_the_build_is_refused():
+def test_an_application_service_registered_after_the_build_answers_from_the_next_execution():
     bus = _built()
 
-    with pytest.raises(exceptions.BusAlreadyBuilt, match="CommandLate.*already built"):
+    @bus.app_service(CommandLate)
+    class Late(ApplicationService):
+        def execute(self, dto: CommandLate) -> str:
+            return "late"
 
-        @bus.app_service(CommandLate)
-        class Late(ApplicationService):
-            def execute(self, dto: CommandLate) -> None:
-                return None
+    assert bus(CommandLate()) == "late"
 
 
-def test_a_dependency_added_after_the_build_is_refused():
-    bus = _built()
+def test_a_dependency_added_after_the_build_reaches_the_handlers_from_the_next_execution():
+    bus = UseFramework("late-dependency", log_after_execution=False)
 
-    with pytest.raises(exceptions.BusAlreadyBuilt, match="clock.*already built"):
-        bus.add_dependency("clock", object())
+    @bus.feature(CommandPing)
+    class Ping(Feature):
+        clock: object
+
+        def execute(self, dto: CommandPing) -> object:
+            return getattr(self, "clock", None)
+
+    assert bus(CommandPing()) is None
+    clock = object()
+
+    bus.add_dependency("clock", clock)
+
+    assert bus(CommandPing()) is clock
 
 
 def test_a_hook_decorated_after_a_repository_read_the_collection_is_refused():
