@@ -12,18 +12,10 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import (
-    DataTransferObject,
-    FailureKind,
-    Feature,
-    UseFramework,
-)
-from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
-from sincpro_framework.data_layer.caching.domain.exceptions import (
-    AlreadyInProgress,
-    KeyReused,
-)
-from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
+from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import upper_snake
 from sincpro_framework.entrypoints.entrypoint.decorators import rpc
@@ -34,17 +26,17 @@ META_SCHEMA = Path(__file__).parent / "fixtures_openrpc_schema.json"
 class HsmDown(Exception):
     """Not a `DomainError`: the caller may not read it, so its class is not its reason."""
 
-    failure_kind = FailureKind.UNAVAILABLE
+    failure_kind = exceptions.FailureKind.UNAVAILABLE
 
 
 RAISED: dict[str, Exception] = {
-    "domain": DomainError("an invoice has to balance"),
-    "stale": StaleAggregate("invoice F-1 was written by someone else"),
-    "duplicate": DuplicateAggregate("invoice F-1 already exists"),
-    "in_progress": AlreadyInProgress("key k-1 is running"),
-    "key_reused": KeyReused("key k-1 was used for another payload"),
-    "unauthenticated": Unauthenticated("token expired"),
-    "permission_denied": PermissionDenied("user:1", "invoices.issue"),
+    "domain": ddd_exceptions.DomainError("an invoice has to balance"),
+    "stale": ddd_exceptions.StaleAggregate("invoice F-1 was written by someone else"),
+    "duplicate": ddd_exceptions.DuplicateAggregate("invoice F-1 already exists"),
+    "in_progress": caching_exceptions.AlreadyInProgress("key k-1 is running"),
+    "key_reused": caching_exceptions.KeyReused("key k-1 was used for another payload"),
+    "unauthenticated": auth_exceptions.Unauthenticated("token expired"),
+    "permission_denied": auth_exceptions.PermissionDenied("user:1", "invoices.issue"),
     "internal": RuntimeError("postgres://admin:hunter2@db"),
     "unavailable": HsmDown("postgres://admin:hunter2@hsm"),
 }

@@ -13,9 +13,9 @@ from typing import Annotated, Any, Union
 
 from pydantic import Discriminator, JsonValue, Tag
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.strict import Strict, refused_or_dropped
 from sincpro_framework.ddd.criteria.domain.values import TEXT, Dynamic, item_kind, value_kind
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 class Operator(StrEnum):
@@ -95,7 +95,7 @@ class Condition(Strict):
         this takes it as the name it stands for. A value that is not a text is refused.
         """
         if not isinstance(field, str):
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"a condition is on a field read through the entity, as in "
                 f"Condition.on(i.state, Operator.EQ, State.DRAFT); it was given {field!r}"
             )
@@ -157,7 +157,7 @@ def expression_from(value: Any, tolerant: bool = False) -> Any:
         # `model_dump`, so sending it in a POST or through a queue failed.
         return Condition(**refused_or_dropped(value, set(Condition.model_fields), tolerant))
 
-    raise InvalidCriteria(
+    raise exceptions.InvalidCriteria(
         "a filter is {'field', 'operator', 'value'} or an object with 'all', 'any' or 'negate'; "
         f"got {sorted(value)}"
     )

@@ -19,27 +19,8 @@ a generation that is not the context's bus until the project adds it.
 
 import threading
 
-from sincpro_framework.exceptions import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.use_bus import UseFramework
-
-
-class BusAlreadyRegistered(ProgrammingError):
-    """A second, different bus was added under a name this process already holds."""
-
-    def __init__(self, name: str) -> None:
-        super().__init__(
-            f"a bus named {name!r} is already registered in this process; "
-            "a context registers once"
-        )
-        self.name = name
-
-
-class BusNotRegistered(ProgrammingError, LookupError):
-    """`get` was asked for a name nobody added."""
-
-    def __init__(self, name: str) -> None:
-        super().__init__(f"no bus named {name!r} is registered in this process")
-        self.name = name
 
 
 class Registry:
@@ -70,7 +51,7 @@ class Registry:
             if current is bus:
                 return
             if current is not None:
-                raise BusAlreadyRegistered(bus.name)
+                raise exceptions.BusAlreadyRegistered(bus.name)
             self._buses[bus.name] = bus
 
     def get(self, name: str) -> UseFramework:
@@ -80,7 +61,7 @@ class Registry:
             try:
                 return self._buses[name]
             except KeyError:
-                raise BusNotRegistered(name) from None
+                raise exceptions.BusNotRegistered(name) from None
 
     def all(self) -> tuple[UseFramework, ...]:
         """Every bus this process serves, in the order they were added."""

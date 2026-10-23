@@ -75,7 +75,8 @@ call. `forget` is the exception: an invalidation that reached no replica raises.
 
 ```python
 from sincpro_framework import DataTransferObject
-from sincpro_framework.data_layer.caching import AlreadyInProgress, Idempotency, KeyReused
+from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.data_layer.caching.domain import exceptions
 from sincpro_framework.common.store import InMemoryKeyValue
 
 class CommandIssueReceipt(DataTransferObject):
@@ -85,7 +86,7 @@ class CommandIssueReceipt(DataTransferObject):
         return self.request_id
 
 idempotency = Idempotency(InMemoryKeyValue())  # RedisKeyValue(...) on replicas
-receipts.ignore_sentry_exceptions(AlreadyInProgress, KeyReused)
+receipts.ignore_sentry_exceptions(exceptions.AlreadyInProgress, exceptions.KeyReused)
 
 @receipts.feature(CommandIssueReceipt)
 @idempotency.once(

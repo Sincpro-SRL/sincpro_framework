@@ -65,11 +65,8 @@ from sincpro_framework.data_layer.caching.adapters.observers import (
     IDEMPOTENCY_OUTCOMES,
     traced_and_measured,
 )
+from sincpro_framework.data_layer.caching.domain import exceptions
 from sincpro_framework.data_layer.caching.domain.codec import Codec
-from sincpro_framework.data_layer.caching.domain.exceptions import (
-    AlreadyInProgress,
-    KeyReused,
-)
 from sincpro_framework.data_layer.caching.domain.idempotency_records import (
     IdempotencyRecord,
     IdempotencyRecords,
@@ -85,7 +82,6 @@ from sincpro_framework.data_layer.caching.domain.observer import (
 )
 from sincpro_framework.data_layer.caching.domain.policies import IdempotencyPolicy
 from sincpro_framework.data_layer.caching.infrastructure.flight import POLL_SECONDS
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 _running: ContextVar[str | None] = ContextVar("sincpro_idempotency_key", default=None)
@@ -129,7 +125,7 @@ def _qualified(cls: type) -> str:
 def _response_of(handler: type, execute: Callable[..., Any]) -> Any:
     response = get_type_hints(execute).get("return")
     if response is None:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{handler.__name__}.execute declares no response type: declare it, so a kept "
             "answer can be replayed as what the use case answers"
         )
@@ -233,7 +229,7 @@ class Idempotency:
                 continue
             if held.fingerprint != fingerprint:
                 self._observe(IdempotencyOutcome.KEY_REUSED)
-                raise KeyReused(
+                raise exceptions.KeyReused(
                     "this idempotency key was already used for a different payload"
                 )
             if held.state == RecordState.COMPLETED:
@@ -245,7 +241,7 @@ class Idempotency:
                 return answer
             if time.monotonic() >= deadline:
                 self._observe(IdempotencyOutcome.IN_PROGRESS)
-                raise AlreadyInProgress(
+                raise exceptions.AlreadyInProgress(
                     "a run with this idempotency key is still in progress"
                 )
             time.sleep(POLL_SECONDS)
@@ -279,10 +275,12 @@ class Idempotency:
                answer's codec is read from its return type at the first run.
             """
             if cls in self._declared:
-                raise ProgrammingError(f"{cls.__name__} declares once() twice: declare one")
+                raise exceptions.ProgrammingError(
+                    f"{cls.__name__} declares once() twice: declare one"
+                )
             original = cls.execute  # type: ignore[attr-defined]
             if inspect.iscoroutinefunction(original):
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     f"{cls.__name__}.execute is async: once() runs synchronous use cases — "
                     "declare it def execute, and reach it from async code with "
                     "bus.get_async_bus()"

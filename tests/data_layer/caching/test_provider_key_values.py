@@ -12,9 +12,10 @@ import pytest
 from pymemcache.client.base import PooledClient
 from pymemcache.test.utils import MockMemcacheClient
 
-from sincpro_framework import FailureKind
+from sincpro_framework import exceptions
 from sincpro_framework.common.failures import refined_failure_kind
-from sincpro_framework.common.store import KeyValueStore, StoreUnavailable
+from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework.common.store import exceptions as store_exceptions
 from sincpro_framework.data_layer.caching.adapters.memcached import MemcachedKeyValue
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import KeyValueStoreContract
@@ -151,8 +152,8 @@ class _DeadClient:
 def test_a_store_that_does_not_answer_is_unavailable_with_the_drivers_error_as_its_cause(
     store: KeyValueStore,
 ):
-    with pytest.raises(StoreUnavailable) as raised:
+    with pytest.raises(store_exceptions.StoreUnavailable) as raised:
         store.get_many(["a"])
 
-    assert refined_failure_kind(raised.value) is FailureKind.UNAVAILABLE
+    assert refined_failure_kind(raised.value) is exceptions.FailureKind.UNAVAILABLE
     assert isinstance(raised.value.__cause__, ConnectionRefusedError)

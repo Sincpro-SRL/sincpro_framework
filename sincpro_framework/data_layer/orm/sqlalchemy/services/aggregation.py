@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.ddd.criteria import (
@@ -26,7 +27,6 @@ from sincpro_framework.ddd.criteria import (
     resolve,
 )
 from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta, ambient_resolution
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 WITHOUT_PERCENTILES = frozenset({"sqlite"})
 """The dialects with no `percentile_cont`. Named here so the refusal happens before a
@@ -90,7 +90,7 @@ def measure_columns(
             columns.append(func.count(distinct(column)).label(name))
         elif measure.function in ("percentile", "median"):
             if dialect in WITHOUT_PERCENTILES:
-                raise InvalidCriteria(
+                raise exceptions.InvalidCriteria(
                     f"'{dialect}' does not compute percentiles; ask for one over a database "
                     "that does, or answer it in memory"
                 )
@@ -133,7 +133,7 @@ def where_measures_clause(grouping: Grouping, measures: dict[str, Any]) -> Any:
         having = resolve(having, ambient_resolution())
     for condition in conditions_of(having):
         if condition.field not in measures:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{condition.field}' is not something a group folded; `where_measures` reads "
                 f"{', '.join(sorted(measures))} — a filter over the rows is `where`"
             )
@@ -155,7 +155,7 @@ def group_order(grouping: Grouping, keys: list[Any], measures: dict[str, Any]) -
         # `or` would ask a column for its truth, which SQLAlchemy refuses on purpose.
         column = measures[sort.field] if sort.field in measures else by_field.get(sort.field)
         if column is None:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"a grouping is ordered by a level, by a total or by count; "
                 f"'{sort.field}' is none of those"
             )

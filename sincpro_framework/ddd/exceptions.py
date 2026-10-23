@@ -14,8 +14,10 @@ A stale version and a lost transaction are the ones worth running again. A proje
 declares another kind with `failure_kind = FailureKind...` on its class.
 """
 
+from sincpro_framework.context.domain.exceptions import DraftConflict
 from sincpro_framework.exceptions import (
     ClientError,
+    DependencyNotRegistered,
     FailureKind,
     FrameworkError,
     ProgrammingError,
@@ -102,3 +104,7 @@ class AggregateNotFound(ClientError):
     """
 
     failure_kind = FailureKind.NOT_FOUND
+
+
+class Unreadable(ValueError):
+    """A value that will not become the type its field holds."""

@@ -19,7 +19,7 @@ from starlette.testclient import TestClient
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
-from sincpro_framework.ddd.exceptions import DomainError, StaleAggregate
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.mcp import McpGateway
@@ -117,9 +117,9 @@ def _billing(auth: AccessControl[Perm] | None = None) -> UseFramework:
     class Fail(Feature):
         def execute(self, dto: CommandFail) -> None:
             if dto.how == "stale":
-                raise StaleAggregate("invoice F-1 was written by someone else")
+                raise exceptions.StaleAggregate("invoice F-1 was written by someone else")
             if dto.how == "domain":
-                raise DomainError("an invoice has to balance")
+                raise exceptions.DomainError("an invoice has to balance")
             raise RuntimeError("postgres://admin:hunter2@db — never to the caller")
 
     if auth is not None:

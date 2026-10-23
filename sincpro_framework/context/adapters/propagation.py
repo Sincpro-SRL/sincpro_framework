@@ -28,7 +28,7 @@ from sincpro_framework.context.domain.execution import (
     CONTEXT_NODE_HEADER,
     IDENTITY_HEADERS,
 )
-from sincpro_framework.context.domain.keys import standardized, travelling
+from sincpro_framework.context.domain.keys import travelling
 from sincpro_framework.context.infrastructure.tree import handed_on
 from sincpro_framework.sincpro_logger import logger
 
@@ -53,7 +53,7 @@ def read(header: str | None) -> dict[str, Any]:
     except ValueError:
         logger.warning(f"a {CONTEXT_HEADER} header that is not JSON was left out")
         return {}
-    return standardized(found) if isinstance(found, dict) else {}
+    return found if isinstance(found, dict) else {}
 
 
 def baggage(context: Mapping[Any, Any]) -> str:
@@ -61,7 +61,7 @@ def baggage(context: Mapping[Any, Any]) -> str:
     members: list[str] = []
     size = 0
     for key, value in travelling(context).items():
-        if isinstance(value, list):
+        if isinstance(value, (list, dict)):
             continue
         member = f"{quote(key, safe='')}={quote(str(value), safe='')}"
         if len(members) == BAGGAGE_MEMBERS or size + len(member) + 1 > BAGGAGE_BYTES:
@@ -116,4 +116,4 @@ def extract(headers: Mapping[str, Any]) -> dict[str, Any]:
     )
     if lowered.get(CONTEXT_NODE_HEADER):
         found[CONTEXT_NODE] = lowered[CONTEXT_NODE_HEADER]
-    return standardized(found)
+    return found

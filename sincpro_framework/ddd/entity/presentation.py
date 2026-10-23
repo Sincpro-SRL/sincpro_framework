@@ -31,8 +31,8 @@ finds it — is not here: it is the entity's own `DEFAULT_*` class methods (`Ent
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Expression
-from sincpro_framework.exceptions import ProgrammingError
 
 
 class FieldRef(str):
@@ -55,7 +55,7 @@ class Fields:
 
     def __getattr__(self, name: str) -> FieldRef:
         if name not in self._names:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{self._owner}.{self._declaration} names {name}, "
                 f"which is not a field of {self._owner}"
             )
@@ -71,7 +71,7 @@ def field_name(value: object, form: str) -> str:
     """
     if isinstance(value, FieldRef):
         return str(value)
-    raise ProgrammingError(
+    raise exceptions.ProgrammingError(
         f"a presentation takes a field read through the entity, as in lambda a: {form}; "
         f"it was given {value!r}"
     )

@@ -25,9 +25,9 @@ from sincpro_framework.ddd import (
     DomainEvent,
     Entity,
     EventSourcedMixin,
+    exceptions,
 )
 from sincpro_framework.ddd.criteria import Operator, parse_order
-from sincpro_framework.ddd.exceptions import StaleAggregate
 from sincpro_framework.entrypoints.adapters.cron import Crons
 from sincpro_framework.event_driven import (
     EventRelay,
@@ -362,6 +362,6 @@ def test_two_writers_of_one_event_sourced_entity_do_not_both_win(repository):
     first.deposit(1)
     repository.save(first)
     second.deposit(2)
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(exceptions.StaleAggregate):
         repository.save(second)
     assert repository.get(Wallet, "W-1").balance == 11

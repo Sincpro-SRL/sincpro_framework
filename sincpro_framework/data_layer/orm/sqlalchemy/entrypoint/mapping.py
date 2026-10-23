@@ -9,6 +9,7 @@ import sqlalchemy
 from sqlalchemy import Table, event
 from sqlalchemy.orm import registry
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import record_mapping
 from sincpro_framework.data_layer.orm.sqlalchemy.services import (
@@ -36,7 +37,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import 
 )
 from sincpro_framework.ddd.entity import Entity, extensions, relations
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def map_aggregates(
@@ -177,7 +177,7 @@ def map_events(mapper_registry: registry, base: type[DomainEvent], table: Table)
     no-op.
     """
     if not (isinstance(base, type) and issubclass(base, DomainEvent)):
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{base!r} is not a DomainEvent class: there is nothing to map"
         )
     if base in bases:

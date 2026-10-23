@@ -8,7 +8,7 @@ each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's
 `OSError` about files, and a handler catching one would catch the other.
 """
 
-from sincpro_framework.exceptions import ClientError, FailureKind
+from sincpro_framework.exceptions import ClientError, FailureKind, ProgrammingError
 
 
 class AuthError(ClientError):

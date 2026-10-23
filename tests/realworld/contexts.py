@@ -17,12 +17,12 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import All, Condition, Criteria, Pagination
-from sincpro_framework.ddd.exceptions import StaleAggregate
 from sincpro_framework.event_driven import (
     Publisher,
 )
@@ -101,7 +101,7 @@ def ledger_bus(
             with self.repository.context() as ledger:
                 entry = ledger.get(Entry, dto.entry_id)
                 if entry is None:
-                    raise ProgrammingError(f"no entry {dto.entry_id}")
+                    raise exceptions.ProgrammingError(f"no entry {dto.entry_id}")
                 entry.post()
                 ledger.save(entry)
                 for line in entry.lines:
@@ -138,7 +138,7 @@ def reporting_bus(
             for attempt in range(RETRIES):
                 try:
                     return self.apply(dto)
-                except StaleAggregate:
+                except ddd_exceptions.StaleAggregate:
                     if attempt == RETRIES - 1:
                         raise
             raise AssertionError("unreachable")

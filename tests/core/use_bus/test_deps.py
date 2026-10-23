@@ -1,7 +1,6 @@
 import pytest
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.exceptions import DependencyNotRegistered
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 
 
 class FakeAdapter:
@@ -34,10 +33,10 @@ def test_deps_unknown_name_raises():
     framework = UseFramework("deps-missing", log_after_execution=False)
     framework.add_dependency("adapter_1", FakeAdapter())
 
-    with pytest.raises(DependencyNotRegistered, match="missing_adapter"):
+    with pytest.raises(exceptions.DependencyNotRegistered, match="missing_adapter"):
         _ = framework.deps.missing_adapter
 
-    with pytest.raises(DependencyNotRegistered, match="Available: adapter_1"):
+    with pytest.raises(exceptions.DependencyNotRegistered, match="Available: adapter_1"):
         _ = framework.deps["missing_adapter"]
 
 

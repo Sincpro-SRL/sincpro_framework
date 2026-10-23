@@ -101,7 +101,7 @@ written nor removed; `orphans=Orphans.DELETE`/`Orphans.DETACH` overrides the key
 silently overwriting.
 
 ```python
-from sincpro_framework.ddd import StaleAggregate
+from sincpro_framework.ddd import exceptions
 
 mine = repository.get(Invoice, first.id)
 theirs = repository.get(Invoice, first.id)
@@ -110,7 +110,7 @@ repository.save(mine)
 theirs.total = 999
 try:
     repository.save(theirs)
-except StaleAggregate:
+except exceptions.StaleAggregate:
     ...                                      # read again, decide again
 ```
 

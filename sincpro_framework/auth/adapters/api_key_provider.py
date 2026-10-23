@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import ConfigDict
 
-from sincpro_framework.auth.domain.exceptions import Unauthenticated
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -105,9 +105,9 @@ class ApiKeyProvider(AuthProvider):
             return None
         kept = self.store.find(digest_of(key))
         if kept is None:
-            raise Unauthenticated("unknown api key")
+            raise exceptions.Unauthenticated("unknown api key")
         if kept.revoked:
-            raise Unauthenticated("revoked api key")
+            raise exceptions.Unauthenticated("revoked api key")
         return Identity(
             subject=kept.subject,
             kind=IdentityKind.SERVICE,

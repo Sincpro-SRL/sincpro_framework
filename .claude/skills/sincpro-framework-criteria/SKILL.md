@@ -51,7 +51,7 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_LITERAL_SEARCH` | What an entity answers once, as criteria: what a record brings (`Specification`), the list order (`Sort`s), the template a typed text fills (`Criteria` whose `where` holds `TEXT`) — with `DEFAULT_GET_ID` and `DEFAULT_DISPLAY`. `@classmethod`s on `Entity`; a caller's criteria wins for each part it names (`Criteria.replaced_by`) | `@classmethod` | `Entity`; `TEXT` from `sincpro_framework.ddd` |
 | `Presentation` | Form hints only, whose conditions are criteria expressions (`When(Condition.on(i.state, …), i.field)`) | class attribute | `from sincpro_framework.ddd import Presentation` |
 | `matching` / `detail_of` | `DEFAULT_LITERAL_SEARCH` filled with a literal / `DEFAULT_READING` as the criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
-| `InvalidCriteria` | A question that cannot be answered (unorderable field, bad grouping, unknown measure) | exception | `from sincpro_framework.ddd import InvalidCriteria` |
+| `InvalidCriteria` | A question that cannot be answered (unorderable field, bad grouping, unknown measure) | exception | `from sincpro_framework.ddd import exceptions` → `exceptions.InvalidCriteria` |
 
 Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `where` filters rows,
 `where_measures` filters groups. A **measure** is a sum/count/avg; an **aggregate** is the DDD root.

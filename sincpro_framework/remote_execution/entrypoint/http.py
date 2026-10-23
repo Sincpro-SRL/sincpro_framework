@@ -25,7 +25,7 @@ from sincpro_framework.remote_execution.adapters.http import (
     ERROR_MODULE_HEADER,
     PATH,
 )
-from sincpro_framework.remote_execution.domain.errors import error_details
+from sincpro_framework.remote_execution.domain.failures import error_details
 from sincpro_framework.remote_execution.entrypoint.execution import (
     execute_hosted,
 )

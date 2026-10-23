@@ -215,7 +215,7 @@ from typing import TypedDict
 from pydantic import Secret
 
 from sincpro_framework.context import requires_context
-from sincpro_framework.exceptions import ContextRequired
+from sincpro_framework import exceptions
 
 
 class Environment(IntEnum):
@@ -258,7 +258,7 @@ assert sent.to_client()["TOKEN"] == "token-of-" + sent["nit_id"]   # it travels,
 
 try:
     siat(CommandSendInvoice())                          # no nit_id: nothing provides the token
-except ContextRequired as refused:
+except exceptions.ContextRequired as refused:
     assert refused.missing == ["TOKEN", "SIAT_ENV"]
 ```
 
@@ -328,6 +328,13 @@ with sales.context({"tenant_id": "acme"}, keep_as="sale-77", ttl=timedelta(hours
 with sales.context(restore="sale-77"):                  # a worker, a cron, another service
     assert use_context()["tenant_id"] == "acme"
 ```
+
+The same store keeps two more things beside the contexts, each under a prefix of its own and each
+reached from the context — never as values inside a node, which would be copied at every read and die
+with their scope: the [drafts](drafts.md) a form keeps between requests (`use_context().drafts()`),
+and how far each run of a [pipeline](pipelines.md) got (`use_context().pipelines()`). Whose they are
+comes from the context by one rule that serves every shape of system and refuses none: no tenant and
+no user, a tenant, a user, a user in a tenant, a user across several (`tenant_ids`).
 
 A store keeps **what a flow is** — a tenant's defaults, a session, a flow to resume — not what can be
 recomputed (that is a cache). `InMemoryContexts` for one process; `KeyValueContexts` over any
@@ -400,13 +407,13 @@ root execution takes what it was handed (`bus.context({...})`, `x-correlation-id
 
 ## The keys the framework reads
 
-| Key | Meaning |
-|---|---|
-| `user_id` | who the execution acts for |
-| `tenant_id` | the tenant it acts in |
-| `tenant_ids` | every tenant it may act across — a list |
-| `correlation_id`, `causation_id`, `execution_id` | the identity |
+| `ContextKey` member | Key | Meaning |
+|---|---|---|
+| `USER_ID` | `user_id` | who the execution acts for |
+| `TENANT_ID` | `tenant_id` | the tenant it acts in |
+| `TENANT_IDS` | `tenant_ids` | every tenant it may act across — a list |
+| `CORRELATION_ID`, `CAUSATION_ID`, `EXECUTION_ID` | `correlation_id`, `causation_id`, `execution_id` | the identity |
 
-`"user.id"` and `"tenant"` are still read, as `user_id` and `tenant_id`, with a warning the first time;
-the key given stays where it was. The signals keep their own names: logs, spans and metrics say
-`tenant` and `user_id`.
+`ContextKey` is a `StrEnum` (`from sincpro_framework.context import ContextKey`): a member is its
+text, so `context[ContextKey.USER_ID]` and `context["user_id"]` read the same key. The signals keep
+their own names: logs, spans and metrics say `tenant` and `user_id`.

@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from sincpro_framework.exceptions import ExternalServiceError, ProgrammingError
-
 
 @dataclass(frozen=True)
 class Chain:
@@ -61,12 +59,3 @@ class ChainState(StrEnum):
     BEHIND = "behind"
     AHEAD = "ahead"
     DIRTY = "dirty"
-
-
-class MigrationRefused(ProgrammingError):
-    """Nothing ran: the system is not where the command can start from, or it asked for
-    something the code does not have."""
-
-
-class MigrationFailed(ExternalServiceError):
-    """A step failed; the steps before it stay applied, the ones after it did not run."""

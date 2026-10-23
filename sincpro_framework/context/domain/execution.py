@@ -18,14 +18,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sincpro_framework.common.ids import moment_of
+from sincpro_framework.context.domain.keys import ContextKey
 
 if TYPE_CHECKING:
     from sincpro_framework.context.domain.level import Level
 
-EXECUTION_ID = "execution_id"
-CAUSATION_ID = "causation_id"
-CORRELATION_ID = "correlation_id"
-CHAIN_KEYS = (EXECUTION_ID, CAUSATION_ID, CORRELATION_ID)
+CHAIN_KEYS = (ContextKey.EXECUTION_ID, ContextKey.CAUSATION_ID, ContextKey.CORRELATION_ID)
 """The context keys of an execution's identity — the same names a `DomainEvent` carries."""
 
 CONTEXT_NODE = "sincpro.context_node"
@@ -35,10 +33,10 @@ CONTEXT_NODE_HEADER = "x-context-node"
 """The header a message carries `CONTEXT_NODE` in — so a receiver needs no other header to read the
 sender's chain."""
 
-IDENTITY_HEADERS = {
-    "x-correlation-id": CORRELATION_ID,
-    "x-causation-id": CAUSATION_ID,
-    "x-execution-id": EXECUTION_ID,
+IDENTITY_HEADERS: dict[str, str] = {
+    "x-correlation-id": ContextKey.CORRELATION_ID,
+    "x-causation-id": ContextKey.CAUSATION_ID,
+    "x-execution-id": ContextKey.EXECUTION_ID,
 }
 """The headers an entrypoint reads the identity from — HTTP and gRPC alike, lowercase."""
 
@@ -62,14 +60,20 @@ class Execution:
 
     def chain(self) -> dict[str, str]:
         """Its identity, as the context keys every signal of it carries."""
-        keys = {EXECUTION_ID: self.execution_id, CORRELATION_ID: self.correlation_id}
+        keys: dict[str, str] = {
+            ContextKey.EXECUTION_ID: self.execution_id,
+            ContextKey.CORRELATION_ID: self.correlation_id,
+        }
         if self.causation_id:
-            keys[CAUSATION_ID] = self.causation_id
+            keys[ContextKey.CAUSATION_ID] = self.causation_id
         return keys
 
     def handed_on(self) -> dict[str, str]:
         """What the next execution, or an event this one produces, is caused by."""
-        return {CAUSATION_ID: self.execution_id, CORRELATION_ID: self.correlation_id}
+        return {
+            ContextKey.CAUSATION_ID: self.execution_id,
+            ContextKey.CORRELATION_ID: self.correlation_id,
+        }
 
 
 def chained(

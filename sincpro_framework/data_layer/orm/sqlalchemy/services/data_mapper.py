@@ -27,6 +27,7 @@ import sqlalchemy
 from sqlalchemy import Table
 from sqlalchemy.orm import column_property, object_session, registry
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import (
     RELATIONS,
 )
@@ -51,9 +52,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import key_pair
-from sincpro_framework.ddd.exceptions import RelationNotResolved
 from sincpro_framework.ddd.query import serialising
-from sincpro_framework.exceptions import ProgrammingError
 
 
 class RelatedAttribute:
@@ -95,7 +94,7 @@ class RelatedAttribute:
             ):
                 return value
         if session is None or repository is None:
-            raise RelationNotResolved(
+            raise exceptions.RelationNotResolved(
                 f"{type(record).__name__}.{self.name} was not asked for; name it in the "
                 "criteria's specification, or read it inside context()"
             )
@@ -107,7 +106,7 @@ class RelatedAttribute:
             # usual cause is a `Relation` pointing the wrong way — `foreign_key` names the
             # column on *this* aggregate, so declaring it for a to-many reads as a to-one that
             # matches nothing. Left alone this surfaced as `KeyError: '_sincpro_resolved'`.
-            raise RelationNotResolved(
+            raise exceptions.RelationNotResolved(
                 f"{type(record).__name__}.{self.name} resolved to nothing. Check how it is "
                 "declared: `foreign_key` names a column on this aggregate pointing at the "
                 "other one, and a to-many is the foreign key on the other side — which "
@@ -269,7 +268,7 @@ def computed_properties(entity: type, table: Table) -> dict[str, Any]:
         try:
             expression = computation.sql(table.c)
         except (AttributeError, KeyError) as error:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{entity.__name__}.{name} is computed over a column {table.name} does not "
                 f"have: {error}"
             ) from error

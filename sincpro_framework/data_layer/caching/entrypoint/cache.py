@@ -61,6 +61,7 @@ from sincpro_framework.data_layer.caching.adapters.observers import (
     CACHE_OUTCOMES,
     traced_and_measured,
 )
+from sincpro_framework.data_layer.caching.domain import exceptions
 from sincpro_framework.data_layer.caching.domain.codec import Codec
 from sincpro_framework.data_layer.caching.domain.eviction import Eviction
 from sincpro_framework.data_layer.caching.domain.freshness import NEVER
@@ -72,7 +73,6 @@ from sincpro_framework.data_layer.caching.infrastructure.flight import (
     StoreFlight,
     awaited,
 )
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def utc_now() -> datetime:
@@ -294,7 +294,7 @@ class Cache:
 
     def _codec_required(self, codec: Codec[Any] | None) -> Codec[Any]:
         if codec is None:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 "a Cache on a shared store keeps bytes: pass the Codec its values are kept with"
             )
         return codec

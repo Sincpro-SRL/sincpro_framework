@@ -18,7 +18,6 @@ from typing import Any, NoReturn
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.domain.exceptions import AuthError, Unauthenticated
 from sincpro_framework.auth.entrypoint.transports import challenges_of, refusal_body
 from sincpro_framework.common.failures import (
     failure_reason,
@@ -38,12 +37,10 @@ from sincpro_framework.common.transport.grpc import (
     is_past,
 )
 from sincpro_framework.context.domain.level import EntrypointKind
-from sincpro_framework.ddd.exceptions import DuplicateAggregate
-from sincpro_framework.entrypoints.adapters.grpc import naming, proto
+from sincpro_framework.entrypoints.adapters.grpc import exceptions, naming, proto
 from sincpro_framework.entrypoints.adapters.grpc.proto import GrpcMethodSpec
 from sincpro_framework.entrypoints.domain.layers import RunFn, Scalar
 from sincpro_framework.entrypoints.services.scalar_executor import dump_scalar_result, execute
-from sincpro_framework.exceptions import FailureKind, ProgrammingError
 from sincpro_framework.observability import process
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
@@ -82,22 +79,22 @@ REFLECTION_SERVICES = (
 )
 
 CODE_OF = {
-    FailureKind.INVALID: grpc.StatusCode.INVALID_ARGUMENT,
-    FailureKind.UNAUTHENTICATED: grpc.StatusCode.UNAUTHENTICATED,
-    FailureKind.PERMISSION_DENIED: grpc.StatusCode.PERMISSION_DENIED,
-    FailureKind.NOT_FOUND: grpc.StatusCode.NOT_FOUND,
-    FailureKind.CONFLICT: grpc.StatusCode.ABORTED,
-    FailureKind.IN_PROGRESS: grpc.StatusCode.ABORTED,
-    FailureKind.KEY_REUSED: grpc.StatusCode.FAILED_PRECONDITION,
-    FailureKind.DOMAIN: grpc.StatusCode.FAILED_PRECONDITION,
-    FailureKind.EXHAUSTED: grpc.StatusCode.RESOURCE_EXHAUSTED,
-    FailureKind.UNAVAILABLE: grpc.StatusCode.UNAVAILABLE,
-    FailureKind.UNKNOWN_OUTCOME: grpc.StatusCode.DEADLINE_EXCEEDED,
-    FailureKind.INTERNAL: grpc.StatusCode.INTERNAL,
+    exceptions.FailureKind.INVALID: grpc.StatusCode.INVALID_ARGUMENT,
+    exceptions.FailureKind.UNAUTHENTICATED: grpc.StatusCode.UNAUTHENTICATED,
+    exceptions.FailureKind.PERMISSION_DENIED: grpc.StatusCode.PERMISSION_DENIED,
+    exceptions.FailureKind.NOT_FOUND: grpc.StatusCode.NOT_FOUND,
+    exceptions.FailureKind.CONFLICT: grpc.StatusCode.ABORTED,
+    exceptions.FailureKind.IN_PROGRESS: grpc.StatusCode.ABORTED,
+    exceptions.FailureKind.KEY_REUSED: grpc.StatusCode.FAILED_PRECONDITION,
+    exceptions.FailureKind.DOMAIN: grpc.StatusCode.FAILED_PRECONDITION,
+    exceptions.FailureKind.EXHAUSTED: grpc.StatusCode.RESOURCE_EXHAUSTED,
+    exceptions.FailureKind.UNAVAILABLE: grpc.StatusCode.UNAVAILABLE,
+    exceptions.FailureKind.UNKNOWN_OUTCOME: grpc.StatusCode.DEADLINE_EXCEEDED,
+    exceptions.FailureKind.INTERNAL: grpc.StatusCode.INTERNAL,
 }
 """Each kind's code (PRD_15 §1.3). A duplicate is `ALREADY_EXISTS`, the one conflict it refines."""
 
-BROKE_A_RULE = frozenset({FailureKind.DOMAIN, FailureKind.KEY_REUSED})
+BROKE_A_RULE = frozenset({exceptions.FailureKind.DOMAIN, exceptions.FailureKind.KEY_REUSED})
 """The kinds whose answer names the rule broken — `PreconditionFailure`, per AIP-193."""
 
 
@@ -149,7 +146,7 @@ def _field_violations(error: ValidationError) -> Any:
     return request
 
 
-def _told(error: Exception, kind: FailureKind, code: Any) -> str:
+def _told(error: Exception, kind: exceptions.FailureKind, code: Any) -> str:
     """The status message: the validation errors as JSON, a domain error's own words, or the
     code's name — never the inside of the process."""
     if isinstance(error, ValidationError):
@@ -159,18 +156,18 @@ def _told(error: Exception, kind: FailureKind, code: Any) -> str:
         return disclosed
     return (
         "Internal error"
-        if kind == FailureKind.INTERNAL
+        if kind == exceptions.FailureKind.INTERNAL
         else code.name.replace("_", " ").capitalize()
     )
 
 
 def refusal_metadata(
-    error: AuthError, framework: UseFramework
+    error: exceptions.AuthError, framework: UseFramework
 ) -> tuple[tuple[str, str], ...]:
     """What a refused caller reads besides the code: why, and — for nobody known — where to get
     a credential, as `www-authenticate`."""
     metadata = [("sp-auth-refusal", json.dumps(refusal_body(error)))]
-    if isinstance(error, Unauthenticated):
+    if isinstance(error, exceptions.Unauthenticated):
         metadata += [("www-authenticate", one) for one in challenges_of([framework])]
     return tuple(metadata)
 
@@ -192,14 +189,15 @@ def status_for(
     kind = refined_failure_kind(error)
     code = (
         grpc.StatusCode.ALREADY_EXISTS
-        if kind == FailureKind.CONFLICT and isinstance(error, DuplicateAggregate)
+        if kind == exceptions.FailureKind.CONFLICT
+        and isinstance(error, exceptions.DuplicateAggregate)
         else CODE_OF[kind]
     )
     message = _told(error, kind, code)
     reason = failure_reason(error, kind)
     info = error_details_pb2.ErrorInfo(reason=reason, domain=domain)
     info.metadata["kind"] = kind.value
-    if isinstance(error, AuthError):
+    if isinstance(error, exceptions.AuthError):
         for key, value in refusal_body(error).items():
             info.metadata[key] = str(value)
     details: list[Any] = [info]
@@ -218,7 +216,7 @@ def status_for(
         code=code.value[0], message=message, details=[_packed(one) for one in details]
     )
     trailing = tuple(rpc_status.to_status(status).trailing_metadata)
-    if isinstance(error, AuthError):
+    if isinstance(error, exceptions.AuthError):
         trailing += refusal_metadata(error, framework)
     return RichStatus(code, message, trailing)
 
@@ -549,7 +547,7 @@ def refuse_clashes(specs: Mapping[str, GrpcMethodSpec], extra: Sequence[Any]) ->
     answers would depend on mounting order."""
     clashing = sorted(paths_of(extra) & set(specs))
     if clashing:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             "hand-written methods the gateway also serves: "
             + ", ".join(
                 f"{path} ({specs[path].operation.command.__name__})" for path in clashing

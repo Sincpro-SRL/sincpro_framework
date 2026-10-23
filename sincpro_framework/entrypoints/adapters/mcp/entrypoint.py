@@ -55,7 +55,7 @@ class Entrypoint:
 
     @property
     def name(self) -> str:
-        return self.catalog.framework_instance._logger_name
+        return self.catalog.framework_instance.name
 
     def include(self, *dtos: type | str) -> Self:
         self.catalog.include(*dtos)

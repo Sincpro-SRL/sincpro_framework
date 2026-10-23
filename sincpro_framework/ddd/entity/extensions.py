@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from sincpro_framework.exceptions import ClientError, ProgrammingError
+from sincpro_framework.ddd import exceptions
 
 
 def identity_of(entity: type) -> str:
@@ -72,7 +72,7 @@ def register(root: type, entity: type, fields: tuple[str, ...]) -> EntityExtensi
     registered[:] = [one for one in registered if one.entity is not entity]
     clash = next((one for one in registered if one.key == found.key), None)
     if clash is not None:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{entity.__module__}.{entity.__name__} and {clash.entity.__module__}."
             f"{clash.entity.__name__} would both be `{found.key}` in a delegated answer of "
             f"{root.__name__}: rename one of them"
@@ -126,7 +126,7 @@ def class_for(entity: type, names: set[str]) -> type:
         {one.entity.__name__ for one in needed if not issubclass(deepest.entity, one.entity)}
     )
     if apart:
-        raise ClientError(
+        raise exceptions.ClientError(
             f"{', '.join(sorted(names & {f for one in needed for f in one.fields}))} belong to "
             f"{deepest.entity.__name__} and {', '.join(apart)}, which no one class holds: "
             "send them in separate edits, or map a Consolidated record for the screen that "
@@ -141,7 +141,7 @@ def overlay(entity: type, field: str, changes: dict[str, Any]) -> None:
     say a thing wins. Anything else about a field belongs to the core and is refused."""
     unknown = sorted(set(changes) - set(OVERLAYABLE))
     if unknown:
-        raise ClientError(
+        raise exceptions.ClientError(
             f"a module may change how {entity.__name__}.{field} is shown ({', '.join(OVERLAYABLE)}), "
             f"not {', '.join(unknown)}: that is the core's"
         )

@@ -10,8 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context.domain.level import EntrypointKind
-from sincpro_framework.exceptions import UnknownDTOToExecute
-from sincpro_framework.remote_execution.domain.errors import DTODoesNotFit
+from sincpro_framework.remote_execution.domain import exceptions
 from sincpro_framework.remote_execution.domain.payload import Payload
 
 if TYPE_CHECKING:
@@ -57,12 +56,14 @@ def execute_hosted(
     message = Payload.from_json(body)
     try:
         value = bus.map_to_dto_or_event(message.type, message.data)
-    except UnknownDTOToExecute:
-        raise UnknownDTOToExecute(
+    except exceptions.UnknownDTOToExecute:
+        raise exceptions.UnknownDTOToExecute(
             f"{context_name} does not answer {message.type!r} in this service"
         ) from None
     except ValidationError as error:
-        raise DTODoesNotFit(f"{message.type} sent to {context_name}", error) from None
+        raise exceptions.DTODoesNotFit(
+            f"{message.type} sent to {context_name}", error
+        ) from None
     with (
         within_trace(carrier),
         bus.context(message.full_context(), kind=EntrypointKind.REMOTE),

@@ -7,12 +7,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import ArgumentError
 from sqlalchemy.orm import Session
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import (
     ISOLATION_LEVELS,
     Isolation,
     Transaction,
 )
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 
@@ -39,7 +39,7 @@ def began(session: Session, transaction: Transaction) -> None:
         try:
             session.connection(execution_options=options)
         except ArgumentError as error:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{dialect} cannot open this unit of work as asked: {error}"
             ) from error
     if transaction.timeout is None:

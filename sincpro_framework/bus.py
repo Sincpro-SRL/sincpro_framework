@@ -1,8 +1,10 @@
 from logging import Logger
 from typing import Callable, Dict, Optional, Type
 
+from sincpro_framework import exceptions
+from sincpro_framework.bus_pipeline.incomes.incomes import Incomes
 from sincpro_framework.bus_pipeline.interceptors.interceptor import Interceptor, run_around
-from sincpro_framework.bus_pipeline.outcomes.mixins.announcer import OutcomeAnnouncerMixin
+from sincpro_framework.bus_pipeline.outcomes.outcomes import Outcomes
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context.domain.level import Level
@@ -24,7 +26,6 @@ from sincpro_framework.sincpro_abstractions import (
     TypeDTOResponse,
 )
 
-from .exceptions import ContextRequired, DTOAlreadyRegistered, UnknownDTOToExecute
 from .sincpro_logger import is_logger_in_debug, logger
 
 
@@ -37,16 +38,22 @@ def prepared(node: ContextNode, handler: object, providers: list[ContextProvider
     if required:
         absent = missing(node, required)
         if absent:
-            raise ContextRequired(type(handler).__name__, absent)
+            raise exceptions.ContextRequired(type(handler).__name__, absent)
 
 
-class FeatureBus(OutcomeAnnouncerMixin, Bus):
+class FeatureBus(Bus):
     """First layer of the framework, atomic features"""
 
     def __init__(
         self,
         logger_bus: Logger = logger,  # type: ignore[assignment]
         observability: Optional[Observability] = None,
+        incomes: Optional[Incomes] = None,
+        outcomes: Optional[Outcomes] = None,
+        context_owner: object = None,
+        context_providers: Optional[list[ContextProvider]] = None,
+        new_execution_id: Optional[Callable[[], str]] = None,
+        log_after_execution: bool = True,
     ):
         self.feature_registry: Dict[type, Feature] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
@@ -54,14 +61,23 @@ class FeatureBus(OutcomeAnnouncerMixin, Bus):
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
         self.observability = observability or Observability()
-        self.new_execution_id: Callable[[], str] = new_entity_id
-        self.context_owner: object = None
-        self.context_providers: list[ContextProvider] = []
+        self.incomes = (
+            incomes if incomes is not None else Incomes(self.observability.bus_name)
+        )
+        self.outcomes = (
+            outcomes if outcomes is not None else Outcomes(self.observability.bus_name)
+        )
+        self.new_execution_id: Callable[[], str] = new_execution_id or new_entity_id
+        self.context_owner: object = context_owner
+        self.context_providers: list[ContextProvider] = (
+            context_providers if context_providers is not None else []
+        )
+        self.log_after_execution = log_after_execution
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
         """Register a feature to the bus"""
         if dto in self.feature_registry:
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
             )
 
@@ -78,7 +94,7 @@ class FeatureBus(OutcomeAnnouncerMixin, Bus):
 
         feature = self.feature_registry.get(dto_type)
         if feature is None:
-            raise UnknownDTOToExecute(f"{dto_name} is not registered as a feature")
+            raise exceptions.UnknownDTOToExecute(f"{dto_name} is not registered as a feature")
         with (
             opened_execution(
                 dto,
@@ -106,10 +122,11 @@ class FeatureBus(OutcomeAnnouncerMixin, Bus):
             with self.observability.handling(dto_name):
                 try:
                     prepared(node, feature, self.context_providers)
+                    self.incomes.began(dto, "feature", node)
                     chain = self.interceptors.get(dto_type, ())
                     response = run_around(chain, feature.execute, dto)
                 except Exception as error:
-                    self._failed_in(error, node)
+                    self.outcomes.failed_in(error, dto, "feature", node)
                     measured.failed(error)
                     self.observability.failed(error, dto, feature, "feature", span)
                     if not self.handle_error:
@@ -119,7 +136,7 @@ class FeatureBus(OutcomeAnnouncerMixin, Bus):
                     return answer
 
             measured.answered(response)
-            self._completed(dto, response, "feature", node)
+            self.outcomes.answered(dto, response, "feature", node)
             self.observability.describe(span, feature, response)
             if response:
                 self.logger.debug(
@@ -135,7 +152,7 @@ class FeatureBus(OutcomeAnnouncerMixin, Bus):
         return self.execute(dto, return_type)
 
 
-class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
+class ApplicationServiceBus(Bus):
     """Second layer of the framework, orchestration of features
     This object contains the feature bus internally
     """
@@ -144,6 +161,12 @@ class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
         self,
         logger_bus: Logger = logger,  # type: ignore[assignment]
         observability: Optional[Observability] = None,
+        incomes: Optional[Incomes] = None,
+        outcomes: Optional[Outcomes] = None,
+        context_owner: object = None,
+        context_providers: Optional[list[ContextProvider]] = None,
+        new_execution_id: Optional[Callable[[], str]] = None,
+        log_after_execution: bool = True,
     ):
         self.app_service_registry: Dict[type, ApplicationService] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
@@ -151,9 +174,18 @@ class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
         self.observability = observability or Observability()
-        self.new_execution_id: Callable[[], str] = new_entity_id
-        self.context_owner: object = None
-        self.context_providers: list[ContextProvider] = []
+        self.incomes = (
+            incomes if incomes is not None else Incomes(self.observability.bus_name)
+        )
+        self.outcomes = (
+            outcomes if outcomes is not None else Outcomes(self.observability.bus_name)
+        )
+        self.new_execution_id: Callable[[], str] = new_execution_id or new_entity_id
+        self.context_owner: object = context_owner
+        self.context_providers: list[ContextProvider] = (
+            context_providers if context_providers is not None else []
+        )
+        self.log_after_execution = log_after_execution
 
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
@@ -162,7 +194,7 @@ class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
         This method is not used directly, the decorator inject_app_service_to_bus is used
         """
         if dto in self.app_service_registry:
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
             )
 
@@ -179,7 +211,7 @@ class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
 
         app_service = self.app_service_registry.get(dto_type)
         if app_service is None:
-            raise UnknownDTOToExecute(
+            raise exceptions.UnknownDTOToExecute(
                 f"{dto_name} is not registered as an application service"
             )
         with (
@@ -209,10 +241,11 @@ class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
             with self.observability.handling(dto_name):
                 try:
                     prepared(node, app_service, self.context_providers)
+                    self.incomes.began(dto, "application_service", node)
                     chain = self.interceptors.get(dto_type, ())
                     response = run_around(chain, app_service.execute, dto)
                 except Exception as error:
-                    self._failed_in(error, node)
+                    self.outcomes.failed_in(error, dto, "application_service", node)
                     measured.failed(error)
                     self.observability.failed(
                         error, dto, app_service, "application_service", span
@@ -224,7 +257,7 @@ class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
                     return answer
 
             measured.answered(response)
-            self._completed(dto, response, "application_service", node)
+            self.outcomes.answered(dto, response, "application_service", node)
             self.observability.describe(span, app_service, response)
             if response:
                 self.logger.debug(
@@ -236,7 +269,7 @@ class ApplicationServiceBus(OutcomeAnnouncerMixin, Bus):
 # ---------------------------------------------------------------------------------------------
 # Pattern Facade bus
 # ---------------------------------------------------------------------------------------------
-class FrameworkBus(OutcomeAnnouncerMixin, Bus):
+class FrameworkBus(Bus):
     """Facade bus to orchestrate the feature bus and app service bus
     This component contains the following buses:
 
@@ -253,12 +286,16 @@ class FrameworkBus(OutcomeAnnouncerMixin, Bus):
         app_service_bus: ApplicationServiceBus,
         logger_bus: Logger = logger,  # type: ignore[assignment]
         observability: Optional[Observability] = None,
+        outcomes: Optional[Outcomes] = None,
+        log_after_execution: bool = True,
     ):
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger
         self.observability = observability or Observability()
+        self.outcomes = outcomes if outcomes is not None else feature_bus.outcomes
+        self.log_after_execution = log_after_execution
 
         registered_features = set(self.feature_bus.feature_registry.keys())
         registered_app_services = set(self.app_service_bus.app_service_registry.keys())
@@ -270,7 +307,7 @@ class FrameworkBus(OutcomeAnnouncerMixin, Bus):
             self.logger.error(
                 f"Features and app services have the same DTO: {intersection_names}",
             )
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"Data transfer object {intersection_names} is present in application services and features, Change "
                 f"the name of the feature or create another framework instance to handle in doupled wat"
             )
@@ -282,7 +319,7 @@ class FrameworkBus(OutcomeAnnouncerMixin, Bus):
             dto_type in self.app_service_bus.app_service_registry
             and dto_type in self.feature_bus.feature_registry
         ):
-            raise DTOAlreadyRegistered(
+            raise exceptions.DTOAlreadyRegistered(
                 f"Data transfer object {dto_name} is present in application services and features, Change the "
                 f"name of the feature or create another framework instance to handle in doupled wat"
             )
@@ -292,7 +329,7 @@ class FrameworkBus(OutcomeAnnouncerMixin, Bus):
         if dto_type in self.app_service_bus.app_service_registry:
             return self.app_service_bus.execute(dto)
 
-        raise UnknownDTOToExecute(
+        raise exceptions.UnknownDTOToExecute(
             f"the DTO {dto_name} was not able to execute nothing review if the decorators are used properly, "
             f"otherwise the DTO {dto_name} was never register using the decorator"
         )
@@ -310,21 +347,23 @@ class FrameworkBus(OutcomeAnnouncerMixin, Bus):
             try:
                 return self._dispatch(dto)
             except Exception as error:
-                if isinstance(error, (UnknownDTOToExecute, DTOAlreadyRegistered)):
+                if isinstance(
+                    error, (exceptions.UnknownDTOToExecute, exceptions.DTOAlreadyRegistered)
+                ):
                     self.observability.record_error(
                         error, dto.__class__.__name__, "framework", kind="framework"
                     )
                 if not self.handle_error:
                     if outermost:
                         self.observability.escaped(error, dto)
-                        self._failure_escaped(error, dto)
+                        self.outcomes.escaped(error, dto)
                     raise
                 try:
                     answer = self.handle_error(error)
                 except Exception as raised:
                     if outermost:
                         self.observability.escaped(raised, dto)
-                        self._failure_escaped(raised, dto)
+                        self.outcomes.escaped(raised, dto)
                     raise
                 self.observability.handled(error, dto)
                 return answer

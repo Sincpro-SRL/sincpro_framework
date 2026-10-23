@@ -13,9 +13,12 @@ from typing import (
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
+from sincpro_framework import exceptions
+
 from . import ioc
 from .aio import AsyncBus
 from .bus import FrameworkBus
+from .bus_pipeline.incomes.mixins.bus_incomes import BusIncomesMixin
 from .bus_pipeline.interceptors.mixins.bus_interceptors import BusInterceptorsMixin
 from .bus_pipeline.outcomes.mixins.bus_outcomes import BusOutcomesMixin
 from .common.serialization import read_values, rebuilt
@@ -23,15 +26,10 @@ from .context.infrastructure.tree import current_execution
 from .context.mixins.bus_context import BusContextMixin
 from .dependencies import DependencyLocator, TDeps
 from .error_handler import BusErrorHandlersMixin
-from .exceptions import (
-    BusAlreadyBuilt,
-    DependencyAlreadyRegistered,
-    SincproFrameworkNotBuilt,
-    UnknownDTOToExecute,
-)
 from .observability import Observability
 from .observability.correlation import declare_metric_labels
 from .observability.mixins.bus_observability import BusObservabilityMixin
+from .pipelines.mixins.bus_pipelines import BusPipelinesMixin
 from .remote_execution.mixins.hosted_context import HostedContextMixin
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 
@@ -39,7 +37,9 @@ from .sincpro_abstractions import TypeDTO, TypeDTOResponse
 class UseFramework(
     BusContextMixin,
     BusInterceptorsMixin,
+    BusIncomesMixin,
     BusOutcomesMixin,
+    BusPipelinesMixin,
     BusErrorHandlersMixin,
     BusObservabilityMixin,
     HostedContextMixin,
@@ -55,13 +55,14 @@ class UseFramework(
         framework.deps.my_adapter  # MyAdapter, same name Features get as self.my_adapter
 
     Each world it offers lives in its own component and is mixed in here: the context
-    (`BusContextMixin`), interceptors (`BusInterceptorsMixin`), outcomes (`BusOutcomesMixin`),
-    error handlers (`BusErrorHandlersMixin`), traces (`BusObservabilityMixin`) and where the
-    context is hosted (`HostedContextMixin`). What stays here is the bus itself: registering,
-    building and executing.
+    (`BusContextMixin`), interceptors (`BusInterceptorsMixin`), incomes (`BusIncomesMixin`),
+    outcomes (`BusOutcomesMixin`), pipelines (`BusPipelinesMixin`), error handlers
+    (`BusErrorHandlersMixin`), traces
+    (`BusObservabilityMixin`) and where the context is hosted (`HostedContextMixin`). What stays
+    here is the bus itself: registering, building and executing.
     """
 
-    _logger_name: str
+    _name: str
 
     def __init__(
         self,
@@ -100,19 +101,23 @@ class UseFramework(
             tuple(hide_in_logs),
             tuple(metric_labels),
         )
+        self._name: str = bundled_context_name
+        """The bounded context's name: defined here, once. Everything else — its logger, its
+        signals, its node of the context, the identity of its use cases — reads it through `name`."""
         self._registrations: list[Callable[[UseFramework], Any]] = []
         """Every registration, in order, as a call that repeats it on another bus — `fresh`."""
 
         # Logger
         self._is_logger_configured: bool = False
-        self._logger_name: str = bundled_context_name
         self._logger: LoggerProxy | None = None
         self.log_after_execution: bool = log_after_execution
         self.log_app_services: bool = log_app_services
         self.log_features: bool = log_features
-        self.observability = Observability(bundled_context_name, package=package or "")
+        self.observability = Observability(self.name, package=package or "")
 
         self._init_context_storage()
+        self._init_incomes()
+        self._init_outcomes()
         self._hidden_in_logs: frozenset[str] = frozenset(hide_in_logs)
         declare_metric_labels(metric_labels)
         # Who the lines come from first, the execution's context after: a key the application
@@ -122,7 +127,10 @@ class UseFramework(
 
         # Container
         self._sp_container = ioc.FrameworkContainer(  # type: ignore[call-arg]
-            logger_bus=self.logger, observability=self.observability
+            logger_bus=self.logger,
+            observability=self.observability,
+            incomes=self._incomes,
+            outcomes=self._outcomes,
         )
         self._sp_container.logger_bus = self.logger  # type: ignore[assignment]
 
@@ -143,7 +151,7 @@ class UseFramework(
     @property
     def name(self) -> str:
         """The bounded context's name — its logger, its GlitchTip app, its OTel service."""
-        return self._logger_name
+        return self._name
 
     def feature(
         self, dto: ioc.DTORegistration, replaces: type | None = None
@@ -156,8 +164,8 @@ class UseFramework(
         and the build log and introspection say who replaced it.
         """
         if self.was_initialized:
-            raise BusAlreadyBuilt(
-                f"Feature for {', '.join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))} registered late: '{self._logger_name}' is already built, so it would "
+            raise exceptions.BusAlreadyBuilt(
+                f"Feature for {', '.join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))} registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the first execution"
             )
         register = ioc.inject_feature_to_bus(self._sp_container, dto, replaces, self.name)
@@ -175,8 +183,8 @@ class UseFramework(
         """Register the decorated class as the ApplicationService that answers `dto`; with
         `replaces`, instead of the one registered now."""
         if self.was_initialized:
-            raise BusAlreadyBuilt(
-                f"ApplicationService for {', '.join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))} registered late: '{self._logger_name}' is already built, so it would "
+            raise exceptions.BusAlreadyBuilt(
+                f"ApplicationService for {', '.join(one.__name__ for one in (dto if isinstance(dto, list) else [dto]))} registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the first execution"
             )
         register = ioc.inject_app_service_to_bus(self._sp_container, dto, replaces, self.name)
@@ -231,8 +239,8 @@ class UseFramework(
         Refused once the bus is built, like what it registers.
         """
         if self.was_initialized:
-            raise BusAlreadyBuilt(
-                f"extension {getattr(extension, '__qualname__', extension)} registered late: '{self._logger_name}' is already built, so it would "
+            raise exceptions.BusAlreadyBuilt(
+                f"extension {getattr(extension, '__qualname__', extension)} registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the first execution"
             )
         kept = len(self._registrations)
@@ -297,9 +305,30 @@ class UseFramework(
     def logger(self) -> LoggerProxy:
         """Get the bundle context logger."""
         if not self._is_logger_configured:
-            self._logger = create_logger(self._logger_name)
+            self._logger = create_logger(self.name)
             self._is_logger_configured = True
         return self._logger  # type: ignore[return-value]
+
+    def _create_buses_with_their_settings(self) -> None:
+        """What each bus is created with, known only once every registration is in: the context it
+        runs in (this bus, its providers, who mints the execution ids) and whether it logs each
+        execution. A bus is never handed these afterwards.
+
+        Context: the buses are created when `framework_bus()` is first called, after this."""
+        context = {
+            "context_owner": self,
+            "context_providers": self._context_providers,
+            "new_execution_id": self._execution_ids,
+        }
+        self._sp_container.feature_bus.add_kwargs(
+            log_after_execution=self.log_after_execution and self.log_features, **context
+        )
+        self._sp_container.app_service_bus.add_kwargs(
+            log_after_execution=self.log_after_execution and self.log_app_services, **context
+        )
+        self._sp_container.framework_bus.add_kwargs(
+            log_after_execution=self.log_after_execution
+        )
 
     def _assemble_handlers(self, bus: FrameworkBus) -> None:
         """Each handler wrapped by its interceptors, and who replaced whom — said once, in the
@@ -324,29 +353,12 @@ class UseFramework(
         self._add_error_handlers_provided_by_user()
         for note in self._error_chain_notes():
             self.logger.warning(f"error handler: {note}")
-        dto_registry = self._sp_container.dto_registry()
+        self._attach_pipelines()
+        self._create_buses_with_their_settings()
 
         self.bus = self._sp_container.framework_bus()  # type: ignore[assignment]
         self._assemble_handlers(self.bus)
         self._bind_context_to_handlers()
-
-        # Set the loggers
-        self.bus.log_after_execution = self.log_after_execution
-        self.bus.feature_bus.log_after_execution = (
-            self.log_after_execution and self.log_features
-        )
-        self.bus.app_service_bus.log_after_execution = (
-            self.log_after_execution and self.log_app_services
-        )
-
-        # Set the DTO registry Tricky way but it works
-        self.bus.dto_registry = dto_registry
-        for handlers in (self.bus.feature_bus, self.bus.app_service_bus):
-            handlers.context_owner = self
-            handlers.context_providers = self._context_providers
-        if self._execution_ids is not None:
-            self.bus.feature_bus.new_execution_id = self._execution_ids
-            self.bus.app_service_bus.new_execution_id = self._execution_ids
 
         # The container already injects this into the three buses; kept as a guard so
         # the guarantee does not depend on the provider still being the one the
@@ -380,12 +392,14 @@ class UseFramework(
         reach them.
         """
         if self.was_initialized:
-            raise BusAlreadyBuilt(
-                f"dependency {name} registered late: '{self._logger_name}' is already built, so it would "
+            raise exceptions.BusAlreadyBuilt(
+                f"dependency {name} registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the first execution"
             )
         if name in self.dynamic_dep_registry:
-            error = DependencyAlreadyRegistered(f"The dependency {name} is already injected")
+            error = exceptions.DependencyAlreadyRegistered(
+                f"The dependency {name} is already injected"
+            )
             self.observability.record_error(error, "", "framework", kind="framework")
             raise error
         self.dynamic_dep_registry[name] = dep
@@ -425,7 +439,7 @@ class UseFramework(
         registry = self.dto_registry
         dto_type = registry.get(name) or registry.get(f"{self.name}.{name}")
         if dto_type is None:
-            raise UnknownDTOToExecute(f"no DTO or event registered under [{name}]")
+            raise exceptions.UnknownDTOToExecute(f"no DTO or event registered under [{name}]")
         return rebuilt(read_values(payload), dto_type)
 
     def execution_ids(self, generator: Callable[[], str]) -> None:
@@ -438,8 +452,8 @@ class UseFramework(
         wins for a root execution; the generator only mints the ones nobody gave.
         """
         if self.was_initialized:
-            raise BusAlreadyBuilt(
-                f"an execution id generator registered late: '{self._logger_name}' is already built, so it would "
+            raise exceptions.BusAlreadyBuilt(
+                f"an execution id generator registered late: '{self.name}' is already built, so it would "
                 "never be used — register it before the first execution"
             )
         if not callable(generator):
@@ -476,7 +490,7 @@ class UseFramework(
             self.build_root_bus()
 
         if self.bus is None:
-            error = SincproFrameworkNotBuilt(
+            error = exceptions.SincproFrameworkNotBuilt(
                 "Check the decorators are rigistering the features and app services, check the imports of each "
                 "feature and app service"
             )

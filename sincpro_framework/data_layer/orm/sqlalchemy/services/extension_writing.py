@@ -16,11 +16,11 @@ import sqlalchemy
 from sqlalchemy import delete, insert, literal, select, update
 from sqlalchemy.orm import Session
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.services import extension_typing
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.extensions import identity_of
-from sincpro_framework.exceptions import ProgrammingError
 
 
 def type_as(session: Session, extension: type, identity: Any) -> None:
@@ -144,7 +144,7 @@ def reclassify_rows(session: Session, entity: type) -> int:
     root = extension_typing.ROOT_OF.get(entity, entity)
     stored = extension_typing.STORED_TYPE.get(root)
     if stored is None:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{root.__name__} stores no type for its rows: its table has no "
             f"{extension_typing.STORED_ATTRIBUTE} column"
         )

@@ -20,11 +20,8 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from sincpro_framework.data_layer.migrations.domain.step import (
-    MigrationFailed,
-    MigrationRefused,
-    Step,
-)
+from sincpro_framework.data_layer.migrations.domain import exceptions
+from sincpro_framework.data_layer.migrations.domain.step import Step
 from sincpro_framework.data_layer.migrations.entrypoint.orchestrator import Migrations
 
 
@@ -129,6 +126,6 @@ def command_line(migrations: Migrations, argv: Sequence[str] | None = None) -> i
     arguments = _parser().parse_args(argv)
     try:
         return _dispatch(migrations, arguments)
-    except (MigrationRefused, MigrationFailed) as error:
+    except (exceptions.MigrationRefused, exceptions.MigrationFailed) as error:
         print(error, file=sys.stderr)
         return 1

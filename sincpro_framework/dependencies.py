@@ -4,7 +4,7 @@ from typing import Any, Iterator
 
 from typing_extensions import TypeVar
 
-from .exceptions import DependencyNotRegistered
+from sincpro_framework import exceptions
 
 TDeps = TypeVar("TDeps", default=Any)
 
@@ -27,13 +27,13 @@ class DependencyLocator:
         try:
             return self._registry[name]
         except KeyError:
-            raise DependencyNotRegistered(self._missing_message(name)) from None
+            raise exceptions.DependencyNotRegistered(self._missing_message(name)) from None
 
     def __getitem__(self, name: str) -> Any:
         try:
             return self._registry[name]
         except KeyError:
-            raise DependencyNotRegistered(self._missing_message(name)) from None
+            raise exceptions.DependencyNotRegistered(self._missing_message(name)) from None
 
     def __contains__(self, name: object) -> bool:
         return name in self._registry

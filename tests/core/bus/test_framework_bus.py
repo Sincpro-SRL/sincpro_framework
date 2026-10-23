@@ -2,8 +2,7 @@
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, bus
-from sincpro_framework.exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
+from sincpro_framework import ApplicationService, DataTransferObject, Feature, bus, exceptions
 from tests.fixtures import (
     CommandApplicationService1,
     CommandFeatureTest1,
@@ -40,7 +39,7 @@ def test_framework_bus_raise_exception_unknown_dto_executed(
 
     framework_bus = bus.FrameworkBus(feature_bus_instance, app_service_bus_instance)
 
-    with pytest.raises(UnknownDTOToExecute):
+    with pytest.raises(exceptions.UnknownDTOToExecute):
         framework_bus.execute(
             UnRegisteredDTO(something="Executed in Application service bus")
         )
@@ -58,5 +57,5 @@ def test_build_framework_bus_with_same_dtos_in_feat_bus_and_app_ser_bus(
     feature_bus_instance.register_feature(AnyDTO, feature_instance_test)
     app_service_bus_instance.register_app_service(AnyDTO, app_service_instance_test)
 
-    with pytest.raises(DTOAlreadyRegistered):
+    with pytest.raises(exceptions.DTOAlreadyRegistered):
         bus.FrameworkBus(feature_bus_instance, app_service_bus_instance)

@@ -11,7 +11,7 @@ is the context's to say; what a record does with one is the domain's.
 from typing import Any
 
 from sincpro_framework.context.domain.drafts import Draft
-from sincpro_framework.ddd.exceptions import StaleAggregate
+from sincpro_framework.ddd import exceptions
 
 
 def refuse_stale(draft: Draft, record: Any) -> None:
@@ -24,7 +24,7 @@ def refuse_stale(draft: Draft, record: Any) -> None:
     loaded record is not a check — the mapping writes it as a new value.
     """
     if record.version != draft.origin_version:
-        raise StaleAggregate(
+        raise exceptions.StaleAggregate(
             f"{type(record).__name__} changed since draft {draft.key} started "
             f"(version {draft.origin_version}, now {record.version}): read it again"
         )

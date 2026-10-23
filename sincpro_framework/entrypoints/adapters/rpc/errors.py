@@ -13,7 +13,6 @@ from typing import Any, NamedTuple
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.domain.exceptions import AuthError
 from sincpro_framework.auth.entrypoint.transports import refusal_body
 from sincpro_framework.common.failures import (
     failure_reason,
@@ -21,8 +20,7 @@ from sincpro_framework.common.failures import (
     refined_failure_kind,
     said_to_the_caller,
 )
-from sincpro_framework.ddd.exceptions import DuplicateAggregate
-from sincpro_framework.exceptions import FailureKind
+from sincpro_framework.entrypoints.adapters.rpc import exceptions
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -93,7 +91,7 @@ BY_KIND = {kind: one for one in METHOD_ERRORS for kind in one.kinds}
 `unavailable`, `exhausted`) is answered with its code without a change here."""
 
 RETRYABLE_BY_KIND = {kind: one.retryable for kind, one in BY_KIND.items()}
-NOT_RETRYABLE = (DuplicateAggregate,)
+NOT_RETRYABLE = (exceptions.DuplicateAggregate,)
 """A duplicate stays a duplicate: sending the same write again collides again — unlike a stale
 write, which a fresh run re-reads."""
 
@@ -134,7 +132,7 @@ def answer_for(error: Exception) -> Answer:
        and an internal one's reason is `INTERNAL_ERROR`.
     """
     if isinstance(error, ValidationError):
-        code = BY_KIND[FailureKind.INVALID.value]
+        code = BY_KIND[exceptions.FailureKind.INVALID.value]
         data = error_data(
             "invalid",
             "VALIDATION_ERROR",
@@ -143,12 +141,12 @@ def answer_for(error: Exception) -> Answer:
         )
         return code.code, code.message, data
     kind = refined_failure_kind(error).value
-    code = BY_KIND.get(kind, BY_KIND[FailureKind.INTERNAL.value])
+    code = BY_KIND.get(kind, BY_KIND[exceptions.FailureKind.INTERNAL.value])
     if code.code == INTERNAL_ERROR:
         return code.code, code.message, error_data("internal", "INTERNAL_ERROR", True)
     retryable = RETRYABLE_BY_KIND[kind] and not isinstance(error, NOT_RETRYABLE)
-    reason = failure_reason(error, FailureKind(kind))
-    if isinstance(error, AuthError):
+    reason = failure_reason(error, exceptions.FailureKind(kind))
+    if isinstance(error, exceptions.AuthError):
         refusal = {**refusal_body(error), "message": error.reason}
         return code.code, code.message, {**refusal, **error_data(kind, reason, retryable)}
     disclosed = said_to_the_caller(error)

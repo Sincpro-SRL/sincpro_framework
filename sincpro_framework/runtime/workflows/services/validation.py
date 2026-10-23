@@ -16,8 +16,8 @@ from pydantic import ValidationError
 
 from sincpro_framework.common.naming import local_name
 from sincpro_framework.ddd.criteria import Criteria, Param, conditions_of
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.introspection.operations import Operation
+from sincpro_framework.runtime.workflows.domain import exceptions
 from sincpro_framework.runtime.workflows.domain.issue import Issue
 from sincpro_framework.runtime.workflows.domain.references import (
     Reference,
@@ -48,7 +48,7 @@ class _Scope:
     in_item: bool = False
 
 
-def _first_problem(error: ValidationError | InvalidCriteria) -> str:
+def _first_problem(error: ValidationError | exceptions.InvalidCriteria) -> str:
     return error.errors()[0]["msg"] if isinstance(error, ValidationError) else str(error)
 
 
@@ -141,7 +141,7 @@ class WorkflowValidator:
             return []
         try:
             expression = Criteria.model_validate({"where": step.when}).expression
-        except (ValidationError, InvalidCriteria) as error:
+        except (ValidationError, exceptions.InvalidCriteria) as error:
             return [
                 Issue(workflow, step.id, "when", f"not a condition: {_first_problem(error)}")
             ]

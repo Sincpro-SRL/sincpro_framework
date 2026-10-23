@@ -5,12 +5,12 @@ from typing import Any
 
 from pydantic import Field, field_validator, model_validator
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import Expression
 from sincpro_framework.ddd.criteria.domain.pagination import Pagination
 from sincpro_framework.ddd.criteria.domain.sort import Sort
 from sincpro_framework.ddd.criteria.domain.strict import Strict, refused_or_dropped
 from sincpro_framework.ddd.criteria.domain.values import Grain, Part
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 MEASURE_FUNCTIONS: tuple[str, ...] = (
@@ -60,7 +60,7 @@ class Measure(Strict):
     @classmethod
     def _one_of_the_known_aggregates(cls, function: str) -> str:
         if function not in MEASURE_FUNCTIONS:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"'{function}' is not a measure; use one of {', '.join(MEASURE_FUNCTIONS)}"
             )
         return function
@@ -76,12 +76,12 @@ class Measure(Strict):
         """
         if self.function == "percentile":
             if self.argument is None or not 0 < self.argument < 1:
-                raise InvalidCriteria(
+                raise exceptions.InvalidCriteria(
                     "a percentile is cut at a fraction between 0 and 1, e.g. 0.5 for the "
                     f"median; got {self.argument!r}"
                 )
         elif self.argument is not None:
-            raise InvalidCriteria(f"'{self.function}' takes no argument")
+            raise exceptions.InvalidCriteria(f"'{self.function}' takes no argument")
         return self
 
     @classmethod
@@ -100,7 +100,7 @@ class Measure(Strict):
         # A tuple as much as a list: a pair written in Python is `("sum", "row_count")` and
         # the same pair read from JSON is a list. They mean the same measure.
         if not isinstance(written, (list, tuple)) or len(written) != 2 or not all(written):
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "a measure is written {'function': …, 'field': …}, or as the pair "
                 f"['sum', 'row_count']; got {written!r}"
             )
@@ -132,7 +132,7 @@ class Level(Strict):
     @classmethod
     def _a_granularity_that_exists(cls, grain: Any) -> Any:
         if grain is not None and grain not in {one.value for one in Grain}:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"{grain!r} is not a granularity; use one of {sorted(one.value for one in Grain)}"
             )
         return grain
@@ -141,7 +141,7 @@ class Level(Strict):
     @classmethod
     def _a_part_that_exists(cls, part: Any) -> Any:
         if part is not None and part not in {one.value for one in Part}:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 f"{part!r} is not a part of a date; use one of {sorted(one.value for one in Part)}"
             )
         return part
@@ -154,7 +154,7 @@ class Level(Strict):
         InvalidCriteria: a level takes a grain (a range of time) or a part (a number), not both
         """
         if self.grain is not None and self.part is not None:
-            raise InvalidCriteria(
+            raise exceptions.InvalidCriteria(
                 "a level takes a grain (a range of time) or a part (a number), not both"
             )
         return self
@@ -177,7 +177,7 @@ class Level(Strict):
             return written
         if isinstance(written, dict):
             return cls(**refused_or_dropped(written, set(cls.model_fields), tolerant))
-        raise InvalidCriteria(
+        raise exceptions.InvalidCriteria(
             f"a level is written {{'field': …, 'grain': …}}; got {written!r}"
         )
 

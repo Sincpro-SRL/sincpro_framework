@@ -23,8 +23,8 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.auth.entrypoint.transports import credentials_from_asgi
@@ -105,7 +105,7 @@ def _call(method: str, params: dict[str, Any] | None = None, request_id: Any = 1
 
 
 def _refused(gateway: RpcGateway) -> str:
-    with pytest.raises(ProgrammingError) as refused:
+    with pytest.raises(exceptions.ProgrammingError) as refused:
         gateway.surface()
     return str(refused.value)
 

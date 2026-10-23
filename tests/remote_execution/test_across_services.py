@@ -15,18 +15,14 @@ from decimal import Decimal
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.ddd.exceptions import DomainError
-from sincpro_framework.remote_execution import (
-    ContextTimeout,
-    ContextUnavailable,
-    HostedAt,
-    Wire,
-)
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework.remote_execution import HostedAt, Wire
 from sincpro_framework.remote_execution.adapters.transport import transport_for
+from sincpro_framework.remote_execution.domain import exceptions as remote_exceptions
 from tests.remote_execution.hosting import TRANSPORTS, host_over
 
 
-class InvoiceRefused(DomainError):
+class InvoiceRefused(ddd_exceptions.DomainError):
     """A refusal of the project's own, raised on B and caught on A by its class."""
 
 
@@ -214,7 +210,7 @@ def test_a_call_past_its_deadline_is_context_timeout(service_b):
     address, _served = service_b
     billing, _ = _service_a(address, timeout=0.2)
 
-    with pytest.raises(ContextTimeout, match="within 0.2s"):
+    with pytest.raises(remote_exceptions.ContextTimeout, match="within 0.2s"):
         billing(CommandSlow(seconds=1))
 
 
@@ -222,7 +218,7 @@ def test_a_call_past_its_deadline_is_context_timeout(service_b):
 def test_nobody_answering_is_context_unavailable(scheme):
     billing, _ = _service_a(f"{scheme}://127.0.0.1:9", timeout=1)
 
-    with pytest.raises(ContextUnavailable):
+    with pytest.raises(remote_exceptions.ContextUnavailable):
         billing(CommandIssueInvoice(total=Decimal("1"), pdf=b""))
 
 
@@ -236,7 +232,9 @@ def test_a_service_that_does_not_host_the_context_is_context_unavailable(service
 
     catalog.hosted_by(address)
 
-    with pytest.raises(ContextUnavailable, match="does not host 'across-catalog'"):
+    with pytest.raises(
+        remote_exceptions.ContextUnavailable, match="does not host 'across-catalog'"
+    ):
         catalog(CommandSlow(seconds=0))
 
 

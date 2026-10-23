@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator
 
-from sincpro_framework.exceptions import ProgrammingError
+from sincpro_framework.common.transport import exceptions
 
 logger = logging.getLogger("sincpro_framework")
 
@@ -49,10 +49,6 @@ class Wire(StrEnum):
 WRITE = "write grpc://<host>:<port>, http://<host>:<port> or https://<host>:<port>[?timeout=<seconds>]"
 
 
-class InvalidAddress(ProgrammingError, ValueError):
-    """An address no wire can reach — it names what was written and what to write instead."""
-
-
 @dataclass(frozen=True)
 class HostedAt:
     """Where a bounded context is hosted: the wire, `host:port`, and each call's deadline."""
@@ -69,14 +65,16 @@ class HostedAt:
         try:
             object.__setattr__(self, "wire", Wire(self.wire))
         except ValueError:
-            raise InvalidAddress(
+            raise exceptions.InvalidAddress(
                 f"{self.wire!r} is not a wire a context is reached by — grpc, http or https"
             ) from None
         host, separator, port = self.address.rpartition(":")
         if not separator or not host or not port.isdigit():
-            raise InvalidAddress(f"{self.address!r} is not <host>:<port> — {WRITE}")
+            raise exceptions.InvalidAddress(
+                f"{self.address!r} is not <host>:<port> — {WRITE}"
+            )
         if not self.timeout > 0:
-            raise InvalidAddress(
+            raise exceptions.InvalidAddress(
                 f"a timeout of {self.timeout:g}s never answers — give seconds above 0"
             )
 
@@ -93,18 +91,18 @@ class HostedAt:
         """
         written = url.strip()
         if "://" not in written:
-            raise InvalidAddress(
+            raise exceptions.InvalidAddress(
                 f"{written!r} names no wire — write grpc://{written or '<host>:<port>'} "
                 "(or http://, https://)"
             )
         parts = urlsplit(written)
         if parts.scheme not in tuple(Wire):
-            raise InvalidAddress(
+            raise exceptions.InvalidAddress(
                 f"{written!r}: {parts.scheme or 'no scheme'!r} is not a wire a context is "
                 f"reached by — {WRITE}"
             )
         if parts.path not in ("", "/"):
-            raise InvalidAddress(
+            raise exceptions.InvalidAddress(
                 f"{written!r}: a path ({parts.path}) is not part of a context's address — {WRITE}"
             )
         options = parse_qs(parts.query)
@@ -115,8 +113,8 @@ class HostedAt:
             )
         try:
             return cls(Wire(parts.scheme), parts.netloc, _timeout(written, options))
-        except InvalidAddress as error:
-            raise InvalidAddress(f"{written!r}: {error}") from None
+        except exceptions.InvalidAddress as error:
+            raise exceptions.InvalidAddress(f"{written!r}: {error}") from None
 
     @classmethod
     def of(cls, value: object) -> "HostedAt":
@@ -126,7 +124,7 @@ class HostedAt:
             return value
         if isinstance(value, str):
             return cls.parse(value)
-        raise InvalidAddress(f"{value!r} is not an address — {WRITE}")
+        raise exceptions.InvalidAddress(f"{value!r} is not an address — {WRITE}")
 
     def __str__(self) -> str:
         return f"{self.wire}://{self.address}?timeout={self.timeout:g}"
@@ -139,7 +137,7 @@ def _timeout(written: str, options: dict[str, list[str]]) -> float:
     try:
         return float(raw)
     except ValueError:
-        raise InvalidAddress(
+        raise exceptions.InvalidAddress(
             f"{written!r}: timeout={raw} is not a number of seconds — write ?timeout=5"
         ) from None
 
@@ -174,12 +172,12 @@ class HostedContext(BaseModel):
                 continue
             context, separator, address = written.partition("=")
             if not separator or not context.strip():
-                raise InvalidAddress(
+                raise exceptions.InvalidAddress(
                     f"{written!r} is not <context>=<address> — write billing=grpc://<host>:<port>"
                 )
             try:
                 at = HostedAt.parse(address)
-            except InvalidAddress as error:
-                raise InvalidAddress(f"{context.strip()}: {error}") from None
+            except exceptions.InvalidAddress as error:
+                raise exceptions.InvalidAddress(f"{context.strip()}: {error}") from None
             entries.append(cls(context=context.strip(), at=at))
         return entries

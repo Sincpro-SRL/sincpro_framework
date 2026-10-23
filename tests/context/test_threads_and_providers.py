@@ -9,7 +9,7 @@ from typing import Any, TypedDict
 import pytest
 from pydantic import Secret
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.context import (
     Context,
     ContextExecutor,
@@ -18,7 +18,6 @@ from sincpro_framework.context import (
     requires_context,
     use_context,
 )
-from sincpro_framework.exceptions import ContextRequired
 
 
 class CommandWork(DataTransferObject):
@@ -173,7 +172,7 @@ def test_a_declared_requirement_refuses_and_nothing_declared_is_never_checked():
         def execute(self, dto: CommandWork) -> None:
             ran.append("work")
 
-    with pytest.raises(ContextRequired) as refused:
+    with pytest.raises(exceptions.ContextRequired) as refused:
         with sdk.context({"TOKEN": "abc"}):
             sdk(CommandSend())
     sdk(CommandWork())

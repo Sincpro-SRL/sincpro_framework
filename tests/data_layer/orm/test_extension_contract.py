@@ -13,13 +13,13 @@ import pytest
 from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text
 from sqlalchemy.orm import registry
 
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import Relation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.ddd import Criteria, Entity
 from sincpro_framework.ddd.criteria import Specification
-from sincpro_framework.exceptions import ClientError, ProgrammingError
 
 from .engines import fresh
 
@@ -48,7 +48,9 @@ def test_a_module_that_reads_a_field_the_core_has_is_mapped():
 def test_a_module_that_reads_a_field_the_core_renamed_is_refused_naming_it():
     md, reg, Move, _ = core()
 
-    with pytest.raises(ProgrammingError, match=r"Move\.amount, which Move does not have"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match=r"Move\.amount, which Move does not have"
+    ):
         map_aggregates(reg, {}, uses={Move: ("amount",)})
 
 
@@ -67,7 +69,7 @@ def test_a_field_an_extension_added_is_not_one_the_core_has():
     )
     map_aggregates(reg, {MoveDelivery: delivery_t})
 
-    with pytest.raises(ProgrammingError, match=r"Move\.route"):
+    with pytest.raises(exceptions.ProgrammingError, match=r"Move\.route"):
         map_aggregates(reg, {}, uses={Move: ("route",)})
 
 
@@ -83,7 +85,8 @@ def test_a_module_written_against_another_major_or_a_newer_minor_is_refused(publ
     _, reg, Move, _ = core(published)
 
     with pytest.raises(
-        ProgrammingError, match=rf"requires Move contract 2.1.*publishes {published}"
+        exceptions.ProgrammingError,
+        match=rf"requires Move contract 2.1.*publishes {published}",
     ):
         map_aggregates(reg, {}, requires={Move: "2.1"})
 
@@ -91,7 +94,7 @@ def test_a_module_written_against_another_major_or_a_newer_minor_is_refused(publ
 def test_a_core_that_publishes_no_contract_cannot_be_required_one():
     _, reg, Move, _ = core(None)
 
-    with pytest.raises(ProgrammingError, match="publishes no CONTRACT version"):
+    with pytest.raises(exceptions.ProgrammingError, match="publishes no CONTRACT version"):
         map_aggregates(reg, {}, requires={Move: "2.0"})
 
 
@@ -152,7 +155,7 @@ def test_a_module_changes_how_a_field_of_the_core_is_shown_and_nothing_else():
 def test_what_a_field_is_cannot_be_overlaid_by_a_module():
     md, reg, Move, _ = core()
 
-    with pytest.raises(ClientError, match="not type: that is the core's"):
+    with pytest.raises(exceptions.ClientError, match="not type: that is the core's"):
         map_aggregates(reg, {}, overlay={Move: {"total": {"type": "text"}}})
 
 

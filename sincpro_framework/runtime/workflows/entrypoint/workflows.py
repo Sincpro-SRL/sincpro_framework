@@ -21,12 +21,12 @@ from typing import Any
 from sincpro_framework.common.naming import local_name
 from sincpro_framework.introspection.operations import Operation, operations_of
 from sincpro_framework.runtime.workflows.adapters.python_snippets import PythonSnippets
-from sincpro_framework.runtime.workflows.domain.issue import Issue, WorkflowsInvalid
+from sincpro_framework.runtime.workflows.domain import exceptions
+from sincpro_framework.runtime.workflows.domain.issue import Issue
 from sincpro_framework.runtime.workflows.domain.run import (
     CommandRunWorkflow,
     Limits,
     ResponseRunWorkflow,
-    WorkflowFailed,
     WorkflowRun,
 )
 from sincpro_framework.runtime.workflows.domain.snippets import SnippetEngine
@@ -128,7 +128,7 @@ class Workflows:
         if self._current is None:
             loaded, issues = self._load()
             if loaded is None:
-                raise WorkflowsInvalid(issues)
+                raise exceptions.WorkflowsInvalid(issues)
             self._current = loaded
         return self._current
 
@@ -136,7 +136,7 @@ class Workflows:
         current = self.current
         if name not in current.workflows:
             known = ", ".join(current.workflows) or "none"
-            raise WorkflowFailed(
+            raise exceptions.WorkflowFailed(
                 f"no workflow {name} — the ones in force are {known}",
                 WorkflowRun(workflow=name, version=current.version),
             )
@@ -194,7 +194,7 @@ class Workflows:
         if isinstance(workflow, Mapping):
             issues = self.validate(workflow)
             if issues:
-                raise WorkflowsInvalid(issues)
+                raise exceptions.WorkflowsInvalid(issues)
             definition, version = Workflow.model_validate(workflow), "draft"
         else:
             definition, version = self._workflow(workflow)

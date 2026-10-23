@@ -7,7 +7,7 @@ import inspect
 import pytest
 from sqlalchemy import func
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import DatabaseAggregateRepository, Repository
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
@@ -23,7 +23,7 @@ from sincpro_framework.ddd import (
     WritesAggregates,
     WritesInBulk,
 )
-from sincpro_framework.ddd.exceptions import StaleAggregate
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 
 from .engines import fresh
 from .ledger_models import Account, Owner, account_table, bank, declare
@@ -105,12 +105,12 @@ def test_a_view_nobody_names_is_handed_its_aggregate(ledger, ana):
 
 
 def test_a_view_without_an_aggregate_is_refused(ledger):
-    with pytest.raises(ProgrammingError, match="which aggregate"):
+    with pytest.raises(exceptions.ProgrammingError, match="which aggregate"):
         DatabaseAggregateRepository(ledger)
 
 
 def test_a_named_view_cannot_be_pointed_at_another_aggregate(ledger):
-    with pytest.raises(ProgrammingError, match="holds Account"):
+    with pytest.raises(exceptions.ProgrammingError, match="holds Account"):
         Accounts(ledger, Owner)  # pyright: ignore[reportArgumentType]
 
 
@@ -133,7 +133,7 @@ def test_a_stale_save_through_the_view_is_refused_like_any_other(ledger, ana):
     first.withdraw(1)
     accounts.save(first)
     second.withdraw(2)
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         accounts.save(second)
 
 

@@ -2,8 +2,8 @@
 
 from typing import Any
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import Operator
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 def _is_empty_list(value: Any) -> bool:
@@ -57,4 +57,6 @@ def compare(actual: Any, operator: Operator, value: Any) -> bool:
         case Operator.NOT_CONTAINS:
             return value not in actual
         case _:
-            raise InvalidCriteria(f"no in-memory evaluation for operator '{operator}'")
+            raise exceptions.InvalidCriteria(
+                f"no in-memory evaluation for operator '{operator}'"
+            )

@@ -31,13 +31,13 @@ from sqlalchemy import Table, and_
 from sqlalchemy.exc import NoInspectionAvailable
 from sqlalchemy.orm import registry
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.events.domain_event import NAME
 from sincpro_framework.ddd.events.mixins.deliverable import (
     DELIVERY_FIELDS,
     DeliverableEventMixin,
 )
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 ENVELOPE = frozenset(one.name for one in dataclasses.fields(DomainEvent))
@@ -101,7 +101,7 @@ def claim(table: Table, cls: type) -> None:
     held = _named.setdefault(table, {})
     other = held.get(cls.name)  # type: ignore[attr-defined]
     if other is not None and other is not cls:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{other.__name__} and {cls.__name__} are both named '{cls.name}' in the event "  # type: ignore[attr-defined]
             f"table {table.name}: a name is the event's identity, so each class needs its own "
             f'— name = "<context>.<aggregate>.<event>"'

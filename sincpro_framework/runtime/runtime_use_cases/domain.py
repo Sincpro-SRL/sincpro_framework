@@ -5,12 +5,7 @@ from abc import ABC, abstractmethod
 
 from pydantic import ConfigDict
 
-from sincpro_framework.exceptions import ClientError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
-
-
-class UseCaseRefused(ClientError):
-    """A stored use case that cannot be loaded — the bus it would have joined is left as it was."""
 
 
 class RuntimeUseCase(DataTransferObject):

@@ -204,5 +204,5 @@ def describe(framework_instance: UseFramework, command: type) -> FeatureOrAppSer
     name = command.__name__
     answered = {**features(framework_instance), **app_services(framework_instance)}
     if name not in answered:
-        raise KeyError(f"nothing on '{framework_instance._logger_name}' answers {name}")
+        raise KeyError(f"nothing on '{framework_instance.name}' answers {name}")
     return answered[name]

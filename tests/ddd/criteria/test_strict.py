@@ -4,8 +4,8 @@ a dropped key does not fail, it answers wrong. A reading may ask to tolerate the
 import pytest
 from pydantic import ValidationError
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import TOLERANT, Criteria
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 def test_a_key_the_criteria_does_not_have_is_refused():
@@ -24,12 +24,12 @@ def test_a_key_an_ordering_does_not_have_is_refused():
 
 
 def test_a_key_a_condition_does_not_have_is_refused():
-    with pytest.raises(InvalidCriteria, match="op"):
+    with pytest.raises(exceptions.InvalidCriteria, match="op"):
         Criteria.model_validate({"where": {"field": "total", "op": ">", "value": 1}})
 
 
 def test_a_group_that_mixes_all_and_any_is_refused_not_half_read():
-    with pytest.raises(InvalidCriteria, match="all"):
+    with pytest.raises(exceptions.InvalidCriteria, match="all"):
         Criteria.model_validate({"where": {"any": [], "all": []}})
 
 
@@ -81,7 +81,7 @@ def test_a_tolerant_reading_reaches_inside_the_grouping_too():
 
 
 def test_a_strict_reading_refuses_an_unknown_key_inside_the_grouping():
-    with pytest.raises(InvalidCriteria, match="colour"):
+    with pytest.raises(exceptions.InvalidCriteria, match="colour"):
         Criteria.model_validate(
             {"grouping": {"group_by": [{"field": "state", "colour": "red"}]}}
         )

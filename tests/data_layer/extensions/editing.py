@@ -4,11 +4,10 @@ a module added."""
 
 import pytest
 
-from sincpro_framework import UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.context.adapters.stores import InMemoryContexts
 from sincpro_framework.ddd import Get, ResponsePaginatedQuery, ResponseRecord, Search
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
-from sincpro_framework.exceptions import ClientError
 
 from .world import World
 
@@ -99,7 +98,7 @@ class ExtendedEdits(World):
     ) -> None:
         k, store = self.make_world()
 
-        with pytest.raises(ClientError, match="no one class holds"):
+        with pytest.raises(exceptions.ClientError, match="no one class holds"):
             Forms(k, store).save("X", {"route": "R1", "cufd": "C1"})
 
     def test_an_edit_kept_as_a_draft_stores_nothing(self) -> None:
@@ -165,7 +164,7 @@ class DelegatedEdits(World):
     ) -> None:
         k, store = self.populated(delegated=True)
 
-        with pytest.raises(ClientError, match="delivery has no field cufd"):
+        with pytest.raises(exceptions.ClientError, match="delivery has no field cufd"):
             Forms(k, store).save("B", {"delivery": {"cufd": "X"}})
 
     def test_an_entity_that_does_not_delegate_does_not_take_its_extensions_nested(
@@ -173,7 +172,7 @@ class DelegatedEdits(World):
     ) -> None:
         k, store = self.populated()
 
-        with pytest.raises(ClientError, match="no field delivery"):
+        with pytest.raises(exceptions.ClientError, match="no field delivery"):
             Forms(k, store).save("B", {"delivery": {"route": "R1"}})
 
     def test_the_answer_to_an_edit_nests_the_extensions_when_the_entity_delegates(

@@ -16,10 +16,11 @@ SCOPE (a block). `contextvars` says which node is current per thread and task; t
 copy-on-write, so threads never tear them.
 
     domain/          Level, EntrypointKind, Origin, ContextNode, Execution, the standard keys,
-                     Draft, the ports — ContextStore, ContextCodec, DraftStore
+                     Draft, the ports — ContextStore (with its entries: Entry, EntryConflict),
+                     ContextCodec
     infrastructure/  the node in play, executions, what scopes say, the shared store
-    adapters/        InMemoryContexts, KeyValueContexts (Redis, Valkey, Memcached), the codecs,
-                     and the drafts each keeps beside it: InMemoryDrafts, KeyValueDrafts
+    adapters/        InMemoryContexts, KeyValueContexts (Redis, Valkey, Memcached), the codecs, and
+                     the versioned entries each keeps beside its contexts — drafts, pipeline runs
     entrypoint/      Context, use_context() and carrying(), Drafts — whoever the context says —
                      requires_context and the providers,
                      the threads and pools, what a bus holds (bus.context, self.context)
@@ -33,24 +34,14 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sincpro_framework.context.adapters.codecs import PickleCodec, PlainCodec, TypedCodec
-    from sincpro_framework.context.adapters.drafts import InMemoryDrafts, KeyValueDrafts
     from sincpro_framework.context.adapters.stores import InMemoryContexts, KeyValueContexts
     from sincpro_framework.context.domain.codec import ContextCodec
-    from sincpro_framework.context.domain.drafts import Draft, DraftConflict, DraftStore
-    from sincpro_framework.context.domain.execution import (
-        CAUSATION_ID,
-        CORRELATION_ID,
-        EXECUTION_ID,
-        Execution,
-        chained,
-    )
-    from sincpro_framework.context.domain.keys import (
-        TENANT_ID,
-        USER_ID,
-        travelling,
-    )
+    from sincpro_framework.context.domain.drafts import Draft
+    from sincpro_framework.context.domain.exceptions import DraftConflict, EntryConflict
+    from sincpro_framework.context.domain.execution import Execution, chained
+    from sincpro_framework.context.domain.keys import ContextKey, travelling
     from sincpro_framework.context.domain.level import EntrypointKind, Level, Origin
-    from sincpro_framework.context.domain.store import ContextStore
+    from sincpro_framework.context.domain.store import ContextStore, Entry
     from sincpro_framework.context.entrypoint.drafts import Drafts
     from sincpro_framework.context.entrypoint.facade import Context, carrying, use_context
     from sincpro_framework.context.entrypoint.providers import requires_context
@@ -66,25 +57,20 @@ _WHERE = {
     "TypedCodec": "adapters.codecs",
     "InMemoryContexts": "adapters.stores",
     "KeyValueContexts": "adapters.stores",
-    "InMemoryDrafts": "adapters.drafts",
-    "KeyValueDrafts": "adapters.drafts",
     "Draft": "domain.drafts",
-    "DraftConflict": "domain.drafts",
-    "DraftStore": "domain.drafts",
+    "DraftConflict": "domain.exceptions",
     "Drafts": "entrypoint.drafts",
     "ContextCodec": "domain.codec",
-    "CAUSATION_ID": "domain.execution",
-    "CORRELATION_ID": "domain.execution",
-    "EXECUTION_ID": "domain.execution",
     "Execution": "domain.execution",
     "chained": "domain.execution",
-    "TENANT_ID": "domain.keys",
-    "USER_ID": "domain.keys",
+    "ContextKey": "domain.keys",
     "travelling": "domain.keys",
     "EntrypointKind": "domain.level",
     "Level": "domain.level",
     "Origin": "domain.level",
     "ContextStore": "domain.store",
+    "Entry": "domain.store",
+    "EntryConflict": "domain.exceptions",
     "Context": "entrypoint.facade",
     "use_context": "entrypoint.facade",
     "requires_context": "entrypoint.providers",
@@ -95,31 +81,26 @@ _WHERE = {
 }
 
 __all__ = [
-    "CAUSATION_ID",
-    "CORRELATION_ID",
     "Context",
     "ContextCodec",
     "ContextExecutor",
+    "ContextKey",
     "ContextStore",
     "ContextThread",
     "Draft",
     "DraftConflict",
-    "DraftStore",
     "Drafts",
-    "EXECUTION_ID",
+    "Entry",
+    "EntryConflict",
     "EntrypointKind",
     "Execution",
     "InMemoryContexts",
-    "InMemoryDrafts",
     "KeyValueContexts",
-    "KeyValueDrafts",
     "Level",
     "Origin",
     "PickleCodec",
     "PlainCodec",
-    "TENANT_ID",
     "TypedCodec",
-    "USER_ID",
     "carrying",
     "chained",
     "in_context",

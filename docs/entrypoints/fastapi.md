@@ -55,7 +55,8 @@ from fastapi.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
-from sincpro_framework.ddd.exceptions import DomainError
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework import exceptions
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.entrypoint.decorators import rest
 from sincpro_framework.entrypoints.adapters.fastapi import (
@@ -66,7 +67,6 @@ from sincpro_framework.entrypoints.adapters.fastapi import (
     operation_extra,
     problem_responses,
 )
-from sincpro_framework import FailureKind
 
 
 class BillingPermission(Permission):
@@ -99,8 +99,8 @@ class CommandRemoveInvoice(DataTransferObject):
     invoice_id: str
 
 
-class InvoiceNotFound(DomainError):
-    failure_kind = FailureKind.NOT_FOUND
+class InvoiceNotFound(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.NOT_FOUND
 
 
 auth = AccessControl[BillingPermission](
@@ -320,8 +320,8 @@ class Measured(DataTransferObject):
     size_bytes: int
 
 
-class DocumentUnreadable(DomainError):
-    failure_kind = FailureKind.INVALID
+class DocumentUnreadable(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.INVALID
 
 
 documents = UseFramework("documents", log_after_execution=False)

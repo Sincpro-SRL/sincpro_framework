@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from sincpro_framework.runtime.workflows.domain import exceptions
+
 
 @dataclass(frozen=True)
 class Reference:
@@ -25,10 +27,6 @@ class Reference:
     def fields(self) -> tuple[str, ...]:
         """The path inside what the root answers — after the step id for `$steps`."""
         return self.path[1:] if self.root == "steps" else self.path
-
-
-class UnresolvedReference(Exception):
-    pass
 
 
 def reference_in(value: Any) -> Reference | None:
@@ -51,7 +49,9 @@ def references_in(value: Any) -> list[Reference]:
 def resolve(reference: Reference, scope: Mapping[str, Any]) -> Any:
     """What `reference` names in `scope` — `{"input": …, "steps": …, "item": …}`."""
     if reference.root not in scope:
-        raise UnresolvedReference(f"{reference.text}: there is no ${reference.root} here")
+        raise exceptions.UnresolvedReference(
+            f"{reference.text}: there is no ${reference.root} here"
+        )
     current = scope[reference.root]
     walked = f"${reference.root}"
     for part in reference.path:
@@ -59,7 +59,7 @@ def resolve(reference: Reference, scope: Mapping[str, Any]) -> Any:
             has = (
                 ", ".join(current) if isinstance(current, Mapping) else type(current).__name__
             )
-            raise UnresolvedReference(
+            raise exceptions.UnresolvedReference(
                 f"{reference.text}: {walked} has no {part} — it has {has}"
             )
         current = current[part]

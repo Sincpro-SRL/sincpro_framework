@@ -58,7 +58,7 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     feature_error_handler: ErrorHandler | None
     app_service_error_handler: ErrorHandler | None
     was_initialized: bool
-    _logger_name: str
+    _name: str
     # Override the parent bus type to allow None during initialization
     bus: FrameworkBus | None  # type: ignore[override]
 
@@ -272,6 +272,14 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
 
     def without_interceptor(self, interceptor: Interceptor) -> None:
         """Switch off an interceptor registered on this bus; refused after build."""
+        ...
+
+    def on_start[L: Callable[..., Any]](self, listener: L) -> L:
+        """Hear every use case of this bus that begins — an `ExecutionStarted`."""
+        ...
+
+    def publish_starts(self, to: Any) -> None:
+        """Hand every use case of this bus that begins to `to`, a Publisher."""
         ...
 
     def on_completion[L: Callable[..., Any]](self, listener: L) -> L:

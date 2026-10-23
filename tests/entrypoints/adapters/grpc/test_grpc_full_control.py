@@ -22,9 +22,9 @@ from grpc_status import rpc_status  # pyright: ignore[reportMissingImports]
 from sincpro_framework import (
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
     entrypoints,
+    exceptions,
 )
 from sincpro_framework.auth import (
     AccessControl,
@@ -33,7 +33,7 @@ from sincpro_framework.auth import (
     StaticProvider,
     current_identity,
 )
-from sincpro_framework.context import EXECUTION_ID
+from sincpro_framework.context import ContextKey
 from sincpro_framework.context.domain.execution import CHAIN_KEYS
 from sincpro_framework.entrypoints.adapters.grpc import (
     GrpcGateway,
@@ -78,7 +78,7 @@ def _parity() -> UseFramework:
         def execute(self, dto: CommandIssueInvoice) -> Issued:
             ran.append(dto.total)
             if dto.total < 0:
-                raise ProgrammingError("an invoice has to balance")
+                raise exceptions.ProgrammingError("an invoice has to balance")
             return Issued(
                 number=f"F-{dto.total}",
                 by=current_identity().subject,
@@ -184,7 +184,7 @@ def test_the_helper_runs_under_the_same_feature_span(
                 ".CommandIssueInvoice"
             )
         ]
-        assert all(EXECUTION_ID in attributes for attributes in spans)
+        assert all(ContextKey.EXECUTION_ID in attributes for attributes in spans)
         return [
             (
                 attributes.pop("name"),
@@ -339,7 +339,9 @@ def test_a_hand_written_path_the_gateway_also_serves_fails_the_build() -> None:
     bus = _parity()
     server = grpc.server(futures.ThreadPoolExecutor(1))
 
-    with pytest.raises(ProgrammingError, match="/parity.v1.ParityService/IssueInvoice"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="/parity.v1.ParityService/IssueInvoice"
+    ):
         GrpcGateway({"parity": bus}).mount(
             server, reflection_extra=[_hand_written_file("ParityService")]
         )

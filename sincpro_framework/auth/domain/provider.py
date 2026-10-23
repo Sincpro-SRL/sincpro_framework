@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.domain.exceptions import PermissionDenied
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 
 if TYPE_CHECKING:
@@ -60,7 +60,7 @@ class AuthProvider(ABC):
     ) -> bool:
         try:
             return self.has_permission(identity, permission, resource, context)
-        except PermissionDenied:
+        except exceptions.PermissionDenied:
             return False
 
     def permitted(

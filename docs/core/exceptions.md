@@ -28,19 +28,19 @@ Subclass the base that says who caused it; declare `failure_kind` when it means 
 the base:
 
 ```python
-from sincpro_framework import ClientError, FailureKind, ServiceUnavailableError
-from sincpro_framework.ddd import DomainError
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework import exceptions
 
 
-class InvoiceNotFound(ClientError):
-    failure_kind = FailureKind.NOT_FOUND
+class InvoiceNotFound(exceptions.ClientError):
+    failure_kind = exceptions.FailureKind.NOT_FOUND
 
 
-class InvoiceDoesNotBalance(DomainError):
+class InvoiceDoesNotBalance(ddd_exceptions.DomainError):
     pass
 
 
-class TaxAuthorityDown(ServiceUnavailableError):
+class TaxAuthorityDown(exceptions.ServiceUnavailableError):
     pass
 ```
 

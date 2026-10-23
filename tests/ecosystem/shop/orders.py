@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
@@ -38,7 +38,9 @@ class Order(ChangeTrackingMixin, Entity):
 
     def refused(self, why: str) -> None:
         if self.state != "placed":
-            raise ProgrammingError(f"an order that is {self.state} cannot be refused")
+            raise exceptions.ProgrammingError(
+                f"an order that is {self.state} cannot be refused"
+            )
         self.state = f"rejected: {why}"
 
 
@@ -183,7 +185,7 @@ def build(repository: Repository, publisher) -> UseFramework:
         def execute(self, dto: CommandTellAboutOrder) -> ResponseAboutOrder:
             order = self.repository.get(Order, dto.order_id)
             if order is None:
-                raise ProgrammingError(f"no order {dto.order_id}")
+                raise exceptions.ProgrammingError(f"no order {dto.order_id}")
             return ResponseAboutOrder(
                 customer=order.customer, total=order.total, state=order.state
             )

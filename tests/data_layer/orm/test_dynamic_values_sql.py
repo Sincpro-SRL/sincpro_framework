@@ -15,6 +15,7 @@ from sqlalchemy.orm import registry
 from sincpro_framework.context.entrypoint.facade import carrying
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
@@ -29,7 +30,6 @@ from sincpro_framework.ddd.criteria import (
     Periods,
     Today,
 )
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .engines import fresh
 
@@ -128,7 +128,9 @@ def test_the_user_is_the_one_of_the_servers_context(bills: Repository):
 def test_a_missing_context_key_refuses_the_search_and_does_not_widen_it(bills: Repository):
     mine = Criteria(where=Condition(field="owner", value=FromContext(key="user_id")))
 
-    with carrying({}), pytest.raises(InvalidCriteria, match="the context has no 'user_id'"):
+    with carrying({}), pytest.raises(
+        exceptions.InvalidCriteria, match="the context has no 'user_id'"
+    ):
         bills.search(Bill, mine)
 
 

@@ -3,14 +3,9 @@ several flows validated together, committed together — or none of them."""
 
 import pytest
 
-from sincpro_framework import (
-    ApplicationService,
-    DataTransferObject,
-    Feature,
-    UseFramework,
-)
+from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.data_layer.orm import Repository
-from sincpro_framework.ddd.exceptions import ConstraintViolation
+from sincpro_framework.ddd import exceptions
 
 from .engines import fresh
 from .ledger_models import Account, Owner, bank, declare
@@ -124,7 +119,7 @@ def test_a_failure_after_both_features_undoes_both(ledger):
 def test_the_second_feature_refused_by_the_database_undoes_the_first(ledger):
     bus = ledger_bus(ledger)
 
-    with pytest.raises(ConstraintViolation):
+    with pytest.raises(exceptions.ConstraintViolation):
         bus(
             CommandOpenAndWithdraw(name="ana", balance=10, amount=30), ResponseOpenAndWithdraw
         )

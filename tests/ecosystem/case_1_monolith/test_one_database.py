@@ -21,7 +21,8 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
 
 from ..shop import billing, inventory, notifications, orders
@@ -76,14 +77,13 @@ def test_outside_a_unit_of_work_a_relation_refuses_rather_than_reading_wide(
 ):
     """The N+1 the layer exists to prevent: a relation nobody asked for is not quietly fetched
     per record."""
-    from sincpro_framework.ddd.exceptions import RelationNotResolved
 
     stocked(one_database)
     placed = an_order(one_database)
     order = one_database.store("orders").get(orders.Order, placed.order_id)
     assert order is not None
 
-    with pytest.raises(RelationNotResolved, match="was not asked for"):
+    with pytest.raises(ddd_exceptions.RelationNotResolved, match="was not asked for"):
         order.lines  # noqa: B018
 
 
@@ -207,7 +207,7 @@ def test_an_aggregate_that_refuses_leaves_nothing_behind(one_database: Shop):
     order.refused("first time")
     store.save(order)
 
-    with pytest.raises(ProgrammingError, match="cannot be refused"):
+    with pytest.raises(exceptions.ProgrammingError, match="cannot be refused"):
         order.refused("again")
 
 

@@ -12,6 +12,7 @@ walk with a row inserted halfway is the case that separates them.
 
 import pytest
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
@@ -21,7 +22,6 @@ from sincpro_framework.ddd.criteria import (
     Pagination,
     parse_order,
 )
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.repositories.repository import IRepository
 
 from .models import ROW_COUNT, Thing, Things, a_thing
@@ -141,12 +141,12 @@ def test_a_page_knows_it_is_a_fragment_and_refuses_to_fold_itself(store):
 
 def test_ordering_by_a_nullable_column_is_refused(store):
     """The one refusal in the compiler: a NULL in a keyset column drops the row silently."""
-    with pytest.raises(InvalidCriteria, match="nullable"):
+    with pytest.raises(exceptions.InvalidCriteria, match="nullable"):
         store.search(Things, Criteria(order=parse_order("owner")))
 
 
 def test_ordering_by_a_field_that_does_not_exist_is_refused(store):
-    with pytest.raises(InvalidCriteria, match="no such field"):
+    with pytest.raises(exceptions.InvalidCriteria, match="no such field"):
         store.search(Things, Criteria(order=parse_order("nope")))
 
 
@@ -209,7 +209,7 @@ def test_grouping_answers_about_the_whole_set_in_one_statement(store, queries_ru
 
 
 def test_grouping_by_a_field_that_does_not_exist_is_refused(store):
-    with pytest.raises(InvalidCriteria, match="no such field"):
+    with pytest.raises(exceptions.InvalidCriteria, match="no such field"):
         store.group_by(Things, ["nope"])
 
 
@@ -220,7 +220,7 @@ def test_aggregating_folds_the_whole_set_under_the_caller_s_names(store):
 
 
 def test_a_malformed_fold_says_how_it_should_read(store):
-    with pytest.raises(InvalidCriteria, match="is written"):
+    with pytest.raises(exceptions.InvalidCriteria, match="is written"):
         store.measures(Things, None, total="size")
 
 

@@ -11,20 +11,15 @@ from decimal import Decimal
 
 import pytest
 
-from sincpro_framework import ClientError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.common.store import InMemoryKeyValue
-from sincpro_framework.context import (
-    ContextStore,
-    DraftConflict,
-    InMemoryContexts,
-    KeyValueContexts,
-)
+from sincpro_framework.context import ContextStore, InMemoryContexts, KeyValueContexts
+from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.ddd import (
     Criteria,
     Derivations,
     Derive,
-    DomainError,
     DraftState,
     Edit,
     EditAction,
@@ -35,12 +30,11 @@ from sincpro_framework.ddd import (
     ResponseRecord,
     Search,
     Specification,
-    StaleAggregate,
 )
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import parse_order
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.exceptions import ContextRequired
 
 
 @dataclass
@@ -69,7 +63,7 @@ class Invoice(Entity):
     def post(self, number: int) -> None:
         """Posting fixes the invoice: it takes its number and leaves the draft state."""
         if self.state == "posted":
-            raise DomainError(f"invoice {self.number} is already posted")
+            raise ddd_exceptions.DomainError(f"invoice {self.number} is already posted")
         self.state, self.number = "posted", f"F-{number:04d}"
 
     def add_line(self, product: str, qty: int, price: Decimal) -> None:
@@ -306,7 +300,7 @@ def test_a_draft_over_a_record_someone_saved_meanwhile_is_stale_and_its_save_ref
     shop.edit(BOB, id=invoice.id, values={"partner_id": "p7"}, action=EditAction.SAVE)
 
     assert drafted(shop.get(ANA, id=invoice.id, draft=True)).stale
-    with pytest.raises(StaleAggregate, match="changed since the edit started"):
+    with pytest.raises(ddd_exceptions.StaleAggregate, match="changed since the edit started"):
         shop.edit(ANA, id=invoice.id, version=drafted(kept).version, action=EditAction.SAVE)
 
 
@@ -345,17 +339,18 @@ def test_the_second_tab_that_kept_on_an_old_version_loses_and_reads_again(shop: 
     assert first.draft is not None
     shop.edit(ANA, id="0192dddd", values={"partner_id": "p2"}, version=drafted(first).version)
 
-    with pytest.raises(DraftConflict):
+    with pytest.raises(context_exceptions.DraftConflict):
         shop.edit(
             ANA, id="0192dddd", values={"partner_id": "p3"}, version=drafted(first).version
         )
-    with pytest.raises(DraftConflict):
+    with pytest.raises(context_exceptions.DraftConflict):
         shop.edit(ANA, id="0192dddd", version=drafted(first).version, action=EditAction.SAVE)
 
 
-def test_an_edit_with_nobody_in_the_context_is_refused(shop: Shop):
-    with pytest.raises(ContextRequired):
-        shop.edit({"tenant_id": "shop-1"}, values={"partner_id": "p1"})
+def test_an_edit_with_nobody_in_the_context_is_kept_for_the_tenant(shop: Shop):
+    kept = shop.edit({"tenant_id": "shop-1"}, id="0192eeee", values={"partner_id": "p1"})
+
+    assert kept.draft is not None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -435,7 +430,7 @@ def test_a_value_the_form_cannot_send_is_the_callers_to_fix(shop: Shop):
         {"partner_id": "p1", "discount": "a lot"},
         {"partner_id": "p1", "version": 7},
     ):
-        with pytest.raises(ClientError):
+        with pytest.raises(exceptions.ClientError):
             shop.edit(ANA, values=values)
 
 
@@ -454,7 +449,7 @@ def test_posting_a_drafted_invoice_saves_the_draft_and_numbers_it_in_one_write(s
         Decimal("125.00"),
     )
     assert posted.draft is None and posted.invoice.number == "F-0001"
-    with pytest.raises(DomainError, match="already posted"):
+    with pytest.raises(ddd_exceptions.DomainError, match="already posted"):
         shop.post(ANA, id="0192iiii")
 
 

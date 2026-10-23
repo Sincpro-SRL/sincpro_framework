@@ -23,13 +23,7 @@ from contextvars import ContextVar
 from typing import Any, Generator, Protocol
 from urllib.parse import unquote
 
-from sincpro_framework.context.domain.keys import (
-    LEGACY_KEYS,
-    LEGACY_TENANT,
-    LEGACY_USER_ID,
-    PLUMBING,
-    TENANT_ID,
-)
+from sincpro_framework.context.domain.keys import PLUMBING, ContextKey
 from sincpro_framework.context.infrastructure.said import keeping_what_scopes_say, said
 from sincpro_framework.context.infrastructure.tree import current_execution
 from sincpro_framework.observability.domain import UNKNOWN, ObservabilityIdentity
@@ -45,7 +39,7 @@ IDENTITY_KEYS = (SERVICE_NAME, SERVICE_VERSION, RELEASE)
 ALWAYS_ON_METRICS = (*IDENTITY_KEYS, TENANT)
 """The keys every series carries, beside what its instrument names and what the buses declare."""
 
-SAID_ABOVE = frozenset({TENANT_ID, *LEGACY_KEYS})
+SAID_ABOVE = frozenset({ContextKey.TENANT_ID, TENANT})
 """Context keys a signal says under its own name — `tenant` and `user_id` — never twice."""
 
 
@@ -155,25 +149,21 @@ def _text(value: Any) -> str:
 
 
 def tenant(context: Mapping[str, Any] | None = None) -> str:
-    """The execution's tenant: the context's `tenant_id` (or `tenant`, the key before it); else
-    the authenticated identity's; else the deployment's."""
+    """The execution's tenant: the context's `tenant_id`; else the authenticated identity's; else the deployment's."""
     context = execution_context() if context is None else context
     return (
-        _text(context.get(TENANT_ID))
-        or _text(context.get(LEGACY_TENANT))
+        _text(context.get(ContextKey.TENANT_ID))
         or _text(getattr(_identity(), "tenant", None))
         or deployment_tenant()
     )
 
 
 def user_id(context: Mapping[str, Any] | None = None) -> str:
-    """Who the execution acts for: the context's `user_id` (or `user.id`, the key before it);
-    else the authenticated subject."""
+    """Who the execution acts for: the context's `user_id`; else the authenticated
+    subject."""
     context = execution_context() if context is None else context
-    return (
-        _text(context.get(USER_ID))
-        or _text(context.get(LEGACY_USER_ID))
-        or _text(getattr(_identity(), "subject", None))
+    return _text(context.get(ContextKey.USER_ID)) or _text(
+        getattr(_identity(), "subject", None)
     )
 
 

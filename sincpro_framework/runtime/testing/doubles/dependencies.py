@@ -11,20 +11,22 @@ import inspect
 from contextlib import contextmanager
 from typing import Any, Generator
 
-from sincpro_framework.exceptions import DependencyNotRegistered, SincproFrameworkNotBuilt
+from sincpro_framework.runtime.testing import exceptions
 from sincpro_framework.use_bus import UseFramework
 
 
 def _built_handlers(framework: UseFramework) -> list[Any]:
     if framework.is_reference:
-        raise SincproFrameworkNotBuilt(
+        raise exceptions.SincproFrameworkNotBuilt(
             f"'{framework.name}' is hosted by another service: nothing of it is built here, so "
             "it has no dependency to replace — replace it where it runs"
         )
     framework.build_root_bus()
     bus = framework.bus
     if bus is None:
-        raise SincproFrameworkNotBuilt(f"'{framework.name}' was built, but it has no bus")
+        raise exceptions.SincproFrameworkNotBuilt(
+            f"'{framework.name}' was built, but it has no bus"
+        )
     features = bus.feature_bus.feature_registry.values()
     app_services = bus.app_service_bus.app_service_registry.values()
     return [*features, *app_services]
@@ -54,7 +56,7 @@ def override_dependencies(
     unknown = sorted(set(doubles) - set(framework.dynamic_dep_registry))
     if unknown:
         available = ", ".join(sorted(framework.dynamic_dep_registry)) or "(none)"
-        raise DependencyNotRegistered(
+        raise exceptions.DependencyNotRegistered(
             f"Cannot override {', '.join(unknown)}: not registered with add_dependency. "
             f"Available: {available}"
         )

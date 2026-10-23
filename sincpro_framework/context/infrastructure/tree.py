@@ -20,14 +20,8 @@ from types import MappingProxyType
 from typing import Any, cast
 
 from sincpro_framework.common.ids import new_entity_id
-from sincpro_framework.context.domain.execution import (
-    CAUSATION_ID,
-    CONTEXT_NODE,
-    CORRELATION_ID,
-    EXECUTION_ID,
-    Execution,
-    chained,
-)
+from sincpro_framework.context.domain.execution import CONTEXT_NODE, Execution, chained
+from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.domain.level import SCOPES, EntrypointKind, Level
 from sincpro_framework.context.domain.node import ContextNode
 from sincpro_framework.context.infrastructure.distributed import sharing_of
@@ -120,7 +114,7 @@ def _identified(dto: Any, new_id: Callable[[], str]) -> tuple[str, str | None, s
     4. Final: `(execution_id, causation_id, correlation_id)` by `chained`."""
     node = current()
     parent = current_execution()
-    said = _text(_given(node, CORRELATION_ID))
+    said = _text(_given(node, ContextKey.CORRELATION_ID))
     event = _event_cause(dto)
     if event is not None:
         cause_id, correlation = event
@@ -133,9 +127,9 @@ def _identified(dto: Any, new_id: Callable[[], str]) -> tuple[str, str | None, s
             new_id(),
         )
     else:
-        cause_id = _text(_given(node, CAUSATION_ID))
+        cause_id = _text(_given(node, ContextKey.CAUSATION_ID))
         correlation = said
-        own = _text(_given(node, EXECUTION_ID)) or new_id()
+        own = _text(_given(node, ContextKey.EXECUTION_ID)) or new_id()
     causation_id, correlation_id = chained(cause_id, correlation, own)
     return own, causation_id, correlation_id
 
@@ -178,7 +172,7 @@ def handed_on(context: Mapping[str, Any]) -> dict[str, Any]:
     passed = {
         key: value
         for key, value in context.items()
-        if key not in (EXECUTION_ID, CONTEXT_NODE)
+        if key not in (ContextKey.EXECUTION_ID, CONTEXT_NODE)
     }
     running = current_execution()
     if running is not None:
@@ -198,9 +192,9 @@ def chain_for(event: Any) -> dict[str, str]:
         return {}
     missing: dict[str, str] = {}
     if not event.causation_id:
-        missing[CAUSATION_ID] = running.execution_id
+        missing[ContextKey.CAUSATION_ID] = running.execution_id
     if not event.correlation_id:
-        missing[CORRELATION_ID] = running.correlation_id
+        missing[ContextKey.CORRELATION_ID] = running.correlation_id
     return missing
 
 

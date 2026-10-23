@@ -15,19 +15,10 @@ import pytest
 from google.protobuf.struct_pb2 import Struct
 from starlette.testclient import TestClient
 
-from sincpro_framework import (
-    ClientError,
-    DataTransferObject,
-    FailureKind,
-    Feature,
-    OutcomeUnknownError,
-    ProgrammingError,
-    ServiceUnavailableError,
-    UseFramework,
-)
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.common.failures import refined_failure_kind
-from sincpro_framework.data_layer.caching import AlreadyInProgress, KeyReused
-from sincpro_framework.ddd.exceptions import DomainError, DuplicateAggregate, StaleAggregate
+from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import scalar_to_struct
 from sincpro_framework.entrypoints.adapters.rest import RestGateway
@@ -42,9 +33,9 @@ from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.entrypoints.infrastructure import json_schema
 
 RAISED = {
-    "domain": DomainError("an invoice has to balance"),
-    "stale": StaleAggregate("invoice F-1 was written by someone else"),
-    "duplicate": DuplicateAggregate("invoice F-1 already exists"),
+    "domain": ddd_exceptions.DomainError("an invoice has to balance"),
+    "stale": ddd_exceptions.StaleAggregate("invoice F-1 was written by someone else"),
+    "duplicate": ddd_exceptions.DuplicateAggregate("invoice F-1 already exists"),
     "internal": RuntimeError("postgres://admin:hunter2@db"),
 }
 
@@ -68,40 +59,40 @@ def _billing() -> UseFramework:
 
 def test_each_failure_is_one_kind() -> None:
     assert [refined_failure_kind(one) for one in RAISED.values()] == [
-        FailureKind.DOMAIN,
-        FailureKind.CONFLICT,
-        FailureKind.CONFLICT,
-        FailureKind.INTERNAL,
+        exceptions.FailureKind.DOMAIN,
+        exceptions.FailureKind.CONFLICT,
+        exceptions.FailureKind.CONFLICT,
+        exceptions.FailureKind.INTERNAL,
     ]
 
 
-class InvoiceNotFound(DomainError):
-    failure_kind = FailureKind.NOT_FOUND
+class InvoiceNotFound(ddd_exceptions.DomainError):
+    failure_kind = exceptions.FailureKind.NOT_FOUND
 
 
 def test_every_base_says_its_own_kind_and_a_subclass_may_say_another() -> None:
     """Who caused a failure is its base; what to do about it, its kind. A crash nobody foresaw —
     no base of the framework — is internal."""
     raised = [
-        ProgrammingError("a DTO registered twice"),
-        ClientError("a request that does not validate"),
-        ServiceUnavailableError("the database did not answer"),
-        OutcomeUnknownError("sent, and no answer came back"),
-        AlreadyInProgress("k"),
-        KeyReused("k"),
+        exceptions.ProgrammingError("a DTO registered twice"),
+        exceptions.ClientError("a request that does not validate"),
+        exceptions.ServiceUnavailableError("the database did not answer"),
+        exceptions.OutcomeUnknownError("sent, and no answer came back"),
+        caching_exceptions.AlreadyInProgress("k"),
+        caching_exceptions.KeyReused("k"),
         InvoiceNotFound("F-9"),
         ZeroDivisionError("a crash"),
     ]
 
     assert [refined_failure_kind(one) for one in raised] == [
-        FailureKind.INTERNAL,
-        FailureKind.INVALID,
-        FailureKind.UNAVAILABLE,
-        FailureKind.UNKNOWN_OUTCOME,
-        FailureKind.IN_PROGRESS,
-        FailureKind.KEY_REUSED,
-        FailureKind.NOT_FOUND,
-        FailureKind.INTERNAL,
+        exceptions.FailureKind.INTERNAL,
+        exceptions.FailureKind.INVALID,
+        exceptions.FailureKind.UNAVAILABLE,
+        exceptions.FailureKind.UNKNOWN_OUTCOME,
+        exceptions.FailureKind.IN_PROGRESS,
+        exceptions.FailureKind.KEY_REUSED,
+        exceptions.FailureKind.NOT_FOUND,
+        exceptions.FailureKind.INTERNAL,
     ]
 
 

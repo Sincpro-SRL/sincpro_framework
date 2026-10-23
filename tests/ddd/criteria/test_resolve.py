@@ -11,9 +11,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from sincpro_framework import exceptions
 from sincpro_framework.context.entrypoint.facade import carrying
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import AggregateRepository, Criteria, FieldType
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Condition,
@@ -37,8 +39,6 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import describe_class
-from sincpro_framework.ddd.exceptions import InvalidCriteria
-from sincpro_framework.exceptions import ProgrammingError
 
 LA_PAZ = ZoneInfo("America/La_Paz")
 MONDAY = datetime(2026, 10, 12, 15, 30, tzinfo=UTC)
@@ -81,7 +81,9 @@ def test_an_object_without_the_key_is_still_a_literal():
 
 
 def test_an_unknown_name_is_refused_naming_what_is_known():
-    with pytest.raises(InvalidCriteria, match="'todya' is not a value the engine resolves"):
+    with pytest.raises(
+        ddd_exceptions.InvalidCriteria, match="'todya' is not a value the engine resolves"
+    ):
         Condition.model_validate({"field": "due", "value": {"$": "todya"}})
 
 
@@ -143,7 +145,7 @@ def test_a_move_comes_before_the_snap():
 
 
 def test_a_date_has_no_hours():
-    with pytest.raises(InvalidCriteria, match="a date has no hours"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="a date has no hours"):
         read(Today().after(hours=2))
 
 
@@ -219,7 +221,7 @@ def test_a_date_the_context_holds_as_text_is_read():
 
 
 def test_a_key_the_context_does_not_hold_is_refused():
-    with pytest.raises(InvalidCriteria, match="the context has no 'user_id'"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="the context has no 'user_id'"):
         read(FromContext(key="user_id"))
 
 
@@ -232,7 +234,7 @@ def test_a_parameter_is_found_by_a_path():
 
 
 def test_a_value_that_is_not_a_date_cannot_be_moved():
-    with pytest.raises(InvalidCriteria, match="is not a date"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="is not a date"):
         read(FromContext(key="user_id").before(days=1), context={"user_id": "u-7"})
 
 
@@ -281,7 +283,7 @@ def test_last_month_in_january_is_december_of_the_year_before():
 
 
 def test_a_period_asked_with_equals_is_refused():
-    with pytest.raises(InvalidCriteria, match="takes the operator 'between'"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="takes the operator 'between'"):
         resolve(due(Period(name=Periods.THIS_MONTH)), on(MONDAY))
 
 
@@ -382,7 +384,9 @@ def test_a_filter_that_names_a_context_key_nobody_set_is_refused_and_not_widened
     invoices = invoices_over([1])
     mine = Criteria(where=Condition(field="owner_id", value=FromContext(key="user_id")))
 
-    with carrying({}), pytest.raises(InvalidCriteria, match="the context has no 'user_id'"):
+    with carrying({}), pytest.raises(
+        ddd_exceptions.InvalidCriteria, match="the context has no 'user_id'"
+    ):
         invoices.search(mine)
 
 
@@ -409,7 +413,7 @@ def test_a_timezone_the_context_names_wrongly_is_refused():
     invoices = invoices_over([0])
 
     with carrying({"timezone": "Mars/Olympus"}), pytest.raises(
-        ProgrammingError, match="Mars"
+        exceptions.ProgrammingError, match="Mars"
     ):
         invoices.search(Criteria(where=due(Today(), Operator.EQ)))
 
@@ -466,7 +470,7 @@ def test_a_window_is_written_without_what_it_leaves_out():
     ],
 )
 def test_a_period_is_a_name_or_a_window_and_nothing_between(bad):
-    with pytest.raises(InvalidCriteria):
+    with pytest.raises(ddd_exceptions.InvalidCriteria):
         Period.model_validate({"$": "period", **bad})
 
 

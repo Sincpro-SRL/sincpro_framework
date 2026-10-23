@@ -15,12 +15,12 @@ import pytest
 from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text, text
 from sqlalchemy.orm import registry
 
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.criteria import Condition, Criteria
-from sincpro_framework.exceptions import ProgrammingError
 
 from .engines import fresh
 
@@ -254,7 +254,9 @@ def test_an_extension_in_the_core_table_needs_a_column_of_its_own(engine_url):
     move_t = entity_table("move", md, Column("number", Text))
     map_aggregates(reg, {Move: move_t})
 
-    with pytest.raises(ProgrammingError, match="none of its own fields is a column"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="none of its own fields is a column"
+    ):
         map_aggregates(reg, {MoveEmpty: move_t})
 
 
@@ -275,7 +277,7 @@ def test_an_extension_in_the_core_table_cannot_live_under_a_core_that_answers_on
     move_t = entity_table("move", md, Column("number", Text), Column("zone", Text))
     map_aggregates(reg, {Move: move_t}, strict=[Move])
 
-    with pytest.raises(ProgrammingError, match="answers only itself"):
+    with pytest.raises(exceptions.ProgrammingError, match="answers only itself"):
         map_aggregates(reg, {MoveZone: move_t})
 
 
@@ -303,7 +305,9 @@ def test_a_core_release_that_adds_a_field_an_extension_has_is_refused_naming_bot
     )
     map_aggregates(reg, {Move: move_t})
 
-    with pytest.raises(ProgrammingError, match=r"route \(in move and move_delivery\)"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match=r"route \(in move and move_delivery\)"
+    ):
         map_aggregates(reg, {MoveDelivery: delivery_t})
 
 
@@ -392,7 +396,7 @@ def test_a_core_that_stores_no_type_refuses_to_reclassify(engine_url):
     Move, _, _, _, _ = world
     store = install_chain(world)
 
-    with pytest.raises(ProgrammingError, match="stores no type"):
+    with pytest.raises(exceptions.ProgrammingError, match="stores no type"):
         store.reclassify(Move)
 
 

@@ -11,10 +11,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
-    AggregateNotFound,
     Condition,
     Criteria,
     DomainEvent,
@@ -24,8 +23,9 @@ from sincpro_framework.ddd import (
     Get,
     ResponsePaginatedQuery,
     ResponseRecord,
-    history_of,
 )
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework.ddd import history_of
 from sincpro_framework.ddd.criteria import Operator, parse_order
 
 
@@ -256,14 +256,14 @@ def test_a_key_other_than_the_identity_finds_the_record_first():
 
     assert names(answer) == ["IssueOpened"]
     assert answer.events[0].entity_id == account.id
-    with pytest.raises(AggregateNotFound, match="Account 9.9.9"):
+    with pytest.raises(ddd_exceptions.AggregateNotFound, match="Account 9.9.9"):
         bus(QueryAccountEvents(id="9.9.9"), ResponseProjectEvents)
 
 
 def test_a_blank_key_is_refused_rather_than_reading_the_events_about_no_record():
     bus, _repository = project()
 
-    with pytest.raises(ProgrammingError, match="key"):
+    with pytest.raises(exceptions.ProgrammingError, match="key"):
         bus(QueryIssueEvents(id="  "), ResponseProjectEvents)
 
 
@@ -271,7 +271,7 @@ def test_a_response_that_does_not_hold_events_is_refused_naming_it():
     bus, repository = project()
     issue = an_issue_opened_and_closed(repository, "login")
 
-    with pytest.raises(ProgrammingError, match="ResponseIssues"):
+    with pytest.raises(exceptions.ProgrammingError, match="ResponseIssues"):
         bus(QueryNotEvents(id=issue.id), ResponseIssues)
 
 
@@ -302,7 +302,7 @@ def test_history_of_reads_several_records_together_each_by_its_type():
 
     assert [type(one).__name__ for one in together.items] == ["IssueOpened", "RunStarted"]
     assert [type(one).__name__ for one in alone.items] == ["SandboxReserved"]
-    with pytest.raises(ProgrammingError, match="at least one"):
+    with pytest.raises(exceptions.ProgrammingError, match="at least one"):
         history_of()
 
 

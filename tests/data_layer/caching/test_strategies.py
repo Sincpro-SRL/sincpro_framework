@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sincpro_framework import DataTransferObject, ProgrammingError
+from sincpro_framework import DataTransferObject, exceptions
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
     Cache,
@@ -211,5 +211,5 @@ def test_an_unbounded_tier_keeps_every_key():
 
 
 def test_an_lru_of_nothing_is_refused():
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         Lru(max_entries=0)

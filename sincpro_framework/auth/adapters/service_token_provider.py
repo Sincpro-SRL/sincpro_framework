@@ -21,7 +21,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.auth.domain.exceptions import Unauthenticated
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.provider import AuthProvider
 
@@ -90,17 +90,17 @@ class ServiceTokenProvider(AuthProvider):
             header = json.loads(_decoded(header_part))
             claims = json.loads(_decoded(claims_part))
         except ValueError as error:
-            raise Unauthenticated("malformed service token") from error
+            raise exceptions.Unauthenticated("malformed service token") from error
         key_id = header.get("kid")
         if header.get("alg") != "HS256" or key_id not in self.keys:
-            raise Unauthenticated("service token signed with an unknown key")
+            raise exceptions.Unauthenticated("service token signed with an unknown key")
         expected = self._signature(key_id, f"{header_part}.{claims_part}")
         if not hmac.compare_digest(expected, signature):
-            raise Unauthenticated("service token signature does not match")
+            raise exceptions.Unauthenticated("service token signature does not match")
         if claims.get("aud") != self.audience:
-            raise Unauthenticated("service token is for another audience")
+            raise exceptions.Unauthenticated("service token is for another audience")
         if int(claims.get("exp", 0)) < int(time.time()):
-            raise Unauthenticated("service token expired")
+            raise exceptions.Unauthenticated("service token expired")
         return claims
 
     def authenticate(self, credentials: Credentials) -> Identity | None:

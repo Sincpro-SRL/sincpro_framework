@@ -21,10 +21,10 @@ import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Protocol
 
+from sincpro_framework import exceptions
 from sincpro_framework.context.adapters.propagation import inject
 from sincpro_framework.context.infrastructure.tree import live_context
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.exceptions import ProgrammingError, ServiceUnavailableError
 from sincpro_framework.observability.tracing.propagation import trace_carrier
 
 EVENT_HEADER = "sincpro-event"
@@ -77,7 +77,7 @@ class FastStreamQueue:
     ) -> T:
         loop = self._loop
         if loop is None:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 "this FastStreamQueue was never started: call start() where the process begins "
                 "and stop() where it ends, so synchronous code has a loop to publish on"
             )
@@ -119,7 +119,7 @@ class FastStreamQueue:
         try:
             await self.broker.publish(written, channel, headers=headers, **options)
         except Exception as error:
-            raise ServiceUnavailableError(
+            raise exceptions.ServiceUnavailableError(
                 f"the broker did not take {event.name} on {channel}: "
                 f"{type(error).__name__}: {error}"
             ) from error

@@ -44,12 +44,12 @@ from typing import Any
 from pydantic import Field
 
 from sincpro_framework.common.ids import new_entity_id
-from sincpro_framework.context.domain.drafts import Draft, DraftConflict
+from sincpro_framework.context.domain.drafts import Draft
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.editing.editing import assign, form_values, recompute
 from sincpro_framework.ddd.editing.preview import Advice, previewing
 from sincpro_framework.ddd.entity import extensions
-from sincpro_framework.ddd.exceptions import StaleAggregate
 from sincpro_framework.ddd.query import DraftState, ResponseRecord
 from sincpro_framework.ddd.reads.reads import (
     EntityReads,
@@ -63,7 +63,6 @@ from sincpro_framework.ddd.reads.reads import (
     with_derived_relations,
 )
 from sincpro_framework.ddd.repositories.capabilities import Extends
-from sincpro_framework.exceptions import ClientError, ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -235,12 +234,14 @@ class EntityEdits[T](EntityReads[T]):
         subject = self.draft_subject(entity, dto.id)
         kept = drafts.read(subject)
         if dto.version != (kept.version if kept is not None else 0):
-            raise DraftConflict(subject, dto.version, kept.version if kept is not None else 0)
+            raise exceptions.DraftConflict(
+                subject, dto.version, kept.version if kept is not None else 0
+            )
         record = self.writable(entity, dto.id)
         origin = kept.origin_version if kept is not None else dto.origin_version
         current = getattr(record, "version", 0) if record is not None else 0
         if record is not None and origin is not None and current != origin:
-            raise StaleAggregate(
+            raise exceptions.StaleAggregate(
                 f"{entity.__name__} {dto.id} changed since the edit started (version {origin}, "
                 f"now {current}): read it again"
             )
@@ -250,7 +251,7 @@ class EntityEdits[T](EntityReads[T]):
         if record is not None and not isinstance(record, wanted):
             repository = self.reads_from()
             if not isinstance(repository, Extends):
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     f"{type(repository).__name__} cannot give {entity.__name__} {dto.id} the "
                     f"rows of {wanted.__name__}: it keeps no extensions apart from the entity"
                 )
@@ -317,7 +318,7 @@ class EntityEdits[T](EntityReads[T]):
                 continue
             unknown = sorted(set(nested) - set(one.fields))
             if unknown:
-                raise ClientError(
+                raise exceptions.ClientError(
                     f"{one.key} has no field {', '.join(unknown)}: it has {', '.join(one.fields)}"
                 )
             flat.update(nested)

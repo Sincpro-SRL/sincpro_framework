@@ -17,11 +17,7 @@ from http.cookies import SimpleCookie
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl
 
-from sincpro_framework.auth.domain.exceptions import (
-    AuthError,
-    PermissionDenied,
-    Unauthenticated,
-)
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.entrypoint.access_control import (
     access_control_of,
@@ -35,26 +31,28 @@ from sincpro_framework.auth.infrastructure.security_context import (
 if TYPE_CHECKING:
     from sincpro_framework.use_bus import UseFramework
 
-HTTP_STATUS = {Unauthenticated: 401, PermissionDenied: 403}
+HTTP_STATUS = {exceptions.Unauthenticated: 401, exceptions.PermissionDenied: 403}
 """The HTTP answer to each refusal — 401 asks the caller to authenticate again, 403 does not."""
 
 
-def http_status_of(error: AuthError) -> int:
+def http_status_of(error: exceptions.AuthError) -> int:
     return next(status for kind, status in HTTP_STATUS.items() if isinstance(error, kind))
 
 
-def refusal_body(error: AuthError) -> dict[str, Any]:
+def refusal_body(error: exceptions.AuthError) -> dict[str, Any]:
     """What a caller is told of a refusal — the reason, what was missing, what to come back
     with — the same fields on every transport."""
     body: dict[str, Any] = {
         "kind": (
-            "unauthenticated" if isinstance(error, Unauthenticated) else "permission_denied"
+            "unauthenticated"
+            if isinstance(error, exceptions.Unauthenticated)
+            else "permission_denied"
         ),
         "reason": error.reason,
     }
-    if isinstance(error, Unauthenticated) and error.step_up:
+    if isinstance(error, exceptions.Unauthenticated) and error.step_up:
         body["step_up"] = error.step_up
-    if isinstance(error, PermissionDenied):
+    if isinstance(error, exceptions.PermissionDenied):
         body["requirement"] = error.requirement
     return body
 

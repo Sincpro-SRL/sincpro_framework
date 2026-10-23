@@ -46,24 +46,49 @@ The caller names only what the draft is about — `invoice:{invoice_id}` for an 
 `invoice:new:{form_id}` for a record not created yet. Whose it is comes from the context of the
 call, never from that name, so two users editing the same invoice never share a draft:
 
-| `drafts(...)` | Whose | Kept under |
+| `drafts(...)` | Whose | Owner |
 |---|---|---|
-| `drafts()` | the user | `tenant_id=acme/user_id=ana/invoice:7` |
-| `drafts(by=["session_id"])` | the session | `tenant_id=acme/session_id=s-1/cart` |
-| `drafts(by=["user_id", "pos_id"])` | the user at one point of sale | `user_id=ana/pos_id=4/cart` |
+| `drafts()` | the user | `tenant_id=acme,tenant_ids=,user_id=ana` |
+| `drafts(by=["session_id"])` | the session | `tenant_id=acme,tenant_ids=,session_id=s-1` |
+| `drafts(by=["user_id", "pos_id"])` | the user at one point of sale | `tenant_id=,tenant_ids=,user_id=ana,pos_id=4` |
 
-A tenant in the context always takes part: a draft never crosses tenants. A key of `by` the context
-does not have is refused with `ContextRequired`, naming it — a draft nobody owns would be
-everybody's. One shared by everybody editing a record is `by=[]` in a context without a tenant.
+The owner always has the same shape: the tenant keys, then the keys of `by` — the user by
+default — each with what the context says, and nothing when it says nothing.
+
+A tenant in the context always takes part: a draft never crosses tenants. **Nothing is refused**: the
+rule serves every shape a system has, and none is forced on a project.
+
+| The context says | The owner of `drafts()` |
+|---|---|
+| nothing — a service keyed by its own ids | `tenant_id=,tenant_ids=,user_id=` |
+| a tenant | `tenant_id=acme,tenant_ids=,user_id=` |
+| a user | `tenant_id=,tenant_ids=,user_id=ana` |
+| a user in a tenant | `tenant_id=acme,tenant_ids=,user_id=ana` |
+| a user across several tenants | `tenant_id=,tenant_ids=acme\|globex,user_id=ana` |
+
+A value that is `None`, empty or missing says nothing, as if the key were absent. Values are encoded,
+so a `/`, a `,`, a `=`, a `:` or a `|` inside a tenant or a user is never read as a separator: a
+tenant called `acme/user_id=bob` never reads the drafts of the user `bob` of `acme`. One draft meant
+to be shared by everybody of a tenant editing a record is `by=[]`.
+
+The desktop, the browser and the phone of one user in one tenant read and write the same draft of a
+record: a draft belongs to no execution and no session, and outlives every browser that closed.
 
 ## Where it is kept
 
-The nearest `ContextStore` of the context keeps the drafts too, through `drafts()`: on the same
-storage, under `{prefix}:draft`. Set once — `bus.context_store(store)` for a bus,
-`use_context().root.set(ContextStore, store)` for the process — or handed to the call,
-`drafts(store=...)`. Each store keeps a draft `drafts_ttl` after its last keep, seven days unless
-told: `KeyValueContexts(RedisKeyValue(redis), drafts_ttl=timedelta(hours=1))`. A project's own
-`ContextStore` keeps drafts when it answers a `DraftStore` from `drafts()`.
+In the context's store — the one store the context has, and the one a project sets: a draft is an
+*entry* of it, under its namespace, its owner and its subject:
+
+```text
+SINCPRO_ENTITY_DRAFT_CONTEXT : tenant_id=acme,tenant_ids=,user_id=ana : billing.Invoice%3A<uuid>
+```
+
+Set once — `bus.context_store(store)` for a bus, `use_context().root.set(ContextStore, store)` for
+the process — or handed to the call, `drafts(store=...)`; with none set, the process's memory keeps
+them, said once in the logs. Each store keeps an entry `kept_ttl` after its last keep, seven days
+unless told: `KeyValueContexts(RedisKeyValue(redis), kept_ttl=timedelta(hours=1))`. A project's own
+`ContextStore` keeps drafts when it implements its entries: `keep_entry`, `entry`, `discard_entry`,
+`entries`.
 
 ## Versions and conflicts
 
@@ -88,7 +113,7 @@ started after the old one expired.
 
 ## The TTL
 
-Every draft has one, the store's `drafts_ttl`, and every keep starts it again: an abandoned draft
+Every draft has one, the store's `kept_ttl`, and every keep starts it again: an abandoned draft
 disappears on its own and the store never grows without end. Days for an edit people come back
 to, minutes or hours for a wizard.
 
@@ -119,17 +144,16 @@ mapping writes it as a new value and the save goes through.
 
 ## How the stores keep it
 
-`InMemoryContexts` keeps its drafts in an `InMemoryDrafts`, `KeyValueContexts` in a
-`KeyValueDrafts` over the same `KeyValueStore`; both are in `sincpro_framework.context`, for a
-test that wants one alone (`InMemoryDrafts(ttl, now=clock.now)`).
+Both context stores keep their entries — drafts, pipeline runs — with the same machinery, written
+once for each store and seen by nobody else.
 
-`InMemoryDrafts` is a dict behind a lock, for one process and for tests. It remembers a key's
+`InMemoryContexts` keeps them in a dict behind a lock, for one process and for tests. It remembers a key's
 last version for a TTL after its draft was last kept or discarded, then forgets it, so it does
 not hold every key it ever saw; a chain started after that begins at the clock's milliseconds,
 and always above any version the store handed out for any key — so a version never repeats,
 not under a clock that stands still, not with a TTL shorter than the keeps it holds.
 
-`KeyValueDrafts` stands on any `KeyValueStore` — Redis, Valkey, Memcached — with nothing
+`KeyValueContexts` stands on any `KeyValueStore` — Redis, Valkey, Memcached — with nothing
 store-specific. A draft is a chain of slots, `{prefix}:{key}:{version}`, each written once with
 the store's atomic `add`: of two keeps naming the same version, exactly one writes the next
 slot. A slot is never deleted — its TTL removes it — so its number is never handed out again; a
@@ -137,7 +161,10 @@ discard writes the next slot as spent. Two pointers, `{prefix}:{key}:head` and
 `{prefix}:{key}:chain`, say where the chain was last seen; a reader takes the larger and probes
 the slots after it, so a keep that won its slot and had not moved them yet is still read, and
 both are written again. The store evicting one of them, or a process stopping between its slot
-and them, loses nothing. Every key carries the TTL.
+and them, loses nothing. Every key carries the TTL. Listing what an owner has a draft of —
+`subjects()` — reads a list nothing ever rewrites: each new draft takes a position in it with the
+store's atomic `add`, so drafts started at the same instant on any replica never lose one another,
+and a hint with the TTL says where the list was last seen.
 
 When nothing of a chain is left — every key expired — the next keep starts it again at the
 clock's milliseconds, above anything a tab could still hold, and only one of the keeps that

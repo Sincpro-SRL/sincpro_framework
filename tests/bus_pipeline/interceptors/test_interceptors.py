@@ -15,10 +15,9 @@ from sincpro_framework import (
     CallNext,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
-from sincpro_framework.exceptions import BusAlreadyBuilt, UnknownDTOToExecute
 from sincpro_framework.introspection import features
 
 
@@ -150,7 +149,7 @@ def test_passing_another_command_class_on_is_refused():
     def swaps_the_command(dto: CommandCreateInvoice, call_next: CallNext[Any]) -> Any:
         return call_next(SomethingElse())
 
-    with pytest.raises(ProgrammingError, match="swaps_the_command.*SomethingElse"):
+    with pytest.raises(exceptions.ProgrammingError, match="swaps_the_command.*SomethingElse"):
         _create(billing)
 
 
@@ -162,7 +161,9 @@ def test_answering_with_another_response_class_is_refused():
         call_next(dto)
         return SomethingElse()
 
-    with pytest.raises(ProgrammingError, match="swaps_the_response.*SomethingElse"):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="swaps_the_response.*SomethingElse"
+    ):
         _create(billing)
 
 
@@ -244,7 +245,7 @@ def test_registering_after_the_bus_was_built_is_refused():
     billing = _billing()
     _create(billing)
 
-    with pytest.raises(BusAlreadyBuilt, match="late"):
+    with pytest.raises(exceptions.BusAlreadyBuilt, match="late"):
 
         @billing.interceptor(CommandCreateInvoice)
         def late(dto: Any, call_next: CallNext[Any]) -> Any:
@@ -258,7 +259,7 @@ def test_naming_a_command_nobody_answers_is_refused_when_the_bus_is_built():
     def lost(dto: Any, call_next: CallNext[Any]) -> Any:
         return call_next(dto)
 
-    with pytest.raises(UnknownDTOToExecute, match="lost.*SomethingElse"):
+    with pytest.raises(exceptions.UnknownDTOToExecute, match="lost.*SomethingElse"):
         billing.build_root_bus()
 
 

@@ -19,13 +19,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import timedelta
 
-from sincpro_framework.exceptions import ServiceUnavailableError
-
-
-class StoreUnavailable(ServiceUnavailableError):
-    """The store did not answer — down, unreachable, past its timeout. Whoever holds context,
-    drafts or cached values there retries later; the cache answers from the process meanwhile.
-    """
+from sincpro_framework.common.store import exceptions
 
 
 class KeyValueStore(ABC):
@@ -35,10 +29,10 @@ class KeyValueStore(ABC):
         `StoreUnavailable`, carrying the client's error as its cause."""
         try:
             yield
-        except StoreUnavailable:
+        except exceptions.StoreUnavailable:
             raise
         except Exception as error:
-            raise StoreUnavailable(
+            raise exceptions.StoreUnavailable(
                 f"{type(self).__name__} did not answer: {type(error).__name__}: {error}"
             ) from error
 

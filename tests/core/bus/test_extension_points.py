@@ -6,8 +6,7 @@ only not as said, is a warning; only what cannot work is refused."""
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.exceptions import BusAlreadyBuilt
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.introspection import features
 
 
@@ -144,7 +143,7 @@ def test_switching_off_an_interceptor_after_the_bus_is_built_is_refused():
     payments.interceptor(CommandPay)(audit)
     payments(CommandPay(amount=1), ResponsePay)
 
-    with pytest.raises(BusAlreadyBuilt):
+    with pytest.raises(exceptions.BusAlreadyBuilt):
         payments.without_interceptor(audit)
 
 

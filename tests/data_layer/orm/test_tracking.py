@@ -10,7 +10,7 @@ so it sees **every** route that reaches the database — including the ones that
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
@@ -256,5 +256,5 @@ def test_it_is_refused_outside_a_unit_of_work(database: Database):
     assert loaded is not None
     loaded.title = "changed"
 
-    with pytest.raises(ProgrammingError, match="unit of work"):
+    with pytest.raises(exceptions.ProgrammingError, match="unit of work"):
         repository.record_changes(loaded)

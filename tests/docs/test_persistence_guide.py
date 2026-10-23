@@ -21,6 +21,8 @@ TRANSACTIONS = ROOT / "docs" / "persistence" / "transactions.md"
 INTERCEPTORS = ROOT / "docs" / "core" / "interceptors.md"
 CONTEXT = ROOT / "docs" / "core" / "context-manager.md"
 OUTCOMES = ROOT / "docs" / "core" / "outcomes.md"
+INCOMES = ROOT / "docs" / "core" / "incomes.md"
+PIPELINES = ROOT / "docs" / "core" / "pipelines.md"
 CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
 EXTENSIONS = ROOT / "docs" / "persistence" / "extensions.md"
@@ -66,6 +68,8 @@ def _failing_line(error: Exception, path: Path) -> int:
         INTERCEPTORS,
         CONTEXT,
         OUTCOMES,
+        INCOMES,
+        PIPELINES,
         CRON,
         MIGRATIONS,
         EXTENSIONS,

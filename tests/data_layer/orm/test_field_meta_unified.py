@@ -18,6 +18,7 @@ import pytest
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
     Condition,
@@ -29,7 +30,6 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 
 from .every_kind_models import Author, Format, Work, Works, declare, open_pair, populate
@@ -151,7 +151,7 @@ def test_a_relational_field_takes_no_operator_and_no_order(meta):
     assert meta.fields["author"].ops == () and not meta.fields["author"].sortable
     _, dropped = meta.accept(Condition(field="author", value="x"))
     assert [(d.field, d.reason) for d in dropped] == [("author", "unsupported_operator")]
-    with pytest.raises(InvalidCriteria):
+    with pytest.raises(exceptions.InvalidCriteria):
         meta.orderable("tags")
 
 

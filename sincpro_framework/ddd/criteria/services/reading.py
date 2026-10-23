@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from typing import Any
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
 from sincpro_framework.ddd.criteria.domain.values import (
     FromContext,
@@ -14,7 +15,6 @@ from sincpro_framework.ddd.criteria.domain.values import (
     Today,
 )
 from sincpro_framework.ddd.criteria.services.calendar import moved, snapped
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 
 def _read(source: Mapping[Any, Any], path: str, what: str) -> Any:
@@ -22,7 +22,7 @@ def _read(source: Mapping[Any, Any], path: str, what: str) -> Any:
     found: Any = source
     for step in path.split("."):
         if not isinstance(found, Mapping) or step not in found:
-            raise InvalidCriteria(f"{what} has no '{path}'")
+            raise exceptions.InvalidCriteria(f"{what} has no '{path}'")
         found = found[step]
     return found
 
@@ -40,7 +40,7 @@ def _date_read(given: Any, what: str) -> date | datetime:
             )
         except ValueError:
             pass
-    raise InvalidCriteria(f"{what} is not a date: {given!r}")
+    raise exceptions.InvalidCriteria(f"{what} is not a date: {given!r}")
 
 
 def _shifted(
@@ -82,7 +82,7 @@ def value_of(value: Today | Now | FromContext | Param, resolution: ResolutionCon
 def item_of(value: Any, field: str, resolution: ResolutionContext) -> Any:
     """One value of a condition, read when it is dynamic and left alone when it is not."""
     if isinstance(value, Period):
-        raise InvalidCriteria(
+        raise exceptions.InvalidCriteria(
             f"a period is a range and cannot be one item of a list; '{field}' asked for it so"
         )
     if isinstance(value, (Today, Now, FromContext, Param)):

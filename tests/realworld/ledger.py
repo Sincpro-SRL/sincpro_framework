@@ -17,7 +17,7 @@ from decimal import Decimal
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Numeric, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd.entity import Entity, Translated
@@ -111,11 +111,11 @@ class Entry(Entity):
            it touched.
         """
         if self.state == "posted":
-            raise ProgrammingError(f"entry {self.reference} is already posted")
+            raise exceptions.ProgrammingError(f"entry {self.reference} is already posted")
         if not self.lines:
-            raise ProgrammingError(f"entry {self.reference} has no lines")
+            raise exceptions.ProgrammingError(f"entry {self.reference} has no lines")
         if not self.is_balanced:
-            raise ProgrammingError(f"entry {self.reference} does not balance")
+            raise exceptions.ProgrammingError(f"entry {self.reference} does not balance")
         self.state = "posted"
         for line in self.lines:
             line.entry_state = "posted"

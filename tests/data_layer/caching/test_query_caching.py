@@ -18,8 +18,8 @@ from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
     Feature,
-    ProgrammingError,
     UseFramework,
+    exceptions,
 )
 from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
@@ -227,7 +227,9 @@ def test_a_sensitive_context_key_the_policy_does_not_vary_by_is_refused():
     caching = QueryCaching(InMemoryKeyValue(now=clock.now), sensitive=("user_id",))
     caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
 
-    with billing.context({"user_id": "u1"}), pytest.raises(ProgrammingError, match="user_id"):
+    with billing.context({"user_id": "u1"}), pytest.raises(
+        exceptions.ProgrammingError, match="user_id"
+    ):
         billing(QueryBalance(customer_id="c1"), ResponseBalance)
 
 

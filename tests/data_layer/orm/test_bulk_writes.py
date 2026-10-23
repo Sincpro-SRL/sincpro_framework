@@ -4,16 +4,12 @@ commit waits for this unit of work's."""
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure import transaction_hooks
 from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
-from sincpro_framework.ddd.exceptions import (
-    ConstraintViolation,
-    DuplicateAggregate,
-    StaleAggregate,
-)
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 
 from .engines import fresh
@@ -152,7 +148,7 @@ def test_the_double_counts_as_the_engine_does():
 
 
 def test_an_upsert_on_a_key_the_table_does_not_hold_unique_is_refused(ledger, ana):
-    with pytest.raises(ProgrammingError, match="unique"):
+    with pytest.raises(exceptions.ProgrammingError, match="unique"):
         ledger.upsert(Account(owner_id=ana.id, balance=1), on=("balance",))
 
 
@@ -170,17 +166,17 @@ def test_a_narrowed_upsert_never_overwrites_a_row_outside_its_scope(ledger, ana)
 
 
 def test_an_upsert_cannot_overwrite_what_the_framework_keeps(ledger, ana):
-    with pytest.raises(ProgrammingError, match="the framework keeps"):
+    with pytest.raises(exceptions.ProgrammingError, match="the framework keeps"):
         ledger.upsert(Owner(name="ana"), on=("name",), update=("id",))
-    with pytest.raises(ProgrammingError, match="the framework keeps"):
+    with pytest.raises(exceptions.ProgrammingError, match="the framework keeps"):
         MemoryRepository().upsert(Owner(name="ana"), on=("name",), update=("version",))
 
 
 def test_an_upsert_of_a_stored_identity_under_another_key_is_a_duplicate_in_both(ledger, ana):
-    with pytest.raises(DuplicateAggregate):
+    with pytest.raises(ddd_exceptions.DuplicateAggregate):
         ledger.upsert(Owner(id=ana.id, name="someone else"), on=("name",))
     double = MemoryRepository(Owner(id=ana.id, name="ana"))
-    with pytest.raises(DuplicateAggregate):
+    with pytest.raises(ddd_exceptions.DuplicateAggregate):
         double.upsert(Owner(id=ana.id, name="someone else"), on=("name",))
 
 
@@ -228,7 +224,7 @@ def test_update_all_raises_the_version_so_a_stale_copy_is_still_refused(ledger, 
     ledger.update_all(Account, owned_by(ana), {"balance": 6})
 
     stale.balance = 7
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         ledger.save(stale)
 
 
@@ -243,7 +239,7 @@ def test_a_write_by_criteria_never_runs_wider_than_its_scope(ledger, ana):
 
 
 def test_a_write_by_criteria_refuses_a_page(ledger, ana):
-    with pytest.raises(ProgrammingError, match="page"):
+    with pytest.raises(exceptions.ProgrammingError, match="page"):
         ledger.update_all(
             Account, Criteria.model_validate({"pagination": {"limit": 10}}), {"balance": 0}
         )
@@ -251,12 +247,12 @@ def test_a_write_by_criteria_refuses_a_page(ledger, ana):
 
 def test_a_write_by_criteria_refuses_a_condition_it_cannot_answer(ledger, ana):
     unknown = Criteria(where=Condition(field="nothing_like_this", value=1))
-    with pytest.raises(ProgrammingError, match="wider"):
+    with pytest.raises(exceptions.ProgrammingError, match="wider"):
         ledger.remove_all(Account, unknown)
 
 
 def test_update_all_refuses_the_fields_the_framework_keeps(ledger, ana):
-    with pytest.raises(ProgrammingError, match="version"):
+    with pytest.raises(exceptions.ProgrammingError, match="version"):
         ledger.update_all(Account, Criteria(), {"version": 1})
 
 
@@ -269,15 +265,15 @@ def test_remove_all_deletes_every_matching_row(ledger, ana):
 
 def test_remove_all_is_refused_by_a_row_still_pointing_at_it(ledger, ana):
     ledger.save(Account(owner_id=ana.id, balance=1))
-    with pytest.raises(ConstraintViolation):
+    with pytest.raises(ddd_exceptions.ConstraintViolation):
         ledger.remove_all(Owner, Criteria())
 
 
 def test_a_read_only_unit_of_work_refuses_the_bulk_writes_too(ledger, ana):
     with ledger.context(read_only=True) as unit:
-        with pytest.raises(ProgrammingError, match="read_only"):
+        with pytest.raises(exceptions.ProgrammingError, match="read_only"):
             unit.update_all(Account, Criteria(), {"balance": 0})
-        with pytest.raises(ProgrammingError, match="read_only"):
+        with pytest.raises(exceptions.ProgrammingError, match="read_only"):
             unit.upsert(Owner(name="x"), on=("name",))
 
 
@@ -347,7 +343,7 @@ def test_a_callback_that_raises_does_not_stop_the_rest(ledger, monkeypatch):
 
 
 def test_after_commit_outside_a_unit_of_work_is_refused(ledger):
-    with pytest.raises(ProgrammingError, match="unit of work"):
+    with pytest.raises(exceptions.ProgrammingError, match="unit of work"):
         ledger.after_commit(lambda: None)
 
 
@@ -367,7 +363,7 @@ def test_the_double_upserts_updates_and_removes_by_criteria_as_the_engine_does()
     double.save([Account(owner_id=ana.id, balance=b) for b in (1, 2)])
     assert double.update_all(Account, owned_by(ana), {"balance": 0}) == 2
     assert double.remove_all(Account, owned_by(ana)) == 2
-    with pytest.raises(ProgrammingError, match="page"):
+    with pytest.raises(exceptions.ProgrammingError, match="page"):
         double.remove_all(Account, Criteria.model_validate({"pagination": {"limit": 1}}))
 
 
@@ -392,5 +388,5 @@ def test_an_upsert_never_brings_an_archived_row_back(ledger, ana):
 
 
 def test_the_double_refuses_an_unknown_column_as_the_engine_does():
-    with pytest.raises(ProgrammingError, match="no field"):
+    with pytest.raises(exceptions.ProgrammingError, match="no field"):
         MemoryRepository().upsert(Owner(name="ana"), on=("name",), update=("colour",))

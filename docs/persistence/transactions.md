@@ -166,12 +166,12 @@ The driver's error is named by what happened, in the `ddd` vocabulary:
 | a lock it was told not to wait for (`nowait`), a statement past `timeout` | `TimedOut` | no — the bound was the caller's |
 
 ```python
-from sincpro_framework.ddd import ConstraintViolation, DuplicateAggregate
+from sincpro_framework.ddd import exceptions
 
 try:
     repository.save(Account(holder="ana", balance=1))
     raise AssertionError("a second ana should have been refused")
-except DuplicateAggregate:
+except exceptions.DuplicateAggregate:
     pass
 
 overdrawn = repository.get_by(Account, holder="bob")
@@ -179,7 +179,7 @@ overdrawn.balance = -1
 try:
     repository.save(overdrawn)
     raise AssertionError("the table refuses a negative balance")
-except ConstraintViolation as refused:
+except exceptions.ConstraintViolation as refused:
     assert "a rule the table holds" in str(refused)
 ```
 
@@ -355,7 +355,7 @@ assert done.source_balance == 60
 try:
     treasury_bus(CommandTransfer(source="carla", target="dan", amount=500), ResponseTransfer)
     raise AssertionError("carla cannot give what she does not have")
-except ConstraintViolation:
+except exceptions.ConstraintViolation:
     pass
 assert repository.get_by(Account, holder="dan").balance == 40     # the credit was undone too
 ```

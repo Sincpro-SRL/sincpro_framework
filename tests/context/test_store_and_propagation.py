@@ -16,9 +16,8 @@ from structlog.testing import capture_logs
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.context import (
-    CAUSATION_ID,
-    CORRELATION_ID,
     Context,
+    ContextKey,
     ContextStore,
     InMemoryContexts,
     KeyValueContexts,
@@ -117,7 +116,9 @@ def test_a_flow_kept_is_resumed_elsewhere_in_its_chain(store: ContextStore):
     bus = _bus("context-store-keep", seen)
     bus.context_store(store)
 
-    with bus.context({"tenant_id": "acme", CORRELATION_ID: "flow-7"}, keep_as="sale-77"):
+    with bus.context(
+        {"tenant_id": "acme", ContextKey.CORRELATION_ID: "flow-7"}, keep_as="sale-77"
+    ):
         pass
     with bus.context(restore="sale-77"):
         bus(CommandWork())
@@ -211,7 +212,7 @@ def test_what_is_injected_is_extracted_the_same():
     headers, sender = sent[0]
     back = extract(headers)
     assert back["tenant_id"] == "acme" and back["tenant_ids"] == ["acme", "beta"]
-    assert back[CAUSATION_ID] == sender.execution.execution_id  # type: ignore[union-attr]
+    assert back[ContextKey.CAUSATION_ID] == sender.execution.execution_id  # type: ignore[union-attr]
     assert back["TOKEN"] == "x"
     assert unbaggaged(headers[BAGGAGE_HEADER])["tenant_id"] == "acme"
 

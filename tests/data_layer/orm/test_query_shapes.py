@@ -1,4 +1,4 @@
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.ddd import Pagination
 
 """The two shapes every read inherits, and the convention that makes the second one work.
@@ -84,7 +84,7 @@ def test_a_response_that_declares_two_fields_is_refused():
         things: list[Thing]
         extras: list[Thing]
 
-    with pytest.raises(ProgrammingError, match="declares 2 fields of its own"):
+    with pytest.raises(exceptions.ProgrammingError, match="declares 2 fields of its own"):
         Ambiguous.records_field()
 
 
@@ -92,7 +92,7 @@ def test_a_response_that_declares_none_is_refused_too():
     class Empty(ResponsePaginatedQuery):
         pass
 
-    with pytest.raises(ProgrammingError, match="declares 0 fields"):
+    with pytest.raises(exceptions.ProgrammingError, match="declares 0 fields"):
         Empty.records_field()
 
 

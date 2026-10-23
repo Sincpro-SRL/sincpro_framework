@@ -15,8 +15,9 @@ shares an engine with the invoice or lives in a database of its own.
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
@@ -26,7 +27,6 @@ from sincpro_framework.ddd.criteria import (
     Specification,
     parse_order,
 )
-from sincpro_framework.ddd.exceptions import RelationNotResolved
 
 from .event_relation_models import World, same_database, two_databases
 
@@ -284,9 +284,9 @@ def test_outside_a_unit_of_work_touching_a_relation_refuses(world: World):
     invoice = world.invoices.get(world.invoice, world.records["F-2"].id)
     assert invoice is not None
 
-    with pytest.raises(RelationNotResolved):
+    with pytest.raises(ddd_exceptions.RelationNotResolved):
         invoice.events  # noqa: B018
-    with pytest.raises(RelationNotResolved):
+    with pytest.raises(ddd_exceptions.RelationNotResolved):
         invoice.lines  # noqa: B018
 
 
@@ -314,5 +314,5 @@ def test_a_scope_the_related_aggregate_cannot_answer_is_refused_not_dropped():
     declared — so it raises here instead, the way `Repository.narrowed` already does."""
     world = same_database(events_scope=Criteria(where=Condition(field="no_such", value=1)))
 
-    with pytest.raises(ProgrammingError, match="cannot answer the scope"):
+    with pytest.raises(exceptions.ProgrammingError, match="cannot answer the scope"):
         invoice_of(world, "F-1")

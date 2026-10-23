@@ -30,12 +30,11 @@ from sincpro_framework.data_layer.migrations.adapters.manifest import (
     sum_of,
     write_manifest,
 )
+from sincpro_framework.data_layer.migrations.domain import exceptions
 from sincpro_framework.data_layer.migrations.domain.engine import MigrationEngine
 from sincpro_framework.data_layer.migrations.domain.step import (
     Chain,
     ChainState,
-    MigrationFailed,
-    MigrationRefused,
     Position,
     Step,
 )
@@ -142,7 +141,7 @@ class Migrations:
 
     def _context(self, name: str) -> ContextMigrations:
         if name not in self.contexts:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"no context {name}: registered are {', '.join(self.contexts)}"
             )
         return self.contexts[name]
@@ -205,7 +204,7 @@ class Migrations:
     def _refuse_unless_intact(self) -> None:
         problems = self._integrity_problems()
         if problems:
-            raise MigrationRefused("; ".join(problems))
+            raise exceptions.MigrationRefused("; ".join(problems))
 
     def _statuses(self, chains: list[tuple[Chain, list[Step]]]) -> dict[str, ChainStatus]:
         statuses: dict[str, ChainStatus] = {}
@@ -226,17 +225,23 @@ class Migrations:
             if status.state in (ChainState.AHEAD, ChainState.DIRTY)
         ]
         if blocked:
-            raise MigrationRefused("; ".join(_refusal(status) for status in blocked))
+            raise exceptions.MigrationRefused(
+                "; ".join(_refusal(status) for status in blocked)
+            )
 
     def _index_of(self, order: list[Step], target: str) -> int:
         """The step whose id is `target` or starts with it — `status` prints the first twelve
         characters."""
         found = [index for index, step in enumerate(order) if step.id.startswith(target)]
         if not found:
-            raise MigrationRefused(f"{target} is not the start of any step id of this code")
+            raise exceptions.MigrationRefused(
+                f"{target} is not the start of any step id of this code"
+            )
         if len(found) > 1:
             ids = ", ".join(order[index].id for index in found)
-            raise MigrationRefused(f"{target} is the start of several step ids: {ids}")
+            raise exceptions.MigrationRefused(
+                f"{target} is the start of several step ids: {ids}"
+            )
         return found[0]
 
     def _run(self, step: Step, forward: bool) -> None:
@@ -260,7 +265,7 @@ class Migrations:
             else:
                 engine.revert(chain, step)
         except Exception as error:
-            raise MigrationFailed(
+            raise exceptions.MigrationFailed(
                 f"{step.chain_key} {step.id} ({step.message}) failed while being {verb}: {error}"
             ) from error
         if not engine.transactional:
@@ -278,7 +283,7 @@ class Migrations:
         try:
             order = timeline([steps for _, steps in chains])
         except ValueError as error:
-            raise MigrationRefused(str(error)) from error
+            raise exceptions.MigrationRefused(str(error)) from error
         return MigrationStatus(statuses, [(step, step.key not in pending) for step in order])
 
     def upgrade_plan(self, to: str | None = None) -> list[Step]:
@@ -309,14 +314,14 @@ class Migrations:
         first = 0 if to == BASE else self._index_of(order, to) + 1
         target, target_applied = status.timeline[first - 1] if first else (None, True)
         if target is not None and not target_applied:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{target.id} ({target.message}) is not applied — the system never stood there"
             )
         to_revert = [step for step, applied in reversed(status.timeline[first:]) if applied]
         irreversible = [step for step in to_revert if step.irreversible]
         if irreversible:
             names = ", ".join(f"{step.key} ({step.message})" for step in irreversible)
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{names} is irreversible — the downgrade would cross it; restore a backup "
                 "taken before it instead"
             )
@@ -347,7 +352,9 @@ class Migrations:
         known = {step.key for _, steps in self._chains() for step in steps}
         unknown = [key for key in requires if key not in known]
         if unknown:
-            raise MigrationRefused(f"requires {', '.join(unknown)}, which no chain has")
+            raise exceptions.MigrationRefused(
+                f"requires {', '.join(unknown)}, which no chain has"
+            )
         manifest = self._manifest(registry)
         entry = manifest.stores.setdefault(store, StoreSteps(engine.name))
         parent = entry.steps[-1].id if entry.steps else None
@@ -398,26 +405,26 @@ class Migrations:
         engine = registry.engines[store]
         entry = self._manifest(registry).stores.get(store)
         if entry is None or not entry.steps:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{chain.key} has no step to adopt the store at — write its baseline first, "
                 "with revision against an empty store"
             )
         position = engine.position(chain)
         if position.head is not None or position.dirty:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{chain.key} already stands on {position.head or 'the start, dirty'} — adopt "
                 "is for a store no step of this code ran on"
             )
         drift = engine.drift(chain)
         last = entry.steps[-1]
         if drift is None:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"the {engine.name} engine of {chain.key} cannot tell whether the store holds "
                 f"what the code declares — look at it, then run `resolve {context} {store} "
                 f"--at {last.id}`"
             )
         if drift:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{chain.key} does not hold what its steps lead to: {'; '.join(drift)}"
             )
         engine.record(chain, Position(last.id))
@@ -450,7 +457,7 @@ class Migrations:
             manifests.append((context, manifest))
         edited = [key for key in changed if key in applied]
         if edited:
-            raise MigrationRefused(
+            raise exceptions.MigrationRefused(
                 f"{', '.join(edited)} changed, and is already applied — revert the edit and write "
                 "a new step instead"
             )

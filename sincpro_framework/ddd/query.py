@@ -30,6 +30,7 @@ from pydantic import (
 from pydantic.errors import PydanticInvalidForJsonSchema, PydanticSchemaGenerationError
 from pydantic_core import to_jsonable_python
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Criteria, Specification
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -44,7 +45,6 @@ from sincpro_framework.ddd.entity.entity_meta import (
     annotations_of,
     presentation_of,
 )
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
@@ -299,7 +299,7 @@ class ResponsePaginatedQuery(DataTransferObject):
             if name not in ResponsePaginatedQuery.model_fields
         ]
         if len(own) != 1:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a paginated response declares exactly one, holding its records"
             )
@@ -455,7 +455,7 @@ class ResponseRecord(DataTransferObject):
         }
         own = [name for name in cls.model_fields if name not in declared]
         if len(own) != 1:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a record response declares exactly one, holding its record"
             )
@@ -559,7 +559,7 @@ class ResponseRecords(DataTransferObject):
         """
         own = [name for name in cls.model_fields if name not in ResponseRecords.model_fields]
         if len(own) != 1:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{cls.__name__} declares {len(own)} fields of its own ({', '.join(own) or 'none'}); "
                 "a records response declares exactly one, holding its records"
             )

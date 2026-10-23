@@ -10,12 +10,13 @@ from datetime import datetime
 import pytest
 from sqlalchemy.dialects.sqlite import dialect as SQLiteDialect
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
     JsonText,
     TranslatedText,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import where_clause
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
@@ -25,7 +26,6 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
-from sincpro_framework.ddd.exceptions import InvalidCriteria
 
 from .models import Thing, Things
 
@@ -51,20 +51,20 @@ def test_a_collection_that_does_not_say_what_it_holds_is_refused(store):
     class Nameless(EntityCollection):
         pass
 
-    with pytest.raises(ProgrammingError, match="does not say which aggregate"):
+    with pytest.raises(exceptions.ProgrammingError, match="does not say which aggregate"):
         store.search(Nameless, Criteria(pagination=Pagination(limit=1)))
 
 
 def test_grouping_by_nothing_is_refused_rather_than_answered(store):
-    with pytest.raises(InvalidCriteria, match="at least one field"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="at least one field"):
         store.group_by(Things, [])
 
 
 def test_folding_nothing_is_refused_and_says_how_it_should_read(store):
-    with pytest.raises(InvalidCriteria, match="at least one measure"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="at least one measure"):
         store.measures(Things)
 
-    with pytest.raises(InvalidCriteria, match="is written"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="is written"):
         store.measures(Things, None, total="size")
 
 
@@ -87,7 +87,7 @@ def test_an_operator_with_no_sql_is_refused_rather_than_guessed():
         field="size", value=1, operator="nope"  # skips validation, as a new operator would
     )
 
-    with pytest.raises(InvalidCriteria, match="no SQL translation"):
+    with pytest.raises(ddd_exceptions.InvalidCriteria, match="no SQL translation"):
         where_clause(Thing, condition)
 
 

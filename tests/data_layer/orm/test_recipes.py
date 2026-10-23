@@ -12,7 +12,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import registry
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import JsonText
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
@@ -132,7 +132,7 @@ def test_written_once_is_a_hook_and_not_a_mode_the_store_has():
     class WrittenOnce(Hook):
         def before_save(self, record: Claim) -> None:
             if not record.is_new:
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     f"{type(record).__name__} is written once and never replaced"
                 )
 
@@ -143,7 +143,7 @@ def test_written_once_is_a_hook_and_not_a_mode_the_store_has():
     store.save(claim)
 
     claim.verdict = "something else"
-    with pytest.raises(ProgrammingError, match="written once"):
+    with pytest.raises(exceptions.ProgrammingError, match="written once"):
         store.save(claim)
 
     stored = store.get(Claim, claim.id)

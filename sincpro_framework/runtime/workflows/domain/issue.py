@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 
-from sincpro_framework.exceptions import ProgrammingError
-
 
 @dataclass(frozen=True)
 class Issue:
@@ -19,11 +17,3 @@ class Issue:
     def __str__(self) -> str:
         where = ".".join(part for part in (self.step, self.path) if part)
         return f"{self.workflow} {where}: {self.message}"
-
-
-class WorkflowsInvalid(ProgrammingError):
-    """The first load found issues: there is no valid set to serve."""
-
-    def __init__(self, issues: list[Issue]) -> None:
-        super().__init__("; ".join(str(issue) for issue in issues))
-        self.issues = issues

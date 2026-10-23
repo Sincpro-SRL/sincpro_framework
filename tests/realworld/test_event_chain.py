@@ -6,7 +6,7 @@ that caused each next one named by `causation_id`.
 
 import pytest
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.event_driven import (
     Publisher,
@@ -73,7 +73,7 @@ def test_posting_twice_is_refused_and_nothing_more_is_heard(
     ledger_context(CommandPostEntry(entry_id=entry.id), ResponsePostEntry)
     heard_once = list(heard)
 
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         ledger_context(CommandPostEntry(entry_id=entry.id), ResponsePostEntry)
 
     assert heard == heard_once
@@ -85,7 +85,7 @@ def test_an_unbalanced_entry_is_refused_before_anything_moves(
     entry = new_draft(unbalanced=True)
     before = balances_of(ledger, expected_moves(entry))
 
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         ledger_context(CommandPostEntry(entry_id=entry.id), ResponsePostEntry)
 
     stored = ledger.get(Entry, entry.id)

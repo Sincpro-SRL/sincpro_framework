@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlalchemy import delete, insert, text
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Isolation, Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure import transaction_opening
@@ -14,7 +14,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows import (
     unit_of_work as unit_of_work_module,
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
-from sincpro_framework.ddd.exceptions import ConstraintViolation, DuplicateAggregate, TimedOut
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 
 from .engines import fresh
 from .ledger_models import Account, Owner, account_table, bank, declare
@@ -48,18 +48,18 @@ def setting(unit: Repository, name: str) -> str:
 
 def test_a_second_owner_with_the_same_name_is_a_duplicate(ledger):
     ledger.save(Owner(name="ana"))
-    with pytest.raises(DuplicateAggregate):
+    with pytest.raises(ddd_exceptions.DuplicateAggregate):
         ledger.save(Owner(name="ana"))
 
 
 def test_an_account_of_an_owner_that_does_not_exist_is_a_constraint_violation(ledger):
-    with pytest.raises(ConstraintViolation, match="a foreign key"):
+    with pytest.raises(ddd_exceptions.ConstraintViolation, match="a foreign key"):
         ledger.save(Account(owner_id="nobody", balance=1))
 
 
 def test_an_overdraft_the_table_forbids_is_a_constraint_violation(ledger, opened):
     opened.withdraw(500)
-    with pytest.raises(ConstraintViolation, match="a rule the table holds"):
+    with pytest.raises(ddd_exceptions.ConstraintViolation, match="a rule the table holds"):
         ledger.save(opened)
 
 
@@ -73,7 +73,7 @@ def test_a_constraint_violation_is_not_retried(ledger, opened):
             account.withdraw(500)
             unit.save(account)
 
-    with pytest.raises(ConstraintViolation):
+    with pytest.raises(ddd_exceptions.ConstraintViolation):
         ledger.retrying(overdraw)
     assert len(attempts) == 1
 
@@ -99,9 +99,9 @@ def test_a_read_only_unit_of_work_refuses_every_write(ledger, opened):
     with ledger.context(read_only=True) as unit:
         account = unit.get(Account, opened.id)
         account.withdraw(10)
-        with pytest.raises(ProgrammingError, match="read_only"):
+        with pytest.raises(exceptions.ProgrammingError, match="read_only"):
             unit.save(account)
-        with pytest.raises(ProgrammingError, match="read_only"):
+        with pytest.raises(exceptions.ProgrammingError, match="read_only"):
             unit.remove(account)
     assert ledger.get(Account, opened.id).balance == 100
 
@@ -119,7 +119,7 @@ def test_what_a_read_only_unit_of_work_read_is_usable_after_it_and_after_commit_
 
 def test_retrying_inside_a_unit_of_work_is_refused(ledger):
     with ledger.context() as unit:
-        with pytest.raises(ProgrammingError, match="around the context"):
+        with pytest.raises(exceptions.ProgrammingError, match="around the context"):
             unit.retrying(lambda: None)
 
 
@@ -160,7 +160,7 @@ def test_a_nested_unit_of_work_joins_and_cannot_reconfigure(ledger, opened):
             assert same is unit
         with unit.context(isolation=Isolation.SERIALIZABLE) as same:
             assert same is unit
-        with pytest.raises(ProgrammingError, match="already began"):
+        with pytest.raises(exceptions.ProgrammingError, match="already began"):
             with unit.context(read_only=True):
                 pass
 
@@ -252,7 +252,7 @@ def test_a_nested_block_asking_another_writes_is_refused(ledger):
     with ledger.context(writes=Writes.CHANGED) as unit:
         with unit.context() as same:
             assert same is unit
-        with pytest.raises(ProgrammingError, match="already began"):
+        with pytest.raises(exceptions.ProgrammingError, match="already began"):
             with unit.context(writes=Writes.SAVED):
                 pass
 
@@ -262,13 +262,13 @@ def test_a_nested_block_asking_another_writes_is_refused(ledger):
 
 def test_nowait_and_skip_locked_cannot_both_be_asked(ledger, opened):
     with ledger.context() as unit:
-        with pytest.raises(ProgrammingError, match="ask for one"):
+        with pytest.raises(exceptions.ProgrammingError, match="ask for one"):
             unit.get(Account, opened.id, for_update=True, nowait=True, skip_locked=True)
 
 
 def test_how_to_take_a_lock_needs_a_lock(ledger, opened):
     with ledger.context() as unit:
-        with pytest.raises(ProgrammingError, match="for_update=True"):
+        with pytest.raises(exceptions.ProgrammingError, match="for_update=True"):
             unit.get(Account, opened.id, nowait=True)
 
 
@@ -287,7 +287,7 @@ def test_nowait_on_a_held_row_stops_at_once_and_is_not_retried(ledger, opened):
         holder.get(Account, opened.id, for_update=True)
         # Another process: on this thread, other would join the unit of work in play.
         with ThreadPoolExecutor(max_workers=1) as elsewhere:
-            with pytest.raises(TimedOut, match="told not to wait"):
+            with pytest.raises(ddd_exceptions.TimedOut, match="told not to wait"):
                 elsewhere.submit(other.retrying, take).result()
     assert len(attempts) == 1
 
@@ -295,13 +295,13 @@ def test_nowait_on_a_held_row_stops_at_once_and_is_not_retried(ledger, opened):
 def test_a_statement_past_its_timeout_stops(ledger, opened):
     if not on_postgres(ledger):
         pytest.skip("only Postgres bounds a statement")
-    with pytest.raises(TimedOut):
+    with pytest.raises(ddd_exceptions.TimedOut):
         with ledger.context(timeout=0.05) as unit:
             unit.session.execute(text("SELECT pg_sleep(1)"))
 
 
 def test_the_double_refuses_nowait_as_it_refuses_for_update():
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         MemoryRepository().get(Account, "x", for_update=True, nowait=True)
 
 

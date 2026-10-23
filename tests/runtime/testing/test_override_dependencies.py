@@ -2,8 +2,13 @@
 
 import pytest
 
-from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.exceptions import DependencyNotRegistered
+from sincpro_framework import (
+    ApplicationService,
+    DataTransferObject,
+    Feature,
+    UseFramework,
+    exceptions,
+)
 from sincpro_framework.runtime.testing import override_dependencies
 
 
@@ -119,6 +124,8 @@ def test_overrides_nest():
 def test_a_name_never_registered_is_refused():
     framework = _framework()
 
-    with pytest.raises(DependencyNotRegistered, match="gatewy.*Available: gateway"):
+    with pytest.raises(
+        exceptions.DependencyNotRegistered, match="gatewy.*Available: gateway"
+    ):
         with override_dependencies(framework, gatewy=FakeGateway()):
             pass

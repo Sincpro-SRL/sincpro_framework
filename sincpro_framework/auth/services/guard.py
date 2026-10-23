@@ -15,16 +15,11 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
-from sincpro_framework.auth.domain.exceptions import (
-    AuthError,
-    PermissionDenied,
-    Unauthenticated,
-)
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import Declaration, WhenDenied
 from sincpro_framework.auth.infrastructure.security_context import _decided, current_identity
 from sincpro_framework.context.infrastructure.tree import executing_context
-from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
@@ -54,7 +49,7 @@ class Declarations:
             merged = declaration
         elif held.kind == declaration.kind == "requires":
             if held.when_denied != declaration.when_denied:
-                raise ProgrammingError(
+                raise exceptions.ProgrammingError(
                     f"{cls.__name__} requires with when_denied={held.when_denied} and "
                     f"{declaration.when_denied}: declare one"
                 )
@@ -62,7 +57,7 @@ class Declarations:
                 "requires", held.requirements + declaration.requirements, held.when_denied
             )
         else:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{cls.__name__} is declared both {held} and {declaration}"
             )
         self._by_class[cls] = merged
@@ -86,7 +81,10 @@ class Declarations:
 
 
 def _refused_or_skipped(
-    refusal: AuthError, declaration: Declaration, identity: Identity, what: str
+    refusal: exceptions.AuthError,
+    declaration: Declaration,
+    identity: Identity,
+    what: str,
 ) -> None:
     if declaration.when_denied == WhenDenied.SKIP:
         logger.info(f"access: {what} skipped — {refusal}")
@@ -133,10 +131,10 @@ class BusGuard:
             return
         if not self.access.strict:
             return
-        refusal: AuthError = (
-            Unauthenticated(f"authenticate to run {command.__name__}")
+        refusal: exceptions.AuthError = (
+            exceptions.Unauthenticated(f"authenticate to run {command.__name__}")
             if identity.is_anonymous
-            else PermissionDenied(
+            else exceptions.PermissionDenied(
                 identity.subject, command.__name__, f"{command.__name__} declares no access"
             )
         )

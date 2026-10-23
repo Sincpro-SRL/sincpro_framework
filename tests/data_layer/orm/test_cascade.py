@@ -4,11 +4,11 @@ says which of them are gone."""
 import pytest
 from sqlalchemy import select
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.services import cascade
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import Criteria
-from sincpro_framework.ddd.exceptions import ConstraintViolation, StaleAggregate
 
 from .cascade_models import (
     Check,
@@ -233,7 +233,7 @@ def test_moving_a_child_between_roots_in_two_saves_is_refused_with_its_remedy(re
         old_root.repositories = []
         unit.save(old_root)
         new_root.repositories = [api]
-        with pytest.raises(ProgrammingError, match="in one call"):
+        with pytest.raises(exceptions.ProgrammingError, match="in one call"):
             unit.save(new_root)
 
 
@@ -347,7 +347,7 @@ def test_a_changed_child_is_written_with_its_version_checked(repository):
 
     assert repository.get_by(CodeRepo, name="api-v2").version == 2
     stale.name = "lost"
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         repository.save(stale)
 
 
@@ -438,7 +438,7 @@ def test_two_writers_editing_different_parts_of_one_root_do_not_both_win(reposit
 
     [api] = [one for one in first.repositories if one.name == "api"]
     api.name = "api-v2"
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         repository.save(first)
     assert names(repository, CodeRepo) == ["api", "web-v2"]
 
@@ -495,7 +495,7 @@ def test_a_part_goes_with_its_root_and_a_reference_is_left_to_its_foreign_key(re
     referenced = Workspace(code="sp-2")
     repository.save(referenced)
     repository.save(Member(workspace_id=referenced.id, name="ana"))
-    with pytest.raises(ConstraintViolation, match="foreign key"):
+    with pytest.raises(ddd_exceptions.ConstraintViolation, match="foreign key"):
         repository.remove(repository.get_by(Workspace, code="sp-2"))
     assert [member.name for member in repository.fetch_all(Member).items] == ["ana"]
 
@@ -543,7 +543,7 @@ def test_removing_a_root_whose_relation_says_nothing_is_refused_before_anything_
     workspace = Workspace(code="sp-1", tasks=[Task(title="ship it")])
     repository.save(workspace)
 
-    with pytest.raises(ProgrammingError, match="Workspace.tasks.*Orphans.DELETE"):
+    with pytest.raises(exceptions.ProgrammingError, match="Workspace.tasks.*Orphans.DELETE"):
         repository.remove(repository.get_by(Workspace, code="sp-1"))
 
     assert repository.get_by(Workspace, code="sp-1") is not None
@@ -554,7 +554,7 @@ def test_dropping_a_child_of_a_relation_that_says_nothing_is_refused(repository)
     workspace = Workspace(code="sp-1", tasks=[Task(title="a"), Task(title="b")])
     repository.save(workspace)
 
-    with pytest.raises(ProgrammingError, match="the assignment drops 1 Task"):
+    with pytest.raises(exceptions.ProgrammingError, match="the assignment drops 1 Task"):
         with repository.context() as unit:
             held = unit.get_by(Workspace, code="sp-1")
             held.tasks = [one for one in held.tasks if one.title == "a"]

@@ -18,6 +18,7 @@ import sqlalchemy
 from sqlalchemy import Column, Join, Table, event, or_
 from sqlalchemy.orm import Mapper, column_property, registry
 
+from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
 from sincpro_framework.data_layer.orm.sqlalchemy.services import (
     extension_typing,
@@ -30,7 +31,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.data_mapper import (
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.extensions import identity_of
-from sincpro_framework.exceptions import ProgrammingError
 
 SHARED_COLUMNS = frozenset({"id", "created_at", "updated_at", "version"})
 """What an entity and each of its extensions all have: written to each table, read from the core's."""
@@ -76,7 +76,7 @@ def refuse_a_column_the_parents_have(entity: type, table: Table, parent: type) -
         if not column.primary_key and column.name in held
     ]
     if clashing:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"{entity.__name__} extends {parent.__name__} but both have a column of the same "
             f"name: {', '.join(clashing)}. Rename the extension's column, or mean the parent's "
             "by not declaring it again"
@@ -91,7 +91,7 @@ def refuse_a_field_the_core_lacks(entity: type, names: Collection[str]) -> None:
     own = {name for name, field in describe(entity).fields.items() if field.owner is None}
     missing = sorted(set(names) - own)
     if missing:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"a module reads {entity.__name__}.{', '.join(missing)}, which {entity.__name__} "
             f"does not have: it has {', '.join(sorted(own))}"
         )
@@ -105,14 +105,14 @@ def refuse_a_contract_out_of_range(entity: type, wanted: str) -> None:
     """
     have = getattr(entity, "CONTRACT", None)
     if have is None:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"a module requires {entity.__name__} contract {wanted}, and {entity.__name__} "
             "publishes no CONTRACT version"
         )
     want_major, want_minor = (int(part) for part in wanted.split(".")[:2])
     have_major, have_minor = (int(part) for part in str(have).split(".")[:2])
     if have_major != want_major or have_minor < want_minor:
-        raise ProgrammingError(
+        raise exceptions.ProgrammingError(
             f"a module requires {entity.__name__} contract {wanted} (the same major, at least "
             f"that minor) and the core publishes {have}"
         )
@@ -162,7 +162,7 @@ def consolidated_columns(
             properties[name] = columns
         else:
             holders = ", ".join(column.table.name for column in columns)
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{entity.__name__} would read {name} from {holders}: a field of an entity, "
                 "an extension and another extension cannot share a name; rename one"
             )
@@ -257,12 +257,12 @@ def extension_options(
     if shared:
         own = fields_added(entity, parent, table)
         if not own:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{entity.__name__} shares {table.name} with {parent.__name__} but none of its "
                 "own fields is a column of it: add the columns to the table"
             )
         if root in strict or root in extension_typing.STRICT:
-            raise ProgrammingError(
+            raise exceptions.ProgrammingError(
                 f"{entity.__name__} keeps its columns in {table.name} and {root.__name__} "
                 "answers only itself: a row would never be read as the extension"
             )

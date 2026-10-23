@@ -14,11 +14,8 @@ wrong is refused naming the variable.
 import os
 from functools import lru_cache
 
-from sincpro_framework.common.transport.addresses import (
-    HostedAt,
-    HostedContext,
-    InvalidAddress,
-)
+from sincpro_framework.common.transport.addresses import HostedAt, HostedContext
+from sincpro_framework.remote_execution.domain import exceptions
 
 CONTEXT_MAP_ENV = "SINCPRO_CONTEXT_MAP"
 
@@ -31,8 +28,8 @@ def _configured(
     winning."""
     try:
         overriding = HostedContext.parse_all(from_environment)
-    except InvalidAddress as error:
-        raise InvalidAddress(f"{CONTEXT_MAP_ENV}: {error}") from None
+    except exceptions.InvalidAddress as error:
+        raise exceptions.InvalidAddress(f"{CONTEXT_MAP_ENV}: {error}") from None
     return {entry.context: entry.at for entry in (*from_file, *overriding)}
 
 

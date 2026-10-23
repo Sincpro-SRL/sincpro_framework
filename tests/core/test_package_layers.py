@@ -42,3 +42,16 @@ def test_a_door_never_imports_the_other(package, forbidden):
     ]
 
     assert crossing == []
+
+
+def test_what_a_bus_announces_about_an_execution_does_not_depend_on_what_observes_it():
+    """The incomes, the outcomes and the interceptors stand on the context. The signals sent to an
+    external backend are the observability component's: neither knows the other."""
+    forbidden = "sincpro_framework.observability"
+    crossing = [
+        f"{file} imports {module}"
+        for file, module in _imports_of("bus_pipeline")
+        if module == forbidden or module.startswith(f"{forbidden}.")
+    ]
+
+    assert crossing == []

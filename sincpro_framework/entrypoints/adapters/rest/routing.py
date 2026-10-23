@@ -20,16 +20,15 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.domain.exceptions import AuthError
 from sincpro_framework.auth.entrypoint.transports import refusal_body
 from sincpro_framework.common.failures import (
     json_safe_validation_errors,
     refined_failure_kind,
 )
 from sincpro_framework.ddd.query import Query
+from sincpro_framework.entrypoints.adapters.rest import exceptions
 from sincpro_framework.entrypoints.domain.layers import Scalar
 from sincpro_framework.entrypoints.entrypoint.catalog import PackedFeatureOrAppService
-from sincpro_framework.exceptions import ClientError, FailureKind
 from sincpro_framework.use_bus import UseFramework
 
 PATH_PARAMETER = re.compile(r"{([A-Za-z_][A-Za-z0-9_]*)}")
@@ -148,27 +147,23 @@ def payload_from_query(query: Mapping[str, str], schema: Mapping[str, Any]) -> S
         try:
             payload[name] = json.loads(value)
         except json.JSONDecodeError as error:
-            raise InvalidRequest(f"{name} is not JSON: {error.msg}") from error
+            raise exceptions.InvalidRequest(f"{name} is not JSON: {error.msg}") from error
     return payload
 
 
-class InvalidRequest(ClientError):
-    """A request the wire cannot read into a payload — answered 400."""
-
-
 STATUS_OF = {
-    FailureKind.INVALID: 422,
-    FailureKind.UNAUTHENTICATED: 401,
-    FailureKind.PERMISSION_DENIED: 403,
-    FailureKind.NOT_FOUND: 404,
-    FailureKind.CONFLICT: 409,
-    FailureKind.IN_PROGRESS: 409,
-    FailureKind.KEY_REUSED: 422,
-    FailureKind.DOMAIN: 422,
-    FailureKind.EXHAUSTED: 429,
-    FailureKind.UNAVAILABLE: 503,
-    FailureKind.UNKNOWN_OUTCOME: 504,
-    FailureKind.INTERNAL: 500,
+    exceptions.FailureKind.INVALID: 422,
+    exceptions.FailureKind.UNAUTHENTICATED: 401,
+    exceptions.FailureKind.PERMISSION_DENIED: 403,
+    exceptions.FailureKind.NOT_FOUND: 404,
+    exceptions.FailureKind.CONFLICT: 409,
+    exceptions.FailureKind.IN_PROGRESS: 409,
+    exceptions.FailureKind.KEY_REUSED: 422,
+    exceptions.FailureKind.DOMAIN: 422,
+    exceptions.FailureKind.EXHAUSTED: 429,
+    exceptions.FailureKind.UNAVAILABLE: 503,
+    exceptions.FailureKind.UNKNOWN_OUTCOME: 504,
+    exceptions.FailureKind.INTERNAL: 500,
 }
 
 
@@ -176,16 +171,16 @@ def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
     """The status and body a failure is answered with — its kind (`common.failures`, the same
     on every wire), and the reason for what the caller may read, never the inside of the
     process. A request that could not be read at all is a 400."""
-    if isinstance(error, InvalidRequest):
-        return 400, {"kind": FailureKind.INVALID.value, "message": str(error)}
+    if isinstance(error, exceptions.InvalidRequest):
+        return 400, {"kind": exceptions.FailureKind.INVALID.value, "message": str(error)}
     kind = refined_failure_kind(error)
     if isinstance(error, ValidationError):
         return STATUS_OF[kind], {
             "kind": kind.value,
             "detail": json_safe_validation_errors(error),
         }
-    if isinstance(error, AuthError):
+    if isinstance(error, exceptions.AuthError):
         return STATUS_OF[kind], refusal_body(error)
-    if kind == FailureKind.INTERNAL:
+    if kind == exceptions.FailureKind.INTERNAL:
         return STATUS_OF[kind], {"kind": kind.value, "message": "Internal error"}
     return STATUS_OF[kind], {"kind": kind.value, "message": str(error)}

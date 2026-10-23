@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import ProgrammingError, UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.repositories import MemoryRepository
@@ -152,14 +152,14 @@ def test_a_batch_is_refused_whole_in_both_stores(stores):
         def before_save(self, note: Note) -> None:
             self.trail.append(("before", note.title))
             if note.title == "b":
-                raise ProgrammingError("not this one")
+                raise exceptions.ProgrammingError("not this one")
 
         def after_save(self, note: Note) -> None:
             self.trail.append(("after", note.title))
 
     repository = stores(hooks)
 
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         repository.save([Note(title=one, body="x") for one in ("a", "b", "c")])
 
     assert trail == [("before", "a"), ("before", "b")]

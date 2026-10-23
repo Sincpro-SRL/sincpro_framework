@@ -7,10 +7,10 @@ nothing behind.
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import Condition, Criteria
-from sincpro_framework.ddd.exceptions import StaleAggregate
 
 from .models import Note, Notes
 
@@ -67,7 +67,7 @@ def test_one_stale_record_undoes_the_whole_batch(store: Repository):
 
     for note in theirs:
         note.body = "theirs"
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         store.save(theirs)
 
     assert all(note.body == "mine" for note in store.fetch_all(Notes))
@@ -120,7 +120,7 @@ def test_a_race_that_never_settles_raises_what_it_lost_to(store: Repository):
             note.body = "mine"
             unit.save(note)
 
-    with pytest.raises(StaleAggregate):
+    with pytest.raises(ddd_exceptions.StaleAggregate):
         store.retrying(work, attempts=2, wait=0)
 
 
@@ -131,7 +131,7 @@ def test_retrying_leaves_anything_else_alone(store: Repository):
     with pytest.raises(ValueError):
         store.retrying(work, wait=0)
 
-    with pytest.raises(ProgrammingError):
+    with pytest.raises(exceptions.ProgrammingError):
         store.retrying(lambda: None, attempts=0)
 
 
@@ -209,7 +209,7 @@ def test_a_batch_that_loses_a_race_does_not_name_a_record_it_guessed(store: Repo
     somebody_else.save(theirs)
 
     second.title = "mine"
-    with pytest.raises(StaleAggregate) as refused:
+    with pytest.raises(ddd_exceptions.StaleAggregate) as refused:
         store.save([first, second])
 
     said = str(refused.value)
@@ -228,5 +228,7 @@ def test_one_record_losing_a_race_is_still_named_plainly(store: Repository):
     somebody_else.save(theirs)
 
     note.title = "mine"
-    with pytest.raises(StaleAggregate, match="^Note changed since it was read"):
+    with pytest.raises(
+        ddd_exceptions.StaleAggregate, match="^Note changed since it was read"
+    ):
         store.save(note)

@@ -8,9 +8,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.exceptions import DTOAlreadyRegistered, UnknownDTOToExecute
 
 
 def _make_command() -> type[DataTransferObject]:
@@ -39,7 +38,7 @@ def test_two_classes_sharing_a_name_are_refused_naming_both():
         def execute(self, dto):
             return "from A"
 
-    with pytest.raises(DTOAlreadyRegistered) as refused:
+    with pytest.raises(exceptions.DTOAlreadyRegistered) as refused:
 
         @bus.feature(CommandB)
         class FeatureB(Feature):
@@ -66,7 +65,7 @@ def test_a_feature_and_an_application_service_sharing_a_name_are_refused_too():
             return "feature"
 
     with pytest.raises(
-        DTOAlreadyRegistered, match="Two use cases of this bus are named Command"
+        exceptions.DTOAlreadyRegistered, match="Two use cases of this bus are named Command"
     ):
 
         @bus.app_service(CommandB)
@@ -83,7 +82,7 @@ def test_registering_the_same_class_twice_raises():
         def execute(self, dto):
             return "first"
 
-    with pytest.raises(DTOAlreadyRegistered):
+    with pytest.raises(exceptions.DTOAlreadyRegistered):
 
         @bus.feature(_Command)
         class SecondFeature(Feature):
@@ -144,7 +143,7 @@ def test_two_contexts_each_with_a_command_create_keep_two_identities():
     assert billing(billing.map_to_dto_or_event("CommandCreate", {"title": "i"})) == (
         "billing created i"
     )
-    with pytest.raises(UnknownDTOToExecute):
+    with pytest.raises(exceptions.UnknownDTOToExecute):
         sales.map_to_dto_or_event("billing.CommandCreate", {"title": "x"})
 
 
@@ -195,7 +194,7 @@ def test_two_domain_events_sharing_an_explicit_wire_name_raise():
         def execute(self, dto):
             return None
 
-    with pytest.raises(DTOAlreadyRegistered):
+    with pytest.raises(exceptions.DTOAlreadyRegistered):
 
         @bus.feature(SecondEvent)
         class SecondFeature(Feature):
@@ -273,5 +272,5 @@ def test_map_to_dto_or_event_rebuilds_a_domain_event_by_its_wire_name():
 def test_map_to_dto_or_event_raises_for_a_name_nobody_registered():
     bus = UseFramework("map-unknown", log_after_execution=False)
 
-    with pytest.raises(UnknownDTOToExecute):
+    with pytest.raises(exceptions.UnknownDTOToExecute):
         bus.map_to_dto_or_event("NobodyKnowsThis", "{}")

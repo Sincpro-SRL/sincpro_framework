@@ -9,7 +9,7 @@ circle is refused: what works, only not as said, is a note for the extension poi
 
 import pytest
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.common.ordering import Placement, ordered
 
 
@@ -66,7 +66,7 @@ def test_before_and_after_win_over_sequence():
 def test_a_cycle_is_refused_naming_it():
     placements = [Placement(audit, before=(check,)), Placement(check, before=(audit,))]
 
-    with pytest.raises(ProgrammingError, match="audit.*check|check.*audit"):
+    with pytest.raises(exceptions.ProgrammingError, match="audit.*check|check.*audit"):
         ordered(placements)
 
 

@@ -24,7 +24,7 @@ from typing import Any
 from pydantic import Secret, TypeAdapter
 
 from sincpro_framework.context.domain.codec import ContextCodec
-from sincpro_framework.context.domain.keys import standardized, travelling
+from sincpro_framework.context.domain.keys import travelling
 from sincpro_framework.sincpro_logger import logger
 
 
@@ -34,7 +34,7 @@ class PlainCodec(ContextCodec):
 
     def loads(self, data: bytes) -> dict[str, Any]:
         found = json.loads(data)
-        return standardized(found) if isinstance(found, dict) else {}
+        return found if isinstance(found, dict) else {}
 
 
 class TypedCodec(ContextCodec):

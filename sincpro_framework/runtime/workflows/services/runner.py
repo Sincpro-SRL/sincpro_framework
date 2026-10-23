@@ -22,9 +22,9 @@ from sincpro_framework.ddd.criteria import (
     conditions_of,
     holds,
 )
+from sincpro_framework.runtime.workflows.domain import exceptions
 from sincpro_framework.runtime.workflows.domain.references import (
     Reference,
-    UnresolvedReference,
     resolve,
     resolve_all,
 )
@@ -33,7 +33,6 @@ from sincpro_framework.runtime.workflows.domain.run import (
     RunStatus,
     StepRun,
     StepStatus,
-    WorkflowFailed,
     WorkflowRun,
 )
 from sincpro_framework.runtime.workflows.domain.snippets import SnippetEngine
@@ -80,7 +79,7 @@ def _shown(read: Callable[[str], Any], field: str) -> str:
     reached, because an earlier part already decided it, is said to be unreached."""
     try:
         return repr(read(field))
-    except UnresolvedReference:
+    except exceptions.UnresolvedReference:
         return "not reached"
 
 
@@ -116,7 +115,7 @@ def _described(error: BaseException) -> str:
 def _fail(run: WorkflowRun, message: str) -> NoReturn:
     run.status = RunStatus.FAILED
     run.error = message
-    raise WorkflowFailed(message, run)
+    raise exceptions.WorkflowFailed(message, run)
 
 
 class WorkflowRunner:
@@ -243,7 +242,7 @@ class WorkflowRunner:
             scope: dict[str, Any] = {"input": dict(given), "steps": {}}
             self._steps(workflow, workflow.steps, scope, run)
             run.output = resolve_all(workflow.output, scope)
-        except (_Stop, UnresolvedReference) as error:
+        except (_Stop, exceptions.UnresolvedReference) as error:
             _fail(run, f"{workflow.name}: {error}")
         finally:
             _depth.reset(token)

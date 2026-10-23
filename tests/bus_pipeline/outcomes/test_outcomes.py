@@ -9,19 +9,16 @@ import pytest
 from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
-    FailureKind,
     Feature,
     UseFramework,
+    exceptions,
 )
+from sincpro_framework.bus_pipeline.listeners import to_publisher
 from sincpro_framework.bus_pipeline.outcomes.events import (
     ExecutionCompleted,
     ExecutionFailed,
 )
-from sincpro_framework.bus_pipeline.outcomes.listeners import (
-    completions,
-    failures,
-    to_publisher,
-)
+from sincpro_framework.bus_pipeline.outcomes.listeners import completions, failures
 from sincpro_framework.context.infrastructure.tree import current_execution
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
@@ -86,7 +83,7 @@ def test_an_escaped_failure_goes_out_with_its_exception():
 
 def test_a_failure_says_the_kind_every_wire_answers_and_how_long_to_wait():
     class SiatDown(Exception):
-        failure_kind = FailureKind.UNAVAILABLE
+        failure_kind = exceptions.FailureKind.UNAVAILABLE
 
     heard: list[ExecutionFailed] = []
     siat = UseFramework("failures-classified", log_after_execution=False)
@@ -101,7 +98,10 @@ def test_a_failure_says_the_kind_every_wire_answers_and_how_long_to_wait():
         siat(CommandIssueInvoice())
 
     [failure] = heard
-    assert (failure.kind, failure.retry_after) == (FailureKind.UNAVAILABLE.value, 1.0)
+    assert (failure.kind, failure.retry_after) == (
+        exceptions.FailureKind.UNAVAILABLE.value,
+        1.0,
+    )
 
 
 def test_a_failure_an_error_handler_answered_never_goes_out():
@@ -357,9 +357,28 @@ def test_completions_handed_to_a_bus_never_announce_their_own_hearing():
     assert trail == ["completions-published.CommandReserveStock"]
 
 
-def test_nobody_listening_builds_nothing():
+def test_a_bus_nobody_listens_to_answers_as_always():
     warehouse = _warehouse("completions-unheard")
-    assert completions.heard("completions-unheard") is False
     assert warehouse(CommandReserveStock(order_id="O-3")) == ResponseReserveStock(
         reservation_id="R-O-3"
     )
+
+
+def test_a_failure_says_what_the_flow_carried_where_it_failed_and_not_where_it_was_received():
+    heard: list[ExecutionFailed] = []
+    shop = UseFramework("failures-site", log_after_execution=False)
+
+    @shop.feature(CommandIssueInvoice)
+    class IssueInvoice(Feature):
+        def execute(self, dto: CommandIssueInvoice) -> None:
+            self.context.set("step", "billing")  # this node only: the caller never has it
+            raise SiatUnavailable("down")
+
+    shop.on_failure(heard.append)
+
+    with shop.context({"tenant_id": "acme"}):
+        with pytest.raises(SiatUnavailable):
+            shop(CommandIssueInvoice())
+
+    assert heard[0].context["step"] == "billing"
+    assert heard[0].context["tenant_id"] == "acme"

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import ProgrammingError
+from sincpro_framework import exceptions
 from sincpro_framework.entrypoints.adapters.cron import (
     Cron,
     CronGateway,
@@ -18,7 +18,6 @@ from sincpro_framework.entrypoints.adapters.cron import (
     RunOutcome,
     Tick,
 )
-from sincpro_framework.exceptions import BusAlreadyBuilt
 from sincpro_framework.runtime.testing import ManualClock
 
 START = datetime(2026, 9, 26, 1, 59, tzinfo=UTC)
@@ -161,7 +160,7 @@ def test_switching_off_a_cron_once_built_is_refused():
     crons, _reconcile, remind = _core([])
     crons.build()
 
-    with pytest.raises(BusAlreadyBuilt):
+    with pytest.raises(exceptions.BusAlreadyBuilt):
         crons.without(remind)
 
 
@@ -187,7 +186,7 @@ def test_running_now_a_cron_the_gateway_does_not_run_is_refused():
 
     gateway = CronGateway([crons], clock=ManualClock(START))
 
-    with pytest.raises(ProgrammingError, match="Stranger"):
+    with pytest.raises(exceptions.ProgrammingError, match="Stranger"):
         gateway.run_now(Stranger)
 
 

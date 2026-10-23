@@ -13,19 +13,19 @@ import fakeredis
 import pytest
 from structlog.testing import capture_logs
 
-from sincpro_framework import DataTransferObject, Feature, ProgrammingError, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
+from sincpro_framework.auth.domain import exceptions as auth_exceptions
 from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.data_layer.caching import (
     IDEMPOTENCY_KEY,
-    AlreadyInProgress,
     Idempotency,
     IdempotencyPolicy,
     IdempotencyRecords,
     JsonCodec,
-    KeyReused,
     KeyValueRecords,
 )
 from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.runtime.testing import IdempotencyRecordsContract, ManualClock
 
 
@@ -128,7 +128,7 @@ def test_a_key_reused_for_another_payload_is_refused_and_runs_nothing(store_name
     issuer = Issuer()
     _issue(idempotency, issuer, "request-1", what="invoice")
 
-    with pytest.raises(KeyReused):
+    with pytest.raises(caching_exceptions.KeyReused):
         _issue(idempotency, issuer, "request-1", what="credit-note")
 
     assert issuer.issued == ["invoice"]
@@ -150,7 +150,7 @@ def test_a_duplicate_mid_run_is_told_it_is_in_progress_when_it_does_not_wait():
     runner.start()
     started.wait(2)
     try:
-        with pytest.raises(AlreadyInProgress):
+        with pytest.raises(caching_exceptions.AlreadyInProgress):
             duplicate.run("request-1", lambda: Receipt(number=99), POLICY, JsonCodec(Receipt))
     finally:
         release.set()
@@ -170,7 +170,7 @@ def test_a_claim_left_by_a_replica_that_died_expires():
         b'{"state": "in_progress", "fingerprint": "", "owner": "dead"}\n',
         policy.in_progress_for,
     )
-    with pytest.raises(AlreadyInProgress):
+    with pytest.raises(caching_exceptions.AlreadyInProgress):
         idempotency.run("request-1", lambda: Receipt(number=1), policy, JsonCodec(Receipt))
 
     clock.advance(seconds=31)
@@ -292,7 +292,7 @@ def test_the_command_says_its_key_and_the_rest_of_it_is_still_checked():
 
     first = billing(CommandIssueByRequest(request_id="r-1", total=10), ResponseIssueInvoice)
     retry = billing(CommandIssueByRequest(request_id="r-1", total=10), ResponseIssueInvoice)
-    with pytest.raises(KeyReused):
+    with pytest.raises(caching_exceptions.KeyReused):
         billing(CommandIssueByRequest(request_id="r-1", total=99), ResponseIssueInvoice)
     other = billing(CommandIssueByRequest(request_id="r-2", total=99), ResponseIssueInvoice)
 
@@ -312,7 +312,9 @@ def test_a_request_key_from_the_transport_keys_a_command_that_names_none():
     for key in ("k-1", "k-1", "k-2"):
         with billing.context({IDEMPOTENCY_KEY: key}):
             billing(invoice, ResponseIssueInvoice)
-    with billing.context({IDEMPOTENCY_KEY: "k-1"}), pytest.raises(KeyReused):
+    with billing.context({IDEMPOTENCY_KEY: "k-1"}), pytest.raises(
+        caching_exceptions.KeyReused
+    ):
         billing(CommandIssueInvoice(customer="luis", total=10), ResponseIssueInvoice)
 
     assert issued == ["ana", "ana"]
@@ -390,7 +392,7 @@ def test_whether_a_class_runs_once_is_asked_by_its_resolved_execute():
 def test_once_twice_on_one_class_and_on_an_async_use_case_are_refused():
     idempotency = Idempotency(InMemoryKeyValue())
 
-    with pytest.raises(ProgrammingError, match="twice"):
+    with pytest.raises(exceptions.ProgrammingError, match="twice"):
 
         @idempotency.once(expires_after=timedelta(minutes=2))
         @idempotency.once(expires_after=timedelta(minutes=2))
@@ -398,7 +400,7 @@ def test_once_twice_on_one_class_and_on_an_async_use_case_are_refused():
             def execute(self, dto: CommandPing) -> ResponsePing:
                 return ResponsePing(pong=1)
 
-    with pytest.raises(ProgrammingError, match="async"):
+    with pytest.raises(exceptions.ProgrammingError, match="async"):
 
         @idempotency.once(expires_after=timedelta(minutes=2))
         class Asynchronous(Feature):
@@ -442,7 +444,7 @@ def test_an_async_caller_racing_duplicates_through_the_async_bus_writes_once():
 def test_a_replayed_answer_is_still_authorized():
     """The guard runs inside the access guard: an answer kept for one caller is not handed to
     someone who may not run the use case."""
-    from sincpro_framework.auth import AccessControl, Permission, PermissionDenied
+    from sincpro_framework.auth import AccessControl, Permission
     from sincpro_framework.runtime.testing import granting
 
     class BillingPermission(Permission):
@@ -464,7 +466,7 @@ def test_a_replayed_answer_is_still_authorized():
 
     with granting(BillingPermission.ISSUE):
         billing(CommandIssueInvoice(customer="ana", total=10), ResponseIssueInvoice)
-    with granting(subject="user:other"), pytest.raises(PermissionDenied):
+    with granting(subject="user:other"), pytest.raises(auth_exceptions.PermissionDenied):
         billing(CommandIssueInvoice(customer="ana", total=10), ResponseIssueInvoice)
 
     assert issued == ["ana"]
@@ -480,7 +482,7 @@ def test_a_use_case_whose_answer_has_no_type_cannot_be_declared_once():
         def execute(self, dto):  # type: ignore[no-untyped-def]
             return ResponsePing(pong=1)
 
-    with pytest.raises(ProgrammingError, match="declares no response type"):
+    with pytest.raises(exceptions.ProgrammingError, match="declares no response type"):
         billing(CommandPing(), ResponsePing)
 
 
@@ -587,14 +589,14 @@ def test_every_outcome_is_reported_to_the_observer():
 
     _issue(idempotency, issuer, "r-1")
     _issue(idempotency, issuer, "r-1")
-    with pytest.raises(KeyReused):
+    with pytest.raises(caching_exceptions.KeyReused):
         _issue(idempotency, issuer, "r-1", what="other")
     store.add(
         idempotency._key("r-2"),
         b'{"state": "in_progress", "fingerprint": "", "owner": "x"}\n',
         timedelta(minutes=1),
     )
-    with pytest.raises(AlreadyInProgress):
+    with pytest.raises(caching_exceptions.AlreadyInProgress):
         idempotency.run("r-2", lambda: Receipt(number=0), POLICY, JsonCodec(Receipt))
 
     assert observer.of(IdempotencyOutcome.CLAIMED, "billing") == 1

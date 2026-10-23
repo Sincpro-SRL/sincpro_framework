@@ -17,7 +17,7 @@ import json
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.domain.exceptions import AuthError
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.entrypoint.transports import (
     credentials_from_asgi,
     http_status_of,
@@ -39,7 +39,7 @@ class IdentityMiddleware:
         self.app = app
         self.access = access
 
-    async def _refused(self, send: Send, error: AuthError) -> None:
+    async def _refused(self, send: Send, error: exceptions.AuthError) -> None:
         status = http_status_of(error)
         headers = [(b"content-type", b"application/json")]
         if status == 401:
@@ -67,7 +67,7 @@ class IdentityMiddleware:
             identity = await asyncio.to_thread(self.access.authenticate, credentials)
             with as_identity(identity):
                 await self.app(scope, receive, sending)
-        except AuthError as error:
+        except exceptions.AuthError as error:
             if started or scope["type"] != "http":
                 raise
             await self._refused(send, error)
