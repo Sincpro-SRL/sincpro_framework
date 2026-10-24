@@ -222,6 +222,7 @@ A pipeline grows with what it needs, never before — each step one line:
 | `retry = Retry()` | a step that failed in a way worth it runs again |
 | `Await("approval")` in the steps | the run waits for a decision, and goes on with it |
 | `PipelineReads` | the runs read through the bus, on any wire |
+| `lease = timedelta(minutes=2)` | one run of a `run_id` at a time across replicas; a worker that died leaves its run `abandoned` — see [leases](leases.md) |
 
 ### Retrying a step
 

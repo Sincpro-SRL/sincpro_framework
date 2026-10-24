@@ -169,8 +169,9 @@ class InvoiceDoesNotBalance(ddd_exceptions.DomainError):
     pass
 ```
 
-Expected traffic (validation, "already exists", auth) also goes in
-`bus.ignore_sentry_exceptions(...)`. Unexpected exceptions must reach Sentry — that is why the
+Expected traffic (validation, "already exists", auth) raises a `ClientError` or a `DomainError`,
+kept out of Sentry by default; `bus.ignore_sentry_exceptions(...)` makes it `expected` in the
+metrics too. Unexpected exceptions must reach Sentry — that is why the
 Feature runs on the bus, not in a helper. Do not swallow a Feature's exception in a wrapper outside
 the bus.
 

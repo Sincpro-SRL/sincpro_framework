@@ -41,7 +41,7 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `Queue` | Protocol: `put(event)` / `aput(event)` | port (abstract) | `sincpro_framework.event_driven` |
 | `SyncQueue` | Runs the subscriber inside the `publish` call, same process | adapter | `sincpro_framework.event_driven` |
 | `BackgroundQueue` | A spawned child consumes from a `multiprocessing.Queue`; `start()`/`stop()`. That child is this queue's, not `sincpro_framework.entrypoints.entrypoint.workers.Process` | adapter | `sincpro_framework.event_driven` |
-| `Subscriber` / `AsyncSubscriber` | The buses that hear events; executes every bus whose registry knows `event.name` | registry | `sincpro_framework.event_driven` |
+| `Subscriber` / `AsyncSubscriber` | The buses that hear events; executes every bus whose registry knows `event.name`; `receipts=store` makes a redelivery run only the bus that failed | registry | `sincpro_framework.event_driven` |
 | `@bus.feature(SomeEvent)` | The subscription itself: an ordinary Feature registered for the event class | decorator | (`UseFramework`) |
 | `RecordingQueue` | Test queue that keeps what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.runtime.testing` |
 | `FastStreamQueue` | A `Queue` that sends to Kafka/RabbitMQ/Redis/NATS — extra `[faststream]` | adapter | `sincpro_framework.event_driven.adapters.faststream` |

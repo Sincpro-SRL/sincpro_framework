@@ -767,42 +767,86 @@ class Reading(Store):
 
     @overload
     def first[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+        self,
+        target: type[EntityCollection[T]],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T | None: ...
 
     @overload
-    def first[T](self, target: type[T], criteria: Criteria | None = None) -> T | None: ...
+    def first[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T | None: ...
 
-    def first(self, target: type, criteria: Criteria | None = None) -> Any:
-        """The first record the criteria's order puts in front, or `None`.
+    def first(
+        self,
+        target: type,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> Any:
+        """The first record the criteria's order puts in front, or `None` — claimed, with
+        `for_update`, until the unit of work ends.
 
         >>> self.repository.first(Entries, Criteria(order=parse_order("-posted_at")))
         Entry(…)
         """
         criteria = criteria or Criteria()
         return self.search(
-            target, criteria.model_copy(update={"count": CountMode.NONE, "meta": False})
+            target,
+            criteria.model_copy(update={"count": CountMode.NONE, "meta": False}),
+            for_update,
+            skip_locked,
+            nowait,
         ).first()
 
     @overload
     def one[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+        self,
+        target: type[EntityCollection[T]],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T: ...
 
     @overload
-    def one[T](self, target: type[T], criteria: Criteria | None = None) -> T: ...
+    def one[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T: ...
 
-    def one(self, target: type, criteria: Criteria | None = None) -> Any:
-        """The single record this criteria matches, refusing zero and refusing two.
+    def one(
+        self,
+        target: type,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> Any:
+        """The single record this criteria matches.
 
             in      a criteria that matches exactly one   →  out  the record
-            in      one that matches none, or several     →  ProgrammingError
+            in      one that matches none                 →  AggregateNotFound (not_found)
+            in      one that matches several              →  ProgrammingError
 
         Two rows are fetched and no more: what makes this safe is that it never loads a set to
         find out it was not one.
         """
         criteria = criteria or Criteria()
-        return self.search(
+        page = self.search(
             target,
             criteria.model_copy(
                 update={
@@ -811,22 +855,51 @@ class Reading(Store):
                     "meta": False,
                 }
             ),
-        ).ensure_one()
+            for_update,
+            skip_locked,
+            nowait,
+        )
+        if not page.items:
+            raise exceptions.AggregateNotFound(
+                f"no {model_and_collection(target)[0].__name__} matches what was asked"
+            )
+        return page.ensure_one()
 
     @overload
-    def get_by[T](self, target: type[EntityCollection[T]], **values: Any) -> T | None: ...
+    def get_by[T](
+        self,
+        target: type[EntityCollection[T]],
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> T | None: ...
 
     @overload
-    def get_by[T](self, target: type[T], **values: Any) -> T | None: ...
+    def get_by[T](
+        self,
+        target: type[T],
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> T | None: ...
 
-    def get_by(self, target: type, **values: Any) -> Any:
+    def get_by(
+        self,
+        target: type,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> Any:
         """One record by a natural key: the values that identify it besides its id.
 
             in      Account, code="1010"    →  out  Account(…) or None
             in      values two rows share   →  ProgrammingError
 
         A natural key names one record; two answers mean it was not one, and guessing which
-        would be the bug.
+        would be the bug. `for_update` claims it until the unit of work ends.
         """
         if not values:
             raise exceptions.InvalidCriteria(
@@ -843,7 +916,7 @@ class Reading(Store):
             count=CountMode.NONE,
             meta=False,
         )
-        page = self.search(target, asked)
+        page = self.search(target, asked, for_update, skip_locked, nowait)
         if len(page) > 1:
             named = ", ".join(f"{field}={value!r}" for field, value in values.items())
             raise exceptions.ProgrammingError(

@@ -45,14 +45,28 @@ def test_first_is_the_one_the_order_puts_in_front(store: Repository, things):
     assert store.first(Things, Criteria(where=Condition(field="size", value=99))) is None
 
 
-def test_one_refuses_none_and_refuses_two(store: Repository, things):
+def test_one_answers_none_as_not_found_and_refuses_two(store: Repository, things):
+    """None is what the caller asked for not being there — `not_found` on every wire; two is
+    the code's mistake: it said there would be one."""
     only = store.one(Things, Criteria(where=Condition(field="thing_id", value="th_0007")))
 
     assert only.thing_id == "th_0007"
     with pytest.raises(exceptions.ProgrammingError):
         store.one(Things, Criteria(where=Condition(field="size", value=3)))
-    with pytest.raises(exceptions.ProgrammingError):
+    with pytest.raises(ddd_exceptions.AggregateNotFound) as missing:
         store.one(Things, Criteria(where=Condition(field="size", value=99)))
+    assert missing.value.failure_kind is exceptions.FailureKind.NOT_FOUND
+
+
+def test_first_one_and_get_by_claim_what_they_read(store: Repository, things):
+    with store.context() as unit:
+        claimed = unit.first(Things, Criteria(where=Condition(field="size", value=3)), True)
+        natural = unit.get_by(Things, True, thing_id="th_0007")
+        only = unit.one(
+            Things, Criteria(where=Condition(field="thing_id", value="th_0001")), True
+        )
+
+    assert claimed is not None and natural is not None and only.thing_id == "th_0001"
 
 
 def test_one_never_loads_the_set_to_find_out_it_was_not_one(store: Repository, queries_run):

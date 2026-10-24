@@ -3,9 +3,14 @@
 Context: under `Writes.SAVED` a `save` flushes its own records and nothing else, so a record
 changed beside it is not written in passing. The stamping and the change tracking run on every
 flush; they read this to touch only what goes out.
+
+SQLAlchemy 2.1 deprecates `Session.flush(objects=...)` — the one way it has to flush some records
+and not others — with nothing in its place. `flush_only` keeps calling it and silences that one
+warning, nothing else; the day a release removes it, this is the one place to change.
 """
 
-from collections.abc import Generator, Iterable
+import warnings
+from collections.abc import Generator, Iterable, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -27,3 +32,12 @@ def goes_out(session: Session, record: Any) -> bool:
     """Whether this flush writes the record."""
     named = session.info.get(FLUSHING)
     return named is None or id(record) in named
+
+
+def flush_only(session: Session, records: Sequence[Any]) -> None:
+    """Flush `records` and nothing else the session holds."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="The `objects` parameter of `Session.flush` is deprecated"
+        )
+        session.flush(objects=records)

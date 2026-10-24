@@ -14,20 +14,36 @@ run, and what failed comes out once all of them ran: the error itself when one b
 `ExceptionGroup` of them when several did. A delivery
 that failed is delivered again — by the relay, by the broker — to every bus that answers it,
 those that succeeded included: delivery is at least once, so a handler of an event is
-idempotent.
+idempotent. With `receipts` — a `KeyValueStore`, shared by the replicas — the ones that succeeded
+are left out of the redelivery: only the bus that failed runs again.
 """
 
 import json
+from datetime import timedelta
 from typing import Any
 
+from sincpro_framework.common.store import KeyValueStore
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.use_bus import UseFramework
+
+RECEIPT = "subscriber"
+"""What a receipt's key starts with: `subscriber:<bus>:<event id>`."""
 
 
 class Subscriber:
 
-    def __init__(self, *buses: UseFramework) -> None:
+    def __init__(
+        self,
+        *buses: UseFramework,
+        receipts: KeyValueStore | None = None,
+        keep_for: timedelta = timedelta(days=1),
+    ) -> None:
+        """`receipts` keeps which bus handled which event, for `keep_for` — longer than a
+        redelivery can take — so a redelivery runs again only the buses that failed. Without
+        one, every bus that answers the event runs again."""
         self.buses: list[UseFramework] = list(buses)
+        self.receipts = receipts
+        self.keep_for = keep_for
 
     def listeners(self, name: str) -> list[UseFramework]:
         """The buses that answer this event name, in the order they were given."""
@@ -63,17 +79,32 @@ class Subscriber:
             return event
         return declared.from_json(json.loads(event.as_json()))
 
+    def heard_already(self, bus: UseFramework, event: DomainEvent) -> bool:
+        """Whether `bus` already handled this event — a redelivery after another bus failed."""
+        return (
+            self.receipts is not None
+            and self.receipts.get(f"{RECEIPT}:{bus.name}:{event.id}") is not None
+        )
+
+    def keep_receipt(self, bus: UseFramework, event: DomainEvent) -> None:
+        if self.receipts is not None:
+            self.receipts.set(f"{RECEIPT}:{bus.name}:{event.id}", b"1", self.keep_for)
+
     def handle(self, event: DomainEvent) -> list[Any]:
-        """The event to every bus that answers it, now; what each one returned, in order — or,
-        once every bus ran, what failed: the error when one did, an `ExceptionGroup` when
-        several did."""
+        """The event to every bus that answers it, now — but the ones a receipt says already
+        did; what each one returned, in order — or, once every bus ran, what failed: the error
+        when one did, an `ExceptionGroup` when several did."""
         answers: list[Any] = []
         failures: list[Exception] = []
         for bus in self.listeners(event.name):
+            if self.heard_already(bus, event):
+                continue
             try:
                 answers.append(bus(self.as_known_by(bus, event)))
             except Exception as error:  # noqa: BLE001 - the other buses still hear it
                 failures.append(error)
+                continue
+            self.keep_receipt(bus, event)
         if len(failures) == 1:
             raise failures[0]
         if failures:
@@ -97,11 +128,15 @@ class AsyncSubscriber:
         answers: list[Any] = []
         failures: list[Exception] = []
         for bus in self._subscriber.listeners(event.name):
+            if self._subscriber.heard_already(bus, event):
+                continue
             known = self._subscriber.as_known_by(bus, event)
             try:
                 answers.append(await bus.get_async_bus()(known))
             except Exception as error:  # noqa: BLE001 - the other buses still hear it
                 failures.append(error)
+                continue
+            self._subscriber.keep_receipt(bus, event)
         if len(failures) == 1:
             raise failures[0]
         if failures:

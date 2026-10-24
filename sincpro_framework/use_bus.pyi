@@ -426,7 +426,12 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
-        """Do not send these exception types to GlitchTip / Sentry."""
+        """Do not send these exception types to GlitchTip / Sentry — a `ClientError` or a
+        `DomainError` already is not."""
+        ...
+
+    def report_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
+        """Send these exception types to GlitchTip / Sentry although they are expected."""
         ...
 
     def with_trace(

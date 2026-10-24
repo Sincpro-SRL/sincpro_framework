@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import Field
 
+from sincpro_framework.common.store import Lease
 from sincpro_framework.pipelines import exceptions
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -93,3 +94,5 @@ class RunInProgress:
     run: PipelineRun
     waiting_for: str | None = None
     """The `Await` the pipeline stopped at — what the recorder closes the run as waiting for."""
+    lease: Lease | None = None
+    """The lease the run is driven under, when the pipeline holds one."""

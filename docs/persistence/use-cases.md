@@ -169,7 +169,7 @@ The columns:
 |---|---|---|---|---|
 | Migrations across contexts and stores | `migrations` | Alembic chains, one timeline | Alembic | ✅ |
 | Several databases | one `Database` per context | — | several engines | ✅ |
-| A test without a database | `MemoryRepository` | — | — | 🟡 no relations, no transactions |
+| A test without a database | `MemoryRepository` | — | — | 🟡 no relations; its unit of work commits, undoes, puts back what was not saved and holds claimed rows in the process — no isolation between blocks |
 | A test on a real engine | — | SQLite in memory; Postgres via `SINCPRO_POSTGRES_URL` | — | ✅ |
 
 ## 12. Many stores
@@ -231,7 +231,7 @@ reasoning behind each, front by front, is in [landscape.md](landscape.md).
 | 11 | Replicas and run-time guards | reads crowd the primary; an N+1 reaches production unseen | `Database(url, replicas=[…])`; warnings, never refusals |
 | 12 | Access patterns and other stores | a second store needs to say how it answers, not only what | capabilities are declared (`Analyzes`, `WritesInBulk`, `Transacts`, `StoreCapabilities`); next: a lock asked of an engine without row locks warns, a key/range/index/scan planner, then Mongo |
 | — | Window functions | rankings, running totals | stay on `statement()` → `run()` until a case repeats |
-| — | `MemoryRepository` without relations or transactions | a Feature tested on the double can behave differently | persistence is tested on SQLite; the double is for Features' logic |
+| — | `MemoryRepository` without relations or isolation | a Feature tested on the double can behave differently where a relation is read or two blocks race without claiming | persistence is tested on SQLite; the double is for Features' logic, units of work included |
 
 Each gap keeps the two promises: orchestrated by default when it lands, and reachable today
 through the door underneath.

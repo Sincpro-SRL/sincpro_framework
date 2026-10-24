@@ -73,6 +73,13 @@ is the parts.
 and the subscriber executes the bus with it. `@bus.feature([SomeCommand, SomeEvent])` is the
 whole subscription; `Subscriber(planning, assurance)` is the whole wiring.
 
+**A redelivery runs again only what failed — when told where to remember.** Delivery is at least
+once: a relay or a broker delivers an event again when a bus failed, and every bus that answers it
+runs again, so a handler of an event is idempotent. `Subscriber(planning, assurance,
+receipts=store)` keeps which bus handled which event (`keep_for`, a day by default) in a
+`KeyValueStore` — `RedisKeyValue`, `DynamoKeyValue`, shared by the replicas — and a redelivery
+then runs only the bus that failed.
+
 ## `Publisher`: the signature of a bus
 
 ```python

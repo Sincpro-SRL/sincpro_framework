@@ -202,3 +202,81 @@ def test_the_async_subscriber_isolates_the_buses_the_same_way(feature_bus, heard
     else:
         raise AssertionError("two failures came out as none")
     assert heard["support"] == ["async"]
+
+
+# --- a redelivery runs again only the bus that failed -----------------------------------------
+
+
+@dataclass(kw_only=True)
+class StockReserved(DomainEvent):
+    name = "warehouse.stock.v1.reserved"
+    order_id: str = ""
+
+
+def _two_buses(ran: list[str], failing: list[bool]) -> tuple[UseFramework, UseFramework]:
+    billing = UseFramework("receipts-billing", log_after_execution=False)
+    shipping = UseFramework("receipts-shipping", log_after_execution=False)
+
+    @billing.feature(StockReserved)
+    class Bill(Feature):
+        def execute(self, dto: StockReserved) -> None:
+            ran.append("bill")
+
+    @shipping.feature(StockReserved)
+    class Ship(Feature):
+        def execute(self, dto: StockReserved) -> None:
+            ran.append("ship")
+            if failing and failing.pop(0):
+                raise RuntimeError("the carrier did not answer")
+
+    return billing, shipping
+
+
+def test_with_receipts_a_redelivery_runs_only_the_bus_that_failed():
+    from sincpro_framework.common.store import InMemoryKeyValue
+
+    ran: list[str] = []
+    subscriber = Subscriber(*_two_buses(ran, [True, False]), receipts=InMemoryKeyValue())
+    event = StockReserved(order_id="O-1")
+
+    try:
+        subscriber.handle(event)
+    except RuntimeError:
+        pass
+    subscriber.handle(event)  # the relay delivers it again
+
+    assert ran == ["bill", "ship", "ship"]
+
+
+def test_without_receipts_every_bus_runs_again():
+    ran: list[str] = []
+    subscriber = Subscriber(*_two_buses(ran, [True, False]))
+    event = StockReserved(order_id="O-2")
+
+    try:
+        subscriber.handle(event)
+    except RuntimeError:
+        pass
+    subscriber.handle(event)
+
+    assert ran == ["bill", "ship", "bill", "ship"]
+
+
+def test_the_async_subscriber_keeps_the_same_receipts():
+    from sincpro_framework.common.store import InMemoryKeyValue
+
+    ran: list[str] = []
+    subscriber = Subscriber(*_two_buses(ran, [True, False]), receipts=InMemoryKeyValue())
+    event = StockReserved(order_id="O-3")
+
+    async def deliveries() -> None:
+        handler = subscriber.get_async_subscriber()
+        try:
+            await handler.handle(event)
+        except RuntimeError:
+            pass
+        await handler.handle(event)
+
+    asyncio.run(deliveries())
+
+    assert ran == ["bill", "ship", "ship"]

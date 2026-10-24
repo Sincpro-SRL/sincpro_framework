@@ -54,6 +54,7 @@ one vocabulary; a project that needs more writes a function.
 | FastStream brokers | ✅ | Kafka, RabbitMQ, Redis, NATS — `[faststream]` | `tests/entrypoints/adapters/queue/test_queue_settlement.py` |
 | Amazon SQS | ✅ | `SqsBroker`: competing consumers, receive count, visibility as retry, redrive as dead letter; SNS and EventBridge wrappers opened | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
 | Amazon SNS, SQS, EventBridge (sending) | ✅ | `SnsQueue`, `SqsQueue`, `EventBridgeQueue`; filter attributes, FIFO grouping | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
+| A redelivery runs only the bus that failed | ✅ | `Subscriber(..., receipts=store)`: a receipt per bus and event, kept `keep_for` in a `KeyValueStore`; without one every bus runs again | `tests/event_driven/test_subscriber.py` |
 | A Lambda fed by SQS | ✅ | `sqs_handler`: the same wire, `batchItemFailures` | `tests/entrypoints/adapters/aws_lambda/test_sqs_handler.py` |
 | A Lambda behind API Gateway | 🟡 | the REST / FastAPI gateway's ASGI app through an adapter of the project's choice; nothing of the framework's | — |
 | The queue wire without FastStream installed | ✅ | importing `entrypoints.adapters.queue` needs no broker library | `tests/core/test_core_without_extras.py` |
@@ -62,7 +63,8 @@ one vocabulary; a project that needs more writes a function.
 
 | Capability | Status | What it is | Held by |
 |---|---|---|---|
-| One port for every shared thing | ✅ | `KeyValueStore` (six operations) under contexts, drafts, pipeline runs, cron ticks, idempotency, query caching | `sincpro_framework/runtime/testing/contracts/key_value_store.py` |
+| One port for every shared thing | ✅ | `KeyValueStore` (six operations, and `replace` — compare before writing, not abstract) under contexts, drafts, pipeline runs, leases, cron ticks, idempotency, query caching | `sincpro_framework/runtime/testing/contracts/key_value_store.py` |
+| **Leases** | ✅ | `Leases`: a name held by one owner at a time, renewed in the background, `FREE` / `HELD` / `EXPIRED`, a fence per take; on any store with `replace` | `tests/common/test_leases.py` |
 | Redis / Valkey, Memcached | ✅ | `[redis]`, `[memcached]` | `tests/data_layer/caching/test_provider_key_values.py` |
 | DynamoDB | ✅ | `DynamoKeyValue`: conditional writes, `ADD`, delete-and-answer; expiry asked of the clock on every read | `tests/data_layer/caching/test_provider_dynamodb.py` |
 
@@ -86,6 +88,7 @@ Page: [pipelines](../core/pipelines.md).
 | Continuing a run | ✅ | the same `run_id` restarts, or continues after the last step that succeeded (`Resume.CONTINUE`) | `tests/pipelines/test_pipelines.py` |
 | **Retrying a step** | ✅ | `retry = Retry()`: only what is worth it by its kind, waiting what the error says, growing, bounded; every attempt counted | `tests/pipelines/test_pipeline_retry_await_reads.py` |
 | **Waiting for a decision** | ✅ | `Await("approval")`: the run waits; the same run with the field filled goes on, and later steps are given it | `tests/pipelines/test_pipeline_retry_await_reads.py` |
+| **A run under a lease** | ✅ | `lease = timedelta(...)`: one run of a `run_id` at a time across replicas, renewed while steps run, a lost lease stops it before its next step; `abandoned(pipeline)` | `tests/pipelines/test_pipeline_leases.py` |
 | **Reading the runs** | ✅ | `GetRun[P]`, `FindRuns[P]` answered by `PipelineReads`, on any wire; `RunNotFound` is `not_found` | `tests/pipelines/test_pipeline_retry_await_reads.py` |
 | Steps at the same time (`Parallel`, `Map`) | ⬜ | no case asked for it yet | — |
 | A wait on the clock | ⬜ | a cron continues the run: no timer of its own | — |

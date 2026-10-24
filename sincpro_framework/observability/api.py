@@ -66,6 +66,7 @@ class Observability:
         self._identity: Optional[ObservabilityIdentity] = None
         self.status: ObservabilityStatus = ObservabilityStatus()
         self.ignored_errors: IgnoredExceptions = ()
+        self.reported_errors: IgnoredExceptions = ()
         self.logger: LoggerProxy = create_logger(bus or "sincpro_framework")
 
     @property
@@ -124,6 +125,15 @@ class Observability:
             if error_type not in known:
                 known.append(error_type)
         self.ignored_errors = tuple(known)
+
+    def report(self, *error_types: Type[Exception]) -> None:
+        """Send these exception types to GlitchTip although they are expected — a
+        `ClientError` or a `DomainError` a project wants to see."""
+        known = list(self.reported_errors)
+        for error_type in error_types:
+            if error_type not in known:
+                known.append(error_type)
+        self.reported_errors = tuple(known)
 
     @contextmanager
     def span(
@@ -200,6 +210,7 @@ class Observability:
             kind=kind,
             ignored_exceptions=self.ignored_errors,
             outcome=outcome,
+            reported_exceptions=self.reported_errors,
         )
 
     def _describe(self, error: BaseException, dto: object) -> tuple[str, dict[str, Any]]:
@@ -261,6 +272,7 @@ class Observability:
             details={**self.logger.logger_fields, **recorded.fields()},
             outcome=outcome,
             use_case=registered_name(type(dto), self._bus),
+            reported_exceptions=self.reported_errors,
         )
 
     def escaped(self, error: BaseException, dto: object) -> None:

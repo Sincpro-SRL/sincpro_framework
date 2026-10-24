@@ -62,11 +62,13 @@ def test_the_database_repository_claims_every_capability():
     assert issubclass(Repository, Transacts)
 
 
-def test_the_memory_repository_does_not_claim_a_transaction():
+def test_the_memory_repository_transacts_and_holds_rows_in_the_process():
     assert issubclass(MemoryRepository, Analyzes)
     assert issubclass(MemoryRepository, WritesInBulk)
-    assert not issubclass(MemoryRepository, Transacts)
-    assert MemoryRepository().capabilities == StoreCapabilities(percentiles=True)
+    assert issubclass(MemoryRepository, Transacts)
+    assert MemoryRepository().capabilities == StoreCapabilities(
+        percentiles=True, row_locks=True, skip_locked=True, nowait=True
+    )
 
 
 def test_what_the_engine_honours_is_read_off_the_engine(ledger):

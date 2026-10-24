@@ -59,3 +59,15 @@ class InMemoryKeyValue(KeyValueStore):
             value = self._live(key)
             self._values.pop(key, None)
             return value
+
+    def replace(
+        self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
+    ) -> bool:
+        with self._lock:
+            if self._live(key) != expected:
+                return False
+            if value is None:
+                self._values.pop(key, None)
+            else:
+                self._values[key] = (value, self._expiry(ttl))
+            return True

@@ -204,8 +204,10 @@ framework.add_app_service_error_handler(handler)
 - Handlers can be added before or after the first execution; same `replaces=`, `before=`, `after=`,
   `sequence=` as interceptors, and `without_error_handler(fn)`.
 - **What a handler returns becomes the bus's answer.** Watching handlers re-raise.
-- `bus.ignore_sentry_exceptions(SomeError)` (subclasses included) marks expected traffic: never sent
-  to Sentry, metric outcome `expected`. Handlers still run.
+- A `ClientError` or a `DomainError` never reaches Sentry by default: it is written for the caller.
+  `bus.ignore_sentry_exceptions(SomeError)` (subclasses included) keeps out more and makes the
+  metric outcome `expected`; `bus.report_sentry_exceptions(SomeError)` brings one back. Handlers
+  still run.
 - Code that calls the bus (a transport, a wrapper) is outside every chain.
 
 Depth: [references/errors.md](references/errors.md).
@@ -244,7 +246,9 @@ is said in the logs. When it needs more, one line each: `retry = Retry()` runs a
 failure is worth it by its kind (unavailable, conflict, in progress — never `ok=False` nor a domain
 refusal); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
 `run_id` is run with the input's `approval` filled; `GetRun[Command]` / `FindRuns[Command]` answered
-by a `PipelineReads` Feature read the runs on any wire. Depth: `docs/core/pipelines.md`.
+by a `PipelineReads` Feature read the runs on any wire; `lease = timedelta(minutes=2)` makes it one run
+of a `run_id` at a time across replicas, renewed while it runs, and `use_context().pipelines().abandoned(…)`
+lists the runs whose worker died. Depth: `docs/core/pipelines.md`, `docs/core/leases.md`.
 
 An income and its outcome name the same `execution_id`. What a listener must not do: keep state a
 process depends on (it may not run) or change the answer. The whole path, step by step:
