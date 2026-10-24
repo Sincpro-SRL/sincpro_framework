@@ -25,11 +25,19 @@ NOT_FOUND = {"ParameterNotFound", "ResourceNotFoundException"}
 
 
 def _missing(error: Exception) -> bool:
+    """Whether a boto3 error says the name is not held — a `ClientError` whose code is one of
+    `NOT_FOUND`; any other error, or one with no `response`, is not."""
     response = getattr(error, "response", None) or {}
     return response.get("Error", {}).get("Code") in NOT_FOUND
 
 
 class ParameterStore:
+    """A `SettingSource` over Systems Manager Parameter Store — each name read once and kept.
+
+    ParameterStore(prefix="/billing/prod")("token")   ->  "s3cr3t"   # /billing/prod/token
+    ParameterStore()("/not/there")                    ->  None
+    """
+
     service = "ssm"
 
     def __init__(self, client: Any = None, prefix: str = "") -> None:
@@ -62,6 +70,13 @@ class ParameterStore:
 
 
 class SecretsManager:
+    """A `SettingSource` over Secrets Manager — each secret read once and kept, whole or one
+    key of its JSON.
+
+        SecretsManager()("billing/db")            ->  '{"user": "app", "password": "…"}'
+        SecretsManager()("billing/db#password")   ->  "…"
+    """
+
     service = "secretsmanager"
 
     def __init__(self, client: Any = None) -> None:
@@ -77,6 +92,8 @@ class SecretsManager:
         return self._client
 
     def _secret(self, secret_id: str) -> str | None:
+        """The secret's `SecretString`, asked once per id — `None` when the service does not
+        hold it, or when it holds only a binary secret."""
         if secret_id not in self._read:
             try:
                 answer = self.client.get_secret_value(SecretId=secret_id)

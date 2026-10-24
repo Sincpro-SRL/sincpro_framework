@@ -9,7 +9,7 @@ An import under `if TYPE_CHECKING:` only names a type, so it is not a dependency
 annotate the `Subscriber` that builds them without importing the entrypoint at runtime.
 
 Nothing lives at the root but `__init__.py`: an optional extra is an adapter like any other
-(`adapters/faststream/`, guarded at import), the way `data_layer.caching.adapters.redis` is.
+(`adapters/faststream/`, guarded at import), the way `store.adapters.redis` is.
 """
 
 import ast

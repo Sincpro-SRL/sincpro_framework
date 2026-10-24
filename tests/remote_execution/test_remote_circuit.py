@@ -17,7 +17,6 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.circuits import Circuit, CircuitOpen, CircuitState
 from sincpro_framework.common.failures import retry_after
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.common.transport.addresses import HostedAt, Wire
 from sincpro_framework.common.transport.exceptions import InvalidAddress
 from sincpro_framework.ddd.exceptions import DomainError
@@ -26,6 +25,7 @@ from sincpro_framework.remote_execution import is_unreached
 from sincpro_framework.remote_execution.adapters.transport import circuit_for
 from sincpro_framework.remote_execution.domain import exceptions
 from sincpro_framework.remote_execution.domain.failures import error_details, raised_as_itself
+from sincpro_framework.store import InMemoryKeyValue
 
 from .hosting import TRANSPORTS, _free_port, host_over
 

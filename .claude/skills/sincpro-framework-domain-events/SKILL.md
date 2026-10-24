@@ -67,7 +67,7 @@ delivery*). Event log (state + history) ≠ event sourcing (history *is* the sta
 (`SyncQueue`, `BackgroundQueue`). Optional extras, never core dependencies:
 `event_driven/adapters/faststream/` sends; `entrypoints/faststream/` subscribes (`[faststream]`
 plus the broker driver, e.g. `faststream[kafka]`), the event
-tables in `orm/` (`[sqlalchemy]`), and a Redis inbox through `data_layer.caching.adapters.redis` (`[redis]`).
+tables in `orm/` (`[sqlalchemy]`), and a Redis inbox through `store.adapters.redis` (`[redis]`).
 
 **Inside a consumer service** (one `UseFramework` per bounded context, created in
 `infrastructure/framework.py` before `services/` is imported):

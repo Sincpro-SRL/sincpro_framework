@@ -43,6 +43,19 @@ type Direction = Literal["asc", "desc"]
 
 
 def type_of(value: Any) -> str:
+    """The frame's type of one value — a `bool` before an `int`, since a bool is one; anything
+    it does not know (a UUID, an enum) is text.
+
+        type_of(Decimal("1.5"))       ->  "decimal"
+        type_of(date(2026, 9, 1))     ->  "date"
+        type_of(uuid4())              ->  "string"
+
+    1. A `bool` is "boolean" — asked first, since `True` is also an `int`.
+    2. An `int` is "integer", a `float` "number", a `Decimal` "decimal".
+    3. A `datetime` is "datetime" — asked before `date`, since a datetime is also a date — and
+       a `date` is "date".
+    Final: anything else, `None` among it, is "string".
+    """
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, int):
@@ -70,6 +83,11 @@ def _column_type(values: Sequence[Any]) -> str:
 
 
 def _json_value(value: Any) -> Any:
+    """One value as JSON carries it without loss: a decimal as text, a date or datetime as ISO
+    8601, a JSON scalar as is, anything else as its text.
+
+        _json_value(Decimal("10.50"))  ->  "10.50"
+    """
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, (date, datetime)):
@@ -126,6 +144,17 @@ def _as_type_of(value: Any, kind: str, sample: Any) -> Any:
 def _coerced(
     expression: Expression, kinds: Mapping[str, str], samples: Mapping[str, Any]
 ) -> Expression:
+    """A filter written as JSON made one a frame can evaluate: every condition's value read as
+    its column's type, the `all` / `any` / `not` around it kept.
+
+    Context: a filter that comes from a client says `"2026-09-01"` and `"3"`; compared as text
+    with a date or an integer column it would answer wrong rows without an error.
+
+        {"field": "qty", "operator": ">", "value": "3"}  ->  Condition(qty > 3)   (an integer)
+
+    A condition on a column the frame does not have is refused as `KeyError`; a value that is
+    not of its column's type as `ValueError`, naming both.
+    """
     match expression:
         case Condition():
             if expression.field not in kinds:
@@ -152,6 +181,16 @@ def _coerced(
 
 @dataclass(frozen=True)
 class DataFrame:
+    """Rows held by column, with one type per column, the filter they answer and whether they
+    are all of it.
+
+        frame = DataFrame.from_rows([{"id": 1, "total": Decimal("10.5")}, {"id": 2}])
+        frame.columns, frame.types   ->  ("id", "total"), ("integer", "decimal")
+        frame.column("total")        ->  [Decimal("10.5"), None]
+
+    Frozen: `append`, `narrow`, `sort` and `select` answer a new frame, never change this one.
+    """
+
     columns: tuple[str, ...]
     types: tuple[str, ...]
     values: tuple[tuple[Any, ...], ...]
@@ -178,7 +217,16 @@ class DataFrame:
         complete: bool = True,
         cursor: str | None = None,
     ) -> "DataFrame":
-        """Columns in the order they first appear; a row without a column has `None` in it."""
+        """Columns in the order they first appear; a row without a column has `None` in it.
+
+            DataFrame.from_rows([{"id": 1, "total": 10}, {"id": 2, "total": Decimal("2.5"),
+                                 "note": "x"}])
+                ->  columns ("id", "total", "note"), types ("integer", "decimal", "string"),
+                    values ((1, 2), (Decimal("10"), Decimal("2.5")), (None, "x"))
+
+        Each column takes the one type that holds all its values, and its values are widened
+        to it — the integer 10 among decimals is `Decimal("10")`.
+        """
         held = list(rows)
         columns: dict[str, None] = {}
         for row in held:
@@ -201,19 +249,31 @@ class DataFrame:
         return cls(columns, types, values, key)
 
     def __len__(self) -> int:
+        """How many rows it holds — 0 for a frame with no column."""
         return len(self.values[0]) if self.values else 0
 
     def _require(self, name: str) -> None:
+        """Refuses a column the frame does not have as `KeyError`, listing the ones it has."""
         if name not in self.columns:
             raise KeyError(
                 f"{name} is not a column — the columns are {', '.join(self.columns)}"
             )
 
     def column(self, name: str) -> list[Any]:
+        """One column's values, in row order, as a list; a column the frame does not have is
+        refused as `KeyError`.
+
+            frame.column("total")  ->  [Decimal("10.5"), None]
+        """
         self._require(name)
         return list(self.values[self.columns.index(name)])
 
     def rows(self) -> list[dict[str, Any]]:
+        """The frame as one dict per row — what `narrow`, `sort` and `append` work over, and
+        what a caller that wants records instead of columns reads.
+
+            frame.rows()  ->  [{"id": 1, "total": Decimal("10.5")}, {"id": 2, "total": None}]
+        """
         return (
             [dict(zip(self.columns, row)) for row in zip(*self.values)] if self.values else []
         )
@@ -242,7 +302,22 @@ class DataFrame:
 
     def append(self, page: "DataFrame") -> "DataFrame":
         """This frame and the next page of its query — each row once, by `key` — and what the page
-        says about the rest: its cursor, and whether it was the last."""
+        says about the rest: its cursor, and whether it was the last.
+
+            first = DataFrame.from_rows([{"id": 1}, {"id": 2}], complete=False, cursor="c1")
+            first.append(DataFrame.from_rows([{"id": 2}, {"id": 3}]))
+                ->  ids [1, 2, 3], complete=True, cursor=None
+
+        1. Two frames that both hold rows must have the same columns, in the same order — any
+           other page is refused as `ProgrammingError`.
+        2. The page's rows to add:
+           2.1 every one, when the page has no `key` column to tell them apart;
+           2.2 otherwise only those whose key is not held yet — nor seen earlier in the page.
+        3. This frame's rows and the added ones built into one frame, with this frame's filter
+           and the page's cursor and completeness.
+        Final: that frame — or, when neither held a row, this one with the page's cursor and
+        completeness, so its columns are kept.
+        """
         if len(self) and len(page) and page.columns != self.columns:
             missing = sorted(set(self.columns) ^ set(page.columns))
             raise exceptions.ProgrammingError(
@@ -268,7 +343,15 @@ class DataFrame:
 
     def narrow(self, where: dict[str, Any]) -> "DataFrame":
         """The rows that also answer `where` — with no read, since every row is here. Refused on
-        a frame that stopped at a page."""
+        a frame that stopped at a page.
+
+            frame.column("total")   ->  [10, 200, None]
+            frame.narrow({"field": "total", "operator": ">", "value": 100}).rows()
+                ->  [{"id": 2, "total": 200}]
+
+        A condition's value is read as its column's type first — `"100"` compares as 100 — and
+        the frame answered keeps both filters, `{"all": [its filter, where]}`, if it has one.
+        """
         if not self.complete:
             raise exceptions.ProgrammingError(
                 f"this frame holds {len(self)} rows of a read that has more — fetch_all it before "
@@ -287,7 +370,15 @@ class DataFrame:
         return self._with_rows(kept, combined)
 
     def sort(self, keys: Sequence[tuple[str, Direction]]) -> "DataFrame":
-        """Ordered by `keys` — `null` last in both directions."""
+        """Ordered by `keys` — `null` last in both directions.
+
+            frame.column("total")                            ->  [10, 200, None]
+            frame.sort([("total", "desc")]).column("total")  ->  [200, 10, None]
+            frame.sort([("total", "asc")]).column("total")   ->  [10, 200, None]
+
+        Stable sorts from the last key to the first, so the first key decides and the next
+        ones break its ties; a column the frame does not have is refused as `KeyError`.
+        """
         ordered = self.rows()
         for name, direction in reversed(keys):
             self._require(name)
@@ -300,6 +391,11 @@ class DataFrame:
         return self._with_rows(ordered, self.where)
 
     def select(self, columns: Sequence[str]) -> "DataFrame":
+        """Only these columns, in this order — the rows, the filter and the completeness kept;
+        a column the frame does not have is refused as `KeyError`.
+
+            frame.select(["total", "id"]).columns  ->  ("total", "id")
+        """
         for name in columns:
             self._require(name)
         positions = [self.columns.index(name) for name in columns]

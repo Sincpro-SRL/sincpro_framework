@@ -43,6 +43,16 @@ class AggregateRepository[T]:
     """The aggregate a subclass named in its base, `AggregateRepository[Invoice]`."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Reads the aggregate off the base a subclass writes, so `get` needs no type.
+
+            class Invoices(AggregateRepository[Invoice]): ...
+            Invoices.declared  ->  Invoice
+
+        1. Each generic base the class wrote (`__orig_bases__`), in order.
+        2. Final: one whose origin is an `AggregateRepository` and whose first argument is a
+           class names the aggregate; a subclass of a subclass with no argument keeps its
+           parent's.
+        """
         super().__init_subclass__(**kwargs)
         for base in getattr(cls, "__orig_bases__", ()):
             origin, arguments = get_origin(base), get_args(base)
@@ -56,7 +66,20 @@ class AggregateRepository[T]:
 
     def __init__(self, repository: IRepository, aggregate: type[T] | None = None) -> None:
         """`aggregate` only when the class does not name one, or names a base of it — the class
-        a table was mapped to, of the aggregate the view was written for."""
+        a table was mapped to, of the aggregate the view was written for.
+
+            Invoices(repository)                     ->  .aggregate is Invoice
+            # class Invoices(AggregateRepository[Invoice])
+            Invoices(repository, MappedInvoice)      ->  .aggregate is MappedInvoice
+            AggregateRepository(repository, Invoice) ->  .aggregate is Invoice
+            AggregateRepository(repository)
+                ->  raises ProgrammingError("… does not say which aggregate it holds …")
+            Invoices(repository, Partner)
+                ->  raises ProgrammingError("Invoices holds Invoice, not Partner")
+
+        The class the view holds is checked here, once, so every read and write after it
+        can trust it.
+        """
         named = aggregate if aggregate is not None else self.declared
         if named is None:
             raise exceptions.ProgrammingError(
@@ -101,20 +124,25 @@ class AggregateRepository[T]:
         skip_locked: bool = False,
         nowait: bool = False,
     ) -> EntityCollection[T]:
+        """One page of this aggregate the criteria matches — `ReadsAggregates.search`."""
         return self.repository.search(
             self.aggregate, criteria, for_update, skip_locked, nowait
         )
 
     def count(self, criteria: Criteria | None = None) -> Count:
+        """How many of this aggregate the criteria matches — `ReadsAggregates.count`."""
         return self.repository.count(self.aggregate, criteria)
 
     def browse(self, ids: Sequence[Any]) -> EntityCollection[T]:
+        """The records with these ids, the missing ones simply absent."""
         return self.repository.browse(self.aggregate, ids)
 
     def fetch_all(self, criteria: Criteria | None = None) -> EntityCollection[T]:
+        """Every match in one collection, unpaged — for a result known to be small."""
         return self.repository.fetch_all(self.aggregate, criteria)
 
     def stream(self, criteria: Criteria | None = None) -> Iterator[EntityCollection[T]]:
+        """Every match, a piece at a time — for a result too large to hold at once."""
         return self.repository.stream(self.aggregate, criteria)
 
     def first(
@@ -124,6 +152,7 @@ class AggregateRepository[T]:
         skip_locked: bool = False,
         nowait: bool = False,
     ) -> T | None:
+        """The first match, or `None` — claimed as `get` claims it."""
         return self.repository.first(
             self.aggregate, criteria, for_update, skip_locked, nowait
         )
@@ -145,24 +174,33 @@ class AggregateRepository[T]:
         nowait: bool = False,
         **values: Any,
     ) -> T | None:
+        """One record by a natural key, `None` when absent.
+
+        invoices.get_by(number="F-0042")  ->  Invoice(...) | None
+        """
         return self.repository.get_by(
             self.aggregate, for_update, skip_locked, nowait, **values
         )
 
     def exists(self, criteria: Criteria | None = None) -> bool:
+        """Whether anything of this aggregate matches, without reading it."""
         return self.repository.exists(self.aggregate, criteria)
 
     def pluck(self, field: str, criteria: Criteria | None = None) -> list[Any]:
+        """One field of every match, without building the aggregates."""
         return self.repository.pluck(self.aggregate, field, criteria)
 
     # --- writing ----------------------------------------------------------------------------
     def save(self, record: T | Sequence[T] | EntityCollection[T]) -> None:
+        """Writes one record or several through the repository underneath, hooks included."""
         self.repository.save(record)
 
     def remove(self, record: T | Sequence[T] | EntityCollection[T]) -> None:
+        """Deletes one record or several — deletes, never archives."""
         self.repository.remove(record)
 
     def archive(self, record: T | Sequence[T] | EntityCollection[T]) -> None:
+        """Puts one record or several away without deleting them (`ArchivableMixin` only)."""
         self.repository.archive(record)
 
     def record_changes(self, record: T) -> Any:

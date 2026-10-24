@@ -279,7 +279,7 @@ write as always; only where each node is kept changes. Nothing is shared by defa
 environment variable turns it on.
 
 ```text
-billing.context_store(KeyValueContexts(RedisKeyValue(redis)))      each bus that shares, in code
+billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))      each bus that shares, in code
 
 global          use_context().at(Level.GLOBAL) — every service and replica that set the store
  └ process      this service's replicas — never another service
@@ -296,45 +296,43 @@ global          use_context().at(Level.GLOBAL) — every service and replica tha
   the process is kept per service; only `Level.GLOBAL` is one for everyone.
 - Two projects that set the same store (same prefix) share as well; the default codec is plain JSON,
   so they need no classes in common.
-- `context_store(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))`: a node lives `ttl`;
+- `store_context_in(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))`: a node lives `ttl`;
   what others wrote is read again at most once per `every`.
 
 See `docs/prd/PRD_24_shared-context.md`.
 
-## Kept outside: N contexts in a store
+## Where the context is kept
+
+The context needs no saving and no loading by hand to reach another process: whatever a use case
+hands on carries it — a published event, a message to a queue, a call to another service, an answer
+to the frontend — and the entrance on the other side opens its flow with it (see "Across services"
+below). What *is* kept is what the framework keeps for the context, in one store a project sets once:
 
 ```python
 from datetime import timedelta
 
-from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework import store_context_in
+from sincpro_framework.store import InMemoryKeyValue
 from sincpro_framework.context import ContextStore, KeyValueContexts
 
-contexts = KeyValueContexts(InMemoryKeyValue())         # RedisKeyValue(redis) in production
-use_context().root.set(ContextStore, contexts)          # the process's; bus.context_store(...) for a bus
-
-contexts.keep("tenant:acme", {"lang": "es", "tz": "America/La_Paz"})
-contexts.keep("session:s1", {"user_id": "ana", "lang": "en"}, ttl=timedelta(hours=8))
-
-with sales.context({"plan": "pro"}, restore=["tenant:acme", "session:s1"]):     # in order
-    restored = use_context()
-    assert (restored["lang"], restored["tz"], restored["user_id"]) == (
-        "en",
-        "America/La_Paz",
-        "ana",
-    )
-
-with sales.context({"tenant_id": "acme"}, keep_as="sale-77", ttl=timedelta(hours=1)):
-    pass
-with sales.context(restore="sale-77"):                  # a worker, a cron, another service
-    assert use_context()["tenant_id"] == "acme"
+contexts = store_context_in(KeyValueContexts(InMemoryKeyValue()))   # RedisKeyValue(redis) in production
+assert use_context().root.get(ContextStore) is contexts             # the process's
+sales.store_context_in(contexts)                                    # or one bus: its own store
 ```
 
-The same store keeps two more things beside the contexts, each under a prefix of its own and each
-reached from the context — never as values inside a node, which would be copied at every read and die
-with their scope: the [drafts](drafts.md) a form keeps between requests (`use_context().drafts()`),
-and how far each run of a [pipeline](pipelines.md) got (`use_context().pipelines()`). Whose they are
-comes from the context by one rule that serves every shape of system and refuses none: no tenant and
-no user, a tenant, a user, a user in a tenant, a user across several (`tenant_ids`).
+The store keeps, each under a prefix of its own and each reached from the context — never as values
+inside a node, which would be copied at every read and die with their scope: the [drafts](drafts.md)
+a form keeps between requests (`use_context().drafts()`), and how far each run of a
+[pipeline](pipelines.md) got (`use_context().pipelines()`). Whose they are comes from the context, by
+exactly the keys each one names — a user within a tenant for a draft, a tenant for a run, nobody for
+a draft of a record everyone edits (`by=()`) — and no shape of system is refused.
+
+Beside them, on the `KeyValueStore` the store stands on (`key_value_store()`), each in a section of
+its own: the [leases](leases.md), the [circuits](circuits.md), and every bounded context's cache and
+idempotency — `bus.cache`, `bus.idempotency` ([caching](../caching/README.md#the-simple-way-buscache-and-busidempotency-nothing-to-build)),
+keyed apart by the bus's name. A bus keeps them on its own store (`bus.store_context_in(...)`), else on
+the process's — `store_context_in(redis)` sets it in one line, the same as
+`use_context().root.set(ContextStore, KeyValueContexts(redis))` — else in this process's memory.
 
 A store keeps **what a flow is** — a tenant's defaults, a session, a flow to resume — not what can be
 recomputed (that is a cache). `InMemoryContexts` for one process; `KeyValueContexts` over any

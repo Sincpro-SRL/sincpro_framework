@@ -54,6 +54,19 @@ from sincpro_framework.use_bus import UseFramework
 
 
 class QueueGateway(Gateway):
+    """The queue entrypoint: the buses' declared Commands consumed and their events heard
+    from one broker, every delivery settled from its verdict.
+
+        gateway = QueueGateway(KafkaBroker("kafka:9092"), [billing, accounting])
+        gateway.build()             ->  [Subscription("billing.invoices.issue", ...), ...]
+        gateway.manifest()          # every channel, kind and access, for a CI snapshot
+        gateway.asyncapi()          # the AsyncAPI document of what was built
+
+    Context: a `Gateway` like every wire's — `add`, `group`, `bind`, `override` — whose wire
+    is a `QueueWire`. Unlike the other wires, an event is published by default (registering a
+    Feature for it is the declaration) and a Command never is.
+    """
+
     wire = "queue"
 
     def __init__(
@@ -68,7 +81,20 @@ class QueueGateway(Gateway):
         unguarded: bool = False,
         port: Wire[Any] | None = None,
     ) -> None:
-        """`broker` and `options` build the wire; a `port` (a `QueueWire`) brings its own."""
+        """`broker` and `options` build the wire; a `port` (a `QueueWire`) brings its own.
+
+            QueueGateway(KafkaBroker("kafka:9092"), [billing])   ->  over QueueWire(broker)
+            QueueGateway(port=MyQueueWire(broker), instances=[billing])  ->  over that wire
+            QueueGateway(instances=[billing])     ->  TypeError: needs a broker, or port=...
+            QueueGateway(broker, port=MyQueueWire(broker))
+            ->  ValueError: the broker and options are the port's
+
+        1. No port: a `QueueWire` over `broker` and `options` — refused without a broker.
+        2. A port that is not a `QueueWire` is refused; given with a broker or options too,
+           refused as well.
+        3. The port told whether the gateway is unguarded, and kept as the gateway's wire.
+        Final: the `Gateway` built over it, with the buses, layers and exposure given.
+        """
         if port is None:
             if broker is None:
                 raise TypeError(
@@ -96,13 +122,17 @@ class QueueGateway(Gateway):
 
     @property
     def broker(self) -> Broker:
+        """The broker the wire subscribes on — what `FastStream(...)` or `start()` runs."""
         return self._wire.broker
 
     @property
     def queue_wire(self) -> QueueWire:
+        """The wire itself — `sqs_handler` hands it each Lambda record to `process`."""
         return self._wire
 
     def _declared_on_queue(self, published: Published) -> bool:
+        """Whether a use case has a queue binding — its decorator's, or a `bind` of the
+        composition — the handler in force where it was replaced."""
         _, bus, packed = published
         handler = packed.handler or bus.handler_of(packed.dto) or packed.dto
         declared = registry.of(handler, bus.replaced_for(packed.dto)).get(self.wire or "")
@@ -205,11 +235,20 @@ class _EventsWire(QueueWire):
         channel_of_name: Callable[[str], str],
         group: str,
     ) -> None:
+        """The queue wire, plus how an event's name maps to its channel and the one consumer
+        group every event is heard in."""
         super().__init__(broker, options)
         self._channel_of_name = channel_of_name
         self._group = group
 
     def derive(self, operation: Operation, group: Group) -> QueueBinding:
+        """An event on `channel_of_name(its name)`, in the shared group; anything else as the
+        queue wire derives it.
+
+            derive(InvoiceIssued)  ->  QueueBinding(kind="hears",
+                                                    channel="billing.invoice.v1.issued",
+                                                    group="planning+assurance")
+        """
         derived = super().derive(operation, group)
         if derived.kind != "hears":
             return derived
@@ -218,7 +257,10 @@ class _EventsWire(QueueWire):
 
 
 class _EventsGateway(QueueGateway):
+    """The gateway `subscribe()` builds: only the buses' DomainEvents reach its surface."""
+
     def _published(self) -> list[Published]:
+        """What the queue gateway publishes, its Commands left out."""
         return [
             one
             for one in super()._published()

@@ -47,6 +47,13 @@ BASE = "base"
 
 @dataclass(frozen=True)
 class ChainStatus:
+    """Where one chain stands: its store's position, the state that position means against the
+    steps the code knows, and the steps it has not applied yet.
+
+        ChainStatus(chain=billing/main, state=BEHIND, position=Position("0192…a1"),
+                    pending=(Step("0192…b7", message="add due_date"),))
+    """
+
     chain: Chain
     state: ChainState
     position: Position
@@ -55,15 +62,28 @@ class ChainStatus:
 
 @dataclass(frozen=True)
 class MigrationStatus:
+    """Where the whole system stands: every chain by its key (`context/store`), and the one
+    timeline every `upgrade` and `downgrade` walks.
+    """
+
     chains: dict[str, ChainStatus]
     timeline: list[tuple[Step, bool]]
     """Every step in the order it runs, and whether its store has applied it."""
 
 
 def _state(steps: Sequence[Step], position: Position) -> ChainState:
-    """Context: a head the code does not know is *ahead* — a step of a newer release, or of a
+    """The state a store's position means against the steps its chain knows.
+
+    Context: a head the code does not know is *ahead* — a step of a newer release, or of a
     branch that was abandoned; its id cannot tell which, since a step merged late keeps an old
-    one."""
+    one.
+
+        steps a, b, c;  Position("c")             ->  UP_TO_DATE
+        steps a, b, c;  Position("a")             ->  BEHIND
+        steps a, b, c;  Position(None)            ->  BEHIND   (UP_TO_DATE with no steps)
+        steps a, b, c;  Position("z")             ->  AHEAD
+        any steps;      Position("b", dirty=True) ->  DIRTY
+    """
     if position.dirty:
         return ChainState.DIRTY
     ids = [step.id for step in steps]
@@ -75,6 +95,9 @@ def _state(steps: Sequence[Step], position: Position) -> ChainState:
 
 
 def _applied(steps: Sequence[Step], position: Position) -> list[Step]:
+    """The steps of a chain its store has applied — every step up to and including its head;
+    none when the head is `None` or a step the code does not know.
+    """
     ids = [step.id for step in steps]
     if position.head not in ids:
         return []
@@ -82,6 +105,10 @@ def _applied(steps: Sequence[Step], position: Position) -> list[Step]:
 
 
 def _refusal(status: ChainStatus) -> str:
+    """The sentence that tells a human why a chain blocks a run and what to do — for an
+    *ahead* store, which release or branch to go through; for a *dirty* one, which step failed
+    part-way and the exact `resolve` command to run once the store is cleaned up.
+    """
     key, head = status.chain.key, status.position.head
     if status.state == ChainState.AHEAD:
         return (
@@ -104,6 +131,16 @@ def _refusal(status: ChainStatus) -> str:
 
 
 def _linear_problems(key: str, steps: Sequence[Step]) -> list[str]:
+    """Where a chain stops being one line: a step whose `parent` is not the step before it, or
+    an id that repeats.
+
+    Context: two branches that each add a step on the same head merge into a manifest with two
+    children of one parent; run in that order, the second would land on a store its body
+    was not written against.
+
+        steps a(parent None), b(parent a), c(parent a)
+        ->  ["billing/main is not linear at c (…): its parent is a, the step before it is b…"]
+    """
     problems: list[str] = []
     seen: set[str] = set()
     parent: str | None = None
@@ -120,7 +157,35 @@ def _linear_problems(key: str, steps: Sequence[Step]) -> list[str]:
 
 
 class Migrations:
+    """The orchestrator: every registered context's chains as one timeline, read, checked and
+    moved forward or back as one.
+
+        migrations.status()                 where each store stands, and the timeline
+        migrations.upgrade()                every pending step, in timeline order
+        migrations.downgrade("0192a1…")     back to a step — "base" for nothing applied
+        migrations.revision("chat", "main", "add read_at")     a new step and its body
+        migrations.check()                  what CI refuses, as sentences
+
+    Context: it reads where each store stands from its engine and what the code declares from
+    each context's manifest; a run is refused before anything executes when the code is not
+    intact (`_refuse_unless_intact`) or a store is ahead or dirty
+    (`_refuse_unless_startable`).
+    """
+
     def __init__(self, contexts: Sequence[ContextMigrations]) -> None:
+        """The contexts the system migrates, checked and introduced to each other.
+
+            Migrations([common_migrations, billing_migrations])
+                ->  migrations.contexts == {"common": common_migrations, "billing": ...}
+            Migrations([billing_migrations, billing_migrations])
+                ->  ValueError("contexts registered twice: billing")
+
+        1. A context name registered twice is refused.
+        2. Two contexts sharing one folder are refused — each keeps its own
+           `meta_migration.json`.
+        Final: every engine is told which others migrate beside it (`coexist`), so it can
+        leave alone what they own — two Alembic engines over one database, for instance.
+        """
         names = [context.name for context in contexts]
         repeated = sorted({name for name in names if names.count(name) > 1})
         if repeated:
@@ -140,6 +205,9 @@ class Migrations:
             engine.coexist([one for one in everyone if one is not engine])
 
     def _context(self, name: str) -> ContextMigrations:
+        """The registered context by its name, refused as `MigrationRefused` naming the
+        registered ones when there is none — what a typo on the command line answers.
+        """
         if name not in self.contexts:
             raise exceptions.MigrationRefused(
                 f"no context {name}: registered are {', '.join(self.contexts)}"
@@ -147,12 +215,19 @@ class Migrations:
         return self.contexts[name]
 
     def _engine(self, step: Step) -> MigrationEngine:
+        """The engine of the store a step belongs to."""
         return self.contexts[step.context].engines[step.store]
 
     def _manifest(self, context: ContextMigrations) -> Manifest:
+        """A context's manifest, read fresh from its folder each time — the files are the
+        truth, and `revision` / `hash` rewrite them between calls.
+        """
         return read_manifest(context.folder, context.name)
 
     def _chains(self) -> list[tuple[Chain, list[Step]]]:
+        """Every chain of every context — each registered store with the steps its manifest
+        lists, an empty chain for a store that has no step yet.
+        """
         chains: list[tuple[Chain, list[Step]]] = []
         for context in self.contexts.values():
             manifest = self._manifest(context)
@@ -202,11 +277,17 @@ class Migrations:
         return problems
 
     def _refuse_unless_intact(self) -> None:
+        """Refuses with every integrity problem at once — the code itself is wrong, so no
+        store is touched.
+        """
         problems = self._integrity_problems()
         if problems:
             raise exceptions.MigrationRefused("; ".join(problems))
 
     def _statuses(self, chains: list[tuple[Chain, list[Step]]]) -> dict[str, ChainStatus]:
+        """Each chain's status, asking each engine where its store stands — the only place a
+        store is read.
+        """
         statuses: dict[str, ChainStatus] = {}
         for chain, steps in chains:
             engine = self.contexts[chain.context].engines[chain.store]
@@ -219,6 +300,9 @@ class Migrations:
         return statuses
 
     def _refuse_unless_startable(self, statuses: dict[str, ChainStatus]) -> None:
+        """Refuses when any store is ahead or dirty, with one sentence per blocked store
+        saying how to get it moving. A behind store is what a run is for, so it passes.
+        """
         blocked = [
             status
             for status in statuses.values()
@@ -274,9 +358,16 @@ class Migrations:
         self.logger.info(f"{verb} {step.key} ({step.message}) in {elapsed:.0f} ms")
 
     def chain(self, context: str, store: str) -> Chain:
+        """The chain of one store of one context, refused when either is not registered."""
         return self._context(context).chain(store)
 
     def status(self) -> MigrationStatus:
+        """Where the whole system stands, reading every store once; nothing is refused but a
+        timeline that cannot be built (a cycle, an unknown `requires`).
+
+            migrations.status().timeline
+            ->  [(Step("…a1", "baseline"), True), (Step("…b7", "add due_date"), False)]
+        """
         chains = self._chains()
         statuses = self._statuses(chains)
         pending = {step.key for status in statuses.values() for step in status.pending}
@@ -288,7 +379,14 @@ class Migrations:
 
     def upgrade_plan(self, to: str | None = None) -> list[Step]:
         """What `upgrade(to)` would apply, in order, running nothing — refused as it would be:
-        when a body changed since it was hashed, or a store is ahead or dirty."""
+        when a body changed since it was hashed, or a store is ahead or dirty.
+
+            migrations.upgrade_plan()            ->  [Step("…b7", "add due_date"),
+                                                      Step("…c2", "add read_at")]
+            migrations.upgrade_plan(to="…b7")    ->  [Step("…b7", "add due_date")]
+
+        `to` is a step id or its start; the steps after it in the timeline are left out.
+        """
         self._refuse_unless_intact()
         status = self.status()
         self._refuse_unless_startable(status.chains)
@@ -306,7 +404,20 @@ class Migrations:
 
     def downgrade_plan(self, to: str) -> list[Step]:
         """What `downgrade(to)` would revert, newest first, running nothing — refused as it
-        would be: when one of them is irreversible, or the system never stood on `to`."""
+        would be: when one of them is irreversible, or the system never stood on `to`.
+
+            timeline: …a1 baseline (applied), …b7 add due_date (applied), …c2 add read_at
+            migrations.downgrade_plan("…a1")   ->  [Step("…b7", "add due_date")]
+            migrations.downgrade_plan("base")  ->  [Step("…b7", ...), Step("…a1", ...)]
+
+        1. Refused when the code is not intact, or a store is ahead or dirty.
+        2. The timeline is cut after `to` — at its very start for `"base"`.
+        3. Refused when the step `to` names is not applied: the system never stood there.
+        4. The applied steps after the cut, newest first; the pending ones have nothing to
+           revert.
+        5. Refused, naming them, when any of those is irreversible.
+        Final: those steps, in the order `downgrade` reverts them.
+        """
         self._refuse_unless_intact()
         status = self.status()
         self._refuse_unless_startable(status.chains)
@@ -345,7 +456,22 @@ class Migrations:
         irreversible: bool = False,
     ) -> Step:
         """A new step at the end of the chain: its engine writes the body, the context's
-        manifest records it. `requires` names steps of other chains — `context/store/id`."""
+        manifest records it. `requires` names steps of other chains — `context/store/id`.
+
+            migrations.revision("chat", "main", "add read_at")
+                ->  Step(id="0192…c2", parent="0192…b7", message="add read_at",
+                         file="0192…c2_add_read_at.py", checksum="v2:…")
+            migrations.revision("billing", "main", "x", requires=["common/main/nope"])
+                ->  MigrationRefused("requires common/main/nope, which no chain has")
+
+        1. The context, its chain and the store's engine — refused when not registered.
+        2. Each key in `requires` must be a step some chain already has.
+        3. The context's manifest read fresh — the store's entry created when it has none.
+        4. A draft step: a new UUIDv7 id, the last step of the chain as its parent.
+        5. The engine writes the body (`scaffold`); the step takes the body's path, relative
+           to the chain's folder, and its checksum.
+        Final: the step appended to the manifest, the manifest written, the step answered.
+        """
         registry = self._context(context)
         chain = registry.chain(store)
         engine = registry.engines[store]
@@ -380,7 +506,14 @@ class Migrations:
 
     def resolve(self, context: str, store: str, at: str | None) -> None:
         """After a human looked at a dirty store: record the step it really stands on — `None`
-        for none."""
+        for none.
+
+            migrations.resolve("billing", "main", "0192b7")   ->  None; clean on …b7
+            migrations.resolve("billing", "main", None)       ->  None; clean, on no step
+
+        `at` is a step id of this chain or its start; one that is neither is refused, and
+        nothing is recorded.
+        """
         registry = self._context(context)
         chain = registry.chain(store)
         entry = self._manifest(registry).stores.get(store)
@@ -398,6 +531,18 @@ class Migrations:
         stands where they lead. Refused, recording nothing, when the store already stands on a
         step, when its engine cannot tell drift — `resolve --at` is the manual form — or when it
         reports any.
+
+            migrations.adopt("billing", "main")   ->  Step("0192…b7", message="add due_date")
+            on a store missing a column:
+                ->  MigrationRefused("billing/main does not hold what its steps lead to:
+                    column invoice.due_date is declared but no step adds it")
+
+        1. Refused when the code is not intact.
+        2. The context, the chain and the store's engine — refused when not registered.
+        3. Refused when the manifest has no step for this store: a baseline is written first.
+        4. Refused when the store already stands on a step, or is dirty.
+        5. The engine's drift: refused when it cannot tell (`None`) or reports a difference.
+        Final: the store recorded clean on the chain's last step, and that step answered.
         """
         self._refuse_unless_intact()
         registry = self._context(context)
@@ -437,6 +582,18 @@ class Migrations:
         body changed. Refused, before anything is written, when one of them is applied: an
         applied step is never edited — a new step changes what it did. A checksum of an older
         algorithm whose body did not change is rewritten with the current one, applied or not.
+
+            migrations.hash()   ->  ["chat/main/0192…c2"]   its body edited before any upgrade
+            migrations.hash()   ->  []                      every checksum already matched
+            migrations.hash()   ->  MigrationRefused("billing/main/0192…a1 changed, and is
+                                    already applied — revert the edit and write a new step …")
+
+        1. The steps applied anywhere, from `status`.
+        2. For every context's manifest, read fresh, and each of its stores:
+           2.1 a step whose body no longer matches its checksum is one that changed;
+           2.2 every step takes the checksum of its body now, with the current algorithm.
+        3. Refused, writing nothing, when a step that changed is applied.
+        Final: every manifest written — its `sum` recomputed — and the changed steps answered.
         """
         applied = {step.key for step, is_applied in self.status().timeline if is_applied}
         manifests: list[tuple[ContextMigrations, Manifest]] = []
@@ -470,7 +627,16 @@ class Migrations:
         linear, a body edited since it was hashed, a manifest whose sum is stale, a cycle or an
         unknown `requires` — and, for each store that is up to date, what its engine reports as
         drift. Empty when all is well. Where each store stands is `status`, not this: CI upgrades
-        a fresh store, then checks."""
+        a fresh store, then checks.
+
+            migrations.check()   ->  []
+            migrations.check()
+                ->  ["chat: the sum of meta_migration.json is stale — run hash",
+                     "billing/main: column invoice.due_date is declared but no step adds it"]
+
+        A store that is behind, ahead or dirty is not asked for drift: its tables are not yet
+        where its steps lead.
+        """
         problems = self._integrity_problems()
         for key, status in self.status().chains.items():
             if status.state == ChainState.UP_TO_DATE:

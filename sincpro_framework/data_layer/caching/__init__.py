@@ -1,11 +1,14 @@
 """Caching as infrastructure: the port a provider implements, the strategies a kept value is
 judged by, and what the framework builds on them.
 
-    store = InMemoryKeyValue()            # common.store — or RedisKeyValue, MemcachedKeyValue, yours
+    store = InMemoryKeyValue()            # store — or RedisKeyValue, MemcachedKeyValue, yours
 
-    Cache(store).get_or_compute(key, compute, KeepPolicy(TimeToLive(...), ExternalVersion(...)))
+    Cache(store).get_or_compute(
+        key, compute, CachePolicy(freshness=TimeToLive(...)), JsonCodec(Answer)
+    )
+
     Idempotency(store).run(key, write, IdempotencyPolicy(expires_after=...), JsonCodec(Answer))
-    QueryCaching(store).on(bus, Query, CachePolicy(...))     # a Query of the ORM, by what it read
+    QueryCaching(store).on(bus, Query, QueryCachePolicy(...))     # a Query of the ORM, by what it read
 
 `domain/` is the vocabulary — the strategies (`Freshness`, `Validation`,
 `FailurePolicy`, `Eviction`), the policies, the refusals; `adapters/` the stores, the codec, the
@@ -21,7 +24,6 @@ from sincpro_framework.data_layer.caching.adapters.eviction import Lru, Unbounde
 from sincpro_framework.data_layer.caching.adapters.json_codec import JsonCodec
 from sincpro_framework.data_layer.caching.adapters.key_value_records import KeyValueRecords
 from sincpro_framework.data_layer.caching.adapters.keys import key_of
-from sincpro_framework.data_layer.caching.adapters.memcached import MemcachedKeyValue
 from sincpro_framework.data_layer.caching.adapters.observers import (
     CountingObserver,
     MetricsObserver,
@@ -29,7 +31,6 @@ from sincpro_framework.data_layer.caching.adapters.observers import (
     Observers,
     SpanObserver,
 )
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.data_layer.caching.domain.codec import Codec
 from sincpro_framework.data_layer.caching.domain.eviction import Eviction
 from sincpro_framework.data_layer.caching.domain.exceptions import (
@@ -60,7 +61,7 @@ from sincpro_framework.data_layer.caching.domain.observer import (
 from sincpro_framework.data_layer.caching.domain.policies import (
     CachePolicy,
     IdempotencyPolicy,
-    KeepPolicy,
+    QueryCachePolicy,
 )
 from sincpro_framework.data_layer.caching.domain.validation import (
     ExternalVersion,
@@ -68,19 +69,28 @@ from sincpro_framework.data_layer.caching.domain.validation import (
     Validation,
 )
 from sincpro_framework.data_layer.caching.entrypoint.cache import Cache
+from sincpro_framework.data_layer.caching.entrypoint.facades import (
+    CacheFacade,
+    CacheStrategy,
+    IdempotencyFacade,
+)
 from sincpro_framework.data_layer.caching.entrypoint.idempotency import (
     Idempotency,
     current_idempotency_key,
     declares_once,
 )
 from sincpro_framework.data_layer.caching.entrypoint.query_caching import QueryCaching
+from sincpro_framework.store.adapters.memcached import MemcachedKeyValue
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 __all__ = [
     "AlreadyInProgress",
     "Cache",
+    "CacheFacade",
+    "CacheStrategy",
     "CacheObserver",
     "CacheOutcome",
-    "CachePolicy",
+    "QueryCachePolicy",
     "Codec",
     "CountingObserver",
     "Eviction",
@@ -90,13 +100,14 @@ __all__ = [
     "Freshness",
     "IDEMPOTENCY_KEY",
     "Idempotency",
+    "IdempotencyFacade",
     "IdempotencyOutcome",
     "IdempotencyPolicy",
     "IdempotencyRecord",
     "IdempotencyRecords",
     "IdempotentCommand",
     "JsonCodec",
-    "KeepPolicy",
+    "CachePolicy",
     "KeyReused",
     "KeyValueRecords",
     "Lifetime",

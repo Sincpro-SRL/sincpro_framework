@@ -51,28 +51,44 @@ class Entrypoint:
     or several, is `McpGateway`."""
 
     def __init__(self, framework_instance: UseFramework):
+        """A catalog over the bus — every use case, until `include` / `exclude` narrow it."""
         self.catalog = Catalog(framework_instance)
 
     @property
     def name(self) -> str:
+        """The bus's name — the server's name when `server()` is given none."""
         return self.catalog.framework_instance.name
 
     def include(self, *dtos: type | str) -> Self:
+        """Publish only these use cases — by Command class or its name.
+
+        Entrypoint(billing).include(CommandIssueInvoice, "QueryInvoice").run()
+        """
         self.catalog.include(*dtos)
         return self
 
     def exclude(self, *dtos: type | str) -> Self:
+        """Leave these use cases out — by Command class or its name."""
         self.catalog.exclude(*dtos)
         return self
 
     def wrap(self, dto: type | str, wrapper: Callable) -> Self:
+        """Decorate one use case's run — the tool calls `wrapper(run)` instead of `run`."""
         self.catalog.wrap(dto, wrapper)
         return self
 
     def tools(self) -> list[PackedFeatureOrAppService]:
+        """Every use case the catalog publishes, binary ones included — `server()` registers
+        only the JSON-safe ones of these."""
         return self.catalog.get_scalar_use_cases()
 
     def to_callables(self) -> dict[str, Callable[[dict[str, Any]], dict[str, Any]]]:
+        """`{tool name: run}` — the catalog as plain dict-in/dict-out functions, for a host
+        that is not FastMCP or for a test.
+
+            Entrypoint(billing).to_callables()["CommandIssueInvoice"]({"amount": 10})
+            ->  {"invoice_id": "F-1", ...}
+        """
         return {
             operation.name: operation.run for operation in self.catalog.get_scalar_use_cases()
         }
@@ -84,6 +100,11 @@ class Entrypoint:
         base_url: str | None = None,
     ) -> Any:
         """Publish JSON-safe Features/ApplicationServices on a FastMCP server.
+
+            Entrypoint(billing).server()
+            ->  FastMCP("billing") with tools "CommandIssueInvoice", "QueryInvoice", ...
+            Entrypoint(billing).server(auth=billing_access, base_url="https://mcp.acme.bo")
+            ->  the same, refusing a missing or failing bearer with 401
 
         1. Import FastMCP or raise with the extra-install hint.
         2. Register catalog.get_scalar_use_cases(filter_binaries_schema=True)
@@ -147,6 +168,8 @@ class McpGateway(Gateway):
         unguarded: bool = False,
         port: McpWire | None = None,
     ):
+        """The gateway's arguments (`Gateway`), with `McpWire` as the port when none is
+        given."""
         super().__init__(
             instances,
             layers,
@@ -163,6 +186,13 @@ class McpGateway(Gateway):
         return self.build()
 
     def tool_names(self) -> list[str]:
+        """The settled name of every tool, prefixed where two contexts clash.
+
+            McpGateway([billing, ventas]).tool_names()
+            ->  ["issue_invoice", "billing_invoice", "ventas_invoice"]
+
+        A name only one context has stays unprefixed.
+        """
         return [tool.name for tool in self.tools()]
 
     def server(
@@ -172,7 +202,20 @@ class McpGateway(Gateway):
         base_url: str | None = None,
     ) -> Any:
         """A FastMCP 3 server with every tool of the surface — returned, not run, so the project
-        adds its middleware, prompts or resources to it."""
+        adds its middleware, prompts or resources to it.
+
+            McpGateway([billing]).server()  ->  FastMCP("sincpro-mcp"), tool "issue_invoice"
+            McpGateway([billing]).server("billing-tools").run(transport="http")
+
+        1. Import FastMCP or raise with the extra-install hint.
+        2. The validated surface (`tools`) — refused before a server exists when it does not
+           hold.
+        3. Each tool registered as a typed function over its Command, with its name, title,
+           description (deprecation first), layer tag and hints; each call acts as whoever
+           called, through its own bus.
+        Final: the server — with `auth`, FastMCP verifies bearer tokens itself, and with
+        `base_url` publishes the resource metadata.
+        """
         try:
             from fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
         except ImportError as error:
@@ -200,6 +243,8 @@ class McpGateway(Gateway):
         return mcp
 
     def run(self, name: str | None = None, **kwargs: Any) -> None:
+        """Build the server and run it — stdio by default; `transport="http"` serves MCP
+        Streamable HTTP at /mcp. Extra kwargs go to `FastMCP.run` (host, port, path, ...)."""
         self.server(name=name).run(**kwargs)
 
 

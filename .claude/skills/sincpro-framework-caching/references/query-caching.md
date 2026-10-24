@@ -5,12 +5,12 @@ Deeper, in the framework repo: `docs/caching/README.md`.
 ```python
 from datetime import timedelta
 
-from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
+from sincpro_framework.data_layer.caching import QueryCachePolicy, QueryCaching
 
-from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework.store import InMemoryKeyValue
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
-caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
+caching.on(billing, QueryBalance, QueryCachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
 # a call with `user_id` in its context is refused: this policy does not vary by it
 
 with billing.context({"tenant_id": "acme"}):
@@ -66,7 +66,7 @@ kept — there would be nothing to let it go by (a warning on the `sincpro_frame
 logger on every such call). A Query that reads through an HTTP adapter or a raw connection declares what it depends on:
 
 ```python
-CachePolicy(ttl=timedelta(minutes=5), depends_on=[Invoice])   # invalidating Invoice lets it go
+QueryCachePolicy(ttl=timedelta(minutes=5), depends_on=[Invoice])   # invalidating Invoice lets it go
 ```
 
 A write that does not reach `invalidate`, `invalidate_on_commit` or `invalidated_by` — a
@@ -74,10 +74,10 @@ A write that does not reach `invalidate`, `invalidate_on_commit` or `invalidated
 their ttl. `invalidate(Invoice)` also invalidates `Invoice`'s base classes; `invalidate()` with no
 argument lets go of every answer of this namespace.
 
-## `CachePolicy`
+## `QueryCachePolicy`
 
 ```python
-policy = CachePolicy(
+policy = QueryCachePolicy(
     ttl=timedelta(minutes=5),
     jitter=0.1,                          # spread ±10 %
     stale_for=timedelta(minutes=1),      # served past the ttl while one caller recomputes
@@ -90,6 +90,18 @@ One caller recomputes a missing or expiring answer — whoever wins the store's 
 lock; the others serve the stale answer or wait a moment. `QueryCaching(store,
 near=timedelta(seconds=5))` also keeps answers in-process and still checks tag versions in the store,
 so an invalidation from another replica is seen at once.
+
+## The bounded context's own: `bus.cache.queries`
+
+```python
+billing.cache.queries(QueryBalance)                                   # a minute, on billing's store
+billing.cache.queries(QueryStatement, QueryCachePolicy(ttl=timedelta(minutes=5), vary_by="branch"))
+invalidate_on_commit(database, billing.cache.queries())               # the same QueryCaching
+```
+
+One `QueryCaching` per bus, namespaced by its name and bound to the store its context is kept in —
+so a write made from any context invalidates on that store. Build one by hand (below) for a store
+or options of its own (`sensitive`, `near`).
 
 ## Several contexts, one store
 
@@ -107,9 +119,9 @@ writes share a namespace.
 
 ## Related API
 
-`QueryCaching(store, near=, sensitive=, now=, namespace=, enabled=)`: `.on(bus, Query, CachePolicy)`,
+`QueryCaching(store, near=, sensitive=, now=, namespace=, enabled=, store_of=)`: `.on(bus, Query, QueryCachePolicy)`,
 `.invalidate(Aggregate | None)`, `.invalidated_by({Event: [Aggregate]})`, `.depends_on(query)` (the
 tags the answer held for that query instance depends on), `.policies()`.
 
-`CachePolicy(ttl, vary_by=(), stale_for=0, jitter=0.1, early_expiry=1.0, depends_on=(),
+`QueryCachePolicy(ttl, vary_by=(), stale_for=0, jitter=0.1, early_expiry=1.0, depends_on=(),
 max_bytes=1 MiB, wait_for_others=2 s)`; `ttl` is required.

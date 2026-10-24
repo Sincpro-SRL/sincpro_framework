@@ -18,34 +18,45 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import quote
 
-from sincpro_framework.common.store import LeaseState
 from sincpro_framework.context.domain.keys import ContextKey
-from sincpro_framework.context.domain.store import ContextStore, Entry
-from sincpro_framework.context.entrypoint.owner import owner_of
+from sincpro_framework.context.entrypoint.owner import BY_TENANT, owner_of
 from sincpro_framework.pipelines.run import PipelineRun, PipelineState
+from sincpro_framework.store import LeaseState
+from sincpro_framework.store.domain.store import ContextStore, Entry
 
 
 class PipelineRuns:
-    """The runs of one owner — the tenant keys, and the values of `by`, read from a context."""
+    """The runs of one owner — the values of `by`, read from a context: the tenant's by
+    default."""
 
     def __init__(
-        self, store: ContextStore, context: Mapping[Any, Any], by: Sequence[str] = ()
+        self, store: ContextStore, context: Mapping[Any, Any], by: Sequence[str] = BY_TENANT
     ) -> None:
+        """The runs kept in `store` for the owner `context` names by the keys of `by` — read
+        once, here."""
         self.store = store
         self.owner = owner_of(context, by)
         """Whose these runs are: `tenant_id=acme,tenant_ids=`."""
 
     def _folder(self, pipeline: str) -> str:
+        """The folder of `pipeline`'s runs for this owner — the pipeline encoded, so a `:` in
+        it never splits the key.
+
+            _folder("billing.CommandRunNightly")
+            ->  "SINCPRO_PIPELINE_CONTEXT:<owner>:billing.CommandRunNightly"
+        """
         return f"{ContextKey.PIPELINE_CONTEXT}:{self.owner}:{quote(pipeline, safe='')}"
 
     def _run(self, entry: Entry) -> PipelineRun:
+        """The `PipelineRun` an entry holds, its `store_version` the entry's version — what
+        the next `save` names as `expected`."""
         return PipelineRun.model_validate({**entry.values, "store_version": entry.version})
 
-    def keep(self, run: PipelineRun, expected: int = 0) -> PipelineRun:
+    def save(self, run: PipelineRun, expected: int = 0) -> PipelineRun:
         """`run` as the state of its pipeline and `run_id`, under a new version, when `expected`
         is the version there now — `0` for none; anything else raises `EntryConflict`."""
         owned = run.model_copy(update={"owner": self.owner})
-        kept = self.store.keep_entry(
+        kept = self.store.save_entry(
             f"{self._folder(run.pipeline)}:{quote(run.run_id, safe='')}",
             owned.model_dump(mode="json", exclude={"store_version"}),
             expected,
@@ -54,12 +65,12 @@ class PipelineRuns:
 
     def read(self, pipeline: str, run_id: str) -> PipelineRun | None:
         """The live run, or `None` when there is none, it was forgotten or it expired."""
-        found = self.store.entry(f"{self._folder(pipeline)}:{quote(run_id, safe='')}")
+        found = self.store.get_entry(f"{self._folder(pipeline)}:{quote(run_id, safe='')}")
         return None if found is None else self._run(found)
 
     def forget(self, pipeline: str, run_id: str) -> None:
         """Drop the run; one with none is not an error."""
-        self.store.discard_entry(f"{self._folder(pipeline)}:{quote(run_id, safe='')}")
+        self.store.delete_entry(f"{self._folder(pipeline)}:{quote(run_id, safe='')}")
 
     def find(
         self, pipeline: str, state: PipelineState | None = None, limit: int = 100
@@ -67,8 +78,8 @@ class PipelineRuns:
         """The runs of `pipeline`, the most recently started first — those in `state` when named."""
         found = [
             self._run(entry)
-            for key in self.store.entries(self._folder(pipeline))
-            if (entry := self.store.entry(key)) is not None
+            for key in self.store.list_entries(self._folder(pipeline))
+            if (entry := self.store.get_entry(key)) is not None
         ]
         chosen = [run for run in found if state is None or run.state == state]
         chosen.sort(key=lambda run: run.started_at, reverse=True)

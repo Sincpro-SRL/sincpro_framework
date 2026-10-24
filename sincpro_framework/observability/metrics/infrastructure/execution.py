@@ -66,7 +66,18 @@ and this label is what finds the SDK, as `resource.service.name` does on its spa
 def faulted(who: BusObservability | None, error: BaseException | None) -> bool | None:
     """Whether the bus (`who`, its `Observability`; the one running when not given) judges
     `error` a fault — `None` when none can say, and the shared rule decides. A timer a use case
-    declares reads the same bus its run is measured by, so both say the same."""
+    declares reads the same bus its run is measured by, so both say the same.
+
+        faulted(billing_observability, KeyError("x"))           ->  True
+        faulted(billing_observability, InvoiceLocked())         ->  False   # the bus ignores it
+        faulted(None, KeyError("x"))      ->  None, outside any bus's execution
+        faulted(who, None)                ->  None: nothing failed
+
+    1. No error: `None`.
+    2. No `who`: the bus running the execution in play (`correlation.current`).
+    3. One without a `faulted` judgement — or none at all: `None`.
+    Final: its judgement as a bool; `None` when asking it raises.
+    """
     if error is None:
         return None
     if who is None:
@@ -122,6 +133,16 @@ _warned: set[tuple[type, str]] = set()
 def _declared_instrument(
     context: str, use_case: type, declaration: Declaration
 ) -> Instrument:
+    """The instrument a decorator declaration records into on the bus `context` — built the
+    first time and kept per context, use case and declaration.
+
+        @metrics.counts()         on billing  ->  counter    "billing.issue_invoice.runs"
+        @metrics.sums(of(R).total)            ->  counter    "billing.issue_invoice.total"
+        @metrics.measures(of(R).lines)        ->  histogram  "billing.issue_invoice.lines"
+
+    Context: with no description, the first line of the use case's docstring stands in, so a
+    series is never undocumented on the backend.
+    """
     key = (context, use_case, id(declaration))
     known = _declared.get(key)
     if known is not None:
@@ -148,7 +169,21 @@ def _declared_instrument(
 def read_labels(
     paths: tuple[FieldPath, ...], sources: tuple[Any, ...], owner: type
 ) -> dict[str, str]:
-    """Each label read off the source its path starts at — `none` when no source is one."""
+    """Each label read off the source its path starts at — `none` when no source is one.
+
+        read_labels((of(CommandIssueInvoice).currency, of(BillingContext)["company"]),
+                    (command, response), IssueInvoice)
+            ->  {"currency": "BOB", "company": "3"}
+        read_labels((of(CommandIssueInvoice).currency,), (), IssueInvoice)
+            ->  {"currency": "none"}, and one warning for IssueInvoice's `currency`
+
+    1. For each path, under its key (its last attribute):
+       1.1 a context path reads the execution's context now (`read_context`);
+       1.2 a DTO path reads the first source that is an instance of its root class;
+       1.3 no such source: `none`, warned about once per use case and key.
+    2. Each value travels as `label_value` spells it — an Enum's value, `true`, `none`.
+    Final: the labels, one per path.
+    """
     labels: dict[str, str] = {}
     for path in paths:
         if path.reads_context:
@@ -169,6 +204,14 @@ def read_labels(
 
 
 def _record_declared(context: str, use_case: type, dto: Any, response: Any) -> None:
+    """Record what `use_case` declared, read off a successful run's Command and Response.
+
+    1. For each declaration: its instrument, and its labels read off `(dto, response)`.
+    2. `counts`: one more.
+    3. `sums` / `measures`: the value read off the context, else the Command or the Response
+       — whichever its path starts at; a run that handed neither records nothing.
+    Final: a `None` value is skipped, any other emitted as a float.
+    """
     for declaration in declarations_of(use_case):
         instrument = _declared_instrument(context, use_case, declaration)
         labels = read_labels(declaration.labels, (dto, response), use_case)
@@ -190,14 +233,18 @@ class Execution:
     """A run in progress: when it started, how it ended."""
 
     def __init__(self) -> None:
+        """Start the clock — no error, no response yet."""
         self.started = time.perf_counter()
         self.error: BaseException | None = None
         self.response: Any = None
 
     def failed(self, error: BaseException) -> None:
+        """The run failed with `error` — it is measured as the failure's kind, even when an
+        error handler answers for it afterwards."""
         self.error = error
 
     def answered(self, response: Any) -> None:
+        """The run answered `response` — what declared metrics read their values off."""
         self.response = response
 
 
@@ -221,6 +268,13 @@ def _finish(
     layer: str,
     who: BusObservability | None,
 ) -> None:
+    """Record a finished run: its duration, then — on success only — what it declared.
+
+    1. The context is announced to the recorder (once per recorder — `identity.announce`).
+    2. `sincpro.use_case.duration` with the service, context, use case, layer and the outcome
+       as the bus judges it.
+    Final: no error — the declared metrics, read off the Command and the response.
+    """
     _announce(context, who)
     identity = identity_of(who)
     labels: Mapping[str, str] = {
@@ -247,7 +301,15 @@ def measured(
 
     1. Nothing to record to: the run goes through untouched.
     2. Final: the run is timed; an exception crossing it is its failure; the metrics are
-       recorded, shielded, whatever happened."""
+       recorded, shielded, whatever happened.
+
+        with measured("billing", command, IssueInvoice(), "feature", who) as run:
+            run.answered(response)
+        ->  sincpro.use_case.duration {"sincpro.context": "billing", "sincpro.layer":
+            "feature", "sincpro.outcome": "ok", ...}, then IssueInvoice's declared metrics
+
+    A failure records the duration with its kind and no declared metric; a recorder that
+    fails is logged as a warning and never reaches the run."""
     execution = Execution()
     if active.get() is None:
         yield execution

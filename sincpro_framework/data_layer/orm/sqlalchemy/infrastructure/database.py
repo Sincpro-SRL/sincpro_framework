@@ -58,6 +58,7 @@ def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], Non
     """
 
     def who() -> str | None:
+        """The actor, or `None` when there is none or it raised."""
         if actor is None:
             return None
         try:
@@ -66,6 +67,13 @@ def _stamping(actor: Callable[[], str | None] | None) -> Callable[[Session], Non
             return None
 
     def stamp(session: Session) -> None:
+        """One flush stamped; only the records this flush writes (`goes_out`).
+
+        1. Each dirty record whose columns really changed: `updated_at`, and `updated_by`
+           when an actor answered.
+        2. Each new record: `updated_at` from `created_at` when unset, and `created_by` when
+           an actor answered and nobody set it.
+        """
         now = utc_now()
         acting = who()
         for record in session.dirty:
@@ -104,6 +112,18 @@ ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
 
 
 class Database:
+    """One engine, its pool and its session factory — and the rules every write through it
+    keeps, whoever opens the session.
+
+        database = Database("postgresql+psycopg://…", actor=lambda: current_user())
+        with database.session() as session:          commits at the end, rolls back on error
+            session.add(row)
+        database.after_commit(lambda session: cache.clear())
+
+    Context: the stamping, the change tracking, the preview guard and the read tracking hang
+    on the session factory rather than on a repository, so a plain session a script opens by
+    hand keeps them too.
+    """
 
     def __init__(
         self,
@@ -135,6 +155,16 @@ class Database:
         `enforce_foreign_keys` makes SQLite refuse an orphan, as Postgres does — off by default
         while one flush can still insert a child before its parent of another aggregate type
         (see the review log); on, a test on SQLite fails where production would.
+
+        1. The URL, the database's name from it, and the engine — registered among `ENGINES`
+           and observed (statements logged, traced) under that name.
+        2. On SQLite with `enforce_foreign_keys`, every new connection turns foreign keys on.
+        3. The session factory: nothing expires on commit, autoflush on, in-place changes
+           watched — first, so the next hooks see them as changes.
+        4. Before each flush, in this order: the stamping, the change tracking, the preview
+           guard.
+        5. On each ORM statement: the preview guard and the note of what it reads.
+        Final: the hooks a transaction runs on commit and rollback attached to the factory.
         """
         self.url = url
         self.name = make_url(url).database or ""

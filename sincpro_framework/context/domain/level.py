@@ -9,7 +9,7 @@ class Level(StrEnum):
 
     GLOBAL = "global"
     """Above every process: what every service that set the same context store shares — it
-    exists only once a bus of the process set one (`bus.context_store(store)`)."""
+    exists only once a bus of the process set one (`bus.store_context_in(store)`)."""
     ROOT = "root"
     """The process: its defaults, its flags, what any execution of it may read."""
     BUS = "bus"

@@ -11,6 +11,27 @@ Feature runs belong to the **process**, and must not be exported under a bus's n
 
 Nothing here raises and nothing here is required: with neither extra installed every
 method is a no-op and the bus runs exactly as it would without observability.
+
+How the bus drives it — one execution, as ``bus.py`` does it:
+
+    observability = Observability("billing", "billing_sdk")
+    observability.start(logger)                       ->  ObservabilityStatus(…)
+    with observability.execution() as outermost:      # True only for the outermost bus
+        with observability.span("CreateInvoice", "feature") as span:
+            with observability.measure(dto, feature, "feature") as measured:
+                try:
+                    response = feature.execute(dto)
+                except Exception as error:
+                    measured.failed(error)
+                    observability.failed(error, dto, feature, "feature", span)
+                    raise
+
+How a transport uses ``process``:
+
+    tracer = process.tracer("sincpro.http")           # None without opentelemetry
+    process.bind_logger(access_logger)                # access lines carry the trace_id
+    if not process.was_reported(error):
+        process.record_error(error)                   # the process release, not a bus
 """
 
 from collections.abc import Generator, Mapping
@@ -60,6 +81,16 @@ class Observability:
     """Who this bus is, which backends came up, and how it reports what happens."""
 
     def __init__(self, bus: str = "", package: str = "", version: str = "") -> None:
+        """Keep who the bus is — `bus`, its `package` and `version` — without resolving it.
+
+            Observability("billing", "billing_sdk").bus_name   ->  "billing"
+            Observability("billing").status.otel.reason         ->  "not_built"
+            Observability().logger                              ->  logger "sincpro_framework"
+
+        Context: the identity is resolved lazily (`identity`), but the module that builds the
+        bus is read here, while it is still on the stack. Nothing is reported or ignored yet
+        and the logger is the bus's own until `start` hands another one.
+        """
         self._bus = bus
         self._package = package
         self._version = version
@@ -87,7 +118,15 @@ class Observability:
         return self._identity
 
     def start(self, logger: Optional[LoggerProxy] = None) -> ObservabilityStatus:
-        """Bring both backends up for this bus. Each one degrades on its own."""
+        """Bring both backends up for this bus. Each one degrades on its own.
+
+            observability.start(logger)
+                ->  ObservabilityStatus(sentry=off("dsn_missing"), otel=off("no_endpoint"))
+                    logged as  "observability sentry=off:dsn_missing otel=off:no_endpoint"
+
+        One line says how both came up — a `warning` when either `failed`, `info` otherwise;
+        called without a `logger`, the status is kept and nothing is logged.
+        """
         if logger is not None:
             self.logger = logger
         self.status = ObservabilityStatus(
@@ -110,6 +149,10 @@ class Observability:
     def log_identity(self) -> dict[str, str]:
         """A log context source: the service, version and tenant on every line of this bus.
 
+            log_identity()   ->  {}                   # nothing has resolved the identity yet
+            log_identity()   ->  {"service_name": "billing-sdk", "service_version": "1.2.0",
+                                  "release": "billing-sdk:1.2.0", "tenant": "acme"}
+
         Context: it never resolves the identity itself — a first line logged at import would
         resolve it before a project hands its `APP_RELEASE` over, and cache the wrong name. It
         reads the identity once `start` (or a span) has resolved it; the tenant is read on each
@@ -122,7 +165,13 @@ class Observability:
             return {}
 
     def ignore(self, *error_types: Type[Exception]) -> None:
-        """Keep these exception types out of GlitchTip. They are expected, not bugs."""
+        """Keep these exception types out of GlitchTip. They are expected, not bugs.
+
+            observability.ignore(InvoiceLocked, InvoiceLocked)
+            observability.ignored_errors   ->  (InvoiceLocked,)
+
+        Added to what was ignored before, in order; a type already there is not repeated.
+        """
         known = list(self.ignored_errors)
         for error_type in error_types:
             if error_type not in known:
@@ -131,7 +180,14 @@ class Observability:
 
     def report(self, *error_types: Type[Exception]) -> None:
         """Send these exception types to GlitchTip although they are expected — a
-        `ClientError` or a `DomainError` a project wants to see."""
+        `ClientError` or a `DomainError` a project wants to see.
+
+            observability.report(InvoiceNotFound)
+            observability.reported_errors          ->  (InvoiceNotFound,)
+            observability.faulted(InvoiceNotFound())   ->  True
+
+        Added to what was reported before, in order; a type already there is not repeated.
+        """
         known = list(self.reported_errors)
         for error_type in error_types:
             if error_type not in known:
@@ -152,6 +208,12 @@ class Observability:
     ) -> Generator[Any, None, None]:
         """Span for one DTO execution, with its ids and coordinates bound to the logger. It
         starts `ok`; `failed` replaces the outcome with the failure's, as the metrics do.
+
+            with observability.span("CreateInvoice", "feature", "billing.CreateInvoice"):
+                ...    ->  span "billing/CreateInvoice": sincpro.outcome="ok",
+                           sincpro.fault="false", the tenant, the user and the context keys
+
+        It yields `None` without a tracer; a fault escaping the block sets the status ERROR.
 
         Context: the execution is this bus's for as long as the span is open, so every signal
         recorded inside reads this bus's context (PRD_03 §4.10). The context goes on the span
@@ -227,6 +289,21 @@ class Observability:
         )
 
     def _describe(self, error: BaseException, dto: object) -> tuple[str, dict[str, Any]]:
+        """The summary and the fields of the one log line a failure gets.
+
+        Context: what a handler recorded (`failure.remember`) names the handler, the chain and
+        where it failed; an error no handler recorded — an unknown DTO, a failure in the bus —
+        is described from the DTO alone. Both carry the outcome and the fault as judged here.
+
+            _describe(KeyError("x"), CreateInvoice(...))
+                ->  ("CreateInvoice failed: KeyError: 'x'",
+                     {"dto": ..., "sincpro_fault": ...})
+
+        1. No recorded failure leads to `error`: the DTO, the error type and the use case.
+        2. A recorded one: its own fields, plus `raised_as` when an error handler mapped the
+           original error to another type.
+        Final: (summary, fields).
+        """
         recorded = failure.failure_of(error)
         if recorded is None:
             fields = {
@@ -258,15 +335,27 @@ class Observability:
         describe(span, type(handler), source)
 
     def execution(self) -> ContextManager[bool]:
+        """The block around one dispatch; yields whether this bus is the outermost one — the
+        only one that logs an error escaping it (`escaped`)."""
         return failure.execution()
 
     def handling(self, dto_name: str) -> ContextManager[None]:
+        """The block a handler runs in; `dto_name` joins the chain a failure reports
+        (`ApplyPayment → CreateInvoice`)."""
         return failure.handling(dto_name)
 
     def failed(
         self, error: Exception, dto: object, handler: object, layer: str, span: Any
     ) -> None:
-        """Context: the handler that raised describes the failure, puts it on its span and
+        """Tell a use case failing with `error` to its span, the failure record and GlitchTip.
+
+            observability.failed(KeyError("x"), CreateInvoice(...), feature, "feature", span)
+                ->  span: sincpro.outcome="internal", sincpro.fault="true", the exception
+                    and code.* where it failed; one GlitchTip event
+            observability.failed(ClientError("no stock"), ...)
+                ->  span: sincpro.outcome="invalid", sincpro.fault="false"; no GlitchTip event
+
+        Context: the handler that raised describes the failure, puts it on its span and
         sends it to GlitchTip. An outer handler the same error crosses adds nothing but its
         span's outcome — every span it crosses takes one, as every run's metric does."""
         judged = self._judged(error)
@@ -291,7 +380,14 @@ class Observability:
         )
 
     def escaped(self, error: BaseException, dto: object) -> None:
-        """Context: called by the outermost bus only, so an error is logged once. A failure that
+        """Log the error that leaves the whole call — the one log line a failure gets.
+
+            observability.escaped(KeyError("x"), CreateInvoice(...))
+                ->  error  "CreateInvoiceFeature failed: KeyError: 'x'"  with its traceback
+            observability.escaped(ClientError("no stock"), CreateInvoice(...))
+                ->  info   "CreateInvoiceFeature failed: ClientError: no stock"
+
+        Context: called by the outermost bus only, so an error is logged once. A failure that
         is not a fault — something not found, refused, invalid — is an answer: an `info` line,
         no traceback. A fault is an `error` line with it."""
         recorded = failure.failure_of(error)
@@ -304,7 +400,14 @@ class Observability:
             self.logger.error(summary, exc_info=error, **fields)
 
     def handled(self, error: BaseException, dto: object) -> None:
-        """Context: an error handler answered instead of raising; the caller never sees the
+        """Log an error an error handler answered — `info` unless it is a fault.
+
+            observability.handled(ClientError("no stock"), CreateInvoice(...))
+                ->  info  "... failed: ClientError: no stock (answered by an error handler)"
+            observability.handled(KeyError("x"), CreateInvoice(...))
+                ->  warning  "... failed: KeyError: 'x' (answered by an error handler)"
+
+        Context: an error handler answered instead of raising; the caller never sees the
         error, so this line is its only trace."""
         summary, fields = self._describe(error, dto)
         message = f"{summary} (answered by an error handler)"
@@ -341,6 +444,12 @@ class ProcessObservability:
 
         Prefers what a bus already announced, so the transport and the buses of one
         deployment never disagree about the version that is running.
+
+            process.identity   ->  ObservabilityIdentity(
+                                   artifact="registry.example.com/team/sincpro-odoo:18.5.0",
+                                   version="", bus="")
+
+        Nothing announced: resolved from the caller's module, its bus emptied.
         """
         announced = registry.process_identity()
         if announced is not None:
@@ -355,6 +464,11 @@ class ProcessObservability:
         ``on:installed`` — this framework put the process provider there.
         ``on:host`` — someone got there first (Odoo, an operator's auto-instrumentation).
         ``off:*`` — nothing is registered, so transport spans would be no-ops.
+
+            process.status   ->  on("installed")     # active=True, state="on"
+            process.status   ->  off("no_endpoint")   # active=False, state="off"
+
+        ``sdk_missing`` without opentelemetry, before anything else is asked.
         """
         if not OTEL_AVAILABLE:
             return off("sdk_missing")
@@ -380,6 +494,11 @@ class ProcessObservability:
     def current_span(self) -> Optional[Any]:
         """The OpenTelemetry span running right now — to add an event or an attribute to it —
         or ``None`` when nothing is tracing or opentelemetry is not installed. Never raises.
+
+            process.current_span()   ->  the request's span, inside a traced ASGI request
+            process.current_span()   ->  None, at import time — no span is active
+
+        A span whose context is not valid (OTel's placeholder) counts as none.
         """
         try:
             from opentelemetry import trace
@@ -392,7 +511,15 @@ class ProcessObservability:
     def span_failed(self, span: Any, error: BaseException) -> None:
         """A span a caller opened itself (`tracer(...).start_span`) ends in `error`: the
         exception recorded, `error.type` set as the metrics and the logs spell it, the status
-        ERROR. Nothing without a span or without opentelemetry. Never raises."""
+        ERROR. Nothing without a span or without opentelemetry. Never raises.
+
+            span = process.tracer("sincpro.http").start_span("GET /invoices")
+            process.span_failed(span, TimeoutError("upstream"))
+                ->  an exception event, error.type="TimeoutError",
+                    Status(StatusCode.ERROR, "TimeoutError")
+
+        Ending the span stays the caller's: this only marks it.
+        """
         if span is None:
             return
         try:

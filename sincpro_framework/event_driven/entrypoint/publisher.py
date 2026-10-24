@@ -57,8 +57,10 @@ def refuse_orders(event: Any) -> None:
 
 
 class AsyncPublisher:
+    """`Publisher` for an `async def` caller — `aput` instead of `put`, the same rules."""
 
     def __init__(self, queue: Queue) -> None:
+        """Publish into `queue`."""
         self.queue = queue
 
     @overload
@@ -68,14 +70,18 @@ class AsyncPublisher:
     async def publish(self, event: DomainEvent, return_type: type[Response]) -> Response: ...
 
     async def publish(self, event: DomainEvent, return_type: Any = None) -> Any:
+        """The event into the queue, awaited; and, when a type is named, the one answer back
+        — as `Publisher.publish`."""
         refuse_orders(event)
         answers = await self.queue.aput(dataclasses.replace(event, **chain_for(event)))
         return None if return_type is None else _one_answer(self.queue, event, answers)
 
 
 class Publisher:
+    """Puts facts into a queue — what a Feature holds to tell whoever listens."""
 
     def __init__(self, queue: Queue) -> None:
+        """Publish into `queue` — which one decides whether an answer can come back."""
         self.queue = queue
 
     @overload

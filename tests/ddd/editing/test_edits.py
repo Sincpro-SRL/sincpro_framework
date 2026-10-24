@@ -12,7 +12,6 @@ from decimal import Decimal
 import pytest
 
 from sincpro_framework import UseFramework, exceptions
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.context import ContextStore, InMemoryContexts, KeyValueContexts
 from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
@@ -35,6 +34,7 @@ from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import parse_order
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.store import InMemoryKeyValue
 
 
 @dataclass
@@ -181,7 +181,7 @@ def shop(context_store: ContextStore) -> Shop:
     bus = UseFramework("edits-shop", log_after_execution=False)
     repository = MemoryRepository()
     bus.add_dependency("repository", repository)
-    bus.context_store(context_store)
+    bus.store_context_in(context_store)
 
     @bus.feature([QueryGetInvoice, QueryListInvoices, CommandEditInvoice])
     class InvoiceForms(EntityEdits[Invoice]):
@@ -328,6 +328,33 @@ def test_two_cashiers_editing_one_invoice_each_keep_their_own_draft(shop: Shop):
     assert shop.get(BOB, id=invoice.id, draft=True).invoice.discount == Decimal("2")
 
 
+def test_a_form_whose_drafts_belong_to_nobody_shares_one_draft_of_a_record(
+    context_store: ContextStore,
+):
+    """`drafts_by = ()`: every user who opens the record edits the same draft — the last
+    save names the version the previous one left."""
+    bus = UseFramework("edits-shared", log_after_execution=False)
+    bus.add_dependency("repository", MemoryRepository())
+    bus.store_context_in(context_store)
+
+    @bus.feature([QueryGetInvoice, QueryListInvoices, CommandEditInvoice])
+    class SharedForms(EntityEdits[Invoice]):
+        drafts_by = ()
+
+    shared = Shop(bus, MemoryRepository())
+    first = shared.edit(ANA, id="0192cccc", values={"partner_id": "p1"})
+    second = shared.edit(
+        ANA_ELSEWHERE,
+        id="0192cccc",
+        version=drafted(first).version,
+        values={"partner_id": "p2"},
+    )
+
+    seen_by_bob = shared.get(BOB, id="0192cccc", draft=True)
+    assert seen_by_bob.draft is not None and seen_by_bob.invoice.partner_id == "p2"
+    assert drafted(second).version == seen_by_bob.draft.version
+
+
 def test_a_draft_never_crosses_shops_even_for_the_same_cashier(shop: Shop):
     shop.edit(ANA, id="0192cccc", values={"partner_id": "p1"})
 
@@ -405,7 +432,7 @@ def test_two_bounded_contexts_sharing_one_store_never_read_each_others_drafts(
     for name in ("billing", "purchases"):
         bus = UseFramework(name, log_after_execution=False)
         bus.add_dependency("repository", MemoryRepository())
-        bus.context_store(context_store)
+        bus.store_context_in(context_store)
 
         @bus.feature([QueryGetInvoice, QueryListInvoices, CommandEditInvoice])
         class InvoiceForms(EntityEdits[Invoice]):

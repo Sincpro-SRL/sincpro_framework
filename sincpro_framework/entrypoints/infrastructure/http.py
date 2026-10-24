@@ -9,6 +9,11 @@ from sincpro_framework.context.adapters.propagation import extract
 def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
     """Fold transport headers into the framework context without touching DTO params.
 
+        merge_http_context({"X-Correlation-Id": "c-1", "Baggage": "tenant_id=acme",
+                            "traceparent": "00-4bf9...-01"})
+        ->  {"tenant_id": "acme", "correlation_id": "c-1",
+             "carrier": {"traceparent": "00-4bf9...-01"}}
+
     1. The context the caller carried — `baggage`, `sincpro-context` (what a frontend sends
        back), the identity headers (body context, merged later, still wins).
     2. carrier.traceparent from the W3C header, for OTel parent adoption.

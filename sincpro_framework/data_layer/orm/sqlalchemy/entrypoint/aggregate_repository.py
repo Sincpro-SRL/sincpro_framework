@@ -49,6 +49,8 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
     repository: Repository
 
     def __init__(self, repository: Repository, aggregate: type[T] | None = None) -> None:
+        """Bound to the context's database repository; `aggregate` is read from the class
+        parameter (`DatabaseAggregateRepository[Invoice]`) when not given."""
         super().__init__(repository, aggregate)
 
     # --- the unit of work -------------------------------------------------------------------
@@ -74,19 +76,27 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
 
     @contextmanager
     def savepoint(self) -> Generator[None]:
+        """A part of the unit of work that can fail on its own — `Repository.savepoint`."""
         with self.repository.savepoint():
             yield
 
     def commit(self) -> None:
+        """Ends the current transaction and starts the next, in the same unit of work —
+        `Repository.commit`, for a long process that must be durable batch by batch."""
         self.repository.commit()
 
     def flush(self) -> None:
+        """Writes what is pending without committing — `Repository.flush`."""
         self.repository.flush()
 
     def after_commit(self, callback: Callable[[], Any]) -> None:
+        """Runs `callback` once the unit of work committed, never if it is undone —
+        `Repository.after_commit`."""
         self.repository.after_commit(callback)
 
     def after_rollback(self, callback: Callable[[], Any]) -> None:
+        """Runs `callback` once the unit of work, or its savepoint, was undone —
+        `Repository.after_rollback`."""
         self.repository.after_rollback(callback)
 
     def retrying[R](
@@ -99,6 +109,8 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
         ),
         wait: float = 0.05,
     ) -> R:
+        """Runs `work` again when it lost a race (a stale version, a conflicting transaction)
+        and gives up saying so — `Repository.retrying`."""
         return self.repository.retrying(work, attempts, on, wait)
 
     @property
@@ -109,17 +121,31 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
 
     # --- analysis ---------------------------------------------------------------------------
     def distinct(self, field: str, criteria: Criteria | None = None) -> list[Any]:
+        """The values one column of this aggregate holds, each once — `Repository.distinct`.
+
+        invoices.distinct("state")   ->  ['draft', 'posted']
+        """
         return self.repository.distinct(self.aggregate, field, criteria)
 
     def measures(self, criteria: Criteria | None = None, **measures: Any) -> dict[str, Any]:
+        """Folds over the whole result set, each named by the caller — `Repository.measures`.
+
+        invoices.measures(total=("sum", "amount"))   ->  {'total': Decimal('1830.50')}
+        """
         return self.repository.measures(self.aggregate, criteria, **measures)
 
     def group_by(
         self, by: Sequence[str], criteria: Criteria | None = None
     ) -> list[dict[str, Any]]:
+        """Counts per bucket over the whole result set — `Repository.group_by`.
+
+        invoices.group_by(["state"])   ->  [{'state': 'draft', 'count': 3}, …]
+        """
         return self.repository.group_by(self.aggregate, by, criteria)
 
     def group_by_levels(self, criteria: Criteria | None = None) -> list[Bucket]:
+        """The result set split by the criteria's `grouping`, each bucket with the criteria
+        that opens it — `Repository.group_by_levels`."""
         return self.repository.group_by_levels(self.aggregate, criteria)
 
     def pivot(
@@ -129,11 +155,14 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
         criteria: Criteria | None = None,
         **measures: Any,
     ) -> Pivot:
+        """Groups crossed by groups, with folded cells and margins — `Repository.pivot`."""
         return self.repository.pivot(self.aggregate, rows, columns, criteria, **measures)
 
     def export(
         self, criteria: Criteria | None = None, specification: Specification | None = None
     ) -> Iterator[dict[str, Any]]:
+        """Every matching record as a dictionary, walked a page at a time so a large report
+        is never held in memory — `Repository.export`."""
         return self.repository.export(self.aggregate, criteria, specification)
 
     # --- writing past the aggregate ---------------------------------------------------------
@@ -143,12 +172,18 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
         on: Sequence[str],
         update: Sequence[str] | None = None,
     ) -> Upserted:
+        """Inserts each record or overwrites the stored one with the same `on` — no version
+        check, by definition — `Repository.upsert`."""
         return self.repository.upsert(record, on, update)
 
     def update_all(self, criteria: Criteria, values: Mapping[str, Any]) -> int:
+        """Sets `values` on every matching row in one statement, past the aggregate's hooks
+        and cascade; answers how many rows — `Repository.update_all`."""
         return self.repository.update_all(self.aggregate, criteria, values)
 
     def remove_all(self, criteria: Criteria) -> int:
+        """Deletes every matching row in one statement, no hook and no cascade; answers how
+        many rows — `Repository.remove_all`."""
         return self.repository.remove_all(self.aggregate, criteria)
 
     # --- the door underneath ----------------------------------------------------------------
@@ -161,4 +196,6 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
         return self.repository.run(self.aggregate, statement, criteria or Criteria())
 
     def explain(self, criteria: Criteria | None = None) -> Explained:
+        """What this criteria becomes — SQL, dropped parts, relations, statement count —
+        without running it — `Repository.explain`."""
         return self.repository.explain(self.aggregate, criteria)

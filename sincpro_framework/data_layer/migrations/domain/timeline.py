@@ -24,6 +24,11 @@ def new_step_id() -> str:
 
     Context: the counter starts at a random value with room to grow, and within one millisecond
     (or when the clock steps back) it only increments — RFC 9562 §6.2, method 1.
+
+        new_step_id()   ->  "01a16ec29864702f9f105f09cfbae1a5"
+        new_step_id()   ->  "01a16ec29864702f9f105f09cfbae1a6"   the same millisecond, +1
+
+    32 hex digits, the 13th the version `7`; ids made later sort after, as text too.
     """
     global _last
     milliseconds = time.time_ns() // 1_000_000
@@ -45,6 +50,12 @@ def new_step_id() -> str:
 
 
 def _dependencies(chains: Sequence[Sequence[Step]]) -> dict[str, set[str]]:
+    """What each step waits for: the step before it in its own chain, and every step it
+    `requires`. A `requires` that names a step no chain has is refused as `ValueError`.
+
+        chains [[a1, a2], [b1 (requires a2)]]
+        ->  {"x/a/a1": set(), "x/a/a2": {"x/a/a1"}, "x/b/b1": {"x/a/a2"}}
+    """
     known = {step.key for chain in chains for step in chain}
     dependencies: dict[str, set[str]] = {}
     for chain in chains:
@@ -60,6 +71,22 @@ def _dependencies(chains: Sequence[Sequence[Step]]) -> dict[str, set[str]]:
 
 
 def timeline(chains: Sequence[Sequence[Step]]) -> list[Step]:
+    """Every chain merged into the one order the steps run in — a topological sort where,
+    among the steps free to go, the smallest id (the oldest UUIDv7) goes first.
+
+    Context: each chain keeps its own order whatever its ids say, a step goes after what it
+    `requires`, and chains sharing a store interleave the way their steps were written.
+
+        chains [[a1(t=1), a2(t=4)], [b1(t=2), b2(t=3, requires a2)]]
+        ->  [a1, b1, a2, b2]
+
+    1. Each step's dependencies (`_dependencies`), and for each step the steps it unblocks.
+    2. The steps with no dependency go into a heap keyed by id.
+    3. Pop the smallest id, append it, and release every step it unblocks whose dependencies
+       are now all done.
+    Final: when some steps were never released they wait on each other — refused as
+    `ValueError` naming them; otherwise the order.
+    """
     steps = {step.key: step for chain in chains for step in chain}
     waiting = _dependencies(chains)
     unblocks: dict[str, list[str]] = {key: [] for key in steps}

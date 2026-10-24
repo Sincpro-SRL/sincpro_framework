@@ -5,9 +5,9 @@ a module added."""
 import pytest
 
 from sincpro_framework import UseFramework, exceptions
-from sincpro_framework.context.adapters.stores import InMemoryContexts
 from sincpro_framework.ddd import Get, ResponsePaginatedQuery, ResponseRecord, Search
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
+from sincpro_framework.store.adapters.stores import InMemoryContexts
 
 from .world import World
 
@@ -38,7 +38,7 @@ class Forms:
 
         bus = UseFramework("accounting", log_after_execution=False)
         bus.add_dependency("repository", store)
-        bus.context_store(InMemoryContexts())
+        bus.store_context_in(InMemoryContexts())
 
         @bus.feature([QueryGetMove, QuerySearchMoves, CommandEditMove])
         class MoveForms(EntityEdits[Move]):  # type: ignore[valid-type]
@@ -54,7 +54,7 @@ class Forms:
                 self.Response,
             )
 
-    def keep(self, key: str, values: dict, **more):
+    def save_draft(self, key: str, values: dict, **more):
         with self.bus.context({"user_id": "u1"}):
             return self.bus(self.Edit(id=key, values=values, **more), self.Response)
 
@@ -104,7 +104,7 @@ class ExtendedEdits(World):
     def test_an_edit_kept_as_a_draft_stores_nothing(self) -> None:
         k, store = self.populated()
 
-        answer = Forms(k, store).keep("B", {"route": "R3"})
+        answer = Forms(k, store).save_draft("B", {"route": "R3"})
 
         assert answer.move.route == "R3"  # type: ignore[attr-defined]
         assert store.get(k.Move, "B").route == "R7"
@@ -180,7 +180,7 @@ class DelegatedEdits(World):
     ) -> None:
         k, store = self.populated(delegated=True)
 
-        answer = Forms(k, store).keep("B", {"delivery": {"route": "R3"}})
+        answer = Forms(k, store).save_draft("B", {"delivery": {"route": "R3"}})
 
         shown = answer.model_dump(mode="json")["move"]
         assert shown["delivery"] == {"route": "R3"} and "route" not in shown
@@ -191,7 +191,7 @@ class DelegatedEdits(World):
 
         version = 0
         for changed in (["delivery"], ["delivery.route"], ["route"]):
-            answer = forms.keep(
+            answer = forms.save_draft(
                 "B", {"delivery": {"route": "R3"}}, changed=changed, version=version
             )
             version = answer.draft.version  # type: ignore[union-attr]

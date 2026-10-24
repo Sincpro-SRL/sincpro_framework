@@ -36,6 +36,12 @@ def execute_hosted(
 ) -> bytes:
     """The execution a caller asked for, on the context it named, answered as a message.
 
+        execute_hosted({"billing": billing}, "billing",
+                       b'{"type":"billing.CommandPay","data":{"amount":10}}', {}, None)
+        ->  b'{"type":"billing.ResponsePay","data":{"paid":true}}'
+        execute_hosted({"billing": billing}, "sales", body, {}, None)
+        ->  LookupError: this service does not host 'sales' — it hosts billing
+
     1. The context, by name — `LookupError` when this service does not host it.
     2. The message read; the DTO by its identity in that context — `UnknownDTOToExecute` when
        the context answers none of it here — rebuilt from its values: `DTODoesNotFit` naming

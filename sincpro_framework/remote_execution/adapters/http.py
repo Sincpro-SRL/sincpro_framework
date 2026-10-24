@@ -36,6 +36,9 @@ IDLE_REUSE = 2.0
 
 
 class _Kept(threading.local):
+    """The connection this thread keeps for one address, and when it last answered — per
+    thread, because an `http.client` connection is not safe to share."""
+
     connection: http.client.HTTPConnection | None = None
     last_used: float = 0.0
 
@@ -44,10 +47,18 @@ class HttpTransport:
     """The caller's side for one address."""
 
     def __init__(self, hosted_at: HostedAt) -> None:
+        """Nothing connects here: each thread opens its own connection at its first call."""
         self.hosted_at = hosted_at
         self._kept = _Kept()
 
     def _connection(self) -> http.client.HTTPConnection:
+        """This thread's connection to the address, fit to write on.
+
+        1. Kept but idle past `IDLE_REUSE`: closed and dropped — the server may have closed
+           it, and a request lost on it could not be retried.
+        Final: the kept one, else a new one — HTTPS when the address says so — with the
+        address's deadline as its socket timeout.
+        """
         kept = self._kept
         stale = time.monotonic() - kept.last_used > IDLE_REUSE
         if kept.connection is not None and stale:
@@ -63,6 +74,8 @@ class HttpTransport:
         return kept.connection
 
     def _forget(self) -> None:
+        """This thread's connection closed and dropped — after any failure on it, so the next
+        call never writes on a connection in an unknown state."""
         if self._kept.connection is not None:
             self._kept.connection.close()
         self._kept.connection = None
@@ -128,10 +141,16 @@ class HttpTransport:
         )
 
     def execute(self, context: str, dto: Any, request: Mapping[str, Any]) -> Payload:
-        """1. The message as the body — the DTO by its identity, its values, the request
+        """Run `dto` on the context hosted at the address, over one HTTP POST.
+
+            transport.execute("billing", CommandPay(amount=10), {"correlation_id": "c1"})
+            ->  Payload(type="billing.ResponsePay", data={"paid": True}, ...)
+            <answered 404>      ->  ContextUnavailable("billing at http://billing:8000: ...")
+
+        1. The message as the body — the DTO by its identity, its values, the request
            context; the context, the trace and who the call acts for as headers.
         2. One POST, each read and write within the address's deadline.
-        3. Final: the answer's message, or the failure raised as itself.
+        Final: the answer's message, or the failure raised as itself.
         """
         from sincpro_framework.auth.entrypoint.transports import identity_headers
         from sincpro_framework.observability.tracing.propagation import trace_carrier

@@ -14,6 +14,9 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class RunOutcome(StrEnum):
+    """How a claimed tick ended — `SKIPPED` when it was claimed but not run, because the
+    previous run still held the cron (`overlap=SKIP`)."""
+
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     SKIPPED = "skipped"
@@ -42,12 +45,26 @@ class CronRuns(ABC):
     """
 
     @abstractmethod
-    def claim(self, name: str, scheduled_for: datetime, key: str = "") -> bool: ...
+    def claim(self, name: str, scheduled_for: datetime, key: str = "") -> bool:
+        """`True` for the first caller of `(name, scheduled_for, key)`, `False` for every
+        other — atomic across whoever shares this record.
+
+            claim("cron-payments.Reconcile", at_0200)            ->  True   (this one runs)
+            claim("cron-payments.Reconcile", at_0200)            ->  False  (already claimed)
+            claim("cron-payments.Reconcile", at_0200, "notify")  ->  True   (`Tick.once`)
+
+        Context: `key=""` is the cron's own run of the tick; any other key is a step claimed
+        inside it, which `last`, `running` and `last_success` never count.
+        """
+        ...
 
     @abstractmethod
     def finish(
         self, name: str, scheduled_for: datetime, key: str, outcome: RunOutcome
-    ) -> None: ...
+    ) -> None:
+        """Record how a claimed run ended — its `finished_at` and `outcome` — so it no longer
+        holds the cron and `last` / `last_success` see it."""
+        ...
 
     @abstractmethod
     def running(self, name: str, since: datetime) -> bool:
@@ -62,4 +79,7 @@ class CronRuns(ABC):
         ...
 
     @abstractmethod
-    def last_success(self, name: str) -> Run | None: ...
+    def last_success(self, name: str) -> Run | None:
+        """The latest run of the cron that ended `SUCCEEDED` — what a status page answers to
+        "when did it last work"."""
+        ...

@@ -2,7 +2,8 @@
 the ones below it (`tests/data_layer/orm/test_layers.py`):
 
     entrypoint/       `Repository` — the facade a Feature receives, composed of the workflows
-    services/         workflows/ — `UnitOfWork`, `Reading`, `Writing` over the `Store` they share,
+    services/         workflows/ — `UnitOfWork`, `Reading`, `Writing` over the
+                      `RepositoryState` they share,
                       orchestrating the atomic services: the data mapper, the SQL translator, the
                       relation resolver, the cascade, the upsert, `describe`
     domain/           the adapter's vocabulary, no I/O: `Held`, `Orphans`, the mapping registry,
@@ -32,6 +33,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint import template_tabl
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.aggregate_repository import (
     DatabaseAggregateRepository,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.idempotency_records import (
+    DatabaseIdempotencyRecords,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.mapping import (
     map_aggregates,
     map_events,
@@ -58,6 +62,7 @@ __all__ = [
     "Consolidated",
     "Database",
     "DatabaseAggregateRepository",
+    "DatabaseIdempotencyRecords",
     "DatabaseNumbering",
     "Isolation",
     "JsonText",

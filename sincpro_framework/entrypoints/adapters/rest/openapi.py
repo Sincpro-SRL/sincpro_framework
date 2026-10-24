@@ -44,11 +44,17 @@ class _Components:
     """The models every schema references, each under one name."""
 
     def __init__(self) -> None:
+        """Start with `Error` — the envelope every failure of the REST wire answers."""
         self.schemas: dict[str, Any] = {
             "Error": {"type": "object", "properties": {"error": REFUSAL}}
         }
 
     def _pointed(self, node: Any) -> Any:
+        """`node` with every `#/$defs/X` reference pointed at `#/components/schemas/X` — the
+        place `keep` lifts the `$defs` to.
+
+            _pointed({"$ref": "#/$defs/Line"})  ->  {"$ref": "#/components/schemas/Line"}
+        """
         if isinstance(node, dict):
             return {
                 key: (
@@ -63,6 +69,8 @@ class _Components:
         return node
 
     def _put(self, name: str, schema: dict[str, Any]) -> None:
+        """Keep `schema` under `name` — the first one kept wins when two differ, with a
+        warning; the same shape twice is kept once, silently."""
         held = self.schemas.get(name)
         if held is not None and held != schema:
             logger.warning(
@@ -98,7 +106,21 @@ def reference(name: str) -> dict[str, str]:
 
 def operation_security(bus: Any, dto: type) -> dict[str, Any]:
     """`security` and `x-sincpro-requires` of the operation answering `dto` on `bus`, when the
-    bus is guarded — the fragment every OpenAPI host of the REST wire shares."""
+    bus is guarded — the fragment every OpenAPI host of the REST wire shares.
+
+        operation_security(billing, CommandIssueInvoice)    # @auth.requires("invoice.issue")
+        ->  {"security": [{"static": []}], "x-sincpro-requires": ["invoice.issue"],
+             "x-sincpro-when-denied": "raise"}
+        operation_security(billing, QueryHealth)            # @auth.public
+        ->  {"security": []}
+        operation_security(<unguarded bus>, CommandIssueInvoice)   ->  {}
+
+    1. An unguarded bus: nothing to say.
+    2. Nothing declared for the DTO: nothing; declared public: an empty `security`.
+    3. Otherwise one requirement per provider that has a security scheme.
+    Final: a `requires` declaration also says its requirements and what happens when they
+    are denied.
+    """
     access = access_control_of(bus)
     if access is None:
         return {}
@@ -114,7 +136,15 @@ def operation_security(bus: Any, dto: type) -> dict[str, Any]:
 
 
 def security_schemes(buses: Iterable[Any]) -> dict[str, Any]:
-    """Every provider of the guarded `buses` as an OpenAPI security scheme, once each."""
+    """Every provider of the guarded `buses` as an OpenAPI security scheme, once each.
+
+        security_schemes([billing, sales])      # StaticProvider and an ApiKeyProvider
+        ->  {"static": {"type": "http", "scheme": "bearer"},
+             "api-keys": {"type": "apiKey", "in": "header", "name": "x-api-key"}}
+
+    A provider name two buses share is described by the first; one with no scheme is left
+    out.
+    """
     schemes: dict[str, Any] = {}
     for bus in buses:
         access = access_control_of(bus)
@@ -126,12 +156,24 @@ def security_schemes(buses: Iterable[Any]) -> dict[str, Any]:
 
 
 def _security(route: RestRoute) -> dict[str, Any]:
+    """`operation_security` of the use case `route` answers."""
     return operation_security(route.bus, route.operation.dto)
 
 
 def _query_parameters(
     schema: Mapping[str, Any], components: _Components
 ) -> list[dict[str, Any]]:
+    """Each field of `schema` as a query parameter — a plain one as itself, any other as JSON
+    (`content: application/json`), the form `payload_from_query` reads back.
+
+        _query_parameters({"properties": {"status": {"type": "string"},
+                                          "criteria": {"$ref": "#/$defs/Criteria"}}}, ...)
+        ->  [{"name": "status", "in": "query", "required": False,
+              "schema": {"type": "string"}},
+             {"name": "criteria", "in": "query", "required": False,
+              "content": {"application/json":
+                          {"schema": {"$ref": "#/components/schemas/Criteria"}}}}]
+    """
     required = set(schema.get("required") or ())
     parameters: list[dict[str, Any]] = []
     for name, field_schema in (schema.get("properties") or {}).items():
@@ -150,6 +192,17 @@ def _query_parameters(
 
 
 def _operation(route: RestRoute, method: str, components: _Components) -> dict[str, Any]:
+    """The OpenAPI operation of `route` on `method`.
+
+    1. The DTO's schema and the answer's kept in `components` — qualified by the alias when
+       another bus published a model of the same name and another shape.
+    2. `operationId` — `_by_body` on the `POST` twin of a `GET` — summary (the description's
+       first line), tags (alias and layer), a 200 and every failure as `Error`, the DTO and
+       the layer as `x-sincpro-*`, and the operation's security.
+    3. The path fields as path parameters.
+    Final: on `GET` the other fields as query parameters, on any other method the DTO as an
+    optional JSON body.
+    """
     operation = route.operation
     kept = components.keep(operation.name, operation.json_schema, route.alias)
     input_ref = reference(kept)
@@ -228,7 +281,14 @@ def openapi_document(
     routes: Iterable[RestRoute],
     servers: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """1. One path item per route, one operation per method it answers.
+    """The OpenAPI 3.1 document of `routes` — what `RestGateway.openapi()` answers.
+
+        openapi_document("sincpro-rest", "1.0.0", routes, servers=["https://api.acme.bo"])
+        ->  {"openapi": "3.1.0", "info": {...}, "paths": {"/billing/...": {"post": {...}}},
+             "components": {"schemas": {...}, "securitySchemes": {...}},
+             "servers": [{"url": "https://api.acme.bo"}]}
+
+    1. One path item per route, one operation per method it answers.
     2. The providers of every guarded bus as `securitySchemes`, once each.
     3. Final: the document, its models under `components/schemas`.
     """

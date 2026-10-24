@@ -15,6 +15,14 @@ from sincpro_framework.ddd.repositories.reads import note_read, reading
 
 
 def note_statement_reads(state: ORMExecuteState) -> None:
+    """The `do_orm_execute` hook: each aggregate mapped to a table a SELECT reads is noted.
+
+    Context: a cached Query is invalidated by what it read, and what it read is only known
+    from the statements it ran. Nothing is done unless a `reading()` is open — the common case
+    costs one context-variable read.
+
+        SELECT … FROM invoice JOIN invoice_line …   ->  note_read(Invoice), note_read(Line)
+    """
     statement = state.statement
     if not reading() or not state.is_select or not isinstance(statement, ClauseElement):
         return

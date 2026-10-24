@@ -233,7 +233,7 @@ def _two_buses(ran: list[str], failing: list[bool]) -> tuple[UseFramework, UseFr
 
 
 def test_with_receipts_a_redelivery_runs_only_the_bus_that_failed():
-    from sincpro_framework.common.store import InMemoryKeyValue
+    from sincpro_framework.store import InMemoryKeyValue
 
     ran: list[str] = []
     subscriber = Subscriber(*_two_buses(ran, [True, False]), receipts=InMemoryKeyValue())
@@ -263,7 +263,7 @@ def test_without_receipts_every_bus_runs_again():
 
 
 def test_the_async_subscriber_keeps_the_same_receipts():
-    from sincpro_framework.common.store import InMemoryKeyValue
+    from sincpro_framework.store import InMemoryKeyValue
 
     ran: list[str] = []
     subscriber = Subscriber(*_two_buses(ran, [True, False]), receipts=InMemoryKeyValue())

@@ -46,7 +46,20 @@ def bus_call[R](
 ) -> Any:
     """A hand-written servicer's call to the bus, on the exact path a generated method takes:
     metadata → context, the caller's credentials, the deadline pre-check, `bus(dto)`, a
-    `google.rpc.Status` on failure (`wire.bus_call`)."""
+    `google.rpc.Status` on failure (`wire.bus_call`).
+
+    Context: a project that keeps its own typed `*_pb2` messages still wants the framework's
+    behaviour on failure — the same status codes and details a generated method answers.
+    `dto` may be a callable, so a request that does not build its DTO is answered
+    INVALID_ARGUMENT too; `to_response` turns the bus's answer into the project's message;
+    `domain` names the `ErrorInfo` domain (the bus's default package when `None`).
+
+        def IssueInvoice(self, request, context):
+            return bus_call(
+                context, billing, lambda: CommandIssueInvoice(amount=request.amount),
+                lambda issued: pb2.Invoice(id=issued.invoice_id),
+            )
+    """
     from sincpro_framework.entrypoints.adapters.grpc import wire
 
     return wire.bus_call(context, bus, dto, to_response, domain=domain)
@@ -64,10 +77,13 @@ class _DrainsFirst:
     """What the SIGTERM hook stops: health flips to NOT_SERVING, then the server drains."""
 
     def __init__(self, gateway: "GrpcGateway", server: Any):
+        """The gateway whose health is flipped and the server it stops."""
         self.gateway = gateway
         self.server = server
 
     def stop(self, grace: float | None) -> Any:
+        """Turn every service NOT_SERVING, then stop the server — in-flight calls get `grace`
+        seconds. Answers what `grpc.Server.stop` answers (the event set once stopped)."""
         self.gateway.drain()
         return self.server.stop(grace)
 
@@ -79,6 +95,11 @@ class GrpcGateway(Gateway):
     `exposure` is `Exposure.DECLARED` by default: only the use cases bound for gRPC; `unguarded`
     says its buses have no `AccessControl` on purpose; `port` a `GrpcWire` of the project's
     that names differently.
+
+        gateway = GrpcGateway([billing]).group(billing, version="v2")
+        gateway.methods()     ->  {"/billing.v2.BillingService/IssueInvoice": GrpcMethodSpec}
+        gateway.run("0.0.0.0:50051")                              # serve until SIGTERM
+        gateway.mount(my_server, reflection_extra=[orders_pb2.DESCRIPTOR])  # a server of mine
     """
 
     wire = "grpc"
@@ -93,6 +114,8 @@ class GrpcGateway(Gateway):
         unguarded: bool = False,
         port: GrpcWire | None = None,
     ):
+        """The gateway's arguments (`Gateway`), with `GrpcWire` as the port when none is given
+        and a draining flag the health service reads."""
         self._draining = threading.Event()
         super().__init__(
             instances,
@@ -105,6 +128,8 @@ class GrpcGateway(Gateway):
         )
 
     def validate_alias(self, alias: str) -> str:
+        """An alias is a proto package segment — `billing`, `sales_orders`; `sales-orders` and
+        `acme.billing` are refused (a dotted package is the group's `package`)."""
         if not naming.IDENTIFIER.match(alias):
             raise ValueError(
                 f"gRPC instance alias [{alias}] must match {naming.IDENTIFIER.pattern} "
@@ -113,9 +138,17 @@ class GrpcGateway(Gateway):
         return alias
 
     def alias_for(self, framework_instance: UseFramework) -> str:
+        """The bus's name fit for a package — `sincpro-billing` is published as
+        `sincpro_billing`."""
         return naming.alias_of(framework_instance.name)
 
     def added(self, alias: str, framework_instance: UseFramework) -> None:
+        """Warn when the bus added is hosted elsewhere by the context map.
+
+        Context: such a bus executes every call at its host, so publishing it here adds a hop;
+        and serving it for other services is remote execution's own door (`bus.serve`,
+        `open_host`), never a public gateway. Warned, not refused — a project may mean it.
+        """
         if framework_instance.hosted_at is not None:
             logger.warning(
                 f"{framework_instance.name} is published here and the context map hosts it at "
@@ -130,7 +163,14 @@ class GrpcGateway(Gateway):
         return self.build()
 
     def describe(self) -> Scalar:
-        """What `sincpro.Introspection/Describe` answers."""
+        """What `sincpro.Introspection/Describe` answers — per service its methods, each with
+        its path, Command, layer, description and the JSON Schema of its params and result.
+
+            describe()
+            ->  {"title": "sincpro-grpc", "version": "1.0.0", "services": [
+                    {"name": "billing.v1.BillingService", "package": "billing.v1",
+                     "alias": "billing", "methods": [{"name": "IssueInvoice", ...}]}]}
+        """
         return proto.describe_document(self._title, self._version, self.methods())
 
     def proto_files(self) -> dict[str, str]:
@@ -139,7 +179,12 @@ class GrpcGateway(Gateway):
 
     def write_proto_files(self, directory: str | Path) -> list[Path]:
         """Write the exported `.proto` files under `directory`, creating the package
-        directories."""
+        directories.
+
+            write_proto_files("protos")   ->  [Path("protos/billing/v1/billing.proto")]
+
+        A file already there is overwritten — the gateway is the source of truth.
+        """
         written: list[Path] = []
         for filename, source in self.proto_files().items():
             path = Path(directory) / filename
@@ -162,6 +207,12 @@ class GrpcGateway(Gateway):
         `health_check` is re-evaluated on every `Check`/`Watch`; the default asks every
         published `UseFramework` whether it is still built. After `drain()` every service
         answers NOT_SERVING.
+
+            gateway.handlers()     ->  (<billing.v1.BillingService>, <sincpro.Introspection>,
+                                        <grpc.health.v1.Health>)
+            server.add_generic_rpc_handlers(gateway.handlers())
+
+        Nothing published is a warning, not a refusal: only the framework's services answer.
         """
         from sincpro_framework.entrypoints.adapters.grpc import wire
 
@@ -187,6 +238,15 @@ class GrpcGateway(Gateway):
 
         A hand-written method on a path this gateway serves is refused with `ProgrammingError`
         before anything is mounted. Answers `server`.
+
+            gateway.mount(grpc.server(pool))               ->  the same server, reflection on
+            gateway.mount(server, [orders_pb2.DESCRIPTOR]) ->  reflection lists both
+            gateway.mount(server, [<pb2 serving /billing.v1.BillingService/IssueInvoice>])
+            ->  ProgrammingError
+
+        1. The validated surface (`methods`); clashes with `reflection_extra` refused.
+        2. The generic handlers added — services, `Describe`, health.
+        Final: one reflection over both, unless `reflection=False` or nothing to list.
         """
         from sincpro_framework.entrypoints.adapters.grpc import wire
 
@@ -251,6 +311,14 @@ class GrpcGateway(Gateway):
         localhost and a mesh terminating TLS in front, never for a port exposed as it is.
         Signals can only be hooked from the main thread: off it, a warning and no hook, as with
         `handle_signals=False`.
+
+            gateway.run()                         ->  serves on DEFAULT_ADDRESS until SIGTERM
+            gateway.run("[::]:50051", grpc.ssl_server_credentials(...), grace=10)
+            ->  TLS on 50051; on SIGTERM, NOT_SERVING then up to 10 s to drain
+
+        1. The server built (`server`) and its port bound, secure or not.
+        2. Started; the shutdown hook installed — drain first, then `stop(grace)`.
+        Final: blocks until the server terminates.
         """
         from sincpro_framework.common.transport.grpc import hook_graceful_shutdown
 
@@ -284,6 +352,12 @@ def build_grpc_server(
     unguarded: bool = False,
     **kwargs: Any,
 ) -> Any:
+    """A configured, unstarted `grpc.Server` for `{alias: bus}` in one call — the gateway
+    built and `.server(**kwargs)` asked of it.
+
+        server = build_grpc_server({"billing": billing}, max_workers=20)
+        server.add_insecure_port("[::]:50051"); server.start()
+    """
     return GrpcGateway(
         instances,
         layers=layers,

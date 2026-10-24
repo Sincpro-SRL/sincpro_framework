@@ -62,22 +62,37 @@ class OpenHost(ABC):
 
 
 class _ServerHost(OpenHost):
+    """A host served on this process's own gRPC threads (`Attach.THREAD`)."""
+
     def __init__(self, server: Any, address: str) -> None:
+        """A server already started, at the address it bound."""
         self._server = server
         self.address = address
         self.pid = os.getpid()
 
     def stop(self, grace: float = 5.0) -> None:
+        """The server stopped — new calls refused, the ones in progress given `grace` seconds
+        — and waited for until it has."""
         self._server.stop(grace).wait()
 
 
 class _ProcessHost(OpenHost):
+    """A host served by a subprocess (`Attach.PROCESS`) — `pid` is the subprocess's."""
+
     def __init__(self, process: "subprocess.Popen[str]", address: str) -> None:
+        """A subprocess already listening, at the address it said."""
         self._process = process
         self.address = address
         self.pid = process.pid
 
     def stop(self, grace: float = 5.0) -> None:
+        """The subprocess asked to stop, waited for, and killed when it will not.
+
+        1. Still running: `grace` written to its stdin and stdin closed — what `host_process`
+           waits on; a pipe already gone is ignored.
+        2. Waited for `grace` plus ten seconds, to drain and exit.
+        Final: still alive after that — killed, and reaped.
+        """
         if self._process.poll() is None and self._process.stdin is not None:
             try:
                 self._process.stdin.write(f"{grace}\n")
@@ -100,6 +115,10 @@ def _internal_server(contexts: Sequence["UseFramework"]) -> Any:
 
 
 def _bound(address: str, port: int) -> str:
+    """`address` with the port the server actually bound — what `:0` turns into.
+
+    _bound("127.0.0.1:0", 50731)   ->  "127.0.0.1:50731"
+    """
     host, _, _asked = address.rpartition(":")
     return f"{host}:{port}"
 
@@ -120,6 +139,10 @@ def _import_path(context: "UseFramework") -> str:
 
 
 def _imported(path: str) -> "UseFramework":
+    """The context a `module:attribute` path names, its module imported.
+
+    _imported("billing.framework:billing")   ->  the `billing` UseFramework
+    """
     module, _, attribute = path.partition(":")
     return getattr(importlib.import_module(module), attribute)
 
@@ -202,6 +225,12 @@ def serve_contexts(
     attach: Attach = Attach.FOREGROUND,
 ) -> OpenHost | None:
     """Host `contexts` for calling services at `address` — `host:port`, `:0` for any free port.
+
+        serve_contexts([billing], "0.0.0.0:50061")         ->  None, once SIGTERM drained it
+        serve_contexts([billing], "127.0.0.1:0", Attach.THREAD)
+        ->  OpenHost listening at "127.0.0.1:50731"
+        serve_contexts(["billing.framework:billing"], "127.0.0.1:0", Attach.PROCESS)
+        ->  OpenHost of a subprocess, once it says it listens
 
     1. `FOREGROUND`: this process serves until SIGTERM/SIGINT, draining the calls in progress.
     2. `THREAD`: started on this process's gRPC threads; the host answers at once.

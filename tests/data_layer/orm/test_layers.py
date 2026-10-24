@@ -8,7 +8,7 @@ structure keeps saying what each piece is.
 
 Inside `services/`, the workflows orchestrate the atomic services as an ApplicationService
 orchestrates Features: an atomic service never imports a workflow, and a workflow imports no other
-workflow but the `Store` they share.
+workflow but the `RepositoryState` they share.
 """
 
 import ast
@@ -29,7 +29,7 @@ ALLOWED = {
 
 
 WORKFLOWS = "services.workflows"
-SHARED_BY_WORKFLOWS = {"store"}
+SHARED_BY_WORKFLOWS = {"repository_state"}
 
 
 def _imported(module: Path) -> set[str]:

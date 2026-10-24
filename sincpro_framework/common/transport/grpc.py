@@ -82,11 +82,20 @@ def deadline_of(context: Any) -> float | None:
 
 
 def is_past(deadline: float | None) -> bool:
+    """Whether the caller has already stopped waiting — never, when it set no deadline."""
     return deadline is not None and deadline <= time.time()
 
 
 def context_from_metadata(metadata: Sequence[tuple[str, Any]]) -> dict[str, Any]:
     """Fold call metadata into the framework context without touching the payload.
+
+        context_from_metadata([("x-correlation-id", "C"), ("traceparent", "00-4bf9…-01"),
+                               ("sp-ctx-tenant", "bo"), ("trace-bin", b"…")])
+            ->  {"correlation_id": "C", "tenant": "bo",
+                 "carrier": {"traceparent": "00-4bf9…-01"}}
+
+    Context: the text entries go first through `extract` — `baggage` and `sincpro-context`
+    are read there; a binary entry (`-bin`, or a value that is not text) is never read.
 
     1. `x-correlation-id`, `x-causation-id`, `x-execution-id` → the identity.
     2. `traceparent` / `tracestate` → carrier, for OTel parent adoption.
@@ -114,7 +123,16 @@ def context_from_metadata(metadata: Sequence[tuple[str, Any]]) -> dict[str, Any]
 def metadata_from_context(
     context: Mapping[str, Any] | None,
 ) -> tuple[tuple[str, str], ...]:
-    """The inverse of `context_from_metadata`, for a client that has a context dict."""
+    """The inverse of `context_from_metadata`, for a client that has a context dict.
+
+        metadata_from_context({"correlation_id": "C", "tenant": "bo", "user": None,
+                               "carrier": {"traceparent": "00-4bf9…-01", "x": "y"}})
+            ->  (("x-correlation-id", "C"), ("sp-ctx-tenant", "bo"),
+                 ("traceparent", "00-4bf9…-01"))
+
+    Context: a `None` value is left out, every other value is written as text, and only the
+    trace headers of the `carrier` travel.
+    """
     metadata: list[tuple[str, str]] = []
     for key, value in (context or {}).items():
         if value is None:
@@ -148,6 +166,20 @@ def health_handler(services: Iterable[str], is_ready: Callable[[], bool]) -> Any
     Context: `grpc.health.v1` is a fixed, well-known protobuf `grpcio-health-checking` generates
     and ships — using its `health_pb2` is not the "no generated stubs" rule, which is about
     services derived from DTOs that have no field-number registry of their own.
+
+        handler = health_handler(["billing.v1.BillingService"], is_ready=lambda: True)
+        Check(service="billing.v1.BillingService")   ->  SERVING
+        Check(service="")                            ->  SERVING     # the whole server
+        Check(service="sales.v1.SalesService")       ->  NOT_FOUND
+        # is_ready() now False: every known service  ->  NOT_SERVING
+
+    1. `grpc_health` not installed: a warning and `None` — the server runs without it.
+    2. The known names: the services given, the health service itself, and `""`.
+    3. `Check`:
+       3.1 a name not known is `NOT_FOUND`, with an empty response;
+       3.2 else `SERVING` while `is_ready()`, `NOT_SERVING` when not — asked on each call.
+    4. `Watch`: the answer of `Check`, once, then the stream ends.
+    Final: a generic handler of `grpc.health.v1.Health` serving both methods.
     """
     try:
         from grpc_health.v1 import health_pb2  # pyright: ignore[reportMissingImports]
@@ -158,6 +190,9 @@ def health_handler(services: Iterable[str], is_ready: Callable[[], bool]) -> Any
     known = {*services, HEALTH_SERVICE, ""}
 
     def check(request: Any, context: Any) -> Any:
+        """`Check`: a service this server does not host is `NOT_FOUND`; the empty name (the
+        whole server) and every hosted one are `SERVING` while `is_ready()`, else
+        `NOT_SERVING`."""
         if request.service and request.service not in known:
             context.set_code(grpc.StatusCode.NOT_FOUND)
             return health_pb2.HealthCheckResponse()
@@ -170,6 +205,8 @@ def health_handler(services: Iterable[str], is_ready: Callable[[], bool]) -> Any
         )
 
     def watch(request: Any, context: Any) -> Any:
+        """`Watch`: the current status, once — the stream then ends rather than pushing
+        changes."""
         yield check(request, context)
 
     return grpc.method_handlers_generic_handler(
@@ -194,9 +231,18 @@ def hook_graceful_shutdown(server: Any, name: str, grace: float | None) -> None:
 
     Context: `wait_for_termination()` blocks until something calls `stop()`, and nothing does by
     default — a rolling restart's SIGTERM would kill the calls in progress. `signal.signal` only
-    works from the main thread: off it, this logs once and the server runs with no hook."""
+    works from the main thread: off it, this logs once and the server runs with no hook.
+
+        hook_graceful_shutdown(server, "billing", grace=5.0)
+        # kill -TERM <pid>  ->  "gRPC server [billing] received [SIGTERM], draining for up
+        #                         to [5.0s]", then server.stop(5.0) — calls in flight finish
+
+    Both SIGTERM and SIGINT are hooked; `grace=None` stops at once, aborting what runs.
+    """
 
     def _shutdown(signum: int, _frame: Any) -> None:
+        """The signal handler: logs the signal and stops the server with `grace` seconds for
+        the calls in flight — what unblocks `wait_for_termination()`."""
         logger.info(
             "gRPC server [%s] received [%s], draining for up to [%ss]",
             name,

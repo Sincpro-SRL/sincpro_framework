@@ -24,6 +24,8 @@ from sincpro_framework.data_layer.caching import (
 
 
 class Claimed(StrEnum):
+    """What claiming a delivery in the inbox answered — the wire turns each into a verdict."""
+
     WON = "won"
     """This delivery runs."""
     COMPLETED = "completed"
@@ -35,17 +37,34 @@ class Claimed(StrEnum):
 
 
 def inbox_key(binding: str, source: str | None, message_id: str) -> str:
+    """The key one context's run of one message is claimed under — a message id is unique
+    only per producer, so the producer is part of it.
+
+        inbox_key("billing.IssueInvoice", "urn:svc:sales", "m-1")
+        ->  "inbox:billing.IssueInvoice:urn:svc:sales:m-1"
+        inbox_key("billing.IssueInvoice", None, "m-1")  ->  "inbox:billing.IssueInvoice::m-1"
+    """
     return f"inbox:{binding}:{source or ''}:{message_id}"
 
 
 def fingerprint_of(body: bytes) -> str:
+    """The SHA-256 of a body — how a redelivery is told from a message reusing its id."""
     return hashlib.sha256(body).hexdigest()
 
 
 class Inbox:
+    """The wire's inbox over an `IdempotencyRecords` — claim before the bus, complete after
+    it, release on failure.
+
+        claimed, owner = await inbox.claim(key, body)     ->  (Claimed.WON, "3f2a…")
+        await inbox.complete(key, body, owner)            # a redelivery is now COMPLETED
+    """
+
     def __init__(
         self, records: IdempotencyRecords, in_progress_for: timedelta, keep_for: timedelta
     ) -> None:
+        """`in_progress_for` is how long a claim holds a run; `keep_for` how long a completed
+        delivery is remembered."""
         self.records = records
         self.in_progress_for = in_progress_for
         self.keep_for = keep_for
@@ -78,10 +97,14 @@ class Inbox:
         return claimed, owner
 
     async def complete(self, key: str, body: bytes, owner: str) -> None:
+        """Mark the delivery done, kept for `keep_for` — every redelivery of it until then is
+        replayed: acked without running."""
         record = IdempotencyRecord(
             state=RecordState.COMPLETED, fingerprint=fingerprint_of(body), owner=owner
         )
         await asyncio.to_thread(self.records.complete, key, record, self.keep_for)
 
     async def release(self, key: str, owner: str) -> None:
+        """Drop `owner`'s claim after a failure, so the retry runs at once — never a claim
+        another delivery won after this one expired."""
         await asyncio.to_thread(self.records.release, key, owner)

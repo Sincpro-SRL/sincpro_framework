@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 
 from sincpro_framework import exceptions
 from sincpro_framework.circuits import Circuit, CircuitOpen, CircuitState
-from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework.store import InMemoryKeyValue
 
 at = [datetime(2026, 10, 24, tzinfo=UTC)]               # one clock, moved by hand
 store = InMemoryKeyValue(now=lambda: at[0])
@@ -144,7 +144,8 @@ decides to try again.
 
 A circuit is built at boot, with its adapter, before any execution runs. At every call it reads
 where the **running** context keeps its leases: the store of the bus it runs in, else the
-process's memory. Nothing about the store is said where the circuit is built:
+process's (`store_context_in(redis)`), else this process's memory — the same rule `bus.cache` and
+`bus.idempotency` keep by. Nothing about the store is said where the circuit is built:
 
 ```python
 from sincpro_framework import DataTransferObject, Feature, UseFramework
@@ -153,7 +154,7 @@ from sincpro_framework.context import InMemoryContexts
 payments = Circuit("payments-docs", failures=1)         # no store: the context's
 kept = InMemoryContexts()                               # KeyValueContexts(RedisKeyValue(...)) on replicas
 shop = UseFramework("circuits-shop", log_after_execution=False)
-shop.context_store(kept)
+shop.store_context_in(kept)
 
 
 class CommandCharge(DataTransferObject):

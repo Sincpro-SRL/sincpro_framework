@@ -13,12 +13,14 @@ from typing import Any
 
 from pydantic import Field
 
-from sincpro_framework.common.store import Lease
 from sincpro_framework.pipelines import exceptions
 from sincpro_framework.sincpro_abstractions import DataTransferObject
+from sincpro_framework.store import Lease
 
 
 class PipelineState(StrEnum):
+    """Where a run stands as a whole — what `FindRuns(state=...)` filters by."""
+
     RUNNING = "running"
     WAITING = "waiting"
     """Stopped at an `Await`, until the same run is run again with what it waits for."""
@@ -27,6 +29,8 @@ class PipelineState(StrEnum):
 
 
 class StepStatus(StrEnum):
+    """Where one step of a run stands — `WAITING` only for an `Await` step."""
+
     PENDING = "pending"
     RUNNING = "running"
     WAITING = "waiting"
@@ -55,7 +59,7 @@ class PipelineRun(DataTransferObject):
     """One run of a pipeline: what it was given and how far it got."""
 
     pipeline: str
-    """The pipeline by its identity — `billing.RunNightly`."""
+    """The pipeline by the identity of its Command — `billing.CommandRunNightly`."""
     run_id: str
     """What names this run: the same one, run again, continues it."""
     owner: str = ""

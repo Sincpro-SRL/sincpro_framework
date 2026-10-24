@@ -42,7 +42,14 @@ class Registry:
         the same name is refused: two contexts in one process do not share a name.
 
         A reference (`hosted_by`, or the context map) is not remembered: this process does
-        not serve it. `run_here` does, so that bus is remembered."""
+        not serve it. `run_here` does, so that bus is remembered.
+
+            registry.add(billing); registry.add(billing)     ->  None, remembered once
+            registry.add(<another bus named "billing">)      ->  BusAlreadyRegistered
+            registry.add(<billing hosted_by elsewhere>)      ->  None, not remembered
+
+        A bus that turned into a reference since it was added is dropped first.
+        """
         with self._lock:
             self._serving()
             if bus.is_reference:
@@ -55,7 +62,13 @@ class Registry:
             self._buses[bus.name] = bus
 
     def get(self, name: str) -> UseFramework:
-        """The bus registered under `name`."""
+        """The bus registered under `name`.
+
+            registry.get("billing")     ->  billing
+            registry.get("shipping")    ->  BusNotRegistered("shipping")
+
+        A bus that now only forwards is dropped first, so it is not found either.
+        """
         with self._lock:
             self._serving()
             try:

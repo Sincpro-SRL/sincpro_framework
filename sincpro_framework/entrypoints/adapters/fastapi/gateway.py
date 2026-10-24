@@ -78,10 +78,21 @@ NO_CONTENT = 204
 
 
 def _normalized(path: str) -> str:
+    """A path as a router matches it — every `{field}` one placeholder, no trailing slash — so
+    two routes that differ only in a field's name are seen as one.
+
+        _normalized("/invoices/{number}/")  ->  "/invoices/{}"
+    """
     return TEMPLATE_FIELD.sub("{}", path.rstrip("/") or "/")
 
 
 def _joined(*parts: str) -> str:
+    """Path segments joined by one slash each, the empty ones dropped — always rooted.
+
+        _joined("/v1", "", "/billing/", "invoices")  ->  "/v1/billing/invoices"
+
+    No part at all answers `/`.
+    """
     return "/" + "/".join(one.strip("/") for one in parts if one.strip("/"))
 
 
@@ -157,7 +168,22 @@ def _body_without(command: type, path_fields: Sequence[str]) -> dict[str, Any]:
 
 def operation_extra(bus: UseFramework, command: type) -> dict[str, Any]:
     """`openapi_extra` of the operation answering `command` on `bus` — its `security`, what it
-    requires (`x-sincpro-requires`), the schemes it names, whether it runs once."""
+    requires (`x-sincpro-requires`), the schemes it names, whether it runs once.
+
+    Context: a hand-written route passes it to `openapi_extra=` so its document says what a
+    generated route's says — who may call it and the `Idempotency-Key` it needs.
+
+        operation_extra(billing, CommandIssueInvoice)
+        ->  {"security": [...], "x-sincpro-requires": ...,
+             "x-sincpro-security-schemes": {...},
+             "parameters": [{"name": "Idempotency-Key", "in": "header", "required": True}]}
+
+    1. The operation's security, as the REST document says it (`operation_security`).
+    2. When it names any, the bus's security schemes — lifted into `components` later by
+       `problem_document`.
+    3. Final: a required `Idempotency-Key` header when the use case runs once and its Command
+       does not identify itself.
+    """
     extra = dict(operation_security(bus, command))
     if extra.get("security"):
         extra[SCHEMES_EXTENSION] = security_schemes([bus])
@@ -175,6 +201,13 @@ def operation_extra(bus: UseFramework, command: type) -> dict[str, Any]:
 
 
 def _kind_of_error(error: type) -> exceptions.FailureKind:
+    """The failure kind a declared error class answers with — read from the class, never
+    raised, so `problem_responses` can document its status.
+
+    1. Its `failure_kind` class attribute, when it names a known kind.
+    2. A stale or duplicate aggregate is a conflict.
+    Final: anything else is a domain refusal.
+    """
     declared = getattr(error, "failure_kind", None)
     if isinstance(declared, str) and declared in exceptions.FailureKind._value2member_map_:
         return exceptions.FailureKind(declared)
@@ -184,6 +217,8 @@ def _kind_of_error(error: type) -> exceptions.FailureKind:
 
 
 def _declares_once(handler: type) -> bool:
+    """Whether `handler` is `@idempotency.once` — imported late, caching is not loaded with
+    this module."""
     from sincpro_framework.data_layer.caching import declares_once
 
     return declares_once(handler)
@@ -193,7 +228,21 @@ def problem_responses(
     bus: UseFramework, command: type, errors: Iterable[type] = ()
 ) -> dict[int | str, dict[str, Any]]:
     """`responses=` of the operation answering `command` on `bus`: every problem it can answer,
-    as `application/problem+json` — `errors` adds the domain errors it declares."""
+    as `application/problem+json` — `errors` adds the domain errors it declares.
+
+    Context: a hand-written route passes it to `responses=` so a client generated from the
+    document knows each status it may get, and that every one is a `Problem`.
+
+        problem_responses(billing, CommandIssueInvoice, errors=[InvoiceAlreadyIssued])
+        ->  {400: ..., 422: {"description": "...; InvoiceAlreadyIssued", ...}, 500: ...,
+             401: ..., 403: ...}
+
+    1. 400, 422 and 500 — any operation can answer them.
+    2. 401 and 403 when the bus's `AccessControl` requires anything but `public`.
+    3. 409 when the use case runs once — the same request still running.
+    4. Final: each declared error under the status of its kind, its name appended to that
+       status's description.
+    """
     from sincpro_framework.entrypoints.adapters.fastapi.problems import STATUS_OF
 
     described: dict[int | str, dict[str, Any]] = {
@@ -223,9 +272,19 @@ class _PathIntoBody(APIRoute):
     FastAPI validates it, so the DTO validates once, whole. The path wins over the body."""
 
     def get_route_handler(self) -> Any:
+        """FastAPI's handler, behind one that rewrites the request body first."""
         handler = super().get_route_handler()
 
         async def merged(request: Request) -> Response:
+            """The request re-sent with the path fields in its JSON body.
+
+                POST /invoices/F-9/lines  {"amount": 10}  ->  {"amount": 10, "number": "F-9"}
+
+            1. A body that is not JSON, or not an object, goes on untouched — FastAPI answers
+               it its own 400 / 422.
+            2. The path parameters over the body's fields.
+            Final: FastAPI's handler with a request whose `receive` answers the merged body.
+            """
             raw = await request.body()
             try:
                 body = json.loads(raw) if raw else {}
@@ -236,6 +295,7 @@ class _PathIntoBody(APIRoute):
             content = json.dumps({**body, **request.path_params}).encode()
 
             async def receive() -> dict[str, Any]:
+                """The merged body, as one ASGI message."""
                 return {"type": "http.request", "body": content, "more_body": False}
 
             return await handler(Request(request.scope, receive))
@@ -248,6 +308,11 @@ def _read_from_url(command: type) -> Any:
     schema = command.model_json_schema() if issubclass(command, BaseModel) else {}
 
     async def read(request: Request) -> Any:
+        """The DTO from the query string and the path — the path wins — or FastAPI's own
+        422, each error located under `query`.
+
+            GET /invoices/F-9?status=open  ->  QueryInvoice(number="F-9", status="open")
+        """
         payload = {
             **payload_from_query(dict(request.query_params), schema),
             **request.path_params,
@@ -271,6 +336,8 @@ class FastApiWire(Wire[RestBinding]):
     binding = RestBinding
 
     def __init__(self, profile: Profile, limiter: CapacityLimiter | None = None) -> None:
+        """`profile` decides how a path is derived and whether a `Query` also answers `POST`;
+        `limiter` bounds the worker threads every route's bus call runs on."""
         self.profile: Profile = profile
         self.limiter = limiter
         self._repeated: set[str] = set()
@@ -280,6 +347,11 @@ class FastApiWire(Wire[RestBinding]):
     def derive(self, operation: Operation, group: Group) -> RestBinding:
         """`GET` for a `Query`, `POST` for any other Command; `/{kebab(Dto)}` in the rpc profile,
         the name without `Command`/`Query` in the resource one; 204 for what answers nothing.
+
+            derive(<CommandIssueInvoice>, Group(alias="billing"))   # profile "resource"
+            ->  RestBinding(method="POST", path="/issue-invoice")
+            derive(<QueryInvoices>, Group(alias="billing"))         # profile "rpc"
+            ->  RestBinding(method="GET", path="/query-invoices")
         """
         name = operation.command.__name__
         if self.profile == "resource":
@@ -319,12 +391,30 @@ class FastApiWire(Wire[RestBinding]):
         return [method]
 
     def full_path(self, resolved: Resolved[RestBinding]) -> str:
+        """The path an operation is served at — its group's prefix and its own path.
+
+            full_path(<"/invoices" in Group(alias="billing", version="v1")>)
+            ->  "/v1/billing/invoices"
+
+        The prefix is the group's version and prefix (`prefix_of`).
+        """
         return _joined(self.prefix_of(resolved.group), resolved.binding.path or "")
 
     # Validating
 
     def validate(self, surface: Sequence[Resolved[RestBinding]]) -> list[str]:
-        """1. Two operations on one method and path — `{id}` and `{number}` are one path.
+        """Every reason the surface cannot be served over REST — empty when it can.
+
+            validate([GET /v1/billing/invoices/{id}, GET /v1/billing/invoices/{number}])
+            ->  ["rest: GET /v1/billing/invoices/{number} answers both QueryInvoice and
+                 QueryInvoiceByNumber"]
+            validate([<binding with body="merge-patch">])
+            ->  ["CommandPatchInvoice (rest): body='merge-patch' is served in phase 2 ..."]
+
+        Context: the Command names that appear more than once are kept first, so their
+        `operationId`s are qualified by their group.
+
+        1. Two operations on one method and path — `{id}` and `{number}` are one path.
         2. Two operations with one `operationId`, once qualified by their group.
         3. Final: what is declared but served only in phase 2 — merge patch, `If-Match`.
         """
@@ -365,6 +455,29 @@ class FastApiWire(Wire[RestBinding]):
     # Building
 
     def add_route(self, router: APIRouter, resolved: Resolved[RestBinding]) -> None:
+        """Add one operation to `router` — one FastAPI route per method it answers.
+
+        Context: the route's OpenAPI is written here, not by a template: the problems it can
+        answer, its security, its path and query parameters inlined, a body without the path's
+        fields — so the generated document says what the route does.
+
+            add_route(router, <CommandIssueInvoice, POST "/invoices", answers a response>)
+            ->  None; POST /invoices on `router`, status 200, operationId from `name_of`
+            add_route(router, <CommandVoidInvoice, DELETE "/invoices/{id}", answers nothing>)
+            ->  None; DELETE /invoices/{id}, `id` a path parameter, status 204
+
+        1. The path (derived when the binding has none), its `{fields}`, the status — 204 when
+           the use case answers nothing — and the `operationId`.
+        2. What every method shares: response model, problem responses, tags, summary (the
+           description's first line), deprecation.
+        3. Per method:
+           3.1 `GET` / `DELETE` read the DTO from the URL, every field a query parameter; any
+               other reads the body, without the fields the path carries.
+           3.2 `x-sincpro-dto` and `x-sincpro-layer` name what answers it.
+           3.3 The `POST` twin of an rpc `Query` gets `_by_body` on its `operationId`.
+        Final: `add_api_route`, with `_PathIntoBody` when a body route takes fields from the
+        path.
+        """
         operation, binding = resolved.operation, resolved.binding
         command = operation.command
         path = binding.path or f"/{kebab(command.__name__)}"
@@ -418,7 +531,14 @@ class FastApiWire(Wire[RestBinding]):
             )
 
     def build(self, surface: Sequence[Resolved[RestBinding]]) -> dict[str, APIRouter]:
-        """One `APIRouter` per bounded context, its group's prefix on it."""
+        """One `APIRouter` per bounded context, its group's prefix on it.
+
+            build([<billing: IssueInvoice, Group(version="v1")>, <billing: QueryInvoice>,
+                   <stock: Reserve>])
+            ->  {"billing": APIRouter(prefix="/v1/billing"), "stock": APIRouter(...)}
+
+        The router's prefix is the one of the first operation of that bounded context.
+        """
         routers: dict[str, APIRouter] = {}
         for one in surface:
             alias = one.operation.alias
@@ -452,6 +572,13 @@ def _endpoint(
     the URL), the bus call as a dependency."""
 
     async def endpoint(request: Request, response: Response, dto: Any, call: Any) -> Any:
+        """Run the DTO — an empty one when an all-optional body was not sent — and answer.
+
+        1. `call(dto)`: the bus, through `bus_call`.
+        2. A 204 answers no body, whatever the bus returned.
+        Final: the answer, with a `Location` header filled from it when the binding declares
+        one.
+        """
         answer = await call(dto if dto is not None else command())
         if status == NO_CONTENT:
             return Response(status_code=NO_CONTENT)
@@ -518,6 +645,17 @@ def _scrape_app() -> Any | None:
 
 
 class FastApiGateway(Gateway):
+    """The REST wire on FastAPI — the buses' surface as `APIRouter`s, or as a whole app.
+
+    Context: a project that serves HTTP with FastAPI publishes its use cases through this,
+    and adds routes of its own beside them through `bus_call`; `verify(app)` checks the two
+    together. What it builds is returned, never started.
+
+        api = FastApiGateway([billing]).group(billing, version="v1")
+        app = api.app()                 # /v1/billing/..., /healthz, problems installed
+        uvicorn.run(app)
+    """
+
     wire = "rest"
 
     def __init__(
@@ -549,6 +687,8 @@ class FastApiGateway(Gateway):
 
     @property
     def profile(self) -> Profile:
+        """`"resource"` — only what is declared — or `"rpc"` — every use case, RPC over
+        HTTP."""
         return self._wire.profile
 
     def add(
@@ -559,6 +699,9 @@ class FastApiGateway(Gateway):
         exclude: Iterable[type | str] | None = None,
         wrap: Mapping[type | str, Wrapper] | None = None,
     ) -> "FastApiGateway":
+        """`Gateway.add`, with `wrap` refused: a route validates the DTO once and calls the
+        bus, never the dictionary-in run a wrapper decorates — an interceptor does that job.
+        """
         if wrap:
             raise exceptions.ProgrammingError(
                 "FastApiGateway: wrap decorates the dictionary-in call this wire never makes — "
@@ -570,6 +713,8 @@ class FastApiGateway(Gateway):
     def _surface_of(
         self, bus: UseFramework | str | None, exclude: Iterable[type]
     ) -> list[Resolved[RestBinding]]:
+        """The validated surface narrowed to one context — the bus or its alias, every one
+        when `None` — without the Commands in `exclude`."""
         left_out = set(exclude)
         return [
             one
@@ -587,6 +732,14 @@ class FastApiGateway(Gateway):
     ) -> APIRouter:
         """The routes of one context — the bus or its alias — or of every one, with their
         prefixes; `exclude` leaves out the Commands a project answers with routes of its own.
+
+            gateway.router("billing")         ->  APIRouter(prefix="/v1/billing")
+            gateway.router()                  ->  one APIRouter including every context's
+            gateway.router(billing, exclude=[CommandIssueInvoice])
+            ->  billing's routes but POST /invoices, answered by a route of the project's
+            gateway.router("shipping")        ->  ProgrammingError: no bus of this gateway
+
+        A bus that has nothing exposed answers an empty router, not an error.
         """
         surface = self._surface_of(bus, exclude)
         if (
@@ -609,11 +762,13 @@ class FastApiGateway(Gateway):
         return joined
 
     def operation_extra(self, bus: UseFramework, command: type) -> dict[str, Any]:
+        """The module's `operation_extra`, reachable from the gateway a project holds."""
         return operation_extra(bus, command)
 
     def problem_responses(
         self, bus: UseFramework, command: type
     ) -> dict[int | str, dict[str, Any]]:
+        """The module's `problem_responses`, with no declared errors."""
         return problem_responses(bus, command)
 
     def app(
@@ -624,7 +779,19 @@ class FastApiGateway(Gateway):
     ) -> FastAPI:
         """Every context's router in one FastAPI app, its problem handlers installed, a health
         check, and — when the process's metrics are scraped (`PrometheusRecorder`) — the scrape
-        at `metrics_path`. `fastapi_kwargs` go to `FastAPI(...)`."""
+        at `metrics_path`. `fastapi_kwargs` go to `FastAPI(...)`.
+
+            gateway.app()                     ->  FastAPI with /healthz and every route
+            gateway.app(health_path=None, docs_url=None)
+            ->  no health check, no Swagger UI
+            GET /healthz                      ->  200 {"status": "ok"}  (503 "unhealthy")
+
+        1. `separate_input_output_schemas` off unless said — one schema per DTO.
+        2. The app, titled and versioned as the gateway; the problem handlers installed.
+        3. Every context's routes (`router()`).
+        4. The health check at `health_path`, out of the OpenAPI document — unless `None`.
+        Final: the scrape mounted at `metrics_path`, when the process's metrics are scraped.
+        """
         fastapi_kwargs.setdefault("separate_input_output_schemas", False)
         app = FastAPI(title=self._title, version=self._version, **fastapi_kwargs)
         install_problem_handlers(app)
@@ -634,6 +801,7 @@ class FastApiGateway(Gateway):
 
             @app.get(health_path, include_in_schema=False)
             async def health() -> Response:
+                """200 `{"status": "ok"}` while every bus is built, else 503 `unhealthy`."""
                 healthy = gateway.is_healthy()
                 return Response(
                     json.dumps({"status": "ok" if healthy else "unhealthy"}),
@@ -649,7 +817,20 @@ class FastApiGateway(Gateway):
     def verify(self, app: FastAPI | None = None) -> list[str]:
         """Every reason the surface would be refused — and, given `app`, what its routes break
         together, generated and hand-written: one method and path twice, one `operationId`
-        twice, problem handlers never installed."""
+        twice, problem handlers never installed.
+
+            gateway.verify()                  ->  []  (the surface alone)
+            gateway.verify(gateway.app())     ->  []
+            gateway.verify(<app with a route of its own on POST /v1/billing/invoices>)
+            ->  ["rest: POST /v1/billing/invoices answered twice — ... and issue_by_hand"]
+
+        1. What `Gateway.verify` finds in the surface; no `app`, that is all.
+        2. Each route the app serves, by its full path:
+           2.1 each method and normalized path seen once — a second one named with both;
+           2.2 each `operationId` seen once — a second one named with both paths.
+        3. The problem handlers not installed on the app.
+        Final: the problems, each once, in the order found.
+        """
         problems = super().verify()
         if app is None:
             return problems

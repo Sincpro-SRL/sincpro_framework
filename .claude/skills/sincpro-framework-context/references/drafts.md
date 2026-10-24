@@ -13,14 +13,14 @@ is for a Feature that handles drafts itself.
 
 ```python
 from sincpro_framework.context import KeyValueContexts, InMemoryContexts
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 
-billing.context_store(KeyValueContexts(RedisKeyValue(redis)))   # production: every replica
-billing.context_store(InMemoryContexts())                        # one process, tests
+billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))   # production: every replica
+billing.store_context_in(InMemoryContexts())                        # one process, tests
 ```
 
 Nothing else to register: the context store keeps the drafts beside the contexts, each lasting
-`kept_ttl` (seven days) after its last keep.
+`entry_ttl` (seven days) after its last keep.
 
 ## 2. Keep and read, naming the version read
 
@@ -29,7 +29,7 @@ drafts = self.context.drafts()                          # the caller's — by us
 subject = f"invoice:{invoice_id}"                       # what the draft is about, nothing more
 draft = drafts.read(subject)                            # Draft | None
 expected = draft.version if draft else 0
-draft = drafts.keep(subject, dto.values, origin_version=invoice.version, expected=expected)
+draft = drafts.save(subject, dto.values, origin_version=invoice.version, expected=expected)
 ```
 
 Whose it is comes from the context: `drafts()` is the user's; `drafts(by=["session_id"])` a

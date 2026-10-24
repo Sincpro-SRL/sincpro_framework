@@ -74,9 +74,12 @@ def build_config_obj(
     sub_key: str | None = None,
     sources: Mapping[str, SettingSource] | None = None,
 ) -> TypeSincproConfigModel:
-    """Build a config object from a dictionary
-    if sub_key is provided, it will return the sub_key of the config — a dotted path reaches a
-    section inside another (`"sincpro_payments_sdk.qr"`).
+    """Build `class_config_obj` from the YAML file at `config_path`, read at the section
+    `sub_key` names — a dotted path reaches a section inside another
+    (`"sincpro_payments_sdk.qr"`); no `sub_key` reads the whole document.
+
+        build_config_obj(QRSettings, "conf/payments.yml", "sincpro_payments_sdk.qr")
+            ->  QRSettings(linkser_endpoint="https://…", environment=Environment.PROD)
 
     1. The document: the file, and — for a shape declaring `env_prefix` — the environment by path.
     2. The section `sub_key` names, and the sections above it inside the project's own.

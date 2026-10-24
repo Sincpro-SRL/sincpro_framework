@@ -23,6 +23,8 @@ from datetime import timedelta
 
 
 class FailurePolicy(ABC):
+    """The port: which failures are answered with the last good value, and for how long."""
+
     last_resort_for: timedelta = timedelta(0)
     """How long past its servable life a value may still be served when computing it fails."""
     throttle_for: timedelta = timedelta(0)
@@ -37,10 +39,13 @@ class Raise(FailurePolicy):
     """Nothing is served past the value's servable life: the error is the answer."""
 
     def handles(self, error: Exception) -> bool:
+        """Never — every failure is raised."""
         return False
 
 
 class FailSafe(FailurePolicy):
+    """RFC 5861's `stale-if-error`: the last good value stands in for `errors`, throttled."""
+
     def __init__(
         self,
         serve_for: timedelta,
@@ -57,4 +62,12 @@ class FailSafe(FailurePolicy):
         )
 
     def handles(self, error: Exception) -> bool:
+        """Whether `error` is one of `errors` — subclasses included.
+
+            policy = FailSafe(serve_for=timedelta(hours=1), errors=TimeoutError)
+            policy.handles(TimeoutError())  ->  True
+            policy.handles(KeyError())      ->  False
+
+        A failure outside `errors` is raised as it is.
+        """
         return isinstance(error, self.errors)

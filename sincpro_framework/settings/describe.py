@@ -22,6 +22,12 @@ MASKED = "**********"
 
 @dataclass(frozen=True)
 class SettingDescription:
+    """One leaf of a settings object: its dotted path, its annotation as written, its value
+    (masked when it is a secret) and where that value came from.
+
+        SettingDescription("qr.timeout", "float", 10.0, "default")
+    """
+
     path: str
     type: str
     value: Any
@@ -42,6 +48,12 @@ def _type_name(annotation: Any) -> str:
 def _walk(
     settings: SincproConfig, sources: dict[str, str], prefix: str
 ) -> list[SettingDescription]:
+    """Describe every field of `settings` in declaration order — a nested section is walked
+    into, with its name added to `prefix`, instead of being described itself.
+
+    Context: `sources` is the root object's map of path → source; a path missing from it was
+    not recorded by the build and reads as `assigned`.
+    """
     described: list[SettingDescription] = []
     for name, field in type(settings).model_fields.items():
         at = f"{prefix}{name}"

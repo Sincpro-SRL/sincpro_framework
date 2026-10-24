@@ -3,11 +3,16 @@
 from sincpro_framework.ddd.criteria.domain.strict import Strict
 
 
+# No class docstring: pydantic publishes it as the description in the committed
+# `criteria.schema.json` contract, which the TypeScript package copies.
+# One key of an ordering: a field, ascending unless `descending` —
+# Sort(field="registered_at", descending=True) is written "-registered_at".
 class Sort(Strict):
     field: str
     descending: bool = False
 
     def __str__(self) -> str:
+        """The URL spelling `parse_order` reads back: `"-registered_at"`, `"name"`."""
         return f"-{self.field}" if self.descending else self.field
 
 

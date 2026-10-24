@@ -20,14 +20,27 @@ HANDLER_DECORATORS = ("feature", "app_service")
 
 @dataclass(frozen=True)
 class ImportCycle:
+    """Modules that import each other when they load, in import order — the last imports the
+    first.
+
+        ImportCycle(("pkg.a", "pkg.b"))   ->  pkg.a → pkg.b → pkg.a
+    """
+
     modules: tuple[str, ...]
 
     def __repr__(self) -> str:
+        """The cycle closed on its first module, so a failing assert reads as the loop."""
         return " → ".join((*self.modules, self.modules[0]))
 
 
 @dataclass(frozen=True)
 class LayerViolation:
+    """One import that breaks a layer rule — where it is, what it imports, why it is refused.
+
+    LayerViolation("domain-is-vocabulary", "pkg.sales.domain.order",
+                   "pkg.sales.adapters.db", 3, "domain/ reaches adapters/; ...")
+    """
+
     rule: str
     importer: str
     imported: str
@@ -35,11 +48,15 @@ class LayerViolation:
     message: str
 
     def __repr__(self) -> str:
+        """One line a failing assert prints: the rule, the import and its line, the reason."""
         return f"[{self.rule}] {self.importer}:{self.line} imports {self.imported} — {self.message}"
 
 
 @dataclass(frozen=True)
 class _Edge:
+    """One import that runs at load time — ``names`` are the attributes taken from a package
+    ``__init__``; empty when it imports a module itself."""
+
     importer: str
     imported: str
     line: int
@@ -48,6 +65,9 @@ class _Edge:
 
 @dataclass(frozen=True)
 class _Module:
+    """A module of the package read: its dotted name, whether it is an ``__init__``, its
+    AST."""
+
     name: str
     is_package: bool
     tree: ast.Module
@@ -59,6 +79,11 @@ class _Module:
 
 
 def _package_root(package: str) -> Path:
+    """The directory of ``package``, found from its top package's import spec — the package
+    itself is never imported.
+
+        _package_root("my_sdk.sales")   ->  Path(".../site-packages/my_sdk/sales")
+    """
     top, *rest = package.split(".")
     spec = importlib.util.find_spec(top)
     if spec is None or not spec.submodule_search_locations:
@@ -70,6 +95,13 @@ def _package_root(package: str) -> Path:
 
 
 def _read_modules(package: str) -> dict[str, _Module]:
+    """Every ``.py`` under ``package`` parsed, by dotted name — hidden folders and
+    ``__pycache__`` skipped, an ``__init__.py`` named as its package.
+
+        _read_modules("pkg")
+            ->  {"pkg": _Module("pkg", True, ...),
+                 "pkg.sales.domain": _Module("pkg.sales.domain", False, ...)}
+    """
     root = _package_root(package)
     modules: dict[str, _Module] = {}
     for path in sorted(root.rglob("*.py")):
@@ -86,6 +118,8 @@ def _read_modules(package: str) -> dict[str, _Module]:
 
 
 def _is_type_checking(test: ast.expr) -> bool:
+    """Whether an ``if`` test is ``TYPE_CHECKING`` or ``typing.TYPE_CHECKING`` — its body
+    never runs, so its imports break no cycle."""
     match test:
         case ast.Name(id="TYPE_CHECKING") | ast.Attribute(attr="TYPE_CHECKING"):
             return True
@@ -110,6 +144,8 @@ def _nested_bodies(node: ast.stmt) -> list[list[ast.stmt]]:
 
 
 def _load_time_statements(body: Iterable[ast.stmt]) -> Iterator[ast.stmt]:
+    """Every statement of ``body`` that runs when the module loads, nested blocks included,
+    function bodies and ``if TYPE_CHECKING:`` left out."""
     for node in body:
         yield node
         for nested in _nested_bodies(node):
@@ -117,6 +153,12 @@ def _load_time_statements(body: Iterable[ast.stmt]) -> Iterator[ast.stmt]:
 
 
 def _resolve_base(module: _Module, node: ast.ImportFrom) -> str:
+    """The absolute module a ``from ... import`` reads from, relative dots resolved against
+    ``module``'s package.
+
+        in pkg.sales.services.quote:  from ..domain import Order   ->  "pkg.sales.domain"
+        in pkg.sales (an __init__):   from . import services       ->  "pkg.sales"
+    """
     if node.level == 0:
         return node.module or ""
     package = module.name if module.is_package else module.name.rpartition(".")[0]
@@ -126,13 +168,21 @@ def _resolve_base(module: _Module, node: ast.ImportFrom) -> str:
 
 
 def _deepest_known(name: str, modules: dict[str, _Module]) -> str | None:
+    """The longest prefix of ``name`` that is a module of the package — ``None`` for an
+    import from outside it.
+
+        _deepest_known("pkg.sales.domain.Order", modules)   ->  "pkg.sales.domain"
+        _deepest_known("pydantic", modules)                 ->  None
+    """
     while name and name not in modules:
         name = name.rpartition(".")[0]
     return name or None
 
 
 def _edges_of(module: _Module, modules: dict[str, _Module]) -> Iterator[_Edge]:
-    """Context: ``from pkg.sales import services`` is an edge to the submodule; ``from
+    """Every import of `module`, run when it loads, as an edge to a module of the package.
+
+    Context: ``from pkg.sales import services`` is an edge to the submodule; ``from
     pkg.sales import sales`` is an edge to the package ``__init__`` carrying the names taken.
     """
     for node in _load_time_statements(module.tree.body):
@@ -157,6 +207,13 @@ def _edges_of(module: _Module, modules: dict[str, _Module]) -> Iterator[_Edge]:
 
 
 def _first_binding_lines(module: _Module) -> dict[str, int]:
+    """The line each name is first bound on at load time — by assignment, ``def``, ``class``
+    or import; what ``is_bootstrap`` compares with the line of the import that loops back.
+
+        bus = UseFramework("sales")    # line 3
+        from . import services         # line 5
+        _first_binding_lines(init)   ->  {..., "bus": 3, "services": 5}
+    """
     bound: dict[str, int] = {}
     for node in _load_time_statements(module.tree.body):
         match node:
@@ -185,6 +242,8 @@ def _first_binding_lines(module: _Module) -> dict[str, int]:
 
 
 def _is_handler_class(node: ast.ClassDef) -> bool:
+    """Whether a class is decorated ``@<bus>.feature(...)`` or ``@<bus>.app_service(...)`` —
+    a call on an attribute of one of those names, whatever the bus is called."""
     return any(
         isinstance(decorator, ast.Call)
         and isinstance(decorator.func, ast.Attribute)
@@ -194,7 +253,9 @@ def _is_handler_class(node: ast.ClassDef) -> bool:
 
 
 def _bus_bypasses(module: _Module) -> set[str]:
-    """Context: names in a service module that run a use case without its bus — a class
+    """The names of a service module another module may not take — they skip the bus.
+
+    Context: names in a service module that run a use case without its bus — a class
     registered with ``@<bus>.feature`` / ``@<bus>.app_service``, and any module-level
     function. DTOs and constants are free, whatever they are called."""
     names: set[str] = set()
@@ -241,6 +302,12 @@ def _cyclic_groups(targets: dict[str, set[str]]) -> list[set[str]]:
 def _shortest_cycle(
     start: str, group: set[str], targets: dict[str, set[str]]
 ) -> tuple[str, ...]:
+    """The shortest loop from ``start`` back to itself inside ``group`` — a breadth-first
+    walk, neighbours in name order so the answer is stable from run to run.
+
+        targets = {"a": {"b"}, "b": {"c", "a"}, "c": {"a"}}
+        _shortest_cycle("a", {"a", "b", "c"}, targets)   ->  ("a", "b")
+    """
     previous: dict[str, str] = {}
     queue = deque([start])
     while queue:
@@ -258,7 +325,11 @@ def _shortest_cycle(
 
 
 class _Graph:
+    """The load-time import graph of a package: its modules, every edge, and the edges and
+    targets from each module (a module importing itself counts as an edge, not a target)."""
+
     def __init__(self, package: str) -> None:
+        """Read and parse ``package`` and index its edges by importer."""
         self.modules = _read_modules(package)
         self.edges = [e for m in self.modules.values() for e in _edges_of(m, self.modules)]
         self.edges_from: dict[str, list[_Edge]] = {name: [] for name in self.modules}
@@ -309,6 +380,17 @@ def _locate(module: str) -> tuple[str, str, str] | None:
 
 
 def _layer_rule(edge: _Edge, graph: _Graph) -> LayerViolation | None:
+    """The layer rule ``edge`` breaks, judged on that one import — ``None`` when it keeps them
+    all or either end sits outside every layer.
+
+    1. Importing ``entrypoints`` from any other layer is refused, across contexts too.
+    2. Taking a registered handler or a function from a ``services`` module is refused, across
+       contexts too — worded as a re-export when the importer is the package above it.
+    3. Between contexts nothing else is judged here (cycles are ``_context_cycles``).
+    4. Inside a context, ``domain`` imports only ``domain``.
+    5. Inside a context, an adapter folder (or module) imports no other one.
+    Final: the first rule broken, or ``None``.
+    """
     here, there = _locate(edge.importer), _locate(edge.imported)
     if here is None or there is None:
         return None
@@ -357,6 +439,14 @@ def _layer_rule(edge: _Edge, graph: _Graph) -> LayerViolation | None:
 
 
 def _context_cycles(graph: _Graph) -> Iterator[LayerViolation]:
+    """One violation per hop of each loop between contexts, pointing at an import that makes
+    that hop.
+
+    1. The first import from each context into each other one is kept as the example.
+    2. The contexts form a graph of their own; its cyclic groups are found.
+    3. Final: for the shortest loop of each group, every hop is reported at its example
+       import, with the whole loop in the message.
+    """
     examples: dict[tuple[str, str], _Edge] = {}
     for edge in graph.edges:
         here, there = _locate(edge.importer), _locate(edge.imported)
@@ -383,6 +473,8 @@ def _context_cycles(graph: _Graph) -> Iterator[LayerViolation]:
 
 
 def _common_reaching_up(graph: _Graph) -> Iterator[LayerViolation]:
+    """Imports from a context named ``common`` into any context that is not itself or one of
+    its parents — the foundation never depends on what stands on it."""
     for edge in graph.edges:
         here, there = _locate(edge.importer), _locate(edge.imported)
         if not (here and there) or here[0].rpartition(".")[2] != "common":

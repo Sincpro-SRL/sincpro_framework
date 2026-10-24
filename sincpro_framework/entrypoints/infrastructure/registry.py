@@ -16,13 +16,35 @@ from sincpro_framework.entrypoints.domain.bindings import Binding
 
 
 class Bindings:
+    """Every exposure declared in the process — the decorators write it, the gateways read it.
+
+        registry.declare(IssueInvoice, RestBinding(method="POST", path="/invoices"))
+        registry.of(IssueInvoice)        ->  {"rest": RestBinding(method="POST", …)}
+        registry.of(NewIssue, ["billing.IssueInvoice"])   # inherits the replaced one's
+
+    Context: kept apart from the class, so a decorator never adds an attribute a handler could
+    shadow or a subclass inherit by accident.
+    """
+
     def __init__(self) -> None:
+        """Empty, both maps weak — a class let go takes its bindings with it."""
         self._by_class: WeakKeyDictionary[type, dict[str, Binding]] = WeakKeyDictionary()
         self._by_name: WeakValueDictionary[str, type] = WeakValueDictionary()
 
     def declare[T: type](self, cls: T, binding: Binding) -> T:
-        """Context: one binding per wire — a second one for the same wire is refused, since
-        only one of them could be published."""
+        """Keep `binding` for `cls` and remember `cls` as the newest class under its dotted
+        name — `cls` returned, so a decorator returns it as it is.
+
+        Context: one binding per wire — a second one for the same wire is refused, since
+        only one of them could be published.
+
+            registry.declare(IssueInvoice, RestBinding(method="POST", path="/invoices"))
+            ->  IssueInvoice
+            registry.declare(IssueInvoice, RestBinding(path="/v2/invoices"))
+            ->  ProgrammingError: IssueInvoice declares two rest bindings — ...
+
+        Bindings of other wires on the same class are kept side by side.
+        """
         held = self._by_class.setdefault(cls, {})
         if binding.wire in held:
             raise exceptions.ProgrammingError(
@@ -36,6 +58,12 @@ class Bindings:
     def of(self, cls: type, replaced: Iterable[str] = ()) -> Mapping[str, Binding]:
         """Every binding `cls` answers with, by wire — its own, and for a wire it declares
         nothing on, the newest of the handlers it replaced that did (`replaced` oldest first).
+
+            registry.of(NewIssue, ["billing.features.IssueInvoice"])
+            ->  {"rest": <IssueInvoice's>, "mcp": <NewIssue's own>}   # NewIssue declares mcp
+            registry.of(Undeclared)                                      ->  {}
+
+        A replaced class that was let go (weakly held) is skipped.
         """
         found: dict[str, Binding] = {}
         for name in reversed(tuple(replaced)):
@@ -47,6 +75,7 @@ class Bindings:
         return {**found, **self._by_class.get(cls, {})}
 
     def declared(self) -> list[type]:
+        """Every class still alive that declared a binding — the newest under each name."""
         return list(self._by_name.values())
 
 

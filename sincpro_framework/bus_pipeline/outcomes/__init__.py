@@ -63,6 +63,8 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
+    """`ExecutionCompleted` and `ExecutionFailed`, imported at the first who asks for them —
+    so a process nobody listens in never loads the events nor the DDD layer under them."""
     if name in ("ExecutionCompleted", "ExecutionFailed"):
         from sincpro_framework.bus_pipeline.outcomes import events
 

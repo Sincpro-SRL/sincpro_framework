@@ -15,7 +15,6 @@ from structlog.testing import capture_logs
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth.domain import exceptions as auth_exceptions
-from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.data_layer.caching import (
     IDEMPOTENCY_KEY,
     Idempotency,
@@ -24,9 +23,10 @@ from sincpro_framework.data_layer.caching import (
     JsonCodec,
     KeyValueRecords,
 )
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.runtime.testing import IdempotencyRecordsContract, ManualClock
+from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 
 class Receipt(DataTransferObject):

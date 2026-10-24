@@ -9,7 +9,7 @@ project's — another region, an endpoint such as LocalStack, retries of its own
 
 | Port | Adapter | Where |
 |---|---|---|
-| `KeyValueStore` | `DynamoKeyValue` | `sincpro_framework.data_layer.caching.adapters.dynamodb` |
+| `KeyValueStore` | `DynamoKeyValue` | `sincpro_framework.store.adapters.dynamodb` |
 | `Queue` | `SnsQueue`, `SqsQueue`, `EventBridgeQueue` | `sincpro_framework.event_driven.adapters.aws` |
 | `Broker` (the queue wire) | `SqsBroker` | `sincpro_framework.event_driven.adapters.aws` |
 | an entrypoint | `sqs_handler` (a Lambda fed by SQS) | `sincpro_framework.entrypoints.adapters.aws_lambda` |

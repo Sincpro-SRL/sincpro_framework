@@ -102,14 +102,20 @@ class Condition(Strict):
         return cls(field=str(field), operator=operator, value=value)
 
 
+# No class docstring: pydantic publishes it as the description in the committed
+# `criteria.schema.json` contract, which the TypeScript package copies.
+# Every part holds — `{"all": [...]}` on the wire, AND in SQL.
 class All(Strict):
     all: list["Expression"]
 
 
+# At least one part holds — `{"any": [...]}` on the wire, OR in SQL. The underscore only
+# keeps it apart from `typing.Any`; it is exported as `Any`.
 class Any_(Strict):
     any: list["Expression"]
 
 
+# The part does not hold — `{"negate": {...}}` on the wire.
 class Not(Strict):
     negate: "Expression"
 
@@ -140,6 +146,13 @@ def expression_from(value: Any, tolerant: bool = False) -> Any:
     Recursive, because the children of a group are trees: the first version looked only at
     the top level, the branches of an `any` stayed raw, pydantic dropped the whole filter and
     a listing that asked for two origins showed all of them.
+
+    1. Anything but a dict — a node already built — is handed back as it is.
+    2. `any` or `all` (`any` looked at first): a key beside it is refused — dropped when
+       `tolerant` — and each child is read in turn into an `Any_` or an `All`.
+    3. `negate`: the same rule for the other keys, its child read into a `Not`.
+    4. `field`: a `Condition` of the keys it takes, the others refused or dropped.
+    Final: a dict with none of those keys is `InvalidCriteria`, naming the keys it had.
     """
     if not isinstance(value, dict):
         return value
@@ -170,6 +183,11 @@ def combined(*expressions: Expression | None) -> Expression | None:
     always adds — and wrapping each merge in a new `All` nests the tree as deep as the number
     of merges for a query that is one `WHERE`.
 
+        combined(None, a)                     ->  a
+        combined(All(all=[a, b]), None, c)    ->  All(all=[a, b, c])     # spliced, not nested
+        combined(Any_(any=[a, b]), c)         ->  All(all=[Any_(any=[a, b]), c])
+        combined(None, None)                  ->  None
+
     1. Drop the empties, and splice an incoming `All` instead of nesting it.
     2. Final: no parts is no filter, one part needs no wrapper, several become an `All`.
     """
@@ -192,9 +210,11 @@ def combined(*expressions: Expression | None) -> Expression | None:
 def conditions_of(expression: Expression | None) -> list[Condition]:
     """Every leaf of a tree, in reading order.
 
-    in   All([Any_([Condition(a), Condition(b)]), Not(Condition(c))])
-    out  [Condition(a), Condition(b), Condition(c)]
-    in   None  →  out  []
+        All([Any_([Condition(a), Condition(b)]), Not(Condition(c))])
+            ->  [Condition(a), Condition(b), Condition(c)]
+        None   ->  []
+
+    Context: a `Not` hands its leaf on as it is — what it negates is not this list's to say.
     """
     match expression:
         case None:

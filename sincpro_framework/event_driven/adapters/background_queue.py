@@ -78,7 +78,17 @@ class BackgroundQueue:
     ) -> None:
         """`spawn` and never `fork`: a spawned worker starts a fresh interpreter, so what
         `build_subscriber()` builds — engines, pools, sessions — is its own. A forked one
-        would inherit the parent's open connections, which SQLAlchemy forbids sharing."""
+        would inherit the parent's open connections, which SQLAlchemy forbids sharing.
+
+            BackgroundQueue(build_subscriber)      ->  spawn, an empty inbox, no worker
+            BackgroundQueue(build_subscriber, "forkserver")  ->  accepted
+            BackgroundQueue(build_subscriber, "fork")
+                ->  raises ProgrammingError("BackgroundQueue does not fork: …")
+            BackgroundQueue(Subscriber(planning))
+                ->  raises ProgrammingError("… Subscriber is not callable …")
+
+        Nothing is spawned here — `start()` does it.
+        """
         if context == "fork":
             raise exceptions.ProgrammingError(
                 "BackgroundQueue does not fork: the worker would inherit the parent's database "
@@ -99,7 +109,15 @@ class BackgroundQueue:
 
     def start(self) -> "BackgroundQueue":
         """Spawns the worker — once: a second worker on the same inbox would leave the first
-        without a `stop()` that reaches it."""
+        without a `stop()` that reaches it.
+
+            queue = BackgroundQueue(build_subscriber).start()   ->  queue, its worker alive
+            queue.start()
+                ->  raises ProgrammingError("this BackgroundQueue was already started: …")
+            queue.stop(); queue.start()                         ->  a new worker, same inbox
+
+        The worker is a daemon: it never outlives the process that spawned it.
+        """
         if self.process is not None:
             raise exceptions.ProgrammingError(
                 "this BackgroundQueue was already started: call stop() before starting it again"
@@ -118,6 +136,13 @@ class BackgroundQueue:
         inbox accepts whatever it is handed whether or not a worker reads it, so a fact that was
         supposed to leave the process would wait for nobody and say nothing; a refusal says
         it where it was published.
+
+            queue.put(InvoicePaid(…))    ->  None — ('{"name": "billing.InvoicePaid", …}',
+                                             {"traceparent": "00-…"}) in the inbox
+            # never started  ->  raises ProgrammingError("… never started: call start() …")
+            # worker died    ->  raises ProgrammingError("… (exit code 1): …")
+
+        It returns once the event is in the inbox — never when the worker handled it.
         """
         if self.process is None:
             raise exceptions.ProgrammingError(
@@ -134,9 +159,25 @@ class BackgroundQueue:
         self.inbox.put((event.as_json(), trace_carrier()))
 
     async def aput(self, event: DomainEvent) -> None:
+        """`put` — handing over to the inbox does not wait for the worker."""
         self.put(event)
 
     def stop(self, timeout: float | None = 10.0) -> None:
+        """Let the worker finish what is in the inbox, and wait for it.
+
+        Context: the stop marker goes in behind every event already put, so a clean stop
+        delivers them all; `timeout` bounds the wait for a worker stuck on one. Calling it on
+        a queue never started, or already stopped, does nothing.
+
+            queue.stop()              ->  None, every event put before it delivered
+            queue.stop(timeout=2.0)   # worker stuck on one event  ->  terminated after 2 s
+            queue.stop()              # again                       ->  None, nothing to do
+
+        1. Not started: nothing to do.
+        2. `STOP` is put in the inbox and the worker is joined for up to `timeout` seconds.
+        3. Still alive: it is terminated, and joined one more second.
+        Final: the queue forgets its worker — `start()` may spawn a new one.
+        """
         if self.process is None:
             return
         self.inbox.put(STOP)

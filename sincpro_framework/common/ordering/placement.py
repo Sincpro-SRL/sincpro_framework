@@ -36,6 +36,7 @@ DEFAULT_SEQUENCE = 10
 
 
 def refused(message: str) -> exceptions.ProgrammingError:
+    """The error an order that cannot exist raises — a wiring mistake: `ProgrammingError`."""
     return exceptions.ProgrammingError(message)
 
 
@@ -47,6 +48,13 @@ def name_of(item: Any) -> str:
 
 @dataclass(frozen=True)
 class Placement:
+    """One registration on an extension point: the item, and what it says about its place.
+
+    Placement(stamp, after=(check,))              once `check` has run
+    Placement(strict_check, replaces=check)       in `check`'s place, as `check` was
+    Placement(audit, sequence=5)                  early among the free ones (default 10)
+    """
+
     item: Any
     sequence: int = DEFAULT_SEQUENCE
     before: tuple[Any, ...] = ()
@@ -56,6 +64,10 @@ class Placement:
 
 @dataclass(frozen=True)
 class Ordered:
+    """What `ordered` answers: the items in the order they run, and what an extension point
+    reports about how it got there — the replacements in force, what was switched off, and
+    the notes on what was asked and could not be done as said."""
+
     items: list[Any]
     replaced: dict[Any, tuple[Any, ...]] = field(default_factory=dict)
     """Each replacement in force → what it replaced, oldest first."""
@@ -66,6 +78,9 @@ class Ordered:
 
 @dataclass
 class _Node:
+    """One item being placed: its registration index and sequence — a replacement's are those
+    of what it replaced — and its constraints, as mutable sets to merge into."""
+
     item: Any
     index: int
     sequence: int
@@ -76,7 +91,13 @@ class _Node:
 def _placed(
     placements: Sequence[Placement],
 ) -> tuple[dict[Any, _Node], dict[Any, tuple[Any, ...]], list[str]]:
-    """1. Each registration becomes a node, in registration order.
+    """The nodes that stay once replacements are resolved, what each replacement replaced,
+    and the notes on what could not be done as said.
+
+        [Placement(a), Placement(b, after=(a,)), Placement(a2, replaces=a)]
+        ->  nodes {a2 (index 0), b (after a2)},  replaced {a2: (a,)}
+
+    1. Each registration becomes a node, in registration order.
     2. A replacement takes its target's node — index, sequence, constraints — adding its own.
        2.1 Its target already replaced: it replaces the latest, with a note.
        2.2 Its target not registered: it is a registration of its own, with a note.
@@ -88,6 +109,7 @@ def _placed(
     notes: list[str] = []
 
     def current(item: Any) -> Any:
+        """What stands in `item`'s place now — the end of its chain of replacements."""
         while item in successor:
             item = successor[item]
         return item
@@ -154,7 +176,16 @@ def _sorted(
     sequence: dict[Any, int],
 ) -> list[Any]:
     """Kahn's sort, taking the free item with the lowest (sequence, registration index) — and
-    refusing, naming it, a cycle that leaves items no order can place."""
+    refusing, naming it, a cycle that leaves items no order can place.
+
+        a(seq 10) · b(seq 5) · c(seq 10, after a)   ->  [b, a, c]
+
+    1. Every item no edge points at is free, in a heap by (sequence, registration index) —
+       the index is unique, so the items themselves are never compared.
+    2. The lowest free item is placed; each item it runs before loses one incoming edge and
+       is freed when it has none left.
+    Final: items never freed are in a cycle, refused naming one (`_cycle`).
+    """
     waiting = dict(incoming)
     free = [(sequence[item], nodes[item].index, item) for item in nodes if waiting[item] == 0]
     heapq.heapify(free)
@@ -177,6 +208,16 @@ def _sorted(
 
 def ordered(placements: Sequence[Placement], off: Iterable[Any] = ()) -> Ordered:
     """The order `placements` run in, with `off` switched off.
+
+        ordered([Placement(audit), Placement(check, sequence=5),
+                 Placement(stamp, after=(check,))])
+            ->  Ordered(items=[check, audit, stamp])
+        ordered([Placement(a, sequence=1), Placement(b, before=(a,)),
+                 Placement(c, sequence=5)])
+            ->  Ordered(items=[b, a, c])     # b inherits a's 1, so it does not wait behind c
+        ordered([Placement(a), Placement(b)], off=[a, x])
+            ->  Ordered(items=[b], off=(a, x),
+                        notes=("mod.x is switched off, but it is not registered here",))
 
     1. Replacements resolved into the nodes that stay.
     2. What is switched off removed — a note when it is not registered.

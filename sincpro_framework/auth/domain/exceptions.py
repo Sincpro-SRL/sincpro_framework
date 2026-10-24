@@ -25,6 +25,7 @@ class Unauthenticated(AuthError):
     failure_kind = FailureKind.UNAUTHENTICATED
 
     def __init__(self, reason: str, step_up: str | None = None) -> None:
+        """A refusal saying why — `"expired token"` — and, for a step-up, what to bring."""
         super().__init__(reason)
         self.reason = reason
         self.step_up = step_up
@@ -37,6 +38,11 @@ class PermissionDenied(AuthError):
     failure_kind = FailureKind.PERMISSION_DENIED
 
     def __init__(self, subject: str, requirement: str, reason: str = "") -> None:
+        """A refusal of `subject` for `requirement` — by default `lacks <requirement>`.
+
+        str(PermissionDenied("user:1", "billing.invoice.issue"))
+            ->  "user:1 may not: lacks billing.invoice.issue"
+        """
         self.reason = reason or f"lacks {requirement}"
         super().__init__(f"{subject} may not: {self.reason}")
         self.subject = subject

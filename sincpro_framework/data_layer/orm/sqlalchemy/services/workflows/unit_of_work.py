@@ -31,14 +31,16 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.transaction_open
     began,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.unit_in_play import playing
-from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.store import Store
+from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.repository_state import (
+    RepositoryState,
+)
 from sincpro_framework.ddd.criteria import (
     Criteria,
 )
 from sincpro_framework.sincpro_logger import logger
 
 
-class UnitOfWork(Store):
+class UnitOfWork(RepositoryState):
     """Context: a bound repository is the same class over one session, built with `type(self)`, so
     the unit of work never needs to know which facade it is part of."""
 
@@ -129,6 +131,8 @@ class UnitOfWork(Store):
         self.session.commit()
 
     def _registered(self, moment: str, callback: Callback) -> None:
+        """Holds `callback` for `moment` on the innermost level of the bound session; refused
+        outside `context()`, where every call already commits on its own."""
         if self._bound is None:
             raise exceptions.ProgrammingError(
                 f"{moment} belongs to a unit of work; outside context() every call commits on "
@@ -233,6 +237,19 @@ class UnitOfWork(Store):
         must outlive the outer rollback needs, an audit of the attempt. It needs a database with
         a connection pool: an in-memory SQLite has one connection, and two transactions cannot
         share it.
+
+        1. What was asked, as one `Transaction` — `Writes.SAVED` unless said otherwise.
+        2. A unit of work already in play, and not `separate`: the block joins it — refused
+           when it asks for options other than the ones it began with — and nothing more.
+        3. Otherwise a new session: no autoflush under `Writes.SAVED`, and the transaction
+           begun with what was asked (`began`).
+        4. The repository bound to that session, keeping its scope and guard, set as the one
+           a relation touched inside resolves through.
+        5. The unit put in play on the database while the block runs, so every repository on
+           it joins.
+        6. After the block: a read-only unit lets go of everything it holds; a `SAVED` one
+           puts back what was changed and never saved, naming it in the log.
+        Final: committed as the session closes, or rolled back when the block raised.
         """
         asked = Transaction(
             isolation, read_only, timeout, dict(engine or {}), writes or Writes.SAVED
@@ -295,6 +312,13 @@ class UnitOfWork(Store):
         A callable and not a block, because a `with` cannot run its body twice. The wait
         doubles between attempts so two workers that collided do not collide again on the
         same beat; the last failure is raised as it was, not wrapped.
+
+        1. Refused with fewer than one attempt, and inside `context()`: the transaction that
+           lost is the one in play, and running it again from inside cannot help.
+        2. Each attempt runs `work` and answers what it answers.
+        3. A failure of a kind in `on` waits `wait`, then twice that, and so on — and runs it
+           again; any other failure is raised at once.
+        Final: the last attempt's failure raised as it was.
         """
         if attempts < 1:
             raise exceptions.ProgrammingError("retrying needs at least one attempt")

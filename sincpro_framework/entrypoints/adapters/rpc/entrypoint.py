@@ -46,8 +46,15 @@ send; a parameter such as `charset=utf-8` is allowed."""
 
 
 def validate_alias(alias: str) -> str:
-    """Context: an alias is the namespace of its methods by default, so `rpc` would publish
-    `rpc.issue_invoice` under the prefix JSON-RPC 2.0 reserves for the protocol itself."""
+    """An alias the JSON-RPC wire accepts — a letter first, then letters, digits, `_`, `-` —
+    refused with `ValueError` otherwise, and when it is `rpc`.
+
+    Context: an alias is the namespace of its methods by default, so `rpc` would publish
+    `rpc.issue_invoice` under the prefix JSON-RPC 2.0 reserves for the protocol itself.
+
+        validate_alias("billing")  ->  "billing"
+        validate_alias("RPC")      ->  ValueError: ... is reserved
+    """
     if not ALIAS_PATTERN.match(alias):
         raise ValueError(f"RPC instance alias [{alias}] must match {ALIAS_PATTERN.pattern}")
     if f"{alias}.".lower() == RESERVED_PREFIX:
@@ -59,6 +66,12 @@ def validate_alias(alias: str) -> str:
 
 
 def is_json_media_type(content_type: str | None) -> bool:
+    """Whether a `Content-Type` is one a JSON-RPC body may be sent as — its parameters
+    ignored.
+
+    is_json_media_type("application/json; charset=utf-8")  ->  True
+    is_json_media_type("text/plain")                       ->  False
+    """
     media_type = (content_type or "").split(";", 1)[0].strip().lower()
     return media_type in JSON_MEDIA_TYPES
 
@@ -88,6 +101,13 @@ class RpcGateway(Gateway):
         unguarded: bool = False,
         port: Wire[Any] | None = None,
     ):
+        """Without a `port`, a `JsonRpcWire` of `title`, `version` and the limits (each its
+        default when `None`); with one, it must be a `JsonRpcWire` and those four are
+        refused — they are the port's.
+
+            RpcGateway([billing], max_batch_size=10)
+            RpcGateway([billing], port=MyNaming(title="billing-api"))
+        """
         settings = (title, version, max_batch_size, max_body_bytes)
         if port is None:
             port = JsonRpcWire(
@@ -120,21 +140,35 @@ class RpcGateway(Gateway):
 
     @property
     def max_batch_size(self) -> int:
+        """How many calls one batch may run — the wire's."""
         return self._wire.max_batch_size
 
     @property
     def max_body_bytes(self) -> int:
+        """How many bytes of a body are read before answering 413 — the wire's."""
         return self._wire.max_body_bytes
 
     def validate_alias(self, alias: str) -> str:
+        """The module's `validate_alias` — `rpc` and what is not a namespace are refused."""
         return validate_alias(alias)
 
     def alias_for(self, framework_instance: UseFramework) -> str:
+        """The bus's name with anything an alias refuses turned into `-` — the namespace then
+        makes it snake_case.
+
+            alias_for(<bus "billing.v2">)  ->  "billing-v2"   # methods: billing_v2.<op>
+        """
         return re.sub(r"[^A-Za-z0-9_-]", "-", framework_instance.name)
 
     def build(self) -> RpcSurface:
         """The validated surface as the wire serves it — built once per resolution, refused
-        with `ProgrammingError` (every reason listed) when it does not hold."""
+        with `ProgrammingError` (every reason listed) when it does not hold.
+
+            gateway.build().methods      ->  {"billing.issue_invoice": <resolved>, ...}
+            gateway.build() is gateway.build()      ->  True, until resolved again
+
+        A new resolution — a bus added, a binding changed — builds it again.
+        """
         surface: Sequence[Resolved[RpcBinding]] = self.surface()
         resolved = self._resolved
         if self._built is None or self._built[0] is not resolved:
@@ -146,6 +180,7 @@ class RpcGateway(Gateway):
         return self.build().methods
 
     def discover(self) -> dict[str, Any]:
+        """The OpenRPC document — what `rpc.discover` and `GET /openrpc.json` answer."""
         return self.build().document
 
     def handle(
@@ -171,6 +206,14 @@ class RpcGateway(Gateway):
         from `is_healthy()` — for a mesh, k8s probe, or load balancer that speaks
         plain HTTP, not JSON-RPC. Included in `.routes()`/`.app()` by default;
         `health_path=None` on either drops it for a host that wires its own.
+
+            gateway.health_route()             ->  Route("/healthz", methods=["GET"])
+            GET /healthz                       ->  200 {"status": "ok"}
+            GET /healthz  <a bus torn down>    ->  503 {"status": "unhealthy"}
+
+        1. Starlette imported — refused with the extra-install hint without it.
+        2. An endpoint that asks `is_healthy()` on every request.
+        Final: a `GET` route at `path` serving it.
         """
         try:
             from starlette.requests import Request  # pyright: ignore[reportMissingImports]
@@ -184,6 +227,7 @@ class RpcGateway(Gateway):
         gateway = self
 
         async def healthz(_request: Request) -> JSONResponse:
+            """200 `{"status": "ok"}` while every bus is built, else 503 `unhealthy`."""
             healthy = gateway.is_healthy()
             return JSONResponse(
                 {"status": "ok" if healthy else "unhealthy"},
@@ -206,6 +250,22 @@ class RpcGateway(Gateway):
         several, or hand the list to a host that adds its own CORS/auth middleware and
         `lifespan` around it. `.app()` is this same list with no host around it supplied.
         `health_path=None` drops the health route for a host that wires its own.
+
+            gateway.routes()
+            ->  [Route("/rpc", POST), Route("/openrpc.json", GET), Route("/healthz", GET)]
+            POST /rpc  {"jsonrpc": "2.0", "id": 1, "method": "billing.issue_invoice", ...}
+            ->  200 {"jsonrpc": "2.0", "id": 1, "result": {...}}
+            POST /rpc  Content-Type: text/plain     ->  415
+
+        1. Starlette imported — refused with the extra-install hint without it.
+        2. The surface built once (`build`) — the routes serve that one.
+        3. `POST rpc_path`, per request:
+           3.1 a body not sent as JSON is refused (415) before it is read;
+           3.2 the body read up to `max_body_bytes` — past it, 413;
+           3.3 `dispatch` in a worker thread, with the request's credentials and headers;
+           3.4 the reply answered with the status and headers `http_status` gives it.
+        4. `GET discover_path`: the OpenRPC document of that surface.
+        Final: the health route (`health_route`), unless `health_path` is `None`.
         """
         try:
             from starlette.requests import Request  # pyright: ignore[reportMissingImports]
@@ -233,12 +293,22 @@ class RpcGateway(Gateway):
             return bytes(received)
 
         def answered(reply: Reply) -> Response:
+            """The reply as an HTTP response — `http_status` gives its status and headers; no
+            reply is an empty one (204)."""
             status, headers = http_status(surface, reply)
             if reply is None:
                 return Response(status_code=status, headers=headers)
             return JSONResponse(reply, status_code=status, headers=headers or None)
 
         async def rpc_endpoint(request: Request) -> Response:
+            """`POST /rpc`: one JSON-RPC body answered.
+
+            1. A body not sent as JSON is refused (415) before it is read.
+            2. The body, bounded by `max_body_bytes` — past it, 413.
+            3. `dispatch` in a worker thread, with the request's credentials and headers — the
+               bus authenticates in the thread it runs in.
+            Final: the reply, its status by `http_status`.
+            """
             if not is_json_media_type(request.headers.get("content-type")):
                 return answered(unsupported_media_type(sorted(JSON_MEDIA_TYPES)))
             raw = await bounded_body(request)
@@ -251,6 +321,7 @@ class RpcGateway(Gateway):
             return answered(reply)
 
         async def openrpc_endpoint(_request: Request) -> JSONResponse:
+            """`GET /openrpc.json`: the document of the surface the routes were built from."""
             return JSONResponse(surface.document)
 
         routes = [
@@ -323,6 +394,10 @@ def build_rpc_app(
     exposure: Exposure = Exposure.DECLARED,
     unguarded: bool = False,
 ) -> Any:
+    """`RpcGateway(...).app()` in one call — the buses served alone, nothing to compose.
+
+    uvicorn.run(build_rpc_app({"billing": billing}, max_batch_size=10))
+    """
     return RpcGateway(
         instances,
         layers=layers,

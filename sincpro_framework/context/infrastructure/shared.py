@@ -18,7 +18,7 @@ from types import MappingProxyType
 from typing import Any
 
 from sincpro_framework.context.domain.node import Values
-from sincpro_framework.context.domain.store import ContextStore
+from sincpro_framework.store.domain.store import ContextStore
 
 
 class SharedValues(Values):
@@ -33,6 +33,19 @@ class SharedValues(Values):
         every: timedelta,
         seed: Mapping[Any, Any] | None = None,
     ) -> None:
+        """Values under `key` in `store`, re-read at most once per `every`.
+
+        1. Start from `seed` — what the process held before it joined the store.
+        2. A key the store never kept takes the seed: the first replica brings its defaults.
+        Final: read what the store holds now — a key kept by another replica wins over the
+        seed.
+
+            SharedValues(store, "process:billing", timedelta(seconds=5), seed={"lang": "es"})
+                ->  first replica: {"lang": "es"}, saved as "process:billing"
+                ->  a later one, the store holding {"lang": "en"}: {"lang": "en"}
+
+        Nothing is refreshed after this until `every` has passed since the last check.
+        """
         super().__init__()
         self._store = store
         self._key = key
@@ -45,11 +58,19 @@ class SharedValues(Values):
         self._refreshed()
 
     def _refreshed(self) -> None:
+        """Ask the store's version and read the values again only when it moved.
+
+        1. Note the time of this check.
+        2. The same version as last read: nothing to read.
+        3. Otherwise the store's values, with what lives only here (keys that are not text)
+           kept.
+        Final: the version read remembered.
+        """
         self._checked = time.monotonic()
         version = self._store.version(self._key)
         if version == self._version:
             return
-        kept = self._store.restore(self._key) or {}
+        kept = self._store.load(self._key) or {}
         local_only = {
             key: value for key, value in self._current.items() if not isinstance(key, str)
         }
@@ -58,27 +79,35 @@ class SharedValues(Values):
 
     @property
     def current(self) -> Mapping[Any, Any]:
+        """The local values — refreshed first when `every` passed since the last check, so a
+        read costs a store round trip at most once per `every`."""
         if time.monotonic() - self._checked >= self._every:
             self._refreshed()
         return self._current
 
     def _kept(self) -> None:
+        """Save the text-keyed values under the key, and remember the version that write made
+        — so this replica does not read back its own write."""
         named = {key: value for key, value in self._current.items() if isinstance(key, str)}
-        self._store.keep(self._key, named)
+        self._store.save(self._key, named)
         self._version = self._store.version(self._key)
 
     def set(self, key: Any, value: Any) -> None:
+        """Written locally at once, then kept for the other replicas."""
         super().set(key, value)
         self._kept()
 
     def update(self, values: Mapping[Any, Any]) -> None:
+        """Written locally at once, then kept for the other replicas."""
         super().update(values)
         self._kept()
 
     def unset(self, key: Any) -> None:
+        """Taken away locally at once, then kept for the other replicas."""
         super().unset(key)
         self._kept()
 
     def replace(self, values: Mapping[Any, Any]) -> None:
+        """Replaced locally at once, then kept for the other replicas."""
         super().replace(values)
         self._kept()

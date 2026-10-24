@@ -39,6 +39,12 @@ def current() -> ContextNode:
 
 @contextmanager
 def entered(node: ContextNode) -> Generator[ContextNode, None, None]:
+    """`node` is the node in play for the block — for this thread or task only — and what was
+    in play before comes back when it ends, raised or not.
+
+        with entered(ContextNode(Level.SCOPE, current(), {"lang": "es"})):
+            current().flattened()["lang"]   ->  "es"
+    """
     token = _current.set(node)
     try:
         yield node
@@ -49,7 +55,13 @@ def entered(node: ContextNode) -> Generator[ContextNode, None, None]:
 def shared(node: ContextNode, node_id: str | None = None) -> ContextNode:
     """`node`, kept in the store of the nearest bus that shares its context — as it is, when none
     does. Free when no bus of the process shares: only a shared process has a global above it.
-    """
+
+        shared(node)            ->  node, untouched — no bus of the process shares
+        shared(node, "01J9")    ->  node kept as "node:01J9", under billing's store
+        shared(node)            ->  node kept under a new entity id
+
+    The same node object is answered either way: being kept changes how it writes, not what
+    it is."""
     if ROOT.parent is None:
         return node
     sharing = sharing_of(node)
@@ -91,6 +103,7 @@ def current_execution() -> Execution | None:
 
 
 def _text(value: Any) -> str | None:
+    """A context value as an id: text, or `None` when it is unsaid or empty."""
     return None if value is None or value == "" else str(value)
 
 
@@ -101,12 +114,20 @@ def _event_cause(dto: Any) -> tuple[str, str | None] | None:
 
 
 def _given(node: ContextNode, key: str) -> Any:
+    """What the nearest node holding `key` says of it — `None` when no node says it, or the
+    nearest took it away."""
     holder = node.holding(key)
     return None if holder is None else holder.own[key]
 
 
 def _identified(dto: Any, new_id: Callable[[], str]) -> tuple[str, str | None, str]:
-    """1. The cause: the event being executed; else the execution that called this one; else
+    """The identity of an execution about to open: its own id, its cause, its flow.
+
+    Context: one rule decides whether an execution continues a chain or heads one — an event
+    it runs, a use case that called it, or an entrance that was handed an identity by a
+    caller.
+
+    1. The cause: the event being executed; else the execution that called this one; else
        what the flow was handed — an entrypoint, a remote caller, a message.
     2. The flow: the event's; else what the context says — a scope or a write can name it — else
        the caller's.
@@ -151,7 +172,17 @@ def opened_execution(
     new_id: Callable[[], str] = new_entity_id,
     owner: Any = None,
 ) -> Generator[ContextNode, None, None]:
-    """The node of one execution of `dto` on `bus`, in play until the block ends."""
+    """The node of one execution of `dto` on `bus`, in play until the block ends.
+
+        with opened_execution(CreateInvoice(...), "billing", Level.FEATURE) as node:
+            node.execution   ->  Execution(execution_id="01J9", causation_id="01J8",
+                                           correlation_id="01J7", use_case="CreateInvoice",
+                                           bus="billing", level=Level.FEATURE)
+                                 # called by execution 01J8 of flow 01J7
+            node.label       ->  "CreateInvoice"
+
+    Its identity by the one rule (`_identified`); kept in the store when its bus shares the
+    context, under its own `execution_id`."""
     own, causation_id, correlation_id = _identified(dto, new_id)
     execution = Execution(own, causation_id, correlation_id, type(dto).__name__, bus, level)
     node = ContextNode(level, current(), label=execution.use_case, owner=owner)
@@ -168,7 +199,15 @@ def handed_on(context: Mapping[str, Any]) -> dict[str, Any]:
     """`context` as an execution elsewhere receives it — another service, a message: caused by
     the execution in play, in its flow, and — when a store shares the context — pointing at the
     node in play, so a receiver that set the store reads the chain from there. Its own
-    `execution_id` stays here."""
+    `execution_id` stays here.
+
+        handed_on({"tenant_id": "acme", "execution_id": "E1"})     # inside E1 of flow C
+            ->  {"tenant_id": "acme", "causation_id": "E1", "correlation_id": "C"}
+                plus "sincpro.context_node": "E1" when a store keeps the node
+        handed_on({"tenant_id": "acme"})                            # outside any execution
+            ->  {"tenant_id": "acme"}
+
+    A `sincpro.context_node` handed in is dropped and named again from this side."""
     passed = {
         key: value
         for key, value in context.items()
@@ -186,7 +225,14 @@ def handed_on(context: Mapping[str, Any]) -> dict[str, Any]:
 def chain_for(event: Any) -> dict[str, str]:
     """What a new event recorded, published or saved now lacks of the execution producing it:
     `causation_id` that execution, `correlation_id` its flow. Empty outside an execution, for an
-    event that already says both, and for one already stored — history keeps its own chain."""
+    event that already says both, and for one already stored — history keeps its own chain.
+
+        chain_for(InvoiceIssued(...))                     # new, inside E1 of flow C
+            ->  {"causation_id": "E1", "correlation_id": "C"}
+        chain_for(InvoiceIssued(correlation_id="C0"))     ->  {"causation_id": "E1"}
+        chain_for(an event loaded from the store)         ->  {}
+
+    It only answers what is missing; setting it on the event is the caller's."""
     running = current_execution()
     if running is None or not getattr(event, "is_new", False):
         return {}
@@ -216,7 +262,12 @@ def live_context() -> Mapping[Any, Any]:
 
 
 def hidden_keys() -> frozenset[str]:
-    """What the bus running the execution keeps off every signal (`hide_in_logs`)."""
+    """What the bus running the execution keeps off every signal (`hide_in_logs`).
+
+        hidden_keys()   ->  frozenset({"password", "card_number"})   # billing hides them
+        hidden_keys()   ->  frozenset()                             # outside every bus
+
+    The nearest bus up the chain that declares some decides; the others are not merged."""
     for node in current().chain():
         hidden = getattr(node.owner, "_hidden_in_logs", None)
         if hidden is not None:

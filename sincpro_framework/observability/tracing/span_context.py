@@ -11,6 +11,16 @@ Responsibilities:
 
 All OTel imports are deferred inside methods — the module is always importable
 regardless of whether opentelemetry is installed.
+
+    with billing.with_trace(carrier=request.headers):    # W3C traceparent of the caller
+        billing(CommandIssueInvoice(...))                # its spans join the caller's trace
+    with billing.with_trace():                           # a root span named after the bus
+        ...
+    with billing.with_parent_trace():                    # the host's active span, adopted
+        ...
+
+Which one is chosen, first match wins: no OTel → the ids given, else UUIDs; `adopt_active`;
+a `carrier`; an explicit `trace_id`; else a new root span.
 """
 
 from typing import TYPE_CHECKING, Any, Mapping, Optional
@@ -36,6 +46,15 @@ class FrameworkSpanContext:
         carrier: Optional[Mapping[str, Any]] = None,
         adopt_active: bool = False,
     ) -> None:
+        """Keep how the trace is to be found — nothing is attached until `__enter__`.
+
+            FrameworkSpanContext(billing, identity, carrier=request.headers)
+                ->  the carrier kept; no root span, no OTel token, no logger binding yet
+            FrameworkSpanContext(billing, identity, adopt_active=True)
+                ->  on `__enter__`, the host's active span is read, never replaced
+
+        What `__enter__` attaches — the OTel token, the root span, the logger's and the
+        framework's context blocks — starts empty, for `__exit__` to undo."""
         self.framework = framework
         self._identity = identity
         self._trace_id = trace_id
@@ -53,6 +72,13 @@ class FrameworkSpanContext:
     # ------------------------------------------------------------------
 
     def __enter__(self) -> "UseFramework":
+        """Open the block: answer the bus, its executions now on the resolved trace.
+
+        1. The trace is resolved, and the OTel context attached when there is one to attach.
+        2. The logger shared by every bus of the framework binds `trace_id`/`span_id`; if that
+           fails, the OTel context just attached is undone before re-raising.
+        Final: a framework context holding `trace_id`/`span_id`, for `self.context` to read.
+        """
         resolved_trace_id, resolved_span_id = self._setup_trace_context()
 
         # Bind to shared LoggerProxy — propagates to FeatureBus,
@@ -121,6 +147,9 @@ class FrameworkSpanContext:
             return
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
+        """Close the block in the reverse order, each step shielded from the one before: the
+        root span ends (in error when the block raised), the OTel context is detached, the
+        logger unbinds, the framework context closes. Never swallows the block's exception."""
         self._end_root_span(exc_type, exc_val)
         self._detach_otel_context()
 

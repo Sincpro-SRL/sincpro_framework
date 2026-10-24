@@ -65,6 +65,8 @@ class AsyncBus:
     """
 
     def __init__(self, run: Callable[..., Any]) -> None:
+        """Wrap whatever runs a DTO synchronously — nothing else is kept, so one instance
+        serves any number of concurrent awaits."""
         self._run = run
         """What runs a DTO on the worker thread: `bus.execute`, or the `UseFramework` itself —
         which builds on first use, opens the call's scope and forwards a context hosted
@@ -84,4 +86,9 @@ class AsyncBus:
     async def __call__(
         self, dto: "TypeDTO", return_type: "Type[TypeDTOResponse] | None" = None
     ) -> "TypeDTOResponse | None":
+        """`await async_bus(dto)` — the same as `await async_bus.execute(dto)`, as a sync
+        `Bus` is called.
+
+            await bus.get_async_bus()(CreateInvoice(amount=10))   ->  InvoiceCreated(...)
+        """
         return await self.execute(dto, return_type)

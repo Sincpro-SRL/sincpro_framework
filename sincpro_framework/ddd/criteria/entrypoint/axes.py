@@ -30,9 +30,20 @@ def empty_measure(measure: Measure) -> Any:
 def part_of(value: Any, part: Part) -> int | None:
     """The number a date part is: what a database extracts from the column.
 
-    in      2026-03-14 15:09, Part.MONTH         →  out  3
-    in      2026-03-14, Part.DAY_OF_WEEK         →  out  6        a Saturday; Monday is 1
-    in      None                                  →  out  None
+        part_of(datetime(2026, 3, 14, 15, 9), Part.MONTH)   ->  3
+        part_of(date(2026, 3, 14), Part.DAY_OF_WEEK)        ->  6     # Saturday; Monday 1
+        part_of("2026-08-14", Part.QUARTER)                 ->  3     # text read as ISO
+        part_of(date(2026, 3, 14), Part.HOUR)               ->  0     # a date has no hour
+        part_of(None, Part.MONTH)                           ->  None
+
+    1. No value: `None` — a row with no date has no part.
+    2. Text is read as an ISO date or datetime.
+    3. The part:
+       3.1 `YEAR`, `MONTH`, `DAY_OF_MONTH`, `HOUR` — the field of the value, a date's hour 0;
+       3.2 `QUARTER` — the month's quarter, 1 to 4;
+       3.3 `ISO_WEEK` — the ISO week number;
+       3.4 `DAY_OF_WEEK` — the ISO weekday, Monday 1 to Sunday 7.
+    Final: that number, as a database's `EXTRACT` would answer it.
     """
     if value is None:
         return None
@@ -70,6 +81,16 @@ def axis_values(
     A date grain needs the filter to bound the field at both ends — an axis with no ends has no
     «every» — and a year part needs it as well. Anything else with no known set of values is
     refused, naming what to do.
+
+    1. A part:
+       1.1 one with a fixed range (`PART_VALUES`) — every number of it, first to last;
+       1.2 a year — every year the filter's bounds on the field cover, the upper bound
+           exclusive; no bounds is `InvalidCriteria`.
+    2. A grain — no bounds is `InvalidCriteria`; else from the lower bound snapped to its
+       grain, one label per grain up to the last instant before the upper bound.
+    3. A boolean: `[False, True]`.
+    4. Choices: the choices, in the order given.
+    Final: anything else has nothing to list — `InvalidCriteria`, naming what can be filled.
     """
     if level.part is not None:
         known = PART_VALUES[level.part]
@@ -114,6 +135,14 @@ def check_levels(criteria: Criteria, grouping: Grouping) -> None:
       on the date, so a page per group would list rows that are not the group's.
     - A **fill** level lists the groups with no rows, which a `where_measures` filter or a page of
       groups cannot place: both decide over the groups the rows made.
+
+        Level(made_at, part=month), criteria with a page asked
+            ->  InvalidCriteria: 'made_at' is grouped by a part of the date (month); …
+        Level(status, fill=True), grouping with `where_measures` or a page of groups
+            ->  InvalidCriteria: 'status' is filled, and a filter or a page over the groups …
+        Level(made_at, grain=month), anything   ->  None — answered as asked
+
+    The levels are checked in order; the first that cannot be answered is refused.
     """
     for level in grouping.group_by:
         if level.part is not None and criteria.pagination.asked:

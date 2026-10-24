@@ -59,6 +59,11 @@ class Measure(Strict):
     @field_validator("function")
     @classmethod
     def _one_of_the_known_aggregates(cls, function: str) -> str:
+        """Refuses a function outside `MEASURE_FUNCTIONS` before it can reach a statement.
+
+        "sum"     ->  "sum"
+        "stddev"  ->  InvalidCriteria: 'stddev' is not a measure; use one of sum, avg, …
+        """
         if function not in MEASURE_FUNCTIONS:
             raise exceptions.InvalidCriteria(
                 f"'{function}' is not a measure; use one of {', '.join(MEASURE_FUNCTIONS)}"
@@ -88,10 +93,15 @@ class Measure(Strict):
     def read(cls, written: Any, tolerant: bool = False) -> "Measure":
         """A measure as it comes in: the object on the wire, or the pair written by hand.
 
-        >>> Measure.read({"function": "sum", "field": "row_count"})
-        Measure(function='sum', field='row_count')
-        >>> Measure.read(["sum", "row_count"])
-        Measure(function='sum', field='row_count')
+            Measure.read({"function": "sum", "field": "row_count"})
+                ->  Measure(function='sum', field='row_count')
+            Measure.read(["sum", "row_count"])   ->  the same measure
+            Measure.read(("sum", "row_count"))   ->  the same — a tuple is the pair too
+            Measure.read(["sum"])
+                ->  InvalidCriteria: a measure is written {'function': …, 'field': …}, …
+
+        Context: a measure already built comes back as it is; an object's unknown keys are
+        refused, or dropped when `tolerant`.
         """
         if isinstance(written, Measure):
             return written
@@ -131,6 +141,8 @@ class Level(Strict):
     @field_validator("grain", mode="before")
     @classmethod
     def _a_granularity_that_exists(cls, grain: Any) -> Any:
+        """Refuses a grain that is not one of `Grain`, listing the ones there are — a clearer
+        message than the enum's own, for a value that came from a URL."""
         if grain is not None and grain not in {one.value for one in Grain}:
             raise exceptions.InvalidCriteria(
                 f"{grain!r} is not a granularity; use one of {sorted(one.value for one in Grain)}"
@@ -140,6 +152,7 @@ class Level(Strict):
     @field_validator("part", mode="before")
     @classmethod
     def _a_part_that_exists(cls, part: Any) -> Any:
+        """Refuses a part of a date that is not one of `Part`, listing the ones there are."""
         if part is not None and part not in {one.value for one in Part}:
             raise exceptions.InvalidCriteria(
                 f"{part!r} is not a part of a date; use one of {sorted(one.value for one in Part)}"
@@ -170,8 +183,14 @@ class Level(Strict):
     def read(cls, written: Any, tolerant: bool = False) -> "Level":
         """A level as it comes in JSON: the object — `{"field": "registered_at", "grain": "month"}`.
 
-        >>> Level.read({"field": "registered_at", "grain": "month"})
-        Level(field='registered_at', grain=<Grain.MONTH: 'month'>, part=None, fill=False)
+            Level.read({"field": "registered_at", "grain": "month"})
+                ->  Level(field='registered_at', grain=<Grain.MONTH: 'month'>, part=None,
+                          fill=False)
+            Level.read("registered_at:month")
+                ->  InvalidCriteria: a level is written {'field': …, 'grain': …}; got …
+
+        Context: a level already built comes back as it is; an object's unknown keys are
+        refused, or dropped when `tolerant`.
         """
         if isinstance(written, Level):
             return written
@@ -282,8 +301,13 @@ class Pivot(Strict):
     def cell(self, row: Sequence[Any], column: Sequence[Any]) -> PivotCell | None:
         """The cell where one row key crosses one column key, or `None` when it is empty.
 
-        >>> pivot.cell(["SAL"], ["2026-01"]).count
-        412
+            pivot.cell(["SAL"], ["2026-01"])
+                ->  PivotCell(row=['SAL'], column=['2026-01'], count=412, measures={…})
+            pivot.cell(("SAL",), ("2026-01",))   ->  the same — keys compared as lists
+            pivot.cell(["PUR"], ["2026-03"])     ->  None    # no rows at that crossing
+
+        Context: only the crossings with rows are in `cells`; a margin is read from
+        `row_margin`, `column_margin` or `total`, not here.
         """
         wanted = (list(row), list(column))
         for one in self.cells:

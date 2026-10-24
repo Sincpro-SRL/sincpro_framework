@@ -10,8 +10,9 @@ an expiry — so a writer still holding an old one cannot win. An entry's key na
 everything before its last `:`, and `listed(folder)` answers the live entries of one.
 
 Context: what lives here is not a concept a project sees. `InMemoryContexts` and `KeyValueContexts`
-are built on it; a project reaches it through the context store — `keep_entry`, `entry`,
-`discard_entry`, `entries` — and through `use_context().drafts()` and `use_context().pipelines()`.
+are built on it; a project reaches it through the context store — `save_entry`, `get_entry`,
+`delete_entry`, `list_entries` — and through `use_context().drafts()` and
+`use_context().pipelines()`.
 """
 
 import threading
@@ -23,9 +24,9 @@ from typing import Any
 
 from pydantic_core import to_jsonable_python
 
-from sincpro_framework.common.store import KeyValueStore
-from sincpro_framework.context.domain import exceptions
-from sincpro_framework.context.domain.store import Entry
+from sincpro_framework.store.domain import exceptions
+from sincpro_framework.store.domain.key_value import KeyValueStore
+from sincpro_framework.store.domain.store import Entry
 
 LISTED = 1000
 """How many entries of one folder a key-value store can list, the most recently kept first."""
@@ -35,16 +36,16 @@ class Entries(ABC):
     """What every store of entries does; the version arithmetic is written once, here."""
 
     @abstractmethod
-    def keep(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
+    def save(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
         """`values` under `key` with a new version, when `expected` is the live version — `0` for
         none; anything else raises `EntryConflict`. The TTL starts again."""
 
     @abstractmethod
-    def read(self, key: str) -> Entry | None:
+    def get(self, key: str) -> Entry | None:
         """The live entry, or `None` when there is none, it was discarded or it expired."""
 
     @abstractmethod
-    def discard(self, key: str) -> None:
+    def delete(self, key: str) -> None:
         """Drop the entry, its version spent; one with none is not an error."""
 
     @abstractmethod
@@ -64,12 +65,17 @@ class Entries(ABC):
     def _entry(
         self, key: str, values: Mapping[str, Any], version: int, now: datetime
     ) -> Entry:
+        """The `Entry` kept for `values` — turned into what JSON carries (a decimal as text, a
+        date as ISO text) now, so a reader in any store gets the same shape back."""
         return Entry(
             key=key, values=to_jsonable_python(dict(values)), version=version, kept_at=now
         )
 
 
 class InMemoryEntries(Entries):
+    """Entries in this process's memory, under one lock — versions won by the lock instead of
+    an atomic store operation."""
+
     def __init__(
         self, ttl: timedelta, now: Callable[[], datetime] = partial(datetime.now, UTC)
     ) -> None:
@@ -80,7 +86,12 @@ class InMemoryEntries(Entries):
         key it ever saw. A chain started after that begins at the clock's milliseconds, and
         always above any version this store handed out for any key, so a version never repeats
         — not under a clock that stands still, not with a TTL shorter than the keeps it holds.
-        """
+
+            InMemoryEntries(timedelta(hours=1))
+                ->  no entry, no version remembered; an entry lives an hour from its last keep
+            InMemoryEntries(timedelta(hours=1), now=clock.now)   ->  judged by a test's clock
+
+        The floor every new chain starts above begins at 0."""
         self.ttl = ttl
         self.now = now
         self._kept: dict[str, tuple[Entry, datetime]] = {}
@@ -89,6 +100,8 @@ class InMemoryEntries(Entries):
         self._lock = threading.Lock()
 
     def _live(self, key: str) -> Entry | None:
+        """The entry under `key` while its TTL lasts — an expired one is dropped as it is
+        read. Called under the lock."""
         found = self._kept.get(key)
         if found is None:
             return None
@@ -104,7 +117,23 @@ class InMemoryEntries(Entries):
             if self._live(key) is None:
                 del self._versions[key]
 
-    def keep(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
+    def save(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
+        """Kept under the lock.
+
+        1. Versions nobody can present any more are forgotten.
+        2. `expected` checked against the remembered version — `0` when no entry is live.
+        3. The next version: the remembered one plus one; a key with none remembered starts at
+           the clock's milliseconds, above every version this store ever handed out.
+        Final: the entry kept and its version remembered, both for a TTL — a copy answered.
+
+            entries.save("drafts:acme:d1", {"total": Decimal("10.5")}, 0)
+                ->  Entry(key="drafts:acme:d1", values={"total": "10.5"},
+                          version=1729753200000, ...)      # the clock's milliseconds
+            entries.save("drafts:acme:d1", {...}, 1729753200000)   ->  version 1729753200001
+            entries.save("drafts:acme:d1", {...}, 0)               ->  EntryConflict
+
+        The values are kept as JSON carries them, so a decimal comes back as its text.
+        """
         with self._lock:
             moment = self.now()
             self._forget_expired(moment)
@@ -122,13 +151,19 @@ class InMemoryEntries(Entries):
             self._versions[key] = (version, moment + self.ttl)
             return entry.model_copy(deep=True)
 
-    def read(self, key: str) -> Entry | None:
+    def get(self, key: str) -> Entry | None:
         """A copy: changing what a caller holds never changes what is kept."""
         with self._lock:
             live = self._live(key)
             return None if live is None else live.model_copy(deep=True)
 
     def listed(self, folder: str) -> list[str]:
+        """Every live key whose folder is `folder` — scanned in memory, no `LISTED` cap — the
+        most recently kept first.
+
+            listed("SINCPRO_ENTITY_DRAFT_CONTEXT:tenant_id=acme")
+            ->  ["SINCPRO_ENTITY_DRAFT_CONTEXT:tenant_id=acme:invoice%3A7", …]
+        """
         with self._lock:
             live = [
                 entry
@@ -138,7 +173,7 @@ class InMemoryEntries(Entries):
         live.sort(key=lambda entry: entry.kept_at, reverse=True)
         return [entry.key for entry in live]
 
-    def discard(self, key: str) -> None:
+    def delete(self, key: str) -> None:
         """The version is remembered a TTL more: a tab holding the entry still loses."""
         with self._lock:
             if self._kept.pop(key, None) is not None:
@@ -167,11 +202,14 @@ whatever the clocks say."""
 
 
 class KeyValueEntries(Entries):
+    """Entries on a shared `KeyValueStore` — versions won with the store's atomic `add`, so
+    keeps on every replica race safely without a lock of their own."""
+
     def __init__(
         self,
         store: KeyValueStore,
         ttl: timedelta,
-        prefix: str = "sincpro:kept",
+        prefix: str = "sincpro:entries",
         now: Callable[[], datetime] = partial(datetime.now, UTC),
     ) -> None:
         """A entry is a chain of slots, one key per version, each written once with the store's
@@ -194,6 +232,8 @@ class KeyValueEntries(Entries):
         self.now = now
 
     def _listing(self, folder: str) -> str:
+        """Where `folder`'s list lives: its last position here, each position at
+        `…:listed:<n>`."""
         return f"{self.prefix}:{folder}:listed"
 
     def _last_listed(self, folder: str) -> int:
@@ -218,15 +258,20 @@ class KeyValueEntries(Entries):
         self.store.set(self._listing(folder), str(position).encode(), self.ttl)
 
     def _head(self, key: str) -> str:
+        """The first pointer to where `key`'s chain was last seen."""
         return f"{self.prefix}:{key}:head"
 
     def _chain(self, key: str) -> str:
+        """The second pointer — kept apart from the head so evicting one loses nothing."""
         return f"{self.prefix}:{key}:chain"
 
     def _slot(self, key: str, version: int) -> str:
+        """The slot of one version: written once with `add`, never deleted."""
         return f"{self.prefix}:{key}:{version}"
 
     def _start(self, key: str, seen: int) -> str:
+        """The start mark of a chain begun again after version `seen` — the meeting point of
+        the keeps that all saw nothing live there."""
         return f"{self.prefix}:{key}:start:{seen}"
 
     def _point(self, key: str, version: int) -> None:
@@ -287,7 +332,9 @@ class KeyValueEntries(Entries):
             self._point(key, version)
         return version, found, starting
 
-    def read(self, key: str) -> Entry | None:
+    def get(self, key: str) -> Entry | None:
+        """The latest slot read back as an `Entry` — `None` when it is missing, `GONE` or
+        `DEAD`."""
         _, found, _ = self._latest(key)
         if found is None or found in SPENT:
             return None
@@ -295,7 +342,13 @@ class KeyValueEntries(Entries):
 
     def listed(self, folder: str) -> list[str]:
         """The live entries of `folder`, the most recently kept first — of the last `LISTED`
-        named in it."""
+        named in it.
+
+            entries.listed("drafts:acme")   ->  ["drafts:acme:d2", "drafts:acme:d1"]
+            entries.listed("drafts:beta")   ->  []          # nothing kept, or all expired
+
+        A key named twice in the list is answered once; one discarded or expired, not at all.
+        """
         last = self._last_listed(folder)
         names = self.store.get_many(
             [
@@ -304,7 +357,7 @@ class KeyValueEntries(Entries):
             ]
         )
         keys = list(dict.fromkeys(one.decode() for one in names if one is not None))
-        live = [(key, entry) for key in keys if (entry := self.read(key)) is not None]
+        live = [(key, entry) for key in keys if (entry := self.get(key)) is not None]
         live.sort(key=lambda pair: pair[1].kept_at, reverse=True)
         return [key for key, _ in live]
 
@@ -320,16 +373,27 @@ class KeyValueEntries(Entries):
             raise exceptions.EntryConflict(key, expected, 0)
         return version
 
-    def keep(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
-        """1. The latest version and whether it is live; a chain another keep is starting
+    def save(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
+        """Kept in the next slot of `key`'s chain, won with `add`.
+
+        1. The latest version and whether it is live; a chain another keep is starting
            right now makes this one lose.
         2. `expected` has to be that version, or `0` when none is live.
         3. The next slot is written with `add`: losing it means another keep came first. A
            chain started again takes the first free slot from its start, past the slots of a
            chain whose pointers and marks were lost; its first slot spent as `DEAD` means the
            start was judged stopped, and this keep lost.
-        Final: the pointers move to it.
-        """
+        Final: the pointers move to it, and an entry that was not live is named in its
+        folder's list.
+
+            entries.save("drafts:acme:d1", {"total": 10}, 0)
+                ->  Entry(version=1729753200000), in slot "…:drafts:acme:d1:1729753200000"
+            entries.save("drafts:acme:d1", {"total": 12}, 1729753200000)
+                ->  Entry(version=1729753200001)
+            two replicas saving with the same `expected`
+                ->  one wins, the other `EntryConflict`
+
+        Nothing is overwritten: every version is a slot of its own, written once."""
         latest, found, starting = self._latest(key)
         live = found is not None and found not in SPENT
         self._check(key, expected, latest, live)
@@ -358,9 +422,15 @@ class KeyValueEntries(Entries):
             self._list(key)
         return entry
 
-    def discard(self, key: str) -> None:
+    def delete(self, key: str) -> None:
         """The next slot is written as `GONE`, so the number is spent and a tab holding the
-        entry before it loses. A keep that wins that slot first is discarded in turn."""
+        entry before it loses. A keep that wins that slot first is discarded in turn.
+
+            entries.delete("drafts:acme:d1")   # live at version 7
+                ->  slot 8 written GONE; get("drafts:acme:d1")  ->  None
+            entries.delete("drafts:acme:d9")   ->  nothing: no live entry
+
+        Tried until the `GONE` slot is won, or nothing live is left to discard."""
         while True:
             latest, found, _ = self._latest(key)
             if found is None or found in SPENT:

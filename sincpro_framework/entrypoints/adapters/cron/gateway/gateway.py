@@ -38,6 +38,15 @@ LATE_AFTER = timedelta(minutes=1)
 
 @dataclass(frozen=True)
 class CronStatus:
+    """What `CronGateway.status()` answers per cron — a health page, an admin screen.
+
+        status()["cron-payments.Reconcile"]
+        ->  CronStatus(last_run=Run(..., outcome=FAILED), last_success=Run(...),
+                       next_tick=2026-03-03 02:00-04:00)
+
+    `next_tick` is the trigger's next tick after the last one the gateway saw.
+    """
+
     last_run: Run | None
     last_success: Run | None
     next_tick: datetime
@@ -45,6 +54,9 @@ class CronStatus:
 
 @dataclass(frozen=True)
 class _Entry:
+    """One cron the gateway runs, with the registry that executes it — several registries
+    share one gateway."""
+
     registry: Crons
     definition: CronDefinition
 
@@ -52,6 +64,12 @@ class _Entry:
 def _ticks_between(
     definition: CronDefinition, after: datetime, until: datetime
 ) -> list[datetime]:
+    """Every tick of the cron after `after` and up to `until`, inclusive, oldest first.
+
+        _ticks_between(every_15_minutes, after=10:00, until=10:45)  ->  [10:15, 10:30, 10:45]
+
+    Empty when no tick falls in the window.
+    """
     ticks: list[datetime] = []
     moment = definition.trigger.next_after(after)
     while moment <= until:
@@ -81,6 +99,17 @@ def _ticks_to_run(
 
 
 class CronGateway:
+    """The orchestrator of one or more `Crons`: a clock looks, it claims and runs what is due.
+
+        gateway = CronGateway([cron_payments, cron_billing], runs=KeyValueRuns(store))
+        gateway.run()                           # blocks: InProcessClock looks every 5 s
+        gateway.status()                        # last run, last success, next tick per cron
+        gateway.run_now(Reconcile)              # "Run Manually"
+
+    Context: building it builds every registry it is given; from then on no cron, dependency
+    or replacement can be added to them.
+    """
+
     def __init__(
         self,
         crons: Sequence[Crons],
@@ -92,6 +121,17 @@ class CronGateway:
     ) -> None:
         """Context: looks every `look_every`, plus up to `jitter` so replicas started together
         do not claim at the same instant. `clock` replaces that loop — a `ManualClock` in tests.
+
+            CronGateway([cron_payments])            ->  InProcessClock every 5 s, InMemoryRuns
+            CronGateway([cron_payments], runs=KeyValueRuns(store), workers=2)
+            ->  at most two crons running at once, ticks claimed on the shared store
+
+        1. The clock given, else an `InProcessClock(look_every, jitter)`; the record of runs
+           given, else an `InMemoryRuns`.
+        2. Each registry built, and one entry kept per cron it defines.
+        3. No cursor yet — `run` sets one per cron.
+        4. A semaphore of `workers` slots, or none when `workers` is not given.
+        Final: nothing running, nothing busy, not stopping.
         """
         self.clock: Clock = clock or InProcessClock(look_every, jitter)
         self.runs: CronRuns = runs or InMemoryRuns()
@@ -141,6 +181,9 @@ class CronGateway:
                     )
 
     def _serve(self, entry: _Entry, ticks: list[datetime]) -> None:
+        """The body of a run's thread: fire its ticks in order, then — whatever happened —
+        release the cron (`_busy`) and forget the thread, so `wait` and the next look see it
+        done."""
         try:
             self._fire_in_order(entry, ticks)
         finally:
@@ -149,6 +192,8 @@ class CronGateway:
                 self._threads.discard(current_thread())
 
     def _skip(self, entry: _Entry, ticks: list[datetime]) -> None:
+        """Record as `SKIPPED` the ticks that came while the cron was still running here —
+        each claimed first, so a tick another replica claimed is left to it."""
         for tick in ticks:
             if self.runs.claim(entry.definition.name, tick):
                 self.runs.finish(entry.definition.name, tick, "", RunOutcome.SKIPPED)
@@ -171,7 +216,14 @@ class CronGateway:
 
     def look(self, now: datetime) -> None:
         """Start what is due at `now`. Context: nothing older than `missed_window` can run, so
-        the search starts there however long the process was down."""
+        the search starts there however long the process was down.
+
+            look(2026-03-02 06:00:03 UTC)   ->  None; Reconcile ("0 6 * * *") started, its
+                                                cursor moved to 06:00
+            look(2026-03-02 06:00:08 UTC)   ->  None; nothing new is due, nothing started
+
+        Which of the due ticks run is `_ticks_to_run`'s call — the cron's `missed` policy.
+        """
         for entry in self._entries:
             name = entry.definition.name
             earliest = max(self._cursors[name], now - entry.definition.missed_window)
@@ -187,7 +239,14 @@ class CronGateway:
         """Start from where each cron last ran — so ticks missed while nothing was running are
         seen — or from now for one that never ran; say what runs and when it ticks next, so a
         process waiting for its first tick is not mistaken for a stuck one; then hand `look` to
-        the clock."""
+        the clock.
+
+            gateway.run()
+            ->  logs "1 crons: cron-payments.Reconcile next 2026-03-03T06:00:00+00:00",
+                then blocks until `stop`
+
+        With a `ManualClock`, `run` returns at once and each `advance` is a look.
+        """
         now = self.clock.now()
         for entry in self._entries:
             last = self.runs.last(entry.definition.name)
@@ -201,7 +260,13 @@ class CronGateway:
         self.clock.run(self.look)
 
     def wait(self) -> None:
-        """Until every run started so far has finished."""
+        """Until every run started so far has finished.
+
+            clock.advance(...); gateway.wait()   ->  None, once every started run returned
+
+        A run that starts while waiting is joined too — the threads are read again until
+        none is left.
+        """
         while True:
             with self._lock:
                 running = list(self._threads)
@@ -218,6 +283,7 @@ class CronGateway:
         self.wait()
 
     def _entry_of(self, cron_class: type[Cron]) -> _Entry:
+        """The entry `cron_class` runs as — refused, with why it may be missing, when none."""
         for entry in self._entries:
             if entry.definition.cron_class is cron_class:
                 return entry
@@ -234,6 +300,15 @@ class CronGateway:
         return self._fire(self._entry_of(cron_class), self.clock.now())
 
     def plan(self, until: datetime) -> list[tuple[str, datetime]]:
+        """Every tick from the clock's now up to `until`, of every cron, in time order — what
+        will run, to check a schedule before it is deployed.
+
+            plan(until=now + timedelta(hours=1))
+            ->  [("cron-payments.Poll", 10:15), ("cron-billing.Close", 10:30), ...]
+
+        Context: the schedule only — a tick another replica runs, or one `overlap=SKIP` skips,
+        is listed as well.
+        """
         now = self.clock.now()
         planned = [
             (entry.definition.name, tick)
@@ -243,6 +318,9 @@ class CronGateway:
         return sorted(planned, key=lambda one: one[1])
 
     def status(self) -> dict[str, CronStatus]:
+        """Each cron's `CronStatus`, by name — its last run and last success from the record
+        of runs, and its next tick after the last one this gateway saw (or after now, before
+        `run`)."""
         now = self.clock.now()
         return {
             entry.definition.name: CronStatus(

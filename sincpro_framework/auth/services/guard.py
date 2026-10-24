@@ -38,12 +38,26 @@ class Declarations:
     Weak on both sides: a use case loaded again lets its old class go."""
 
     def __init__(self) -> None:
+        """Nothing declared yet."""
         self._by_class: WeakKeyDictionary[type, Declaration] = WeakKeyDictionary()
         self._by_name: WeakValueDictionary[str, type] = WeakValueDictionary()
 
     def add[T: type](self, cls: T, declaration: Declaration) -> T:
-        """Context: stacked decorators on one class add up; the same class declared two
-        different ways is refused, since only one of them could hold."""
+        """Mark `cls` with `declaration` and answer `cls` — what every decorator ends in.
+
+            @auth.requires(A)
+            @auth.requires(B)          ->  Declaration("requires", (B, A))
+            class IssueInvoice(Feature): ...
+
+        Context: stacked decorators on one class add up; the same class declared two
+        different ways is refused, since only one of them could hold.
+
+        1. Nothing held yet: the declaration as given.
+        2. Two `requires`: their requirements joined — refused when they disagree on
+           `when_denied`.
+        3. Any other pair (`public` and `requires`, twice `authenticated`): refused.
+        Final: kept by the class and by its dotted name; `cls` is answered unchanged.
+        """
         held = self._by_class.get(cls)
         if held is None:
             merged = declaration
@@ -66,7 +80,16 @@ class Declarations:
 
     def of(self, cls: type, replaced: Iterable[str] = ()) -> Declaration | None:
         """What `cls` declared — or, when it declared nothing, what the newest of the handlers
-        it replaced did, `replaced` given oldest first."""
+        it replaced did, `replaced` given oldest first.
+
+            declarations.of(IssueInvoice)    ->  Declaration("requires", (ISSUE,))
+            declarations.of(IssueV3, ["billing.IssueInvoice", "billing.IssueInvoiceV2"])
+                ->  what IssueInvoiceV2 declared — or IssueInvoice's, when V2 declared nothing
+            declarations.of(QueryHealth)     ->  None
+
+        Context: a replaced handler is found by its dotted name, and only while its class is
+        still declared.
+        """
         own = self._by_class.get(cls)
         if own is not None:
             return own
@@ -77,6 +100,7 @@ class Declarations:
         return None
 
     def declared(self) -> list[type]:
+        """Every class declared and still alive — the newest under each dotted name."""
         return list(self._by_name.values())
 
 
@@ -86,6 +110,9 @@ def _refused_or_skipped(
     identity: Identity,
     what: str,
 ) -> None:
+    """Act on a refusal as the declaration says: log and return for `WhenDenied.SKIP`, log
+    and raise it for `WhenDenied.RAISE` — the caller then answers `None` or leaves the hook's
+    moment out."""
     if declaration.when_denied == WhenDenied.SKIP:
         logger.info(f"access: {what} skipped — {refusal}")
         return
@@ -99,6 +126,13 @@ class BusGuard:
     context."""
 
     def __init__(self, access: "AccessControl[Any]", bus: "UseFramework") -> None:
+        """The guard of `bus` for `access`, with an empty cache of declarations.
+
+            BusGuard(auth, billing).__qualname__   ->  "AccessControl.guard[billing]"
+
+        Context: the qualified name is set so the build log and introspection name the
+        interceptor after the bus it guards.
+        """
         self.access = access
         self.bus = bus
         self._declared: dict[tuple[type, type | None], Declaration | None] = {}
@@ -108,6 +142,8 @@ class BusGuard:
         """What the build log and introspection call the interceptor."""
 
     def declaration_of(self, command: type) -> Declaration | None:
+        """What the handler answering `command` on this bus declared — read once per pair of
+        Command and handler, then cached; `None` for no handler or nothing declared."""
         handler = self.bus.handler_of(command)
         if (command, handler) not in self._declared:
             self._declared[command, handler] = (
@@ -118,6 +154,8 @@ class BusGuard:
         return self._declared[command, handler]
 
     def _decided_run(self, command: type, call_next: Callable[[Any], Any], dto: Any) -> Any:
+        """Run the use case with its decision recorded, so a nested use case it calls inherits
+        it instead of being refused by `strict` — the mark is undone once it answers."""
         token = _decided.set(command.__name__)
         try:
             return call_next(dto)
@@ -125,7 +163,9 @@ class BusGuard:
             _decided.reset(token)
 
     def _undeclared(self, command: type, identity: Identity) -> None:
-        """Context: refused only when strict and entered from outside — nobody calling is asked
+        """Let a use case that declares nothing run, or refuse it.
+
+        Context: refused only when strict and entered from outside — nobody calling is asked
         to authenticate, a known identity is told the use case declares nothing."""
         entered_by = _decided.get()
         if entered_by is not None:
@@ -144,9 +184,11 @@ class BusGuard:
         raise refusal
 
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
-        """1. Disabled, or the system acting: it runs.
+        """Decide whether the identity in play may run the use case `dto` enters, and run it.
+
+        1. Disabled: it runs. The system acting: it runs, and the decision is recorded.
         2. Declared nothing: it runs, unless strict and entered from outside.
-        3. Final: declared something the identity lacks — refused, or skipped (`None`) when it
+        Final: declared something the identity lacks — refused, or skipped (`None`) when it
            said `WhenDenied.SKIP`; else it runs, and a use case it calls inherits the decision.
         """
         if not self.access.enabled:
@@ -173,15 +215,26 @@ class HookGuard:
     hook, so a replacement made in a combination inherits from what it replaces there."""
 
     def __init__(self, access: "AccessControl[Any]") -> None:
+        """The gate of every collection `access` guards — one for all of them."""
         self.access = access
 
     def declaration_of(self, hooks: "Hooks", hook: type) -> Declaration | None:
+        """What `hook` declared — or, when nothing, what the hooks it replaces there did."""
         return self.access.declarations.of(
             hook, hooks.replacements.get(f"{hook.__module__}.{hook.__qualname__}", ())
         )
 
     def __call__(self, hooks: "Hooks", hook: type["Hook"], moment: str, record: Any) -> bool:
-        """`False` leaves the moment out; raising refuses the write it is part of."""
+        """Whether `hook` may run its `moment` for the identity in play.
+
+        Context: `False` leaves the moment out; raising refuses the write it is part of. The
+        record is the resource asked about — except at `after_search`, where there is no
+        single record yet.
+
+        1. Disabled, nothing declared, or the system acting: `True`.
+        2. The refusal of the declaration, with the record and the executing context.
+        Final: `True` when none; else skipped (`False`) or raised, as the declaration says.
+        """
         if not self.access.enabled:
             return True
         declaration = self.declaration_of(hooks, hook)

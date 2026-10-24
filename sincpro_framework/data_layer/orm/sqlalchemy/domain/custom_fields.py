@@ -41,6 +41,8 @@ class TypedJson[T](TypeDecorator[T]):
     cache_ok = True
 
     def __init__(self, shape: Any) -> None:
+        """`shape` is any type pydantic validates; its `TypeAdapter` is built once, here, not
+        per row."""
         super().__init__()
         self.shape = shape
         self.adapter: TypeAdapter[T] = TypeAdapter(shape)
@@ -52,11 +54,18 @@ class TypedJson[T](TypeDecorator[T]):
         return self.impl_instance
 
     def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
+        """Validated against the shape, then dumped as JSON-ready data — a wrong value fails
+        on the way in, never on the next read.
+
+            Address(city="La Paz")   ->  {"city": "La Paz"}
+            {"city": "La Paz"}       ->  {"city": "La Paz"}     a dict is validated too
+        """
         if value is None:
             return None
         return self.adapter.dump_python(self.adapter.validate_python(value), mode="json")
 
     def process_result_value(self, value: Any, dialect: Dialect) -> T | None:
+        """The stored JSON validated back into the declared type — never a bare dict."""
         return None if value is None else self.adapter.validate_python(value)
 
     def coerce_compared_value(self, op: OperatorType | None, value: Any) -> TypeEngine[Any]:
@@ -80,9 +89,11 @@ class JsonText(TypeDecorator):
     cache_ok = True
 
     def process_bind_param(self, value: Any, dialect: Dialect) -> str | None:
+        """The list or dict as a JSON string; `None` stays SQL `NULL`."""
         return None if value is None else json.dumps(value)
 
     def process_result_value(self, value: str | None, dialect: Dialect) -> Any:
+        """The JSON string parsed back to the list or dict it was."""
         return None if value is None else json.loads(value)
 
 
@@ -104,6 +115,15 @@ class TranslatedText(TypeDecorator):
     def process_bind_param(
         self, value: dict[str, str] | None, dialect: Dialect
     ) -> str | None:
+        """The translations as a JSON object, characters unescaped — refused without a
+        `default`, the text every reader falls back to.
+
+            {"default": "Año", "en": "Year"}  ->  '{"default": "Año", "en": "Year"}'
+            None                              ->  None, SQL NULL
+            {"en": "Year"}    ->  ValueError("a translation needs a 'default' text")
+
+        The mapping is copied into a plain `dict` first, so any `Mapping` is written as one.
+        """
         if value is None:
             return None
         if "default" not in value:
@@ -113,4 +133,5 @@ class TranslatedText(TypeDecorator):
     def process_result_value(
         self, value: str | None, dialect: Dialect
     ) -> dict[str, str] | None:
+        """The stored JSON object back as `{language: text}`."""
         return None if value is None else json.loads(value)

@@ -21,4 +21,10 @@ def snake(name: str) -> str:
 
 
 def metric_name(context: str, use_case: type, *rest: str) -> str:
+    """The dotted name of a metric of `use_case` on the bus `context` — `sincpro` when the
+    use case runs on no bus.
+
+        metric_name("billing", IssueInvoice, "total")   ->  "billing.issue_invoice.total"
+        metric_name("", IssueInvoice, "runs")           ->  "sincpro.issue_invoice.runs"
+    """
     return ".".join((snake(context or "sincpro"), snake(use_case.__name__), *rest))

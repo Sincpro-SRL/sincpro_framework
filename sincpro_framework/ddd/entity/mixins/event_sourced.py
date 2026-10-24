@@ -34,6 +34,13 @@ if TYPE_CHECKING:
 
 
 class EventSourcedMixin:
+    """Makes an entity's state the sum of its events: `happened` records and applies one,
+    `rebuilt` replays them, and a save appends the ones not stored yet.
+
+    Mixed in before `Entity`; the entity says how each event changes it in `apply` and names
+    where its events are kept in `event_base`. `version` is the number of events applied.
+    """
+
     event_base: ClassVar[type]
     """The bounded context's base event class — the table its events are kept in."""
 
@@ -49,7 +56,16 @@ class EventSourcedMixin:
         )
 
     def happened(self, event: "DomainEvent") -> "DomainEvent":
-        """Records the event as the next version of this entity and applies it."""
+        """Records the event as the next version of this entity and applies it.
+
+            account.version                                   ->  3
+            account.happened(Deposited(account_id="A-1", amount=50))
+                ->  Deposited(…, entity_version=4)    # recorded, applied
+            account.version                                   ->  4
+
+        Context: the event is numbered before `apply` runs, so `apply` sees the version it
+        makes; the stamped copy `record` answers is the one applied and handed back.
+        """
         numbered = dataclasses.replace(event, entity_version=self.version + 1)
         stamped = self.record(numbered)  # type: ignore[attr-defined]
         self.apply(stamped)
@@ -58,7 +74,16 @@ class EventSourcedMixin:
 
     @classmethod
     def rebuilt(cls, identity: Any, events: "list[DomainEvent]") -> Self | None:
-        """The entity its events add up to, in order; `None` when it has none."""
+        """The entity its events add up to, in order; `None` when it has none.
+
+            Account.rebuilt("A-1", [Deposited(amount=50, entity_version=2),
+                                    Opened(entity_version=1)])
+                ->  Account(id="A-1", balance=50, version=2)    # Opened applied first
+            Account.rebuilt("A-1", [])   ->  None
+
+        Context: built with its identity alone, then each event applied in `entity_version`
+        order; an event with no version counts as the next one. Nothing is recorded again.
+        """
         if not events:
             return None
         entity = cls(id=identity)  # type: ignore[call-arg]

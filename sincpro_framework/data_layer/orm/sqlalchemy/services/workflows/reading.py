@@ -27,8 +27,8 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection im
 from sincpro_framework.data_layer.orm.sqlalchemy.services.relation_resolver import (
     resolve_relations,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.store import (
-    Store,
+from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.repository_state import (
+    RepositoryState,
 )
 from sincpro_framework.ddd.criteria import (
     Bucket,
@@ -101,7 +101,7 @@ def _relations_named(
     return named
 
 
-class Reading(Store):
+class Reading(RepositoryState):
     """Reads are generic because a filter is a filter: one `prepare` per criteria, one statement
     per page, relations resolved once for the whole page."""
 
@@ -342,6 +342,16 @@ class Reading(Store):
         EntityCollection(20 records of 197, more)
         >>> self.repository.search(Dataset)                      # no criteria: first page of everything
         EntityCollection(50 records of 197, more)
+
+        1. No criteria is the first page of everything; the lock asked for is checked — only
+           inside `context()`, never both `skip_locked` and `nowait`.
+        2. The model and the collection it answers as; the criteria prepared once — clause,
+           ordering, definition, what was dropped.
+        3. A grouping with a page asked: a page of ids per group (`_partitioned_page`), read
+           in one session — no row lock is taken on this path.
+        4. Otherwise the select built from what was prepared, `FOR UPDATE` when asked.
+        Final: in one session, the page read one past its limit and counted, answered as the
+        collection `target` names.
         """
         criteria = criteria or Criteria()
         lock = self._locking(for_update, skip_locked, nowait)
@@ -571,6 +581,14 @@ class Reading(Store):
         that claims an item so no other worker takes it. `skip_locked` steps over rows
         another worker already holds instead of waiting; `nowait` fails at once with
         `TransactionConflict`. SQLite has no row locks and ignores all three.
+
+        1. An event-sourced aggregate is rebuilt from its events instead of read from a row.
+        2. The lock asked for is checked, as for `search`.
+        3. In one session, the row by its identity — `None` when there is none, when it is
+           outside the repository's scope, or when it is archived.
+        4. The record read as the caller sees it (`_read`).
+        5. With `detail`, the relations it names resolved onto that one record.
+        Final: the record, or `None`.
         """
         model, _ = model_and_collection(target)
         if isinstance(model, type) and issubclass(model, EventSourcedMixin):
@@ -656,6 +674,13 @@ class Reading(Store):
         Rows are deliberately not returned: opening a bucket is an ordinary search with the
         bucket's values added to the criteria, so it pages inside the bucket. Not
         `EntityCollection.grouped`, which buckets a page.
+
+        1. Refused with no field to group by.
+        2. Each field checked on the model's definition; the criteria prepared into its
+           clause.
+        3. One statement: the fields' columns and `count(*)`, over the rows the clause keeps,
+           grouped and ordered by those columns.
+        Final: one dict per bucket — each field's value and its `count`.
         """
         if not by:
             raise exceptions.InvalidCriteria(
@@ -726,6 +751,12 @@ class Reading(Store):
         response reads as what was asked rather than `count_1`.
 
         This is where a `EntityCollection` sends anyone who tried to measure a page.
+
+        1. Refused with no measure.
+        2. The criteria prepared into its clause.
+        3. One statement: each measure as its labelled aggregate (`measure_columns` —
+           percentiles refused on SQLite), over the rows the clause keeps.
+        Final: the one row it answers, by the caller's names.
         """
         if not measures:
             raise exceptions.InvalidCriteria(
@@ -1011,6 +1042,16 @@ class Reading(Store):
         >>> matrix = self.repository.pivot(Line, ["journal_id"], ["posted_at:month"], debit="sum:debit")
         >>> matrix.cell(["SAL"], ["2026-01"]).measures["debit"]
         Decimal('18240.50')
+
+        1. Refused unless each axis names at least one field.
+        2. The criteria prepared into its clause; each axis read as levels (`"field:grain"`),
+           every field checked on the model.
+        3. The measures as labelled aggregates, and each level as its grouping column for
+           this dialect.
+        4. In one session, four `GROUP BY`s: both axes (the cells), the rows alone, the
+           columns alone, and neither (the total).
+        Final: the pivot — its row and column headers taken from the margins, and a total of
+        empty measures when nothing matched.
         """
         if not rows or not columns:
             raise exceptions.InvalidCriteria(

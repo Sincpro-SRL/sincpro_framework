@@ -27,6 +27,14 @@ IgnoredExceptions = Tuple[Type[Exception], ...]
 def _tag_correlation(
     scope: Any, error: Exception, use_case: str, identity: ObservabilityIdentity, outcome: str
 ) -> None:
+    """Tag the event with what the spans, the metrics and the logs say about the same run —
+    service, version, release, context, use case, outcome and error type — and its trace.
+
+    Context: an issue in GlitchTip must lead to its trace in Tempo and to its series in
+    Prometheus; the same names on every signal are what make that a lookup. Sentry would put a
+    trace id of its own in `contexts.trace`, so the OpenTelemetry one is set first. An empty
+    value is left off, never tagged blank.
+    """
     tags = {
         "service_name": identity.service_name,
         "service_version": identity.service_version,
@@ -91,6 +99,26 @@ def record_error(
 
     The host (Odoo) may capture the same exception object with its own release —
     that is a separate product event, and intentionally not suppressed here.
+
+        record_error(KeyError("x"), "CreateInvoice", "feature", identity, outcome="internal")
+            ->  one event: sincpro.kind="instance", sincpro.layer="feature",
+                sincpro.dto="CreateInvoice", sincpro.outcome="internal", error.type="KeyError"
+        record_error(ClientError("no stock"), "CreateInvoice", "feature", identity)
+            ->  nothing: an answer, not a fault
+
+    1. Without sentry-sdk installed, nothing is sent.
+    2. An `instance` error that is not a fault (`is_fault`, with what the bus ignores and
+       reports) is not sent; a `framework` one always is, under the framework's identity
+       (`framework_identity`), the bus kept.
+    3. Nothing either when the SDK has no `isolation_scope`, or no client exists for the
+       release (`setup.client_for` — no DSN).
+    4. In an isolation scope bound to the framework's own client:
+       4.1 `sincpro.kind`, `sincpro.layer`; `sincpro.dto`, `sincpro.instance` (the bus) and
+           `sincpro.package` (the artifact) when known;
+       4.2 `details` as the `sincpro` context, its `handler` also as `sincpro.handler`;
+       4.3 the tags every signal shares and the trace (`_tag_correlation`), then the
+           execution's keys and user (`_tag_execution`).
+    Final: `capture_exception(error)`; anything that fails on the way is swallowed.
     """
     try:
         if not setup.SDK_AVAILABLE:

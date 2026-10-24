@@ -17,9 +17,9 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.circuits import Circuit, CircuitOpen, CircuitState
 from sincpro_framework.common.failures import refined_failure_kind, retry_after
-from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore, StoreUnavailable
 from sincpro_framework.context import ContextStore, InMemoryContexts
 from sincpro_framework.ddd.exceptions import DomainError
+from sincpro_framework.store import InMemoryKeyValue, KeyValueStore, StoreUnavailable
 
 
 class Clock:
@@ -196,7 +196,7 @@ def test_a_circuit_built_before_any_execution_keeps_its_state_where_the_bus_keep
     gateway = Circuit("bus-gateway", failures=1)  # built with the adapter, at boot
     kept = InMemoryContexts()
     shop = UseFramework("circuit-shop", log_after_execution=False)
-    shop.context_store(kept)
+    shop.store_context_in(kept)
 
     class CommandPay(DataTransferObject):
         amount: int
@@ -231,12 +231,12 @@ def test_a_store_that_does_not_answer_never_blocks_a_call(clock):
 class NoLeases(ContextStore):
     """A project's own context store, written before leases existed."""
 
-    def keep(self, key, values, ttl=None) -> None: ...
+    def save(self, key, values, ttl=None) -> None: ...
 
-    def restore(self, key):
+    def load(self, key):
         return None
 
-    def forget(self, key) -> None: ...
+    def delete(self, key) -> None: ...
 
     def version(self, key) -> int:
         return 0
@@ -245,7 +245,7 @@ class NoLeases(ContextStore):
 def test_a_context_store_that_keeps_no_leases_still_has_circuits_never_a_failed_call():
     gateway = Circuit("no-leases-gateway", failures=1)
     legacy = UseFramework("circuit-legacy-store", log_after_execution=False)
-    legacy.context_store(NoLeases())
+    legacy.store_context_in(NoLeases())
 
     class CommandSend(DataTransferObject):
         fail: bool

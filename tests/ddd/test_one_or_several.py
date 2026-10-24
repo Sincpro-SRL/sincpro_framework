@@ -12,7 +12,7 @@ import pytest
 
 from sincpro_framework import UseFramework
 from sincpro_framework.data_layer.caching.domain.failure import FailSafe
-from sincpro_framework.data_layer.caching.domain.policies import CachePolicy
+from sincpro_framework.data_layer.caching.domain.policies import QueryCachePolicy
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     Condition,
@@ -236,11 +236,13 @@ class Customer:
 
 
 def test_a_cache_policy_takes_one_key_alone_or_a_list_and_keeps_a_tuple():
-    one = CachePolicy(ttl=timedelta(minutes=1), depends_on=[Invoice], vary_by="tenant")
-    several = CachePolicy(
+    one = QueryCachePolicy(ttl=timedelta(minutes=1), depends_on=[Invoice], vary_by="tenant")
+    several = QueryCachePolicy(
         ttl=timedelta(minutes=1), depends_on=[Invoice, Customer], vary_by=["tenant", "lang"]
     )
-    kept = CachePolicy(ttl=timedelta(minutes=1), depends_on=(Invoice,), vary_by=("tenant",))
+    kept = QueryCachePolicy(
+        ttl=timedelta(minutes=1), depends_on=(Invoice,), vary_by=("tenant",)
+    )
 
     assert (one.depends_on, one.vary_by) == ((Invoice,), ("tenant",))
     assert hash(one) == hash(kept)

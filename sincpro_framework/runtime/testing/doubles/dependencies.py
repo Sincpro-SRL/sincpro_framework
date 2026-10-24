@@ -15,6 +15,8 @@ from sincpro_framework.use_bus import UseFramework
 
 
 def _built_handlers(framework: UseFramework) -> list[Any]:
+    """Every Feature and ApplicationService instance of ``framework``'s bus, built now if it
+    was not — refused for a bus hosted by another service, whose handlers are not here."""
     if framework.is_reference:
         raise exceptions.SincproFrameworkNotBuilt(
             f"'{framework.name}' is hosted by another service: nothing of it is built here, so "

@@ -56,7 +56,9 @@ from sincpro_framework.sincpro_logger import logger
 class Publishes(Protocol):
     """What the relay hands each event to — a `Publisher` over any queue is one."""
 
-    def publish(self, event: DomainEvent) -> Any: ...
+    def publish(self, event: DomainEvent) -> Any:
+        """Send `event` on; raising is a failed delivery, for the policy to decide."""
+        ...
 
 
 class Became(StrEnum):
@@ -81,7 +83,16 @@ class RelayPass(DataTransferObject):
 
 
 def deliverable_classes(source: type) -> list[type]:
-    """`source` and every subclass of it marked `DeliverableEventMixin`."""
+    """`source` and every subclass of it marked `DeliverableEventMixin`.
+
+        # BillingEvent ← InvoiceIssued(DeliverableEventMixin), InvoiceDrafted,
+        #                InvoicePaid(DeliverableEventMixin) ← InvoicePaidLate
+        deliverable_classes(BillingEvent)
+            ->  [InvoiceIssued, InvoicePaid, InvoicePaidLate]
+
+    Context: breadth first, every level of subclass, each class once; `source` itself is
+    among them only when it is marked too.
+    """
     found: list[type] = []
     pending = [source]
     while pending:
@@ -107,7 +118,15 @@ class EventRelay:
         """`source` is the bounded context's base event class; its subclasses marked
         `DeliverableEventMixin` are what goes out. `publisher` is a `Publisher` over any queue,
         or anything with its `publish(event)`. `on_failure` is `DEFAULT_FAILURE_POLICY` unless
-        given. `clock` is the time, for a test to move."""
+        given. `clock` is the time, for a test to move.
+
+            EventRelay(events_repository, BillingEvent, Publisher(queue))
+                ->  100 events a pass, `DEFAULT_FAILURE_POLICY`, the real clock
+            EventRelay(events_repository, BillingEvent, Publisher(queue), batch=0)
+                ->  raises ProgrammingError("a relay reads at least one event, not 0")
+
+        Nothing is read here; `run_once` reads, delivers and marks.
+        """
         if batch < 1:
             raise exceptions.ProgrammingError(
                 f"a relay reads at least one event, not {batch}"
@@ -145,6 +164,20 @@ class EventRelay:
     def _decided(
         self, event: Any, error: Exception, now: datetime
     ) -> tuple[Became, bool, bool]:
+        """Carry out what the policy decides for an event whose publish raised `error`.
+
+        Context: the policy only decides; here the event is marked so the next pass reads the
+        decision back from the store — the attempts, the reason, when it is due again.
+
+            RETRY_IN_PLACE  ->  (RETRIED, True, True)    failed(reason, retry_at); pass ends
+            RETRY_LATER     ->  (RETRIED, holds_stream, False)
+            PARK            ->  (PARKED, False, False)   parked(reason)
+            SKIP            ->  (SKIPPED, False, False)  delivered, with `skipped` noted
+
+        1. The failure is this attempt: the attempts so far plus one, at `now`.
+        2. The policy decides; the decision is logged as a warning with the reason.
+        Final: the event is marked as decided, and the outcome answered as in `_delivered`.
+        """
         failure = HandlingFailure(event, error, event.delivery_attempts + 1, now)
         decision = self.on_failure.decide(failure)
         reason = f"{type(error).__name__}: {error}"
@@ -168,8 +201,12 @@ class EventRelay:
                 return Became.SKIPPED, False, False
 
     def _delivered(self, event: Any, now: datetime) -> tuple[Became, bool, bool]:
-        """What became of it: the outcome, whether its entity waits behind it, whether the pass
-        stops at it."""
+        """Publish one event and mark it — delivered, or as the policy decided.
+
+        Context: answers what became of it: the outcome, whether its entity waits behind it,
+        whether the pass stops at it. A publish that raises is never raised further — it is a
+        failed delivery, decided by `_decided`.
+        """
         try:
             self.publisher.publish(event)
         except (
@@ -180,14 +217,17 @@ class EventRelay:
         return Became.DELIVERED, False, False
 
     def _carried_out(self, repository: Any, now: datetime, locks: bool) -> RelayPass:
-        """1. The due events, oldest first, at most a batch — locked, where the store locks.
+        """One pass over `repository` at `now` — `run_once`'s body, inside its unit of work.
+
+        1. The due events, oldest first, at most a batch — locked, where the store locks.
         2. What waits for its retry holds back what the policy says:
            2.1 everything after it — a claimed event newer than the oldest waiting one is held,
                and so is every one after it;
            2.2 its entity — a claimed event of an entity with one waiting is held.
         3. Each one delivered, or decided by the policy; an event of a held entity waits, and
            a retry in place ends the pass.
-        4. Final: every event touched is saved in the same unit of work."""
+        Final: every event touched is saved in the same unit of work, and the counts answered.
+        """
         waiting = Condition(field="next_delivery_at", operator=Operator.GT, value=now)
         due = Condition(field="next_delivery_at", operator=Operator.LTE, value=now)
         events = self._search(repository, [due], self.batch, locks)
@@ -229,7 +269,15 @@ class EventRelay:
 
     def run_once(self) -> RelayPass:
         """One pass: claim the due events, deliver them in order, mark them — one transaction
-        on a store that has them."""
+        on a store that has them.
+
+            relay.run_once()   ->  RelayPass(read=3, delivered=2, retried=1)
+            relay.run_once()   # nothing due  ->  RelayPass()   — every count 0
+
+        Context: on a store that transacts, the pass is one unit of work — locking the rows it
+        claims when the store has row locks, so two relays never deliver the same event; on
+        any other store, it runs on the repository as it is, with no locks.
+        """
         now = self.clock()
         if isinstance(self.repository, Transacts):
             with self.repository.context() as unit:

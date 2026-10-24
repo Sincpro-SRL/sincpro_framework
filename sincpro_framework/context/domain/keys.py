@@ -59,12 +59,20 @@ _warned: set[str] = set()
 
 
 def _warn_once(key: str, message: str) -> None:
+    """Log `message` the first time `key` is seen in this process — a context crossing on
+    every request must not flood the log with the same warning."""
     if key not in _warned:
         _warned.add(key)
         logger.warning(message)
 
 
 def _simple(value: Any) -> bool:
+    """Text, a number, a boolean, or a list or tuple of only those — a mapping is `_travels`'
+    to judge.
+
+        _simple(["acme", "beta"])  ->  True
+        _simple({"a": 1})          ->  False
+    """
     if isinstance(value, _SIMPLE):
         return True
     return isinstance(value, (list, tuple)) and all(isinstance(one, _SIMPLE) for one in value)
@@ -80,7 +88,22 @@ def _travels(value: Any) -> bool:
 def travelling(context: Mapping[str, Any]) -> dict[str, Any]:
     """The keys of `context` a header can carry: simple values — a `Secret` as the value it
     holds — the trace's plumbing left to its own headers. What cannot travel is warned about once
-    per key and stays here."""
+    per key and stays here.
+
+        travelling({"tenant_id": "acme", "tenant_ids": ("acme", "beta"),
+                    "token": Secret("t0k"), "trace_id": "4bf9…", "db": connection,
+                    "note": None})
+            ->  {"tenant_id": "acme", "tenant_ids": ["acme", "beta"], "token": "t0k"}
+                and once: "the context key 'db' holds a Connection: it stays in this …"
+
+    1. A `Secret` (or `SecretStr`) is read as the value it holds.
+    2. A key that is not text, the trace's plumbing (`trace_id`, `span_id`, `carrier`) or a
+       `None` value is skipped, silently.
+    3. A value that travels — text, a number, a boolean, a list of them, or a one-level
+       mapping of those by text — is kept, every tuple as a list (JSON's shape).
+    4. Anything else is warned about, once per key in the process, and left out.
+    Final: what travels, in the context's order.
+    """
     found: dict[str, Any] = {}
     for key, value in context.items():
         if isinstance(value, (Secret, SecretStr)):

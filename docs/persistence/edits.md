@@ -34,7 +34,7 @@ class InvoiceForms(EntityEdits[Invoice]):
 
 
 billing.add_dependency("repository", repository)
-billing.context_store(KeyValueContexts(RedisKeyValue(redis)))   # where drafts are kept
+billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))   # where drafts are kept
 ```
 
 `EntityEdits` is an `EntityReads`: the one Feature answers the form's reads and its edits.
@@ -124,7 +124,7 @@ class AddInvoiceLine(EntityEdits[Invoice]):
         invoice.add_line(dto.product, dto.qty, dto.price)
 ```
 
-Each step is a method to override and call `super()` in: `keep`, `save`, `discard`, `change`,
+Each step is a method to override and call `super()` in: `save_draft`, `save`, `discard`, `change`,
 `drafts`.
 
 ## A transition: confirm, post, approve

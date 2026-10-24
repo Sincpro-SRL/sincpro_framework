@@ -28,6 +28,17 @@ class _RecordDelivery(SqsDelivery):
     """A record of the batch: settled by being in the answer or not, never by SQS's API."""
 
     def __init__(self, broker: SqsBroker, record: dict[str, Any]) -> None:
+        """Read a Lambda record as the SQS message `receive_message` would have answered.
+
+            {"messageId": "m-1", "body": "...", "eventSourceARN": "...:billing",
+             "messageAttributes": {"sincpro-headers": {"stringValue": "{...}"}}}
+            ->  SqsDelivery over {"MessageId": "m-1", "Body": "...", "MessageAttributes":
+                {"sincpro-headers": {"StringValue": "{...}"}}, ...}
+
+        Context: Lambda spells the keys in camelCase; renamed, the record is opened like a
+        polled message — SNS and EventBridge wrappers, the envelope attribute, the receive
+        count. It starts as not failed.
+        """
         message = {
             "MessageId": record.get("messageId"),
             "ReceiptHandle": record.get("receiptHandle"),
@@ -42,16 +53,27 @@ class _RecordDelivery(SqsDelivery):
         self.failed = False
 
     async def ack(self) -> None:
+        """Settled: left out of `batchItemFailures`, so Lambda deletes it with the batch."""
         self.failed = False
 
     async def nack(self) -> None:
+        """A retry: answered in `batchItemFailures`, so SQS delivers it again."""
         self.failed = True
 
     async def reject(self) -> None:
+        """Answered in `batchItemFailures` as a retry is: the queue's redrive policy moves it
+        to the dead-letter queue once its receives run out."""
         self.failed = True
 
 
 def _queue_name(record: dict[str, Any]) -> str:
+    """The queue a record came from — the last part of its ARN.
+
+        _queue_name({"eventSourceARN": "arn:aws:sqs:us-east-1:123:billing-issue"})
+        ->  "billing-issue"
+
+    The wire's subscriptions are found by that name.
+    """
     return record.get("eventSourceARN", "").rsplit(":", 1)[-1]
 
 
@@ -68,6 +90,19 @@ def sqs_handler(
 
     `options` is the wire's (`QueueOptions`: the inbox, `max_attempts`, ...); `broker` an
     `SqsBroker` of the project's, for the client a retry by channel publishes with.
+
+        handler = sqs_handler([billing])
+        handler({"Records": [<from billing-invoice-v1-issued, acked>]}, None)
+        ->  {"batchItemFailures": []}
+        handler({"Records": [<from a queue nobody reads, id "m-9">]}, None)
+        ->  {"batchItemFailures": [{"itemIdentifier": "m-9"}]}
+
+    1. The broker given, else a new `SqsBroker`.
+    2. A `QueueGateway` over the broker and `buses`, with the wire's `options`.
+    3. Its subscriptions built once, each keyed by the name of the queue its channel is read
+       from — the last part of `queue_of(channel)`.
+    Final: `handler`, which runs each batch through the wire in an event loop of its own
+    (`handled`) and answers the records it did not ack.
     """
     import asyncio
 
@@ -78,6 +113,14 @@ def sqs_handler(
     }
 
     async def handled(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+        """Run the batch through the wire, one record after the other, and answer the ones
+        that failed.
+
+        1. Each record becomes a delivery, matched to its subscription by its queue's name.
+        2. A queue no subscription reads is logged and failed — SQS keeps it for its redrive.
+        3. Otherwise the wire processes it as it processes a polled message.
+        Final: `{"itemIdentifier": <message id>}` for every delivery the wire did not ack.
+        """
         failures: list[dict[str, str]] = []
         for record in records:
             delivery = _RecordDelivery(sqs, record)
@@ -94,6 +137,8 @@ def sqs_handler(
         return failures
 
     def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+        """What Lambda calls with each batch — the wire is async, so each call runs it in an
+        event loop of its own and answers the partial batch response."""
         return {"batchItemFailures": asyncio.run(handled(event.get("Records") or []))}
 
     return handler

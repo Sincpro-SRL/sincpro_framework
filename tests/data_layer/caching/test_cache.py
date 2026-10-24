@@ -14,16 +14,16 @@ import fakeredis
 import pytest
 
 from sincpro_framework import DataTransferObject, exceptions
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
     Cache,
+    CachePolicy,
     ExternalVersion,
     JsonCodec,
-    KeepPolicy,
     TimeToLive,
 )
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import ManualClock
+from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 
 class Tenant(DataTransferObject):
@@ -71,7 +71,7 @@ def _world(tier: str) -> World:
     return World(Cache(store, now=clock.now, random=lambda: 0.5), clock, JsonCodec(Tenant))
 
 
-def _tenant(world: World, token: str, policy: KeepPolicy[Tenant] | None = None) -> Tenant:
+def _tenant(world: World, token: str, policy: CachePolicy[Tenant] | None = None) -> Tenant:
     return world.cache.get_or_compute(
         ("tenant", token), lambda: world.registry.resolve(token), policy, world.codec
     )
@@ -92,7 +92,7 @@ def test_asking_again_with_the_same_parameters_does_not_compute_again(tier):
 @pytest.mark.parametrize("tier", ["process", "memory"])
 def test_a_value_is_recomputed_once_its_ttl_passes(tier):
     world = _world(tier)
-    policy = KeepPolicy[Tenant](freshness=TimeToLive(ttl=timedelta(minutes=5)))
+    policy = CachePolicy[Tenant](freshness=TimeToLive(ttl=timedelta(minutes=5)))
 
     _tenant(world, "tok", policy)
     world.clock.advance(minutes=4)
@@ -108,7 +108,7 @@ def test_past_its_ttl_the_stale_value_is_served_while_another_caller_recomputes(
     """RFC 5861's stale-while-revalidate: nobody waits on the source for what was right a moment
     ago — the leader recomputes, the rest are answered at once."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=1))
     )
     _tenant(world, "tok", policy)
@@ -157,9 +157,9 @@ def test_a_version_that_moved_makes_the_kept_value_recomputed(tier):
     """The incident this strategy is for: access granted at the source never shows, because the
     cached value was computed before it and its lifetime alone keeps it."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         validation=ExternalVersion(
-            world.registry.current_version, kept=lambda one: one.version
+            world.registry.current_version, version_of=lambda one: one.version
         )
     )
     _tenant(world, "tok", policy)
@@ -175,10 +175,10 @@ def test_a_version_that_moved_makes_the_kept_value_recomputed(tier):
 def test_the_version_is_not_asked_again_while_the_last_check_is_trusted(tier):
     """A hot key must not put the source's version endpoint in the path of every call."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         validation=ExternalVersion(
             world.registry.current_version,
-            kept=lambda one: one.version,
+            version_of=lambda one: one.version,
             trusted_for=timedelta(minutes=5),
         )
     )
@@ -195,12 +195,12 @@ def test_the_version_is_not_asked_again_while_the_last_check_is_trusted(tier):
 
 def test_reading_the_version_off_the_value_spares_asking_before_computing():
     world = _world("process")
-    kept = KeepPolicy[Tenant](
+    kept = CachePolicy[Tenant](
         validation=ExternalVersion(
-            world.registry.current_version, kept=lambda one: one.version
+            world.registry.current_version, version_of=lambda one: one.version
         )
     )
-    asked_first = KeepPolicy[Tenant](
+    asked_first = CachePolicy[Tenant](
         validation=ExternalVersion(world.registry.current_version)
     )
 
@@ -215,10 +215,10 @@ def test_a_value_that_no_longer_holds_is_never_served_even_when_another_caller_l
     """The stale window covers lifetime, never validity: a value the source says is wrong is not
     handed out because someone else happens to be recomputing it."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5)),
         validation=ExternalVersion(
-            world.registry.current_version, kept=lambda one: one.version
+            world.registry.current_version, version_of=lambda one: one.version
         ),
         wait_for_others=timedelta(milliseconds=20),
     )
@@ -307,7 +307,7 @@ def test_switched_off_every_call_computes_and_nothing_is_kept():
 
 def test_a_value_larger_than_max_bytes_is_answered_and_not_kept():
     world = _world("memory")
-    policy = KeepPolicy[Tenant](max_bytes=10)
+    policy = CachePolicy[Tenant](max_bytes=10)
 
     _tenant(world, "tok", policy)
     _tenant(world, "tok", policy)
@@ -352,7 +352,7 @@ def test_past_its_ttl_inside_the_stale_window_the_leader_recomputes_it(tier):
     """Stale-while-revalidate needs a leader: with nobody else recomputing, the caller that finds
     the value expiring computes the new one — or the stale value would be served forever."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5))
     )
     _tenant(world, "tok", policy)
@@ -369,10 +369,10 @@ def test_past_its_ttl_inside_the_stale_window_the_leader_recomputes_it(tier):
 def test_a_check_that_held_is_trusted_again_for_another_window(tier):
     """The version is asked once per `trusted_for`, not once ever and not on every call."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         validation=ExternalVersion(
             world.registry.current_version,
-            kept=lambda one: one.version,
+            version_of=lambda one: one.version,
             trusted_for=timedelta(minutes=5),
         )
     )
@@ -394,7 +394,7 @@ def test_a_check_that_held_is_trusted_again_for_another_window(tier):
 def test_a_caller_waiting_on_a_leader_that_never_finishes_computes_itself(tier):
     """A waiter never hangs: past `wait_for_others` it computes on its own."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](wait_for_others=timedelta(milliseconds=30))
+    policy = CachePolicy[Tenant](wait_for_others=timedelta(milliseconds=30))
     hashed = world.cache._key(("tenant", "tok"), world.codec)
     assert world.cache._tier(world.codec).lead(hashed, policy)  # a leader that never finishes
 
@@ -417,7 +417,7 @@ def test_a_validation_that_settles_no_mark_answers_and_keeps_nothing():
             return True
 
     world = _world("process")
-    policy = KeepPolicy[Tenant](validation=NeverKept())
+    policy = CachePolicy[Tenant](validation=NeverKept())
 
     _tenant(world, "tok", policy)
     _tenant(world, "tok", policy)

@@ -19,6 +19,8 @@ from sincpro_framework.observability.metrics.domain.instruments import Instrumen
 
 
 class Recorder(ABC):
+    """A metrics backend — two methods, one per kind of instrument; see the module."""
+
     @abstractmethod
     def add(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
         """A counter or an up-down counter moves by `value` for this set of labels."""

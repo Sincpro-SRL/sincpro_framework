@@ -1,3 +1,21 @@
+"""The pieces a bounded context is written with: `DataTransferObject`, `Feature`,
+`ApplicationService` — and `Bus`, what every bus that runs them answers to.
+
+    class CommandIssueInvoice(DataTransferObject):
+        amount: Decimal
+
+    @billing.feature(CommandIssueInvoice)
+    class IssueInvoice(Feature):
+        def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice: ...
+
+    billing(CommandIssueInvoice(amount=10), ResponseIssueInvoice)  ->  ResponseIssueInvoice
+    bus.thread_context().execute                                  a thread pool's task
+    await bus.get_async_bus()(dto)                                from async code
+
+A bounded context never subclasses `Feature` or `ApplicationService` straight from here: its
+`framework.py` wraps each once with the dependencies it registers (see the classes).
+"""
+
 from abc import ABC, abstractmethod
 from contextvars import copy_context
 from typing import TYPE_CHECKING, Generic, Type
@@ -33,6 +51,10 @@ class DataTransferObject(BaseModel):
 
 
 class Bus(ABC):
+    """What every bus is: something that executes a DTO — the `UseFramework`, the
+    `FrameworkBus`, a layer bus, the `feature_bus` an ApplicationService holds. It brings the
+    two ways to call it off the calling thread: `thread_context()` and `get_async_bus()`."""
+
     log_after_execution: bool = True
 
     @abstractmethod
@@ -129,14 +151,15 @@ class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT])
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
-        """
-        Execute the feature's business logic.
+        """The use case itself: the business rule for one DTO, answered with a response DTO —
+        or `None` for a command that answers nothing.
 
-        Args:
-            dto: The input Data Transfer Object containing request parameters
+        Context: the bus calls it with everything around already done — context, span,
+        interceptors; what it raises is the use case's failure, classified and reported by the
+        bus — raise a `ClientError` subclass for an answer (not found, refused, invalid) and
+        let the error handlers map it, rather than catching to answer.
 
-        Returns:
-            A response DTO containing the operation result, or None
+            issue_invoice.execute(CommandIssueInvoice(amount=10))  ->  ResponseIssueInvoice
         """
 
 
@@ -186,12 +209,9 @@ class ApplicationService(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse,
 
     @abstractmethod
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None:
-        """
-        Execute the application service orchestration logic.
+        """The orchestration for one DTO: features run through `self.feature_bus`, their
+        answers combined into a response DTO — or `None` for a command that answers nothing.
 
-        Args:
-            dto: The input Data Transfer Object containing orchestration parameters
-
-        Returns:
-            A response DTO containing the orchestration result, or None
+        Context: each feature it runs is its own execution under this one — its own span, node
+        and error handling — so a failure in one names the chain it crossed.
         """

@@ -61,6 +61,21 @@ class RequestContext(DataTransferObject):
     frontend sends back)."""
 
     def bus_context(self) -> dict[str, Any]:
+        """The keys the bus context opens with for this request — what was carried, the
+        `Idempotency-Key` and the identity chain, each only when the request sent it.
+
+        Context: the use case reads `idempotency_key` or `correlation_id` from its context,
+        not from its DTO; an absent header writes no key, so the bus derives its own.
+
+            RequestContext(idempotency_key="k-1", correlation_id="c-9",
+                           carried={"tenant_id": "acme"}).bus_context()
+            ->  {"tenant_id": "acme", "idempotency_key": "k-1", "correlation_id": "c-9"}
+
+        1. What the caller carried (`baggage`, `sincpro-context`).
+        2. The `Idempotency-Key`, under `idempotency_key`.
+        3. Final: the identity chain — `execution_id`, `causation_id`, `correlation_id` — over
+           what was carried.
+        """
         found: dict[str, Any] = dict(self.carried)
         if self.idempotency_key:
             found[IDEMPOTENCY_KEY] = self.idempotency_key
@@ -71,6 +86,8 @@ class RequestContext(DataTransferObject):
 
     @property
     def trace_id(self) -> str | None:
+        """The trace id the caller's `traceparent` names — `None` when it sent none or a
+        malformed one; what a problem reports when the bus never opened a span."""
         return trace_id_of(self.traceparent)
 
 
@@ -112,7 +129,14 @@ def run_on_bus(
     context: RequestContext,
     seen: dict[str, str | None],
 ) -> Any:
-    """1. Authenticate `credentials` by the bus's `AccessControl` — in this thread.
+    """Run `dto` on `bus` as the request's caller — in the worker thread `call` hands it to.
+
+        run_on_bus(billing, CommandIssueInvoice(total=10), creds, context, seen)
+        ->  ResponseIssueInvoice(...)
+        run_on_bus(<bus raises>, dto, creds, context, seen)
+        ->  the error raised; seen == {"trace_id": "4bf92f35..."}
+
+    1. Authenticate `credentials` by the bus's `AccessControl` — in this thread.
     2. The request's context keys (`Idempotency-Key`, correlation id) into the bus context.
     3. The trace: the host's span when its instrumentation opened one, else the caller's
        `traceparent`; no second root.
@@ -142,14 +166,44 @@ def bus_call(
     bus: UseFramework, limiter: CapacityLimiter | None = None
 ) -> Callable[..., Awaitable[BusCall]]:
     """A FastAPI dependency answering `call`: `await call(dto)` runs `dto` on `bus` the way
-    every generated route does. `limiter` bounds the worker threads (anyio's default, 40)."""
+    every generated route does. `limiter` bounds the worker threads (anyio's default, 40).
+
+    Context: a hand-written route that called `bus(dto)` itself would run in the event loop,
+    lose the identity to a thread copy and skip the problem's trace id; through `call` it is
+    the generated route's path, component for component.
+
+        call = Depends(bus_call(billing))         # in the route's signature
+        await call(CommandIssueInvoice(total=10))  ->  the bus's answer, or its failure raised
+
+    1. `provide`, the dependency FastAPI resolves per request: the acting credentials and
+       the request's context, read once in the event loop.
+    2. The `call` it answers, per DTO:
+       2.1 the bus noted on the request state, so a 401 names its challenges;
+       2.2 a use case that runs once, with no `Idempotency-Key` and a Command that does not
+           identify itself — `IdempotencyKeyMissing`, before the bus;
+       2.3 `run_on_bus` in a worker thread, bounded by `limiter`;
+       2.4 on failure, the trace it belongs to kept on the request state.
+    Final: `provide` — FastAPI calls it, the route gets `call`.
+    """
 
     async def provide(
         request: Request,
         credentials: Credentials = Depends(acting_credentials),
         context: RequestContext = Depends(request_context),
     ) -> BusCall:
+        """The dependency itself: reads the credentials and the request's context once, in
+        the event loop, and answers the `call` that runs a DTO with them."""
+
         async def call(dto: Any) -> Any:
+            """Run `dto` on the bus off the event loop, with this request's identity.
+
+            1. The bus is noted on the request state — a 401 names its challenges.
+            2. A use case that runs once, with no `Idempotency-Key` and a Command that does
+               not identify itself, is refused before the bus (400).
+            3. `run_on_bus` in a worker thread, bounded by `limiter`.
+            4. Final: on failure, the trace it belongs to is kept on the request state, so the
+               problem answered names it.
+            """
             setattr(request.state, BUSES_STATE, [bus])
             if context.idempotency_key is None and requires_idempotency_key(bus, type(dto)):
                 raise exceptions.IdempotencyKeyMissing(

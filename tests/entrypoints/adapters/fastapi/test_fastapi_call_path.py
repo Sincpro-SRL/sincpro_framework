@@ -26,7 +26,6 @@ from sincpro_framework.auth import (
     StaticProvider,
     current_identity,
 )
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
@@ -39,6 +38,7 @@ from sincpro_framework.entrypoints.adapters.fastapi import (
     install_problem_handlers,
 )
 from sincpro_framework.entrypoints.entrypoint.decorators import rest
+from sincpro_framework.store import InMemoryKeyValue
 
 
 class Perm(Permission):

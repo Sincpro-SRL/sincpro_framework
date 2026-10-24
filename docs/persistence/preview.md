@@ -160,7 +160,7 @@ with no Criteria evaluator (a native app, an agent) shows.
 ### Kept: the preview of a form that is not saved yet
 
 `Preview` keeps nothing. The same computation, kept as the caller's draft — and saved or dropped
-when the form says so — is `Edit` with `EditAction.KEEP`, answered by `EntityEdits`: the record
+when the form says so — is `Edit` with `EditAction.SAVE_DRAFT`, answered by `EntityEdits`: the record
 with its derived fields, each field's state, the advice, and the draft version to name next.
 See [edits.md](edits.md).
 

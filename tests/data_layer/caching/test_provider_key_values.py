@@ -14,11 +14,11 @@ from pymemcache.test.utils import MockMemcacheClient
 
 from sincpro_framework import exceptions
 from sincpro_framework.common.failures import refined_failure_kind
-from sincpro_framework.common.store import KeyValueStore
-from sincpro_framework.common.store import exceptions as store_exceptions
-from sincpro_framework.data_layer.caching.adapters.memcached import MemcachedKeyValue
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import KeyValueStoreContract
+from sincpro_framework.store import KeyValueStore
+from sincpro_framework.store.adapters.memcached import MemcachedKeyValue
+from sincpro_framework.store.adapters.redis import RedisKeyValue
+from sincpro_framework.store.domain import exceptions as store_exceptions
 
 
 class TestRedisKeyValue(KeyValueStoreContract):

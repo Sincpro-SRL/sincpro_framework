@@ -52,6 +52,16 @@ _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False
 
 @contextmanager
 def writing_out() -> Iterator[None]:
+    """Marks the block in which an answer is written out, so `serialising()` says so.
+
+        with writing_out():
+            adapter.dump_python(record, mode="json")     a relation nobody resolved
+                                                          answers its default, never raises
+
+    Context: dumping a record reads every attribute, and a relation attribute read outside
+    a resolution refuses (`RelationNotResolved`) — while writing out, it must not. Per thread
+    and task, and restored exactly on the way out.
+    """
     token = _SERIALISING.set(True)
     try:
         yield
@@ -61,12 +71,20 @@ def writing_out() -> Iterator[None]:
 
 @cache
 def _adapter(aggregate: type) -> TypeAdapter:
+    """The pydantic `TypeAdapter` that dumps a record of this class, built once per class."""
     return TypeAdapter(aggregate)
 
 
 def _shaped(value: Any, specification: Specification, definition: Meta) -> Any:
-    """An embedded value, already written out, cut to what its node named plus its identity;
-    a list of them, each one cut the same way."""
+    """An embedded value, already written out, cut to what its node named — a value object
+    has no identity to keep; a list of them, each one cut the same way.
+
+        {"amount": 5, "currency": "BOB", "rate": 1}, {"amount": {}}   ->  {"amount": 5}
+
+    1. `None` stays `None`; a list is cut item by item.
+    2. Only the names the node lists survive.
+    Final: a kept name that is itself an embedded value with its own node is cut the same way.
+    """
     if value is None:
         return None
     if isinstance(value, list):
@@ -143,7 +161,25 @@ def _cut(
     meta: Meta | None,
     mode: Literal["json", "python"],
 ) -> dict[str, Any]:
-    """One record as the answer shows it: the scalars the mask keeps, then the named relations."""
+    """One record as the answer shows it: the scalars the mask keeps, then the relations
+    it names.
+
+        Invoice, {"number": {}, "lines": {"specification": {"qty": {}}}}
+        ->  {"id": …, "number": "F-1",
+             "lines": {"items": [{"id": …, "qty": 2}], "count": {…}, "cursor": None}}
+
+    1. The whole record dumped, its relation attributes taken out — they are written below
+       from what was resolved, never from the attribute.
+    2. No mask: that is the answer, every scalar.
+    3. A mask keeps the identity and what it names — through the model's definition when
+       there is one, else the names as given, or the entity's display when none.
+    4. Each named field the model knows:
+    4.1 an embedded value is cut to its own node (`_shaped`);
+    4.2 a to-many relation is written as a page — items, count, cursor — of what the reading
+        resolved, an empty page when nothing was;
+    4.3 a to-one relation is its record, or `None`.
+    Final: each related record written the same way, recursively (`_record`).
+    """
     written = _adapter(type(record)).dump_python(record, mode=mode)
     relations = set(meta.relations) if meta is not None else set()
     for name in relations:
@@ -614,8 +650,11 @@ class ResponseRecords(DataTransferObject):
     ) -> Any:
         """The records of a page, put back in the order of `ids`.
 
-        in      ids ["b", "gone", "a"], a page holding a and b
-        out     ResponseAccounts(accounts=[b, a], missing=["gone"])
+            ResponseAccounts.of(["b", "gone", "a"], <page holding a and b>, criteria, "id")
+                ->  ResponseAccounts(accounts=[b, a], missing=["gone"])
+
+        Context: the identity is compared as text; the definition travels — cut by the
+        specification — only when the criteria asked for it, with what the page dropped.
         """
         found = {str(getattr(one, identity)): one for one in page.items}
         response = cls(

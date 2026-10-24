@@ -8,6 +8,9 @@ _by_class: "WeakKeyDictionary[type, tuple[Declaration, ...]]" = WeakKeyDictionar
 
 
 def declare(cls: type, declaration: Declaration) -> None:
+    """Add `declaration` to what `cls` declares, after the ones before it — kept off the
+    class, so a DTO or a use case is never touched and a class that goes away takes them
+    with it."""
     _by_class[cls] = (*_by_class.get(cls, ()), declaration)
 
 

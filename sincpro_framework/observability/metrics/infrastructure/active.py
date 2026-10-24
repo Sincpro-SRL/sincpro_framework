@@ -32,6 +32,7 @@ _UNSET = object()
 
 
 def _installed(module: str) -> bool:
+    """Whether `module` can be imported, without importing it — `False` when blocked."""
     try:
         return find_spec(module) is not None
     except (ImportError, ValueError):  # blocked, or a module without a spec
@@ -39,6 +40,8 @@ def _installed(module: str) -> bool:
 
 
 def _otel_is_configured() -> bool:
+    """Whether `auto` should pick the OTel recorder: the SDK is installed, and either an OTLP
+    endpoint is set or a host registered a real meter provider."""
     if not (_installed("opentelemetry") and _installed("opentelemetry.sdk")):
         return False
     if settings.otlp_endpoint:
@@ -70,13 +73,22 @@ def _standard_backend() -> str:
 
 
 def from_settings() -> Recorder | None:
-    """1. `off`: none.
+    """The recorder the settings and the environment ask for — `None` when metrics are off.
+
+    1. `off`: none.
     2. `prometheus`: `PrometheusRecorder` on the default registry — `[prometheus]`.
     3. `otel`: `OtelRecorder` on the host's meter provider, or one this installs for OTLP.
     Final: `auto` is `otel` when a meter provider or an OTLP endpoint is there, else none —
     Prometheus is never chosen by guessing, because it needs its `/metrics` served.
     `SINCPRO_METRICS_BACKEND` decides when set; else `OTEL_METRICS_EXPORTER` and
-    `OTEL_SDK_DISABLED` (`_standard_backend`)."""
+    `OTEL_SDK_DISABLED` (`_standard_backend`).
+
+        SINCPRO_METRICS_BACKEND=prometheus                ->  PrometheusRecorder()
+        OTEL_METRICS_EXPORTER=otlp                        ->  OtelRecorder.for_process()
+        OTEL_METRICS_EXPORTER=none                        ->  None
+        nothing set, no OTLP endpoint, no host provider   ->  None
+
+    Never a guess beyond that: an unknown backend name also leaves metrics off."""
     backend = (getattr(settings, "metrics_backend", None) or "auto").lower()
     if backend == "auto":
         backend = _standard_backend()
@@ -96,12 +108,24 @@ def from_settings() -> Recorder | None:
 
 
 class ActiveRecorder:
+    """The one recorder of the process, chosen lazily from the settings, swappable by code,
+    and the shield every measurement passes through (`emit`)."""
+
     def __init__(self) -> None:
+        """Nothing chosen yet — the settings are read on the first `get`."""
         self._lock = threading.Lock()
         self._chosen: object = _UNSET
         self._failing: set[str] = set()
 
     def get(self) -> Recorder | None:
+        """The recorder in use — `from_settings()` the first time, under the lock so racing
+        threads choose once; a choice that raises is logged and leaves metrics off.
+
+            active.get()   ->  OtelRecorder(...)     # first call: read from the settings
+            active.get()   ->  the same recorder     # later calls: no lock, no settings read
+            active.get()   ->  None                  # metrics off, or the choice raised
+
+        `set` replaces the choice; `restore` of the "not chosen yet" marker re-reads them."""
         chosen = self._chosen
         if chosen is _UNSET:
             with self._lock:
@@ -122,6 +146,8 @@ class ActiveRecorder:
             return previous
 
     def restore(self, previous: object) -> None:
+        """Put back what `set` answered — even the "not chosen yet" marker, so the settings
+        are read again after a test that swapped the recorder."""
         with self._lock:
             self._chosen = previous
             self._failing.clear()
@@ -129,7 +155,23 @@ class ActiveRecorder:
     def emit(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
         """One measurement, shielded: a counter never goes down, and a recorder that raises is
         logged once per instrument and never reaches the use case. Every measurement carries
-        the execution's correlation labels (`correlated`)."""
+        the execution's correlation labels (`correlated`).
+
+            active.emit(issued, 1, {"currency": "BOB"})
+                ->  recorder.add(issued + the correlation keys, 1, {"currency": "BOB",
+                                 "service.name": "billing-sdk", "tenant": "acme", ...})
+            active.emit(issued, -1, {...})    ->  nothing: a counter never goes down
+            a recorder raising on `issued`    ->  one warning for it; the use case goes on
+
+        1. No recorder (metrics off): nothing.
+        2. A correlated instrument (the default) takes the correlation keys and their values.
+        3. By kind:
+           3.1 a histogram records the value;
+           3.2 a counter handed a negative value drops it;
+           3.3 a counter or an up-down counter adds it.
+        Final: whatever raises is swallowed — logged the first time for that instrument's name
+        until the recorder is replaced (`set`/`restore` forget it).
+        """
         recorder = self.get()
         if recorder is None:
             return
@@ -162,7 +204,16 @@ def correlated(
 
     Context: added here, where every instrument passes, so the use case's duration, the
     declared metrics, the instruments by hand, the cache, the idempotency and the queue carry
-    them alike, on every backend, with no collector (PRD_03 §4.10)."""
+    them alike, on every backend, with no collector (PRD_03 §4.10).
+
+        correlated(issued, {"currency": "BOB", "tenant": "beta"})
+            ->  (issued with label_keys ("currency", "service.name", "service.version",
+                 "release", "tenant"),
+                 {"service.name": "billing-sdk", "service.version": "1.2.0",
+                  "release": "billing-sdk:1.2.0", "currency": "BOB", "tenant": "beta"})
+
+    Only the keys the instrument lacks are added; the extended instrument is built once per
+    instrument and set of extra keys, and kept, so a backend sees one shape per series."""
     extra = tuple(
         one for one in correlation.metric_label_keys() if one not in instrument.label_keys
     )

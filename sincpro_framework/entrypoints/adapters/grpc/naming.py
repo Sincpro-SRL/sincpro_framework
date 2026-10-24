@@ -45,7 +45,14 @@ def pascal(name: str) -> str:
 def method_name(command: type) -> str:
     """The DTO's name without `Command`/`Query`, PascalCase — `QueryInvoice` → `Invoice`.
 
-    Context: stripped only when a word follows (`Commander` stays, `Query` alone stays)."""
+    Context: stripped only when a word follows (`Commander` stays, `Query` alone stays).
+
+        method_name(CommandIssueInvoice)   ->  "IssueInvoice"
+        method_name(Commander)             ->  "Commander"
+        method_name(QueryInvoice)          ->  "Invoice"
+
+    The rest is made PascalCase by `pascal` — an inner capital is kept.
+    """
     name = command.__name__
     for kind in KINDS:
         rest = name[len(kind) :]
@@ -56,11 +63,20 @@ def method_name(command: type) -> str:
 
 
 def service_name(alias: str) -> str:
+    """The service a context's methods are grouped under — `sales_orders` →
+    `SalesOrdersService`."""
     return f"{pascal(alias)}Service"
 
 
 def major_of(version: str | None) -> int:
-    """`v2`, `2` or `2.1` → 2; `None` → 1. Refused when it is no version."""
+    """`v2`, `2` or `2.1` → 2; `None` → 1. Refused when it is no version.
+
+        major_of("v2.1")    ->  2
+        major_of(None)      ->  1
+        major_of("beta")    ->  ValueError: version 'beta' is no version — say v1, v2, ...
+
+    Only the major reaches the package name (`package_of`): `2.1` is `billing.v2`.
+    """
     if version is None:
         return DEFAULT_MAJOR
     found = VERSION.match(version)
@@ -85,6 +101,13 @@ def default_package(bus_name: str) -> str:
 
 
 def path_of(package: str, service: str, method: str) -> str:
+    """The full method path a client dials — what `GrpcClient.call` and the server route on.
+
+        path_of("billing.v1", "BillingService", "IssueInvoice")
+        ->  "/billing.v1.BillingService/IssueInvoice"
+
+    The gRPC wire form: `/{package}.{service}/{method}`.
+    """
     return f"/{package}.{service}/{method}"
 
 
@@ -96,18 +119,39 @@ class GrpcWire(Wire[GrpcBinding]):
     binding = GrpcBinding
 
     def derive(self, operation: Operation, group: Group) -> GrpcBinding:
+        """The binding a use case has when nothing is declared: the context's service, the
+        DTO's name without its kind.
+
+            derive(Operation(command=CommandIssueInvoice, ...), Group(alias="billing"))
+            ->  GrpcBinding(service="BillingService", method="IssueInvoice")
+        """
         return GrpcBinding(
             service=service_name(group.alias), method=method_name(operation.command)
         )
 
     def path(self, resolved: Resolved[GrpcBinding]) -> str:
+        """The path a resolved binding is served at — its group's package, its service and
+        method.
+
+            path(<IssueInvoice in group billing, version "2">)
+            ->  "/billing.v2.BillingService/IssueInvoice"
+
+        The same path `path_of` builds from the three names.
+        """
         binding = resolved.binding
         return path_of(package_of(resolved.group), str(binding.service), str(binding.method))
 
     def name_of(self, resolved: Resolved[GrpcBinding]) -> str:
+        """The name a manifest lists for it — on gRPC, the full method path."""
         return self.path(resolved)
 
     def _name_problems(self, resolved: Resolved[GrpcBinding]) -> list[str]:
+        """What makes one binding's names unservable — a package proto refuses, or a service
+        or method that is no proto identifier (`Issue-Invoice`, `1Invoice`, `None`).
+
+        1. The group's package, checked by `validate_package`.
+        2. Final: the service and the method, each matched against `IDENTIFIER`.
+        """
         where = f"{resolved.operation.command.__name__} (grpc)"
         problems: list[str] = []
         try:
@@ -124,8 +168,21 @@ class GrpcWire(Wire[GrpcBinding]):
         return problems
 
     def validate(self, surface: Sequence[Resolved[GrpcBinding]]) -> list[str]:
-        """Every name a proto identifier, no path answered twice, none of the framework's own
-        services taken."""
+        """Every reason the surface cannot be served on gRPC — empty when it can.
+
+        Context: two DTOs that differ only by their kind (`CommandInvoice`, `QueryInvoice`)
+        end up on one path once it is stripped; refused here, at build time, instead of one
+        method silently shadowing the other.
+
+            validate([<CommandInvoice in billing>, <QueryInvoice in billing>])
+            ->  ["/billing.v1.BillingService/Invoice is answered by CommandInvoice,
+                 QueryInvoice — once Command/Query is stripped they share one name: ..."]
+
+        1. Each binding's names (`_name_problems`) — one that fails is not checked further.
+        2. Its path is collected; its service must not be one of the framework's own
+           (`RESERVED_SERVICES` — reflection, health, `Describe`).
+        Final: every path answered by more than one Command is refused, naming them all.
+        """
         problems: list[str] = []
         answering: dict[str, list[str]] = {}
         for resolved in surface:
@@ -151,7 +208,13 @@ class GrpcWire(Wire[GrpcBinding]):
 
     def build(self, surface: Sequence[Resolved[GrpcBinding]]) -> dict[str, GrpcMethodSpec]:
         """`{path: GrpcMethodSpec}` — what the server mounts, reflection and `Describe` list and
-        the `.proto` export renders."""
+        the `.proto` export renders.
+
+            build([<IssueInvoice in group billing>])
+            ->  {"/billing.v1.BillingService/IssueInvoice": GrpcMethodSpec(
+                     alias="billing", package="billing.v1",
+                     service="billing.v1.BillingService", method="IssueInvoice", ...)}
+        """
         specs: dict[str, GrpcMethodSpec] = {}
         for resolved in surface:
             package = package_of(resolved.group)

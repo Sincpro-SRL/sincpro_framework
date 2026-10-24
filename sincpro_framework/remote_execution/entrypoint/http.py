@@ -48,6 +48,11 @@ def open_host_routes(contexts: "Sequence[UseFramework]") -> list[Route]:
     """The route that hosts `contexts` for calling services, keyed by their names — they run in
     this process, whatever the context map says.
 
+        Starlette(routes=[*open_host_routes([billing]), *gateway.routes()])
+        POST <PATH>  x-sp-bounded-context: billing   {"type": "billing.CommandPay", ...}
+        ->  200 {"type": "billing.ResponsePay", "data": {...}}
+        POST <PATH>  x-sp-bounded-context: sales     ->  404 "this service does not host ..."
+
     1. The context from its header; the message — the DTO's identity, its values, the request
        context — from the body.
     2. Executed on a worker thread (`execute_hosted`).
@@ -59,6 +64,8 @@ def open_host_routes(contexts: "Sequence[UseFramework]") -> list[Route]:
         bus.run_here()
 
     async def execute(request: Request) -> Response:
+        """One call from a calling service — the steps above; `execute_hosted` runs off the
+        event loop, so the route never blocks it."""
         from sincpro_framework.auth.entrypoint.transports import credentials_from_asgi
 
         name = request.headers.get(CONTEXT_HEADER, "")

@@ -9,10 +9,11 @@ Context: inside `previewing()` every write door of every store (`save`, `remove`
 `upsert`, `update_all`, `remove_all`), every numbering `take`, every flush or writing statement
 of a SQL session (`record_changes`, a unit of work committing what it tracks, a record added to
 `repository.session` by hand, a `text(...)` statement that is not a read) and every read that
-locks rows raises `ProgrammingError`, naming the call. The guard is a
-context variable: a statement on a raw connection, and a thread started without the
-framework's context (`ContextExecutor`), are outside it. A preview that wrote would leave a record, a number or a lock behind the
-user's back, which is the one failure here worth a refusal. Outside a preview nothing changes.
+locks rows raises `ProgrammingError`, naming the call. The guard is a context variable: a
+statement on a raw connection, and a thread started without the framework's context
+(`ContextExecutor`), are outside it. A preview that wrote would leave a record, a number or a
+lock behind the user's back, which is the one failure here worth a refusal. Outside a preview
+nothing changes.
 
 `advise(...)` is how domain code speaks to a form without refusing anything: inside a preview
 the advice is collected and travels back; outside one it does nothing.

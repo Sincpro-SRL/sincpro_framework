@@ -2,7 +2,7 @@
 written through, a flow handed on — a queue's headers, the remote bus — is read from the store by the
 bus that receives it, and the global level is one for every service that shares the store.
 
-    bus.context_store(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))
+    bus.store_context_in(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))
 
 Two services are two buses sharing one `InMemoryContexts` (Redis, in production). The receiving
 side runs outside the sender's scope — in a new thread, which starts with no context of its own — so
@@ -58,7 +58,7 @@ class CommandPriceOrder(DataTransferObject):
 def _orders(store: InMemoryContexts, sent: list[dict[str, str]]) -> UseFramework:
     """Service A: places an order with a discount and hands it on to a queue."""
     orders = UseFramework("shared-context-orders", log_after_execution=False)
-    orders.context_store(store)
+    orders.store_context_in(store)
 
     @orders.app_service(CommandPlaceOrder)
     class PlaceOrder(ApplicationService):
@@ -78,7 +78,7 @@ def _orders(store: InMemoryContexts, sent: list[dict[str, str]]) -> UseFramework
 def _billing(store: InMemoryContexts, read: list[dict[str, Any]]) -> UseFramework:
     """Service B: bills what the queue brings, reading the context it was handed."""
     billing = UseFramework("shared-context-billing", log_after_execution=False)
-    billing.context_store(store)
+    billing.store_context_in(store)
 
     @billing.feature(CommandBill)
     class Bill(Feature):
@@ -148,7 +148,7 @@ def test_a_bus_without_a_context_store_keeps_nothing_and_works_as_always():
 def test_two_concurrent_executions_on_a_sharing_bus_each_read_their_own_context():
     store = InMemoryContexts()
     bus = UseFramework("shared-context-concurrent", log_after_execution=False)
-    bus.context_store(store)
+    bus.store_context_in(store)
     found: dict[str, tuple[Any, Any]] = {}
     barrier = threading.Barrier(2)
 
@@ -237,7 +237,7 @@ def test_service_a_nodes_are_read_by_service_b_and_never_written():
     refused: list[Exception] = []
     _orders(store, sent)(CommandPlaceOrder())
     reader = UseFramework("shared-context-reader", log_after_execution=False)
-    reader.context_store(store)
+    reader.store_context_in(store)
 
     @reader.feature(CommandBill)
     class Reach(Feature):
@@ -277,7 +277,7 @@ def test_what_service_b_writes_never_lands_on_service_a_nodes():
 def _pricing(store: InMemoryContexts) -> UseFramework:
     """Service B's `pricing` context, as every service builds it from the same code."""
     pricing = UseFramework("shared-context-pricing", log_after_execution=False)
-    pricing.context_store(store)
+    pricing.store_context_in(store)
 
     @pricing.feature(CommandPrice)
     class Price(Feature):
@@ -290,7 +290,7 @@ def _pricing(store: InMemoryContexts) -> UseFramework:
 def _sales(store: InMemoryContexts, pricing: UseFramework) -> UseFramework:
     """Service A: writes a discount, then asks `pricing` — hosted elsewhere — for a price."""
     sales = UseFramework("shared-context-sales", log_after_execution=False)
-    sales.context_store(store)
+    sales.store_context_in(store)
     sales.add_dependency("pricing", pricing)
 
     @sales.app_service(CommandPriceOrder)
@@ -337,11 +337,11 @@ def test_a_value_service_a_wrote_is_read_by_the_context_it_calls_on_another_serv
 def test_the_process_level_is_kept_per_service():
     store = InMemoryContexts()
     bus = UseFramework("shared-context-process", log_after_execution=False)
-    bus.context_store(store)
+    bus.store_context_in(store)
 
     use_context().root.set("flag", 1)
 
-    kept = store.restore(f"process:{bus.observability.identity.service_name}")
+    kept = store.load(f"process:{bus.observability.identity.service_name}")
     assert kept is not None and kept["flag"] == 1
 
 
@@ -349,7 +349,7 @@ def test_the_global_level_is_seen_by_every_sharing_bus():
     store = InMemoryContexts()
     read: list[Any] = []
     billing = UseFramework("shared-context-global-reader", log_after_execution=False)
-    billing.context_store(store)
+    billing.store_context_in(store)
 
     @billing.feature(CommandReadGlobal)
     class ReadGlobal(Feature):
@@ -362,7 +362,7 @@ def test_the_global_level_is_seen_by_every_sharing_bus():
     _in_a_new_thread(lambda: billing(CommandReadGlobal()))
 
     assert read == [True]
-    assert store.restore("global") == {"maintenance": True}
+    assert store.load("global") == {"maintenance": True}
 
 
 # --- what the store is given --------------------------------------------------------------------
@@ -375,16 +375,16 @@ class SpyContexts(InMemoryContexts):
         super().__init__()
         self.kept: list[tuple[str, timedelta | None]] = []
 
-    def keep(self, key: str, values: Mapping[str, Any], ttl: timedelta | None = None) -> None:
+    def save(self, key: str, values: Mapping[str, Any], ttl: timedelta | None = None) -> None:
         self.kept.append((key, ttl))
-        super().keep(key, values, ttl)
+        super().save(key, values, ttl)
 
 
 def test_every_node_is_kept_for_the_ttl_the_bus_was_given():
     spy = SpyContexts()
     sent: list[dict[str, str]] = []
     orders = UseFramework("shared-context-ttl", log_after_execution=False)
-    orders.context_store(spy, ttl=timedelta(minutes=5))
+    orders.store_context_in(spy, ttl=timedelta(minutes=5))
 
     @orders.feature(CommandPublishOrder)
     class PublishOrder(Feature):
@@ -405,7 +405,7 @@ def test_every_node_is_kept_for_the_ttl_the_bus_was_given():
 def test_over_redis_every_key_of_a_node_expires_nothing_grows_without_end():
     fakeredis = pytest.importorskip("fakeredis")
     from sincpro_framework.context import KeyValueContexts
-    from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+    from sincpro_framework.store.adapters.redis import RedisKeyValue
 
     redis = fakeredis.FakeRedis()
     store = KeyValueContexts(RedisKeyValue(redis))

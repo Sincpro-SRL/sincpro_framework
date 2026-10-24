@@ -52,6 +52,13 @@ def _declared_dependencies(cron_class: type[Cron]) -> set[str]:
 def _trigger(
     expression: str | None, timezone: str | None, every: timedelta | None
 ) -> Trigger:
+    """The schedule `Crons.cron` was given — exactly one of an expression with its timezone,
+    or `every`.
+
+        _trigger("0 2 * * *", "America/La_Paz", None)      ->  CronExpression(...)
+        _trigger(None, None, timedelta(seconds=30))        ->  Every(0:00:30)
+        _trigger("0 2 * * *", None, None)                  ->  ValueError: needs a timezone
+    """
     if every is not None and expression is None:
         return Every(every)
     if expression is None or every is not None:
@@ -63,9 +70,29 @@ def _trigger(
 
 class Crons[TDeps]:
     """Parameterize with the bounded context's `CronDependencyContextType` so `deps` is typed,
-    the way a bus is `UseFramework[DependencyContextType]`."""
+    the way a bus is `UseFramework[DependencyContextType]`.
+
+        cron_payments = Crons[CronDependencyContextType]("cron-payments")
+        cron_payments.add_dependency("billing", billing_bus)
+
+        @cron_payments.cron(every=timedelta(minutes=15))
+        class ChargeDue(Cron): ...
+
+        CronGateway([cron_payments]).run()      # builds it, then runs what is due
+
+    Context: open until it is built — dependencies, crons, replacements and switches-off are
+    accepted until the gateway builds it, refused after, since they would never be used.
+    """
 
     def __init__(self, name: str) -> None:
+        """A registry named `name` — its identity in the crons' names, logs and traces — with
+        a logger and an `Observability` of its own.
+
+            Crons("cron-payments")      ->  no dependency, no cron, not built
+            Crons("cron-payments").definitions                  ->  ()
+
+        Its observability starts only when it is built (`build`).
+        """
         self.name = name
         self.logger: LoggerProxy = create_logger(name)
         self.observability = Observability(name)
@@ -84,6 +111,7 @@ class Crons[TDeps]:
         return cron_class
 
     def _registered(self, cron_class: type[Cron]) -> CronDefinition | None:
+        """The definition `cron_class` is registered under — `None` when it is not."""
         for definition in self._definitions.values():
             if definition.cron_class is cron_class:
                 return definition
@@ -113,6 +141,14 @@ class Crons[TDeps]:
         return replaced.name
 
     def add_dependency(self, name: str, dependency: Any) -> None:
+        """Give every cron of this registry `dependency` as `self.<name>` — a bus, a client, a
+        repository.
+
+            cron_payments.add_dependency("cybersource", cybersource)
+
+        Context: refused once the registry is built — it would never reach a cron — and
+        refused for a name already taken, so one dependency never silently replaces another.
+        """
         if self._built:
             raise exceptions.BusAlreadyBuilt(
                 f"dependency {name} registered late: '{self.name}' is already built, so it would "
@@ -143,10 +179,35 @@ class Crons[TDeps]:
         Context: with `overlap=SKIP`, a run still unfinished `stale_after` past its tick is
         presumed dead — its replica crashed — and stops holding the cron. `replaces` runs the
         decorated class instead of a registered one, under that one's name, so its record of
-        runs goes on; the schedule and the policies are the ones given here."""
+        runs goes on; the schedule and the policies are the ones given here.
+
+            @cron_payments.cron("0 2 * * *", timezone="America/La_Paz")
+            class Reconcile(Cron): ...              # runs as "cron-payments.Reconcile"
+
+            @cron_payments.cron(every=timedelta(minutes=5), missed=Missed.SKIP)
+            class Poll(Cron): ...
+
+        1. The trigger, built once from what was given (`_trigger`): an expression with its
+           timezone, or `every` — refused when both, neither, or no timezone.
+        2. The decorator (`register`), which on each class:
+           2.1 is refused once the registry is built;
+           2.2 names it — the name given, else `<registry>.<Class>`;
+           2.3 with `replaces`, takes the replaced cron's name; otherwise a name already
+               registered is refused;
+           2.4 records its `CronDefinition` under that name.
+        Final: the decorator — the class it decorates is handed back unchanged.
+        """
         trigger = _trigger(expression, timezone, every)
 
         def register(cron_class: C) -> C:
+            """Record the class's definition and hand the class back unchanged.
+
+            1. Refused once the registry is built.
+            2. Its name: the one given, else `<registry>.<Class>`.
+            3. `replaces`: the replaced cron's name (`_replacing`); otherwise a name already
+               registered is refused.
+            4. Final: its `CronDefinition`, under that name.
+            """
             if self._built:
                 raise exceptions.BusAlreadyBuilt(
                     f"cron {cron_class.__name__} registered late: '{self.name}' is already built, so it would "
@@ -179,6 +240,7 @@ class Crons[TDeps]:
         """
 
         def run(cron: Cron, tick: Tick) -> None:
+            """The `run` of the class built here: one pass of the relay."""
             relay.run_once()
 
         driven = type(
@@ -214,7 +276,14 @@ class Crons[TDeps]:
 
     def without(self, cron_class: type[Cron]) -> None:
         """Switch a registered cron off — the one in force where it was registered: it never
-        runs, and no status shows it. One not registered is a warning."""
+        runs, and no status shows it. One not registered is a warning.
+
+            cron_payments.without(Reconcile)      ->  None; "cron-payments.Reconcile" removed
+            cron_payments.without(NeverAdded)     ->  None, a warning logged
+            <after build> without(Reconcile)      ->  BusAlreadyBuilt
+
+        A class that replaced `Reconcile` goes with it: the one in force is what is removed.
+        """
         if self._built:
             raise exceptions.BusAlreadyBuilt(
                 f"switching off {cron_class.__name__} registered late: '{self.name}' is already built, so it would "
@@ -236,11 +305,25 @@ class Crons[TDeps]:
 
     @property
     def definitions(self) -> tuple[CronDefinition, ...]:
+        """Every cron registered and not switched off, in registration order — what a gateway
+        runs."""
         return tuple(self._definitions.values())
 
     def build(self) -> None:
         """Build one instance per cron with every dependency of the registry, as a bus does for
         its Features — refused when a cron declares one the registry does not have. Idempotent.
+
+            cron_payments.build()     ->  None; Reconcile() built, self.cybersource set on it
+            <Reconcile declares billing, not added>.build()
+            ->  DependencyNotRegistered: Reconcile needs billing, which 'cron-payments' ...
+
+        1. Already built: nothing more.
+        2. For each cron registered:
+           2.1 the dependencies it declares, against the registry's — any missing refused,
+               named in order;
+           2.2 one instance, with every dependency of the registry set on it by name.
+        3. The registry's observability started with its logger.
+        Final: built — from now on no cron, dependency or switch-off is accepted.
         """
         if self._built:
             return
@@ -262,6 +345,10 @@ class Crons[TDeps]:
     def execute(self, definition: CronDefinition, tick: Tick) -> RunOutcome:
         """Context: a cron is the outermost caller, so it reports a failure once — including one
         that happened inside a bus it called, which then keeps its `failed_in`.
+
+            execute(<Reconcile>, Tick("cron-payments.Reconcile", 06:00, runs))
+            ->  RunOutcome.SUCCEEDED, logged "cron-payments.Reconcile ran for 2026-..."
+            execute(<Reconcile, raises>, tick)  ->  RunOutcome.FAILED, reported, not raised
 
         1. Hand the tick to every bus the cron calls, as their context.
         2. Run it in its own span.

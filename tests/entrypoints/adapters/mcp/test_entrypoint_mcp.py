@@ -22,7 +22,6 @@ from sincpro_framework import (
     exceptions,
 )
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.ddd import Query
 from sincpro_framework.entrypoints.adapters.mcp import (
@@ -34,6 +33,7 @@ from sincpro_framework.entrypoints.adapters.mcp import (
 from sincpro_framework.entrypoints.domain.bindings import Deprecation, McpBinding
 from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp
+from sincpro_framework.store import InMemoryKeyValue
 
 fastmcp = pytest.importorskip("fastmcp")
 

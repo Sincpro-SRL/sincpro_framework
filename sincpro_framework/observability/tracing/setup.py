@@ -51,7 +51,14 @@ def _root_sampler(ratio: float) -> Any:
 
 
 def current_otel_context() -> dict:
-    """``trace_id``/``span_id`` of the active span, for the logger to pick up."""
+    """``trace_id``/``span_id`` of the active span, for the logger to pick up.
+
+        current_otel_context()   ->  {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+                                      "span_id": "00f067aa0ba902b7"}      # inside a span
+        current_otel_context()   ->  {}                       # no valid span, or no OTel
+
+    The ids as hex, zero-padded to 32 and 16 characters; never raises.
+    """
     try:
         from opentelemetry import trace
 
@@ -82,6 +89,17 @@ def tracer_for(bus: str, instrumentation_name: str = "sincpro_framework") -> Any
     Falls back to the global provider so a bus can ride on the host's OTel setup.
     A provider this framework built for a *different* bus is never borrowed: a span
     exported under another service's name is worse than no span at all.
+
+        tracer_for("billing")   ->  billing's provider's tracer, scope "sincpro_framework"
+        tracer_for("sales")     ->  the host's tracer, when sales has no provider (Odoo)
+        tracer_for("sales")     ->  None, when the global provider is one built for a bus
+
+    1. The framework's version, the instrumentation scope's version.
+    2. A provider registered for `bus` gives the tracer.
+    3. Otherwise the global provider:
+       3.1 one this framework built and registered (for a bus or the process): `None`;
+       3.2 any other — the host's, or OTel's proxy — gives the tracer.
+    Final: `None` when anything on the way raises.
     """
     try:
         # The scope's version says which framework release instrumented the span.
@@ -101,6 +119,14 @@ def tracer_for(bus: str, instrumentation_name: str = "sincpro_framework") -> Any
 
 
 def _build_provider(identity: ObservabilityIdentity, endpoint: str) -> Any:
+    """A tracer provider exporting to `endpoint` under `identity` — built, not installed: the
+    caller decides whether it becomes the global one.
+
+    1. The resource: `service.name` stable across releases, the version, release and tenant
+       beside it — merged with `OTEL_RESOURCE_ATTRIBUTES` and the SDK's defaults.
+    2. Sampling follows the parent; a root span is sampled at `otlp_traces_sample_rate`.
+    Final: a batch processor on the OTLP exporter for `endpoint`.
+    """
     from opentelemetry.sdk.resources import SERVICE_NAME, Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -139,6 +165,16 @@ def install_process_provider(identity: ObservabilityIdentity, endpoint: str) -> 
     tracer. If a bus answered there, every HTTP request would be exported as if it
     belonged to that bounded context. A host that already owns the global is left
     alone: inside Odoo there is nothing for us to install.
+
+        install_process_provider(billing_identity, "http://collector:4317")
+            ->  TracerProvider(service.name="billing-sdk"), now the global, bus ""
+        install_process_provider(...)   ->  None inside Odoo — its provider stays
+
+    1. A real global provider already registered (anything but OTel's proxy or no-op):
+       `None`, nothing installed.
+    2. The process provider already built is reused; else one is built for the identity
+       with its bus emptied, and both it and that identity are registered for the process.
+    Final: it is set as the global provider and returned.
     """
     from opentelemetry import trace
 
@@ -169,7 +205,24 @@ def _turned_off() -> str:
 def setup_tracing(
     identity: ObservabilityIdentity, logger: LoggerProxy | None = None
 ) -> ComponentStatus:
-    """Install this bus's TracerProvider and bind trace ids to its logger."""
+    """Install this bus's TracerProvider and bind trace ids to its logger.
+
+        setup_tracing(identity, logger)   ->  on("init")       # otlp_endpoint set
+        setup_tracing(identity, logger)   ->  on("host")       # no endpoint, inside Odoo
+        setup_tracing(identity, logger)   ->  off("no_endpoint")
+        setup_tracing(identity, logger)   ->  off("sdk_missing")   # no opentelemetry-sdk
+
+    1. The OpenTelemetry SDK must import: `off("sdk_missing")` when it is not installed.
+    2. No `otlp_endpoint`, or OpenTelemetry's own variables turn it off (`_turned_off`):
+       2.1 a real host provider: the logger learns the span ids — `on("host")`;
+       2.2 none: `off` with the reason — `sdk_disabled`, `exporter_none`, `no_endpoint`.
+    3. The provider of this bus: the registered one, else built and registered —
+       `failed("exporter_missing")` when the OTLP exporter cannot be imported.
+    4. The process provider is installed as the global, when nobody owns it
+       (`install_process_provider`).
+    5. The logger learns the span ids (`_bind_log_ids`).
+    Final: `on("init")`; any other exception is the status (`failure_of`), never raised.
+    """
     try:
         import opentelemetry.sdk.trace  # noqa: F401 — the SDK must be installed
     except ImportError:

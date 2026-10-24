@@ -21,6 +21,7 @@ from sincpro_framework.bus_pipeline.outcomes.listeners import completions, failu
 from sincpro_framework.context import InMemoryContexts, use_context
 from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.context.domain.keys import ContextKey
+from sincpro_framework.context.entrypoint.owner import BY_TENANT
 from sincpro_framework.pipelines import (
     Pipeline,
     PipelineRun,
@@ -89,7 +90,7 @@ class Shop:
         self.contexts: list[dict[str, Any]] = []
         self.store = store if store is not None else InMemoryContexts()
         self.bus = UseFramework(name, log_after_execution=False)
-        self.bus.context_store(self.store)
+        self.bus.store_context_in(self.store)
         calls, contexts = self.calls, self.contexts
         answers = answers or {}
 
@@ -351,22 +352,22 @@ def test_a_run_kept_under_another_recipe_starts_over_and_says_so(monkeypatch):
 @pytest.mark.parametrize(
     ("scope", "by", "owner"),
     [
-        ({}, [], "tenant_id=,tenant_ids="),
+        ({}, BY_TENANT, "tenant_id=,tenant_ids="),
         (
             {"tenant_id": None, "user_id": None},
-            ["user_id"],
+            [*BY_TENANT, "user_id"],
             "tenant_id=,tenant_ids=,user_id=",
         ),
-        ({"tenant_id": "acme"}, [], "tenant_id=acme,tenant_ids="),
-        ({"user_id": "ana"}, ["user_id"], "tenant_id=,tenant_ids=,user_id=ana"),
+        ({"tenant_id": "acme"}, BY_TENANT, "tenant_id=acme,tenant_ids="),
+        ({"user_id": "ana"}, [*BY_TENANT, "user_id"], "tenant_id=,tenant_ids=,user_id=ana"),
         (
             {"tenant_id": "acme", "user_id": "ana"},
-            ["user_id"],
+            [*BY_TENANT, "user_id"],
             "tenant_id=acme,tenant_ids=,user_id=ana",
         ),
         (
             {"tenant_ids": ["globex", "acme"], "user_id": "ana"},
-            ["user_id"],
+            [*BY_TENANT, "user_id"],
             "tenant_id=,tenant_ids=acme|globex,user_id=ana",
         ),
     ],
@@ -399,7 +400,7 @@ def test_the_runs_of_one_tenant_are_not_the_runs_of_another():
 
 def test_with_no_context_store_the_runs_are_kept_in_the_memory_of_the_process():
     shop = Shop("pipe-memory")
-    shop.bus.context_store(InMemoryContexts())  # replaced below: no store of its own
+    shop.bus.store_context_in(InMemoryContexts())  # replaced below: no store of its own
     bare = UseFramework("pipe-bare", log_after_execution=False)
 
     @bare.feature(CommandCollect)
@@ -490,7 +491,7 @@ def test_runs_at_the_same_time_each_see_only_their_own_run():
     seen: list[tuple[str, str]] = []
     lock = threading.Lock()
     bus = UseFramework("pipe-many", log_after_execution=False)
-    bus.context_store(InMemoryContexts())
+    bus.store_context_in(InMemoryContexts())
 
     @bus.feature(CommandCollect)
     class Collect(Feature):
@@ -531,7 +532,7 @@ def test_a_second_writer_of_the_same_run_makes_the_run_fail_instead_of_overwriti
         runs = use_context().pipelines()
         current = runs.read("pipe-two.CommandRunNightly", "r-1")
         assert current is not None
-        runs.keep(current, current.store_version)
+        runs.save(current, current.store_version)
         return StepAnswer()
 
     shop = Shop("pipe-two", answers={CommandBill: another_replica})

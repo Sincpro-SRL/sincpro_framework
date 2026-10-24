@@ -9,10 +9,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.common.store import LeaseState
-from sincpro_framework.common.store import exceptions as store_exceptions
 from sincpro_framework.context import InMemoryContexts, use_context
 from sincpro_framework.pipelines import Pipeline, PipelineRun, PipelineState
+from sincpro_framework.store import LeaseState
+from sincpro_framework.store.domain import exceptions as store_exceptions
 
 PIPELINE = "leased-pipelines.CommandRunNightly"
 
@@ -40,7 +40,7 @@ def nightly(
 ) -> tuple[UseFramework, list[str]]:
     did: list[str] = []
     bus = UseFramework("leased-pipelines", log_after_execution=False)
-    bus.context_store(contexts)
+    bus.store_context_in(contexts)
 
     @bus.feature(CommandCollect)
     class Collect(Feature):
@@ -111,7 +111,7 @@ def test_a_run_whose_worker_died_is_found_abandoned():
     contexts = InMemoryContexts(now=lambda: clock[0])
     with use_context().scoped({}) as context:
         runs = context.pipelines(store=contexts)
-        runs.keep(PipelineRun(pipeline=PIPELINE, run_id="R-2", started_at=now))
+        runs.save(PipelineRun(pipeline=PIPELINE, run_id="R-2", started_at=now))
         contexts.leases().take(
             runs.lease_name(PIPELINE, "R-2"), owner="worker-a", ttl=timedelta(minutes=2)
         )

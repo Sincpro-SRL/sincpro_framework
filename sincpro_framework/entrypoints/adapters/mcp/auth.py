@@ -37,6 +37,19 @@ IDENTITY_CLAIM = "sincpro_identity"
 
 
 def _call_state() -> tuple[Identity | None, Credentials | None]:
+    """What the current tool call says about its caller — a verified identity, or the
+    credentials to authenticate; `(None, None)` when it says nothing.
+
+        bearer verified by `token_verifier`   ->  (Identity(subject="ana", ...), None)
+        HTTP call, no verifier               ->  (None, Credentials(transport="mcp", ...))
+        stdio, or FastMCP not installed      ->  (None, None)
+
+    1. No FastMCP: nothing to read.
+    2. An access token carrying `IDENTITY_CLAIM`: the identity FastMCP's verifier already
+       authenticated — not authenticated twice.
+    3. No HTTP request in flight (stdio): nothing to read.
+    Final: the request's credentials, read from its ASGI scope.
+    """
     try:
         from fastmcp.server.dependencies import (  # pyright: ignore[reportMissingImports]
             get_access_token,
@@ -56,7 +69,18 @@ def _call_state() -> tuple[Identity | None, Credentials | None]:
 
 @contextmanager
 def acting_for_tool_call(bus: "UseFramework | None") -> Generator[Identity, None, None]:
-    """The identity one tool call runs as — see the module's context for the order read."""
+    """The identity one tool call runs as — see the module's context for the order read.
+
+        with acting_for_tool_call(billing) as identity: ...
+        ->  over HTTP with "Authorization: Bearer <token of ana>": Identity(subject="ana")
+        ->  over stdio, bus guarded: whoever `AccessControl` makes of no credentials
+        with acting_for_tool_call(None) as identity: ...   ->  the identity already current
+
+    1. No bus: the identity already current, unchanged.
+    2. An identity FastMCP's verifier put in the access token: acted as directly.
+    Final: otherwise the call's credentials — `None` over stdio — authenticated by the bus's
+    `AccessControl` (`authenticated_as`), for the duration of the call.
+    """
     if bus is None:
         with nullcontext(current_identity()) as unchanged:
             yield unchanged
@@ -77,7 +101,22 @@ def token_verifier(
 ) -> Any:
     """A FastMCP `TokenVerifier` answering with `access`'s providers — for `FastMCP(auth=...)`,
     so FastMCP refuses a missing or failing bearer with 401 and publishes, given `base_url`, the
-    resource metadata MCP clients discover the authorization server by (RFC 9728)."""
+    resource metadata MCP clients discover the authorization server by (RFC 9728).
+
+        FastMCP("billing", auth=token_verifier(billing_access, "https://mcp.acme.bo"))
+        await verifier.verify_token("<ana's JWT>")
+        ->  AccessToken(client_id="ana", subject="ana", scopes=["invoice.issue"], ...)
+        await verifier.verify_token("garbage")              ->  None, FastMCP answers 401
+
+    1. FastMCP's `AccessToken` and `TokenVerifier` imported — refused with the extra-install
+       hint without `fastmcp`.
+    2. A `TokenVerifier` whose `verify_token`:
+       2.1 hands the token to `access` as `Authorization: Bearer` credentials, off the
+           event loop;
+       2.2 answers `None` for nobody authenticated, or the anonymous identity;
+       2.3 otherwise answers an `AccessToken` carrying the identity under `IDENTITY_CLAIM`.
+    Final: that verifier, over `base_url` and `required_scopes`.
+    """
     try:
         from fastmcp.server.auth import (  # pyright: ignore[reportMissingImports]
             AccessToken,
@@ -87,7 +126,19 @@ def token_verifier(
         raise ImportError(FASTMCP_MISSING) from error
 
     class AccessControlTokenVerifier(TokenVerifier):
+        """FastMCP's bearer check, answered by the bus's `AccessControl` providers."""
+
         async def verify_token(self, token: str) -> Any:
+            """The bearer as FastMCP's `AccessToken`, or `None` — refused with 401 — when it
+            authenticates nobody.
+
+            1. The token as `Authorization: Bearer` credentials, authenticated off the event
+               loop (`access.authenticate` may block on a provider).
+            2. Unauthenticated, or the anonymous identity: `None`.
+            Final: an access token whose client and subject are the identity's subject, its
+            scopes the permissions, and the identity itself under `IDENTITY_CLAIM` — read back
+            by `_call_state`, so the call is not authenticated twice.
+            """
             credentials = Credentials(
                 transport="mcp", headers={"authorization": f"Bearer {token}"}
             )

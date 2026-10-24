@@ -32,6 +32,7 @@ type OptionsOf = Callable[[DomainEvent], dict[str, Any]]
 
 
 def by_event_name(event: DomainEvent) -> str:
+    """The default channel: the event's wire name — `billing.InvoicePaid` on its own topic."""
     return event.name
 
 
@@ -41,6 +42,8 @@ def keyed_by_entity(event: DomainEvent) -> dict[str, Any]:
 
 
 class FastStreamQueue:
+    """A `Queue` publishing onto a FastStream broker, from synchronous or async code."""
+
     def __init__(
         self,
         broker: Broker,
@@ -50,7 +53,16 @@ class FastStreamQueue:
     ) -> None:
         """`channel_of` names where an event goes — its wire name by default; `options_of` adds
         what one broker takes and another does not, such as Kafka's `key` — nothing by
-        default; `source` is this service in the envelope."""
+        default; `source` is this service in the envelope.
+
+            FastStreamQueue(KafkaBroker("localhost:9092"), options_of=keyed_by_entity,
+                            source="billing")
+                ->  InvoicePaid on topic "billing.InvoicePaid", keyed by its entity
+            FastStreamQueue(broker, channel_of=lambda event: "billing-events")
+                ->  every event on one channel, told apart by its `sincpro-event` header
+
+        Nothing connects here: `start()` gives the queue its loop and connects the broker.
+        """
         self.broker = broker
         self.source = source
         self.channel_of = channel_of
@@ -61,6 +73,8 @@ class FastStreamQueue:
     def _on_own_loop[T](
         self, work: Callable[[], Coroutine[Any, Any, T]], timeout: float | None
     ) -> T:
+        """Run `work` on the queue's own loop from this thread, and wait up to `timeout` for
+        its answer — a `ProgrammingError` when the queue was never started."""
         loop = self._loop
         if loop is None:
             raise exceptions.ProgrammingError(
@@ -70,7 +84,15 @@ class FastStreamQueue:
         return asyncio.run_coroutine_threadsafe(work(), loop).result(timeout)
 
     def start(self, timeout: float | None = 30.0) -> "FastStreamQueue":
-        """A loop of the queue's own, in a daemon thread, with the broker connected on it."""
+        """A loop of the queue's own, in a daemon thread, with the broker connected on it.
+
+            queue = FastStreamQueue(broker).start()       ->  queue, connected
+            FastStreamQueue(unreachable).start(timeout=5)
+                ->  raises TimeoutError after 5 s waiting for the broker to connect
+
+        Context: the loop is the queue's before the broker connects on it — a connection
+        that fails leaves that loop running, held by the queue.
+        """
         loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
             target=loop.run_forever, name="faststream-queue", daemon=True
@@ -81,7 +103,16 @@ class FastStreamQueue:
         return self
 
     def stop(self, timeout: float | None = 10.0) -> None:
-        """Disconnect the broker and end the loop — what was published has been sent."""
+        """Disconnect the broker and end the loop — what was published has been sent.
+
+            queue.stop()   ->  None; broker disconnected, thread joined, loop closed
+            queue.stop()   # again, or never started  ->  None, nothing to do
+
+        1. Never started, or stopped already: nothing to do.
+        2. The broker stopped on the queue's loop, waiting up to `timeout`.
+        3. The loop told to stop, its thread joined up to `timeout`, the loop closed.
+        Final: the queue forgets both — `start()` may begin again.
+        """
         if self._loop is None or self._thread is None:
             return
         self._on_own_loop(self.broker.stop, timeout)
@@ -96,7 +127,9 @@ class FastStreamQueue:
         return cloud_event_headers(event, source=self.source)
 
     async def _publish(self, event: DomainEvent, headers: dict[str, str]) -> None:
-        """Context: the event is written and its channel chosen here, before the broker is
+        """Publish the event's JSON on its channel, with `headers` and the broker's options.
+
+        Context: the event is written and its channel chosen here, before the broker is
         reached — what fails after that is the broker not taking it, `ServiceUnavailableError`:
         retry later."""
         written = event.as_json().encode()
@@ -116,7 +149,16 @@ class FastStreamQueue:
         self._on_own_loop(lambda: self._publish(event, headers), None)
 
     async def aput(self, event: DomainEvent) -> None:
-        """Publish from async code — on the queue's loop when it was started, else on this one."""
+        """Publish from async code — on the queue's loop when it was started, else on this
+        one.
+
+            await queue.aput(InvoicePaid(…))   # started: sent from the queue's own loop
+            await queue.aput(InvoicePaid(…))   # never started: sent on the caller's loop,
+                                               # the broker connected by the caller
+
+        Context: the headers are read here, on the caller's side, where the trace and the
+        execution's context are — the queue's thread has neither.
+        """
         headers = self._headers(event)
         if self._loop is None:
             await self._publish(event, headers)

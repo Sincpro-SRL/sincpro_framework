@@ -1,6 +1,35 @@
 # `Cache` and `Idempotency`
 
-Deeper, in the framework repo: `docs/caching/README.md` §"Any value" and §"A write that runs once".
+Deeper, in the framework repo: `docs/caching/README.md` §"The simple way", §"Any value" and §"A write
+that runs once".
+
+## The facades first: `bus.cache`, `bus.idempotency`
+
+Every bus has them, kept where its context is kept (its `store_context_in`, else the process's
+`store_context_in`, else memory), keys apart by the bus's name and by whose the call is (the
+context's `tenant_id`, `tenant_ids`, `user_id`):
+
+```python
+@billing.cache                                                   # a minute
+def exchange_rate(currency: str) -> Decimal: ...
+
+@billing.cache.ttl(timedelta(minutes=5), fail_safe=timedelta(hours=1))
+@billing.cache.sliding(timedelta(minutes=30), timedelta(hours=8))
+@billing.cache.versioned(catalog.version, trusted_for=timedelta(seconds=5))
+@billing.cache(CachePolicy(...))                                  # any combination
+
+products = billing.cache.ttl(timedelta(hours=1))                 # by hand, in an adapter handed it
+products.get(("products", nit), lambda: soap.products(nit), JsonCodec(list[Product]))
+
+@billing.feature(CommandIssueReceipt)
+@billing.idempotency                                             # once per request, 24 h, 409 at once
+class IssueReceipt(Feature): ...
+
+@billing.idempotency.exactly_once(DatabaseIdempotencyRecords(database, idempotency_table))
+class IssueInvoice(Feature): ...                                 # the answer in the write's commit
+```
+
+What follows is what they stand on — and how to build one by hand on a store of its own.
 
 ## `Cache` — any value by its parameters
 
@@ -21,18 +50,18 @@ from sincpro_framework.data_layer.caching import (
 
     JsonCodec,
 
-    KeepPolicy,
+    CachePolicy,
 
     TimeToLive,
 
 )
 
-from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework.store import InMemoryKeyValue
 
 tenants = Cache(InMemoryKeyValue(), namespace="catalog")
-policy = KeepPolicy[Tenant](
+policy = CachePolicy[Tenant](
     freshness=TimeToLive(ttl=timedelta(minutes=5), jitter=0.1, stale_for=timedelta(minutes=1)),
-    validation=ExternalVersion(registry.current_version, kept=version_of, trusted_for=timedelta(minutes=5)),
+    validation=ExternalVersion(registry.current_version, version_of=version_of, trusted_for=timedelta(minutes=5)),
     failure=FailSafe(serve_for=timedelta(hours=1), errors=[ConnectionError, TimeoutError]),
 )
 value = tenants.get_or_compute(("catalog", "acme"), lambda: registry.resolve("acme"), policy, JsonCodec(Tenant))
@@ -44,13 +73,13 @@ tenants.forget(("catalog", "acme"), JsonCodec(Tenant))
   replicas and requires a `Codec` on every call.
 - The key is the parameters, written canonically and hashed — a token used as a key is never readable
   in the store. Every parameter the value depends on (the tenant) belongs in the key.
-- `KeepPolicy()` (also what a call with no policy gets) is `TimeToLive(ttl=None)`: kept until
+- `CachePolicy()` (also what a call with no policy gets) is `TimeToLive(ttl=None)`: kept until
   forgotten or until a validation rejects it. Give a shared-store value a ttl.
 - **freshness** — `TimeToLive(ttl=, jitter=, stale_for=, early_expiry=)` (alias `Lifetime`) or
   `Sliding(idle_for=, at_most=)`. On a shared store a sliding hit renews at most once per quarter of
   the window.
 - **validation** — `Unconditional()` (default, freshness is the whole answer) or
-  `ExternalVersion(current, kept=, trusted_for=)` (an ETag; a moved version forces recompute, never
+  `ExternalVersion(current, version_of=, trusted_for=)` (an ETag; a moved version forces recompute, never
   serves stale).
 - **failure** — `Raise()` (default) or `FailSafe(serve_for=, throttle_for=30s, errors=Exception)`
   (serves the last good value through an outage, re-keeps it fresh for `throttle_for`; never serves a
@@ -77,7 +106,7 @@ call. `forget` is the exception: an invalidation that reached no replica raises.
 from sincpro_framework import DataTransferObject
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.caching.domain import exceptions
-from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework.store import InMemoryKeyValue
 
 class CommandIssueReceipt(DataTransferObject):
     request_id: str
@@ -85,7 +114,7 @@ class CommandIssueReceipt(DataTransferObject):
     def idempotency_key(self) -> str:          # what identifies one request
         return self.request_id
 
-idempotency = Idempotency(InMemoryKeyValue())  # RedisKeyValue(...) on replicas
+idempotency = Idempotency(InMemoryKeyValue())  # by hand, on a store of its own; else @receipts.idempotency
 
 @receipts.feature(CommandIssueReceipt)
 @idempotency.once(
@@ -116,6 +145,11 @@ class IssueReceipt(Feature): ...
 - By hand, around anything: `idempotency.run(key, write, IdempotencyPolicy(expires_after=...),
   JsonCodec(Answer), payload=body)`.
 - Underneath it needs a place replicas share to claim a key and keep its answer:
-  `KeyValueRecords(store)` (best effort for a replica that dies after the side effect), or your
-  `IdempotencyRecords` over a database so the record commits in the write's transaction
-  (`IdempotencyRecordsContract`). Inside the write, `current_idempotency_key()` is the key.
+  `KeyValueRecords(store)` (best effort for a replica that dies after the side effect), or
+  `DatabaseIdempotencyRecords(database, template_table.idempotency_table(...))` with
+  `bus.idempotency.exactly_once(records)`: the claim commits on its own, the use case runs in a
+  unit of work every repository on that database joins, and the answer commits with the write —
+  a crash before the commit leaves neither. Records of yours answer `transaction()` and prove
+  themselves with `IdempotencyRecordsContract`. Inside the write, `current_idempotency_key()` is the key.
+- Across the upgrade: an answer an `Idempotency(store)` of the previous release completed is
+  replayed by `bus.idempotency` on the same store.

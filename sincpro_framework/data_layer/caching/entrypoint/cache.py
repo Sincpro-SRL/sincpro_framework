@@ -5,14 +5,14 @@ and recomputed by one caller at a time — for anything, not only a Query of the
     tenant = tenants.get_or_compute(
         ("tenant", token),
         lambda: registry.resolve(token),
-        KeepPolicy(validation=ExternalVersion(registry.version_of_tenant, kept=version_of)),
+        CachePolicy(validation=ExternalVersion(registry.version_of_tenant, version_of)),
     )
 
     shared = Cache(RedisKeyValue(client), namespace="catalog")   # bytes, shared by replicas
     catalog = shared.get_or_compute(
         ("catalog", tenant_id),
         load_catalog,
-        KeepPolicy(
+        CachePolicy(
             freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=1)),
             failure=FailSafe(serve_for=timedelta(hours=1)),
         ),
@@ -54,7 +54,6 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sincpro_framework.common.store import KeyValueStore
 from sincpro_framework.data_layer.caching.adapters.eviction import Lru
 from sincpro_framework.data_layer.caching.adapters.keys import key_of
 from sincpro_framework.data_layer.caching.adapters.observers import (
@@ -66,16 +65,18 @@ from sincpro_framework.data_layer.caching.domain.codec import Codec
 from sincpro_framework.data_layer.caching.domain.eviction import Eviction
 from sincpro_framework.data_layer.caching.domain.freshness import NEVER
 from sincpro_framework.data_layer.caching.domain.observer import CacheObserver, CacheOutcome
-from sincpro_framework.data_layer.caching.domain.policies import KeepPolicy
-from sincpro_framework.data_layer.caching.infrastructure.breaker import StoreBreaker
+from sincpro_framework.data_layer.caching.domain.policies import CachePolicy
+from sincpro_framework.data_layer.caching.infrastructure.breaker import StoreCircuitBreaker
 from sincpro_framework.data_layer.caching.infrastructure.flight import (
-    LocalFlight,
-    StoreFlight,
+    LocalSingleFlight,
+    StoreSingleFlight,
     awaited,
 )
+from sincpro_framework.store import KeyValueStore
 
 
 def utc_now() -> datetime:
+    """The default clock of a `Cache` — aware, in UTC."""
     return datetime.now(UTC)
 
 
@@ -94,10 +95,12 @@ class _Kept:
 
 
 def _finite(moment: float) -> float | None:
+    """A moment as the store's JSON header writes it — `NEVER` (infinity) as `null`."""
     return None if moment == NEVER else moment
 
 
 def _moment(held: float | None) -> float:
+    """`_finite` read back — `null` as `NEVER`."""
     return NEVER if held is None else held
 
 
@@ -117,19 +120,23 @@ class _ProcessTier:
     """Objects in this process, never encoded, bounded by the eviction."""
 
     def __init__(self, eviction: Eviction) -> None:
+        """`eviction` bounds the tier; a `LocalSingleFlight` elects one leader per key."""
         self.eviction = eviction
         self._kept: dict[str, _Kept] = {}
         self._lock = threading.Lock()
-        self.flight = LocalFlight()
+        self.flight = LocalSingleFlight()
 
     def read(self, key: str) -> _Kept | None:
+        """The record under `key`, the eviction told it was served — `None` when missing."""
         with self._lock:
             kept = self._kept.get(key)
         if kept is not None:
             self.eviction.touched(key)
         return kept
 
-    def write(self, key: str, kept: _Kept, policy: KeepPolicy[Any], now: float) -> None:
+    def write(self, key: str, kept: _Kept, policy: CachePolicy[Any], now: float) -> None:
+        """Keeps `kept` and drops the eviction's victims — their records under the lock,
+        their flight locks after it. No `max_bytes` here: nothing is encoded to measure."""
         with self._lock:
             self._kept[key] = kept
             victims = self.eviction.admitted(key)
@@ -139,24 +146,31 @@ class _ProcessTier:
             self.flight.forget(victim)
 
     def renews(self, kept: _Kept, fresh_until: float, now: float) -> bool:
+        """Always — renewing in memory costs nothing."""
         return True
 
     def forget(self, key: str) -> None:
+        """Drops the record under `key` and stops the eviction tracking it."""
         with self._lock:
             self._kept.pop(key, None)
         self.eviction.forgotten(key)
 
-    def lead(self, key: str, policy: KeepPolicy[Any]) -> bool:
+    def lead(self, key: str, policy: CachePolicy[Any]) -> bool:
+        """Whether this caller leads `key` in this process — the policy plays no part."""
         return self.flight.lead(key)
 
     def release(self, key: str) -> None:
+        """Ends the lead; the flight lock is dropped too when nothing was kept — a
+        computation that kept nothing would otherwise leave a lock per key outside the
+        eviction's bound."""
         self.flight.release(key)
         with self._lock:
             kept = key in self._kept
         if not kept:
             self.flight.forget(key)
 
-    def awaited(self, key: str, policy: KeepPolicy[Any]) -> _Kept | None:
+    def awaited(self, key: str, policy: CachePolicy[Any]) -> _Kept | None:
+        """Waits on the leader's lock for up to `wait_for_others`, then reads what it kept."""
         self.flight.wait(key, policy.wait_for_others)
         return self.read(key)
 
@@ -169,14 +183,16 @@ class _StoreTier:
     trips it: the value is answered all the same."""
 
     def __init__(
-        self, store: KeyValueStore, codec: Codec[Any], breaker: StoreBreaker
+        self, store: KeyValueStore, codec: Codec[Any], breaker: StoreCircuitBreaker
     ) -> None:
+        """`breaker` is the `Cache`'s own, shared by every call; a tier is made per call."""
         self.store = store
         self.codec = codec
         self.breaker = breaker
-        self.flight = StoreFlight(store)
+        self.flight = StoreSingleFlight(store)
 
     def _held(self, key: str) -> bytes | None:
+        """The raw bytes under `key`; a failing store trips the breaker — `_StoreFailed`."""
         try:
             return self.store.get(key)
         except Exception as error:
@@ -205,7 +221,16 @@ class _StoreTier:
         except Exception:
             return None
 
-    def write(self, key: str, kept: _Kept, policy: KeepPolicy[Any], now: float) -> None:
+    def write(self, key: str, kept: _Kept, policy: CachePolicy[Any], now: float) -> None:
+        """Keeps `kept` as a JSON header line and the encoded value.
+
+            b'{"mark": "", "born": 1700000000.0, "fresh_until": 1700000300.0, ...}\\n<value>'
+
+        1. The value encoded; over `max_bytes`, nothing is kept — the call still answers.
+        2. The header written, `NEVER` as `null`.
+        3. Set for the record's whole timeline, last resort included (`_kept_for`).
+        Final: a store that fails the write only trips the breaker.
+        """
         raw = self.codec.encode(kept.value)
         if len(raw) > policy.max_bytes:
             return
@@ -231,13 +256,16 @@ class _StoreTier:
         return fresh_until - kept.fresh_until >= (fresh_until - now) / 4
 
     def forget(self, key: str) -> None:
+        """Deletes `key` for every replica — a failure trips the breaker and is raised."""
         try:
             self.store.delete(key)
         except Exception:
             self.breaker.trip()
             raise
 
-    def lead(self, key: str, policy: KeepPolicy[Any]) -> bool:
+    def lead(self, key: str, policy: CachePolicy[Any]) -> bool:
+        """Whether this caller leads `key` across replicas — the lock held five times
+        `wait_for_others`, so a leader that dies frees it soon after the others gave up."""
         try:
             return self.flight.lead(key, policy.wait_for_others * 5)
         except Exception as error:
@@ -251,7 +279,8 @@ class _StoreTier:
         except Exception:
             self.breaker.trip()
 
-    def awaited(self, key: str, policy: KeepPolicy[Any]) -> _Kept | None:
+    def awaited(self, key: str, policy: CachePolicy[Any]) -> _Kept | None:
+        """Polls the store for up to `wait_for_others` until something is kept under `key`."""
         return awaited(lambda: self.read(key), policy.wait_for_others)
 
 
@@ -259,6 +288,9 @@ type _Tier = _ProcessTier | _StoreTier
 
 
 class Cache:
+    """A value kept by its parameters, on two tiers — see the module header for the order a
+    call is answered in."""
+
     def __init__(
         self,
         store: KeyValueStore | None = None,
@@ -275,7 +307,14 @@ class Cache:
         `random` are the clock and the dice freshness is judged by — a `ManualClock.now` and a
         fixed roll in tests. `observer` is told the outcome of every call (by default on the
         active span and on `sincpro.cache.outcomes`); `eviction` bounds the process tier (`Lru(10_000)` by default); `bypass_for` is
-        how long a shared store that failed is left alone before it is tried again."""
+        how long a shared store that failed is left alone before it is tried again.
+
+            Cache()                                     ->  objects in this process, Lru(10 000)
+            Cache(RedisKeyValue(redis), namespace="rates")
+                ->  bytes shared by every replica under "cache:rates:value:<32 hex>"
+            Cache(enabled=False)                        ->  every call computes, nothing kept
+
+        Nothing is read or written here: the store is first touched by a call."""
         self.store = store
         self.namespace = namespace
         self.now = now
@@ -283,7 +322,7 @@ class Cache:
         self.enabled = enabled
         self.observer: CacheObserver = observer or traced_and_measured(CACHE_OUTCOMES)
         self._process = _ProcessTier(eviction or Lru())
-        self._breaker = StoreBreaker(bypass_for, self._clock)
+        self._breaker = StoreCircuitBreaker(bypass_for, self._clock)
 
     def _key(self, key: Any, codec: Codec[Any] | None = None) -> str:
         """Context: on a shared store the codec's schema is part of the key — a deploy that
@@ -293,6 +332,7 @@ class Cache:
         return f"{prefix}value:{key_of(key, schema)}"
 
     def _codec_required(self, codec: Codec[Any] | None) -> Codec[Any]:
+        """`codec`, else `ProgrammingError` — a shared store keeps bytes, it needs one."""
         if codec is None:
             raise exceptions.ProgrammingError(
                 "a Cache on a shared store keeps bytes: pass the Codec its values are kept with"
@@ -300,21 +340,24 @@ class Cache:
         return codec
 
     def _tier(self, codec: Codec[Any] | None) -> _Tier:
+        """The process tier with no store; else a store tier bound to `codec` and breaker."""
         if self.store is None:
             return self._process
         return _StoreTier(self.store, self._codec_required(codec), self._breaker)
 
     def _clock(self) -> float:
+        """`now()` in epoch seconds — the unit every moment of a record is in."""
         return self.now().timestamp()
 
     def _observe(self, outcome: CacheOutcome) -> None:
+        """Tells the observer, under this cache's namespace — one that raises is ignored."""
         try:
             self.observer.observed(outcome, self.namespace)
         except Exception:
             return
 
     def _still_valid[T](
-        self, tier: _Tier, key: str, kept: _Kept, policy: KeepPolicy[T], now: float
+        self, tier: _Tier, key: str, kept: _Kept, policy: CachePolicy[T], now: float
     ) -> bool:
         """1. A check younger than `trusted_for` is believed.
         2. Final: the validation is asked; a check that held is trusted anew for `trusted_for`.
@@ -329,7 +372,7 @@ class Cache:
         return True
 
     def _renewed_on_hit[T](
-        self, tier: _Tier, key: str, kept: _Kept, policy: KeepPolicy[T], now: float
+        self, tier: _Tier, key: str, kept: _Kept, policy: CachePolicy[T], now: float
     ) -> None:
         """A sliding freshness keeps a value served for as long as it is asked for."""
         fresh_until = policy.freshness.on_hit(kept.born, kept.fresh_until, now, self.random())
@@ -349,7 +392,7 @@ class Cache:
         tier: _Tier,
         key: str,
         fallback: _Kept | None,
-        policy: KeepPolicy[T],
+        policy: CachePolicy[T],
         error: Exception,
     ) -> tuple[T, CacheOutcome]:
         """Row 7: the last good value, re-kept fresh — and trusted — for `throttle_for`, never
@@ -375,7 +418,7 @@ class Cache:
         return fallback.value, CacheOutcome.FALLBACK
 
     def _computed[T](
-        self, tier: _Tier, key: str, compute: Callable[[], T], policy: KeepPolicy[T]
+        self, tier: _Tier, key: str, compute: Callable[[], T], policy: CachePolicy[T]
     ) -> T:
         """1. The mark the validation takes before computing.
         2. The value, timed — XFetch weighs early recomputation by how long it took.
@@ -417,10 +460,12 @@ class Cache:
         tier: _Tier,
         key: str,
         compute: Callable[[], T],
-        policy: KeepPolicy[T],
+        policy: CachePolicy[T],
         fallback: _Kept | None,
         outcome: CacheOutcome,
     ) -> tuple[T, CacheOutcome]:
+        """The leader's computation answered with `outcome`; one that raises falls back on
+        `fallback` (row 7)."""
         try:
             return self._computed(tier, key, compute, policy), outcome
         except Exception as error:
@@ -431,12 +476,23 @@ class Cache:
         tier: _Tier,
         key: str,
         compute: Callable[[], T],
-        policy: KeepPolicy[T],
+        policy: CachePolicy[T],
         kept: _Kept | None,
         fallback: _Kept | None,
         rejected: bool,
     ) -> tuple[T, CacheOutcome]:
-        """Rows 6 and 6a: the leader computes; the others wait for its value, then compute."""
+        """Rows 6 and 6a: the leader computes; the others wait for its value, then compute.
+
+        `kept` is what was read (expired or rejected), `fallback` what may stand in when
+        computing fails — `None` for a rejected value, which is never served.
+
+        1. This caller leads: it computes and keeps (`COMPUTED`; `INVALIDATED` if rejected).
+        2. Another leads: wait up to `wait_for_others` for what it keeps.
+           2.1 Something new arrived — not the very record read before — it is served
+               (`COALESCED`, `INVALIDATED` when `rejected`).
+        3. Nothing arrived: this caller computes too, keeping nothing; a failure falls back.
+        Final: the value and the outcome to report.
+        """
         if tier.lead(key, policy):
             outcome = CacheOutcome.INVALIDATED if rejected else CacheOutcome.COMPUTED
             return self._led(tier, key, compute, policy, fallback, outcome)
@@ -453,9 +509,18 @@ class Cache:
         return value, CacheOutcome.INVALIDATED if rejected else CacheOutcome.COMPUTED
 
     def _answered[T](
-        self, tier: _Tier, key: str, compute: Callable[[], T], policy: KeepPolicy[T]
+        self, tier: _Tier, key: str, compute: Callable[[], T], policy: CachePolicy[T]
     ) -> tuple[T, CacheOutcome]:
-        """Rows 2 to 7 of PRD_13 §6 on one tier — see the module's context."""
+        """Rows 2 to 7 of PRD_13 §6 on one tier — see the module's context.
+
+        1. Nothing kept, or past its stale window: `_missing`, with what was read as fallback.
+        2. Validated (`_still_valid`); a validation that raises falls back on the kept value.
+           2.1 It no longer holds: `_missing`, rejected — the value never stands in.
+        3. Not expiring (fresh, not picked by XFetch): renewed on the hit when the freshness
+           slides it, served as `HIT`.
+        4. Expiring: the leader recomputes it (`COMPUTED`), the others serve it (`STALE`).
+        Final: the value and the outcome to report.
+        """
         kept = tier.read(key)
         now = self._clock()
         if kept is None or now >= kept.stale_until:
@@ -480,14 +545,26 @@ class Cache:
         self,
         key: Any,
         compute: Callable[[], T],
-        policy: KeepPolicy[T] | None = None,
+        policy: CachePolicy[T] | None = None,
         codec: Codec[T] | None = None,
     ) -> T:
         """The value kept under `key` — its parameters, hashed — or `compute()`'s. See the
-        module's context for the order it is answered in."""
+        module's context for the order it is answered in.
+
+            cache.get_or_compute(("rates", "USD"), load_rates)   ->  {"BOB": 6.96}, COMPUTED
+            cache.get_or_compute(("rates", "USD"), load_rates)   ->  {"BOB": 6.96}, HIT
+
+        1. Switched off: `compute()`, nothing kept or reported.
+        2. No store: answered on the process tier.
+        3. A store whose breaker is closed: answered on the store tier.
+           3.1 It failed on a read or a lock (`_StoreFailed`): on to step 4.
+        4. `BYPASSED` reported, then answered on the process tier under the same hashed key.
+        Final: the value; the outcome of the tier that answered is reported.
+        """
+
         if not self.enabled:
             return compute()
-        policy = policy or KeepPolicy()
+        policy = policy or CachePolicy()
         if self.store is None:
             value, outcome = self._answered(self._process, self._key(key), compute, policy)
             self._observe(outcome)
@@ -511,7 +588,14 @@ class Cache:
         every replica, where the key is found by the same codec it was kept with.
 
         Context: a forget is an invalidation somebody relies on, so a store that fails it raises
-        — a value left on the other replicas must be known — rather than being bypassed."""
+        — a value left on the other replicas must be known — rather than being bypassed.
+
+            cache.forget(("rate", "USD"))                  # no store: this process only
+            cache.forget(("rate", "USD"), JsonCodec(Rate))
+                ->  gone here and from "cache:rates:value:<key and Rate's schema>"
+
+        Forgotten in this process first, then on the store; with a store and no codec it is
+        `ProgrammingError`, before anything is forgotten."""
         if self.store is None:
             self._process.forget(self._key(key))
             return

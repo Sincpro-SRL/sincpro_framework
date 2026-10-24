@@ -13,7 +13,6 @@ from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text, text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework, exceptions
-from sincpro_framework.context.adapters.stores import InMemoryContexts
 from sincpro_framework.data_layer.orm import Consolidated, Relation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
@@ -36,6 +35,7 @@ from sincpro_framework.ddd.criteria import (
     Specification,
 )
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
+from sincpro_framework.store.adapters.stores import InMemoryContexts
 
 from .engines import fresh
 
@@ -273,7 +273,7 @@ def forms(world: World):
 
     bus = UseFramework("accounting", log_after_execution=False)
     bus.add_dependency("repository", world.store)
-    bus.context_store(InMemoryContexts())
+    bus.store_context_in(InMemoryContexts())
 
     @bus.feature([QueryGetMove, QuerySearchMoves, CommandEditMove])
     class MoveForms(EntityEdits[Move]):  # type: ignore[valid-type]

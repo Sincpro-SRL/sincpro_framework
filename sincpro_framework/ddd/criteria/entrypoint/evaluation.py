@@ -45,6 +45,16 @@ def holds(
     With a `resolution`, a dynamic value is read when its condition is reached and not before,
     so `all` and `any` still stop at the first part that decides and a value that is out of
     reach is never asked for.
+
+    1. No filter holds.
+    2. A condition:
+       2.1 with a `resolution` and a dynamic value, it is resolved and asked again, plain;
+       2.2 a `FromField` value is the other field's, read — a `None` there never holds;
+       2.3 the field's value compared with the value by the operator (`compare`).
+    3. `All` — every part holds, stopping at the first that does not.
+    4. `Any_` — one part holds, stopping at the first that does.
+    5. `Not` — the part does not hold.
+    Final: anything else is not a filter — `InvalidCriteria`.
     """
     match expression:
         case None:

@@ -28,6 +28,13 @@ def trace_carrier() -> dict[str, str]:
 
     The event itself is left alone: a trace is about the call that produced the fact, not part
     of the fact, so it rides beside the payload rather than inside `DomainEvent`.
+
+        trace_carrier()   ->  {"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-"
+                                              "00f067aa0ba902b7-01"}     # inside a span
+        trace_carrier()   ->  {}                                       # no span, or no OTel
+
+    Written by the globally configured propagator (`opentelemetry.propagate.inject`), so it
+    carries whatever that one writes — W3C Trace Context by default.
     """
     try:
         from opentelemetry.propagate import inject
@@ -46,6 +53,18 @@ def within_trace(carrier: Mapping[str, str]) -> Generator[None]:
 
     The same adoption `entrypoints/rpc/entrypoint.py` does for an incoming `traceparent`
     header; this is that boundary, asynchronous.
+
+        with within_trace({"traceparent": "00-4bf92f…4736-00f067aa0ba902b7-01"}):
+            bus(command)      ->  its span is a child of 00f067aa0ba902b7, trace 4bf92f…4736
+        with within_trace({}):
+            bus(command)      ->  a plain block: its span joins whatever trace is current
+
+    1. No carrier: the block runs as it is.
+    2. No OpenTelemetry: the block runs as it is.
+    3. The carrier read by the global propagator (`extract`) and attached as the current
+       context.
+    4. The block runs.
+    Final: the context before it is put back, whether the block raised or not.
     """
     if not carrier:
         yield

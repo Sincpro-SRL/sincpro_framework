@@ -1,3 +1,25 @@
+"""`UseFramework`: one bounded context's bus — what a project registers its use cases on,
+wires its dependencies into, and calls.
+
+    billing = UseFramework[BillingDeps]("billing")
+    billing.add_dependency("invoices", InvoiceRepository(session))
+
+    @billing.feature(CommandIssueInvoice)
+    class IssueInvoice(Feature): ...
+
+    billing(CommandIssueInvoice(total=100))                       built on the first call
+    with billing.context({"tenant_id": "acme"}):                  a scope for the block
+        billing(CommandIssueInvoice(total=100), ResponseInvoice)
+
+**Registrations are kept, the bus is built from them.** Every registration is kept as a call
+that repeats it, so a registration after the build asks for a new *generation* — new buses,
+new handler instances — built on the next call; a request already running finishes on the
+generation it started on. `fresh()` replays them all on a new, unbuilt bus.
+
+The other worlds a bus offers — context, interceptors, incomes, outcomes, pipelines, error
+handlers, observability, hosting, cache and idempotency — are mixins, each in its own package.
+"""
+
 import threading
 from typing import (
     Any,
@@ -24,6 +46,7 @@ from .bus_pipeline.outcomes.mixins.bus_outcomes import BusOutcomesMixin
 from .common.serialization import read_values, rebuilt
 from .context.infrastructure.tree import current_execution
 from .context.mixins.bus_context import BusContextMixin
+from .data_layer.mixins.bus_caching import BusCachingMixin
 from .dependencies import DependencyLocator, TDeps
 from .error_handler import BusErrorHandlersMixin
 from .observability import Observability
@@ -32,6 +55,7 @@ from .observability.mixins.bus_observability import BusObservabilityMixin
 from .pipelines.mixins.bus_pipelines import BusPipelinesMixin
 from .remote_execution.mixins.hosted_context import HostedContextMixin
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
+from .store.mixins.bus_store import BusStoreMixin
 
 
 class UseFramework(
@@ -43,9 +67,12 @@ class UseFramework(
     BusErrorHandlersMixin,
     BusObservabilityMixin,
     HostedContextMixin,
+    BusStoreMixin,
+    BusCachingMixin,
     Generic[TDeps],
 ):
-    """Main class to use the framework, this is the main entry point to configure the framework.
+    """One bounded context's bus — where its use cases are registered, its dependencies
+    wired, and it is called.
 
     Parameterize with the bounded context's ``DependencyContextType`` so registered
     adapters are typed on ``framework.deps``::
@@ -57,9 +84,9 @@ class UseFramework(
     Each world it offers lives in its own component and is mixed in here: the context
     (`BusContextMixin`), interceptors (`BusInterceptorsMixin`), incomes (`BusIncomesMixin`),
     outcomes (`BusOutcomesMixin`), pipelines (`BusPipelinesMixin`), error handlers
-    (`BusErrorHandlersMixin`), traces
-    (`BusObservabilityMixin`) and where the context is hosted (`HostedContextMixin`). What stays
-    here is the bus itself: registering, building and executing.
+    (`BusErrorHandlersMixin`), traces (`BusObservabilityMixin`), where the context is hosted
+    (`HostedContextMixin`) where it keeps what it keeps (`BusStoreMixin`) and its cache and idempotency (`BusCachingMixin`). What stays here is
+    the bus itself: registering, building and executing.
     """
 
     _name: str
@@ -74,23 +101,29 @@ class UseFramework(
         hide_in_logs: Iterable[str] = (),
         metric_labels: Iterable[Any] = (),
     ):
-        """Initialize the framework
+        """A bus for the bounded context `bundled_context_name` — not built yet: the first
+        call, or `build_root_bus()`, builds it.
 
-        Args:
-            bundled_context_name (str): Name of the logger / GlitchTip app
-            log_after_execution (bool): Log after execution if False, All logs will be disabled
-            log_app_services (bool): Log app services, If log_after_execution is False, this will be disabled
-            log_features (bool): Log features, If log_after_execution is False, this will be disabled
-            package: Optional Poetry distribution name used for Sentry
-                release and OTel ``service.name``. When omitted, the
-                caller outside ``sincpro_framework`` is detected.
-            hide_in_logs: Context keys kept off every signal — log lines, spans, metrics and
-                GlitchTip events (e.g. ``["TOKEN"]``). Everything else set with ``context()``
-                goes on all of them (PRD_03 §4.10).
-            metric_labels: Context keys on every metric series, beside the release, service,
-                version and tenant every series carries — a key (``"company"``) or a field
-                reference (``of(BillingContext).company``). Declared here, before the bus is
-                built, because a backend fixes a series' labels when it creates it.
+            UseFramework("billing", hide_in_logs=["TOKEN"], metric_labels=["company"])
+
+        Context: the name is the bounded context's identity everywhere — its logger, its
+        GlitchTip app, its node of the context, the prefix of its use cases' names.
+        - `log_after_execution=False` silences every execution log line; `log_app_services`
+          and `log_features` silence one kind only.
+        - `package` is the Poetry distribution named in the Sentry release and the OTel
+          `service.name` — detected from the caller outside `sincpro_framework` when omitted.
+        - `hide_in_logs` keeps context keys off every signal — log lines, spans, metrics and
+          GlitchTip events; everything else the context says goes on all of them.
+        - `metric_labels` puts context keys on every metric series, beside the release,
+          service, version and tenant every series carries — a key (`"company"`) or a field
+          reference (`of(BillingContext).company`). Declared here, before the build, because a
+          backend fixes a series' labels when it creates it.
+
+        1. The settings kept as given, so `fresh()` builds a bus with the same ones.
+        2. Logger, observability, context, incomes and outcomes, each component's own state.
+        3. The container the buses and handlers come from, the dependency registry, error
+           handlers and interceptors.
+        Final: an unbuilt bus, its hosting read from the context map.
         """
         self._settings = (
             bundled_context_name,
@@ -169,7 +202,7 @@ class UseFramework(
 
     @property
     def logger(self) -> LoggerProxy:
-        """Get the bundle context logger."""
+        """The bounded context's logger — created on first use, named after the bus."""
         if not self._is_logger_configured:
             self._logger = create_logger(self.name)
             self._is_logger_configured = True
@@ -207,6 +240,8 @@ class UseFramework(
         register = ioc.inject_feature_to_bus(self._sp_container, dto, replaces, self.name)
 
         def registered(handler: ioc.T) -> ioc.T:
+            """Register `handler` under the build lock, keep how to repeat it, and answer it
+            unchanged."""
             with self._build_lock:
                 answer = register(handler)
                 self._registered(
@@ -222,10 +257,21 @@ class UseFramework(
     ) -> Callable[[ioc.T], ioc.T]:
         """Register the decorated class as the ApplicationService that answers `dto`; with
         `replaces`, instead of the one registered now. Registered after the bus was built, it
-        answers from the next execution."""
+        answers from the next execution.
+
+            @billing.app_service(CommandCheckout)
+            class Checkout(ApplicationService): ...      ->  Checkout, unchanged
+
+            @billing.app_service(CommandCheckout, replaces=Checkout)
+            class CheckoutWithFraudCheck(ApplicationService): ...
+
+        The registration is kept (`_registered`), so a generation `fresh()` makes repeats it.
+        """
         register = ioc.inject_app_service_to_bus(self._sp_container, dto, replaces, self.name)
 
         def registered(handler: ioc.T) -> ioc.T:
+            """Register `handler` under the build lock, keep how to repeat it, and answer it
+            unchanged."""
             with self._build_lock:
                 answer = register(handler)
                 self._registered(
@@ -311,6 +357,9 @@ class UseFramework(
         return fresh
 
     def _share_observability(self, observability: Observability) -> None:
+        """Report through `observability` — the bus `fresh()` copied from — on this bus and in
+        its container, so every generation shares one exporter, one Sentry client, one set of
+        metrics."""
         self.observability = observability
         self._sp_container.observability.override(observability)
 
@@ -329,6 +378,8 @@ class UseFramework(
         }
 
     def _add_dependencies_provided_by_user(self):
+        """Every dependency added with `add_dependency` set as an attribute of every Feature
+        and ApplicationService registered — what a handler reads as `self.<name>`."""
         if "feature_registry" in self._sp_container.feature_bus.attributes:
             feature_registry = self._sp_container.feature_bus.attributes[
                 "feature_registry"
@@ -438,9 +489,8 @@ class UseFramework(
             self._build_root_bus()
 
     def add_dependency(self, name, dep: Any, replaces: Any = None):
-        """
-        Add a dependency to the framework where
-        The Feature and App Service have as attribute
+        """Register `dep` under `name`: every Feature and ApplicationService reads it as
+        `self.<name>`, and the bounded context's root as `bus.deps.<name>`.
 
             billing.add_dependency("cache", RedisCache(...), replaces=memory_cache)
 
@@ -505,6 +555,13 @@ class UseFramework(
 
         What a consumer has once a message arrives off the wire — another service, Kafka,
         RabbitMQ, this framework's own `BackgroundQueue` — ready to hand to ``bus(...)``.
+
+            billing.map_to_dto_or_event("billing.CommandIssueInvoice", '{"total": 10}')
+            ->  CommandIssueInvoice(total=10)
+            billing.map_to_dto_or_event("CommandIssueInvoice", {"total": 10})   ->  the same
+            billing.map_to_dto_or_event("CommandNope", {})    ->  UnknownDTOToExecute
+
+        The full identity is tried first, then `<bus>.<name>`.
         """
         registry = self.dto_registry
         dto_type = registry.get(name) or registry.get(f"{self.name}.{name}")
@@ -552,8 +609,19 @@ class UseFramework(
     def __call__(
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
-        """Main function to execute the framework — here, or on the service hosting this context
-        when this bus is a reference to it (`is_reference`)."""
+        """Execute `dto` and answer what its use case answered — here, or on the service
+        hosting this context when this bus is a reference to it (`is_reference`).
+
+            billing(CommandIssueInvoice(total=100))                    the response, or None
+            billing(CommandIssueInvoice(total=100), ResponseInvoice)   typed, for the IDE
+
+        1. A reference forwards the call to where the context is hosted.
+        2. A bus not built, or with registrations after its build, builds its generation now.
+        3. The generation is read once: the whole execution runs on the one answering when it
+           starts.
+        Final: executed inside the scope already open on this bus, or a new scope of its own —
+        an entrypoint when nothing opened the flow.
+        """
         if self.is_reference:
             return self._executed_where_hosted(dto, return_type)
         if self.bus is None or self._built_revision != self._revision:

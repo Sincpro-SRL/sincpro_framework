@@ -29,6 +29,7 @@ def _serve(build: Callable[[], CronGateway], stop: Event) -> None:
     gateway = build()
 
     def stop_when_told() -> None:
+        """Wait for the parent's event, then stop the gateway — which ends `run`."""
         stop.wait()
         gateway.stop()
 
@@ -47,6 +48,8 @@ class CronProcess:
         build: Callable[[], CronGateway],
         context: Literal["spawn", "forkserver"] = "spawn",
     ) -> None:
+        """`build` is a module-level function — the child imports it by name — that builds the
+        `CronGateway`; nothing starts until `start`."""
         self.build = build
         self._context = (
             multiprocessing.get_context("forkserver")
@@ -57,6 +60,13 @@ class CronProcess:
         self.process: SpawnProcess | ForkServerProcess | None = None
 
     def start(self) -> "CronProcess":
+        """Spawn the child — a daemon named `crons` that builds the gateway and runs it — and
+        hand this back, so `crons = CronProcess(build_crons).start()` reads in one line.
+
+            CronProcess(build_crons).start()   ->  the same CronProcess, is_alive() True
+
+        The stop event is cleared first, so a process stopped before can be started again.
+        """
         self._stop.clear()
         process = self._context.Process(
             target=_serve, args=(self.build, self._stop), name="crons", daemon=True
@@ -66,10 +76,18 @@ class CronProcess:
         return self
 
     def is_alive(self) -> bool:
+        """Whether the child was started and has not exited — what a liveness probe asks."""
         return self.process is not None and self.process.is_alive()
 
     def stop(self, timeout: float = 30.0) -> None:
-        """Ask the child to stop looking and finish its runs; terminate it after `timeout`."""
+        """Ask the child to stop looking and finish its runs; terminate it after `timeout`.
+
+            crons.stop()            ->  None; runs in progress finished, the child exited
+            crons.stop(timeout=5)   ->  None; a child still running after 5 s is terminated
+            CronProcess(build_crons).stop()   ->  None, nothing was started
+
+        Either way `process` is `None` after it, so `is_alive` answers `False`.
+        """
         if self.process is None:
             return
         self._stop.set()

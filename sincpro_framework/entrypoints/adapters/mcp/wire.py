@@ -44,6 +44,13 @@ def tool_name_of(command: type) -> str:
 def hints_of(binding: McpBinding, idempotent: bool) -> dict[str, Any]:
     """The MCP `ToolAnnotations` of a binding — derived first, declared where it cannot be.
 
+        hints_of(McpBinding(read_only=True), False)
+        ->  {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": False,
+             "openWorldHint": False}
+        hints_of(McpBinding(destructive=False, title="Issue"), True)
+        ->  {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
+             "openWorldHint": False, "title": "Issue"}
+
     1. `readOnlyHint` — the Command's kind: a `Query` reads.
     2. `destructiveHint` — false on a read; on a write what was declared, else the MCP
        specification's pessimistic default, true — the framework cannot prove a write harmless.
@@ -65,7 +72,16 @@ def hints_of(binding: McpBinding, idempotent: bool) -> dict[str, Any]:
 
 def deprecated_description(description: str, deprecation: Deprecation | None) -> str:
     """MCP has no `deprecated` field: a deprecated tool says so first in its description — the
-    one thing a model reads before choosing it (PRD_14 §3)."""
+    one thing a model reads before choosing it (PRD_14 §3).
+
+        deprecated_description("Issue an invoice.", None)    ->  "Issue an invoice."
+        deprecated_description("Issue an invoice.", Deprecation(since=date(2026, 1, 1),
+            sunset=date(2026, 6, 1), replacement=CommandIssueInvoiceV2))
+        ->  "DEPRECATED since 2026-01-01, removed on 2026-06-01; use issue_invoice_v2
+             instead. Issue an invoice."
+
+    Each part is said only when declared.
+    """
     if deprecation is None:
         return description
     said = "DEPRECATED"
@@ -102,9 +118,16 @@ class McpWire(Wire[McpBinding]):
     binding = McpBinding
 
     def __init__(self) -> None:
+        """No names settled yet — `validate` settles them for the surface it is given."""
         self._settled: dict[tuple[str, type], str] = {}
 
     def derive(self, operation: Operation, group: Group) -> McpBinding:
+        """What the facts prove: the DTO's tool name, read-only for a Query, destructive for a
+        write — the MCP default, since nothing proves a write harmless.
+
+            derive(Operation(command=QueryInvoice, is_query=True, ...), group)
+            ->  McpBinding(name="invoice", read_only=True, destructive=False)
+        """
         return McpBinding(
             name=tool_name_of(operation.command),
             read_only=operation.is_query,
@@ -112,6 +135,8 @@ class McpWire(Wire[McpBinding]):
         )
 
     def _is_derived(self, resolved: Resolved[McpBinding]) -> bool:
+        """Whether its name is the derived one — only such a name may be prefixed on a
+        clash."""
         return resolved.binding.name == self.derive(resolved.operation, resolved.group).name
 
     def names(self, surface: Sequence[Resolved[McpBinding]]) -> list[str]:
@@ -129,13 +154,22 @@ class McpWire(Wire[McpBinding]):
         ]
 
     def name_of(self, resolved: Resolved[McpBinding]) -> str:
+        """The tool name `validate` settled for it — its binding's name when none was settled
+        (a surface not validated yet)."""
         operation = resolved.operation
         return self._settled.get(
             (operation.alias, operation.command), str(resolved.binding.name)
         )
 
     def validate(self, surface: Sequence[Resolved[McpBinding]]) -> list[str]:
-        """1. A Query declared destructive — a read destroys nothing.
+        """Every reason the surface cannot be served as MCP tools — empty when it can.
+
+            validate([<QueryInvoice in billing>, <QueryInvoice in ventas>])
+            ->  []  — both derived, settled as "billing_invoice" and "ventas_invoice"
+            validate([<@mcp(name="issue") in billing>, <@mcp(name="issue") in ventas>])
+            ->  ["tool issue answered by CommandIssue (billing), CommandIssue (ventas) ..."]
+
+        1. A Query declared destructive — a read destroys nothing.
         2. A name no MCP client accepts.
         3. One name answered by two operations, after prefixing.
         4. Final: the names settled, for `name_of`."""
@@ -167,6 +201,14 @@ class McpWire(Wire[McpBinding]):
         return problems
 
     def build(self, surface: Sequence[Resolved[McpBinding]]) -> list[McpTool]:
+        """One `McpTool` per operation, in the surface's order — its settled name, the
+        declared title, the description with any deprecation said first, and its hints.
+
+            build([<CommandIssueInvoice in billing>])
+            ->  [McpTool(name="issue_invoice", title=None, description="Issue an invoice.",
+                         annotations={"readOnlyHint": False, "destructiveHint": True,
+                                      "idempotentHint": False, "openWorldHint": False}, ...)]
+        """
         return [
             McpTool(
                 name=name,

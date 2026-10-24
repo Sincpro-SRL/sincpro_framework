@@ -1,6 +1,12 @@
 """ThreadContextBus: propagate a captured context across a thread boundary.
 
-`context()` overlays live in a `ContextVar` (see `mixin.py`), which is isolated
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [
+            executor.submit(self.feature_bus.thread_context().execute, dto)
+            for dto in dtos                                 one snapshot per task
+        ]
+
+`context()` overlays live in a `ContextVar` (see `tree.py`), which is isolated
 per OS thread by design. A Feature/ApplicationService that fans work out to a
 `ThreadPoolExecutor` loses `self.context` in every worker unless the context is
 explicitly propagated — this module is that propagation mechanism.
@@ -45,13 +51,33 @@ class ThreadContextBus:
     """
 
     def __init__(self, bus: "Bus", ctx: Context) -> None:
+        """Hold the bus to call and the `contextvars` snapshot taken in the submitting
+        thread."""
         self._bus = bus
         self._ctx = ctx
 
     def execute(
         self, dto: "TypeDTO", return_type: "Type[TypeDTOResponse] | None" = None
     ) -> "TypeDTOResponse | None":
+        """Execute `dto` on the bus inside the captured snapshot — from whatever thread calls.
+
+        1. The call runs through `Context.run`, so the worker sees the submitter's context.
+        2. Entering one snapshot from two threads at once is a misuse: the `RuntimeError` it
+           raises is re-raised saying to take one snapshot per task.
+        Final: what the bus answered.
+
+            executor.submit(feature_bus.thread_context().execute, dto)
+                ->  a Future of what `feature_bus.execute(dto)` answers, in the worker,
+                    with the submitter's `self.context`
+            one handle submitted twice, run at once
+                ->  RuntimeError("ThreadContextBus.execute() was entered concurrently …")
+
+        Any `RuntimeError` out of the call is re-raised with that message, the original as
+        its cause.
+        """
+
         def _call() -> "TypeDTOResponse | None":
+            """The bus's own `execute`, run inside the snapshot."""
             # `Bus` is only known here via a TYPE_CHECKING import (to avoid a
             # circular import with sincpro_abstractions), which pyright can't
             # fully reconcile with `execute`'s per-call generic signature.

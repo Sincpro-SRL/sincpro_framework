@@ -17,6 +17,8 @@ from abc import ABC, abstractmethod
 
 
 class Eviction(ABC):
+    """The port: told what the process tier serves, keeps and drops; answers what goes."""
+
     @abstractmethod
     def touched(self, key: str) -> None:
         """`key` was served — a key that is not tracked is left untracked."""

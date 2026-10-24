@@ -29,12 +29,23 @@ def reading() -> bool:
 
 
 def note_read(model: type) -> None:
+    """Notes that `model` was read, in every unit of reading open now — the innermost and
+    each one around it. Outside any unit, nothing happens."""
     for unit in _units.get():
         unit.add(aggregate_tag(model))
 
 
 @contextmanager
 def noting_reads() -> Iterator[set[str]]:
+    """Opens a unit of reading and hands out the set the reads inside it fill.
+
+        with noting_reads() as reads:
+            repository.search(Invoice, criteria)
+        reads  ->  {"billing.domain.Invoice"}
+
+    1. A new, empty set pushed after the units already open, so an outer one keeps seeing.
+    2. Final: on the way out the stack is restored exactly — the set stays with the caller.
+    """
     unit: set[str] = set()
     token = _units.set((*_units.get(), unit))
     try:

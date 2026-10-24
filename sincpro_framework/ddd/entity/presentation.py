@@ -49,11 +49,19 @@ class Fields:
     def __init__(
         self, owner: str, names: Iterable[str], declaration: str = "presentation"
     ) -> None:
+        """`names` are the entity's fields; `declaration` names the class attribute a refusal
+        points at — `presentation`, `derivations`."""
         self._owner = owner
         self._names = frozenset(names)
         self._declaration = declaration
 
     def __getattr__(self, name: str) -> FieldRef:
+        """`a.code` as `FieldRef("code")`; a name the entity does not have is refused.
+
+        Fields("Invoice", ["number"]).number   ->  FieldRef("number")
+        Fields("Invoice", ["number"]).nmber    ->  ProgrammingError: Invoice.presentation
+                                                   names nmber, which is not a field …
+        """
         if name not in self._names:
             raise exceptions.ProgrammingError(
                 f"{self._owner}.{self._declaration} names {name}, "
@@ -89,6 +97,8 @@ class When:
     fields: tuple[object, ...]
 
     def __init__(self, condition: Expression, *fields: object) -> None:
+        """The condition first, then the fields it covers, as many as there are — read through
+        the entity (`i.partner_id`), checked when the class is described."""
         object.__setattr__(self, "condition", condition)
         object.__setattr__(self, "fields", fields)
 

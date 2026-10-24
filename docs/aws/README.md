@@ -22,9 +22,9 @@ does — the environment, a profile, the role of the task or the function. A cli
 
 ```python
 from sincpro_framework.context import KeyValueContexts
-from sincpro_framework.data_layer.caching.adapters.dynamodb import DynamoKeyValue
+from sincpro_framework.store.adapters.dynamodb import DynamoKeyValue
 
-billing.context_store(KeyValueContexts(DynamoKeyValue("billing-shared")))      # simple
+billing.store_context_in(KeyValueContexts(DynamoKeyValue("billing-shared")))      # simple
 DynamoKeyValue("billing-shared", client=dynamodb, prefix="billing:")            # advanced
 ```
 
@@ -120,7 +120,7 @@ service does not hold falls back to the default. See [settings](../core/settings
 
 | Adapter | Module | Test |
 |---|---|---|
-| `DynamoKeyValue` | `sincpro_framework.data_layer.caching.adapters.dynamodb` | `tests/data_layer/caching/test_provider_dynamodb.py` |
+| `DynamoKeyValue` | `sincpro_framework.store.adapters.dynamodb` | `tests/data_layer/caching/test_provider_dynamodb.py` |
 | `SnsQueue` · `SqsQueue` · `EventBridgeQueue` | `sincpro_framework.event_driven.adapters.aws` | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
 | `SqsBroker` | `sincpro_framework.entrypoints.adapters.queue` | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
 | `sqs_handler` | `sincpro_framework.entrypoints.adapters.aws_lambda` | `tests/entrypoints/adapters/aws_lambda/test_sqs_handler.py` |

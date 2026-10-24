@@ -35,9 +35,23 @@ def _joined(active: list[RuntimeUseCase], use_case: RuntimeUseCase) -> list[Runt
 
 
 class BusRegistry:
+    """The generations of one bounded context's bus: the code's bus plus the stored use cases,
+    swapped in whole when they change.
+
+        registry = BusRegistry(billing, store)
+        registry.put(draft)                                       # checked, saved, swapped in
+        registry.execute("billing.CommandQuote", {"amount": 100})
+        registry.generation                                       ->  1
+    """
+
     def __init__(self, bus: UseFramework, store: UseCaseStore) -> None:
         """`bus` is the context's bus as the code declares it — each generation starts from its
         `fresh()`. Nothing is read nor built until the first `current`, `execute` or `reload`.
+
+            registry = BusRegistry(billing, store)
+            registry.context, registry.generation, registry.in_force  ->  "billing", 0, ()
+
+        The store is not read here: a store that is down fails the first call, not this one.
         """
         self.bus = bus
         self.context = bus.name
@@ -61,6 +75,14 @@ class BusRegistry:
     def _built(
         self, use_cases: list[RuntimeUseCase]
     ) -> tuple[UseFramework, dict[str, ModuleType]]:
+        """Build a generation with `use_cases` on top of the code's bus — not swapped in.
+
+        1. A `fresh()` copy of the code's bus.
+        2. Each use case loaded onto it, in order; then the root bus built.
+        3. When either fails, `sys.modules` is settled back to the generation in force and the
+           error raised.
+        Final: the built bus and the stored modules it answers with, by name.
+        """
         names = [module_name(self.context, use_case) for use_case in use_cases]
         bus = self.bus.fresh()
         try:
@@ -78,7 +100,9 @@ class BusRegistry:
         modules: dict[str, ModuleType],
         use_cases: list[RuntimeUseCase],
     ) -> UseFramework:
-        """Context: called under the lock, with a generation already built."""
+        """Make `bus` the generation in force, retiring the modules it no longer loads.
+
+        Context: called under the lock, with a generation already built."""
         retired = self._modules.keys() - modules.keys()
         self._modules = modules
         self._settle_modules(retired)
@@ -88,6 +112,8 @@ class BusRegistry:
         return bus
 
     def _first_generation(self) -> UseFramework:
+        """Build and swap in the first generation — once: a caller that waited on the lock
+        answers the one another caller built."""
         with self._lock:
             if self._current is not None:
                 return self._current
@@ -112,7 +138,13 @@ class BusRegistry:
 
     def reload(self) -> bool:
         """Swap in a generation with the store's active use cases — `False`, and no build, when
-        they are the ones loaded. Raises `UseCaseRefused`, with `current` as it was."""
+        they are the ones loaded. Raises `UseCaseRefused`, with `current` as it was.
+
+            registry.reload()   ->  True, generation 1 → 2 — the store gained a use case
+            registry.reload()   ->  False, nothing built — the same use cases are loaded
+
+        The use cases are compared as a set: the same ones in another order are not reloaded.
+        """
         with self._lock:
             use_cases = self.store.active()
             if self._current is not None and frozenset(use_cases) == frozenset(self._loaded):
@@ -130,6 +162,10 @@ class BusRegistry:
 
     def put(self, use_case: RuntimeUseCase) -> None:
         """Check, save and swap in, as one step no other registry call interleaves with.
+
+            registry.put(draft)            ->  None; saved, generation + 1, draft in force
+            registry.put(<draft that does not import>)
+            ->  UseCaseRefused; nothing saved, `current` as it was
 
         1. Build the generation `use_case` joins; `UseCaseRefused` saves nothing.
         2. Save it; a store that fails leaves `current` as it was.
@@ -151,7 +187,18 @@ class BusRegistry:
         in; an empty list is a store the code still answers.
 
         Context: each use case loads beside the ones before it, so one that imports a refused one
-        is refused too, in its own name."""
+        is refused too, in its own name.
+
+            registry.check_all()   ->  []  — every stored use case still loads
+            registry.check_all()   ->  [UseCaseRefused("billing.quote: ...")], after a rename
+
+        1. The store's active use cases, onto a `fresh()` copy of the code's bus.
+        2. Each loaded in order; a refusal is kept and the next one still tried.
+        3. None refused: the root bus built — a failure there is one refusal, of the
+           generation.
+        4. `sys.modules` settled back, so nothing loaded here stays.
+        Final: the refusals — empty when the code still answers the store.
+        """
         with self._lock:
             use_cases = self.store.active()
             bus = self.bus.fresh()

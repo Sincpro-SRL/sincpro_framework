@@ -36,15 +36,21 @@ Callback = Callable[[], Any]
 
 @dataclass
 class Level:
+    """What one level — the unit of work, or a savepoint above it — holds to run at its
+    end."""
+
     after_commit: list[Callback] = field(default_factory=list)
     after_rollback: list[Callback] = field(default_factory=list)
 
 
 def _levels(session: Session) -> list[Level]:
+    """The stack of levels on `session`, the unit of work's at the bottom — made on first
+    use."""
     return session.info.setdefault(LEVELS, [Level()])
 
 
 def _run(callbacks: list[Callback], moment: str) -> None:
+    """Each callback in order; one that raises is logged and the rest still run."""
     for callback in callbacks:
         try:
             callback()
@@ -53,6 +59,8 @@ def _run(callbacks: list[Callback], moment: str) -> None:
 
 
 def _committed(session: Session) -> None:
+    """SQLAlchemy's `after_commit`: every level's `after_commit` run, bottom first, and the
+    stack let go of — the next transaction starts empty."""
     held = session.info.pop(LEVELS, [Level()])
     _run([one for level in held for one in level.after_commit], "after_commit")
 
@@ -80,12 +88,20 @@ def register(session: Session, moment: str, callback: Callback) -> None:
 
 
 def opened_savepoint(session: Session) -> None:
+    """A new level on top, for what the savepoint about to open registers."""
     _levels(session).append(Level())
 
 
 def closed_savepoint(session: Session, undone: bool) -> None:
     """A savepoint that ended well hands what it held to the level around it; one that was
-    undone runs its after_rollback and forgets its after_commit."""
+    undone runs its after_rollback and forgets its after_commit.
+
+        levels [unit: commit=[a]], [savepoint: commit=[b], rollback=[c]]
+        closed_savepoint(session, undone=False)   ->  [unit: commit=[a, b], rollback=[c]]
+        closed_savepoint(session, undone=True)    ->  c runs now; [unit: commit=[a]]
+
+    With no savepoint level open, an empty one is closed: nothing moves and nothing runs.
+    """
     levels = _levels(session)
     level = levels.pop() if len(levels) > 1 else Level()
     if undone:

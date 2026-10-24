@@ -91,17 +91,23 @@ class _Hooks:
     __slots__ = ("_guard", "_token")
 
     def __init__(self, repository: "IRepository") -> None:
+        """Marks by the repository's guard, not by the repository — so a unit of work or a
+        narrowing of it is the same store inside the window."""
         self._guard = id(repository._guard)
         self._token: Any = None
 
     def __enter__(self) -> None:
+        """Adds this store to the ones inside a hook, on this thread or task only."""
         self._token = _running.set(_running.get(frozenset()) | {self._guard})
 
     def __exit__(self, *_: Any) -> None:
+        """Restores exactly what `__enter__` found — the outer window, when nested."""
         _running.reset(self._token)
 
 
 def _is_hook_class(given: Any) -> bool:
+    """Whether `given` is a `Hook` class itself — the mistake of passing the class, not the
+    collection it is registered in."""
     return isinstance(given, type) and issubclass(given, Hook)
 
 
@@ -191,6 +197,7 @@ class IRepository(ReadsAggregates, WritesAggregates):
         self._chain: HookChain = guard._chain if guard is not None else HookChain(hooks)
 
     def _running_hooks(self) -> "_Hooks":
+        """The window a hook runs in for this store — a write through it inside is refused."""
         return _Hooks(self)
 
     def after_read(self, record: Any) -> Any:
@@ -273,20 +280,26 @@ class IRepository(ReadsAggregates, WritesAggregates):
         return newness
 
     def _after_writes(self, records: list[Any], newness: list[bool]) -> None:
+        """Every after-moment for a batch, told new from stored by what `_before_writes`
+        worked out — never asked again, since the write has raised the version by now."""
         for one, is_new in zip(records, newness):
             self._fire("after_save", one)
             self._fire("after_create" if is_new else "after_update", one)
 
     def _before_archive(self, record: Any) -> None:
+        """`before_archive`, the chain's hooks then the store's own."""
         self._fire("before_archive", record)
 
     def _after_archive(self, record: Any) -> None:
+        """`after_archive`, the chain's hooks then the store's own."""
         self._fire("after_archive", record)
 
     def _before_remove(self, record: Any) -> None:
+        """`before_remove`, the chain's hooks then the store's own."""
         self._fire("before_remove", record)
 
     def _after_remove(self, record: Any) -> None:
+        """`after_remove`, the chain's hooks then the store's own."""
         self._fire("after_remove", record)
 
     def _refuse_reentrant_write(self) -> None:

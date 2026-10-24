@@ -1047,7 +1047,7 @@ class CommandEditQuote(Edit[Quote, ResponseEditQuote]):
 quotes_bus = UseFramework("quotes", log_after_execution=False)
 quotes = MemoryRepository()
 quotes_bus.add_dependency("repository", quotes)
-quotes_bus.context_store(InMemoryContexts())          # a KeyValueContexts over Redis in production
+quotes_bus.store_context_in(InMemoryContexts())          # a KeyValueContexts over Redis in production
 
 
 @quotes_bus.feature([QueryGetQuote, QueryListQuotes, CommandEditQuote])

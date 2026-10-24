@@ -36,6 +36,7 @@ class AnyOf:
     permissions: tuple[Permission, ...]
 
     def __str__(self) -> str:
+        """Its permissions joined by `or` — `billing.read or billing.admin`."""
         return " or ".join(str(one) for one in self.permissions)
 
 
@@ -52,6 +53,12 @@ class Declaration:
     when_denied: WhenDenied = WhenDenied.RAISE
 
     def __str__(self) -> str:
+        """How `describe()` and the logs say it.
+
+        Declaration("public")                                   ->  "public"
+        Declaration("requires", (A, AnyOf((B, C))))             ->  "a and b or c"
+        Declaration("requires", (A,), WhenDenied.SKIP)          ->  "a (else skipped)"
+        """
         if self.kind != "requires":
             return self.kind
         needed = " and ".join(str(one) for one in self.requirements)

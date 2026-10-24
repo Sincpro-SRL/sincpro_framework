@@ -51,6 +51,14 @@ class DeliverableEventMixin:
     delivery: dict[str, Any] = field(default_factory=dict)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Warns, at class definition, about a delivered event without its own versioned name.
+
+            name = "billing.invoice.v1.paid"     quiet
+            no name, or name = "InvoicePaid"     warned: a rename would break its consumers
+
+        Context: a warning and not a refusal — the event still works; it is the contract that
+        is fragile. Only the class's own `name` counts, never an inherited one.
+        """
         super().__init_subclass__(**kwargs)
         declared = cls.__dict__.get("name")
         if not isinstance(declared, str) or not VERSIONED.search(declared):
@@ -63,6 +71,8 @@ class DeliverableEventMixin:
 
     @property
     def delivery_attempts(self) -> int:
+        """How many times delivery was tried — delivered, failed or parked — since it was made
+        or last replayed."""
         return int(self.delivery.get("attempts", 0))
 
     def delivered(self, at: datetime | None = None) -> None:

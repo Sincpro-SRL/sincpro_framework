@@ -45,11 +45,33 @@ class Cron(ABC):
     """
 
     @abstractmethod
-    def run(self, tick: Tick) -> None: ...
+    def run(self, tick: Tick) -> None:
+        """What happens at each tick — call the buses, with `tick.once(key)` around a step
+        that must not repeat.
+
+            def run(self, tick: Tick) -> None:
+                if tick.once("notify"):
+                    self.billing.execute(CommandNotifyOverdue(day=tick.scheduled_for.date()))
+
+        Context: an exception is the run's `FAILED` outcome — the registry reports it once and
+        never hands it to the clock, so the next tick runs anyway.
+        """
+        ...
 
 
 @dataclass(frozen=True)
 class CronDefinition:
+    """One registered cron as the gateway sees it: its name, its class, when it ticks and the
+    policies `Crons.cron` was given.
+
+    Context: built by the registry, read by the gateway — the name is the cron's identity in
+    the record of runs, so a class that `replaces` another keeps the replaced one's name.
+
+        CronDefinition("cron-payments.Reconcile", Reconcile,
+                       CronExpression("0 2 * * *", "UTC"), Overlap.SKIP, Missed.RUN_LATEST,
+                       timedelta(days=1), timedelta(hours=1))
+    """
+
     name: str
     cron_class: type[Cron]
     trigger: Trigger

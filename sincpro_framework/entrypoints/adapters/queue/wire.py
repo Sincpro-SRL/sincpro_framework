@@ -25,7 +25,6 @@ from sincpro_framework import exceptions
 from sincpro_framework.auth.domain.identity import Credentials
 from sincpro_framework.auth.entrypoint.transports import authenticated_as
 from sincpro_framework.common.failures import failure_reason, refined_failure_kind
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.context.adapters.propagation import extract
 from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.domain.level import EntrypointKind
@@ -67,6 +66,7 @@ from sincpro_framework.observability.metrics.infrastructure.active import active
 from sincpro_framework.observability.tracing.propagation import within_trace
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
+from sincpro_framework.store import InMemoryKeyValue
 
 UNGUARDED = "unguarded"
 QUEUE_DELIVERIES = Instrument(
@@ -105,12 +105,17 @@ def rabbit_user_id(message: Delivery, envelope: Envelope) -> str | None:
 
 
 def _default_records() -> IdempotencyRecords:
+    """The inbox a `QueueOptions` has by default — in this process's memory, a fresh one per
+    options, enough for one replica."""
     return KeyValueRecords(InMemoryKeyValue())
 
 
 def queue_context(envelope: Envelope, headers: Mapping[str, str]) -> dict[str, Any]:
     """What a message hands the execution's context — so every signal of the run says it
     (PRD_03 §4.10, PRD_21).
+
+        queue_context(Envelope(correlationid="c-1", causationid="e-7"), {"x-tenant": "acme"})
+        ->  {"correlation_id": "c-1", "causation_id": "e-7", "tenant_id": "acme"}
 
     1. The context the producer's execution carried (`baggage`, `sincpro-context`, the identity).
     2. The envelope's chain over it: `correlationid`, `causationid`.
@@ -139,19 +144,28 @@ class QueueOptions(DataTransferObject):
     max_attempts: int = 5
     """What a binding that declares none is tried at most before it is dead-lettered."""
     retry_by: RetryBy | None = None
+    """How a retry is carried — `None`: the broker's default (`flavours`)."""
     dead_letter_by: DeadLetterBy | None = None
+    """How a dead letter is carried — `None`: the broker's default (`flavours`)."""
     dead_letter_suffix: str = ".dlq"
+    """What a dead-letter channel adds to the channel's name — `billing.issue.dlq`."""
     time_limit: timedelta | None = None
     """How long the bus may run one message — MUST stay below `in_progress_for` and the
     broker's visibility timeout. Past it the delivery is retried; the claim is kept, so a
     redelivery waits for it to expire rather than run beside the one still running."""
     in_progress_for: timedelta = timedelta(minutes=5)
+    """How long the inbox's claim holds a delivery that is running — a replica that dies
+    mid-run frees it once this passes."""
     keep_for: timedelta = timedelta(days=1)
     """How long a completed delivery is remembered — longer than a redelivery can take."""
     expires_after: timedelta | None = None
     """A message whose envelope `time` is older is dead-lettered — `EXPIRED`."""
     identify: Identify = by_envelope_source
+    """Who produced a message — what `producers=` and the inbox key read; `rabbit_user_id`
+    where the broker vouches for it."""
     subscription_of: SubscriptionOf | None = None
+    """How a subscription is declared when the broker's defaults do not cover it — a RabbitMQ
+    exchange, a Redis Stream (`flavours.SubscriptionOf`)."""
 
 
 class Subscription(DataTransferObject):
@@ -173,10 +187,22 @@ def channel_of(resolved: Resolved[QueueBinding]) -> str:
 
 
 def consumer_group_of(resolved: Resolved[QueueBinding]) -> str:
+    """The consumer group a binding reads in — its own `group`, else the context's namespace,
+    else the alias it was added under.
+
+        QueueBinding(group="billing-workers")                  ->  "billing-workers"
+        Group(alias="billing", namespace="acme.billing")       ->  "acme.billing"
+        Group(alias="billing")                                 ->  "billing"
+    """
     return resolved.binding.group or resolved.group.namespace or resolved.group.alias
 
 
 def binding_name(resolved: Resolved[QueueBinding]) -> str:
+    """The name the inbox keys a context's run under — `<alias>.<Command>`, so two contexts
+    hearing one event each claim it on their own.
+
+        binding_name(resolved)  ->  "billing.InvoiceIssued"
+    """
     return f"{resolved.operation.alias}.{resolved.operation.command.__name__}"
 
 
@@ -190,6 +216,14 @@ def _decoded(command: type, body: bytes) -> Any:
 
 
 def _validated(command: type, value: Any) -> Any:
+    """What a project's `decode=` answered, made the Command — full control may hand back the
+    DTO itself, raw text or bytes, or the fields.
+
+        _validated(CommandIssue, CommandIssue(...))     ->  as it is
+        _validated(CommandIssue, b'{"amount": 10}')     ->  decoded from JSON (`_decoded`)
+        _validated(InvoiceIssued, {"id": "e-1", ...})   ->  the DomainEvent from its fields
+        _validated(CommandIssue, {"amount": 10})        ->  CommandIssue(amount=10)
+    """
     if isinstance(value, command):
         return value
     if isinstance(value, bytes | bytearray | str):
@@ -206,7 +240,18 @@ def _validated(command: type, value: Any) -> Any:
 
 
 def arrival_channel(message: Delivery) -> str | None:
-    """The channel a message arrived on, where the broker's message says it."""
+    """The channel a message arrived on, where the broker's message says it.
+
+        arrival_channel(<Kafka record, topic "billing.invoice.v1.issued">)
+        ->  "billing.invoice.v1.issued"
+        arrival_channel(<Redis, raw {"channel": b"billing.issue", ...}>)  ->  "billing.issue"
+        arrival_channel(<SqsDelivery>)                                   ->  None
+
+    1. The raw message's `topic` (Kafka), `routing_key` (RabbitMQ) or `subject` (NATS) —
+       the first non-empty one.
+    2. A raw message that is a dict (Redis): its `channel`, decoded when bytes.
+    Final: `None` — the broker does not say.
+    """
     raw = message.raw_message
     for attribute in ("topic", "routing_key", "subject"):
         value = getattr(raw, attribute, None)
@@ -222,12 +267,36 @@ def arrival_channel(message: Delivery) -> str | None:
 
 
 class QueueWire(Wire[QueueBinding]):
-    """The queue wire on one FastStream broker. Subclass it to derive otherwise and hand it to
-    `QueueGateway(port=...)`."""
+    """The queue wire on one broker — a FastStream one, or another `Broker` such as
+    `SqsBroker`. Subclass it to derive otherwise and hand it to `QueueGateway(port=...)`.
+
+        wire = QueueWire(KafkaBroker("kafka:9092"), QueueOptions(max_attempts=3))
+        QueueGateway(wire.broker, [billing], port=wire).build()
+
+    Context: the port derives, validates and builds like every wire's; past that it owns the
+    one path a delivery takes (`process`) and how it is settled (`_settle`), from the broker's
+    flavour and the options.
+    """
 
     binding = QueueBinding
 
     def __init__(self, broker: Broker, options: QueueOptions | None = None) -> None:
+        """Read the broker's flavour once and settle on it: the options' `retry_by` /
+        `dead_letter_by` over the flavour's, and an `Inbox` unless the options turned it off.
+        Nothing is subscribed until `build`.
+
+            QueueWire(KafkaBroker("kafka:9092"))
+            ->  retry_by REPUBLISH, dead_letter_by CHANNEL, an in-memory inbox
+            QueueWire(RabbitBroker(url), QueueOptions(inbox=None))
+            ->  retry_by NACK, dead_letter_by NATIVE, no inbox
+
+        1. The broker kept, and the options given — else the defaults.
+        2. The broker's flavour (`flavour_of`): its name and whether it acknowledges.
+        3. `retry_by` and `dead_letter_by`: the options', else the flavour's.
+        4. An `Inbox` over the options' records, claim and keep times — none when
+           `inbox=None`.
+        Final: not unguarded until the gateway says so; nothing subscribed yet.
+        """
         self.broker = broker
         self.options = options or QueueOptions()
         flavour = flavour_of(broker)
@@ -257,6 +326,7 @@ class QueueWire(Wire[QueueBinding]):
         return QueueBinding(kind="consumes")
 
     def name_of(self, resolved: Resolved[QueueBinding]) -> str:
+        """A queue operation is named by its channel — the manifest's `name`."""
         return channel_of(resolved)
 
     def _access_problem(self, resolved: Resolved[QueueBinding]) -> str | None:
@@ -284,7 +354,16 @@ class QueueWire(Wire[QueueBinding]):
         return None
 
     def validate(self, surface: Sequence[Resolved[QueueBinding]]) -> list[str]:
-        """1. The time limit stays below the inbox's claim.
+        """Every reason the surface cannot be served on the broker — empty when it can.
+
+            validate([<billing:CommandIssue on "billing.issue">,
+                      <sales:CommandIssue on "billing.issue">])
+            ->  ["queue: command channel billing.issue is consumed by billing:CommandIssue,
+                 sales:CommandIssue — point to point runs exactly one handler"]
+            <QueueOptions(time_limit=10 min, in_progress_for=5 min)> validate([...])
+            ->  ["queue: time_limit 0:10:00 is not below the inbox's in_progress_for ..."]
+
+        1. The time limit stays below the inbox's claim.
         2. Every binding says who may send it; attempts and concurrency are positive.
         3. Final: one command channel has exactly one handler, and carries no events. An
            event heard by several contexts in one group is one subscription running them all.
@@ -329,6 +408,18 @@ class QueueWire(Wire[QueueBinding]):
     def subscriptions_of(
         self, surface: Sequence[Resolved[QueueBinding]]
     ) -> list[Subscription]:
+        """The surface as subscriptions: one per channel, consumer group and kind, each with
+        what it runs by message type.
+
+            [IssueInvoice consumes "billing.issue", InvoiceIssued heard by billing and
+             accounting on "billing.invoice.v1.issued" in group "billing"]
+            ->  [Subscription("billing.issue", ..., by_type={"billing.IssueInvoice": (…,)}),
+                 Subscription("billing.invoice.v1.issued", "billing", "hears",
+                              by_type={"billing.invoice.v1.issued": (billing, accounting)})]
+
+        Context: contexts that hear one event in one group share a subscription — the broker
+        delivers once to the group, and `process` runs every context.
+        """
         grouped: dict[tuple[str, str, str], dict[str, list[Resolved[QueueBinding]]]] = {}
         for one in surface:
             key = (channel_of(one), consumer_group_of(one), one.binding.kind)
@@ -358,10 +449,14 @@ class QueueWire(Wire[QueueBinding]):
         return by_type.get(envelope.type or "", ())
 
     def _attempts(self, message: Delivery, envelope: Envelope) -> int:
+        """This delivery's attempt: the higher of what the attempts header says (a counted
+        copy) and what the broker counted — at least 1."""
         counted = delivery_count(self.broker_name, message)
         return max(envelope.attempts, counted or 1)
 
     def _expired(self, envelope: Envelope) -> bool:
+        """Whether the message is older than `expires_after` by its envelope's `time` — never
+        when either is missing; a naive `time` is read as UTC."""
         limit = self.options.expires_after
         if limit is None or envelope.time is None:
             return False
@@ -377,6 +472,16 @@ class QueueWire(Wire[QueueBinding]):
         headers: dict[str, str],
         envelope: Envelope,
     ) -> None:
+        """Run one context's bus on the DTO, off the event loop, as the producer's execution
+        goes on.
+
+        1. The headers become the queue's credentials, read as lower-case names.
+        2. The context the message carried (`queue_context`).
+        3. In a worker thread: authenticated and inside that context, the bus runs the DTO —
+           identity is a `ContextVar`, so it is set in the thread that runs.
+        4. Final: inside the producer's trace; past `time_limit` it raises `TimeoutError`, the
+           thread left to finish on its own.
+        """
         bus = resolved.operation.bus
         credentials = Credentials(
             transport="queue",
@@ -386,6 +491,7 @@ class QueueWire(Wire[QueueBinding]):
         carried = queue_context(envelope, credentials.headers)
 
         def call() -> Any:
+            """The bus run in the worker thread, authenticated and in the carried context."""
             with (
                 authenticated_as(bus, credentials),
                 bus.context(carried, kind=EntrypointKind.QUEUE),
@@ -447,6 +553,9 @@ class QueueWire(Wire[QueueBinding]):
     def _copy_headers(
         self, message: Delivery, envelope: Envelope, attempts: int
     ) -> dict[str, str]:
+        """The headers a republished copy carries: the original's as text, the envelope as
+        CloudEvents headers, `sincpro-attempts` set to `attempts` — and RabbitMQ's
+        `x-delivery-count` dropped, since it counted the original, not the copy."""
         headers = text_headers(message.headers)
         headers.pop("x-delivery-count", None)
         headers.update(envelope.as_headers())
@@ -456,6 +565,8 @@ class QueueWire(Wire[QueueBinding]):
     async def _publish_copy(
         self, message: Delivery, channel: str, headers: dict[str, str]
     ) -> bool:
+        """Publish a copy of the message to `channel` — `False`, logged, when the broker
+        refused it, so the caller nacks instead of acking a message that went nowhere."""
         try:
             await self.broker.publish(
                 message.body,
@@ -541,6 +652,13 @@ class QueueWire(Wire[QueueBinding]):
     ) -> Verdict:
         """One delivery, from its envelope to its settlement.
 
+            await wire.process(delivery, subscription.by_type, "billing.invoice.v1.issued")
+            ->  Verdict(settlement=Settlement.ACK, ...) — every context that hears it ran
+            await wire.process(<sent by "shop", producers=("erp",)>, by_type, channel)
+            ->  Verdict(settlement=DEAD_LETTER, reason="PRODUCER_NOT_ALLOWED"), never run
+            await wire.process(<body "not json">, by_type, channel)
+            ->  Verdict(settlement=DEAD_LETTER, reason="UNDECODABLE")
+
         1. What it is: an event nobody here handles on a shared channel is skipped (ack).
         2. Who sent it: a producer a binding does not allow is dead-lettered, before the bus.
         3. A message past `expires_after` is dead-lettered.
@@ -565,6 +683,8 @@ class QueueWire(Wire[QueueBinding]):
         identity = self.options.identify(message, envelope)
 
         def refused(kind: exceptions.FailureKind, reason: str) -> Verdict:
+            """A failure's verdict for this delivery — its attempts, the lowest `max_attempts`
+            of its handlers, its type."""
             return failed(kind, reason, attempts, max_attempts, name)
 
         verdict: Verdict | None = None
@@ -626,11 +746,13 @@ class QueueWire(Wire[QueueBinding]):
             from faststream import Context
 
             async def handle(message: Any = Context("message")) -> None:
+                """FastStream's subscriber: the message from its `Context`, then `process`."""
                 await self.process(message, subscription.by_type, subscription.channel)
 
         else:
 
             async def handle(message: Any = None) -> None:
+                """Another broker's subscriber: the delivery as argument, then `process`."""
                 await self.process(message, subscription.by_type, subscription.channel)
 
         handle.__name__ = handle.__qualname__ = "_".join(
@@ -642,6 +764,8 @@ class QueueWire(Wire[QueueBinding]):
         return handle
 
     def _concurrency(self, subscription: Subscription) -> int | None:
+        """How many deliveries a subscription runs at once — the highest `concurrency` its
+        bindings declare, `None` (the broker's default) when none does."""
         declared = [
             one.binding.concurrency
             for handlers in subscription.by_type.values()
@@ -651,7 +775,21 @@ class QueueWire(Wire[QueueBinding]):
 
     def build(self, surface: Sequence[Resolved[QueueBinding]]) -> list[Subscription]:
         """Register one subscription per channel and group on the broker — once; building
-        again answers what was registered."""
+        again answers what was registered.
+
+            wire.build([<billing hears InvoiceIssued>, <accounting hears InvoiceIssued>])
+            ->  [Subscription(channel="billing.invoice.v1.issued", group="billing",
+                              kind="hears", ...), <the same channel, group "accounting">]
+            wire.build(surface)          ->  the same list again, nothing re-registered
+
+        1. Built before: what was registered.
+        2. The subscriptions of the surface (`subscriptions_of`).
+        3. For each, its concurrency and the handler the broker calls (`_handler`), then:
+           3.1 the options' `subscription_of`, when the project declares its own;
+           3.2 otherwise `broker.subscriber(channel, description=..., ...)` with the
+               flavour's options (`subscription_options`).
+        Final: the subscriptions kept, and answered.
+        """
         if self.subscriptions is not None:
             return list(self.subscriptions)
         subscriptions = self.subscriptions_of(surface)

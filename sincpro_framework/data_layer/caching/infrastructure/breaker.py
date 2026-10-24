@@ -12,16 +12,22 @@ from collections.abc import Callable
 from datetime import timedelta
 
 
-class StoreBreaker:
+class StoreCircuitBreaker:
+    """Open for `bypass_for` after any store failure; closed again by the clock alone."""
+
     def __init__(self, bypass_for: timedelta, clock: Callable[[], float]) -> None:
+        """`clock` is the cache's own — seconds, moved by hand in a test."""
         self.bypass_for = bypass_for
         self.clock = clock
         self._open_until = 0.0
         self._lock = threading.Lock()
 
     def is_open(self) -> bool:
+        """Whether the store is bypassed right now — no half-open state: once `bypass_for` has
+        passed, every caller tries the store again."""
         return self.clock() < self._open_until
 
     def trip(self) -> None:
+        """Opens the breaker for `bypass_for` from now — a failure while open extends it."""
         with self._lock:
             self._open_until = self.clock() + self.bypass_for.total_seconds()

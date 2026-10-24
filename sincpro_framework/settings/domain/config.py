@@ -55,6 +55,13 @@ def usable_env_value(value: str, field_info) -> bool:
     ``settings`` is built at import time, so a malformed env var would otherwise
     raise ValidationError before the framework is even importable — a typo in one
     deployment variable would take down the whole process.
+
+        usable_env_value("5", <timeout: int>)        ->  True
+        usable_env_value("abc", <timeout: int>)      ->  False
+        usable_env_value("1.5", <rate: Annotated[float, Field(ge=0.0, le=1.0)]>)
+            ->  False    # the field's constraints are checked too
+
+    Context: the value is only tried, never kept — the model reads it again as it builds.
     """
     try:
         annotation = field_info.annotation
@@ -98,6 +105,29 @@ class SincproConfig(BaseModel):
         """Read every value written as a sentinel: `$ENV:NAME` from the environment, any other
         (`$SSM:/path`) from the source the build was handed under that name. A value the source
         does not hold, or the field cannot accept, falls back to the default with a log line.
+
+            # class C(SincproConfig): timeout: int = 30; name: str | None = "x"
+            # environment: TIMEOUT=5, BAD=abc; NOT_SET unset
+            C(timeout="$ENV:TIMEOUT")              ->  C(timeout=5, …)
+            C(timeout="$ENV:BAD")                  ->  C(timeout=30, …)    # logged, default
+            C(name="$ENV:NOT_SET")                 ->  C(name="x", …)      # logged, default
+            C(name="$SSM:/billing/name")           # no "SSM" source handed
+                ->  C(name="$SSM:/billing/name", …), with a warning naming `sources=`
+
+        1. Anything but a dict of values is handed on as it is.
+        2. The sources the build was handed, from the validation context.
+        3. Each value that is a sentinel — `$<SOURCE>:<name>` — any other left alone:
+           3.1 `ENV` reads the environment;
+           3.2 a source handed reads `name` — one that raises keeps the sentinel as written,
+               with a warning;
+           3.3 a source not handed keeps the sentinel as written, with a warning.
+        4. What was read:
+           4.1 held, and the field takes it (or no field declares the key): the value;
+           4.2 held, and the field refuses it: the field's default, logged;
+           4.3 not held, a field with a default other than `None`: that default, logged;
+           4.4 not held, a field defaulting to `None`: `None`, silently;
+           4.5 not held, no such field: left as written, logged.
+        Final: the values, sentinels replaced, for the model to validate.
         """
         if not isinstance(values, dict):
             return values
@@ -220,7 +250,16 @@ class FrameworkSettings(DefaultFrameworkConfig):
 
 
 def is_secret(annotation: Any) -> bool:
-    """Whether a field holds a `Secret` — `Secret[str]`, or one that may be `None`."""
+    """Whether a field holds a `Secret` — `Secret[str]`, or one that may be `None`.
+
+        is_secret(Secret[str])            ->  True
+        is_secret(Secret[str] | None)     ->  True
+        is_secret(Optional[Secret[int]])  ->  True
+        is_secret(SecretStr)              ->  False   # pydantic's own, not `Secret`
+        is_secret(str)                    ->  False
+
+    Context: a union is a secret when any of its members is; a subclass of `Secret` is one.
+    """
     origin = get_origin(annotation)
     if origin in (Union, UnionType):
         return any(is_secret(one) for one in get_args(annotation))

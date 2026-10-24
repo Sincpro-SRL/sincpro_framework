@@ -5,6 +5,7 @@
     archive.py         archive_columns                      ArchivableMixin
     events.py          event_table, event_columns           the context's domain events
     numbering.py       numbering_table                      gapless numbers
+    idempotency.py     idempotency_table                    a write run exactly once
     runtime_use_cases.py  use_case_table                    the use cases a context stores
     properties.py      properties_column, slot_field        the slot an extensible entity reserves
 
@@ -26,6 +27,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.event
     event_columns,
     event_table,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.idempotency import (
+    idempotency_table,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.numbering import (
     numbering_table,
 )
@@ -46,6 +50,7 @@ __all__ = [
     "entity_table",
     "event_columns",
     "event_table",
+    "idempotency_table",
     "numbering_table",
     "properties_column",
     "slot_field",

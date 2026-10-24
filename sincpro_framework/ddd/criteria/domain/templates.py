@@ -18,6 +18,8 @@ def with_text(expression: Expression | None, text: str) -> Expression | None:
     """
 
     def filled(condition: Condition) -> Condition | None:
+        """One leaf: untouched without `TEXT`, dropped when there is no literal, else the
+        literal put where `TEXT` stood — the whole value, or each `TEXT` member of a list."""
         if not holds_text(condition):
             return condition
         if not text:

@@ -1,5 +1,10 @@
 """Open a DTO span and bind its ids and coordinates to the logger. Never raises. Not
-GlitchTip's job."""
+GlitchTip's job.
+
+    with span_execution("CreateInvoice", "feature", "billing", logger) as span:
+        use_case_span()   ->  span        # where `traces.annotate` writes
+        ...               # every log line carries sincpro_context, sincpro_use_case, trace_id
+"""
 
 from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
@@ -15,11 +20,13 @@ not become where the use case's attributes land."""
 
 
 def use_case_span() -> Any:
+    """The span of the use case running now — `None` outside one or without a tracer."""
     return _use_case_span.get()
 
 
 @contextmanager
 def _running(span: Any) -> Generator[None, None, None]:
+    """Make `span` the use case's span for the block, and put back the one before after it."""
     token = _use_case_span.set(span)
     try:
         yield
@@ -66,7 +73,9 @@ def _shielded(cm: Any) -> Generator[Any, None, None]:
 def _span_for(
     dto_name: str, layer: str, bus: str, attributes: Mapping[str, str], use_case: str
 ) -> Any:
-    """Context: named ``context/DTO`` — the service is the artifact, so the bounded context
+    """The span of one use case run — a no-op context when OpenTelemetry is not there.
+
+    Context: named ``context/DTO`` — the service is the artifact, so the bounded context
     shows in the name as an RPC span shows ``service/method``; ``sincpro.context`` carries the
     context and ``sincpro.use_case`` the use case's identity (``context.Class``) for
     filtering."""
@@ -117,7 +126,19 @@ def span_execution(
     use_case: str = "",
 ) -> Generator[Any, None, None]:
     """`use_case` is the identity the span and the log lines carry — `dto_name` when none is
-    given (a cron names itself)."""
+    given (a cron names itself).
+
+        with span_execution("CreateInvoice", "feature", "billing", logger,
+                            {"sincpro.outcome": "ok"}, "billing.CreateInvoice") as span:
+            ...   ->  span "billing/CreateInvoice": sincpro.layer="feature",
+                      sincpro.use_case="billing.CreateInvoice", sincpro.context="billing", …
+                      every line: sincpro_use_case, sincpro_layer, sincpro_context,
+                      trace_id, span_id
+        with span_execution("nightly_close", "cron", "", logger) as span:
+            ...   ->  span "nightly_close"; the lines carry no sincpro_context
+
+    The span is `None` without a tracer — the lines still carry the coordinates; the span
+    and the logger binding are shielded, so neither can break the block or hide its error."""
     use_case = use_case or dto_name
     coordinates = {"sincpro_use_case": use_case, "sincpro_layer": layer}
     if bus:

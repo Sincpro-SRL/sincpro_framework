@@ -31,6 +31,7 @@ class ArchivableMixin:
 
     @property
     def is_archived(self) -> bool:
+        """Whether the record was put away — it has a moment it left."""
         return self.archived_at is not None
 
     def archive(self) -> None:
@@ -40,4 +41,5 @@ class ArchivableMixin:
             self.archived_at = utc_now()
 
     def restore(self) -> None:
+        """Brings the record back: readings that leave archived records out see it again."""
         self.archived_at = None

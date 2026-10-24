@@ -14,6 +14,12 @@ metric and the GlitchTip event that close the execution. The only filter is the 
 chose, `hide_in_logs`; nothing is refused for its content.
 
 Nothing here imports a backend, and nothing here raises.
+
+    with running(observability):                   # the bus's span is open
+        tenant()             ->  "acme"            # context, else identity, else deployment
+        execution_keys()     ->  {"tenant": "acme", "user_id": "u7", "company": "3"}
+        metric_labels(metric_label_keys())
+                             ->  {"service.name": "billing", "tenant": "acme", ...}
 """
 
 import sys
@@ -47,7 +53,9 @@ class ExecutionSource(Protocol):
     """Who runs an execution: the `Observability` of its bus."""
 
     @property
-    def identity(self) -> ObservabilityIdentity: ...
+    def identity(self) -> ObservabilityIdentity:
+        """Who the bus is — its service, version and release."""
+        ...
 
 
 _running: ContextVar[ExecutionSource | None] = ContextVar("sincpro_execution", default=None)
@@ -55,7 +63,16 @@ _running: ContextVar[ExecutionSource | None] = ContextVar("sincpro_execution", d
 
 @contextmanager
 def running(source: ExecutionSource) -> Generator[None, None, None]:
-    """The execution of a use case of `source`'s bus, from its span's opening to its closing."""
+    """The execution of a use case of `source`'s bus, from its span's opening to its closing.
+
+        with running(observability):
+            current()              ->  observability
+            running_identity()     ->  observability.identity
+        current()                  ->  None — or the source running before it, put back
+
+    What the scopes opened inside the block say is kept (`keeping_what_scopes_say`), so the
+    signals that close the execution still read it.
+    """
     token = _running.set(source)
     try:
         with keeping_what_scopes_say():
@@ -68,6 +85,7 @@ def running(source: ExecutionSource) -> Generator[None, None, None]:
 
 
 def current() -> ExecutionSource | None:
+    """The `Observability` of the bus running the execution in play — `None` outside one."""
     return _running.get()
 
 
@@ -76,7 +94,13 @@ def current() -> ExecutionSource | None:
 
 def resource_attributes() -> dict[str, str]:
     """`OTEL_RESOURCE_ATTRIBUTES` as OpenTelemetry defines it: `key=value` pairs joined by
-    commas, each part percent-decoded and stripped."""
+    commas, each part percent-decoded and stripped.
+
+        OTEL_RESOURCE_ATTRIBUTES="tenant=acme, region=eu%2Dwest,broken,=x"
+        resource_attributes()   ->  {"tenant": "acme", "region": "eu-west"}
+
+    A part without `=` or with an empty key is skipped; a value may itself hold `=`.
+    """
     import os
 
     declared: dict[str, str] = {}
@@ -119,6 +143,13 @@ def execution_context() -> Mapping[str, Any]:
     wrote to it included, and its identity last: `execution_id`, `causation_id` and
     `correlation_id` are the execution's own, whatever the context was handed. Outside a use case,
     what a caller handed the next bus (`carrying`).
+
+        execution_context()   ->  {"tenant_id": "acme", "company": 3,
+                                   "execution_id": "…", "causation_id": "…",
+                                   "correlation_id": "…"}
+
+    Layered as live context, then what closed scopes said, then the execution's chain; the
+    live context alone when there is neither — an empty one when the tree cannot be read.
     """
     try:
         from sincpro_framework.context.infrastructure.tree import live_context
@@ -134,6 +165,8 @@ def execution_context() -> Mapping[str, Any]:
 
 
 def _hidden() -> frozenset[str]:
+    """The context keys the project hid from the signals (`hide_in_logs`) — none when the
+    context tree cannot be read."""
     try:
         from sincpro_framework.context.infrastructure.tree import hidden_keys
 
@@ -143,13 +176,18 @@ def _hidden() -> frozenset[str]:
 
 
 def _text(value: Any) -> str:
+    """A context value as a label: an enum by its `value`, stripped; `None` as empty.
+
+    _text(" acme ")  ->  "acme"        _text(None)  ->  ""
+    """
     if value is None:
         return ""
     return str(getattr(value, "value", value)).strip()
 
 
 def tenant(context: Mapping[str, Any] | None = None) -> str:
-    """The execution's tenant: the context's `tenant_id`; else the authenticated identity's; else the deployment's."""
+    """The execution's tenant: the context's `tenant_id`; else the authenticated identity's;
+    else the deployment's."""
     context = execution_context() if context is None else context
     return (
         _text(context.get(ContextKey.TENANT_ID))
@@ -180,7 +218,14 @@ def identity_keys(identity: ObservabilityIdentity | None) -> dict[str, str]:
 
 
 def running_identity() -> ObservabilityIdentity | None:
-    """Who is emitting now: the bus running the execution, else the process's announcement."""
+    """Who is emitting now: the bus running the execution, else the process's announcement.
+
+        with running(observability):
+            running_identity()   ->  observability.identity        # the bus's
+        running_identity()       ->  the process identity, or None when none was announced
+
+    `None` too when the bus's identity cannot be resolved — never raises.
+    """
     source = _running.get()
     if source is not None:
         try:
@@ -197,7 +242,22 @@ def running_identity() -> ObservabilityIdentity | None:
 
 def execution_keys() -> dict[str, Any]:
     """What an execution says on its span and its GlitchTip event: its tenant, its user, and every
-    key of its context — the hidden ones and the trace's own plumbing left out."""
+    key of its context — the hidden ones and the trace's own plumbing left out.
+
+        context  {"tenant_id": "acme", "user_id": "u7", "company": 3, "trace_id": "4bf9…",
+                  "note": None}
+        execution_keys()   ->  {"tenant": "acme", "user_id": "u7", "company": 3,
+                                "execution_id": "…", "causation_id": "…",
+                                "correlation_id": "…"}
+
+    1. The execution's context (`execution_context`) and the keys the project hid.
+    2. `tenant`: the execution's tenant (`tenant`), when there is one.
+    3. `user_id`: who it acts for (`user_id`), when known.
+    4. Every other key of the context, its value as it is:
+       4.1 a key that is not text, the trace's plumbing (`trace_id`, `span_id`, `carrier`),
+           `tenant_id`/`tenant` — already said in 2 — or a `None` value is skipped.
+    Final: the keys the project hid (`hide_in_logs`) are dropped.
+    """
     context = execution_context()
     hidden = _hidden()
     keys: dict[str, Any] = {}
@@ -222,7 +282,14 @@ _metric_labels: list[str] = []
 def declare_metric_labels(keys: Iterable[Any]) -> tuple[str, ...]:
     """Context keys that go on every series of the process, beside `ALWAYS_ON_METRICS`. Each is
     a key (`"company"`) or a field reference (`of(BillingContext).company`). Declared before the
-    bus is built: a backend fixes a series' label keys when it creates the instrument."""
+    bus is built: a backend fixes a series' label keys when it creates the instrument.
+
+        declare_metric_labels(["company", of(BillingContext).company, "", "region"])
+            ->  ("company", "region")           # each key once; "" is not a key
+        declare_metric_labels(["company"])   ->  ()   # already declared
+
+    It answers what this call added; the declared keys stay for the whole process.
+    """
     added: list[str] = []
     for one in keys:
         key = getattr(one, "key", one)
@@ -234,7 +301,14 @@ def declare_metric_labels(keys: Iterable[Any]) -> tuple[str, ...]:
 
 def metric_label_keys() -> tuple[str, ...]:
     """Every key a series carries beside its own: the four always, then the declared ones — on
-    buses (`UseFramework(metric_labels=...)`) and in the settings (`metric_labels`)."""
+    buses (`UseFramework(metric_labels=...)`) and in the settings (`metric_labels`).
+
+        declare_metric_labels(["company"])           # settings: metric_labels: [region]
+        metric_label_keys()
+            ->  ("service.name", "service.version", "release", "tenant", "company", "region")
+
+    In that order, each key once — a declared key that is already there is not repeated.
+    """
     try:
         configured = tuple(getattr(settings, "metric_labels", None) or ())
     except Exception:
@@ -247,7 +321,21 @@ def metric_label_keys() -> tuple[str, ...]:
 
 
 def metric_labels(keys: tuple[str, ...]) -> dict[str, str]:
-    """The values of `keys` for a measurement taken now; a key with no value is left off."""
+    """The values of `keys` for a measurement taken now; a key with no value is left off.
+
+        metric_labels(("service.name", "release", "tenant", "company", "region"))
+            ->  {"service.name": "billing-sdk", "release": "billing-sdk:1.2.0",
+                 "tenant": "acme", "company": "3"}        # no region in the context
+
+    1. Who is emitting (`running_identity`) as its identity keys, the execution's context and
+       the keys the project hid.
+    2. For each key, in order:
+       2.1 a hidden key is skipped;
+       2.2 `service.name`, `service.version`, `release`: the identity's;
+       2.3 `tenant` and `user_id`: the execution's (`tenant`, `user_id`);
+       2.4 any other: the context's value as text (`_text`).
+    Final: the keys with a non-empty value.
+    """
     identity = identity_keys(running_identity())
     context = execution_context()
     hidden = _hidden()

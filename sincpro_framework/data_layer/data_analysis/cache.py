@@ -45,6 +45,10 @@ FRAME_TYPES = {
 
 @dataclass
 class _Held:
+    """One read held: the model it reads (what `invalidate` matches), the frame so far, and
+    how many pages it has read.
+    """
+
     model: type
     frame: DataFrame
     pages: int
@@ -93,15 +97,31 @@ def _page(
 
 
 class QueryCache:
+    """Reads kept as frames, by the repository's fingerprint of each, continued page by page
+    and let go least recently used first past `max_rows`.
+
+        cache = QueryCache(max_rows=1_000_000)
+        cache.fetch(repository, InvoiceLine, posted, pages=2)   ->  DataFrame, 2 pages read
+        cache.fetch(repository, InvoiceLine, posted, pages=3)   ->  the same, page 3 appended
+        len(cache)                                              ->  1   (one read held)
+    """
+
     def __init__(self, max_rows: int | None = None) -> None:
+        """`max_rows` bounds the rows held across every read; `None` holds everything until
+        `invalidate`.
+        """
         self.max_rows = max_rows
         self._held: OrderedDict[str, _Held] = OrderedDict()
         self._lock = threading.Lock()
 
     def __len__(self) -> int:
+        """How many reads are held — not rows."""
         return len(self._held)
 
     def _let_go_past_the_limit(self, kept: str) -> None:
+        """The reads used longest ago let go while the rows held exceed `max_rows` — never
+        `kept`, the read just used: a single read larger than the limit stays held on its own.
+        """
         if self.max_rows is None:
             return
         while sum(len(held.frame) for held in self._held.values()) > self.max_rows:
@@ -113,7 +133,13 @@ class QueryCache:
     def get(
         self, repository: IRepository, target: type, criteria: Criteria
     ) -> DataFrame | None:
-        """What is held for this read, which counts as using it — or nothing, and no read."""
+        """What is held for this read, which counts as using it — or nothing, and no read.
+
+            cache.get(repository, InvoiceLine, posted)   ->  the DataFrame held, now used last
+            cache.get(repository, InvoiceLine, unread)   ->  None — the repository not asked
+
+        The read is found by the repository's fingerprint, so another page of it finds it too.
+        """
         key = repository.fingerprint(target, criteria)
         with self._lock:
             held = self._held.get(key)
@@ -172,7 +198,13 @@ class QueryCache:
         return self._read(repository, target, criteria, None)
 
     def invalidate(self, target: type | None = None) -> None:
-        """Let go of what is held of `target` — of everything when not given."""
+        """Let go of what is held of `target` — of everything when not given.
+
+            cache.invalidate(InvoiceLine)   ->  None; its reads let go, the rest kept
+            cache.invalidate()              ->  None; nothing held
+
+        A read is of `target` when it was made on the same model — whatever its filter.
+        """
         with self._lock:
             if target is None:
                 self._held.clear()

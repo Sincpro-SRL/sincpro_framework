@@ -20,15 +20,23 @@ class AuthProviderContract:
     """Inherit, answer the four methods, and run with pytest."""
 
     def make_provider(self) -> AuthProvider:
+        """Answer the provider under test — a new one per call is fine; every test makes its
+        own."""
         raise NotImplementedError("answer the provider under test")
 
     def accepted(self) -> Credentials:
+        """Answer credentials the provider authenticates as someone, the same someone on every
+        call."""
         raise NotImplementedError("answer credentials the provider authenticates")
 
     def foreign(self) -> Credentials:
+        """Answer credentials of a kind the provider does not read — a bearer token for an API
+        key provider — for which it must answer `None`."""
         raise NotImplementedError("answer credentials of another kind — the provider's None")
 
     def rejected(self) -> Credentials:
+        """Answer credentials of the provider's own kind that fail — a revoked key, a bad
+        signature."""
         raise NotImplementedError("answer credentials of its kind that fail")
 
     def granted_permission(self) -> str | None:
@@ -36,11 +44,14 @@ class AuthProviderContract:
         return None
 
     def test_accepted_credentials_are_someone(self) -> None:
+        """Accepted credentials answer an identity, and not the anonymous one."""
         identity = self.make_provider().authenticate(self.accepted())
         if identity is None or identity.is_anonymous:
             raise AssertionError(f"the accepted credentials answered {identity!r}")
 
     def test_the_same_credentials_are_the_same_someone(self) -> None:
+        """Authenticating the same credentials twice answers the same `subject` — what audit
+        trails and per-user limits key on."""
         provider = self.make_provider()
         first, second = provider.authenticate(self.accepted()), provider.authenticate(
             self.accepted()
@@ -49,6 +60,8 @@ class AuthProviderContract:
             raise AssertionError("the same credentials answered two subjects")
 
     def test_foreign_credentials_are_not_its_kind(self) -> None:
+        """Credentials of another kind answer `None`, not a refusal — so a chain of providers
+        goes on to the next one."""
         answered = self.make_provider().authenticate(self.foreign())
         if answered is not None:
             raise AssertionError(
@@ -57,6 +70,17 @@ class AuthProviderContract:
             )
 
     def test_rejected_credentials_raise_unauthenticated(self) -> None:
+        """Failing credentials of its kind raise `Unauthenticated` — no other exception, and
+        never an identity nor `None`.
+
+            authenticate(rejected) raises Unauthenticated   ->  passes
+            authenticate(rejected) raises KeyError
+                ->  AssertionError("failing credentials raised KeyError: …")
+            authenticate(rejected) answers an identity, or None
+                ->  AssertionError("failing credentials were let through")
+
+        `Unauthenticated` is what every entrypoint answers 401 for; anything else is a 500.
+        """
         try:
             self.make_provider().authenticate(self.rejected())
         except exceptions.Unauthenticated:
@@ -69,6 +93,15 @@ class AuthProviderContract:
         raise AssertionError("failing credentials were let through")
 
     def test_nobody_is_granted_nothing(self) -> None:
+        """The anonymous identity is granted no permission — refused with `False` or with
+        `PermissionDenied`, either is accepted.
+
+            has_permission(Identity.anonymous(), "any.permission") -> False   ->  passes
+            has_permission(...) raises PermissionDenied                       ->  passes
+            has_permission(...) -> True   ->  AssertionError("an anonymous identity was …")
+
+        Any other exception the provider raises fails the test as it is.
+        """
         provider = self.make_provider()
         try:
             granted = provider.has_permission(Identity.anonymous(), "any.permission")
@@ -78,6 +111,15 @@ class AuthProviderContract:
             raise AssertionError("an anonymous identity was granted a permission")
 
     def test_what_the_identity_holds_is_granted(self) -> None:
+        """The accepted identity is granted `granted_permission()` — skipped when that is
+        `None`.
+
+            granted_permission() -> "billing.invoice.post"
+            has_permission(accepted identity, "billing.invoice.post") -> True   ->  passes
+            ... -> False   ->  AssertionError("the accepted identity was refused …")
+
+        The identity is the one `accepted()` authenticates as, with a provider of its own.
+        """
         permission = self.granted_permission()
         if permission is None:
             return
@@ -88,6 +130,15 @@ class AuthProviderContract:
             raise AssertionError(f"the accepted identity was refused {permission}")
 
     def test_a_batch_answers_one_decision_per_resource(self) -> None:
+        """`permitted` over three resources answers three decisions — one per resource, none
+        dropped or merged.
+
+            permitted(identity, "any.permission", (None, None, None)) -> [True, False, False]
+                ->  passes: three decisions, whatever each says
+            ... -> [False]   ->  AssertionError("permitted() answered a different number …")
+
+        Only the count is checked: which resources are permitted is the provider's to say.
+        """
         provider = self.make_provider()
         identity = provider.authenticate(self.accepted())
         assert identity is not None

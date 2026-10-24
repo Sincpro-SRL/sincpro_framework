@@ -28,14 +28,12 @@ from contextlib import contextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, overload
 
-from sincpro_framework.common.store.leases import Leases
-from sincpro_framework.context.adapters.stores import process_contexts
 from sincpro_framework.context.domain.execution import Execution
 from sincpro_framework.context.domain.keys import ContextKey, travelling
 from sincpro_framework.context.domain.level import EntrypointKind, Level, Origin
 from sincpro_framework.context.domain.node import REMOVED, ContextNode
-from sincpro_framework.context.domain.store import ContextStore
-from sincpro_framework.context.entrypoint.drafts import BY_USER, Drafts
+from sincpro_framework.context.entrypoint.drafts import Drafts
+from sincpro_framework.context.entrypoint.owner import BY_TENANT, BY_TENANT_AND_USER
 from sincpro_framework.context.infrastructure.shared import SharedValues
 from sincpro_framework.context.infrastructure.tree import (
     ROOT,
@@ -43,12 +41,14 @@ from sincpro_framework.context.infrastructure.tree import (
     current,
     current_execution,
     entered,
-    handed_on,
     recorrelated,
     scope_of,
     shared,
 )
 from sincpro_framework.sincpro_logger import logger
+from sincpro_framework.store.adapters.stores import in_memory_contexts
+from sincpro_framework.store.domain.store import ContextStore
+from sincpro_framework.store.infrastructure.leases import Leases
 
 if TYPE_CHECKING:
     from sincpro_framework.pipelines.runs import PipelineRuns
@@ -77,11 +77,23 @@ class Context(dict[Any, Any]):
         return dict(self)
 
     def __repr__(self) -> str:
+        """`Context(feature, {...})` — the node's level and what it sees."""
         return f"Context({self._node.level}, {dict(self)!r})"
 
     # --- writing as a mapping: the scope of the call ---------------------------------------------
 
     def _writing(self) -> ContextNode:
+        """The node a write as a mapping lands on.
+
+        Context: `context[key] = value` has always meant "for the whole call", so it lands on
+        the call's scope, not on the Feature's own node — `set` is the way to write that one.
+
+        1. A read-only context (`bus.current_context()`) refuses: `TypeError`.
+        2. The nearest entrypoint or scope — of this context's bus, when it has one.
+        3. Else the bus's own node, when it is this context's bus.
+        Final: else the process — warned, since a write outside every scope reaches every
+        flow.
+        """
         if not self._writable:
             raise TypeError(
                 "this context is read-only: open a scope with bus.context({...}), or write it "
@@ -100,6 +112,8 @@ class Context(dict[Any, Any]):
         return ROOT
 
     def __setitem__(self, key: Any, value: Any) -> None:
+        """`key` written on the scope of the call — every execution of that call reads it; a
+        `correlation_id` written renames the flow of the execution in play."""
         self._writing().values.set(key, value)
         super().__setitem__(key, value)
         self._identity_written(key, value)
@@ -125,6 +139,14 @@ class Context(dict[Any, Any]):
             )
 
     def __delitem__(self, key: Any) -> None:
+        """`key` taken away from the scope of the call — `KeyError` when the context does not
+        see it.
+
+        1. The scope said it itself and nothing above says it: the scope stops saying it.
+        2. Otherwise — inherited from above — the scope hides it with `REMOVED`, so the call
+           no longer sees it while the node above keeps it for everyone else.
+        Final: gone from this `Context`'s items too.
+        """
         if key not in self:
             raise KeyError(key)
         scope = self._writing()
@@ -136,19 +158,31 @@ class Context(dict[Any, Any]):
         super().__delitem__(key)
 
     def update(self, other: Any = (), **more: Any) -> None:  # type: ignore[override]
+        """Each key written as `context[key] = value` does — on the scope of the call."""
         for key, value in dict(other, **more).items():
             self[key] = value
 
     def __ior__(self, other: Any) -> "Context":  # type: ignore[override]
+        """`context |= {...}` — `update`, answering this same context."""
         self.update(other)
         return self
 
     def setdefault(self, key: Any, default: Any = None) -> Any:
+        """The value of `key`; when the context does not see it, `default` is written on the
+        scope of the call first."""
         if key not in self:
             self[key] = default
         return self[key]
 
     def pop(self, key: Any, *default: Any) -> Any:  # type: ignore[override]
+        """The value of `key`, taken away from the scope of the call as `del` does — the
+        default when the context does not see it, `KeyError` without one.
+
+            context.pop("note")          ->  "x", and the scope of the call no longer says it
+            context.pop("absent", None)  ->  None
+            context.pop("absent")        ->  KeyError("absent")
+
+        A value inherited from above is hidden from the scope, not deleted where it lives."""
         if key in self:
             value = self[key]
             del self[key]
@@ -158,13 +192,21 @@ class Context(dict[Any, Any]):
         raise KeyError(key)
 
     def popitem(self) -> tuple[Any, Any]:
+        """The last key seen and its value, taken away as `pop` does — `KeyError` when
+        empty."""
         if not self:
             raise KeyError("popitem(): the context is empty")
         key = next(reversed(self))
         return key, self.pop(key)
 
     def replace(self, values: Mapping[Any, Any]) -> None:
-        """The scope of the call now says exactly `values` — what `self.context = {...}` does."""
+        """The scope of the call now says exactly `values` — what `self.context = {...}` does.
+
+            context   {"tenant_id": "acme", "lang": "es"}      # tenant_id from the entrypoint
+            context.replace({"company": 3})
+            context   ->  {"company": 3}       # tenant_id and lang hidden, as REMOVED
+
+        Every key seen now and not in `values` is hidden on the scope — not deleted above."""
         scope = self._writing()
         hidden = {key: REMOVED for key in self if key not in values}
         scope.values.replace({**hidden, **values})
@@ -174,10 +216,19 @@ class Context(dict[Any, Any]):
     # --- writing this node ---------------------------------------------------------------------
 
     def clear(self) -> None:
+        """The scope of the call says nothing any more — `replace({})`: what is inherited is
+        hidden, not deleted above."""
         self.replace({})
 
     def set(self, key: Any, value: Any) -> None:
-        """This node says `key` — what it runs afterwards sees it; its caller and siblings do not."""
+        """This node says `key` — what it runs afterwards sees it; its caller and siblings do not.
+
+            use_context().set("pos_id", 3)     # in IssueInvoice's feature node
+            use_context()["pos_id"]   ->  3, here and in the use cases it calls
+            the caller, after it      ->  KeyError("pos_id")
+
+        A `correlation_id` written here renames the flow of the execution in play, as `[]=`
+        does; an `execution_id` or a `causation_id` is only warned about."""
         if not self._writable:
             self._writing()
         self._node.values.set(key, value)
@@ -185,7 +236,12 @@ class Context(dict[Any, Any]):
         self._identity_written(key, value)
 
     def unset(self, key: Any) -> None:
-        """This node stops saying `key`; what is above it shows through again."""
+        """This node stops saying `key`; what is above it shows through again.
+
+            entrypoint {"lang": "es"} → this node {"lang": "en"}
+            context.unset("lang")   ->  context["lang"]  ->  "es"
+
+        Unlike `del`, nothing is hidden: the context is read again from the chain."""
         if not self._writable:
             self._writing()
         self._node.values.unset(key)
@@ -195,55 +251,46 @@ class Context(dict[Any, Any]):
     # --- the tree -------------------------------------------------------------------------------
 
     def store(self, given: ContextStore | None = None) -> ContextStore | None:
-        """The store a keep or a restore uses: the one given, else the nearest kept under
-        `ContextStore` — in a scope, on a bus, in the process."""
+        """The `ContextStore` this context keeps in: the one given, else the nearest set — on
+        a scope, on a bus (`bus.store_context_in`), on the process (`store_context_in`) — else
+        `None`.
+
+        Context: drafts, pipeline runs, leases, caches and idempotency records live where the
+        context lives; each component asks here instead of being configured on its own.
+
+            use_context().store()                  ->  KeyValueContexts(...)    billing's Redis
+            use_context().store(InMemoryContexts())  ->  that one
+        """
         if given is not None:
             return given
         return self.get(ContextStore)
-
-    def _required_store(self, given: ContextStore | None) -> ContextStore:
-        found = self.store(given)
-        if found is None:
-            raise LookupError(
-                "no ContextStore to keep or restore with: pass store=..., or set one where it "
-                "should apply — use_context().root.set(ContextStore, store) for the process, "
-                "bus.context_store(store) for a bus"
-            )
-        return found
-
-    def restored(
-        self, keys: "str | list[str] | None", store: ContextStore | None = None
-    ) -> dict[str, Any]:
-        """What a store kept under each of `keys`, merged in order — the last one wins."""
-        if not keys:
-            return {}
-        found = self._required_store(store)
-        merged: dict[str, Any] = {}
-        for key in [keys] if isinstance(keys, str) else keys:
-            kept = found.restore(key)
-            if kept is None:
-                logger.warning(
-                    f"the context '{key}' was restored, but nothing is kept under it"
-                )
-                continue
-            merged.update(kept)
-        return merged
 
     @contextmanager
     def scoped(
         self,
         values: Mapping[Any, Any] | None = None,
-        restore: "str | list[str] | None" = None,
-        store: ContextStore | None = None,
         kind: EntrypointKind | None = None,
     ) -> Generator["Context", None, None]:
-        """A child scope for the block: `values` over what this node sees — and, first, what a
-        store kept under each key of `restore`, in order.
+        """A child scope for a `with` block: `values` over what this node sees, for the block
+        only.
 
-        Opened from any level, the block sees that level only — what the nodes under it said is
-        left out — and stays in the execution in play: `use_context().parent.scoped()`,
-        `use_context(Level.ENTRYPOINT).scoped()`."""
-        given = {**self.restored(restore, store), **(values or {})}
+        Context: a piece of work inside a use case — one tenant of a loop, one line of a batch
+        — needs values of its own without touching what the caller sees; the scope ends with
+        the block. Opened from any level, the block sees that level only — what the nodes
+        under it said is left out — and stays in the execution in play.
+
+            with use_context().scoped({"tenant_id": "acme"}) as scope:
+                scope["tenant_id"]                          ->  "acme"
+            use_context().get("tenant_id")                  ->  None      outside the block
+            with use_context(Level.ENTRYPOINT).scoped():    the entrypoint's view, nothing under it
+
+        1. The level: a scope under the flow's entrypoint, or the entrypoint itself when none
+           is open — `kind` naming the entrance, `DIRECT` when unsaid.
+        2. The node, carrying the execution in play, so its spans and metrics stay one
+           execution.
+        Final: the node entered for the block, answered as a `Context`.
+        """
+        given = dict(values or {})
         level = Level.SCOPE if self._node.nearest(Level.ENTRYPOINT) else Level.ENTRYPOINT
         if level is Level.ENTRYPOINT:
             kind = kind or EntrypointKind.DIRECT
@@ -256,6 +303,7 @@ class Context(dict[Any, Any]):
 
     @property
     def level(self) -> Level:
+        """The level of the node this context is — `Level.FEATURE` in a Feature."""
         return self._node.level
 
     @property
@@ -266,10 +314,13 @@ class Context(dict[Any, Any]):
 
     @property
     def label(self) -> str:
+        """What the node is named after: the bus, the use case or the hook."""
         return self._node.label
 
     @property
     def parent(self) -> "Context | None":
+        """The node right above — `None` above the global (or the process when nothing is
+        shared)."""
         parent = self._node.parent
         return None if parent is None else Context(parent, self._owner)
 
@@ -280,26 +331,34 @@ class Context(dict[Any, Any]):
 
     @property
     def root(self) -> "Context":
+        """The process level — where its defaults and flags live (`root.share(store)` shares
+        it across replicas)."""
         return Context(ROOT, self._owner)
 
     @property
     def bus(self) -> "Context | None":
+        """The bus's node — what it publishes for every execution of its own."""
         return self.at(Level.BUS)
 
     @property
     def entrypoint(self) -> "Context | None":
+        """The entrypoint of the flow — what the entrance knew: who, which tenant, which
+        kind."""
         return self.at(Level.ENTRYPOINT)
 
     @property
     def application(self) -> "Context | None":
+        """The node of the nearest ApplicationService execution — `None` outside one."""
         return self.at(Level.APPLICATION)
 
     @property
     def feature(self) -> "Context | None":
+        """The node of the nearest Feature execution — `None` outside one."""
         return self.at(Level.FEATURE)
 
     @property
     def hook(self) -> "Context | None":
+        """The node of the repository hook running — `None` outside one."""
         return self.at(Level.HOOK)
 
     # --- beyond the process ----------------------------------------------------------------------
@@ -331,7 +390,14 @@ class Context(dict[Any, Any]):
     ) -> None:
         """The process level shared by every replica through `store` — read locally, read again
         when its version moved, at most once per `every`; a write is kept for the others. Only the
-        root is shared: a flow travels with its message."""
+        root is shared: a flow travels with its message.
+
+            use_context().root.share(KeyValueContexts(redis))
+                ->  ROOT reads and writes through "process" in that store, seeded with what
+                    the process already said
+            use_context().share(store)   ->  TypeError, from any node but the root
+
+        The root's values are replaced by `SharedValues` for the life of the process."""
         if self._node is not ROOT:
             raise TypeError(
                 f"only the process level is shared across replicas, not a {self._node.level} — "
@@ -341,29 +407,21 @@ class Context(dict[Any, Any]):
         super().clear()
         super().update(ROOT.flattened())
 
-    def keep(
-        self, key: str, ttl: timedelta | None = None, store: ContextStore | None = None
-    ) -> None:
-        """What this node sees, kept under `key` — with the flow's chain, so whoever restores it
-        continues the flow."""
-        found = self._required_store(store)
-        found.keep(key, handed_on(_named(self)), ttl)
-
     def _keeping(self, given: ContextStore | None) -> ContextStore:
         """Where the drafts and the pipeline runs are kept: the store given, else the nearest
         `ContextStore` — a bus's, the process's — else this process's memory, said once."""
         found = self.store(given)
-        return found if found is not None else process_contexts()
+        return found if found is not None else in_memory_contexts()
 
     def drafts(
-        self, by: Sequence[str] = BY_USER, store: ContextStore | None = None
+        self, by: Sequence[str] = BY_TENANT_AND_USER, store: ContextStore | None = None
     ) -> Drafts:
         """The drafts of whoever this context says — its tenant and its user by default, any keys
         of it with `by` (`["session_id"]`) — kept where the context is kept."""
         return Drafts(self._keeping(store), self, by)
 
     def pipelines(
-        self, by: Sequence[str] = (), store: ContextStore | None = None
+        self, by: Sequence[str] = BY_TENANT, store: ContextStore | None = None
     ) -> "PipelineRuns":
         """The runs of the pipelines of whoever this context says — its tenant, and the keys of
         `by` — kept where the context is kept.
@@ -386,11 +444,13 @@ def _named(values: Mapping[Any, Any]) -> dict[str, Any]:
 
 
 @overload
-def use_context() -> Context: ...
+def use_context() -> Context:
+    """The context in play."""
 
 
 @overload
-def use_context(level: Level) -> Context | None: ...
+def use_context(level: Level) -> Context | None:
+    """The node of `level` above the one in play — `None` when there is none."""
 
 
 def use_context(level: Level | None = None) -> Context | None:

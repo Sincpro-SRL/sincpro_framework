@@ -177,6 +177,7 @@ def _after(records: list[Any], keys: CursorKeys, sorts: tuple[Sort, ...]) -> lis
     """
 
     def beyond(record: Any) -> bool:
+        """Whether `record` comes after the cursor — the first key that differs decides."""
         for value, sort in zip(keys.keys, sorts):
             mine = getattr(record, sort.field)
             if mine == value:
@@ -197,6 +198,12 @@ def _by(values: dict[str, Any]) -> Criteria:
 
 
 def _flattened_buckets(buckets: list[Bucket], path: tuple = ()) -> list[tuple[tuple, Bucket]]:
+    """The leaves of a bucket tree, each with the path of group values that leads to it — what
+    `group_by` turns into one flat row per combination.
+
+        [Bucket(value="BO", groups=[Bucket(value="LPZ"), Bucket(value="SCZ")])]
+        ->  [(("BO", "LPZ"), <LPZ bucket>), (("BO", "SCZ"), <SCZ bucket>)]
+    """
     flat = []
     for bucket in buckets:
         here = path + (bucket.value,)
@@ -207,6 +214,11 @@ def _flattened_buckets(buckets: list[Bucket], path: tuple = ()) -> list[tuple[tu
 
 
 def _measured(rows: list[Any], grouping: Grouping) -> dict[str, Any]:
+    """The grouping's measures over the rows of one group, a `None` left out the way SQL's
+    aggregates skip a NULL.
+
+        rows with amount 10, None, 30; measures={"total": sum of amount}  ->  {"total": 40}
+    """
     return {
         name: _measure_of(
             [
@@ -223,6 +235,18 @@ def _measured(rows: list[Any], grouping: Grouping) -> dict[str, Any]:
 def _page_of_ids(
     rows: list[Any], criteria: Criteria, meta: Meta
 ) -> tuple[list[Any], str | None]:
+    """The ids of the first page of a group, and the cursor to the next — what a bucket
+    carries so a screen opens a group without a second query.
+
+    Context: only filled when the criteria asked for a page; otherwise a bucket answers counts
+    and measures alone, as the engine does.
+
+    1. No page asked: no ids, no cursor.
+    2. The criteria's order (or the aggregate's default), the identity appended as the last
+       tie-breaker so the cursor names exactly one row.
+    3. The rows sorted and cut to `criteria.limit`.
+    Final: the ids kept, and a cursor from the last one when more rows remain.
+    """
     if not criteria.pagination.asked:
         return [], None
     sorts = criteria.order or parse_order(meta.default_order)
@@ -239,6 +263,9 @@ def _page_of_ids(
 
 
 def _bucket_key(bucket: Bucket, name: str) -> Any:
+    """What a group is sorted by for one key of the grouping's order: `count`, one of its
+    measures, or else its own value as text with nothing last.
+    """
     if name == "count":
         return bucket.count
     if name in bucket.measures:
@@ -253,6 +280,16 @@ def _by_value(bucket: Bucket) -> tuple[bool, Any]:
 
 
 def _ordered_buckets(buckets: list[Bucket], grouping: Grouping) -> list[Bucket]:
+    """The groups of one level in the grouping's order, cut to its page — the `ORDER BY` and
+    `LIMIT/OFFSET` the database applies to a `GROUP BY`.
+
+    1. No order asked: by the group's own value — numbers as numbers, text as text, nothing
+       last; values that cannot be compared with each other fall back to their text.
+    2. An order asked: one stable sort per key, from the last to the first, so the first key
+       wins — by `count`, a measure, or the value.
+    3. No page on the grouping: every group.
+    Final: the groups of the page asked for.
+    """
     if not grouping.order:
         try:
             buckets.sort(key=_by_value)
@@ -340,6 +377,7 @@ class _Measured:
     """What `having` is evaluated against: the numbers a group folded, as attributes."""
 
     def __init__(self, **values: Any) -> None:
+        """Each measure by name: `_Measured(total=120, count=3).total  ->  120`."""
         self.__dict__.update(values)
 
 
@@ -349,9 +387,11 @@ class _Lenient:
     had was already dropped before the filter ran."""
 
     def __init__(self, record: Any) -> None:
+        """`record` is read through, untouched."""
         self._record = record
 
     def __getattr__(self, name: str) -> Any:
+        """The record's field, or `None` for one it does not have."""
         return getattr(self._record, name, None)
 
 
@@ -377,7 +417,15 @@ class MemoryRepository(
     ) -> None:
         """`actor` answers who is writing, for an `AuditedMixin` aggregate — the same argument
         `Database` takes and read the same way, once per save. Without one those fields stay
-        `None`, which is also what the engine does."""
+        `None`, which is also what the engine does.
+
+            repository = MemoryRepository(Invoice(id="F-1"), Invoice(id="F-2"), hooks=hooks)
+            repository.get(Invoice, "F-1")     ->  Invoice(id="F-1")
+            MemoryRepository(hooks)            ->  ProgrammingError, write it as `hooks=`
+
+        The records are seeded as they are, with no version check; each repository keeps its
+        own unit of work per context and its own row locks.
+        """
         refuse_wiring_as_a_record(records)
         self._actor = actor
         super().__init__(hooks)
@@ -431,7 +479,23 @@ class MemoryRepository(
     @contextmanager
     def context(self) -> Generator[Self]:
         """One unit of work: committed when the block ends — a change never saved put back —
-        every record it touched put back when it raises. A block inside another joins it."""
+        every record it touched put back when it raises. A block inside another joins it.
+
+            with repository.context() as unit:
+                invoice = unit.get(Invoice, "F-1"); invoice.total = 900; unit.save(invoice)
+            repository.get(Invoice, "F-1").total   ->  900
+            with repository.context() as unit:
+                unit.get(Invoice, "F-1").total = 1                     never saved
+            repository.get(Invoice, "F-1").total   ->  900, put back and named in the log
+
+        1. A unit already in play in this context: the block joins it, nothing more.
+        2. A new unit, set as the one in play.
+        3. The block raises: every record it touched put back as it was, its row locks
+           released, the unit let go of, its `after_rollback` callbacks run — and the error
+           raised again.
+        4. The block ends: each record read but never saved put back, and logged.
+        Final: its row locks released, the unit let go of, its `after_commit` callbacks run.
+        """
         if self._units.get() is not None:
             yield self
             return
@@ -459,6 +523,13 @@ class MemoryRepository(
         ran(unit.after_commit, "after_commit")
 
     def _registered(self, moment: str) -> list[Callable[[], Any]]:
+        """The callbacks the unit of work in play runs at `moment` — `after_commit` or
+        `after_rollback`.
+
+        Context: outside `context()` there is no commit to wait for, so registering one is a
+        mistake in the caller, refused as a `ProgrammingError` rather than run at once
+        silently.
+        """
         unit = self._units.get()
         if unit is None:
             raise exceptions.ProgrammingError(
@@ -490,6 +561,13 @@ class MemoryRepository(
         """What may be asked about this aggregate, read off its annotations — and, once the store
         holds a record of a subclass of it, the fields that subclass adds, each marked with it as
         its owner and absent on a record that is not one, as the database does for an extension.
+
+            repository.definition(Move).fields.keys()   ->  {"id", "number", "total", …}
+            repository.add(MoveDelivery(id=7, route="R1"))
+            repository.definition(Move).fields["route"].owner   ->  "MoveDelivery"
+
+        An added field is described as nullable whatever its type says; a field two held
+        subclasses add is described by the shallowest one.
         """
         meta = describe_class(aggregate, identity_name(aggregate))
         inherited = set(meta.fields)
@@ -606,6 +684,13 @@ class MemoryRepository(
         return rows, dropped + unanswerable
 
     def _ordering(self, aggregate: type, criteria: Criteria) -> tuple[Sort, ...]:
+        """The sorts a read applies: the criteria's, or the aggregate's default order, each
+        checked as orderable, with the identity appended as the last tie-breaker unless
+        already there — the same total order the engine gives, so a cursor names exactly one
+        row.
+
+            Criteria(order="-issued_at")  ->  (Sort("issued_at", desc), Sort("id", desc))
+        """
         meta = self.definition(aggregate)
         sorts = criteria.order or parse_order(meta.default_order)
         self._refuse_unanswerable(aggregate, [sort.field for sort in sorts])
@@ -616,6 +701,9 @@ class MemoryRepository(
         return sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
 
     def _events_about(self, aggregate: type, identity: Any) -> list[DomainEvent]:
+        """Every domain event stored about one aggregate — its type's name and its id — which
+        is what an event-sourced aggregate is rebuilt from.
+        """
         return [
             event
             for event in self._rows(DomainEvent)
@@ -635,6 +723,18 @@ class MemoryRepository(
 
         `detail` is checked against the definition exactly as `search` checks a specification.
         The record held here already carries its relations, so nothing more is resolved.
+
+            repository.get(Invoice, "F-1")      ->  Invoice(id="F-1", total=500)
+            repository.get(Invoice, "gone")     ->  None
+            repository.get(Partner, archived)   ->  None
+            repository.get(Move, 7)             ->  MoveDelivery(id=7, …), as it was saved
+
+        1. `detail`, when given, checked against the aggregate's definition.
+        2. An event-sourced aggregate is rebuilt from the events stored about it.
+        3. The record under that identity, stored as the class or as an extension of it.
+        4. `None` for an archived record, or one `skip_locked` passed over; the claim asked
+           for is taken — or refused outside a unit — even when nothing was found.
+        Final: the record with its computed fields, handed back through `after_read`.
         """
         aggregate, _holder = model_and_collection(target)
         if detail is not None:
@@ -662,6 +762,18 @@ class MemoryRepository(
     def browse[T](self, target: type[T], ids: Sequence[Any]) -> EntityCollection[T]: ...
 
     def browse(self, target: type, ids: Sequence[Any]) -> Any:
+        """The records with these ids, in the order the ids were given, the ones not held left
+        out.
+
+        What this one does differently: it reads the dict directly — no filter runs, so an
+        archived record is handed back like any other — and `after_read` fires for each
+        record.
+
+            repository.browse(Invoice, ["F-5", "F-1", "gone"])
+                ->  EntityCollection([F-5, F-1]), count 2 exact
+
+        Each record is handed back with its computed fields.
+        """
         aggregate, holder = model_and_collection(target)
         note_read(aggregate)
         stored = {
@@ -706,7 +818,24 @@ class MemoryRepository(
         nowait: bool = False,
     ) -> Any:
         """The page this criteria asks for, with its cursor, its count and what was dropped —
-        claimed by the unit of work in play with `for_update`."""
+        claimed by the unit of work in play with `for_update`.
+
+            seven invoices, Criteria(pagination=Pagination(limit=3))
+            repository.search(Invoice, criteria)
+                ->  EntityCollection(3 items, cursor="…", count=Count(7, exact=True))
+            repository.search(Invoice, criteria.resuming_from(that.cursor))
+                ->  the next 3, and the last page holds 1 with no cursor
+
+        1. The records the criteria matches, and what it dropped — not handed back yet.
+        2. The claim asked for, taken on every match — `skip_locked` leaves out the ones
+           another unit holds.
+        3. Ordered by the criteria's order, the identity breaking ties.
+        4. Resumed past the cursor's keys when it carries one; then the offset skipped.
+        5. The page: up to `limit` records, each handed back through `after_read`; more past
+           it means a cursor from the last one.
+        Final: the collection `target` names — the count exact unless none was asked, the
+        definition only when `criteria.meta` asks.
+        """
         criteria = criteria or Criteria()
         aggregate, holder = model_and_collection(target)
         # Matched without reading: the page is cut first, and only what the caller is handed
@@ -754,7 +883,14 @@ class MemoryRepository(
     ) -> EntityCollection[T]: ...
 
     def fetch_all(self, target: type, criteria: Criteria | None = None) -> Any:
-        """Every record the criteria matches, as one complete collection."""
+        """Every record the criteria matches, as one complete collection.
+
+            over_100 = Criteria(where={"field": "total", "operator": ">", "value": 100})
+            repository.fetch_all(Invoice, over_100)
+                ->  EntityCollection(4 items, no cursor, count=Count(4, exact=True))
+
+        Ordered as `search` orders them; no page and no cursor, whatever the criteria asks.
+        """
         criteria = criteria or Criteria()
         aggregate, holder = model_and_collection(target)
         rows, dropped = self._matching(aggregate, criteria)
@@ -780,6 +916,17 @@ class MemoryRepository(
     ) -> Iterator[EntityCollection[T]]: ...
 
     def stream(self, target: type, criteria: Criteria | None = None) -> Iterator[Any]:
+        """Every page of the criteria, one `search` after another, until a page has no cursor.
+
+        What this one does differently: nothing is held open between pages — each page is a
+        new `search` resumed from the last cursor, so a record written meanwhile may appear in
+        a later page as it would with keyset pagination on the engine.
+
+            seven invoices, Criteria(pagination=Pagination(limit=3))
+            [len(page) for page in repository.stream(Invoice, criteria)]   ->  [3, 3, 1]
+
+        A generator: each page is read when the caller asks for the next one.
+        """
         criteria = criteria or Criteria()
         while True:
             page = self.search(target, criteria)
@@ -789,11 +936,17 @@ class MemoryRepository(
             criteria = criteria.resuming_from(page.cursor)
 
     def count(self, target: type, criteria: Criteria | None = None) -> Count:
+        """How many records the criteria matches — always exact here, since every record is
+        already in memory. No `after_read` fires: nothing is handed back.
+        """
         aggregate, _holder = model_and_collection(target)
         rows, _ = self._matching(aggregate, criteria or Criteria(), handed_back=False)
         return Count(value=len(rows), exact=True)
 
     def exists(self, target: type, criteria: Criteria | None = None) -> bool:
+        """Whether the criteria matches anything — a `count` above zero, there being no
+        cheaper way over a dict.
+        """
         return self.count(target, criteria).value > 0
 
     @overload
@@ -824,6 +977,9 @@ class MemoryRepository(
         skip_locked: bool = False,
         nowait: bool = False,
     ) -> Any:
+        """The first record of the criteria's order, or `None` — the first item of the
+        `search` page, claimed with the same flags.
+        """
         return self.search(target, criteria, for_update, skip_locked, nowait).first()
 
     @overload
@@ -855,7 +1011,17 @@ class MemoryRepository(
         nowait: bool = False,
     ) -> Any:
         """The single record the criteria matches: none is `AggregateNotFound`, several a
-        `ProgrammingError`."""
+        `ProgrammingError`.
+
+            code_1010 = Criteria(where={"field": "code", "operator": "=", "value": "1010"})
+            repository.one(Account, code_1010)   ->  Account(code="1010", …)
+            no match                             ->  AggregateNotFound("no Account matches …")
+            two matches                          ->  ProgrammingError("expected exactly one
+                                                     record, found 2")
+
+        The claim asked for is taken on every match before the count is judged; a match
+        `skip_locked` passed over does not count.
+        """
         found = self.fetch_all(target, criteria)
         claimed = self._claimed(list(found.items), for_update, skip_locked, nowait)
         found = found.filtered(lambda one: any(one is kept for kept in claimed))
@@ -893,7 +1059,17 @@ class MemoryRepository(
         nowait: bool = False,
         **values: Any,
     ) -> Any:
-        """One record by a natural key: the values that identify it besides its id."""
+        """One record by a natural key: the values that identify it besides its id.
+
+            repository.get_by(Account, code="1010")   ->  Account(code="1010", …)
+            repository.get_by(Account, code="9999")   ->  None
+            repository.get_by(Account, kind="asset")  ->  ProgrammingError("3 records answer
+                                                          to kind='asset'; a natural key …")
+            repository.get_by(Account)                ->  InvalidCriteria, no value given
+
+        Every value must hold — an equality per field — and the claim asked for is taken on
+        the matches before they are counted.
+        """
         if not values:
             raise exceptions.InvalidCriteria(
                 "get_by needs at least one value, e.g. code='1010'"
@@ -909,6 +1085,12 @@ class MemoryRepository(
         return found.first()
 
     def pluck(self, target: type, field: str, criteria: Criteria | None = None) -> list[Any]:
+        """One field of every match, in the criteria's order. The field is checked against the
+        definition first, so a typo is refused rather than answered with `None`s; no
+        `after_read` fires, as the engine builds no aggregate either.
+
+            repository.pluck(Account, "code")  ->  ["1010", "2010", "3010"]
+        """
         aggregate, _holder = model_and_collection(target)
         self.definition(aggregate).field(field)
         rows, _ = self._matching(aggregate, criteria or Criteria(), handed_back=False)
@@ -920,6 +1102,11 @@ class MemoryRepository(
     def distinct(
         self, target: type, field: str, criteria: Criteria | None = None
     ) -> list[Any]:
+        """The values that field takes across the matches, each once, sorted by their text
+        with `None` last.
+
+            repository.distinct(Account, "kind")  ->  ["asset", "liability", None]
+        """
         seen = []
         for value in self.pluck(target, field, criteria):
             if value not in seen:
@@ -933,6 +1120,17 @@ class MemoryRepository(
 
         in      Dataset, None, rows=("sum", "row_count")
         out     {'rows': 4012933}
+
+            repository.measures(Invoice, None, total=("sum", "total"), top=("max", "total"))
+                ->  {"total": Decimal("1250.00"), "top": Decimal("900.00")}
+            repository.measures(Invoice)   ->  InvalidCriteria, no measure asked
+
+        1. Refused with no measure.
+        2. The aggregate's definition, and the records the criteria matches — not handed
+           back, so no `after_read` fires.
+        3. Per measure: read as `Measure.read` writes it, its field checked on the definition,
+           and its function folded over the field's values — `None`s left out, as SQL does.
+        Final: the answers by the caller's names.
         """
         if not measures:
             raise exceptions.InvalidCriteria(
@@ -983,6 +1181,13 @@ class MemoryRepository(
     def group_by(
         self, target: type, by: Sequence[str], criteria: Criteria | None = None
     ) -> list[dict[str, Any]]:
+        """The matches folded by these fields, one flat row per combination with its count.
+
+            repository.group_by(Invoice, ["state", "currency"])
+            ->  [{"state": "open", "currency": "BOB", "count": 12}, …]
+
+        The same tree `group_by_levels` builds, with every leaf flattened to a row.
+        """
         criteria = criteria or Criteria()
         levels = tuple(Level(field=field) for field in by)
         buckets = self._grouped(target, criteria, Grouping(group_by=levels))
@@ -994,6 +1199,11 @@ class MemoryRepository(
     # ---------------------------------------------------------------- writing
 
     def group_by_levels(self, target: type, criteria: Criteria | None = None) -> list[Bucket]:
+        """The matches folded as a tree, the way `criteria.grouping` describes it — levels,
+        measures, having, order, page and filled axes — answered in memory over the records
+        held. A grouping that names no level is refused: it would be a count, and asking for
+        it as a grouping is a mistake. A date grain is refused too (see `_grouped`).
+        """
         criteria = criteria or Criteria()
         if not criteria.grouping.asked:
             raise exceptions.InvalidCriteria(
@@ -1003,6 +1213,9 @@ class MemoryRepository(
         return self._grouped(target, criteria, criteria.grouping)
 
     def _kept(self, event: Any) -> bool:
+        """Whether this event is already held — by its id, under any class it is an instance
+        of — so an event recorded twice is written once.
+        """
         return any(
             event.id in held for kind, held in self._stored.items() if isinstance(event, kind)
         )
@@ -1059,6 +1272,18 @@ class MemoryRepository(
             record.updated_by = acting
 
     def _save_one(self, record: Any) -> None:
+        """One record written into the store, with what the engine stamps on a save.
+
+        1. The block in play, if any, keeps the record as it was and marks it saved.
+        2. For an `Entity`:
+           2.1 another object held under the same id with a different version is refused as
+               `StaleAggregate` — somebody saved since this one was read;
+           2.2 `updated_at` stamped now on an update, or set to `created_at` on a first save
+               that has none;
+           2.3 `created_by` / `updated_by` stamped from `actor`;
+           2.4 the version raised by one.
+        Final: the record itself held under its id — the caller's object, not a copy.
+        """
         stored = self._stored.setdefault(type(record), {})
         identity = identity_of(record)
         self._touching(type(record), identity)
@@ -1096,6 +1321,14 @@ class MemoryRepository(
         third aggregate is refused left the first two written and their `after_save` already
         fired, while the engine wrote nothing at all. A test against this double would see
         records that production never stored.
+
+            repository.save(Invoice(id="F-1"))            ->  None; stored at version 1
+            invoice = repository.get(Invoice, "F-1"); invoice.total = 900
+            repository.save(invoice)                      ->  None; version 2, updated_at now
+            repository.save(stale_copy_at_version_1)      ->  StaleAggregate
+
+        What the aggregates recorded is kept beside them, each event once, between the writes
+        and the `after_save` hooks.
         """
         refuse_writing_in_preview("save")
         self._refuse_reentrant_write()
@@ -1107,6 +1340,9 @@ class MemoryRepository(
         self._after_writes(records, newness)
 
     def _forget(self, record: Any) -> None:
+        """One record deleted from the store, the block in play keeping it as it was so a
+        rollback puts it back.
+        """
         self._touching(type(record), identity_of(record))
         self._stored.setdefault(type(record), {}).pop(identity_of(record), None)
 
@@ -1114,6 +1350,12 @@ class MemoryRepository(
         """Deletes one aggregate or several, archivable or not.
 
         Three passes, for the reason `save` gives: a batch is refused whole or applied whole.
+
+            repository.remove([invoice_1, invoice_2])   ->  None; neither held any more
+            repository.get(Invoice, invoice_1.id)       ->  None
+
+        No cascade here: the children a root owns stay held unless removed with it. Inside
+        `context()` a raise puts the removed back.
         """
         refuse_writing_in_preview("remove")
         self._refuse_reentrant_write()
@@ -1155,6 +1397,19 @@ class MemoryRepository(
         """Gives a stored record the class of an extension: the record held is replaced by an
         instance of `extension` with the same fields, and the fields it adds at their defaults. A
         store of objects keeps what a class adds on the object, so there is no row to insert.
+
+            repository.extend(move, MoveDelivery)   ->  None
+            repository.get(Move, move.id)           ->  MoveDelivery(id=…, route=None)
+            repository.extend(unsaved_move, MoveDelivery)   ->  None, nothing held to extend
+
+        1. The store holding the record, as its class or an extension of it — nothing done
+           when none holds it, or when it already is the extension.
+        2. An instance of `extension` built from the record's init fields, the rest of the
+           extension's at their defaults.
+        3. Every field of the record copied onto it, the ones `__init__` does not take too.
+        4. Both keys marked touched, so a unit of work in play can put them back.
+        Final: the record taken out of its class's store and the instance kept under the
+        extension, same identity.
         """
         held = self._held_as(type(record))
         identity = identity_of(record)
@@ -1180,7 +1435,15 @@ class MemoryRepository(
         return 0
 
     def archive(self, record: Any) -> None:
-        """Stamps when it left and keeps the row — one aggregate or several."""
+        """Stamps when it left and keeps the row — one aggregate or several.
+
+            repository.archive(partner)          ->  None; partner.archived_at set, still held
+            repository.get(Partner, partner.id)  ->  None, an archived record answers nothing
+            repository.archive(invoice_line)     ->  ProgrammingError, not `ArchivableMixin`
+
+        Each `before_archive` and `archive()`, then one `save` of all — with its hooks and
+        version check — then each `after_archive`, as the engine does.
+        """
         refuse_writing_in_preview("archive")
         self._refuse_reentrant_write()
         records = records_of(record)
@@ -1210,7 +1473,22 @@ class MemoryRepository(
 
     def update_all(self, target: type, criteria: Criteria, values: Mapping[str, Any]) -> int:
         """The engine's `update_all`, over the records held: values set, version raised,
-        `updated_at` stamped, no hook."""
+        `updated_at` stamped, no hook.
+
+            expired = Criteria(where={"field": "state", "operator": "=", "value": "expired"})
+            repository.update_all(Session, expired, {"state": "closed"})   ->  3
+            repository.update_all(Session, expired, {"version": 9})
+                ->  ProgrammingError("update_all cannot set version on Session: …")
+
+        1. Refused in a preview and inside another write's hook.
+        2. Refused when a value names something that is not a field, a relation, or one the
+           framework keeps — the identity, `created_at`, `version`, `updated_at`.
+        3. The records the filter reaches — refused for a page, or a condition the aggregate
+           cannot answer.
+        4. Each one marked touched, its values set, and an entity's version raised and
+           `updated_at` stamped with one moment for all.
+        Final: how many records it changed.
+        """
         refuse_writing_in_preview("update_all")
         self._refuse_reentrant_write()
         model, _ = model_and_collection(target)
@@ -1240,7 +1518,13 @@ class MemoryRepository(
         return len(rows)
 
     def remove_all(self, target: type, criteria: Criteria) -> int:
-        """The engine's `remove_all`, over the records held: no hook, no cascade."""
+        """The engine's `remove_all`, over the records held: no hook, no cascade.
+
+            expired = Criteria(where={"field": "state", "operator": "=", "value": "expired"})
+            repository.remove_all(Session, expired)   ->  3, none of them held any more
+
+        Refused for a page, or a condition the aggregate cannot answer — as the engine.
+        """
         refuse_writing_in_preview("remove_all")
         self._refuse_reentrant_write()
         model, _ = model_and_collection(target)
@@ -1255,7 +1539,29 @@ class MemoryRepository(
         """The engine's `upsert`, over the records held: one per key, the last one; a held
         record with the same key is overwritten and its version raised, a new one is kept as a
         copy — the records handed in are not refreshed, as the engine leaves them. Answers the
-        same counts the engine does."""
+        same counts the engine does.
+
+            repository.upsert([Rate("USD", 6.96), Rate("EUR", 7.5)], on=["currency"])
+                ->  Upserted(written=2, skipped=0)        both new, kept at version 1
+            repository.upsert([Rate("USD", 6.97)], on=["currency"])
+                ->  Upserted(written=1, skipped=0)        the USD held overwritten, version 2
+            repository.upsert([Rate("USD", 6.98)], on=["currency"], update=[])
+                ->  Upserted(written=0, skipped=1)        a conflict with nothing to overwrite
+
+        1. Refused in a preview, inside another write's hook, and when `update` names a field
+           the framework keeps.
+        2. One record per key, the last one — a key with a `None` in it is its own.
+        3. `before_save` for each record kept.
+        4. Per record:
+           4.1 refused when `on` or `update` names a field its class does not have;
+           4.2 the held record with the same key values — none when the key has a `None`;
+           4.3 none held but its identity taken by another key: `DuplicateAggregate`;
+           4.4 none held: a copy kept, at version 1 when it had none — written;
+           4.5 held: the fields to overwrite — the ones named, or every one but the key, the
+               framework's own, `archived_at` and `created_by` — set on it, its version raised
+               and `updated_at` stamped; written, unless there is nothing to overwrite.
+        Final: `after_save` for each, and how many were written and skipped.
+        """
         refuse_writing_in_preview("upsert")
         self._refuse_reentrant_write()
         records = records_of(record)

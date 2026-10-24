@@ -11,13 +11,19 @@ import time
 from collections.abc import Callable
 from datetime import timedelta
 
-from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework.store import KeyValueStore
 
 POLL_SECONDS = 0.005
 
 
 def awaited[T](read: Callable[[], T | None], within: timedelta) -> T | None:
-    """What `read` answers once it answers something, or `None` after `within`."""
+    """What `read` answers once it answers something, or `None` after `within`.
+
+        awaited(lambda: store.get("9f2c…"), timedelta(milliseconds=200))
+            ->  b"…", as soon as the leader kept it
+            ->  None, when nothing was kept within 200 ms — the caller computes itself
+
+    Polled every 5 ms (`POLL_SECONDS`); a `within` of zero reads nothing at all."""
     deadline = time.monotonic() + within.total_seconds()
     while time.monotonic() < deadline:
         found = read()
@@ -27,33 +33,47 @@ def awaited[T](read: Callable[[], T | None], within: timedelta) -> T | None:
     return None
 
 
-class StoreFlight:
+class StoreSingleFlight:
+    """One leader per key across replicas: a lock key written by the store's atomic `add`."""
+
     def __init__(self, store: KeyValueStore) -> None:
+        """`store` is the shared store the values themselves are kept in."""
         self.store = store
 
     def lock_key(self, key: str) -> str:
+        """The key the lead is held under: `lock_key("9f2c…")  ->  "9f2c…:lock"`."""
         return f"{key}:lock"
 
     def lead(self, key: str, hold: timedelta) -> bool:
+        """Whether this caller leads `key` — the lock key written only when absent, for
+        `hold`, so a leader that dies frees it when `hold` passes."""
         return self.store.add(self.lock_key(key), b"1", hold)
 
     def release(self, key: str) -> None:
+        """Deletes the lock key — unconditionally: a leader that outlived `hold` deletes
+        whoever leads after it, which costs one duplicate computation."""
         self.store.delete(self.lock_key(key))
 
 
-class LocalFlight:
+class LocalSingleFlight:
+    """One leader per key in this process: a `threading.Lock` per key, led unblocking."""
+
     def __init__(self) -> None:
+        """No lock yet — one is made the first time a key is asked."""
         self._locks: dict[str, threading.Lock] = {}
         self._guard = threading.Lock()
 
     def _lock(self, key: str) -> threading.Lock:
+        """The lock of `key`, made on first use under the guard so two threads share one."""
         with self._guard:
             return self._locks.setdefault(key, threading.Lock())
 
     def lead(self, key: str) -> bool:
+        """Whether this caller leads `key` — the lock taken without waiting."""
         return self._lock(key).acquire(blocking=False)
 
     def release(self, key: str) -> None:
+        """Releases the lock of `key` when it is held — the leader's call, once it is done."""
         lock = self._lock(key)
         if lock.locked():
             lock.release()

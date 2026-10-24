@@ -104,6 +104,8 @@ def _identity_of(kind: type) -> str:
 
 
 def _is_record_class(annotation: Any) -> bool:
+    """Whether `annotation` is a record class — a dataclass, an entity or a value record — so
+    a mapping for it is built or edited field by field instead of validated as one value."""
     return isinstance(annotation, type) and dataclasses.is_dataclass(annotation)
 
 
@@ -114,9 +116,19 @@ def form_values(
     out at every level — a nested record keeping its identity, the way a form names the line it
     edits.
 
-        in      Sale, {"id": "s1", "version": 2, "discount": "5",
-                       "lines": [{"id": "l1", "version": 1, "qty": 2}]}
-        out     {"discount": "5", "lines": [{"id": "l1", "qty": 2}]}
+        form_values(Sale, {"id": "s1", "version": 2, "discount": "5",
+                           "lines": [{"id": "l1", "version": 1, "qty": 2}]})
+            ->  {"discount": "5", "lines": [{"id": "l1", "qty": 2}]}
+
+    1. What to leave out: every field the framework writes — at a nested level, all but the
+       record's own identity.
+    2. Each value, in order, its field's optional stripped:
+       2.1 a field left out is skipped;
+       2.2 a list of records — each mapping in it read the same way, nested; anything else
+           in the list kept as it is;
+       2.3 one record held as a mapping — read the same way, nested;
+       2.4 anything else kept as it is.
+    Final: the values a form edits, ready for `assign`.
     """
     annotations = annotations_of(kind)
     kept = _identity_of(kind) if nested else ""
@@ -302,8 +314,12 @@ def owned(declared: type) -> tuple[str, ...]:
     derivations read, and the lists of records that declare derivations of their own. Never
     another aggregate it only points at.
 
-    in      Order: subtotal ← (lines,);  OrderLine: amount ← (qty, price)    →  ("lines",)
-    in      Box: no derivations;  Item: none                                  →  ()
+        owned(Order)    ->  ("lines",)    # Order: subtotal ← lines; OrderLine: amount ← qty
+        owned(Sale)     ->  ("lines",)    # nothing reads lines, but SaleLine derives amount
+        owned(Box)      ->  ()            # Box and Item declare no derivations
+
+    Context: a single record field counts only when a derivation reads it; a list counts
+    also when its records derive something themselves. Cached per class.
     """
     derivations = derivations_of(declared)
     read = {name for one in derivations for name in one.depends}
@@ -394,6 +410,18 @@ def _ran(
 
 
 def _tree(record: Any, reached: set[str], tolerant: bool, seen: set[int]) -> tuple[str, ...]:
+    """The derivations of `record` and of the records it owns, innermost first — what both
+    `recompute` and `recompute_whole` run.
+
+    1. A record already visited answers nothing: a cycle of references ends here.
+    2. Each owned field (`owned`) the record holds whole or in part: every record in it runs
+       its own tree, with nothing reached — its derivations all run.
+       2.1 When one of them moved and the change named fields, the owned field is reached, so
+           what sums it runs.
+    3. A record with no derivations of its own answers nothing.
+    Final: its derivations run (`_ran`) — `tolerant` skipping those over a relation not held
+    whole — answering the fields of `record` that moved.
+    """
     if id(record) in seen:
         return ()
     seen.add(id(record))

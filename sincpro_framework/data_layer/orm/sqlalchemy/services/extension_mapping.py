@@ -102,6 +102,13 @@ def refuse_a_contract_out_of_range(entity: type, wanted: str) -> None:
     that breaks, a minor that adds) and a module declares the one it was written against. The
     same major and at least that minor is a core it works with; anything else stops the
     application from starting, because a half-working ERP is worse than one that does not start.
+
+        Move.CONTRACT = "2.3"
+        refuse_a_contract_out_of_range(Move, "2.1")   ->  None, a core it works with
+        refuse_a_contract_out_of_range(Move, "2.4")   ->  ProgrammingError, the minor is older
+        refuse_a_contract_out_of_range(Move, "3.0")   ->  ProgrammingError, another major
+
+    Only the major and the minor are compared: "2.3.7" reads as 2.3.
     """
     have = getattr(entity, "CONTRACT", None)
     if have is None:
@@ -132,6 +139,14 @@ def consolidated_columns(
     The extensions are outer-joined: a record without a row of one reads it as empty. A field two
     tables both have is refused, naming both, unless it is one the entity itself owns in every
     table (`id`, `created_at`, `updated_at`, `version`), which is written to each.
+
+    1. The table each of the core and its extensions is mapped to; the core's key.
+    2. The core outer-joined to each extension's table on that key, in the order declared.
+    3. Every column of those tables gathered under its name.
+    4. The names the class does not declare as fields are left out of the mapping.
+    5. Each other name maps to its one column; a shared bookkeeping name to all of its
+       columns; any other name in two tables is refused.
+    Final: the join, the properties, the names left out and the core's table.
     """
     tables = [
         parent_table(mapper_registry, one)
@@ -176,7 +191,17 @@ def map_consolidated(
     properties: dict[str, Any],
 ) -> Mapper:
     """Maps one flat class over the outer join of an entity and its extensions, and notes which
-    table holds which of its fields, so a save can give a record the row it lacks."""
+    table holds which of its fields, so a save can give a record the row it lacks.
+
+        map_consolidated(registry, MoveConsolidated, Consolidated(Move, MoveDelivery), {})
+            ->  the Mapper of MoveConsolidated over move LEFT JOIN move_delivery, keyed and
+                version-checked by move
+        CONSOLIDATED[MoveConsolidated]
+            ->  [(move_delivery, move_delivery.id, ("route",), MoveDelivery)]
+
+    A core that stores its rows' type works it out again after each insert, once every
+    extension's row exists.
+    """
     joined, columns, unread, core_table = consolidated_columns(
         mapper_registry, entity, consolidation
     )
@@ -209,6 +234,8 @@ def map_consolidated(
         identity_name = core_table.primary_key.columns.values()[0].key
 
         def typed_after_insert(_mapper: Any, connection: Any, record: Any) -> None:
+            """After a consolidated record is inserted: the stored type of its row
+            rewritten, now that every extension's row exists."""
             extension_writing.retype(
                 connection, consolidation.core, getattr(record, identity_name)
             )
@@ -219,7 +246,15 @@ def map_consolidated(
 
 def root_options(entity: type, table: Table, strict: Collection[type]) -> dict[str, Any]:
     """What the mapper needs of an entity so that what extends it later can be read as itself: the
-    type of a row as its discriminator, and the identity of the root."""
+    type of a row as its discriminator, and the identity of the root.
+
+        root_options(Move, move_table, strict=())
+            ->  {"polymorphic_on": "_extension_type", "polymorphic_identity": "billing.Move",
+                 "properties": {"_extension_type": column_property(ExtensionType(Move))}}
+
+    Noted on the way: Move is its own root, strict when `strict` names it, and its rows' type
+    stored when its table has an `extension_type` column.
+    """
     options: dict[str, Any] = {
         "polymorphic_on": extension_typing.TYPE_ATTRIBUTE,
         "polymorphic_identity": identity_of(entity),
@@ -245,7 +280,28 @@ def extension_options(
     strict: Collection[type],
 ) -> tuple[Table | None, dict[str, Any]]:
     """What the mapper needs of a class that extends another: the table it names — none when its
-    columns are the parent's own — and how a row is recognised as it."""
+    columns are the parent's own — and how a row is recognised as it.
+
+        extension_options(registry, MoveDelivery, move_delivery, Move, strict=())
+            ->  (move_delivery, {"inherits": Move,
+                                 "polymorphic_identity": "billing.MoveDelivery",
+                                 "polymorphic_load": "selectin", "properties": {…}})
+        extension_options(registry, MoveZone, move, Move, strict=())    # columns in move
+            ->  (None, {"inherits": Move, "polymorphic_identity": "billing.MoveZone", …})
+
+    1. The parent's table, and the root of the chain the parent is in.
+    2. Columns in the parent's own table:
+       2.1 refused when none of the class's own fields is a column of it, or when the root
+           answers only itself — a row would never be read as the extension;
+       2.2 a row has it when any of those columns holds a value.
+    3. A table of its own:
+       3.1 refused when it does not reference the parent's key, or repeats a column of the
+           parents;
+       3.2 a row has it when its table has the row; unless the root is strict, the class
+           reads the type of a row from its own place in the chain down.
+    4. Its root, its proof and where it is stored registered; its added fields too.
+    Final: its own table — `None` when it shares the parent's — and the mapper's options.
+    """
     above = parent_table(mapper_registry, parent)
     root = extension_typing.ROOT_OF[parent]
     shared = table is above
@@ -288,7 +344,16 @@ def extension_options(
 
 def finished(mapper: Mapper, entity: type, parent: type | None) -> None:
     """What is left to say once the mapper exists: a core that stores the type writes it on
-    insert, and an extension reads the discriminator of its root."""
+    insert, and an extension reads the discriminator of its root.
+
+        finished(move_mapper, Move, None)               # move has extension_type
+            ->  None; each insert writes "billing.Move" — or the subclass's — in the column
+        finished(delivery_mapper, MoveDelivery, Move)
+            ->  None; delivery_mapper.polymorphic_on is its `_extension_type` expression
+
+    An extension of a strict root, or one whose mapper already has a discriminator, is left
+    as it is.
+    """
     if parent is None:
         if entity in extension_typing.STORED_TYPE:
             event.listen(mapper, "before_insert", stored_type_of_the_row, propagate=True)

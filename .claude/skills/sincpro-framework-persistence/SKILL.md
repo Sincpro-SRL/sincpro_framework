@@ -52,6 +52,7 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `Writes.SAVED` / `Writes.CHANGED` | Default explicit saves / opt-in session-tracked writes at commit | enum | `sincpro_framework.data_layer.orm` |
 | `INumbering` / `MemoryNumbering` | `next_number(series, scope="")`, `take(series, count=1, scope="") -> range` | port / test double | `sincpro_framework.ddd` |
 | `DatabaseNumbering` / `numbering_table` | Number allocation participating in the database unit of work | adapter / table factory | `sincpro_framework.data_layer.orm` |
+| `DatabaseIdempotencyRecords` / `idempotency_table` | A write run exactly once: the claim commits on its own, the answer in the write's unit of work — `@bus.idempotency.exactly_once(records)` (`sincpro-framework-caching`) | adapter / table factory | `sincpro_framework.data_layer.orm` |
 | `Hooks` | A bounded context's collection of hooks, handed to a repository | registry | `from sincpro_framework.ddd import Hooks` |
 | `Hook` | One rule class; its methods are moments (`before_save`, `after_create`…) | base class | `from sincpro_framework.ddd import Hook` |
 | `ArchivableMixin` | `archived_at`; `archive()` hides instead of deleting | dataclass mixin | `from sincpro_framework.ddd import ArchivableMixin` |

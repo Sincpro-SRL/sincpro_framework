@@ -89,6 +89,20 @@ class SqsDelivery:
     """One SQS message as the wire reads it — a `Delivery`."""
 
     def __init__(self, broker: "SqsBroker", queue_url: str, message: dict[str, Any]) -> None:
+        """Open a message as `receive_message` answers it into what the wire reads.
+
+            SqsDelivery(broker, url, {"MessageId": "m-1", "Body": '{"total": 10}',
+                "Attributes": {"ApproximateReceiveCount": "2"}, "MessageAttributes":
+                {"sincpro-event": {"StringValue": "billing.InvoiceIssued"}}, ...})
+            ->  body b'{"total": 10}', headers {"sincpro-event": "billing.InvoiceIssued"},
+                message_id "m-1", delivery_count 2
+
+        1. Its message attributes, by name, as strings.
+        2. Body and headers out of an SNS or EventBridge wrapper, the envelope spread
+           (`_opened`).
+        3. Final: `delivery_count` is SQS's `ApproximateReceiveCount` — `None` when the
+           receive did not ask for it.
+        """
         attributes = {
             name: one.get("StringValue", "")
             for name, one in (message.get("MessageAttributes") or {}).items()
@@ -104,6 +118,8 @@ class SqsDelivery:
         self.delivery_count = int(received) if received else None
 
     async def _call(self, operation: str, **arguments: Any) -> None:
+        """One call of the boto3 client on this message — its queue and receipt handle — in a
+        thread, since boto3 blocks."""
         await asyncio.to_thread(
             getattr(self.broker.client, operation),
             QueueUrl=self.queue_url,
@@ -112,9 +128,12 @@ class SqsDelivery:
         )
 
     async def ack(self) -> None:
+        """Settled: the message is deleted from its queue."""
         await self._call("delete_message")
 
     async def nack(self) -> None:
+        """A retry: visible again at once (`VisibilityTimeout=0`), one more receive
+        counted."""
         await self._call("change_message_visibility", VisibilityTimeout=0)
 
     async def reject(self) -> None:
@@ -123,6 +142,19 @@ class SqsDelivery:
 
 
 class SqsBroker:
+    """Amazon SQS behind the shape of a FastStream broker — `subscriber`, `publish`, `start`,
+    `stop` — so `QueueGateway` subscribes and settles on it as on Kafka or RabbitMQ.
+
+        broker = SqsBroker(queues={"billing.invoices.issue": "billing-issue"})
+        QueueGateway(broker, [billing]).build()
+        broker.queues_read                      ->  ["billing-issue", ...]   what to create
+        await broker.start()                    # one polling task per subscribed channel
+
+    Context: its flavour says a retry is a nack — the message made visible again, SQS counts
+    the receive — and a dead letter is native: the queue's redrive policy, not the wire,
+    moves it.
+    """
+
     flavour = SQS
 
     def __init__(
@@ -135,7 +167,14 @@ class SqsBroker:
         """`client` is a boto3 SQS client — boto3's default when none is given; `wait` how long
         one receive waits for messages (long polling, at most 20 seconds); `batch` how many
         messages one receive takes (at most 10); `queues` the queue — name or URL — of a channel
-        that is not read from its own (`queue_name`)."""
+        that is not read from its own (`queue_name`).
+
+            SqsBroker()                      ->  boto3's default client, 20 s waits, 10 a time
+            SqsBroker(sqs_client, wait=timedelta(seconds=5), batch=1)
+            ->  each receive waits up to 5 s and takes one message
+
+        Nothing is subscribed or polled yet: `subscriber` adds, `start` polls.
+        """
         self.client = aws_client("sqs", client)
         self.queues = queues
         self.wait = wait
@@ -145,7 +184,17 @@ class SqsBroker:
         self._tasks: list[asyncio.Task[None]] = []
 
     def queue_of(self, channel: str) -> str:
-        """The queue — its name or URL — a channel is read from."""
+        """The queue — its name or URL — a channel is read from.
+
+            queue_of("billing.invoice.v1.issued")            ->  "billing-invoice-v1-issued"
+            queue_of("orders.fifo")                          ->  "orders.fifo"
+            <queues={"billing.issue": "billing-issue"}> queue_of("billing.issue")
+            ->  "billing-issue"
+            queue_of("https://sqs.us-east-1.amazonaws.com/123/x")   ->  the URL as it is
+
+        `queues=` first — a mapping by channel, or a function — then a URL, else
+        `queue_name`.
+        """
         if isinstance(self.queues, Mapping) and channel in self.queues:
             return self.queues[channel]
         if callable(self.queues):
@@ -159,6 +208,8 @@ class SqsBroker:
         return list(dict.fromkeys(self.queue_of(one[0]) for one in self._subscriptions))
 
     def queue_url(self, channel: str) -> str:
+        """The URL every SQS call on a channel needs — `queue_of` itself when it is one, else
+        asked of SQS by the queue's name (`get_queue_url`, one call per use)."""
         queue = self.queue_of(channel)
         if queue.startswith(("https://", "http://")):
             return queue
@@ -168,9 +219,17 @@ class SqsBroker:
         self, channel: str, max_workers: int | None = None, **_: Any
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Run the handler on every message of `channel`, `max_workers` at a time (one by
-        default). What a FastStream broker takes besides — a description — is ignored."""
+        default). What a FastStream broker takes besides — a description — is ignored.
+
+            @broker.subscriber("billing.invoice.v1.issued", max_workers=4)
+            async def handle(delivery: SqsDelivery) -> None: ...
+            broker.queues_read                      ->  ["billing-invoice-v1-issued"]
+
+        Kept until `start`; the handler is handed back unchanged.
+        """
 
         def subscribed(handler: Callable[..., Any]) -> Callable[..., Any]:
+            """Keep the handler for `start` to poll, and hand it back unchanged."""
             self._subscriptions.append((channel, handler, max_workers or 1))
             return handler
 
@@ -196,6 +255,8 @@ class SqsBroker:
         )
 
     async def _receive(self, queue_url: str) -> list[dict[str, Any]]:
+        """One long-polling receive — up to `batch` messages, waiting up to `wait` — with
+        every message attribute and the receive count the wire's attempts are read from."""
         answer = await asyncio.to_thread(
             self.client.receive_message,
             QueueUrl=queue_url,
@@ -213,6 +274,7 @@ class SqsBroker:
         limit = asyncio.Semaphore(workers)
 
         async def one(message: dict[str, Any]) -> None:
+            """Hand one message to the handler once a worker slot is free."""
             async with limit:
                 await handler(SqsDelivery(self, queue_url, message))
 
@@ -228,6 +290,9 @@ class SqsBroker:
         return sum(handled)
 
     async def _loop(self, channel: str, handler: Callable[..., Any], workers: int) -> None:
+        """Poll one channel until `stop`. Context: a receive that fails — a throttle, the
+        network — is logged and retried a second later, so one bad moment never ends the
+        consumer; cancelling is the only way out."""
         while self._running.is_set():
             try:
                 await self._poll(channel, handler, workers)
@@ -246,6 +311,15 @@ class SqsBroker:
         ]
 
     async def stop(self) -> None:
+        """Stop polling: every loop is cancelled and awaited — a receive or a handler in
+        progress is cancelled with it, and its message is delivered again once its visibility
+        timeout passes.
+
+            await broker.start(); ...; await broker.stop()   ->  None, no task left
+            await SqsBroker().stop()                          ->  None, nothing to cancel
+
+        A loop that ends with an error is not raised here — `return_exceptions=True`.
+        """
         self._running.clear()
         for task in self._tasks:
             task.cancel()

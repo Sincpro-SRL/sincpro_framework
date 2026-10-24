@@ -1,5 +1,5 @@
-"""`DatabaseNumbering`: gapless numbers on a database: gapless numbers from a counter row, written in the unit of work
-that uses them.
+"""`DatabaseNumbering`: gapless numbers on a database, from a counter row written in the unit
+of work that uses them.
 
     counters = numbering_table("numbering", metadata)
     numbering = DatabaseNumbering(database, counters)
@@ -47,6 +47,8 @@ class DatabaseNumbering(INumbering):
     """Gapless numbers from `table`, in the unit of work in play on `database`."""
 
     def __init__(self, database: Database, table: Table) -> None:
+        """`table` is the counter table `numbering_table` declares: one row per
+        (series, scope), holding the last number taken."""
         self.database = database
         self.table = table
 
@@ -77,6 +79,13 @@ class DatabaseNumbering(INumbering):
         count: int,
         scope: str,
     ) -> int:
+        """The counter moved in one `INSERT … ON CONFLICT DO UPDATE … RETURNING last`.
+
+        Context: there is no read to race — the first take creates the row with `last=count`,
+        every later one adds `count` under the row lock the write takes.
+
+            ("F", 3, "branch-1/2026") on a counter at 40   ->  43
+        """
         counter = self.table.c
         statement = (
             upsert(self.table)
@@ -92,6 +101,16 @@ class DatabaseNumbering(INumbering):
     def _updated_or_inserted(
         self, session: Session, series: str, count: int, scope: str
     ) -> int:
+        """The counter moved where the dialect has no upsert: UPDATE first, INSERT when there
+        was no row.
+
+        1. `UPDATE … SET last = last + count` on the (series, scope) row — it locks the row.
+        2. No row moved: the row inserted with `last=count` in a savepoint.
+           2.1 Answered `count` at once: these were the first numbers of the series.
+           2.2 The insert lost to another transaction (`IntegrityError`): the savepoint is
+               rolled back and the UPDATE run again, now on its row.
+        Final: `last` read back under the lock the UPDATE holds.
+        """
         counter = self.table.c
         here = (counter.series == series) & (counter.scope == scope)
         moved = session.execute(
@@ -112,6 +131,22 @@ class DatabaseNumbering(INumbering):
         return int(session.execute(select(counter.last).where(here)).scalar_one())
 
     def take(self, series: str, count: int = 1, scope: str = "") -> range:
+        """Take `count` gapless numbers of `series` within `scope`.
+
+        Context: an invoice number must never repeat nor skip; the counter row is written in
+        the unit of work that saves what carries the number, so a rollback gives the numbers
+        back.
+
+            numbering.take("F", count=3, scope="branch-1/2026")   ->  range(41, 44)
+
+        1. Refused inside `previewing()` and for a count below one.
+        2. The session: the unit of work in play (refused when read-only), or a transaction of
+           its own, warned in the log.
+        3. The counter moved in one statement where the dialect has an upsert (Postgres,
+           SQLite).
+           3.1 Elsewhere: UPDATE first, INSERT in a savepoint when there was no row.
+        Final: the range ending at the counter's new `last`.
+        """
         refuse_writing_in_preview("take")
         refuse_no_count(count)
         with self._session() as session:

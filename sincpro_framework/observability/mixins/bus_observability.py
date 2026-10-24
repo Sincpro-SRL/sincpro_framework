@@ -34,24 +34,15 @@ class BusObservabilityMixin:
         span_id: Optional[str] = None,
         carrier: Optional[Mapping[str, Any]] = None,
     ) -> FrameworkSpanContext:
-        """Create a tracing context manager for an execution block.
+        """Open a trace around a block — every use case run inside is a span of it.
 
-        Binds trace_id/span_id to all internal logs and makes them available in
-        Feature/ApplicationService via self.context.get("trace_id").
-
-        When opentelemetry is installed, also attaches an OTel span context so
-        all bus spans are exported under the correct parent trace.
-
-        Args:
-            trace_id: Explicit trace identifier (hex string for OTel compatibility,
-                      or any string for log-only correlation). Auto-generated if None.
-            span_id:  Explicit span identifier. Auto-generated if None.
-            carrier:  Mapping with W3C traceparent/tracestate headers (e.g.
-                      request.headers). Extracts the parent trace from the headers.
-                      Requires opentelemetry to be installed.
-
-        Returns:
-            FrameworkSpanContext ready to use with the ``with`` statement.
+        Context: binds `trace_id`/`span_id` to every internal log line and puts them in the
+        context, so a Feature or ApplicationService reads `self.context.get("trace_id")`; with
+        OpenTelemetry installed it also attaches an OTel span context, so the bus spans export
+        under the right parent. The parent is, in order: the W3C `traceparent`/`tracestate` of
+        a `carrier` (incoming headers — needs OpenTelemetry), an explicit `trace_id` (hex for
+        OTel, any string for log-only correlation) with an optional `span_id`, else a new root
+        with generated ids. The answer is used in a `with` statement.
 
         Examples::
 
