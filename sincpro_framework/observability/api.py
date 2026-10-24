@@ -19,9 +19,11 @@ from typing import Any, ContextManager, Optional, Tuple, Type
 
 from sincpro_log.logger import LoggerProxy, create_logger
 
+from sincpro_framework.common.failures.classification import is_fault
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.observability import correlation, failure
 from sincpro_framework.observability.domain import (
+    FAULT,
     OK,
     OUTCOME,
     ComponentStatus,
@@ -47,6 +49,7 @@ from sincpro_framework.observability.tracing.span_error import (
     span_attributes,
     span_correlation,
     span_error,
+    span_in_error,
 )
 from sincpro_framework.observability.tracing.span_execution import span_execution
 
@@ -135,6 +138,14 @@ class Observability:
                 known.append(error_type)
         self.reported_errors = tuple(known)
 
+    def faulted(self, error: BaseException) -> bool:
+        """Whether `error` is a problem of the service, as this bus judges it — the one answer
+        every signal reads (`common.failures.is_fault`, with what the bus ignores and reports):
+        GlitchTip, an `error` line with its traceback, a span in error, `sincpro.fault="true"`.
+        Anything else — something not found, refused, invalid — is an answer: an `info` line.
+        """
+        return is_fault(error, self.ignored_errors, self.reported_errors)
+
     @contextmanager
     def span(
         self, dto_name: str, layer: str, use_case: str = ""
@@ -150,14 +161,27 @@ class Observability:
         with (
             correlation.running(self),
             span_execution(
-                dto_name, layer, self.identity.bus, self.logger, {OUTCOME: OK}, use_case
+                dto_name,
+                layer,
+                self.identity.bus,
+                self.logger,
+                {OUTCOME: OK, FAULT: "false"},
+                use_case,
             ) as span,
         ):
             try:
                 yield span
+            except BaseException as error:
+                if self.faulted(error):
+                    span_in_error(span, error)
+                raise
             finally:
                 if span is not None:
                     span_correlation(span, correlation.execution_keys())
+
+    # -----------------------------------------------------------------------------------------
+    # One failure, reported once
+    # -----------------------------------------------------------------------------------------
 
     def measure(self, dto: object, handler: object, layer: str) -> ContextManager[Any]:
         """The metrics of one DTO execution: its duration by outcome, and what its use case
@@ -166,29 +190,18 @@ class Observability:
 
         return measured(self._bus, dto, handler, layer, who=self)
 
-    def _is_expected(self, error: BaseException) -> bool:
-        return isinstance(error, self.ignored_errors)
-
-    # -----------------------------------------------------------------------------------------
-    # One failure, reported once
-    # -----------------------------------------------------------------------------------------
-
-    def expects(self, error: BaseException) -> bool:
-        """Whether this bus was told (`ignore`) that `error` is traffic, not a bug — kept out of
-        GlitchTip, logged at info, and an `expected` outcome in the metrics."""
-        return self._is_expected(error)
-
-    def _outcome(self, error: BaseException) -> str:
-        """`expected` or the failure's kind — the value `sincpro.outcome` takes on the metrics,
-        so the span, the log line and GlitchTip say the same."""
+    def _judged(self, error: BaseException) -> dict[str, str]:
+        """`sincpro.outcome` — the failure's kind — and `sincpro.fault`, as the metrics carry
+        them, so the span, the log line and GlitchTip say the same."""
         try:
             from sincpro_framework.observability.metrics.infrastructure.execution import (
                 outcome_of,
             )
 
-            return outcome_of(error, self.expects(error))[OUTCOME]
+            judged = outcome_of(error, self.faulted(error))
+            return {OUTCOME: judged[OUTCOME], FAULT: judged[FAULT]}
         except Exception:
-            return "internal"
+            return {OUTCOME: "internal", FAULT: "true"}
 
     def record_error(
         self,
@@ -199,8 +212,8 @@ class Observability:
         kind: ErrorKind = "instance",
     ) -> None:
         """Report a failure everywhere it belongs: on the span and in GlitchTip."""
-        outcome = self._outcome(error)
-        span_attributes(span, {OUTCOME: outcome})
+        judged = self._judged(error)
+        span_attributes(span, judged)
         span_error(span, error, None)
         record_error(
             error,
@@ -209,7 +222,7 @@ class Observability:
             self.identity,
             kind=kind,
             ignored_exceptions=self.ignored_errors,
-            outcome=outcome,
+            outcome=judged[OUTCOME],
             reported_exceptions=self.reported_errors,
         )
 
@@ -220,11 +233,13 @@ class Observability:
                 "dto": repr(dto),
                 "error_type": type(error).__name__,
                 "sincpro_use_case": registered_name(type(dto), self._bus),
-                "sincpro_outcome": self._outcome(error),
+                "sincpro_outcome": self._judged(error)[OUTCOME],
+                "sincpro_fault": self._judged(error)[FAULT],
             }
             return f"{type(dto).__name__} failed: {type(error).__name__}: {error}", fields
         fields = recorded.fields()
-        fields["sincpro_outcome"] = self._outcome(error)
+        fields["sincpro_outcome"] = self._judged(error)[OUTCOME]
+        fields["sincpro_fault"] = self._judged(error)[FAULT]
         if error is not recorded.error:
             fields["raised_as"] = type(error).__name__
         return recorded.summary, fields
@@ -254,8 +269,8 @@ class Observability:
         """Context: the handler that raised describes the failure, puts it on its span and
         sends it to GlitchTip. An outer handler the same error crosses adds nothing but its
         span's outcome — every span it crosses takes one, as every run's metric does."""
-        outcome = self._outcome(error)
-        span_attributes(span, {OUTCOME: outcome})
+        judged = self._judged(error)
+        span_attributes(span, judged)
         self.describe(span, handler, None)
         recorded = failure.remember(
             error, dto, self._bus, handler, layer, trace_ids=current_otel_context()
@@ -270,19 +285,20 @@ class Observability:
             self.identity,
             ignored_exceptions=self.ignored_errors,
             details={**self.logger.logger_fields, **recorded.fields()},
-            outcome=outcome,
+            outcome=judged[OUTCOME],
             use_case=registered_name(type(dto), self._bus),
             reported_exceptions=self.reported_errors,
         )
 
     def escaped(self, error: BaseException, dto: object) -> None:
-        """Context: called by the outermost bus only, so an error is logged once. An expected
-        error — kept out of GlitchTip with ``ignore`` — is traffic: info, no traceback."""
+        """Context: called by the outermost bus only, so an error is logged once. A failure that
+        is not a fault — something not found, refused, invalid — is an answer: an `info` line,
+        no traceback. A fault is an `error` line with it."""
         recorded = failure.failure_of(error)
         if recorded is not None:
             failure.annotate(error, recorded)
         summary, fields = self._describe(error, dto)
-        if self._is_expected(error) or (recorded and self._is_expected(recorded.error)):
+        if not self.faulted(error) or (recorded and not self.faulted(recorded.error)):
             self.logger.info(summary, **fields)
         else:
             self.logger.error(summary, exc_info=error, **fields)
@@ -292,7 +308,7 @@ class Observability:
         error, so this line is its only trace."""
         summary, fields = self._describe(error, dto)
         message = f"{summary} (answered by an error handler)"
-        if self._is_expected(error):
+        if not self.faulted(error):
             self.logger.info(message, **fields)
         else:
             self.logger.warning(message, **fields)

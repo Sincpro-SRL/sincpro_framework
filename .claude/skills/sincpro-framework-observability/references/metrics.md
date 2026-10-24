@@ -7,7 +7,7 @@ The long form, in the framework repo: `docs/observability/metrics.md`.
 Nothing to declare. Each run lands on `sincpro.use_case.duration` (seconds), labelled:
 
 `service.name`, `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`
-(`ok` / `expected` / the failure's kind), `error.type`.
+(`ok` / the failure's kind), `sincpro.fault` (`true` / `false` — what an alert reads), `error.type`.
 
 From that one metric a dashboard has rate (count), errors (outcome) and latency (buckets) of every
 use case. A failure answered by an error handler is still recorded as its kind — the caller got an

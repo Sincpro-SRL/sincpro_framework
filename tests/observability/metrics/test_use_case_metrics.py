@@ -114,6 +114,7 @@ def test_every_use_case_is_timed_with_its_context_and_outcome(recorder):
         "sincpro.use_case": "crm.CommandIssueInvoice",
         "sincpro.layer": "feature",
         "sincpro.outcome": "ok",
+        "sincpro.fault": "false",
         "error.type": "",
     }
     assert len(values) == 1 and values[0] >= 0
@@ -296,6 +297,7 @@ def test_instruments_declared_on_the_use_case_are_named_by_their_attribute(recor
         pricing_labels
         == {
             "sincpro.outcome": "ok",
+            "sincpro.fault": "false",
             "error.type": "",
             "service.name": "billing",
         }
@@ -325,6 +327,7 @@ def test_a_timed_block_that_raises_is_timed_as_its_failure(recorder):
     ((labels, _),) = recorder.observations("billing.issue_invoice.pricing")
     assert labels == {
         "sincpro.outcome": "domain",
+        "sincpro.fault": "false",
         "error.type": "InvoiceRefused",
         "service.name": "billing",
     }
@@ -406,7 +409,7 @@ def test_a_counter_never_goes_down(recorder):
     assert recorder.totals("billing.refund.amount") == {(SERVICE,): 5.0}
 
 
-# --- what a failure is called: what it declares, and whether the bus expected it --------------
+# --- what a failure is called: what it declares, and whether it is a fault ------------------
 
 
 def _failing(error: Exception) -> UseFramework:
@@ -424,7 +427,7 @@ def _outcome_of_a_run(bus: UseFramework, recorder: InMemoryRecorder) -> dict[str
     with pytest.raises(Exception):
         bus(CommandIssueInvoice(customer_id="c", currency=Currency.BOB, total=Decimal(1)))
     ((labels, _),) = recorder.observations(USE_CASE_DURATION)
-    return {key: labels[key] for key in ("sincpro.outcome", "error.type")}
+    return {key: labels[key] for key in ("sincpro.outcome", "sincpro.fault", "error.type")}
 
 
 def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
@@ -436,7 +439,11 @@ def test_a_failure_is_named_by_the_kind_its_class_declares(recorder):
 
     outcome = _outcome_of_a_run(_failing(InvoiceNotFound("F-9")), recorder)
 
-    assert outcome == {"sincpro.outcome": "not_found", "error.type": "InvoiceNotFound"}
+    assert outcome == {
+        "sincpro.outcome": "not_found",
+        "sincpro.fault": "false",
+        "error.type": "InvoiceNotFound",
+    }
 
 
 def test_a_duplicate_that_did_not_wait_is_in_progress_not_internal(recorder):
@@ -448,28 +455,52 @@ def test_a_duplicate_that_did_not_wait_is_in_progress_not_internal(recorder):
     assert outcome["sincpro.outcome"] == "in_progress"
 
 
-def test_an_error_the_bus_was_told_to_expect_is_expected_not_a_failure_kind(recorder):
-    """`ignore_sentry_exceptions` already says these are traffic, not bugs — a preview that
-    asks for confirmation, a refused argument. Counted as `internal` they make every
-    error-rate alert fire on normal use. The class stays in `error.type`."""
-    bus = _failing(InvoiceRefused("an invoice cannot be negative"))
-    bus.ignore_sentry_exceptions(InvoiceRefused)
+def test_an_answer_is_no_fault_and_keeps_its_kind(recorder):
+    """A rule of the business that said no is the caller's answer: an error-rate alert reads
+    `sincpro.fault`, and the dashboard still tells a refusal from a 404 by `sincpro.outcome`.
+    """
+    outcome = _outcome_of_a_run(_failing(InvoiceRefused("cannot be negative")), recorder)
 
-    outcome = _outcome_of_a_run(bus, recorder)
-
-    assert outcome == {"sincpro.outcome": "expected", "error.type": "InvoiceRefused"}
-
-
-def test_what_the_bus_did_not_expect_keeps_its_kind(recorder):
-    bus = _failing(RuntimeError("the database went away"))
-    bus.ignore_sentry_exceptions(InvoiceRefused)
-
-    outcome = _outcome_of_a_run(bus, recorder)
-
-    assert outcome == {"sincpro.outcome": "internal", "error.type": "RuntimeError"}
+    assert outcome == {
+        "sincpro.outcome": "domain",
+        "sincpro.fault": "false",
+        "error.type": "InvoiceRefused",
+    }
 
 
-def test_a_timed_block_that_raises_an_expected_error_is_expected_too(recorder):
+def test_a_crash_is_a_fault(recorder):
+    outcome = _outcome_of_a_run(_failing(RuntimeError("the database went away")), recorder)
+
+    assert outcome == {
+        "sincpro.outcome": "internal",
+        "sincpro.fault": "true",
+        "error.type": "RuntimeError",
+    }
+
+
+def test_what_the_bus_ignores_or_reports_turns_the_fault_and_never_the_kind(recorder):
+    ignored = _failing(RuntimeError("a library's own, expected"))
+    ignored.ignore_sentry_exceptions(RuntimeError)
+    reported = _failing(InvoiceRefused("suspected fraud"))
+    reported.report_sentry_exceptions(InvoiceRefused)
+
+    as_ignored = _outcome_of_a_run(ignored, recorder)
+    recorder.clear()
+    as_reported = _outcome_of_a_run(reported, recorder)
+
+    assert as_ignored == {
+        "sincpro.outcome": "internal",
+        "sincpro.fault": "false",
+        "error.type": "RuntimeError",
+    }
+    assert as_reported == {
+        "sincpro.outcome": "domain",
+        "sincpro.fault": "true",
+        "error.type": "InvoiceRefused",
+    }
+
+
+def test_a_timed_block_reads_the_fault_as_its_bus_does(recorder):
     bus = UseFramework("billing", log_after_execution=False)
     bus.ignore_sentry_exceptions(InvoiceRefused)
 
@@ -485,4 +516,4 @@ def test_a_timed_block_that_raises_an_expected_error_is_expected_too(recorder):
         bus(CommandIssueInvoice(customer_id="c", currency=Currency.BOB, total=Decimal(1)))
 
     ((labels, _),) = recorder.observations("billing.issue_invoice.pricing")
-    assert labels["sincpro.outcome"] == "expected"
+    assert (labels["sincpro.outcome"], labels["sincpro.fault"]) == ("domain", "false")

@@ -1438,8 +1438,10 @@ bus — however many ApplicationServices or other bounded contexts' buses it cro
   repr: `password: SecretStr`, or `otp: str = Field(repr=False)`.
 - An error handler that re-raises changes nothing above. One that answers leaves a
   `warning` — `… (answered by an error handler)` — because the caller never sees the error.
-- An expected error, one passed to `ignore_sentry_exceptions`, is logged at `info` with no
-  traceback: it is traffic, not a fault.
+- A failure that is not a fault — a `ClientError` or a `DomainError`, or one passed to
+  `ignore_sentry_exceptions` — is logged at `info` with no traceback: it is an answer the caller
+  was meant to get. A fault is an `error` line with its traceback. Every signal follows the same
+  rule: `sincpro.outcome` says what happened, `sincpro.fault` whether it is a problem.
 - A transport (JSON-RPC, gRPC, the background queue) logs only what no bus logged:
   `process.was_reported(error)`.
 

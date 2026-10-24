@@ -9,7 +9,7 @@ The long form, in the framework repo: `docs/observability/README.md`,
   (or a host already registered a real global provider, which the bus then rides); otherwise a
   no-op. `OTEL_TRACES_EXPORTER=none` or `OTEL_SDK_DISABLED=true` turns it off;
   `OTEL_TRACES_SAMPLER_ARG` (0–1) samples the traces the bus starts. The span is named `context/DTO` and carries `sincpro.context`,
-  `sincpro.use_case`, `sincpro.layer`, `sincpro.instance`, `sincpro.outcome`, `error.type`.
+  `sincpro.use_case`, `sincpro.layer`, `sincpro.instance`, `sincpro.outcome`, `sincpro.fault`, `error.type`.
 - **Each failure once** to Sentry/GlitchTip when `[sentry]` is installed and `SENTRY_PYTHON_DSN` is
   set (an `http(s)://…@…` URL; anything else is off). The client is isolated — it does not call
   `sentry_sdk.init()` and does not reuse the host's (Odoo's).
@@ -78,8 +78,8 @@ framework.add_app_service_error_handler(handler)
 
 Handlers can be registered before or after the first execution. **What a handler returns becomes the
 bus's answer** — a handler written only to watch returns `None` and silently swallows the failure.
-Re-raise (`raise error`) to delegate. `bus.ignore_sentry_exceptions(SomeError)` marks expected
-traffic so it is not reported and its metric outcome is `expected`.
+Re-raise (`raise error`) to delegate. `bus.ignore_sentry_exceptions(SomeError)` makes it an answer,
+not a fault: not reported, an `info` line, `sincpro.fault="false"` — its kind kept.
 
 An error handler takes the same `replaces=`, `before=`, `after=`, `sequence=` as an interceptor.
 

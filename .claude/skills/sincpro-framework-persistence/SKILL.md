@@ -43,6 +43,7 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `MemoryRepository` | Same vocabulary over a dict, for tests; `context()` commits or undoes, puts back what was not saved, `for_update` holds rows across threads; no relations | adapter (in-memory) | `from sincpro_framework.data_layer.repositories import MemoryRepository` |
 | `Database` | One engine + session factory; stamps `updated_at`/`created_by`, logs and traces every statement | adapter | `from sincpro_framework.data_layer.orm import Database` |
 | `entity_table` | `Table` with the four `Entity` columns prepended | function | `from sincpro_framework.data_layer.orm import template_table` → `template_table.entity_table` |
+| `TypedJson(Shape)` | Column type for a value with a shape — a model, a dataclass, `list[Line]`: validated on write, read back as the type, `jsonb` on Postgres, `None` as NULL; a migration writes the store's JSON type | column type | `from sincpro_framework.data_layer.orm import TypedJson` |
 | `archive_columns` / `audit_columns` | The columns `ArchivableMixin` / `AuditedMixin` need | function | `from sincpro_framework.data_layer.orm import template_table` → `template_table.archive_columns` / `template_table.audit_columns` |
 | `map_aggregates` | Imperative mapping class → table; switches on the version check; infers relations from FKs; idempotent | function | `from sincpro_framework.data_layer.orm import map_aggregates` |
 | `Relation` (orm) | Declares what the tables cannot say: `many_to_many`, `id_list`, `foreign_key`, `bus`, `resolved_by` | registry (declared into `map_aggregates(relations=…)`) | `from sincpro_framework.data_layer.orm import Relation` |
@@ -144,6 +145,11 @@ Silent ones first — the runtime gives no error for these.
   passes a test unsaved. Always `save`;
   `context(writes=Writes.CHANGED)` exists for a block that wants the session to write what it
   tracked.
+- **A `dict`/`list` column for a value with a shape.** `Column("address", JsonText)` reads back a
+  `dict`, and `invoice.address.city` fails far from the table. Type the field as the model and the
+  column `TypedJson(Address)`. A change made inside the value (`invoice.address.city = "Sucre"`,
+  `lines.append(...)`) is written by the save like an assignment — the `Database` compares a copy
+  taken when read — so no `flag_modified` and no reassigning to "make it dirty".
 - **Removing a child by mutating the collection.** A root saves its children by itself, but only
   an **assignment inside `context()`** removes: `workspace.repositories = [kept, added]` settles
   what the relation read and no longer holds. Reading and saving never deletes; outside

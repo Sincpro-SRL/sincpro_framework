@@ -356,14 +356,14 @@ class FrameworkBus(Bus):
                 if not self.handle_error:
                     if outermost:
                         self.observability.escaped(error, dto)
-                        self.outcomes.escaped(error, dto)
+                        self.outcomes.escaped(error, dto, self.observability.faulted(error))
                     raise
                 try:
                     answer = self.handle_error(error)
                 except Exception as raised:
                     if outermost:
                         self.observability.escaped(raised, dto)
-                        self.outcomes.escaped(raised, dto)
+                        self.outcomes.escaped(raised, dto, self.observability.faulted(raised))
                     raise
                 self.observability.handled(error, dto)
                 return answer

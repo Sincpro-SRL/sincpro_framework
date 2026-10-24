@@ -8,6 +8,7 @@ A foreign key into another context names that context's column — `ForeignKey(p
 not the string `"partner.id"`, which SQLAlchemy resolves only inside one `MetaData`.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,15 @@ from sincpro_framework.data_layer.migrations import (
     Migrations,
 )
 from sincpro_framework.data_layer.migrations.domain import exceptions
-from sincpro_framework.data_layer.orm import AlembicEngine, Database, JsonText, version_table
+from sincpro_framework.data_layer.orm import (
+    AlembicEngine,
+    Database,
+    JsonText,
+    TypedJson,
+    version_table,
+)
+
+from .engines import fresh
 
 
 def _common_tables() -> MetaData:
@@ -280,6 +289,39 @@ def test_a_project_column_type_is_written_as_its_impl_and_never_imported(tmp_pat
     assert __name__ not in body and "custom_fields" not in body
     migrations.upgrade()
     assert "run" in _tables(database)
+    assert migrations.check() == []
+
+
+@dataclass
+class Shape:
+    width: int
+    height: int
+
+
+def test_a_typed_json_column_is_written_as_the_stores_own_json_type(tmp_path, engine_url):
+    """`JSONB` on Postgres, `JSON` elsewhere — what the store holds, and nothing of the project."""
+    metadata = MetaData()
+    Table(
+        "box",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("size", TypedJson(Shape)),
+        Column("sizes", TypedJson(list[Shape]), nullable=False),
+    )
+    database = fresh(engine_url, MetaData())
+    migrations = _context(tmp_path, AlembicEngine(metadata, database))
+
+    step = migrations.revision("execution", "main", "create box")
+
+    body = (migrations.chain("execution", "main").folder / step.file).read_text()
+    written = {
+        "sqlite": "sqlalchemy.JSON(none_as_null=True)",
+        "postgresql": "postgresql.JSONB(none_as_null=True, astext_type=sqlalchemy.Text())",
+    }[database.engine.dialect.name]
+    assert f"sqlalchemy.Column('size', {written}, nullable=True)" in body
+    assert __name__ not in body and "custom_fields" not in body and "Shape" not in body
+    migrations.upgrade()
+    assert "box" in _tables(database)
     assert migrations.check() == []
 
 

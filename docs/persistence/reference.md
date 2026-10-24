@@ -195,13 +195,14 @@ ApplicationService orchestrates Features — `tests/data_layer/orm/test_layers.p
 | **domain/** `relations.py` | how a record keeps its relations and the words a cascade decides by: `Held`, `Orphans` |
 | **domain/** `registry.py` | what is mapped: the relations per aggregate, the aggregates per table |
 | **domain/** `transaction.py` | what a unit of work is opened with: `Isolation`, `Transaction` |
-| **domain/** `custom_fields.py` | column types: `JsonText`, `TranslatedText` |
+| **domain/** `custom_fields.py` | column types: `TypedJson`, `JsonText`, `TranslatedText` |
 | **infrastructure/** `database.py` | `Database`: one engine, one session factory, observed from birth |
 | **infrastructure/** `transaction_opening.py` | applying a `Transaction` before the first statement |
 | **infrastructure/** `engine_errors.py` | the driver's errors named by what happened |
 | **infrastructure/** `transaction_hooks.py` | `after_commit` / `after_rollback` per unit of work, savepoints included |
 | **infrastructure/** `observability.py` | every statement to the logger, the tracer and the error tracker |
 | **infrastructure/** `change_tracking.py` · `read_tracking.py` · `cache_invalidation.py` | what every flush and every read goes through without being asked |
+| **infrastructure/** `in_place_changes.py` | a value changed inside — a JSON key, a model's field — written like one assigned: a copy kept when read, compared before a write |
 
 What a project imports is what `sincpro_framework.data_layer.orm` exports; the paths inside are the
 framework's own.

@@ -40,8 +40,8 @@ span-attributes) and PRD_03 in the framework repo.
 | `bus.with_trace(carrier=...)` / `bus.with_parent_trace()` | adopt an incoming `traceparent` / the host's active span | function | `UseFramework` methods |
 | `bus.context({...})` | the execution context — the source of correlation keys | function | `UseFramework` method |
 | `UseFramework(hide_in_logs=, metric_labels=)` | keys kept off every signal / context keys on every series | setting | `sincpro_framework` |
-| `bus.ignore_sentry_exceptions(*types)` | expected traffic: no GlitchTip, outcome `expected` (a `ClientError` / `DomainError` is already kept out of GlitchTip) | setting | `UseFramework` method |
-| `bus.report_sentry_exceptions(*types)` | an expected error sent to GlitchTip anyway | setting | `UseFramework` method |
+| `bus.ignore_sentry_exceptions(*types)` | these are answers, not faults: no GlitchTip, an `info` line, `sincpro.fault="false"` (a `ClientError` / `DomainError` already is) — the kind stays in `sincpro.outcome` | setting | `UseFramework` method |
+| `bus.report_sentry_exceptions(*types)` | these are faults even if they are a `ClientError` / `DomainError`: GlitchTip, an `error` line, `sincpro.fault="true"` | setting | `UseFramework` method |
 | `traces` → `@traces.attributes(..., namespace=)` / `traces.annotate({...})` | business fields on the use case's span | decorator / function | `sincpro_framework.observability` |
 | `of(X).field` / `of(Ctx)["key"]` | a checked reference to a Command/Response field or a context key | function | `sincpro_framework.observability` (same object in `.metrics`) |
 | `metrics` (`Metrics`) | the process's metrics: decorators, instruments, recorder choice | registry | `sincpro_framework.observability.metrics` |
@@ -103,8 +103,9 @@ bus(dto) ─► span "context/DTO" opens (parent: with_trace carrier, host span,
    ▼
  execute() ─► traces.annotate(...) · self.x.add(...) · self.context[...] = ...
    ├─ ok      → attributes off the Response; counts/sums/measures; duration{outcome=ok}
-   └─ failure → span error + outcome; GlitchTip once (unless ignored → outcome=expected);
-                logged once by the outermost bus; duration{outcome=<kind>}
+   └─ failure → outcome=<kind> on every signal; a fault (is_fault): span ERROR, GlitchTip once,
+                an `error` line with traceback, duration{fault=true}; an answer (not found,
+                refused, invalid): span unset, an `info` line, duration{fault=false}
    ▼
  span ─► the bus's TracerProvider ─► OTLP      measurements ─► the process recorder ─► /metrics | OTLP
 ```
@@ -133,15 +134,13 @@ Silent ones first — the runtime says nothing.
 - **Prometheus expected from `auto`.** `auto` never picks Prometheus: set
   `OTEL_METRICS_EXPORTER=prometheus` and serve `/metrics` (`FastApiGateway.app()` does); with
   several worker processes set `PROMETHEUS_MULTIPROC_DIR` before start.
-- **Expected traffic left as failures.** A `ClientError` or a `DomainError` never reaches
-  GlitchTip by default, but it still counts as its kind in the metrics; list it in
-  `bus.ignore_sentry_exceptions(...)` to make it `expected`, or every error-rate alert fires on
-  normal use.
+- **An alert on `sincpro_outcome`.** The outcome says what happened — a 404 is `not_found` —
+  so an alert on it fires on normal use. An error-rate alert reads `sincpro_fault="true"`.
 
 ## Metrics — by itself, then by declaration
 
 Every use case lands on `sincpro.use_case.duration` (seconds) labelled with service, context, use
-case, layer and outcome (`ok`, `expected`, or the failure's kind). More is declared on the use case
+case, layer, outcome (`ok` or the failure's kind) and fault (`true` / `false`). More is declared on the use case
 — **names come from the context, the use case and the field, never a string**:
 
 ```python
@@ -160,11 +159,12 @@ Instruments by hand, backends and Prometheus: [references/metrics.md](references
 
 ## Errors
 
-**What nobody expected reaches GlitchTip** — a crash, a `ProgrammingError`, a service that did not
-answer — once, even when an error handler answers for it. A `ClientError` or a `DomainError` is
-kept out by default. `bus.ignore_sentry_exceptions(...)` keeps out more and makes them `expected`
-(logged at info, an `expected` outcome); `bus.report_sentry_exceptions(...)` brings back an
-expected one. Error handlers by layer:
+**A fault or an answer, decided once** (`common.failures.is_fault`) and read by every signal: a
+crash, a `ProgrammingError`, a service that did not answer is a fault — GlitchTip once (even when
+an error handler answers for it), an `error` line with its traceback, a span in error,
+`sincpro.fault="true"`, `ExecutionFailed.fault`. A `ClientError` or a `DomainError` is an answer —
+an `info` line and nothing more. `bus.ignore_sentry_exceptions(...)` and
+`bus.report_sentry_exceptions(...)` turn it for a bus's own errors; the kind never changes. Error handlers by layer:
 [references/traces-errors-logs.md](references/traces-errors-logs.md).
 
 ## Spans and correlation

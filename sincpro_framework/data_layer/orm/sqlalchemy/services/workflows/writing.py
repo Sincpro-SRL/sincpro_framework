@@ -16,6 +16,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.flushing import 
     flush_only,
     only,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.in_place_changes import (
+    changed_in_place,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services import (
     extension_writing,
     sql_translator,
@@ -92,6 +95,7 @@ class Writing(Store, Extends):
         the wrong aggregate. The engine's own message does name the table; it is carried
         through rather than summarised away.
         """
+        changed_in_place(session, records)
         with named(_named(records)):
             if self._transaction.writes is Writes.SAVED and self._bound is not None:
                 # Only what this save named: a record changed beside it is not written in passing.

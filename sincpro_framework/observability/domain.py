@@ -24,9 +24,13 @@ FRAMEWORK_ARTIFACT = "sincpro-framework"
 DEFAULT_BUS = "sincpro_framework"
 
 OUTCOME = "sincpro.outcome"
-"""How a run ended — the same key on the metrics, the span, the log line and GlitchTip."""
+"""How a run ended — `ok`, or the failure's kind — the same key on the metrics, the span, the
+log line and GlitchTip."""
 OK = "ok"
-EXPECTED = "expected"
+FAULT = "sincpro.fault"
+"""Whether the run's failure is a problem of the service — `"true"` — or an answer its caller
+was meant to get, `"false"` (`common.failures.is_fault`): what an alert reads, while `OUTCOME`
+keeps saying what happened."""
 
 State = Literal["off", "on", "failed"]
 

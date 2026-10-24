@@ -19,11 +19,12 @@ FrameworkError
 logged with its traceback and reported to GlitchTip, and nothing of it is told to the caller. There
 is no class for it; not being one of these is what makes it one.
 
-**What reaches GlitchTip is what nobody expected**: a crash, a `ProgrammingError`, a service that
-did not answer. A `ClientError` or a `DomainError` is written for the caller — traffic, not a bug —
-and is kept out by default. A bus keeps out more with `ignore_sentry_exceptions(...)`, which also
-counts them `expected` in the metrics, and brings back an expected one it wants to see with
-`report_sentry_exceptions(...)`.
+**A fault or an answer — decided once, read by every signal** (`common.failures.is_fault`). A
+crash, a `ProgrammingError`, a service that did not answer are faults: GlitchTip, an `error` log
+line with its traceback, a span in error, `sincpro.fault="true"`, `ExecutionFailed.fault`. A
+`ClientError` or a `DomainError` is written for the caller — an answer, not a bug: an `info` line,
+nothing more, its kind still on every signal (`sincpro.outcome`). A bus turns the rule for its own
+errors with `ignore_sentry_exceptions(...)` and `report_sentry_exceptions(...)`.
 
 **What the caller reads.** The message of a `ClientError` or a `DomainError` is written for the
 caller and told to it; anything else is answered by its kind alone.

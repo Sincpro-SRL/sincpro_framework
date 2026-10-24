@@ -216,6 +216,7 @@ def test_what_the_bus_measured_reaches_the_otel_meter(otel_reader):
             "sincpro.use_case": "billing.CommandIssueInvoice",
             "sincpro.layer": "feature",
             "sincpro.outcome": "ok",
+            "sincpro.fault": "false",
             "error.type": "",
         },
     )

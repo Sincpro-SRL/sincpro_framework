@@ -39,6 +39,7 @@ from alembic.util import CommandError
 from sqlalchemy import (
     Column,
     Connection,
+    Dialect,
     MetaData,
     String,
     Table,
@@ -115,8 +116,13 @@ def declared_elsewhere(mine: MetaData, others: Sequence[MetaData]) -> IncludeObj
     return include_object
 
 
-def _written_as(type_: TypeEngine[Any], render_types: RenderTypes) -> TypeEngine[Any] | None:
+def _written_as(
+    type_: TypeEngine[Any], render_types: RenderTypes, dialect: Dialect
+) -> TypeEngine[Any] | None:
     """The type a step writes in place of `type_`; `None` for Alembic's own rendering.
+
+    A project's decorator is written as the type it stores on this store's engine — what its
+    `load_dialect_impl` answers: `TypedJson` is `JSONB` on Postgres and `JSON` elsewhere.
 
     Context: a type SQLAlchemy ships stays itself — `Interval` is a `TypeDecorator` too, and a
     native one on Postgres."""
@@ -125,7 +131,7 @@ def _written_as(type_: TypeEngine[Any], render_types: RenderTypes) -> TypeEngine
             return render_types[cls]
     shipped = type(type_).__module__.startswith("sqlalchemy.")
     if isinstance(type_, TypeDecorator) and not shipped:
-        return type_.impl_instance
+        return type_.load_dialect_impl(dialect)
     return None
 
 
@@ -139,7 +145,11 @@ def rendering_types(render_types: RenderTypes) -> RenderItemFn:
     def render_item(
         type_: str, obj: Any, autogen_context: AutogenContext
     ) -> str | Literal[False]:
-        written = _written_as(obj, render_types) if type_ == "type" else None
+        written = (
+            _written_as(obj, render_types, autogen_context.dialect)
+            if type_ == "type"
+            else None
+        )
         return False if written is None else _repr_type(written, autogen_context)
 
     return render_item

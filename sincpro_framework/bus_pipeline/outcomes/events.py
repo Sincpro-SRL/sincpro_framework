@@ -30,6 +30,10 @@ class ExecutionFailed(ExecutionEvent):
     error: str = ""
     kind: str = ""
     """The `FailureKind` the failure is answered with on every wire."""
+    fault: bool = True
+    """Whether it is a problem of the service — a crash, a service down — or an answer the caller
+    was meant to get (`False`): what a listener that pages somebody filters on,
+    `when=Condition(field="fault", value=True)`."""
     retry_after: float | None = None
     """Seconds to wait before the same call is sent again; `None` when sending it again will not
     help."""

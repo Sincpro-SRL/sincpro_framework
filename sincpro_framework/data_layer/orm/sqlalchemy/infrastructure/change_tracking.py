@@ -28,6 +28,7 @@ still change the record, so the framework's two participants — this and the st
 one moment and one ordering.
 """
 
+import copy
 from typing import Any
 
 from sqlalchemy import inspect
@@ -43,6 +44,9 @@ def changed_columns(record: ChangeTrackingMixin) -> dict[str, tuple[Any, Any]]:
     Only what `tracked_fields()` allows, so the aggregate still decides what counts: its
     bookkeeping columns, a field marked `tracked=False` and anything pointing at another
     aggregate stay out, exactly as they do everywhere else.
+
+    The value after is a copy: the record keeps the object and may change it inside again, and
+    an event is what was written, not what the record holds later.
     """
     tracked = record.tracked_fields()
     changes: dict[str, tuple[Any, Any]] = {}
@@ -55,7 +59,7 @@ def changed_columns(record: ChangeTrackingMixin) -> dict[str, tuple[Any, Any]]:
         history = attributes.get_history(record, column.key)
         if history.has_changes():
             before = history.deleted[0] if history.deleted else None
-            after = history.added[0] if history.added else None
+            after = copy.deepcopy(history.added[0]) if history.added else None
             changes[column.key] = (before, after)
     return changes
 

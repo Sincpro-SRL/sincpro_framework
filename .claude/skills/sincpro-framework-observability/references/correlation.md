@@ -21,7 +21,8 @@ span, the metric and the event are recorded at the end of the use case.
 | any context key | `company=acme-srl` | what the execution context carries |
 | context | `siat-soap-sdk` | the bus (`UseFramework` name) |
 | use case | `CommandSendInvoice` | the DTO's class |
-| outcome | `ok` · `expected` · `unavailable` · `internal` · … | how the run ended |
+| outcome | `ok` · `not_found` · `unavailable` · `internal` · … | how the run ended |
+| fault | `true` · `false` | whether it is a problem of the service — what an alert reads |
 | error | `ConnectionError` | the exception's class |
 | trace id | 32 hex | the active span |
 
@@ -62,7 +63,7 @@ handler declares in `Feature[C, R, BillingContext]`) works in `@metrics.counts(b
 
 ```promql
 sum by (sincpro_use_case, sincpro_outcome) (
-  rate(sincpro_use_case_duration_seconds_count{service_name="sincpro-siat-soap", service_version="8.0.4", tenant="dispel", sincpro_outcome!~"ok|expected"}[5m])
+  rate(sincpro_use_case_duration_seconds_count{service_name="sincpro-siat-soap", service_version="8.0.4", tenant="dispel", sincpro_fault="true"}[5m])
 )
 ```
 

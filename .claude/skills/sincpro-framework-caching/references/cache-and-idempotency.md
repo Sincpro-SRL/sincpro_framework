@@ -86,7 +86,6 @@ class CommandIssueReceipt(DataTransferObject):
         return self.request_id
 
 idempotency = Idempotency(InMemoryKeyValue())  # RedisKeyValue(...) on replicas
-receipts.ignore_sentry_exceptions(exceptions.AlreadyInProgress, exceptions.KeyReused)
 
 @receipts.feature(CommandIssueReceipt)
 @idempotency.once(
