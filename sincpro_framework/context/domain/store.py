@@ -16,7 +16,7 @@ the flow and read by whoever continues it. Opt-in: by default a context travels 
 
 **One store, everything the context keeps.** A project sets one — the process's memory
 (`InMemoryContexts`), a Redis, Valkey or Memcached (`KeyValueContexts`), or a store of its own — and
-drafts and pipeline runs are kept there, with nothing else to set. Each is an *entry*: a key, its
+drafts, pipeline runs and leases are kept there, with nothing else to set. Each is an *entry*: a key, its
 values as JSON, a version won atomically and a TTL. A store that keeps no entries says so when one
 is asked of it.
 """
@@ -26,6 +26,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
+from sincpro_framework.common.store.leases import Leases
 from sincpro_framework.context.domain import exceptions
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -86,3 +87,11 @@ class ContextStore(ABC):
         """The keys of the live entries in `folder` — everything before a key's last `:` — the
         most recently kept first."""
         raise self._keeps_no_entries()
+
+    def leases(self) -> Leases:
+        """The leases kept beside the contexts — a name held by one owner at a time, by every
+        replica that shares this store."""
+        raise exceptions.ProgrammingError(
+            f"{type(self).__name__} keeps no leases: keep the context in InMemoryContexts or "
+            "KeyValueContexts, or implement leases()"
+        )

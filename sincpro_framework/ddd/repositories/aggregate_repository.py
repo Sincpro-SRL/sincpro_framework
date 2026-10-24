@@ -117,14 +117,37 @@ class AggregateRepository[T]:
     def stream(self, criteria: Criteria | None = None) -> Iterator[EntityCollection[T]]:
         return self.repository.stream(self.aggregate, criteria)
 
-    def first(self, criteria: Criteria | None = None) -> T | None:
-        return self.repository.first(self.aggregate, criteria)
+    def first(
+        self,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T | None:
+        return self.repository.first(
+            self.aggregate, criteria, for_update, skip_locked, nowait
+        )
 
-    def one(self, criteria: Criteria | None = None) -> T:
-        return self.repository.one(self.aggregate, criteria)
+    def one(
+        self,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T:
+        """The single record the criteria matches; none is `AggregateNotFound`."""
+        return self.repository.one(self.aggregate, criteria, for_update, skip_locked, nowait)
 
-    def get_by(self, **values: Any) -> T | None:
-        return self.repository.get_by(self.aggregate, **values)
+    def get_by(
+        self,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> T | None:
+        return self.repository.get_by(
+            self.aggregate, for_update, skip_locked, nowait, **values
+        )
 
     def exists(self, criteria: Criteria | None = None) -> bool:
         return self.repository.exists(self.aggregate, criteria)

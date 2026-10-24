@@ -54,6 +54,32 @@ class TestMemcachedKeyValue(KeyValueStoreContract):
     )
     def test_only_one_of_many_racing_takes_gets_the_value(self) -> None: ...
 
+    @pytest.mark.skip(
+        reason="pymemcache's MockMemcacheClient has no gets/cas; "
+        "TestMemcachedKeyValueOnAServer runs replace against a real one"
+    )
+    def test_replace_writes_only_over_what_was_expected(self) -> None: ...
+
+    @pytest.mark.skip(
+        reason="pymemcache's MockMemcacheClient has no gets/cas; "
+        "TestMemcachedKeyValueOnAServer runs replace against a real one"
+    )
+    def test_replace_with_none_deletes_only_what_was_expected(self) -> None: ...
+
+    @pytest.mark.skip(
+        reason="pymemcache's MockMemcacheClient has no gets/cas; "
+        "TestMemcachedKeyValueOnAServer runs replace against a real one"
+    )
+    def test_only_one_of_many_racing_replaces_wins(self) -> None: ...
+
+    @pytest.mark.skip(
+        reason="pymemcache's MockMemcacheClient has no gets/cas; "
+        "TestMemcachedKeyValueOnAServer runs replace against a real one"
+    )
+    def test_a_replaced_value_lives_for_its_own_ttl_and_an_expired_one_is_not_replaced(
+        self,
+    ) -> None: ...
+
 
 def _memcached_server() -> str | None:
     address = os.environ.get("SINCPRO_TEST_MEMCACHED", "localhost:11211")

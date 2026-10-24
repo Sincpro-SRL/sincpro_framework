@@ -247,7 +247,8 @@ repository.count(Invoice).value                    # Count(value, exact)
 repository.pluck(Invoice, "number")                # one column of the whole result set
 repository.distinct(Invoice, "state")
 repository.first(Invoices, criteria)               # or None
-repository.one(Invoices, criteria)                 # exactly one, else ProgrammingError
+repository.one(Invoices, criteria)                 # exactly one: none AggregateNotFound (404), two ProgrammingError
+unit.get_by(Invoice, True, number="F-7")           # for_update=True: claimed until the unit of work ends
 ```
 
 `search` answers **one page** (50 rows by default). The rest of the surface — `search`,

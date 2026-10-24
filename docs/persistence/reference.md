@@ -100,7 +100,7 @@ with self.repository.context() as repository:                         # several 
 | Surface | Reads or writes | Notes |
 |---|---|---|
 | `search`, `browse`, `get`, `stream` | read | A page, records by id in the order given, one by id, every page in turn |
-| `exists`, `first`, `one`, `get_by` | read | The short questions: is there any, the one in front, the only one (refusing zero and two), one by a natural key |
+| `exists`, `first`, `one`, `get_by` | read | The short questions: is there any, the one in front, the only one (none is `AggregateNotFound` — `not_found` on every wire; two a `ProgrammingError`), one by a natural key. `first`, `one` and `get_by` claim what they read with `for_update` / `skip_locked` / `nowait`, as `get` does |
 | `pluck`, `distinct` | read | One column of the whole result set, and the values it actually holds — no record is built |
 | `export` | read | Every page as dictionaries, one at a time: a report or a CSV without holding the set |
 | `pivot` | read | Groups crossed by groups with their margins; four statements whatever the volume |

@@ -1,11 +1,16 @@
-"""`KeyValueStore`: the one contract a cache provider implements — six operations every store has.
+"""`KeyValueStore`: the one contract a cache provider implements — six operations every store has,
+and a seventh that compares before it writes.
 
-    Redis / Valkey   MGET · SET PX · SET NX PX · INCR · DEL · GETDEL
-    Memcached        get_multi · set · add · incr · delete · gets + cas
+    Redis / Valkey   MGET · SET PX · SET NX PX · INCR · DEL · GETDEL · WATCH + MULTI
+    Memcached        get_multi · set · add · incr · delete · gets + cas · gets + cas
     DynamoDB         BatchGetItem · PutItem · conditional PutItem · UpdateItem ADD · DeleteItem ·
-                     DeleteItem ReturnValues=ALL_OLD
+                     DeleteItem ReturnValues=ALL_OLD · conditional PutItem / DeleteItem
     a SQL table      SELECT ANY · upsert · INSERT ON CONFLICT DO NOTHING · UPDATE RETURNING ·
-                     DELETE · DELETE RETURNING
+                     DELETE · DELETE RETURNING · UPDATE / DELETE … WHERE value = expected
+
+`replace` is what a lease renews and releases with — "only if it is still mine". It is not
+abstract: a store of a project's that has no way to compare and write is still a store, and says
+so only when a lease asks it to.
 
 Context: everything clever — keys, tag versions, early expiry, single-flight, idempotency, the
 near cache — is built on these by the framework, so an adapter is these six and nothing else,
@@ -62,6 +67,17 @@ class KeyValueStore(ABC):
         """Read `key` and remove it in one step, atomically — of many callers racing for one
         value, exactly one gets it. What a one-time code, a ticket or a claim is spent with.
         """
+
+    def replace(
+        self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
+    ) -> bool:
+        """Write `value` under `key` — for `ttl`, or until deleted — only when `key` holds
+        `expected` now, atomically; `None` deletes it. `True` when it was written: of many
+        callers racing with the same `expected`, exactly one is."""
+        raise exceptions.ProgrammingError(
+            f"{type(self).__name__} cannot compare before it writes (replace): a lease needs a "
+            "store that can — InMemoryKeyValue, RedisKeyValue, MemcachedKeyValue, DynamoKeyValue"
+        )
 
     def get(self, key: str) -> bytes | None:
         return self.get_many([key])[0]

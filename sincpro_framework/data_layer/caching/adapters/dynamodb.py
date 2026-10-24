@@ -1,4 +1,4 @@
-"""`DynamoKeyValue`: the store on an Amazon DynamoDB table — the six operations, nothing more.
+"""`DynamoKeyValue`: the store on an Amazon DynamoDB table — the operations of the port, nothing more.
 
     DynamoKeyValue("billing-cache")                                  # boto3's default client
     DynamoKeyValue("billing-cache", client=dynamodb, prefix="billing:")
@@ -15,7 +15,8 @@ The table is the project's — made by its infrastructure code — with one stri
 Context: DynamoDB deletes an expired item when it gets to it — up to days later — so every read
 asks the clock, and an expired item is gone for this store the instant its time passes. `add` is
 a conditional write that also takes the place of an expired item; `increment` is `ADD`, after
-clearing an expired counter; `take` is a delete that answers what it deleted. Reads are strongly
+clearing an expired counter; `take` is a delete that answers what it deleted; `replace` a put or a
+delete on the condition that the live item holds what was expected. Reads are strongly
 consistent: a claim written by one replica is what the next one reads. One item holds up to
 400 KB.
 """
@@ -164,3 +165,32 @@ class DynamoKeyValue(KeyValueStore):
                 TableName=self.table, Key=self._key(key), ReturnValues="ALL_OLD"
             )
             return self._live(answer.get("Attributes"))
+
+    def replace(
+        self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
+    ) -> bool:
+        """A `PutItem` — a `DeleteItem` for `None` — on the condition that the item is live and
+        holds `expected`: one conditional write, so of many racing exactly one passes."""
+        condition = {
+            "ConditionExpression": "#v = :expected AND (attribute_not_exists(#e) OR #e > :now)",
+            "ExpressionAttributeNames": {"#v": VALUE, "#e": EXPIRES_AT},
+            "ExpressionAttributeValues": {
+                ":expected": {"B": expected},
+                ":now": {"N": str(self.clock())},
+            },
+        }
+        with self._reaching():
+            try:
+                if value is None:
+                    self.client.delete_item(
+                        TableName=self.table, Key=self._key(key), **condition
+                    )
+                else:
+                    self.client.put_item(
+                        TableName=self.table, Item=self._item(key, value, ttl), **condition
+                    )
+            except Exception as error:
+                if _conditional_failure(error):
+                    return False
+                raise
+            return True

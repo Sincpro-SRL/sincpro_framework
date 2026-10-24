@@ -129,8 +129,9 @@ Silent ones first — the runtime says nothing.
   consumers, with a reason that is logged.
 - **A handwritten FastAPI route calling `bus(dto)`.** No credentials reach the bus. Use the gateway,
   or wrap the app in `IdentityMiddleware(app, access=auth)`.
-- **Refusals counted as failures.** They reach GlitchTip as errors unless the bus is told they are
-  traffic: `billing.ignore_sentry_exceptions(AuthError)`.
+- **Refusals counted as failures.** An `AuthError` is a `ClientError`: kept out of GlitchTip by
+  default, but counted as its kind in the metrics unless the bus is told it is traffic:
+  `billing.ignore_sentry_exceptions(AuthError)`.
 
 ## Permissions and a provider
 

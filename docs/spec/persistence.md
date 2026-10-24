@@ -119,7 +119,7 @@ The goal: **define the model and get the analysis**, without writing a query. A 
 
 | Store | Status | Notes |
 |---|---|---|
-| Memory (`MemoryRepository`) | ✅ | the same vocabulary without a database; no relations, no units of work, no date **grains** (a grain is the adapter's), parts and fills yes |
+| Memory (`MemoryRepository`) | ✅ | the same vocabulary without a database, a unit of work included (commit, undo, put back what was not saved, `for_update` / `skip_locked` / `nowait` across threads — `tests/data_layer/repositories/test_memory_unit_of_work.py`); no relations, no isolation between blocks, no date **grains** (a grain is the adapter's), parts and fills yes |
 | SQLAlchemy | ✅ | SQLite always; PostgreSQL when `SINCPRO_POSTGRES_URL` is set — the analysis suite (`test_model_driven_analytics.py`) runs on both, with the same rows; DuckDB has translators and compile-level tests |
 | Another adapter (document, key-value) | ⬜ | the capabilities are declared; no second adapter yet |
 

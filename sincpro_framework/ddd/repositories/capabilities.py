@@ -183,38 +183,99 @@ class ReadsAggregates(ABC):
 
     @overload
     def first[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+        self,
+        target: type[EntityCollection[T]],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T | None: ...
 
     @overload
-    def first[T](self, target: type[T], criteria: Criteria | None = None) -> T | None: ...
+    def first[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T | None: ...
 
     @abstractmethod
-    def first(self, target: type, criteria: Criteria | None = None) -> Any:
-        """The first aggregate the criteria matches, or `None`."""
+    def first(
+        self,
+        target: type,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> Any:
+        """The first aggregate the criteria matches, or `None` — claimed as `get` claims it."""
 
     @overload
     def one[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+        self,
+        target: type[EntityCollection[T]],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T: ...
 
     @overload
-    def one[T](self, target: type[T], criteria: Criteria | None = None) -> T: ...
+    def one[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T: ...
 
     @abstractmethod
-    def one(self, target: type, criteria: Criteria | None = None) -> Any:
-        """The single aggregate the criteria matches; more than one is an error, because the
-        caller said there would be one."""
+    def one(
+        self,
+        target: type,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> Any:
+        """The single aggregate the criteria matches. None is `AggregateNotFound` — what the
+        caller asked for is not there, `not_found` on every wire; more than one is a
+        `ProgrammingError`, because the caller said there would be one."""
 
     @overload
-    def get_by[T](self, target: type[EntityCollection[T]], **values: Any) -> T | None: ...
+    def get_by[T](
+        self,
+        target: type[EntityCollection[T]],
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> T | None: ...
 
     @overload
-    def get_by[T](self, target: type[T], **values: Any) -> T | None: ...
+    def get_by[T](
+        self,
+        target: type[T],
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> T | None: ...
 
     @abstractmethod
-    def get_by(self, target: type, **values: Any) -> Any:
-        """One aggregate by a natural key — the values that identify it besides its id."""
+    def get_by(
+        self,
+        target: type,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> Any:
+        """One aggregate by a natural key — the values that identify it besides its id —
+        claimed as `get` claims it."""
 
     @abstractmethod
     def exists(self, target: type, criteria: Criteria | None = None) -> bool:

@@ -140,6 +140,8 @@ def test_the_short_readings_answer_the_same_as_the_adapter(ledger, accounts):
         ledger.get_by(Accounts, kind="asset")
     with pytest.raises(exceptions.ProgrammingError):
         ledger.one(Accounts)
+    with pytest.raises(ddd_exceptions.AggregateNotFound):
+        ledger.one(Accounts, Criteria(where=Condition(field="code", value="nobody")))
 
 
 def test_folds_are_answered_over_the_whole_result_set(ledger, accounts):

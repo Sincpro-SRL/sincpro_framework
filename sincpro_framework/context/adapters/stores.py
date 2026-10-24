@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any
 
-from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore, Leases
 from sincpro_framework.context.adapters.codecs import PlainCodec
 from sincpro_framework.context.adapters.entries import InMemoryEntries, KeyValueEntries
 from sincpro_framework.context.domain.codec import ContextCodec
@@ -42,6 +42,7 @@ class InMemoryContexts(ContextStore):
         self._versions: dict[str, int] = {}
         self._lock = threading.Lock()
         self._entries = InMemoryEntries(kept_ttl, now)
+        self._leases = Leases(InMemoryKeyValue(now))
 
     def keep(self, key: str, values: Mapping[str, Any], ttl: timedelta | None = None) -> None:
         until = None if ttl is None else datetime.now(UTC) + ttl
@@ -80,6 +81,10 @@ class InMemoryContexts(ContextStore):
     def entries(self, folder: str) -> list[str]:
         return self._entries.listed(folder)
 
+    def leases(self) -> Leases:
+        """The leases of this process: held across its threads, not across replicas."""
+        return self._leases
+
 
 class KeyValueContexts(ContextStore):
     def __init__(
@@ -97,6 +102,7 @@ class KeyValueContexts(ContextStore):
         self.codec = codec or PlainCodec()
         self.prefix = prefix
         self._entries = KeyValueEntries(store, kept_ttl, prefix=f"{prefix}:kept", now=now)
+        self._leases = Leases(store, prefix=f"{prefix}:lease")
 
     def _key(self, key: str) -> str:
         return f"{self.prefix}:{key}"
@@ -135,6 +141,10 @@ class KeyValueContexts(ContextStore):
 
     def entries(self, folder: str) -> list[str]:
         return self._entries.listed(folder)
+
+    def leases(self) -> Leases:
+        """The leases of every replica that shares the store, under `{prefix}:lease`."""
+        return self._leases
 
 
 _process: InMemoryContexts | None = None

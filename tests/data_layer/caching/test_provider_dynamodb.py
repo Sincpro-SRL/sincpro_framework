@@ -1,7 +1,9 @@
 """The DynamoDB store honours the same `KeyValueStore` contract as the one in memory — on moto's
 DynamoDB, with a clock the test moves, so no account and no waiting is needed."""
 
+import threading
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -34,6 +36,29 @@ class ManualClock:
         return self.now
 
 
+class OneRequestAtATime:
+    """A boto3 client whose requests reach moto one at a time. DynamoDB applies each request
+    atomically — an `ADD` on a missing item, a conditional `PutItem` — while moto's backend reads
+    and writes its dicts with no lock: racing threads lose counts, or break its iteration. The
+    racing contract tests prove the store's own logic, so they need what DynamoDB guarantees.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self.client = client
+        self.lock = threading.Lock()
+
+    def __getattr__(self, name: str) -> Any:
+        found = getattr(self.client, name)
+        if not callable(found):
+            return found
+
+        def serialized(*args: Any, **kwargs: Any) -> Any:
+            with self.lock:
+                return found(*args, **kwargs)
+
+        return serialized
+
+
 def a_table() -> None:
     client = boto3.client("dynamodb")
     if TABLE in client.list_tables()["TableNames"]:
@@ -49,7 +74,12 @@ def a_table() -> None:
 class TestDynamoKeyValue(KeyValueStoreContract):
     def make_store(self) -> KeyValueStore:
         a_table()
-        return DynamoKeyValue(TABLE, prefix="test:", clock=ManualClock())
+        return DynamoKeyValue(
+            TABLE,
+            client=OneRequestAtATime(boto3.client("dynamodb")),
+            prefix="test:",
+            clock=ManualClock(),
+        )
 
     def expire(self, store: KeyValueStore, seconds: float) -> None:
         assert isinstance(store, DynamoKeyValue) and isinstance(store.clock, ManualClock)

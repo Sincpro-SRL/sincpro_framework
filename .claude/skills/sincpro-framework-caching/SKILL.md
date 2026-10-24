@@ -27,7 +27,8 @@ key.
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `KeyValueStore` | The store contract: `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic), plus `get` | port (abstract) | `sincpro_framework.data_layer.caching` |
+| `KeyValueStore` | The store contract: `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic), plus `get`; `replace` (compare-and-write, for leases) | port (abstract) | `sincpro_framework.data_layer.caching` |
+| `Leases(store)` | A name held by one owner at a time across replicas: `held(name, owner, ttl)` renews in the background, `state` FREE/HELD/EXPIRED, a fence per take; `LeaseTaken`, `LeaseLost` | class | `sincpro_framework.common.store` |
 | `InMemoryKeyValue` | Store in this process; standard library only. One replica | adapter | `sincpro_framework.data_layer.caching` |
 | `RedisKeyValue(client, prefix=)` | Store on Redis or Valkey — extra `[redis]` | adapter | `sincpro_framework.data_layer.caching.adapters.redis` |
 | `MemcachedKeyValue(client, prefix=)` | Store on Memcached (pymemcache) — extra `[memcached]` | adapter | `sincpro_framework.data_layer.caching.adapters.memcached` |

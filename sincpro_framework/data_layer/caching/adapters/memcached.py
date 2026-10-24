@@ -63,3 +63,24 @@ class MemcachedKeyValue(KeyValueStore):
                 return None
             self.client.delete(self.prefix + key, noreply=False)
             return value
+
+    def replace(
+        self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
+    ) -> bool:
+        """`gets` then `cas`: a write by anyone in between makes the `cas` fail. A delete goes
+        through the empty value `take` spends with, so only the one whose `cas` won deletes.
+        """
+        with self._reaching():
+            held, token = self.client.gets(self.prefix + key)
+            if held != expected:
+                return False
+            if value is not None:
+                return bool(
+                    self.client.cas(
+                        self.prefix + key, value, token, expire=_seconds(ttl), noreply=False
+                    )
+                )
+            if not self.client.cas(self.prefix + key, b"", token, expire=1, noreply=False):
+                return False
+            self.client.delete(self.prefix + key, noreply=False)
+            return True

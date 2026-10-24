@@ -40,7 +40,7 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `ReadsAggregates` / `WritesAggregates` / `Analyzes` / `WritesInBulk` / `Transacts` | Declare the operations a consumer actually requires; `StoreCapabilities` describes backend support | capability ports | `sincpro_framework.ddd` |
 | `AggregateRepository[T]` / `DatabaseAggregateRepository[T]` | Typed view bound to one aggregate; the database view additionally exposes SQL capabilities | adapter views | `sincpro_framework.ddd` / `sincpro_framework.data_layer.orm` |
 | `Repository` (orm) | The SQLAlchemy implementation; adds `context()`, `narrowed()`, `retrying()`, `statement()`/`run()`, `pivot`, `export`, `explain`, `session` | adapter | `from sincpro_framework.data_layer.orm import Repository` |
-| `MemoryRepository` | Same vocabulary over a dict, for tests; no unit of work, no relations | adapter (in-memory) | `from sincpro_framework.data_layer.repositories import MemoryRepository` |
+| `MemoryRepository` | Same vocabulary over a dict, for tests; `context()` commits or undoes, puts back what was not saved, `for_update` holds rows across threads; no relations | adapter (in-memory) | `from sincpro_framework.data_layer.repositories import MemoryRepository` |
 | `Database` | One engine + session factory; stamps `updated_at`/`created_by`, logs and traces every statement | adapter | `from sincpro_framework.data_layer.orm import Database` |
 | `entity_table` | `Table` with the four `Entity` columns prepended | function | `from sincpro_framework.data_layer.orm import template_table` → `template_table.entity_table` |
 | `archive_columns` / `audit_columns` | The columns `ArchivableMixin` / `AuditedMixin` need | function | `from sincpro_framework.data_layer.orm import template_table` → `template_table.archive_columns` / `template_table.audit_columns` |
@@ -138,8 +138,9 @@ Silent ones first — the runtime gives no error for these.
   otherwise `created_by`/`updated_by` stay `None`.
 - **Changing an aggregate without `save`.** It is never written: outside `context()` the change
   is lost, inside it the change is put back at the end of the block and a warning names it
-  ("Account changed inside context() and was never saved"). A test on `MemoryRepository` passes
-  either way, because it hands back the very object it holds. Always `save`;
+  ("Account changed inside context() and was never saved"). `MemoryRepository` does the same
+  inside its `context()`; outside one it hands back the very object it holds, so a change there
+  passes a test unsaved. Always `save`;
   `context(writes=Writes.CHANGED)` exists for a block that wants the session to write what it
   tracked.
 - **Removing a child by mutating the collection.** A root saves its children by itself, but only

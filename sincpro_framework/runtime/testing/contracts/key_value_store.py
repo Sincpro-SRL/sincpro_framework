@@ -130,3 +130,56 @@ class KeyValueStoreContract:
             raise AssertionError("a value outlived its ttl")
         if store.get("kept") != b"1":
             raise AssertionError("a value without a ttl expired")
+
+    def test_replace_writes_only_over_what_was_expected(self) -> None:
+        store = self.make_store()
+        store.set("lease", b"ana")
+        if store.replace("lease", b"bo", b"carla"):
+            raise AssertionError("replace wrote over a value it did not expect")
+        if (
+            not store.replace("lease", b"ana", b"ana-renewed")
+            or store.get("lease") != b"ana-renewed"
+        ):
+            raise AssertionError("replace did not write over the value it expected")
+        if store.replace("absent", b"ana", b"x") or store.get("absent") is not None:
+            raise AssertionError("replace wrote a key that was not there")
+
+    def test_replace_with_none_deletes_only_what_was_expected(self) -> None:
+        store = self.make_store()
+        store.set("lease", b"ana")
+        if store.replace("lease", b"bo", None) or store.get("lease") != b"ana":
+            raise AssertionError("replace deleted a value it did not expect")
+        if not store.replace("lease", b"ana", None) or store.get("lease") is not None:
+            raise AssertionError("replace did not delete the value it expected")
+
+    def test_only_one_of_many_racing_replaces_wins(self) -> None:
+        store = self.make_store()
+        store.set("lease", b"old")
+        won: list[bool] = []
+        lock = threading.Lock()
+
+        def race(number: int) -> None:
+            written = store.replace("lease", b"old", f"new-{number}".encode())
+            with lock:
+                won.append(written)
+
+        threads = [threading.Thread(target=race, args=(one,)) for one in range(self.racers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        if won.count(True) != 1:
+            raise AssertionError(f"{won.count(True)} racing replaces won")
+
+    def test_a_replaced_value_lives_for_its_own_ttl_and_an_expired_one_is_not_replaced(
+        self,
+    ) -> None:
+        store = self.make_store()
+        store.set("lease", b"ana")
+        store.replace("lease", b"ana", b"ana", ttl=timedelta(seconds=1))
+        store.set("gone", b"ana", ttl=timedelta(seconds=1))
+        self.expire(store, 1.5)
+        if store.get("lease") is not None:
+            raise AssertionError("a replaced value outlived the ttl it was given")
+        if store.replace("gone", b"ana", b"ana"):
+            raise AssertionError("replace wrote over a value whose time had passed")

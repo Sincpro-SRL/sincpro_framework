@@ -16,11 +16,17 @@ class BusObservabilityMixin:
     def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
         """Do not send these exception types to GlitchTip / Sentry.
 
-        Error handlers still run. Use this for expected domain errors
-        (validation, insufficient funds, etc.) so they do not hide real bugs:
-        anything not in this list is reported even if a handler swallows it.
+        A `ClientError` or a `DomainError` is already kept out: it is written for the caller,
+        traffic and not a bug. Use this for other expected errors — a library's own, a service's
+        refusal the project treats as normal. Error handlers still run, and anything reported
+        is reported even if a handler swallows it.
         """
         self.observability.ignore(*exc_types)
+
+    def report_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
+        """Send these exception types to GlitchTip / Sentry although they are expected — a
+        `ClientError` or a `DomainError` the project wants to see, such as a fraud refusal."""
+        self.observability.report(*exc_types)
 
     def with_trace(
         self,

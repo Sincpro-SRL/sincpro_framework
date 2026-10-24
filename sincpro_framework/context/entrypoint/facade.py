@@ -28,6 +28,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, overload
 
+from sincpro_framework.common.store.leases import Leases
 from sincpro_framework.context.adapters.stores import process_contexts
 from sincpro_framework.context.domain.execution import Execution
 from sincpro_framework.context.domain.keys import ContextKey, travelling
@@ -372,6 +373,11 @@ class Context(dict[Any, Any]):
         from sincpro_framework.pipelines.runs import PipelineRuns
 
         return PipelineRuns(self._keeping(store), self, by)
+
+    def leases(self, store: ContextStore | None = None) -> Leases:
+        """The leases kept where the context is kept — a name held by one owner at a time, by
+        every replica that shares the store."""
+        return self._keeping(store).leases()
 
 
 def _named(values: Mapping[Any, Any]) -> dict[str, Any]:

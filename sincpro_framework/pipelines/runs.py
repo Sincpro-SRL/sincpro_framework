@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import quote
 
+from sincpro_framework.common.store import LeaseState
 from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.domain.store import ContextStore, Entry
 from sincpro_framework.context.entrypoint.owner import owner_of
@@ -72,3 +73,18 @@ class PipelineRuns:
         chosen = [run for run in found if state is None or run.state == state]
         chosen.sort(key=lambda run: run.started_at, reverse=True)
         return chosen[:limit]
+
+    def lease_name(self, pipeline: str, run_id: str) -> str:
+        """The lease a run of a pipeline that holds one is driven under — named as its entry is."""
+        return f"{self._folder(pipeline)}:{quote(run_id, safe='')}"
+
+    def abandoned(self, pipeline: str, limit: int = 100) -> list[PipelineRun]:
+        """The runs still `RUNNING` whose worker stopped renewing their lease — died, or paused
+        past it. A worker may still be at work on one: what a reclaimer marks failed and leaves
+        what it held for a person, rather than handing it to another worker at once."""
+        leases = self.store.leases()
+        return [
+            run
+            for run in self.find(pipeline, state=PipelineState.RUNNING, limit=limit)
+            if leases.state(self.lease_name(pipeline, run.run_id)) is LeaseState.EXPIRED
+        ]

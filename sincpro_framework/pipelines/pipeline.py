@@ -135,6 +135,9 @@ class Pipeline:
     """Whether the bus attaches the recorder that keeps the run."""
     retry: ClassVar[Retry | None] = None
     """How a step that failed in a way worth running again is run again — never, by default."""
+    lease: ClassVar[timedelta | None] = None
+    """How long a run lives without its worker renewing it: one run of a `run_id` at a time
+    across every replica, and a worker that died leaves its run `abandoned` — none by default."""
 
     if TYPE_CHECKING:
         feature_bus: Any
@@ -274,7 +277,10 @@ class Pipeline:
             failure = str(error) or type(error).__name__
             raise
         finally:
-            if self.always is not None and not waiting:
+            lost = (
+                holder is not None and holder.lease is not None and holder.lease.lost.is_set()
+            )
+            if self.always is not None and not waiting and not lost:
                 self.feature_bus.execute(
                     self.command_of(self.always, dto, ok=failure == "", failure=failure)
                 )

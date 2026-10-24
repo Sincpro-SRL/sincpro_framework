@@ -2,11 +2,13 @@
 
 Deeper, in the framework repo: `docs/caching/README.md` §"Providers".
 
-## `KeyValueStore` — the six operations
+## `KeyValueStore` — the six operations, and `replace`
 
 `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic); `get` is
 `get_many` of one key. Everything else — tag versions, single flight, idempotency claims — is built
-on these, so a provider is these six and nothing more.
+on these, so a provider is these six. `replace(key, expected, value, ttl)` — write (or delete, with
+`None`) only when the key holds `expected`, atomically — is what `Leases` renews and releases with;
+it is not abstract, so a store of yours without it is still a store until a lease uses it.
 
 | Provider | Import | Install |
 |---|---|---|

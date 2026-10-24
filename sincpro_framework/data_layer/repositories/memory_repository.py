@@ -25,17 +25,30 @@ To exercise that race against this double, hold copies:
     repository.save(first)        # version moves
     repository.save(second)       # StaleAggregate, the same as the engine
 
-Three things it does not have: relations, units of work and date grains, which is where
-a database starts — and `remove` here deletes, the way it does there; `archive` is the other one.
+It has the database's unit of work (`memory_unit.py`): `context()` commits or puts everything
+back, a change never saved is put back, `for_update` holds a row until the block ends, and
+`after_commit` waits for it — so a Feature that writes in a unit of work is tested here as it runs
+there. Outside `context()` every call stands on its own, as it does on the engine.
+
+Two things it does not have: relations and date grains, which is where a database starts — and
+`remove` here deletes, the way it does there; `archive` is the other one.
 """
 
 import dataclasses
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import copy
 from decimal import Decimal
-from typing import Any, overload
+from typing import Any, Self, overload
 
 from sincpro_framework.data_layer import exceptions
+from sincpro_framework.data_layer.repositories.memory_unit import (
+    MemoryUnit,
+    RowLocks,
+    ran,
+    restored,
+)
 from sincpro_framework.ddd.criteria import (
     Bucket,
     Condition,
@@ -85,6 +98,7 @@ from sincpro_framework.ddd.repositories.capabilities import (
     Analyzes,
     Extends,
     StoreCapabilities,
+    Transacts,
     Upserted,
     WritesInBulk,
 )
@@ -101,6 +115,7 @@ from sincpro_framework.ddd.repositories.repository import (
     refuse_wiring_as_a_record,
     refuse_writing_in_preview,
 )
+from sincpro_framework.sincpro_logger import logger
 
 
 def _percentile(values: list[Any], fraction: float) -> Any:
@@ -341,16 +356,18 @@ class _Lenient:
 
 
 class MemoryRepository(
-    ChangeTrackingRepositoryMixin, IRepository, Analyzes, WritesInBulk, Extends
+    ChangeTrackingRepositoryMixin, IRepository, Analyzes, WritesInBulk, Extends, Transacts
 ):
-    """Every read and write the vocabulary can answer without a database. No `Transacts`: a
-    test that needs a unit of work runs on SQLite."""
+    """Every read and write the vocabulary can answer without a database, a unit of work
+    included."""
 
     @property
     def capabilities(self) -> StoreCapabilities:
-        """Percentiles, computed the way a database does; no locks and no savepoints, because
-        there is no transaction to hold them."""
-        return StoreCapabilities(percentiles=True)
+        """Percentiles, computed the way a database does; row locks held by a unit of work
+        across the threads of the process; no savepoints."""
+        return StoreCapabilities(
+            percentiles=True, row_locks=True, skip_locked=True, nowait=True
+        )
 
     def __init__(
         self,
@@ -365,6 +382,10 @@ class MemoryRepository(
         self._actor = actor
         super().__init__(hooks)
         self._stored: dict[type, dict[Any, Any]] = {}
+        self._units: ContextVar[MemoryUnit | None] = ContextVar(
+            f"memory_unit_{id(self)}", default=None
+        )
+        self._row_locks = RowLocks()
         self.add(*records)
 
     def add(self, *records: Any) -> "MemoryRepository":
@@ -372,6 +393,87 @@ class MemoryRepository(
         for record in records:
             self._stored.setdefault(type(record), {})[identity_of(record)] = record
         return self
+
+    def _touching(self, kind: type, identity: Any) -> None:
+        """A write of the block in play reaches this record: kept as it was, and marked saved."""
+        unit = self._units.get()
+        if unit is not None:
+            unit.remember((kind, identity), self._stored.get(kind, {}).get(identity))
+            unit.saved.add((kind, identity))
+
+    def _read(self, record: Any) -> Any:
+        """A record handed to the block in play is kept as it was first, so what the block changes
+        on it can be put back."""
+        unit = self._units.get()
+        if unit is not None and record is not None and not isinstance(record, DomainEvent):
+            key = (type(record), identity_of(record))
+            if self._stored.get(key[0], {}).get(key[1]) is record:
+                unit.remember(key, record)
+        return super()._read(record)
+
+    def _claimed(
+        self, records: list[Any], for_update: bool, skip_locked: bool, nowait: bool
+    ) -> list[Any]:
+        """The records the block in play now holds, the ones another holds passed over with
+        `skip_locked`. Outside a unit of work a claim is refused: nothing would hold it."""
+        if not (for_update or skip_locked or nowait):
+            return records
+        unit = self._units.get()
+        if unit is None:
+            refuse_locking(True)
+            return records
+        return [
+            one
+            for one in records
+            if self._row_locks.claim(unit, (type(one), identity_of(one)), skip_locked, nowait)
+        ]
+
+    @contextmanager
+    def context(self) -> Generator[Self]:
+        """One unit of work: committed when the block ends — a change never saved put back —
+        every record it touched put back when it raises. A block inside another joins it."""
+        if self._units.get() is not None:
+            yield self
+            return
+        unit = MemoryUnit()
+        token = self._units.set(unit)
+        try:
+            yield self
+        except BaseException:
+            for key, before in unit.before.items():
+                restored(self._stored, key, before)
+            self._row_locks.release(unit)
+            self._units.reset(token)
+            ran(unit.after_rollback, "after_rollback")
+            raise
+        unsaved = [key for key in unit.before if key not in unit.saved]
+        for key in unsaved:
+            restored(self._stored, key, unit.before[key])
+        if unsaved:
+            logger.info(
+                "changed in a unit of work and never saved, put back: "
+                + ", ".join(f"{kind.__name__} {identity}" for kind, identity in unsaved)
+            )
+        self._row_locks.release(unit)
+        self._units.reset(token)
+        ran(unit.after_commit, "after_commit")
+
+    def _registered(self, moment: str) -> list[Callable[[], Any]]:
+        unit = self._units.get()
+        if unit is None:
+            raise exceptions.ProgrammingError(
+                f"{moment} belongs to a unit of work; outside context() every call commits on "
+                "its own, so what would wait for the commit can simply run now"
+            )
+        return unit.after_commit if moment == "after_commit" else unit.after_rollback
+
+    def after_commit(self, callback: Callable[[], Any]) -> None:
+        """Runs `callback` once the unit of work in play committed; never if it is undone."""
+        self._registered("after_commit").append(callback)
+
+    def after_rollback(self, callback: Callable[[], Any]) -> None:
+        """Runs `callback` once the unit of work in play was undone."""
+        self._registered("after_rollback").append(callback)
 
     def _extensions_held(self, aggregate: type) -> list[type]:
         """The subclasses of `aggregate` this store holds records of, the shallowest first."""
@@ -530,7 +632,6 @@ class MemoryRepository(
         `detail` is checked against the definition exactly as `search` checks a specification.
         The record held here already carries its relations, so nothing more is resolved.
         """
-        refuse_locking(for_update or skip_locked or nowait)
         aggregate, _holder = model_and_collection(target)
         if detail is not None:
             self.definition(aggregate).accept_specification(detail.specification)
@@ -544,6 +645,10 @@ class MemoryRepository(
         )
         if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
             return None
+        if found is not None and not self._claimed([found], for_update, skip_locked, nowait):
+            return None
+        if found is None:
+            self._claimed([], for_update, skip_locked, nowait)
         return self._read(found if found is None else self._with_computed(found))
 
     @overload
@@ -596,8 +701,8 @@ class MemoryRepository(
         skip_locked: bool = False,
         nowait: bool = False,
     ) -> Any:
-        """The page this criteria asks for, with its cursor, its count and what was dropped."""
-        refuse_locking(for_update or skip_locked or nowait)
+        """The page this criteria asks for, with its cursor, its count and what was dropped —
+        claimed by the unit of work in play with `for_update`."""
         criteria = criteria or Criteria()
         aggregate, holder = model_and_collection(target)
         # Matched without reading: the page is cut first, and only what the caller is handed
@@ -605,6 +710,7 @@ class MemoryRepository(
         # page — seven rows over three pages is twenty-one — while the engine, which fetches
         # only the page, runs it seven times.
         rows, dropped = self._matching(aggregate, criteria, handed_back=False)
+        rows = self._claimed(rows, for_update, skip_locked, nowait)
         sorts = self._ordering(aggregate, criteria)
         ordered = _sorted(rows, sorts)
 
@@ -688,39 +794,109 @@ class MemoryRepository(
 
     @overload
     def first[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+        self,
+        target: type[EntityCollection[T]],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T | None: ...
 
     @overload
-    def first[T](self, target: type[T], criteria: Criteria | None = None) -> T | None: ...
+    def first[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T | None: ...
 
-    def first(self, target: type, criteria: Criteria | None = None) -> Any:
-        return self.search(target, criteria).first()
+    def first(
+        self,
+        target: type,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> Any:
+        return self.search(target, criteria, for_update, skip_locked, nowait).first()
 
     @overload
     def one[T](
-        self, target: type[EntityCollection[T]], criteria: Criteria | None = None
+        self,
+        target: type[EntityCollection[T]],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
     ) -> T: ...
 
     @overload
-    def one[T](self, target: type[T], criteria: Criteria | None = None) -> T: ...
+    def one[T](
+        self,
+        target: type[T],
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> T: ...
 
-    def one(self, target: type, criteria: Criteria | None = None) -> Any:
-        return self.fetch_all(target, criteria).ensure_one()
+    def one(
+        self,
+        target: type,
+        criteria: Criteria | None = None,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+    ) -> Any:
+        """The single record the criteria matches: none is `AggregateNotFound`, several a
+        `ProgrammingError`."""
+        found = self.fetch_all(target, criteria)
+        claimed = self._claimed(list(found.items), for_update, skip_locked, nowait)
+        found = found.filtered(lambda one: any(one is kept for kept in claimed))
+        if not found.items:
+            raise exceptions.AggregateNotFound(
+                f"no {model_and_collection(target)[0].__name__} matches what was asked"
+            )
+        return found.ensure_one()
 
     @overload
-    def get_by[T](self, target: type[EntityCollection[T]], **values: Any) -> T | None: ...
+    def get_by[T](
+        self,
+        target: type[EntityCollection[T]],
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> T | None: ...
 
     @overload
-    def get_by[T](self, target: type[T], **values: Any) -> T | None: ...
+    def get_by[T](
+        self,
+        target: type[T],
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> T | None: ...
 
-    def get_by(self, target: type, **values: Any) -> Any:
+    def get_by(
+        self,
+        target: type,
+        for_update: bool = False,
+        skip_locked: bool = False,
+        nowait: bool = False,
+        **values: Any,
+    ) -> Any:
         """One record by a natural key: the values that identify it besides its id."""
         if not values:
             raise exceptions.InvalidCriteria(
                 "get_by needs at least one value, e.g. code='1010'"
             )
         found = self.fetch_all(target, _by(values))
+        claimed = self._claimed(list(found.items), for_update, skip_locked, nowait)
+        found = found.filtered(lambda one: any(one is kept for kept in claimed))
         if len(found) > 1:
             named = ", ".join(f"{field}={value!r}" for field, value in values.items())
             raise exceptions.ProgrammingError(
@@ -881,6 +1057,7 @@ class MemoryRepository(
     def _save_one(self, record: Any) -> None:
         stored = self._stored.setdefault(type(record), {})
         identity = identity_of(record)
+        self._touching(type(record), identity)
         if isinstance(record, Entity):
             held = stored.get(identity)
             if held is not None and held is not record and held.version != record.version:
@@ -926,6 +1103,7 @@ class MemoryRepository(
         self._after_writes(records, newness)
 
     def _forget(self, record: Any) -> None:
+        self._touching(type(record), identity_of(record))
         self._stored.setdefault(type(record), {}).pop(identity_of(record), None)
 
     def remove(self, record: Any) -> None:
@@ -988,6 +1166,8 @@ class MemoryRepository(
         )
         for one in dataclasses.fields(record):
             setattr(promoted, one.name, getattr(record, one.name))
+        self._touching(type(record), identity)
+        self._touching(extension, identity)
         self._stored[type(record)].pop(identity, None)
         self._stored.setdefault(extension, {})[identity] = promoted
 
@@ -1047,6 +1227,7 @@ class MemoryRepository(
         rows = self._matched_for_writing(model, criteria, "update_all")
         now = utc_now()
         for one in rows:
+            self._touching(type(one), identity_of(one))
             for name, value in values.items():
                 setattr(one, name, value)
             if isinstance(one, Entity):
@@ -1118,6 +1299,7 @@ class MemoryRepository(
                 if isinstance(kept, Entity) and not kept.version:
                     kept.version = 1
                     kept.updated_at = kept.updated_at or kept.created_at
+                self._touching(model, identity_of(kept))
                 self._stored.setdefault(model, {})[identity_of(kept)] = kept
                 written += 1
                 continue
@@ -1130,6 +1312,7 @@ class MemoryRepository(
             )
             if not overwritten:
                 continue
+            self._touching(type(held), identity_of(held))
             for name in overwritten:
                 setattr(held, name, getattr(one, name))
             if isinstance(held, Entity):

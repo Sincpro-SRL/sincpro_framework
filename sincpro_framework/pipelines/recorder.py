@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from sincpro_framework.common.failures import refined_failure_kind, retry_after
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
+from sincpro_framework.common.store import Lease
 from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.entrypoint.facade import use_context
 from sincpro_framework.context.infrastructure.tree import current_execution
@@ -107,7 +108,7 @@ class PipelineRecorder:
             },
         )
 
-    def _opened(self, dto: Any, name: str, bus: str) -> PipelineRun:
+    def _opened(self, dto: Any, name: str, bus: str, run_id: str) -> PipelineRun:
         """1. The recipe this input runs, and its version.
         2. The run: continued when the pipeline says so and it ran this recipe, else new.
         Final: kept over what was there."""
@@ -119,7 +120,6 @@ class PipelineRecorder:
             for step in recipe
         ]
         version = hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
-        run_id = str(getattr(dto, "run_id", "") or new_entity_id())
         runs = self._runs()
         before = runs.read(name, run_id)
         continuing = before is not None and (
@@ -164,11 +164,20 @@ class PipelineRecorder:
             )
         return runs.keep(run, 0 if before is None else before.store_version)
 
-    def _run(self, dto: Any, call_next: Callable[[Any], Any], name: str, bus: str) -> Any:
+    def _driven(
+        self,
+        dto: Any,
+        call_next: Callable[[Any], Any],
+        name: str,
+        bus: str,
+        run_id: str,
+        lease: Lease | None,
+    ) -> Any:
         """1. The run opened, and the context of this execution says which run it is.
         Final: the run closed — failed with the exception that escaped, or by its steps — and
-        what the caller gets is the run as kept."""
-        holder = RunInProgress(self._opened(dto, name, bus))
+        what the caller gets is the run as kept. A run whose lease was lost is not closed: it
+        is no longer this execution's to write."""
+        holder = RunInProgress(self._opened(dto, name, bus, run_id), lease=lease)
         context = use_context()
         context.set(RunInProgress, holder)
         context.set(
@@ -177,10 +186,28 @@ class PipelineRecorder:
         try:
             response = call_next(dto)
         except Exception as error:
-            self._close(dto, holder, str(error) or type(error).__name__)
+            if lease is None or not lease.lost.is_set():
+                self._close(dto, holder, str(error) or type(error).__name__)
             raise
+        if lease is not None:
+            lease.check()
         closed = self._close(dto, holder, "")
         return closed if isinstance(response, PipelineRun) else response
+
+    def _run(self, dto: Any, call_next: Callable[[Any], Any], name: str, bus: str) -> Any:
+        """The run driven — under its lease when the pipeline holds one: taken before the run is
+        touched, so a second execution of the same run is refused (`LeaseTaken`) before it writes
+        or runs a step, and renewed while its steps run."""
+        run_id = str(getattr(dto, "run_id", "") or new_entity_id())
+        if self.pipeline.lease is None:
+            return self._driven(dto, call_next, name, bus, run_id, None)
+        execution = current_execution()
+        with use_context().leases().held(
+            self._runs().lease_name(name, run_id),
+            owner=execution.execution_id if execution is not None else "",
+            ttl=self.pipeline.lease,
+        ) as lease:
+            return self._driven(dto, call_next, name, bus, run_id, lease)
 
     def _mark(
         self,
@@ -230,6 +257,8 @@ class PipelineRecorder:
     ) -> Any:
         """The step marked running; then succeeded, or failed — by what it answered (`ok=False`)
         or by the exception it raised, with its kind and when to try again."""
+        if holder.lease is not None:
+            holder.lease.check()
         step = registered_name(type(dto), bus)
         self._mark(holder, step, StepStatus.RUNNING)
         try:

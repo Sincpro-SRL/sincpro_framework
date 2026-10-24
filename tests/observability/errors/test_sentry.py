@@ -3,6 +3,8 @@
 from importlib.metadata import version as installed_version
 from typing import Any, Dict, List
 
+import pytest
+
 from sincpro_framework import (
     ApplicationService,
     DataTransferObject,
@@ -10,6 +12,7 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
+from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.observability import ObservabilityIdentity
 from sincpro_framework.observability.domain import framework_identity
 from sincpro_framework.observability.domain import installed_version as dist_version
@@ -574,3 +577,68 @@ def test_privacy_uses_data_collection_when_the_sdk_accepts_it(monkeypatch):
 
     assert "send_default_pii" not in options
     assert options["data_collection"]["user_info"] is False
+
+
+# --- what is reported is what nobody expected ----------------------------------------------
+
+
+class InvoiceNotFound(exceptions.ClientError):
+    pass
+
+
+class NotEnoughCredit(ddd_exceptions.DomainError):
+    pass
+
+
+class GatewayDown(exceptions.ServiceUnavailableError):
+    pass
+
+
+def _raising(name: str, error: Exception) -> UseFramework:
+    framework = UseFramework(name, log_after_execution=False)
+
+    @framework.feature(BoomDTO)
+    class Boom(Feature):
+        def execute(self, dto):
+            raise error
+
+    return framework
+
+
+@pytest.mark.parametrize(
+    ("error", "reported"),
+    [
+        pytest.param(
+            InvoiceNotFound("F-9"), False, id="the caller asked for what is not there"
+        ),
+        pytest.param(
+            NotEnoughCredit("no credit"), False, id="a rule of the business said no"
+        ),
+        pytest.param(
+            exceptions.ProgrammingError("wrong call"), True, id="the code's mistake"
+        ),
+        pytest.param(GatewayDown("down"), True, id="a service did not answer"),
+        pytest.param(KeyError("total"), True, id="a crash"),
+    ],
+)
+def test_only_what_nobody_expected_is_reported(monkeypatch, error, reported):
+    state = CaptureState()
+    _install_fake_sentry(monkeypatch, state)
+    framework = _raising(f"sentry-expected-{type(error).__name__}", error)
+
+    with pytest.raises(type(error)):
+        framework(BoomDTO())
+
+    assert (len(state.errors) == 1) is reported
+
+
+def test_an_expected_error_the_bus_wants_to_see_is_reported(monkeypatch):
+    state = CaptureState()
+    _install_fake_sentry(monkeypatch, state)
+    framework = _raising("sentry-report-expected", NotEnoughCredit("fraud?"))
+    framework.report_sentry_exceptions(NotEnoughCredit)
+
+    with pytest.raises(NotEnoughCredit):
+        framework(BoomDTO())
+
+    assert len(state.errors) == 1

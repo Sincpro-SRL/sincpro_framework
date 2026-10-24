@@ -2,7 +2,7 @@
 
     RedisKeyValue(redis.Redis.from_url("redis://cache:6379/0"), prefix="billing:")
 
-The client is yours — its pool, its TLS, its cluster mode — so this is the six operations and
+The client is yours — its pool, its TLS, its cluster mode — so this is the operations of the port and
 nothing else. `prefix` lets several services share one server without sharing keys.
 """
 
@@ -50,3 +50,28 @@ class RedisKeyValue(KeyValueStore):
         """`GETDEL` — Redis 6.2 and every Valkey."""
         with self._reaching():
             return self.client.getdel(self.prefix + key)
+
+    def replace(
+        self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
+    ) -> bool:
+        """`WATCH` the key, compare, then `MULTI` the write: a write by anyone in between aborts
+        the transaction, and the answer is `False` — no script on the server."""
+        from redis.exceptions import WatchError
+
+        name = self.prefix + key
+        with self._reaching():
+            with self.client.pipeline() as pipe:
+                try:
+                    pipe.watch(name)
+                    if pipe.get(name) != expected:
+                        pipe.unwatch()
+                        return False
+                    pipe.multi()
+                    if value is None:
+                        pipe.delete(name)
+                    else:
+                        pipe.set(name, value, px=_milliseconds(ttl))
+                    pipe.execute()
+                except WatchError:
+                    return False
+            return True

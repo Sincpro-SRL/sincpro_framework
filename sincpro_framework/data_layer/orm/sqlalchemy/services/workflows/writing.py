@@ -12,7 +12,10 @@ from sqlalchemy.schema import sort_tables
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.engine_errors import named
-from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.flushing import only
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.flushing import (
+    flush_only,
+    only,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services import (
     extension_writing,
     sql_translator,
@@ -93,7 +96,7 @@ class Writing(Store, Extends):
             if self._transaction.writes is Writes.SAVED and self._bound is not None:
                 # Only what this save named: a record changed beside it is not written in passing.
                 with only(session, records):
-                    session.flush(objects=records)
+                    flush_only(session, records)
             else:
                 session.flush()
 
@@ -157,7 +160,7 @@ class Writing(Store, Extends):
         if fresh:
             session.add_all(fresh)
             with named(_named(fresh)):
-                session.flush(objects=fresh)
+                flush_only(session, fresh)
 
     def _carried_out(self, session: Session, plan: Plan) -> list[bool]:
         """Writes a plan in the one order every write needs, and answers what the before-moments

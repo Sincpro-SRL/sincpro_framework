@@ -21,6 +21,7 @@ from sincpro_framework.settings.domain.config import (
     SettingSource,
     SincproConfig,
     TypeSincproConfigModel,
+    logger,
 )
 from sincpro_framework.settings.domain.resolution import locate, values_of
 
@@ -91,7 +92,7 @@ def build_config_obj(
         document = with_environment_by_path(document, prefix, anchor, os.environ)
     section, above = locate(document, sub_key, config_path)
 
-    print(f"read yaml file {config_path} for config {class_config_obj.__name__}")
+    logger.info(f"read yaml file {config_path} for config {class_config_obj.__name__}")
     came_from: dict[str, str] = {}
     values = values_of(
         class_config_obj, section, sub_key or "", config_path, above, came_from
