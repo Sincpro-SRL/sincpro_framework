@@ -24,6 +24,20 @@ def span_error(span: Any, error: BaseException, where: CodeLocation | None) -> N
         return
 
 
+def span_in_error(span: Any, error: BaseException) -> None:
+    """The span's status ERROR — set on every span a fault crosses; a failure that is not one
+    (something not found, refused, invalid) leaves it unset, as OpenTelemetry asks of a server
+    span answering a client's mistake. Never raises."""
+    try:
+        if not (OTEL_AVAILABLE and span is not None):
+            return
+        from opentelemetry.trace import Status, StatusCode
+
+        span.set_status(Status(StatusCode.ERROR, type(error).__name__))
+    except Exception:
+        return
+
+
 def span_attributes(span: Any, attributes: Mapping[str, str]) -> None:
     if not (OTEL_AVAILABLE and span is not None):
         return

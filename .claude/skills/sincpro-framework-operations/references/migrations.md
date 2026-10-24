@@ -68,8 +68,9 @@ it approved) → `upgrade`. `requires` names steps of other chains that must run
 (`context/store/id`).
 
 - **A step body imports only `sqlalchemy` and `alembic`** — never the project's models or types,
-  which change while the step must run as written. A `TypeDecorator` (`JsonText`) is written as its
-  `impl` (`sa.Text()`); a type with no `impl` is mapped with `render_types`.
+  which change while the step must run as written. A `TypeDecorator` is written as the type it
+  stores on the store's engine (`JsonText` → `sa.Text()`; `TypedJson` → `postgresql.JSONB(...)` on
+  Postgres, `sa.JSON(...)` elsewhere); a type with no `impl` is mapped with `render_types`.
 - `upgrade`/`downgrade` refuse a body that changed since it was hashed; `hash` refuses an applied
   step. An applied step is never edited — a new step changes what it did.
 - Autogenerate needs the store on the chain's last step (`upgrade` first). A table removed from the

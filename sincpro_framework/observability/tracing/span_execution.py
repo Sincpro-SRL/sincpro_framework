@@ -81,11 +81,12 @@ def _span_for(
             on_span["sincpro.instance"] = bus
             on_span["sincpro.context"] = bus
         # The exception is recorded once, by span_error, on the handler that raised it; the
-        # span only takes the error status as the exception crosses it.
+        # error status is the bus's to set (`span_in_error`), and only on a fault.
         return tracer.start_as_current_span(
             f"{bus}/{dto_name}" if bus else dto_name,
             attributes=on_span,
             record_exception=False,
+            set_status_on_exception=False,
         )
     except Exception:
         return nullcontext()

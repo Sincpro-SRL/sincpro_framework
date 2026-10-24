@@ -42,7 +42,7 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `replaces=` on `@bus.interceptor` / `add_*_error_handler` | Another interceptor/handler takes **its place in the chain** | decorator | — |
 | `ErrorHandler` | `(error) -> answer`, or re-raise to delegate | function | `from sincpro_framework.error_handler import ErrorHandler` |
 | `add_global_error_handler` / `add_feature_error_handler` / `add_app_service_error_handler` | Append a handler to one of three chains | registry | methods of `UseFramework` |
-| `ignore_sentry_exceptions(*types)` | Marks error types as expected traffic: not sent to Sentry, outcome `expected` | setting | method of `UseFramework` |
+| `ignore_sentry_exceptions(*types)` | Marks error types as answers, not faults: not sent to Sentry, an `info` line, `sincpro.fault="false"` | setting | method of `UseFramework` |
 | `ProgrammingError` | Raised when an interceptor changes the Command's or response's class | DTO | `from sincpro_framework import exceptions` → `exceptions.ProgrammingError` |
 | `extend(module.attach)` | Install a module: a function (or an object's `attach`) that registers on the bus; before or after the build — after, it answers from the next execution | method | method of `UseFramework`; guide `docs/core/extending.md` |
 | `add_dependency(name, dep, replaces=old)` | Put another adapter in the place of a registered one; without `replaces`, a taken name raises `DependencyAlreadyRegistered` | method | method of `UseFramework` |
@@ -204,10 +204,10 @@ framework.add_app_service_error_handler(handler)
 - Handlers can be added before or after the first execution; same `replaces=`, `before=`, `after=`,
   `sequence=` as interceptors, and `without_error_handler(fn)`.
 - **What a handler returns becomes the bus's answer.** Watching handlers re-raise.
-- A `ClientError` or a `DomainError` never reaches Sentry by default: it is written for the caller.
-  `bus.ignore_sentry_exceptions(SomeError)` (subclasses included) keeps out more and makes the
-  metric outcome `expected`; `bus.report_sentry_exceptions(SomeError)` brings one back. Handlers
-  still run.
+- A `ClientError` or a `DomainError` is an answer, not a fault: no Sentry, an `info` line,
+  `sincpro.fault="false"`. `bus.ignore_sentry_exceptions(SomeError)` (subclasses included) makes
+  other errors answers too; `bus.report_sentry_exceptions(SomeError)` makes one a fault. The kind
+  (`sincpro.outcome`) never changes. Handlers still run.
 - Code that calls the bus (a transport, a wrapper) is outside every chain.
 
 Depth: [references/errors.md](references/errors.md).

@@ -18,6 +18,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Con
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
     JsonText,
     TranslatedText,
+    TypedJson,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import (
     Orphans,
@@ -65,6 +66,7 @@ __all__ = [
     "Repository",
     "SqlUseCases",
     "TranslatedText",
+    "TypedJson",
     "Writes",
     "invalidate_on_commit",
     "map_aggregates",

@@ -18,6 +18,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import (
     Transaction,
     Writes,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.in_place_changes import (
+    changed_in_place,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.transaction_hooks import (
     Callback,
     closed_savepoint,
@@ -91,7 +94,9 @@ class UnitOfWork(Store):
     def _discarded_unsaved(self, session: Session) -> None:
         """Context: every `save` flushes on the spot, so what is still changed here was changed
         after its last save, or never saved — and the commit would write it past the aggregate's
-        hooks and cascade. It is put back as the database holds it, and named."""
+        hooks and cascade. It is put back as the database holds it, and named — a value changed
+        inside as much as one assigned."""
+        changed_in_place(session)
         unsaved = [one for one in session.dirty if session.is_modified(one)]
         if not unsaved:
             return

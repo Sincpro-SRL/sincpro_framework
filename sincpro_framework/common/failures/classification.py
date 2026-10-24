@@ -84,6 +84,31 @@ def said_to_the_caller(error: Exception) -> str | None:
     )
 
 
+def is_fault(
+    error: BaseException,
+    ignored: tuple[type[BaseException], ...] = (),
+    reported: tuple[type[BaseException], ...] = (),
+) -> bool:
+    """Whether a failure is a problem of the service — a bug, a service down, an outcome nobody
+    knows — or an answer the caller was meant to get: what something not found, refused or
+    invalid is. The one rule every signal follows, so none contradicts another:
+
+        fault       GlitchTip, an `error` log line with its traceback, a span in error,
+                    `sincpro.fault="true"` on the metrics, `fault=True` on `ExecutionFailed`
+        not fault   none of that: an `info` line, `sincpro.fault="false"`
+
+    1. What a bus asked to see (`reported`) is a fault, whatever it is.
+    2. What a bus said is traffic (`ignored`) is not.
+    Final: a `ClientError` or a `DomainError` — written for whoever asked — is not; anything else
+    is: a crash, a `ProgrammingError`, an `ExternalServiceError`.
+    """
+    if isinstance(error, reported):
+        return True
+    if isinstance(error, ignored):
+        return False
+    return not (isinstance(error, Exception) and said_to_the_caller(error) is not None)
+
+
 def failure_reason(error: Exception, kind: exceptions.FailureKind) -> str:
     """The stable, UPPER_SNAKE reason a client switches on: the error's class when the caller may
     read the error (`InvoiceNotFound` → `INVOICE_NOT_FOUND`), the kind otherwise — the class of

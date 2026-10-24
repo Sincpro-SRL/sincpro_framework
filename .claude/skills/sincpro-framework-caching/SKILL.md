@@ -167,7 +167,6 @@ from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.caching.domain import exceptions
 
 idempotency = Idempotency(InMemoryKeyValue())          # RedisKeyValue(...) on replicas
-receipts.ignore_sentry_exceptions(exceptions.AlreadyInProgress, exceptions.KeyReused)
 
 @receipts.feature(CommandIssueReceipt)
 @idempotency.once(

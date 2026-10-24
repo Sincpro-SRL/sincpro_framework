@@ -29,7 +29,8 @@ does — but nothing here needs it. The design of each signal is in
 | any context key | `company=acme-srl` | what `bus.context`, an interceptor, a hook or `execute` put there |
 | context | `siat-soap-sdk` | the bus (`UseFramework` name) |
 | use case | `CommandSendInvoice` | the DTO's class |
-| outcome | `ok` · `expected` · `unavailable` · `internal` · … | how the run ended — `expected` for what the bus ignores (`ignore_sentry_exceptions`), else the failure's kind |
+| outcome | `ok` · `not_found` · `conflict` · `unavailable` · `internal` · … | how the run ended: `ok`, or the failure's kind — always, whatever the fault says |
+| fault | `true` · `false` | whether the failure is a problem of the service (a crash, a service down) or an answer the caller was meant to get (not found, refused, invalid) — `common.failures.is_fault`, turned by `ignore_sentry_exceptions` / `report_sentry_exceptions` |
 | error | `ConnectionError` | the exception's class (`__name__`) |
 | trace id | 32 hex | the active span |
 
@@ -112,7 +113,7 @@ on-premise install — the fields are still in every line.
 
 | Tool | Filter |
 |---|---|
-| Prometheus | `sum by (sincpro_use_case, sincpro_outcome) (rate(sincpro_use_case_duration_seconds_count{service_name="sincpro-siat-soap", tenant="dispel", sincpro_outcome!~"ok\|expected"}[5m]))` |
+| Prometheus | `sum by (sincpro_use_case, sincpro_outcome) (rate(sincpro_use_case_duration_seconds_count{service_name="sincpro-siat-soap", tenant="dispel", sincpro_fault="true"}[5m]))` |
 | Prometheus, by version | `...{service_name="sincpro-siat-soap", service_version="8.0.4", tenant="dispel"}` — or, as before, `group_left (sincpro_version) sincpro_context_info` |
 | Tempo | `{resource.service.name="sincpro-siat-soap" && resource.service.version="8.0.4" && span.tenant="dispel" && status=error}` |
 | Tempo, where it started | `{resource.service.name="sincpro-siat-soap" && status=error} \| rate() by (resource.service.version)` |

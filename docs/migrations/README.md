@@ -129,12 +129,14 @@ even for applied steps whose body did not change.
 
 A step body imports only `sqlalchemy` and `alembic` — never the project's models or types,
 which change while the step must run as it was written. So a `TypeDecorator` — the framework's
-`JsonText`, or a project's own — is written as the type it stores, its `impl`: `JsonText()` in
-the table, `sa.Text()` in the step, and `check` compares it the same way. Types SQLAlchemy
-ships (`sa.Interval()`, `sa.Enum(...)`) stay themselves.
+`JsonText` and `TypedJson`, or a project's own — is written as the type it stores on the
+store's engine, what its `load_dialect_impl` answers (its `impl` unless it says otherwise):
+`JsonText()` in the table, `sa.Text()` in the step; `TypedJson(Address)` in the table,
+`postgresql.JSONB(...)` in a Postgres store's step and `sa.JSON(...)` in a SQLite one. `check`
+compares it the same way. Types SQLAlchemy ships (`sa.Interval()`, `sa.Enum(...)`) stay
+themselves.
 
-A type with no `impl` (a `UserDefinedType`), or a decorator whose database type is not its
-`impl` (it overrides `load_dialect_impl`), is mapped by hand: `render_types` names the
+A type with no `impl` (a `UserDefinedType`) is mapped by hand: `render_types` names the
 SQLAlchemy type a step writes for it, and for its subclasses.
 
 ```python

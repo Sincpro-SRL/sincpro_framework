@@ -11,12 +11,10 @@ unified `FieldMeta`.
 Only what Python and the tables cannot say is declared. Everything else is read off them.
 """
 
-import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -30,14 +28,13 @@ from sqlalchemy import (
     Table,
     Text,
 )
-from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import registry
-from sqlalchemy.types import TypeDecorator
 
 from sincpro_framework.data_layer.orm import Relation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
     JsonText,
     TranslatedText,
+    TypedJson,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
@@ -66,31 +63,6 @@ class Shape:
     width: int
     height: int
     unit: str = "cm"
-
-
-class EmbeddedShape(TypeDecorator):
-    """How this project stores a `Shape` in a column: as JSON. The framework does not know
-    this type; it reads the annotation."""
-
-    impl = Text
-    cache_ok = True
-
-    def process_bind_param(self, value: Any, dialect: Dialect) -> str | None:
-        return None if value is None else json.dumps(asdict(value))
-
-    def process_result_value(self, value: str | None, dialect: Dialect) -> Any:
-        return None if value is None else Shape(**json.loads(value))
-
-
-class EmbeddedShapes(TypeDecorator):
-    impl = Text
-    cache_ok = True
-
-    def process_bind_param(self, value: Any, dialect: Dialect) -> str | None:
-        return None if value is None else json.dumps([asdict(one) for one in value])
-
-    def process_result_value(self, value: str | None, dialect: Dialect) -> Any:
-        return None if value is None else [Shape(**one) for one in json.loads(value)]
 
 
 @dataclass
@@ -154,8 +126,8 @@ work_table = entity_table(
     Column("format", Enum(Format, native_enum=False), nullable=False),
     Column("author_id", Text, ForeignKey("author.id"), nullable=False),
     Column("publisher_id", Text),
-    Column("size", EmbeddedShape),
-    Column("sizes", EmbeddedShapes, nullable=False),
+    Column("size", TypedJson(Shape)),
+    Column("sizes", TypedJson(list[Shape]), nullable=False),
 )
 work_tag = Table(
     "work_tag",

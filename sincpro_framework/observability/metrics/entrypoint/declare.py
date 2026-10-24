@@ -44,8 +44,9 @@ from sincpro_framework.observability.metrics.domain.recorder import Recorder
 from sincpro_framework.observability.metrics.infrastructure.active import active
 from sincpro_framework.observability.metrics.infrastructure.execution import (
     ERROR_TYPE,
+    FAULT,
     OUTCOME,
-    expects,
+    faulted,
     outcome_of,
     read_labels,
 )
@@ -96,12 +97,12 @@ class BoundInstrument:
         instrument: Instrument,
         labels: tuple[FieldPath, ...],
         owner: type,
-        expects: BusObservability | None = None,
+        who: BusObservability | None = None,
     ):
         self.instrument = instrument
         self._labels = labels
         self._owner = owner
-        self._expects = expects
+        self._who = who
 
     def _read(self, sources: tuple[Any, ...]) -> dict[str, str]:
         return read_labels(self._labels, sources, self._owner)
@@ -127,7 +128,7 @@ class BoundInstrument:
         finally:
             labels = {
                 **self._read(sources),
-                **outcome_of(error, expects(self._expects, error)),
+                **outcome_of(error, faulted(self._who, error)),
             }
             active.emit(self.instrument, time.perf_counter() - started, labels)
 
@@ -168,7 +169,7 @@ class DeclaredInstrument:
             kind=self.kind,
             unit=self.unit,
             description=self.description,
-            label_keys=(*keys, OUTCOME, ERROR_TYPE) if self.timed else keys,
+            label_keys=(*keys, OUTCOME, FAULT, ERROR_TYPE) if self.timed else keys,
             buckets=self.buckets,
         )
         bound = BoundInstrument(instrument, self.labels, owner, who)

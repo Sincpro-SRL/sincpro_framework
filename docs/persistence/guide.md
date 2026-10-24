@@ -120,6 +120,70 @@ repository = Repository(database)
 (`Database(url, pool_size=10, pool_pre_ping=True)`). Every statement is logged at DEBUG,
 traced when OpenTelemetry is on, and reported to GlitchTip when it fails.
 
+**A value with a shape — an address, the lines of an order — is `TypedJson`.** The field is
+typed as the domain holds it; the column says the same type, and is JSON in the table (`jsonb`
+on Postgres):
+
+```python
+from decimal import Decimal
+
+from pydantic import BaseModel
+
+from sincpro_framework.data_layer.orm import TypedJson
+
+
+class Address(BaseModel):
+    city: str
+    street: str = ""
+
+
+@dataclass
+class Parcel:
+    product: str
+    weight: Decimal
+
+
+@dataclass
+class Shipping(Entity):
+    address: Address | None = None
+    parcels: list[Parcel] = field(default_factory=list)
+
+
+depot = registry()
+shipping_table = template_table.entity_table(
+    "shipping",
+    depot.metadata,
+    Column("address", TypedJson(Address)),                    # None is NULL
+    Column("parcels", TypedJson(list[Parcel]), nullable=False),
+)
+map_aggregates(depot, {Shipping: shipping_table})
+shippings = Repository(Database("sqlite://"))
+depot.metadata.create_all(shippings.database.engine)
+
+sent = Shipping(address=Address(city="La Paz"), parcels=[Parcel("P-1", Decimal("2.5"))])
+shippings.save(sent)
+
+shipping = shippings.get(Shipping, sent.id)
+assert shipping is not None and shipping.address is not None
+shipping.address.city = "Sucre"                               # changed inside, never assigned
+shipping.parcels.append(Parcel("P-2", Decimal("1")))
+shippings.save(shipping)
+
+again = shippings.get(Shipping, sent.id)
+assert again is not None and again.address == Address(city="Sucre")
+assert again.parcels[1].weight == Decimal("1")                # the type, never a dict
+```
+
+- **Read back as the type**, validated on the way in: a model, a dataclass, a list of them, a
+  `TypedDict` — whatever pydantic validates. A `Decimal` is kept as text and read back exact.
+- **A value changed inside is written.** SQLAlchemy writes what was assigned and never looks
+  inside a value; the `Database` keeps a copy of each such value it reads and compares it before
+  writing — for `TypedJson`, `JsonText`, `JSON` or a project's own column. Without it, the save
+  above answers and the row keeps "La Paz". A change never saved is put back at the end of a
+  unit of work, as an assigned one is.
+- **A migration writes the store's own type** — `JSONB` on Postgres, `JSON` elsewhere — never
+  `TypedJson`: a step does not import the project.
+
 ## 3. Inside a Feature
 
 The repository is a dependency like any other. A Feature reads it as `self.repository` and

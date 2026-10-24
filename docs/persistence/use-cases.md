@@ -112,7 +112,8 @@ The columns:
 | Use case | Vocabulary | Framework · SQLAlchemy | SQLAlchemy directly | Status |
 |---|---|---|---|---|
 | A JSON column | `dict` / pydantic field | `JsonText` | `JSON`, `JSONB` | ✅ |
-| A value object stored as JSON | pydantic model field | `EMBEDDED`: described, masked by a specification, read back as the model | — | ✅ |
+| A value object stored as JSON | pydantic model or dataclass field | `TypedJson(Shape)`: validated, read back as the type, `jsonb` on Postgres; `EMBEDDED` in `Meta`, masked by a specification | `TypeDecorator` + `TypeAdapter` by hand | ✅ |
+| A change inside a JSON value is written | `address.city = …`, `lines.append(…)` | the `Database` compares a copy taken when read, for every column that holds a structure | `MutableDict` (first level only), `flag_modified` by hand | ✅ |
 | Text per locale | `dict[str, str]` with a `default` | `TranslatedText`: one JSON object per value, searchable with `like` as written | — | ✅ |
 | A list held in a column contains a value | `contains` on `text[]` | substring on the stored JSON (portable) | `@>` on `jsonb` | 🟡 portable, not indexed |
 | Filter on a path inside JSON (`address.city = 'La Paz'`) | — (dropped: `unknown_field`) | — | `col["address"]["city"].astext`, `jsonb_path_exists` | ⬜ |

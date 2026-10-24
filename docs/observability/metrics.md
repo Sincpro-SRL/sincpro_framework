@@ -51,11 +51,12 @@ billing = UseFramework("billing", log_after_execution=False)
 Nothing to declare. Each run lands on one histogram, `sincpro.use_case.duration` (seconds),
 labelled with the service behind it (`service.name`: the library or service, as on its spans —
 inside Odoo the job is the host, this label is the SDK), its bounded context, its use case, its
-layer and its outcome — `ok`, `expected`,
-or the failure's kind (`domain`, `invalid`, `not_found`, `unavailable`, `internal`, … the
-classification every wire already shares, including what an error's class declares with
-`failure_kind = ...`) — and its class in `error.type`. From that one metric a dashboard has the rate
-(its count), the errors (its outcome) and the latency (its buckets) of every use case.
+layer and its outcome — `ok`, or the failure's kind (`domain`, `invalid`, `not_found`,
+`unavailable`, `internal`, … the classification every wire already shares, including what an
+error's class declares with `failure_kind = ...`) — whether that failure is a fault
+(`sincpro.fault`) and its class in `error.type`. From that one metric a dashboard has the rate
+(its count), what happened (its outcome), the problems (its fault) and the latency (its buckets)
+of every use case.
 
 ```python
 class CommandPing(DataTransferObject):
@@ -82,6 +83,7 @@ assert labels == {
     "sincpro.use_case": "shop.CommandPing",
     "sincpro.layer": "feature",
     "sincpro.outcome": "ok",
+    "sincpro.fault": "false",
     "error.type": "",
 }
 ```
@@ -89,15 +91,20 @@ assert labels == {
 A failure answered by an error handler is still recorded as its kind: the caller got an answer,
 the use case did not succeed.
 
-An error the bus was told to expect (`bus.ignore_sentry_exceptions(...)`: a preview that asks
-for confirmation, a refused argument) is `expected`, not a failure kind: it is traffic, so an
-error-rate alert reads `sincpro_outcome!~"ok|expected"`, while the class stays in `error_type`.
+**An alert reads the fault, a dashboard the outcome.** Something not found, refused or invalid
+is an answer the caller was meant to get — `sincpro.fault="false"`, its kind kept in
+`sincpro.outcome`, so a 404 and a 409 stay apart. A crash, a `ProgrammingError`, a service down,
+an outcome nobody knows is a fault — `"true"`. The same rule decides GlitchTip, the log level, the
+span's status and `ExecutionFailed.fault`, so no signal contradicts another; a bus turns it with
+`ignore_sentry_exceptions(...)` and `report_sentry_exceptions(...)`, never the kind:
+
+    sum by (sincpro_use_case) (rate(sincpro_use_case_duration_seconds_count{sincpro_fault="true"}[5m]))
 
 The framework's own pieces count what they do, declaring nothing either:
 
 | Metric | Labels | What it answers |
 |---|---|---|
-| `sincpro.use_case.duration` (s) | `service.name`, `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`, `error.type` | rate, errors and latency of every use case |
+| `sincpro.use_case.duration` (s) | `service.name`, `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`, `sincpro.fault`, `error.type` | rate, faults and latency of every use case |
 | `sincpro.cache.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`hit`, `stale`, `computed`, `coalesced`, `invalidated`, `fallback`, `bypassed`) | a fail-safe serving through an outage, a store bypassed |
 | `sincpro.idempotency.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`claimed`, `replayed`, `in_progress`, `key_reused`) | the rate of duplicates |
 | `sincpro.queue.deliveries` | `messaging.system`, `messaging.destination.name`, `sincpro.settlement`, `sincpro.failure_kind` | acks, retries and dead letters per channel — the queue alert |
@@ -219,7 +226,12 @@ assert recorder.totals("pricing.price_order.lookups") == {
     (("channel", "pos"), ("service.name", "pricing")): 2
 }
 ((timed, _),) = recorder.observations("pricing.price_order.pricing")
-assert timed == {"sincpro.outcome": "ok", "error.type": "", "service.name": "pricing"}
+assert timed == {
+    "sincpro.outcome": "ok",
+    "sincpro.fault": "false",
+    "error.type": "",
+    "service.name": "pricing",
+}
 ```
 
 | Instrument | Records | Call |

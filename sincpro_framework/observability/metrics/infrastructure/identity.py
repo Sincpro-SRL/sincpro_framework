@@ -31,13 +31,13 @@ from sincpro_framework.observability.metrics.domain.recorder import Recorder
 
 class BusObservability(Protocol):
     """What the metrics ask of the bus that runs a use case — its `Observability`: who it is,
-    and whether an error is traffic it was told to expect. Read only when something records,
+    and whether an error is a fault, as it judges it. Read only when something records,
     and every read is shielded: a bus that answers neither is measured all the same."""
 
     @property
     def identity(self) -> ObservabilityIdentity: ...
 
-    def expects(self, error: BaseException) -> bool: ...
+    def faulted(self, error: BaseException) -> bool: ...
 
 
 CONTEXT_INFO = Instrument(

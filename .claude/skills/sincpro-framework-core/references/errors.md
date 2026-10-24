@@ -80,10 +80,12 @@ Two consequences that give no error signal:
   Unexpected errors must be raised from a Feature.
 - A DTO no handler answers raises `UnknownDTOToExecute`, which the global chain also receives: a
   catch-all global handler turns a missing registration into an ordinary answer.
-- Expected traffic (validation, "already exists", auth, idempotency refusals) goes in
-  `bus.ignore_sentry_exceptions(...)` (an `isinstance` match, so subclasses count): not sent to
-  Sentry, logged at info, metric outcome `expected`. Handlers still run. Anything not in the list is
-  reported even when a handler answers it. An error-rate alert reads `sincpro_outcome!~"ok|expected"`.
+- Expected traffic (validation, "already exists", auth, idempotency refusals) raises a `ClientError`
+  or a `DomainError`: an answer, not a fault — not sent to Sentry, logged at info,
+  `sincpro.fault="false"`, its kind kept in `sincpro.outcome`. `bus.ignore_sentry_exceptions(...)`
+  (an `isinstance` match) does the same for other errors, `bus.report_sentry_exceptions(...)` the
+  reverse. Handlers still run; a fault is reported even when a handler answers it. An error-rate
+  alert reads `sincpro_fault="true"`.
 - A failure answered by a handler is still recorded on `sincpro.use_case.duration` by its kind.
 
 ## Ordering and switching off

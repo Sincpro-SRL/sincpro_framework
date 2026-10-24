@@ -97,6 +97,16 @@ map_aggregates(kept, {Bill: bill_table})
 map_events(kept, LedgerEvent, ledger_events)
 
 
+@dataclass(kw_only=True)
+class Reopened(LedgerEvent):
+    """Declared after its base was mapped: the first save maps it. Once, at module level — a
+    class declared inside a test is a new class on every run (one per engine), and two classes
+    under one name are refused, as they must be."""
+
+    name = "tests.ledger.v1.reopened"
+    reason: str = ""
+
+
 class Broker:
     def __init__(self) -> None:
         self.sent: list[DomainEvent] = []
@@ -159,11 +169,6 @@ def test_an_entity_history_is_its_events_filtered_by_the_envelope(repository):
 
 
 def test_an_event_class_declared_after_its_base_was_mapped_is_kept_too(repository):
-    @dataclass(kw_only=True)
-    class Reopened(LedgerEvent):
-        name = "tests.ledger.v1.reopened"
-        reason: str = ""
-
     repository.save([Reopened(reason="late payment")])
     [reopened] = repository.fetch_all(Reopened).items
     assert reopened.reason == "late payment"

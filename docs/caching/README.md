@@ -367,7 +367,6 @@ class ResponseIssueReceipt(DataTransferObject):
 
 receipts = UseFramework("receipts", log_after_execution=False)
 idempotency = Idempotency(InMemoryKeyValue())                # RedisKeyValue(...) on replicas
-receipts.ignore_sentry_exceptions(exceptions.AlreadyInProgress, exceptions.KeyReused)  # `expected` in the metrics
 issued: list[int] = []
 
 
@@ -397,8 +396,8 @@ assert first == retry and issued == [10]
 
 A key reused for a different payload is `KeyReused` (the IETF `Idempotency-Key` draft's 422); a
 duplicate still in flight past `wait_for_completion` is `AlreadyInProgress` (its 409). Both are
-`ClientError`s — expected traffic, kept out of GlitchTip by default; list them in the context's
-`ignore_sentry_exceptions(...)` to count them `expected` in the metrics too.
+`ClientError`s — answers, not faults: kept out of GlitchTip, an `info` line,
+`sincpro.fault="false"`, their kind (`in_progress`, `key_reused`) on every signal.
 
 The Command says what identifies one request with a plain method, `idempotency_key()`: a rename
 moves it, a type checker checks it, and the DTO is an ordinary DTO. The fields not in the key are

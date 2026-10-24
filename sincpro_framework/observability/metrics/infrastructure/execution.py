@@ -1,13 +1,14 @@
 """The metrics of one run of a use case — what every bus records, declared or not (PRD_03 §4.2).
 
     sincpro.use_case.duration   histogram, seconds — sincpro.context, sincpro.use_case,
-                                sincpro.layer, sincpro.outcome, error.type
+                                sincpro.layer, sincpro.outcome, sincpro.fault, error.type
 
 Context: one histogram gives the three signals a use case is watched by — its rate (the count),
 its errors (the outcome) and its latency (the buckets) — for every use case of every bounded
 context, without a line in any of them. A failure is recorded as its kind (`domain`, `invalid`,
 `internal`, …, the classification every wire already shares), never as `ok`, even when an error
-handler answered for it. Declared metrics are read off a successful run.
+handler answered for it — and `sincpro.fault` says whether it is a problem of the service, what
+an error-rate alert reads. Declared metrics are read off a successful run.
 """
 
 import time
@@ -16,7 +17,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from sincpro_framework.common.naming import registered_name
-from sincpro_framework.observability.domain import EXPECTED, OK, OUTCOME
+from sincpro_framework.observability.domain import FAULT, OK, OUTCOME
 from sincpro_framework.observability.metrics.domain.declarations import Declaration, Measure
 from sincpro_framework.observability.metrics.domain.instruments import (
     DURATION_BUCKETS,
@@ -52,6 +53,7 @@ USE_CASE_DURATION = Instrument(
         "sincpro.use_case",
         "sincpro.layer",
         OUTCOME,
+        FAULT,
         ERROR_TYPE,
     ),
     buckets=DURATION_BUCKETS,
@@ -61,21 +63,41 @@ adds no series. It is there because the job is the process's: inside Odoo the jo
 and this label is what finds the SDK, as `resource.service.name` does on its spans."""
 
 
-def outcome_of(error: BaseException | None, expected: bool = False) -> dict[str, str]:
-    """`ok`, `expected`, or the failure's kind — and the error's class, always. All bounded:
-    kinds are an enum, classes are the code's.
+def faulted(who: BusObservability | None, error: BaseException | None) -> bool | None:
+    """Whether the bus (`who`, its `Observability`; the one running when not given) judges
+    `error` a fault — `None` when none can say, and the shared rule decides. A timer a use case
+    declares reads the same bus its run is measured by, so both say the same."""
+    if error is None:
+        return None
+    if who is None:
+        from sincpro_framework.observability.correlation import current
+
+        who = current()  # type: ignore[assignment]
+    check = getattr(who, "faulted", None)
+    if check is None:
+        return None
+    try:
+        return bool(check(error))
+    except Exception:
+        return None
+
+
+def outcome_of(error: BaseException | None, fault: bool | None = None) -> dict[str, str]:
+    """How a run ended — `ok` or the failure's kind — whether that is a fault, and the error's
+    class. All bounded: kinds are an enum, faults a boolean, classes are the code's.
+
+        in      None                                      →  ok, fault false
+        in      InvoiceNotFound (a ClientError)           →  not_found, fault false
+        in      SiatDown (a ServiceUnavailableError)      →  unavailable, fault true
 
     Context: the kind is the refined one every wire encodes — what the error's class declares
-    (`failure_kind = NOT_FOUND`), the idempotency refusals, then the shared classification.
-    `expected` is an error the bus was told is traffic and not a bug (`ignore_sentry_exceptions`):
-    a preview that asks for confirmation, a refused argument. Counted as `internal` it makes
-    every error-rate alert fire on normal use; here it stays apart, its class in `error.type`.
+    (`failure_kind = NOT_FOUND`), the idempotency refusals, then the shared classification —
+    and it is kept whatever the fault says, so a 404 and a 409 stay apart on a dashboard. `fault`
+    is what the bus judged (`Observability.faulted`), the shared rule when it says nothing.
     """
     if error is None:
-        return {OUTCOME: OK, ERROR_TYPE: ""}
-    if expected:
-        return {OUTCOME: EXPECTED, ERROR_TYPE: type(error).__name__}
-    from sincpro_framework.common.failures import refined_failure_kind
+        return {OUTCOME: OK, FAULT: "false", ERROR_TYPE: ""}
+    from sincpro_framework.common.failures import is_fault, refined_failure_kind
 
     try:
         kind = (
@@ -83,10 +105,17 @@ def outcome_of(error: BaseException | None, expected: bool = False) -> dict[str,
         )
     except Exception:
         kind = "internal"
-    return {OUTCOME: kind, ERROR_TYPE: type(error).__name__}
+    faulted = is_fault(error) if fault is None else fault
+    return {
+        OUTCOME: kind,
+        FAULT: "true" if faulted else "false",
+        ERROR_TYPE: type(error).__name__,
+    }
 
 
 _declared: dict[tuple[str, type, int], Instrument] = {}
+
+
 _warned: set[tuple[type, str]] = set()
 
 
@@ -172,17 +201,6 @@ class Execution:
         self.response = response
 
 
-def expects(who: BusObservability | None, error: BaseException | None) -> bool:
-    """Whether the bus (`who`, its `Observability`) was told `error` is expected traffic."""
-    check = getattr(who, "expects", None)
-    if error is None or check is None:
-        return False
-    try:
-        return bool(check(error))
-    except Exception:
-        return False
-
-
 def _announce(context: str, who: BusObservability | None) -> None:
     """Who runs this context, once per recorder — see `identity`."""
     identity = identity_of(who)
@@ -210,7 +228,7 @@ def _finish(
         "sincpro.context": context,
         "sincpro.use_case": registered_name(type(dto), context),
         "sincpro.layer": layer,
-        **outcome_of(execution.error, expects(who, execution.error)),
+        **outcome_of(execution.error, faulted(who, execution.error)),
     }
     active.emit(USE_CASE_DURATION, time.perf_counter() - execution.started, labels)
     if execution.error is None:

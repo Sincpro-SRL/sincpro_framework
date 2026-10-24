@@ -27,6 +27,10 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.change_tracking 
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.engine_errors import named
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.flushing import goes_out
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.in_place_changes import (
+    IN_PLACE,
+    watch_in_place,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.observability import observe
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.read_tracking import (
     note_statement_reads,
@@ -141,9 +145,12 @@ class Database:
             event.listen(self.engine, "connect", _enforcing_foreign_keys)
 
         self.open_session = sessionmaker(
-            bind=self.engine, expire_on_commit=False, autoflush=True
+            bind=self.engine, expire_on_commit=False, autoflush=True, info={IN_PLACE: True}
         )
         self.actor = actor
+        # First of what a write runs: a value changed inside is a change like any other by the
+        # time the stamping and the change tracking look.
+        watch_in_place(self.open_session)
         # The two things the framework guarantees about a write, through the same door anybody
         # else uses. On the moment that sees every write, rather than on the repository, because
         # a use case holding a plain session must not be able to step around them.

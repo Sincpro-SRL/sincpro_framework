@@ -1,16 +1,16 @@
 """Send one exception to GlitchTip. Never raises. Does not touch spans.
 
-**What is reported is what nobody expected.** A `ClientError` or a `DomainError` was written for
-whoever asked — the caller sent something wrong, a rule of the business said no — so it is
-traffic, not a bug: kept out of GlitchTip by default, as it is told to the caller. A crash, a
-`ProgrammingError`, a service that did not answer are reported. A bus says more:
-`ignore_sentry_exceptions(...)` keeps out others, `report_sentry_exceptions(...)` brings back an
-expected one it wants to see.
+**What is reported is a fault** (`common.failures.is_fault`, the rule every signal follows). A
+`ClientError` or a `DomainError` was written for whoever asked — the caller sent something wrong,
+a rule of the business said no — so it is an answer, not a bug: kept out of GlitchTip by default.
+A crash, a `ProgrammingError`, a service that did not answer are reported. A bus says more:
+`ignore_sentry_exceptions(...)` keeps out others, `report_sentry_exceptions(...)` brings back one
+it wants to see.
 """
 
 from typing import Any, Literal, Mapping, Optional, Tuple, Type
 
-from sincpro_framework.common.failures.classification import said_to_the_caller
+from sincpro_framework.common.failures.classification import is_fault
 from sincpro_framework.observability import correlation
 from sincpro_framework.observability.domain import (
     UNKNOWN,
@@ -95,9 +95,10 @@ def record_error(
     try:
         if not setup.SDK_AVAILABLE:
             return
-        if kind == "instance" and not isinstance(error, reported_exceptions):
-            if isinstance(error, ignored_exceptions) or said_to_the_caller(error) is not None:
-                return
+        if kind == "instance" and not is_fault(
+            error, ignored_exceptions, reported_exceptions
+        ):
+            return
         if kind == "framework":
             identity = framework_identity(identity.bus)
 

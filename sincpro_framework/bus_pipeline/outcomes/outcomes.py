@@ -89,12 +89,13 @@ class Outcomes:
                 f"the completion of {type(dto).__name__} on '{self.bus}' could not be announced"
             )
 
-    def escaped(self, error: BaseException, dto: Any) -> None:
+    def escaped(self, error: BaseException, dto: Any, fault: bool | None = None) -> None:
         """The exception that left the whole call, told where the caller receives it.
 
         1. Where it first failed — the use case, its bus, its execution — else the call itself.
         2. Nobody hears the bus it failed in, nor the process: nothing is built.
-        3. Its kind and the wait before a retry, as every wire answers it.
+        3. Its kind and the wait before a retry, as every wire answers it; whether it is a fault,
+           as the bus judged it (`fault`) — the shared rule when it did not say.
         Final: each listener of that bus and of the process, in turn, never raising; the
         exception carries the event's id."""
         origin: FailedAt | None = getattr(error, FAILED_AT, None)
@@ -104,7 +105,11 @@ class Outcomes:
         from sincpro_framework import exceptions
         from sincpro_framework.bus_pipeline.events import ExecutionEvent
         from sincpro_framework.bus_pipeline.outcomes.events import ExecutionFailed
-        from sincpro_framework.common.failures import refined_failure_kind, retry_after
+        from sincpro_framework.common.failures import (
+            is_fault,
+            refined_failure_kind,
+            retry_after,
+        )
 
         failed_dto = origin.dto if origin is not None else dto
         if isinstance(failed_dto, ExecutionEvent) or isinstance(dto, ExecutionEvent):
@@ -124,6 +129,7 @@ class Outcomes:
                 error_type=type(error).__name__,
                 error=str(error),
                 kind=kind.value,
+                fault=is_fault(error) if fault is None else fault,
                 retry_after=wait.total_seconds() if wait is not None else None,
             )
             try:

@@ -72,6 +72,7 @@ assert raised.value.failure_id == failure.id          # the exception names the 
 | `dto` | the DTO as it was handed, as JSON values |
 | `error_type`, `error` | the exception's class and message |
 | `kind` | the `FailureKind` every wire answers it with (`from sincpro_framework import exceptions` → `exceptions.FailureKind`): `domain`, `conflict`, `unavailable`, `internal`… |
+| `fault` | whether it is a problem of the service (`True`) or an answer the caller was meant to get — what a listener that pages somebody filters on: `when=Condition(field="fault", value=True)` |
 | `retry_after` | seconds to wait before sending the same call again — `None` when sending it again will not help |
 | `execution_id` · `causation_id` · `correlation_id` | the execution that failed, and its flow — what its log line, span and error report carry |
 | `context` | what the flow carried — the keys that travel, a `Secret` as its value |
