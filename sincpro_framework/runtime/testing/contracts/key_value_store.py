@@ -12,7 +12,7 @@ port (query caching, crons across replicas) works on it. Nothing here imports py
 import threading
 from datetime import timedelta
 
-from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework.store import KeyValueStore
 
 
 class KeyValueStoreContract:
@@ -22,6 +22,7 @@ class KeyValueStoreContract:
     """How many threads race for `add` and `increment` — the atomicity half of the contract."""
 
     def make_store(self) -> KeyValueStore:
+        """Answer a new, empty store — keys from one test must not be seen by the next."""
         raise NotImplementedError("answer a new, empty store")
 
     def expire(self, store: KeyValueStore, seconds: float) -> None:
@@ -30,16 +31,20 @@ class KeyValueStoreContract:
         raise NotImplementedError("advance the store's clock, or sleep")
 
     def test_a_value_set_is_got_back(self) -> None:
+        """A value `set` is answered by `get` as the same bytes."""
         store = self.make_store()
         store.set("a", b"1")
         if store.get("a") != b"1":
             raise AssertionError("a value set was not got back")
 
     def test_a_missing_key_is_none(self) -> None:
+        """`get` of a key never set answers `None`."""
         if self.make_store().get("missing") is not None:
             raise AssertionError("a missing key answered a value")
 
     def test_get_many_answers_in_the_order_asked_with_none_for_the_missing(self) -> None:
+        """`get_many` answers one slot per key asked, in that order, `None` in the slot of a
+        missing key."""
         store = self.make_store()
         store.set("a", b"1")
         store.set("c", b"3")
@@ -47,12 +52,16 @@ class KeyValueStoreContract:
             raise AssertionError("get_many did not answer in order, None for the missing")
 
     def test_add_writes_only_when_the_key_is_absent(self) -> None:
+        """`add` writes and answers `True` on a missing key; on a present one it answers
+        `False` and leaves the value there."""
         store = self.make_store()
         first, second = store.add("k", b"first"), store.add("k", b"second")
         if not first or second or store.get("k") != b"first":
             raise AssertionError("add wrote over a key that was there, or refused a new one")
 
     def test_only_one_of_many_racing_adds_wins(self) -> None:
+        """`racers` threads `add` one key at once and exactly one answers `True` — what a
+        claim or a cron lock across replicas relies on."""
         store = self.make_store()
         won: list[bool] = []
         lock = threading.Lock()
@@ -71,6 +80,8 @@ class KeyValueStoreContract:
             raise AssertionError(f"{won.count(True)} racing adds won; exactly one must")
 
     def test_increment_starts_at_one_and_counts_every_racer(self) -> None:
+        """`increment` of a missing key answers 1, and `racers` concurrent increments are all
+        counted — none lost to a read-then-write."""
         store = self.make_store()
         if store.increment("fresh") != 1:
             raise AssertionError("increment of a missing key did not answer 1")
@@ -86,6 +97,7 @@ class KeyValueStoreContract:
             raise AssertionError("racing increments lost a count")
 
     def test_delete_removes_and_tolerates_a_missing_key(self) -> None:
+        """`delete` removes a key, and deleting a key that is not there does not raise."""
         store = self.make_store()
         store.set("a", b"1")
         store.delete("a")
@@ -94,6 +106,8 @@ class KeyValueStoreContract:
             raise AssertionError("a deleted key answered a value")
 
     def test_take_answers_the_value_once_and_leaves_nothing(self) -> None:
+        """`take` answers the value and removes it in one step: a second `take` and a `get`
+        answer `None`, as does a `take` of a missing key."""
         store = self.make_store()
         store.set("code", b"1")
         if store.take("code") != b"1" or store.take("code") is not None:
@@ -102,6 +116,8 @@ class KeyValueStoreContract:
             raise AssertionError("take left the value behind, or answered a missing key")
 
     def test_only_one_of_many_racing_takes_gets_the_value(self) -> None:
+        """`racers` threads `take` one key at once and exactly one gets the value — a one-time
+        code is spent once."""
         store = self.make_store()
         store.set("ticket", b"x")
         taken: list[bytes | None] = []
@@ -121,6 +137,8 @@ class KeyValueStoreContract:
             raise AssertionError(f"{len([one for one in taken if one])} racing takes got it")
 
     def test_a_value_with_a_ttl_is_gone_after_it(self) -> None:
+        """Values written by `set` or `add` with a ttl are gone once it passes — and the key
+        can be added again; a value without a ttl stays. Uses `expire`."""
         store = self.make_store()
         store.set("short", b"1", ttl=timedelta(seconds=1))
         store.add("claimed", b"1", ttl=timedelta(seconds=1))
@@ -132,6 +150,8 @@ class KeyValueStoreContract:
             raise AssertionError("a value without a ttl expired")
 
     def test_replace_writes_only_over_what_was_expected(self) -> None:
+        """`replace` writes only when the key holds the expected value — a compare-and-set; it
+        never writes over another value nor creates a missing key."""
         store = self.make_store()
         store.set("lease", b"ana")
         if store.replace("lease", b"bo", b"carla"):
@@ -145,6 +165,8 @@ class KeyValueStoreContract:
             raise AssertionError("replace wrote a key that was not there")
 
     def test_replace_with_none_deletes_only_what_was_expected(self) -> None:
+        """`replace` with `None` deletes the key only when it holds the expected value — how a
+        lease is released only by its holder."""
         store = self.make_store()
         store.set("lease", b"ana")
         if store.replace("lease", b"bo", None) or store.get("lease") != b"ana":
@@ -153,6 +175,8 @@ class KeyValueStoreContract:
             raise AssertionError("replace did not delete the value it expected")
 
     def test_only_one_of_many_racing_replaces_wins(self) -> None:
+        """`racers` threads `replace` the same expected value at once and exactly one wins — a
+        lease is renewed or taken over by one holder."""
         store = self.make_store()
         store.set("lease", b"old")
         won: list[bool] = []
@@ -174,6 +198,8 @@ class KeyValueStoreContract:
     def test_a_replaced_value_lives_for_its_own_ttl_and_an_expired_one_is_not_replaced(
         self,
     ) -> None:
+        """A value written by `replace` with a ttl expires after it, even when it had none;
+        a value whose ttl passed is not there to be replaced. Uses `expire`."""
         store = self.make_store()
         store.set("lease", b"ana")
         store.replace("lease", b"ana", b"ana", ttl=timedelta(seconds=1))

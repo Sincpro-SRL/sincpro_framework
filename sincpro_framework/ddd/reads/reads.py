@@ -49,14 +49,15 @@ nothing, so it reads exactly what the entity says.
 
 import copy
 import dataclasses
-from collections.abc import Callable
-from typing import Any, cast, get_args, get_origin
+from collections.abc import Callable, Sequence
+from typing import Any, ClassVar, cast, get_args, get_origin
 
 from pydantic import field_validator
 
 from sincpro_framework.context.domain.drafts import Draft
 from sincpro_framework.context.entrypoint.drafts import Drafts
 from sincpro_framework.context.entrypoint.facade import use_context
+from sincpro_framework.context.entrypoint.owner import BY_TENANT_AND_USER
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
@@ -174,6 +175,7 @@ class DomainEvents[T, R: ResponsePaginatedQuery](Query):
     @field_validator("names", mode="before")
     @classmethod
     def _one_or_several(cls, value: Any) -> Any:
+        """`names="InvoicePaid"` read as `["InvoicePaid"]` — one name is a list of one."""
         return [value] if isinstance(value, str) else value
 
 
@@ -229,7 +231,14 @@ def key_of(entity: type) -> str:
 def declared_by(dto: type) -> tuple[type, type]:
     """The entity and the response a DTO named in its base.
 
-    in      QueryGetAccount        →  out  (Account, ResponseAccount)
+        declared_by(QueryGetAccount)       ->  (Account, ResponseAccount)
+        # class QueryGetAccount(Get[Account, ResponseAccount])
+        declared_by(CommandEditInvoice)    ->  (Invoice, ResponseEditInvoice)
+        declared_by(QueryHealth)
+            ->  raises ProgrammingError("QueryHealth does not name its entity and …")
+
+    Context: the first base in the MRO parametrized with two classes is the one read, so a
+    subclass of a declared DTO answers what its parent named.
     """
     for base in dto.__mro__:
         generic = getattr(base, "__pydantic_generic_metadata__", None)
@@ -244,7 +253,14 @@ def declared_by(dto: type) -> tuple[type, type]:
 
 def held(record: Any) -> dict[str, Any]:
     """Each field's value as the record holds it, read without resolving anything; a list is
-    copied, so what is later put in its place is compared with what was there."""
+    copied, so what is later put in its place is compared with what was there.
+
+        held(Invoice(id="F-7", total=95, lines=[l1, l2], partner=<not read>))
+            ->  {"id": "F-7", …, "total": 95, "lines": [l1, l2]}   # partner left out
+
+    Context: a relation nobody read is left out rather than read for this — holding is not
+    asking.
+    """
     found: dict[str, Any] = {}
     for name in annotations_of(type(record)):
         try:
@@ -258,7 +274,12 @@ def held(record: Any) -> dict[str, Any]:
 def events_of(response: type) -> type:
     """The event class a `DomainEvents` response holds: where its events are read.
 
-    in      ResponseIssueEvents(events: list[ProjectEvent])    →  out  ProjectEvent
+        events_of(ResponseIssueEvents)    ->  ProjectEvent
+        # class ResponseIssueEvents: events: list[ProjectEvent]
+        events_of(ResponseAccounts)       # accounts: list[Account]
+            ->  raises ProgrammingError("ResponseAccounts holds list[Account], not events: …")
+
+    The records field must be a list of a `DomainEvent` class — nothing else is read.
     """
     annotation = response.model_fields[response.records_field()].annotation
     arguments = get_args(annotation) if get_origin(annotation) is list else ()
@@ -308,6 +329,10 @@ class EntityReads[T](Feature):
             return answer
     """
 
+    drafts_by: ClassVar[Sequence[str]] = BY_TENANT_AND_USER
+    """Whose the drafts of this form are — a user's within its tenant by default; `BY_TENANT`
+    everybody's of the tenant, `()` nobody's: one draft of a record that every user opens."""
+
     def reads_from(self) -> IRepository:
         """The repository read from: the dependency named `repository`. Override it when the
         bounded context named it otherwise."""
@@ -320,9 +345,19 @@ class EntityReads[T](Feature):
         return repository
 
     def drafts(self) -> Drafts:
-        """The drafts read and kept: the caller's, in the context's store. Override it to key
-        them by something else — `use_context().drafts(by=["session_id"])`."""
-        return use_context().drafts()
+        """The drafts this form reads and saves, owned by the keys of `drafts_by`.
+
+        Context: whose a draft is decides who sees it — the caller alone by default, everybody
+        who opens the record with `drafts_by = ()`. Declared on the class, not computed per
+        call, so every action of the form (`save_draft`, `save`, `discard`) uses one owner.
+
+            class InvoiceForms(EntityEdits[Invoice]): ...        a user's draft, in its tenant
+            class SharedForms(EntityEdits[Invoice]):
+                drafts_by = ()                                   one draft of a record, for all
+
+        Final: `use_context().drafts(by=drafts_by)`, in the context's store.
+        """
+        return use_context().drafts(by=self.drafts_by)
 
     def draft_subject(self, entity: type, key: str) -> str:
         """What a draft of a record is kept as: its key under its entity and its bounded context —
@@ -363,7 +398,16 @@ class EntityReads[T](Feature):
     def previewed(self, entity: type, identity: str | None) -> Any:
         """The record a preview starts from: a copy of the stored one found by its key, read as
         its `DEFAULT_READING` brings it and with the relations its derivations read, or a new
-        one holding the class defaults (`None` where a field has none)."""
+        one holding the class defaults (`None` where a field has none).
+
+            previewed(Invoice, "F-7")    ->  a copy of invoice F-7, its lines read
+            previewed(Invoice, None)     ->  Invoice(currency_id="BOB", total=None, …)
+            previewed(Invoice, "F-404")
+                ->  raises AggregateNotFound("Invoice F-404 does not exist")
+
+        Context: a copy, so whatever the preview puts on it never reaches the instance a
+        unit of work may be tracking.
+        """
         if identity is None:
             return blank(entity)
         criteria = self.by_identity(
@@ -387,7 +431,16 @@ class EntityReads[T](Feature):
     ) -> Any:
         """A draft answered as the record it holds, the way the stored one is answered: cut by the
         same criteria, with the same definition — and said to be a draft, stale when the stored
-        record moved on since the draft started."""
+        record moved on since the draft started.
+
+            # F-7 stored at version 4; the draft kept {"discount": "5"} from version 3
+            drafted(Invoice, ResponseInvoice, "F-7", kept, criteria)
+                ->  ResponseInvoice(invoice=Invoice(discount=5, …),
+                        draft=DraftState(version=2, origin_version=3, stale=True))
+            # only drafted, never stored  ->  a blank Invoice keyed "F-7" with the values
+
+        A draft of a record never stored is never stale: there is nothing to move on.
+        """
         stored = self.stored(entity, key)
         record = stored if stored is not None else keyed(blank(entity), entity, key)
         assign(record, kept.values, True)
@@ -402,7 +455,17 @@ class EntityReads[T](Feature):
 
     def get(self, dto: Any) -> Any:
         """The record found by its key, as the entity reads it, or `AggregateNotFound` — the
-        caller's draft of it instead when `draft` asks and one is kept."""
+        caller's draft of it instead when `draft` asks and one is kept.
+
+            QueryGetAccount(id="01a1…")               ->  ResponseAccount(account=Account(…))
+            QueryGetAccount(id="01a1…", draft=True)   ->  the kept draft, with `draft` state
+
+        1. With `draft` asked, the caller's kept draft of this record, when there is one, is
+           answered instead (`drafted`), over the criteria a stored one would be read by.
+        2. Otherwise a page of one, filtered by the entity's key and read as the entity reads
+           itself, the caller's criteria replacing it part by part (`by_identity`).
+        Final: an empty page is `AggregateNotFound`; else the record, its page and criteria.
+        """
         entity, response = declared_by(type(dto))
         if dto.draft:
             kept = self.drafts().read(self.draft_subject(entity, dto.id))
@@ -421,7 +484,14 @@ class EntityReads[T](Feature):
 
     def get_many(self, dto: Any) -> Any:
         """The records of `ids`, in that order, each as the entity reads it; the ids with no
-        record are listed as missing."""
+        record are listed as missing.
+
+            QueryGetManyAccounts(ids=["1.2", "9.9", "1.1", "1.2"])
+                ->  ResponseAccounts(accounts=[<1.2>, <1.1>], missing=["9.9"])
+
+        Context: a repeated id is asked once; the page is as long as the ids, and each id is
+        read by the entity's key (`DEFAULT_GET_ID`), not necessarily its identity.
+        """
         entity, response = declared_by(type(dto))
         ids = list(dict.fromkeys(dto.ids))
         identity = key_of(entity)
@@ -443,7 +513,26 @@ class EntityReads[T](Feature):
     def drafted_page(self, entity: type, criteria: Criteria) -> EntityCollection[Any]:
         """The caller's drafts of `entity` as one page: each as the record it holds, kept by the
         criteria's filter, in its order — the most recently kept first when it names none — cut
-        to its limit."""
+        to its limit.
+
+            # drafts kept of Invoice F-9 (just now) and F-7 (earlier), and of a Partner
+            drafted_page(Invoice, Criteria())
+                ->  EntityCollection(items=(<F-9 drafted>, <F-7 drafted>),
+                                     count=Count(2, exact=True), meta=<Invoice's>)
+            drafted_page(Invoice, Criteria(where=Condition(field="total",
+                                                           operator=Operator.GT, value=100)))
+                ->  only the drafted invoices above 100
+
+        1. Each subject the caller has a draft of, the most recently kept first — only those
+           of this entity, in this bounded context.
+           1.1 The record it holds: the stored one, or a blank one under its key, with the
+               draft's values put on it.
+        2. The records kept by the criteria's filter, in memory, as the engine would.
+        3. Sorted by each of the criteria's sorts — the last first, so the first one wins.
+        4. Cut to the criteria's limit, when it asks for a page.
+        Final: one exact page, with the definition and the drops the store answers for the
+        same criteria.
+        """
         drafts = self.drafts()
         prefix = self.draft_subject(entity, "")
         records = []
@@ -474,6 +563,15 @@ class EntityReads[T](Feature):
     def search(self, dto: Any) -> Any:
         """The page the criteria asks for, each record as the entity reads it unless the
         criteria names what to bring. The store applies the entity's order when none is named.
+
+            drafts_only = Criteria(where=Condition(field="state", value="draft"))
+            QuerySearchInvoices(criteria=drafts_only)
+                ->  ResponseInvoices(invoices=[…], cursor=…, count=…)
+            QuerySearchInvoices(criteria=…, drafts=True)
+                ->  the caller's drafts of invoices instead (`drafted_page`)
+
+        The entity's `DEFAULT_READING` is the starting point; the caller's criteria replaces
+        it part by part.
         """
         entity, response = declared_by(type(dto))
         criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
@@ -483,6 +581,12 @@ class EntityReads[T](Feature):
 
     def domain_events(self, dto: Any) -> Any:
         """The record's events, oldest first, each filtered by the record's type and identity.
+
+            QueryIssueEvents(id="0192…")
+                ->  ResponseIssueEvents(events=[IssueOpened(…), IssueAssigned(…), …])
+            QueryIssueEvents(id="0192…", names="IssueAssigned")   ->  only those
+            QueryAccountEvents(id="1.2.3")   # Account keyed by `code`: its id read first
+            QueryIssueEvents(id="  ")        ->  raises ProgrammingError("… a blank one …")
 
         1. The event class is what the response holds (`events: list[ProjectEvent]`); one that
            is not a `DomainEvent` is refused.
@@ -527,6 +631,11 @@ class EntityReads[T](Feature):
     def preview(self, dto: Any) -> Any:
         """What the record becomes with the form's values, computed over a record nobody saves.
 
+            QueryPreviewSale(id="S-1", values={"discount": "10"}, changed=["discount"])
+                ->  ResponsePreview(values={"total": 90.00}, fields={…}, advice=[])
+            QueryPreviewSale(values={})    # a new sale, nothing changed yet
+                ->  ResponsePreview(values={<every value of a blank sale, derived>}, …)
+
         1. Inside `previewing()`: every write of every store raises, advice is collected.
         2. Start from a copy of the stored record, read as its `DEFAULT_READING` brings it and
            with every relation its derivations read (`AggregateNotFound` when the id has none), or from a
@@ -537,7 +646,8 @@ class EntityReads[T](Feature):
         4. Events the domain recorded are dropped: nothing happened.
         Final: the values that differ from what the form sent, compared as values (`0` and
         `0.00` are one amount) — never a field the framework writes, which a form must not
-        send back —, each field's state, the advice.
+        send back —, each field's state, the advice. A new record with nothing changed
+        answers every value.
         """
         entity, response = declared_by(type(dto))
         with previewing() as advice:
@@ -561,6 +671,16 @@ class EntityReads[T](Feature):
         return response(values=values, fields=states_of(record), advice=list(advice))
 
     def execute(self, dto: Any) -> Any:
+        """Routes the DTO to the read its base names — `Get` to `get`, `Search` to `search`, …
+        — so one Feature answers every read of the entity and each stays overridable alone.
+
+            execute(QueryGetAccount(id="1.2.3"))      ->  self.get(dto)
+            execute(QueryIssueEvents(id="0192…"))     ->  self.domain_events(dto)
+            execute(CommandIssueInvoice(…))
+                ->  raises ProgrammingError("AccountReads answers Get, GetMany, …, not …")
+
+        `DomainEvents` is matched before `Search`; any other DTO is a `ProgrammingError`.
+        """
         match dto:
             case Get():
                 return self.get(dto)
@@ -584,8 +704,14 @@ def with_derived_relations(entity: type, criteria: Criteria) -> Criteria:
     """`criteria`, also bringing every relation the computation of `entity` reads (`owned`) — a
     total over lines the entity's reading does not name still reads the lines.
 
-    in      Sale (DEFAULT_READING: customer_id), subtotal ← lines
-    out     the reading plus {"lines": {}}: each line, every scalar
+        # Sale: DEFAULT_READING names customer_id; subtotal ← lines
+        with_derived_relations(Sale, Criteria(specification={"customer_id": {}}))
+            ->  Criteria(specification={"customer_id": {}, "lines": {}})  # every scalar
+        with_derived_relations(Sale, Criteria(specification={"lines": {"qty": {}}}))
+            ->  the same criteria — `lines` named already, as the caller cut it
+
+    Context: only what is missing is added, sorted by name, after what the caller named; the
+    criteria comes back as it is when nothing is missing.
     """
     read = set(owned(entity))
     named = criteria.specification.root if criteria.specification is not None else {}
@@ -597,6 +723,8 @@ def with_derived_relations(entity: type, criteria: Criteria) -> Criteria:
 
 
 def _in_progress(value: Any, seen: dict[int, Any]) -> bool:
+    """Whether `value` is a record whose copy is being built right now — `seen` still holds
+    the original itself, not its copy — so whatever points at it must wait for the copy."""
     return seen.get(id(value)) is value and dataclasses.is_dataclass(value)
 
 
@@ -625,7 +753,19 @@ def _copied(
     record: Any, seen: dict[int, Any], pending: dict[int, list[Callable[[Any], None]]]
 ) -> Any:
     """One record copied. While its fields are copied it stands for itself in `seen`; whatever
-    met it then is pointed at its copy once the copy exists (`pending`)."""
+    met it then is pointed at its copy once the copy exists (`pending`).
+
+        Invoice(lines=[Line(invoice=<that invoice>)])
+        ->  Invoice'(lines=[Line'(invoice=Invoice')])          the cycle closed on the copies
+
+    1. Not a dataclass: a shallow `copy.copy`.
+    2. Met before: its copy — or, while still in progress, the original, fixed up in step 5.
+    3. Marked in progress, then each init field copied; a relation nobody resolved is left
+       to its default.
+    4. Built through its own constructor, and the copy put in `seen`.
+    5. Every value of the copy still pointing at a record in progress is noted (`_awaiting`).
+    Final: every point that waited for this record is pointed at the copy, which is answered.
+    """
     entity = type(record)
     if not dataclasses.is_dataclass(entity):
         return copy.copy(record)
@@ -704,7 +844,15 @@ def blank(entity: type) -> Any:
 
 def dumped(record: Any) -> dict[str, Any]:
     """Each field of the record as JSON, read without resolving anything: a relation nobody
-    resolved is left out, and a related record's own relations write their defaults."""
+    resolved is left out, and a related record's own relations write their defaults.
+
+        Invoice(number="F-1", lines=<not resolved>)   ->  {"number": "F-1", ...}   no "lines"
+
+    1. Each annotated field, read; a `RelationNotResolved` skips it.
+    2. A collection written as the list of its records.
+    Final: dumped as JSON through the field's own adapter, inside `writing_out()` so nested
+    records do not try to resolve what nobody loaded.
+    """
     annotations = annotations_of(type(record))
     written: dict[str, Any] = {}
     for name, annotation in annotations.items():
@@ -722,6 +870,7 @@ def dumped(record: Any) -> dict[str, Any]:
 
 
 def _holds(record: Any, condition: Any) -> bool:
+    """Whether a hint's condition holds over the record; no condition never holds."""
     return condition is not None and matches(record, condition)
 
 

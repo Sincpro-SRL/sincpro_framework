@@ -22,4 +22,10 @@ def internal[T: type](cls: T) -> T:
 
 
 def is_internal(*classes: type | None) -> bool:
+    """Whether any of `classes` — the Command, its handler — was marked `internal`; a `None`
+    (no handler found) counts as not marked.
+
+        is_internal(CommandReconcileLedger, ReconcileLedger)  ->  True
+        is_internal(CommandIssueInvoice, None)                ->  False
+    """
     return any(one is not None and one in _internal for one in classes)

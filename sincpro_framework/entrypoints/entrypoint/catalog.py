@@ -4,6 +4,11 @@ Packs what `sincpro_framework.introspection` already described — Features,
 ApplicationServices, DTOs — for a JSON-speaking host. Hosts only add a wire:
 FastMCP tools, JSON-RPC methods, FastAPI routes, CLI commands. Do not put
 FastMCP, Starlette, or argparse types here.
+
+    catalog = Catalog(billing).exclude(CommandReconcile).wrap("CommandIssue", audited)
+    [one.name for one in catalog.get_scalar_use_cases(filter_binaries_schema=True)]
+    ->  ["CommandIssue", "QueryInvoice"]
+    catalog.get_scalar_use_cases()[0].run({"invoice_id": 7})  ->  {"status": "issued"}
 """
 
 from collections.abc import Mapping
@@ -56,6 +61,20 @@ class Catalog:
     """
 
     def __init__(self, framework_instance: UseFramework):
+        """Hold `framework_instance` with nothing narrowed — every use case it answers.
+
+        Context: the bus is built here, so a catalog made before the first call already sees
+        every Feature and ApplicationService registered; its revision is noted so a later
+        registration on the bus lets the packed answers go.
+
+            Catalog(billing)                    ->  every use case of billing, none wrapped
+            Catalog(billing).revision           ->  billing.revision — no change of its own
+
+        1. The bus's root built.
+        2. Nothing included (every use case), nothing excluded, nothing wrapped.
+        3. Nothing packed yet; the bus's revision noted as the one packed from.
+        Final: no change of its own — `revision` is the bus's.
+        """
 
         framework_instance.build_root_bus()
 
@@ -79,6 +98,7 @@ class Catalog:
 
     @staticmethod
     def _names(*dtos: type | str) -> set[str]:
+        """Each Command by the name the catalog keys it under — a class by its `__name__`."""
         return {dto if isinstance(dto, str) else dto.__name__ for dto in dtos}
 
     def _convert_to_scalar_use_case(
@@ -147,18 +167,34 @@ class Catalog:
             )
 
     def include(self, *dtos: type | str) -> Self:
+        """Publish only these use cases — by Command or its name; a second call replaces the
+        first, it does not add to it.
+
+            Catalog(billing).include(CommandIssue, "QueryInvoice")
+        """
         self._include = self._names(*dtos)
         self._packed.clear()
         self._changes += 1
         return self
 
     def exclude(self, *dtos: type | str) -> Self:
+        """Leave these use cases out — by Command or its name; it wins over `include`, and a
+        second call replaces the first.
+
+            Catalog(billing).exclude(CommandReconcile)
+        """
         self._exclude = self._names(*dtos)
         self._packed.clear()
         self._changes += 1
         return self
 
     def wrap(self, dto: type | str, wrapper: Wrapper) -> Self:
+        """Decorate one use case's `run` — auth, audit, extra logging — on this catalog only;
+        the bus and every other gateway run it as it is. One wrapper per Command: the last
+        wins.
+
+            Catalog(billing).wrap(CommandIssue, lambda run: lambda payload: run(payload))
+        """
         key = dto if isinstance(dto, str) else dto.__name__
         self._wrappers[key] = wrapper
         self._packed.clear()
@@ -181,6 +217,16 @@ class Catalog:
     def _packed_use_cases(
         self, filter_binaries_schema: bool
     ) -> list[PackedFeatureOrAppService]:
+        """Pack every use case afresh — what `get_scalar_use_cases` keeps until something
+        changes.
+
+        1. JSON-safe asked: the full answer, read through `get_scalar_use_cases` so it is
+           packed once, filtered of what carries bytes.
+        2. Build the root bus and read what introspection describes, Features and
+           ApplicationServices.
+        3. Warn about a name in include/exclude/wrap no use case has.
+        Final: Features first, then ApplicationServices, each narrowed and bound.
+        """
         if filter_binaries_schema:
             return self._json_safe(self.get_scalar_use_cases())
         self.framework_instance.build_root_bus()
@@ -208,6 +254,11 @@ class Catalog:
         as JSON (a `bytes` field, `format: binary|byte` in the schema) — skipped
         with a warning. Still callable in-process via `framework(dto)`; just not
         exposed on a JSON wire.
+
+            Catalog(billing).get_scalar_use_cases()
+            ->  [PackedFeatureOrAppService(name="CommandIssueInvoice", ...), ...]
+            Catalog(billing).get_scalar_use_cases(filter_binaries_schema=True)
+            ->  the same, without CommandUploadScan (a `bytes` field)
 
         1. Build the root bus if the instance was never initialized.
         2. Warn about a name in include/exclude/wrap that no use case has.

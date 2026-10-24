@@ -8,11 +8,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from sincpro_framework import DataTransferObject, exceptions
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
     Cache,
+    CachePolicy,
     JsonCodec,
-    KeepPolicy,
     Lifetime,
     Lru,
     Sliding,
@@ -28,6 +27,7 @@ from sincpro_framework.runtime.testing import (
     FreshnessContract,
     ManualClock,
 )
+from sincpro_framework.store import InMemoryKeyValue
 
 
 class Tenant(DataTransferObject):
@@ -114,7 +114,7 @@ def test_a_sliding_value_asked_for_is_served_until_at_most_and_one_left_idle_goe
     again, one who left is — and a hot value is still recomputed after `at_most`."""
     clock = ManualClock(datetime(2026, 9, 29, 12, 0, tzinfo=UTC))
     cache, codec = _cache(tier, clock)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         freshness=Sliding(idle_for=timedelta(minutes=10), at_most=timedelta(hours=1))
     )
     computed: list[str] = []
@@ -143,7 +143,7 @@ def test_a_sliding_value_asked_for_is_served_until_at_most_and_one_left_idle_goe
 def test_lifetime_is_still_the_time_to_live_and_keep_policy_still_takes_it():
     """Code written against phase 1 keeps running."""
     ttl = Lifetime(ttl=timedelta(minutes=5))
-    policy = KeepPolicy[Tenant](lifetime=ttl)  # pyright: ignore[reportCallIssue]
+    policy = CachePolicy[Tenant](lifetime=ttl)  # pyright: ignore[reportCallIssue]
 
     assert Lifetime is TimeToLive
     assert policy.freshness == ttl

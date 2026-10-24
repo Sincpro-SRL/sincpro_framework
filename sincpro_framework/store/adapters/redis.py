@@ -9,41 +9,50 @@ nothing else. `prefix` lets several services share one server without sharing ke
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework.store.domain.key_value import KeyValueStore
 
 
 def _milliseconds(ttl: timedelta | None) -> int | None:
+    """Redis's `PX`: whole milliseconds, at least one — `None`, no ttl, keeps the key."""
     return None if ttl is None else max(1, int(ttl.total_seconds() * 1000))
 
 
 class RedisKeyValue(KeyValueStore):
+    """The `KeyValueStore` port on redis-py — one command per operation, ttl in `PX`."""
+
     def __init__(self, client: Any, prefix: str = "") -> None:
         """`client` is a `redis.Redis` — or anything with its `mget/set/incr/delete/getdel`."""
         self.client = client
         self.prefix = prefix
 
     def get_many(self, keys: list[str]) -> list[bytes | None]:
+        """One `MGET` — skipped for no keys, which Redis refuses."""
         with self._reaching():
             if not keys:
                 return []
             return list(self.client.mget([self.prefix + key for key in keys]))
 
     def set(self, key: str, value: bytes, ttl: timedelta | None = None) -> None:
+        """`SET … PX`; with no ttl, `SET` alone — which also drops a ttl the key had."""
         with self._reaching():
             self.client.set(self.prefix + key, value, px=_milliseconds(ttl))
 
     def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
+        """`SET … NX PX` — the write and its expiry in one atomic command."""
         with self._reaching():
             return bool(
                 self.client.set(self.prefix + key, value, nx=True, px=_milliseconds(ttl))
             )
 
     def increment(self, key: str) -> int:
+        """`INCR` — Redis creates a missing counter at 0 itself; a ttl the key had is kept."""
         with self._reaching():
             return int(self.client.incr(self.prefix + key))
 
     def delete(self, key: str) -> None:
+        """`DEL`."""
         with self._reaching():
+
             self.client.delete(self.prefix + key)
 
     def take(self, key: str) -> bytes | None:
@@ -55,7 +64,18 @@ class RedisKeyValue(KeyValueStore):
         self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
     ) -> bool:
         """`WATCH` the key, compare, then `MULTI` the write: a write by anyone in between aborts
-        the transaction, and the answer is `False` — no script on the server."""
+        the transaction, and the answer is `False` — no script on the server.
+
+            store.replace("lease", b"owner-a", b"owner-b", timedelta(seconds=30))  ->  True
+            store.replace("lease", b"owner-a", None)   ->  False    # it holds owner-b
+            another client writes "lease" between the GET and the EXEC  ->  False
+
+        1. On a pipeline of its own, `WATCH` the prefixed key.
+        2. `GET` it: not `expected` (missing included) — `UNWATCH`, `False`.
+        3. `MULTI`, then the write: `DEL` for `None`, else `SET … PX`.
+        4. `EXEC`: a write by anyone since the `WATCH` aborts it — `WatchError`, `False`.
+        Final: `True`, the write applied.
+        """
         from redis.exceptions import WatchError
 
         name = self.prefix + key

@@ -49,6 +49,14 @@ type MethodIndex = Mapping[str, Resolved[RpcBinding]]
 def jsonrpc_error(
     code: int, message: str, request_id: Any = None, data: Any = None
 ) -> dict[str, Any]:
+    """A JSON-RPC 2.0 error response — `data` only when there is some.
+
+        jsonrpc_error(-32601, "Method not found", 7)
+        ->  {"jsonrpc": "2.0", "id": 7,
+             "error": {"code": -32601, "message": "Method not found"}}
+
+    The `id` is the request's — `None` when it could not be read.
+    """
     error: dict[str, Any] = {"code": code, "message": message}
     if data is not None:
         error["data"] = data
@@ -56,34 +64,48 @@ def jsonrpc_error(
 
 
 def jsonrpc_answer(answer: Answer, request_id: Any = None) -> dict[str, Any]:
+    """The error response of an `Answer` — the `(code, message, data)` the catalogue gives."""
     code, message, data = answer
     return jsonrpc_error(code, message, request_id, data)
 
 
 def parse_error(message: str) -> dict[str, Any]:
+    """`-32700`: the body is not JSON — answered with a `null` id, none could be read."""
     return jsonrpc_answer(protocol_error(PARSE, "PARSE_ERROR", message=message))
 
 
 def invalid_request(
     reason: str, message: str, request_id: Any = None, **disclosed: Any
 ) -> dict[str, Any]:
+    """`-32600`: the request is not one the protocol accepts — `reason` says why, `disclosed`
+    adds what the caller needs to fix it (`limit`, `size`)."""
     answer = protocol_error(INVALID, reason, message=message, **disclosed)
     return jsonrpc_answer(answer, request_id)
 
 
 def body_too_large(limit: int) -> dict[str, Any]:
+    """An Invalid Request with `reason` `BODY_TOO_LARGE` — the HTTP host sends it as 413."""
     return invalid_request(
         "BODY_TOO_LARGE", f"a request body holds at most {limit} bytes", limit=limit
     )
 
 
 def unsupported_media_type(accepted: list[str]) -> dict[str, Any]:
+    """An Invalid Request with `reason` `UNSUPPORTED_MEDIA_TYPE` and the media types
+    `accepted` — the HTTP host sends it as 415."""
     return invalid_request(
         "UNSUPPORTED_MEDIA_TYPE", "send the request as application/json", accepted=accepted
     )
 
 
 def jsonrpc_result(request_id: Any, result: Any) -> dict[str, Any]:
+    """A JSON-RPC 2.0 success response.
+
+        jsonrpc_result(7, {"status": "issued"})
+        ->  {"jsonrpc": "2.0", "id": 7, "result": {"status": "issued"}}
+
+    The `id` is the request's, so the caller matches the answer.
+    """
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
@@ -96,6 +118,12 @@ def dispatch_method(
     credentials: Credentials | None = None,
 ) -> dict[str, Any]:
     """Execute one JSON-RPC method of the surface — through the bus, never `execute`.
+
+        dispatch_method(methods, discover, "billing.issue_invoice", {"total": 10}, None)
+        ->  {"invoice_id": "F-1", "total": 10}
+        dispatch_method(methods, discover, "rpc.discover", None, None)  ->  the OpenRPC doc
+        dispatch_method(methods, discover, "billing.issue_invoice", [10], None)
+        ->  InvalidParams("PARAMS_BY_POSITION", ...)
 
     1. rpc.discover returns the OpenRPC document (no params).
     2. Unknown method → MethodNotFound.
@@ -132,7 +160,24 @@ def is_valid_id(request_id: Any) -> bool:
 
 def invalid_request_of(request: Any) -> dict[str, Any] | None:
     """Why a request is not a valid Request object — answered even without an `id`: an
-    invalid request is not a notification (JSON-RPC 2.0 §7, "invalid Request object")."""
+    invalid request is not a notification (JSON-RPC 2.0 §7, "invalid Request object").
+
+        invalid_request_of({"jsonrpc": "2.0", "id": 1, "method": "billing.issue_invoice"})
+        ->  None
+        invalid_request_of({"jsonrpc": "1.0", "id": 1, "method": "x"})
+        ->  {"jsonrpc": "2.0", "id": 1, "error": {"code": -32600, "message": "Invalid
+             Request", "data": {"kind": "invalid", "reason": "INVALID_VERSION", ...}}}
+        invalid_request_of([1, 2])     ->  the same error, reason "NOT_AN_OBJECT", id null
+
+    1. Not a JSON object: `NOT_AN_OBJECT`, answered with a null id.
+    2. An id that is no string, number or null: `INVALID_ID`, answered with a null id.
+    3. From here the answer carries the request's id:
+       3.1 `jsonrpc` other than "2.0": `INVALID_VERSION`;
+       3.2 a method that is no non-empty string: `INVALID_METHOD`;
+       3.3 params neither an object nor an array: `INVALID_PARAMS_STRUCTURE`;
+       3.4 a `context` that is no object: `INVALID_CONTEXT`.
+    Final: `None` — a valid Request object.
+    """
     if not isinstance(request, dict):
         return invalid_request("NOT_AN_OBJECT", "a request must be a JSON object")
     request_id = request.get("id")
@@ -155,7 +200,16 @@ def invalid_request_of(request: Any) -> dict[str, Any] | None:
 
 
 def failure_of(method: str, error: Exception) -> Answer:
-    """What a failed method is answered with — logged unless expected or already reported."""
+    """What a failed method is answered with — logged unless expected or already reported.
+
+        failure_of("billing.nope", MethodNotFound("billing.nope"))
+        ->  (-32601, "Method not found", {"kind": "not_found", "reason": "METHOD_NOT_FOUND",
+                                          "retryable": False, "method": "billing.nope"})
+        failure_of("billing.issue_invoice", RuntimeError("boom"))
+        ->  (-32603, "Internal error", {...}), the traceback logged
+
+    A validation error and an auth refusal are the caller's — answered, never logged.
+    """
     if isinstance(error, exceptions.MethodNotFound):
         return protocol_error(UNKNOWN_METHOD, "METHOD_NOT_FOUND", method=method)
     if isinstance(error, exceptions.InvalidParams):
@@ -175,6 +229,12 @@ def handle_single(
     credentials: Credentials | None = None,
 ) -> dict[str, Any] | None:
     """Handle one JSON-RPC request object.
+
+        handle_single(methods, discover, {"jsonrpc": "2.0", "id": 7,
+                      "method": "billing.issue_invoice", "params": {"total": 10}})
+        ->  {"jsonrpc": "2.0", "id": 7, "result": {"invoice_id": "F-1", "total": 10}}
+        handle_single(methods, discover, {"jsonrpc": "2.0", "method": "billing.ping"})
+        ->  None — a notification, answered or failed
 
     1. An invalid Request object is answered, `id` or not.
     2. The body's `context` (a framework extension) is merged over the inherited one.
@@ -211,6 +271,12 @@ def handle_payload(
 ) -> dict[str, Any] | list[Any] | None:
     """JSON-RPC 2.0 entry: one request, a batch, or a parse-level invalid payload.
 
+        handle_payload(methods, discover, [<request id 1>, <notification>, <request id 2>])
+        ->  [{"jsonrpc": "2.0", "id": 1, ...}, {"jsonrpc": "2.0", "id": 2, ...}]
+        handle_payload(methods, discover, [])
+        ->  Invalid Request, reason "EMPTY_BATCH", nothing run
+        handle_payload(methods, discover, [<notification>])           ->  None
+
     1. A list is a batch: empty, or longer than `max_batch_size`, is one Invalid Request and
        nothing runs. Each item is answered on its own; notifications are dropped from the
        reply.
@@ -237,6 +303,12 @@ def handle_payload(
 
 
 def _rewritten_refs(node: Any, names: Mapping[str, str]) -> Any:
+    """A deep copy of `node` with every `#/$defs/X` pointed at the component `X` is kept under
+    — `names[X]`, which may be qualified by its owner.
+
+        _rewritten_refs({"$ref": "#/$defs/Line"}, {"Line": "billing.issue.Line"})
+        ->  {"$ref": "#/components/schemas/billing.issue.Line"}
+    """
     if isinstance(node, dict):
         rewritten = {key: _rewritten_refs(value, names) for key, value in node.items()}
         ref = node.get("$ref")
@@ -257,6 +329,12 @@ def hoisted(schema: dict[str, Any], schemas: dict[str, Any], owner: str) -> dict
     no `$defs`. Each definition moves to `components.schemas` — under its own name, or under
     `{owner}.{name}` when another DTO already published a different schema by that name. The
     catalog's schema is never mutated: it is computed once and shared by every wire.
+
+        hoisted({"properties": {"lines": {"items": {"$ref": "#/$defs/Line"}}},
+                 "$defs": {"Line": {...}}}, schemas, "billing.issue_invoice")
+        ->  {"properties": {"lines": {"items": {"$ref": "#/components/schemas/Line"}}}}
+            and schemas["Line"] holds it — "billing.issue_invoice.Line" when another
+            "Line" was there first
     """
     definitions = schema.get("$defs") or {}
     same_names = {name: name for name in definitions}
@@ -276,6 +354,11 @@ def hoisted(schema: dict[str, Any], schemas: dict[str, Any], owner: str) -> dict
 
 def content_descriptors(schema: dict[str, Any]) -> list[dict[str, Any]]:
     """Turn a DTO JSON Schema object into OpenRPC by-name params.
+
+        content_descriptors({"properties": {"note": {"type": "string"},
+                             "total": {"type": "integer"}}, "required": ["total"]})
+        ->  [{"name": "total", "required": True, "schema": {"type": "integer"}},
+             {"name": "note", "required": False, "schema": {"type": "string"}}]
 
     1. Read properties and required from the DTO schema.
     2. Each field becomes a Content Descriptor (name, required, schema).
@@ -303,6 +386,12 @@ def method_object(
 ) -> dict[str, Any]:
     """One method of the document — no layer anywhere: a Feature promoted to an
     ApplicationService publishes the same object.
+
+        method_object("billing.issue_invoice", <CommandIssueInvoice in billing>, schemas)
+        ->  {"name": "billing.issue_invoice", "summary": "Issue an invoice.",
+             "tags": [{"name": "billing"}], "paramStructure": "by-name",
+             "params": [...], "result": {"name": "result", "schema": {...}},
+             "x-sincpro-dto": "CommandIssueInvoice", "x-idempotent": False, ...}
 
     1. Params and result from the DTOs' schemas, nested definitions hoisted to `schemas`.
     2. One tag, the context (the bus's alias) — the document is tagged per context.
@@ -342,6 +431,7 @@ def method_object(
 
 
 def discover_method_object() -> dict[str, Any]:
+    """`rpc.discover` as a method of the document — no params, the document as its result."""
     return {
         "name": DISCOVER_METHOD,
         "summary": "OpenRPC service discovery",
@@ -372,6 +462,18 @@ def openrpc_document(
     max_batch_size: int = DEFAULT_MAX_BATCH_SIZE,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
 ) -> dict[str, Any]:
+    """The OpenRPC 1.4 document of `methods`.
+
+        openrpc_document("sincpro-rpc", [method_object(...)], schemas=hoisted_models)
+        ->  {"openrpc": "1.4.0", "info": {...}, "methods": [<rpc.discover>, ...],
+             "components": {"errors": {...}, "schemas": {..., "ErrorData": {...}}},
+             "x-sincpro-context": {...}, "x-sincpro-limits": {"maxBatchSize": 50, ...}}
+
+    1. `rpc.discover` first, then every published method.
+    2. `components`: every error code once, the hoisted models and `ErrorData` — what each
+       error's `data` carries.
+    Final: the framework's extensions — the request `context` member and the limits.
+    """
     return {
         "openrpc": OPENRPC_VERSION,
         "info": {"title": title, "version": version},

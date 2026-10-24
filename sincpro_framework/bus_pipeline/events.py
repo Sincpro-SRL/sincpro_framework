@@ -27,7 +27,16 @@ DESCRIBED_KEYS = ("execution_id", "causation_id")
 
 
 def as_json_values(value: Any) -> Any:
-    """A DTO, or what a handler returned, as JSON values — described when it cannot be written."""
+    """A DTO, or what a handler returned, as JSON values — described when it cannot be
+    written.
+
+        as_json_values(7)                            ->  7
+        as_json_values(CommandReserve(sku="A1"))     ->  {"sku": "A1"}
+        as_json_values({"at": datetime(2026, 1, 1)}) ->  {"repr": "{'at': datetime...}"}
+
+    A pydantic model by `model_dump(mode="json")`, one with `as_json` through its JSON,
+    anything else through `json.dumps` — and what none of them can write, by its `repr`.
+    """
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     try:

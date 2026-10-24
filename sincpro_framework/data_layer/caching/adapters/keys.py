@@ -25,7 +25,15 @@ KEY_LENGTH = 32
 
 
 def canonical(value: Any) -> Any:
-    """A value written the one way two equal values are always written."""
+    """A value written the one way two equal values are always written.
+
+        canonical({"b": Decimal("1.50"), "a": {3, 1, 2}, "d": date(2026, 1, 31),
+                   "t": (1, "x")})
+            ->  {"a": [1, 2, 3], "b": "1.5", "d": "2026-01-31", "t": [1, "x"]}
+        canonical(QueryBalance(customer_id="c1"))   ->  {"customer_id": "c1"}  # defaults out
+
+    Recursive — a DTO by the fields it sets apart from their defaults, an Enum by its value;
+    anything else it does not know is answered as it is, for `json.dumps` to write."""
     match value:
         case BaseModel():
             return canonical(value.model_dump(exclude_defaults=True))
@@ -45,5 +53,14 @@ def canonical(value: Any) -> Any:
 
 
 def key_of(*parts: Any) -> str:
+    """The 32-hex key `parts` always hash to — equal parameters, one key, in any process.
+
+        key_of("rates", "USD")                                  ->  "9f2c…" (32 hex)
+        key_of("rates", Decimal("1.0")) == key_of("rates", Decimal("1"))    ->  True
+
+    1. The parts written canonically, as one list, to JSON with sorted keys — what JSON
+       does not know is written by `str`.
+    Final: the first 32 hex characters of its sha256.
+    """
     written = json.dumps(canonical(list(parts)), sort_keys=True, default=str)
     return hashlib.sha256(written.encode()).hexdigest()[:KEY_LENGTH]

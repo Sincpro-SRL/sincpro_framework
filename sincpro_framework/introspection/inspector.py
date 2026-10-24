@@ -75,7 +75,14 @@ class DtoMetadata(DataTransferObject):
 
 def built_bus(framework_instance: UseFramework) -> FrameworkBus:
     """The generation answering now — brought up to date first, when something was registered
-    after it was built."""
+    after it was built.
+
+        built_bus(billing)    # built, then a feature registered  ->  the bus rebuilt with it
+        built_bus(fresh_bus)  # never built
+            ->  raises ValueError("Framework must be built before introspection")
+
+    Context: introspection never builds a bus nobody built — it only catches one up.
+    """
     if not framework_instance.was_initialized or framework_instance.bus is None:
         raise ValueError(NOT_BUILT)
     framework_instance.build_root_bus()
@@ -169,7 +176,17 @@ def _registered(
 
 
 def features(framework_instance: UseFramework) -> dict[DtoName, FeatureOrAppServiceMetadata]:
-    """Feature registry keyed by DTO name, described."""
+    """Feature registry keyed by DTO name, described.
+
+        features(billing)
+            ->  {"CommandIssueInvoice": FeatureOrAppServiceMetadata(
+                     name="CommandIssueInvoice", type=IssueInvoice, instance=<IssueInvoice>,
+                     response=ResponseInvoice, interceptors=("…guard",), replaces=()), …}
+        features(billing_reference)   ->  the same, `instance=None`, no interceptors
+
+    Context: a reference is described from what was registered and never built; any other
+    bus from the generation answering now.
+    """
     if framework_instance.is_reference:
         return _registered(framework_instance, framework_instance.feature_handlers())
     bus = built_bus(framework_instance)
@@ -182,7 +199,15 @@ def features(framework_instance: UseFramework) -> dict[DtoName, FeatureOrAppServ
 def app_services(
     framework_instance: UseFramework,
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
-    """ApplicationService registry keyed by DTO name, described."""
+    """ApplicationService registry keyed by DTO name, described.
+
+        app_services(billing)
+            ->  {"CommandCloseMonth": FeatureOrAppServiceMetadata(name="CommandCloseMonth",
+                     type=CloseMonth, instance=<CloseMonth>, …), …}
+        app_services(billing_reference)   ->  the same, `instance=None`, no interceptors
+
+    Context: as `features` — a reference never built, any other bus as it answers now.
+    """
     if framework_instance.is_reference:
         return _registered(framework_instance, framework_instance.app_service_handlers())
     bus = built_bus(framework_instance)
@@ -204,7 +229,17 @@ def dtos(framework_instance: UseFramework) -> dict[DtoName, DtoMetadata]:
 
 def describe(framework_instance: UseFramework, command: type) -> FeatureOrAppServiceMetadata:
     """What answers `command` on this bus: the handler that runs, what it replaced, and the
-    interceptors around it."""
+    interceptors around it.
+
+        describe(billing, CommandIssueInvoice)
+            ->  FeatureOrAppServiceMetadata(name="CommandIssueInvoice", type=IssueInvoiceV2,
+                    replaces=("billing.IssueInvoice",), interceptors=(…), …)
+        describe(billing, CommandPayroll)
+            ->  raises KeyError("nothing on 'billing' answers CommandPayroll")
+
+    Context: looked up by the Command's class name, Features and ApplicationServices alike —
+    an ApplicationService wins over a Feature of the same name.
+    """
     name = command.__name__
     answered = {**features(framework_instance), **app_services(framework_instance)}
     if name not in answered:

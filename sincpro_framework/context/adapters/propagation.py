@@ -45,7 +45,14 @@ def written(context: Mapping[Any, Any]) -> str:
 
 def read(header: str | None) -> dict[str, Any]:
     """The context a `sincpro-context` header carried; empty when there is none or it does not
-    parse."""
+    parse.
+
+        read('{"tenant_id":"acme","tenant_ids":["acme","beta"]}')
+            ->  {"tenant_id": "acme", "tenant_ids": ["acme", "beta"]}
+        read("not json")    ->  {}, and a warning
+        read('["acme"]')    ->  {}                  # JSON, but not an object
+
+    Read as it came: nothing is checked against what may travel — `travelling` did that."""
     if not header:
         return {}
     try:
@@ -57,7 +64,19 @@ def read(header: str | None) -> dict[str, Any]:
 
 
 def baggage(context: Mapping[Any, Any]) -> str:
-    """The travelling scalars as a W3C `baggage` value; what passes its limits is left out."""
+    """The travelling scalars as a W3C `baggage` value; what passes its limits is left out.
+
+        baggage({"tenant_id": "acme", "company": 3, "tenant_ids": ["acme"], "note": "a b"})
+            ->  "tenant_id=acme,company=3,note=a%20b"
+
+    1. The keys that may travel (`travelling`), in order.
+    2. For each:
+       2.1 a list or a mapping is skipped — baggage holds text;
+       2.2 the member `key=value`, both percent-encoded;
+       2.3 a member past 180 members or 8192 bytes: warned about, and it and every key
+           after it are left out.
+    Final: the members joined by commas — `""` when none.
+    """
     members: list[str] = []
     size = 0
     for key, value in travelling(context).items():
@@ -73,7 +92,12 @@ def baggage(context: Mapping[Any, Any]) -> str:
 
 
 def unbaggaged(header: str | None) -> dict[str, str]:
-    """The members of a W3C `baggage` value; properties after `;` are ignored."""
+    """The members of a W3C `baggage` value; properties after `;` are ignored.
+
+        unbaggaged("tenant_id=acme;ttl=1, note=a%20b,broken")
+            ->  {"tenant_id": "acme", "note": "a b"}
+
+    Names and values percent-decoded and stripped; a member without `=` is left out."""
     found: dict[str, str] = {}
     for member in (header or "").split(","):
         name, separator, value = member.split(";", 1)[0].partition("=")
@@ -83,7 +107,19 @@ def unbaggaged(header: str | None) -> dict[str, str]:
 
 
 def inject(context: Mapping[Any, Any]) -> dict[str, str]:
-    """The headers that carry `context` — caused by the execution in play, in its flow."""
+    """The headers that carry `context` — caused by the execution in play, in its flow.
+
+    1. The text keys of `context`, handed on: the execution in play becomes the cause, its
+       own `execution_id` stays here, the node in play is named when a store shares it.
+    2. The identity as its own headers, and the node as `x-context-node`.
+    3. Every travelling key as the `sincpro-context` JSON.
+    Final: the travelling scalars as `baggage` too, when there are any.
+
+        inject({"tenant_id": "acme"})      (inside execution E1 of flow C)
+        ->  {"x-correlation-id": "C", "x-causation-id": "E1",
+             "sincpro-context": '{"tenant_id":"acme","causation_id":"E1",…}',
+             "baggage": "tenant_id=acme,causation_id=E1,…"}
+    """
     carried = handed_on(
         {key: value for key, value in context.items() if isinstance(key, str)}
     )
@@ -103,7 +139,12 @@ def inject(context: Mapping[Any, Any]) -> dict[str, str]:
 
 def extract(headers: Mapping[str, Any]) -> dict[str, Any]:
     """The context a request or a message carried — `baggage`, then `sincpro-context`, then the
-    identity headers, the later winning. Header names are read in any case."""
+    identity headers, the later winning. Header names are read in any case.
+
+        extract({"Baggage": "lang=es", "sincpro-context": '{"tenant_ids":["a","b"]}',
+                 "X-Correlation-Id": "C"})
+        ->  {"lang": "es", "tenant_ids": ["a", "b"], "correlation_id": "C"}
+    """
     lowered = {str(name).lower(): value for name, value in headers.items()}
     found: dict[str, Any] = dict(unbaggaged(lowered.get(BAGGAGE_HEADER)))
     found.update(read(lowered.get(CONTEXT_HEADER)))

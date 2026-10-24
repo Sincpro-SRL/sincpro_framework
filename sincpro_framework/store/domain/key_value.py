@@ -24,10 +24,20 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import timedelta
 
-from sincpro_framework.common.store import exceptions
+from sincpro_framework.store.domain import exceptions
 
 
 class KeyValueStore(ABC):
+    """The contract a key-value provider implements: six abstract operations, `replace` when
+    the store can compare before it writes, and `get` for free.
+
+        class RedisKeyValue(KeyValueStore):
+            def get_many(self, keys):
+                with self._reaching():               a client error is `StoreUnavailable`
+                    return self.client.mget(keys)
+            ...
+    """
+
     @contextmanager
     def _reaching(self) -> Generator[None, None, None]:
         """A call to the store's own client: whatever it raises is the store not answering —
@@ -80,4 +90,5 @@ class KeyValueStore(ABC):
         )
 
     def get(self, key: str) -> bytes | None:
+        """The value of one key, `None` when absent — `get_many` of one."""
         return self.get_many([key])[0]

@@ -26,7 +26,18 @@ type AttributesOf = Callable[[DomainEvent], dict[str, str]]
 
 def filtered_on(event: DomainEvent) -> dict[str, str]:
     """The fields a subscription filters on: the event's name, and an execution event's use
-    case, bus, level, kind of failure and tenant — the ones it says."""
+    case, bus, level, kind of failure and tenant — the ones it says.
+
+        filtered_on(InvoiceIssued(…))
+            ->  {"sincpro-event": "billing.InvoiceIssued"}
+        filtered_on(ExecutionFailed(use_case="billing.CommandPay", bus="billing",
+                                    kind="unavailable", context={"tenant_id": "bo"}, …))
+            ->  {"sincpro-event": "…ExecutionFailed", "use_case": "billing.CommandPay",
+                 "bus": "billing", "kind": "unavailable", "tenant_id": "bo"}
+
+    Context: only text that is not empty is said — a field missing, `None` or not text is
+    left out rather than written as `"None"`.
+    """
     said: dict[str, str] = {EVENT_HEADER: event.name}
     for name in ("use_case", "bus", "level", "kind"):
         value = getattr(event, name, None)

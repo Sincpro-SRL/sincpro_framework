@@ -28,7 +28,6 @@ from sincpro_framework import (
 )
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.auth.entrypoint.transports import credentials_from_asgi
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.ddd import Query
 from sincpro_framework.entrypoints import Exposure
@@ -45,6 +44,7 @@ from sincpro_framework.entrypoints.adapters.rpc.errors import METHOD_NOT_FOUND
 from sincpro_framework.entrypoints.domain.bindings import RpcBinding
 from sincpro_framework.entrypoints.domain.surface import Wire
 from sincpro_framework.entrypoints.entrypoint.decorators import rpc
+from sincpro_framework.store import InMemoryKeyValue
 
 
 class CommandIssueInvoice(DataTransferObject):

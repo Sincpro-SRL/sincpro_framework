@@ -19,6 +19,21 @@ from sincpro_framework.data_layer.migrations.domain.step import Chain, Position,
 
 
 class MigrationEngine(ABC):
+    """The contract a store implements to be migrated: it reads and records where the store
+    stands, runs and reverts one step, and writes a new step's body.
+
+        class MongoEngine(MigrationEngine):
+            name = "mongo"
+            transactional = False
+
+            def position(self, chain):        ->  Position read from a collection in the store
+            def apply(self, chain, step):     runs `chain.folder / step.file`, records step.id
+            def revert(self, chain, step):    undoes it, records step.parent
+            def scaffold(self, chain, step):  ->  the path of the new body it wrote
+
+    `InMemoryEngine` is a complete one, small enough to read.
+    """
+
     name: str
     """Written in the manifest next to each store: which engine its step bodies are for."""
 

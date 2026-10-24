@@ -18,6 +18,8 @@ from sincpro_framework.event_driven.domain.queue import Queue
 
 
 class RecordingQueue:
+    """A `Queue` that keeps every event put on it, in order, and hands it on to `then`."""
+
     def __init__(self, then: Queue | None = None) -> None:
         """`then` is the queue each event is handed on to after it is kept; none, and nobody
         hears it."""
@@ -25,10 +27,13 @@ class RecordingQueue:
         self.events: list[DomainEvent] = []
 
     def put(self, event: DomainEvent) -> list[Any] | None:
+        """Keep `event`, then hand it to `then` — `None` when there is none, else what `then`
+        answers."""
         self.events.append(event)
         return None if self.then is None else self.then.put(event)
 
     async def aput(self, event: DomainEvent) -> list[Any] | None:
+        """`put` for an async publisher — `then` is awaited through its own `aput`."""
         self.events.append(event)
         return None if self.then is None else await self.then.aput(event)
 
@@ -37,4 +42,5 @@ class RecordingQueue:
         return [event for event in self.events if isinstance(event, event_type)]
 
     def clear(self) -> None:
+        """Forget what was kept — between two acts of one test."""
         self.events.clear()

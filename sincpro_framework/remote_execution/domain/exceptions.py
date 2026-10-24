@@ -53,6 +53,11 @@ class ContextFailed(ExternalServiceError):
     not imported here. `kind` names it."""
 
     def __init__(self, kind: str, message: str) -> None:
+        """`kind` and the remote message kept apart, for a handler that maps by kind.
+
+        ContextFailed("acme.errors.QuotaExceeded", "no quota left")
+            ->  "acme.errors.QuotaExceeded: no quota left"
+        """
         super().__init__(f"{kind}: {message}")
         self.kind = kind
         self.message = message
@@ -81,6 +86,10 @@ class DTODoesNotFit(ClientError):
     value of another type. `fields` says which, each with why."""
 
     def __init__(self, what: str, error: ValidationError) -> None:
+        """Each field the validation refused, as `path: why` — `(root)` for the whole value.
+
+        DTODoesNotFit("CommandPay", error).fields  ->  ["amount: Field required"]
+        """
         self.fields = [
             f"{'.'.join(str(one) for one in detail['loc']) or '(root)'}: {detail['msg']}"
             for detail in error.errors()

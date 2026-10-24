@@ -137,8 +137,8 @@ registry = BusRegistry(bus, store)
 assert registry.execute("core-only.CommandEcho", {"said": "hi"}).said == "hi"
 
 from dataclasses import dataclass as _dataclass
-from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
-from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework.data_layer.caching import QueryCachePolicy, QueryCaching
+from sincpro_framework.store import InMemoryKeyValue
 from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns
 from sincpro_framework.ddd import Entity
 from sincpro_framework.data_layer.repositories import MemoryRepository
@@ -169,7 +169,7 @@ class CountNotes(Feature):
         return ResponseNotes(count=self.repository.count(Note).value)
 
 
-QueryCaching(InMemoryKeyValue()).on(notes, QueryNotes, CachePolicy(ttl=timedelta(minutes=1)))
+QueryCaching(InMemoryKeyValue()).on(notes, QueryNotes, QueryCachePolicy(ttl=timedelta(minutes=1)))
 assert notes(QueryNotes(), ResponseNotes).count == notes(QueryNotes(), ResponseNotes).count == 0
 assert asked == [1]
 assert KeyValueRuns(InMemoryKeyValue()).claim("core", datetime(2026, 9, 27, tzinfo=UTC))
@@ -324,7 +324,7 @@ from sincpro_framework.data_layer.caching import (
     Cache,
     FailSafe,
     Idempotency,
-    KeepPolicy,
+    CachePolicy,
     Lru,
     Sliding,
     declares_once,
@@ -336,7 +336,7 @@ from sincpro_framework import FailureKind
 from sincpro_framework.common.failures import refined_failure_kind
 
 kept = Cache(eviction=Lru(max_entries=10))
-fresh = KeepPolicy(
+fresh = CachePolicy(
     freshness=Sliding(idle_for=timedelta(minutes=1), at_most=timedelta(minutes=5)),
     failure=FailSafe(serve_for=timedelta(minutes=5)),
 )
@@ -410,7 +410,7 @@ for module, extra in (
 
 import sincpro_framework.entrypoints.adapters.queue  # any broker: FastStream is one of them
 
-from sincpro_framework.data_layer.caching.adapters.dynamodb import DynamoKeyValue
+from sincpro_framework.store.adapters.dynamodb import DynamoKeyValue
 from sincpro_framework.entrypoints.adapters.queue import SqsBroker
 from sincpro_framework.event_driven.adapters.aws import EventBridgeQueue, SnsQueue, SqsQueue
 from sincpro_framework.settings.adapters.aws import ParameterStore, SecretsManager

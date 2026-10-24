@@ -8,6 +8,9 @@ top-level properties would miss a bytes field hidden inside a nested
 submodel, a list of submodels, a dict of submodels, or an Optional submodel.
 This module walks the full schema tree so a Feature/ApplicationService is
 never published as JSON-safe when it secretly carries binary data.
+
+    json_schema_for(list[Invoice])               ->  {"type": "array", "items": {"$ref": …}}
+    dto_is_json_serializable(CommandUploadFile)  ->  False   # a `bytes` field, maybe nested
 """
 
 import dataclasses
@@ -20,6 +23,15 @@ from sincpro_framework.entrypoints.domain.layers import BINARY_JSON_FORMATS, BIN
 
 
 def _is_binary_annotation(annotation: Any) -> bool:
+    """Whether a field's annotation holds bytes — itself, or anywhere among its arguments.
+
+    Context: the schema alone misses a `bytes` the schema renders as a plain string, so the
+    annotations are read too; a generic (`list[bytes]`, `bytes | None`) is walked argument by
+    argument.
+
+        _is_binary_annotation(bytes | None)       ->  True
+        _is_binary_annotation(dict[str, int])     ->  False
+    """
     if annotation in BINARY_TYPES:
         return True
     origin = get_origin(annotation)
@@ -73,7 +85,13 @@ def adapter(annotation: Any) -> TypeAdapter:
 
 
 def field_annotations(dto_type: Any) -> dict[str, Any]:
-    """`{field: annotation}` for a DataTransferObject or a dataclass Command."""
+    """`{field: annotation}` for a DataTransferObject or a dataclass Command.
+
+        field_annotations(CommandIssueInvoice)    ->  {"total": int, "note": str | None}
+        field_annotations(int)                    ->  {}
+
+    Anything that is neither has no fields to read.
+    """
     if isinstance(dto_type, type) and issubclass(dto_type, BaseModel):
         return {name: field.annotation for name, field in dto_type.model_fields.items()}
     if dataclasses.is_dataclass(dto_type):
@@ -88,6 +106,14 @@ def json_schema_for(annotation: Any) -> dict[str, Any]:
     forward reference that never resolved) becomes a bare object rather than an
     exception: the catalog still publishes the method, it just cannot promise
     the shape.
+
+        json_schema_for(list[int])       ->  {"items": {"type": "integer"}, "type": "array"}
+        json_schema_for(None)            ->  {"type": "object"}
+        json_schema_for(<a type Pydantic cannot describe, named Socket>)
+        ->  {"type": "object", "title": "Socket"}
+
+    A pydantic model answers its own `model_json_schema`; anything else goes through a
+    cached `TypeAdapter`.
     """
     if annotation is None:
         return {"type": "object"}

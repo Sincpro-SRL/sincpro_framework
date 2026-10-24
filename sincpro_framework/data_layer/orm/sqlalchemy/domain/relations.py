@@ -80,6 +80,18 @@ def read_before(record: Any, name: str) -> frozenset[Any]:
 def hold(
     record: Any, name: str, value: Any, how: Held, read: frozenset[Any] | None = None
 ) -> None:
+    """Put a relation's value on `record`, saying how it got there — what a cascade reads
+    later.
+
+    Context: a write decides from `how` whether the value can settle the children it no longer
+    holds (`ASSIGNED`, `WHOLE`) or must not infer anything (`BLIND`, `CUT`). `read` is kept
+    only when given, so a blind assignment leaves the identities of the last whole reading as
+    they were.
+
+        hold(invoice, "lines", lines, Held.WHOLE, read=frozenset({1, 2}))
+        held(invoice, "lines")         ->  Held.WHOLE
+        read_before(invoice, "lines")  ->  frozenset({1, 2})
+    """
     record.__dict__.setdefault(RESOLVED, {})[name] = value
     record.__dict__.setdefault(HELD, {})[name] = how
     if read is not None:
@@ -114,6 +126,17 @@ class Relation(relations.Relation):
         orphans: Orphans = Orphans.REFUSE,
         many: bool | None = None,
     ) -> None:
+        """Prefer the named constructors (`foreign_key`, `many_to_many`, ...): this one takes
+        every kind's options at once. `through` and `related_key` are read by `many_to_many`
+        only; `owned` and `orphans` by a to-many `foreign_key` only.
+
+            Relation("many_to_many", Tag, "dataset_id", through=dataset_tag,
+                     related_key="tag_id")
+                ->  as Relation.many_to_many(Tag, dataset_tag, "dataset_id", "tag_id")
+
+        The options every kind shares go to the base declaration; the database's own —
+        `through`, `related_key`, `owned`, `orphans` — are kept here.
+        """
         super().__init__(
             kind,
             related,

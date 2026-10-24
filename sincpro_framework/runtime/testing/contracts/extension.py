@@ -34,14 +34,20 @@ class ExtensionContract:
     minor. Empty when the core publishes none."""
 
     def make_store(self) -> Any:
+        """Answer a store — a `Repository` or anything with its `search`, `get`, `save` and
+        `remove` — with `entity` and `extension` mapped; it may be empty."""
         raise NotImplementedError("answer a store with `entity` and `extension` mapped")
 
     def _definition(self) -> Any:
+        """The store's definition of `entity` — the `meta` of a one-record search, which says
+        each field's `owner` (`None` for the core's own)."""
         page = self.make_store().search(self.entity, Criteria(pagination=Pagination(limit=1)))
         assert page.meta is not None, "the store gave no definition of the entity"
         return page.meta
 
     def test_every_field_the_module_reads_is_a_field_of_the_core(self) -> None:
+        """Every name in `uses` is still a field the core owns — a rename in the core fails
+        here, in the module's CI, not in production."""
         own = {
             name for name, field in self._definition().fields.items() if field.owner is None
         }
@@ -51,6 +57,11 @@ class ExtensionContract:
         assert not missing, f"{self.entity.__name__} no longer has {', '.join(missing)}"
 
     def test_the_core_publishes_a_contract_the_module_accepts(self) -> None:
+        """The core's `CONTRACT` has the major `requires` names and at least its minor —
+        skipped when `requires` is empty.
+
+            requires "2.1"   CONTRACT "2.3"  ->  passes;   "3.0" or "2.0"  ->  fails
+        """
         if not self.requires:
             return
         have = getattr(self.entity, "CONTRACT", None)
@@ -63,6 +74,17 @@ class ExtensionContract:
         )
 
     def test_the_definition_of_the_core_says_which_fields_are_the_modules(self) -> None:
+        """`extension` is mapped as an extension of `entity`, and the core's definition marks
+        each of its fields as owned by it — so a screen or an export can tell them apart.
+
+            InvoiceFiscal adds cufd, owned "InvoiceFiscal" in Invoice's definition  ->  passes
+            InvoiceFiscal never mapped   ->  AssertionError("InvoiceFiscal is not mapped as an
+                                             extension of Invoice")
+            cufd owner None              ->  AssertionError("fields of the module that the
+                                             core's definition does not mark: ['cufd']")
+
+        A field of the extension the definition lacks altogether raises `KeyError`.
+        """
         added = next(
             (one for one in extensions.under(self.entity) if one.entity is self.extension),
             None,
@@ -83,6 +105,16 @@ class ExtensionContract:
     def test_a_record_of_the_extension_is_stored_read_back_as_itself_and_removed(
         self,
     ) -> None:
+        """A blank record of the extension is saved, got back through the core's entity as
+        an instance of the extension, and removed — after which it is gone.
+
+            save(blank InvoiceFiscal); get(Invoice, its id)  ->  an InvoiceFiscal   passes
+            get(Invoice, its id) answers a plain Invoice      ->  AssertionError
+            after remove, get(Invoice, its id) -> None        ->  passes
+
+        The record is the extension with every field blank and a new entity id — what the
+        module's own fields default to must be storable.
+        """
         store = self.make_store()
         record = blank(self.extension)
         record.id = new_entity_id()

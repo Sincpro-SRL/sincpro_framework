@@ -110,6 +110,11 @@ gained a column (SQLAlchemy builds a new `column_attrs` then)."""
 
 
 def _structured(mapper: Mapper[Any]) -> dict[str, TypeEngine[Any]]:
+    """The columns of `mapper` whose type is not a plain scalar, by attribute key — the ones
+    a value changed inside can live in. Cached per mapper until its `column_attrs` change.
+
+        Invoice(id TEXT, address TypedJson, lines JSON)   ->  {"address": …, "lines": …}
+    """
     columns = mapper.column_attrs
     found = STRUCTURED.get(mapper)
     if found is None or found[0] is not columns:
@@ -126,6 +131,9 @@ def _structured(mapper: Mapper[Any]) -> dict[str, TypeEngine[Any]]:
 
 
 def _changeable(value: Any) -> bool:
+    """Whether `value` can be changed inside: a dict, list, set or bytearray, or an object
+    that compares by value (a model, a dataclass) — never `None` nor an `UNCHANGEABLE` scalar.
+    """
     if value is None or isinstance(value, UNCHANGEABLE):
         return False
     return (
@@ -154,6 +162,7 @@ def _differs(column: TypeEngine[Any], value: Any, kept: Any) -> bool:
 
 
 def _before(column: TypeEngine[Any], kept: Any) -> Any:
+    """The value before, from its copy: a `TypedJson` copy is JSON, read back as its type."""
     return column.adapter.validate_json(kept) if isinstance(column, TypedJson) else kept
 
 
@@ -191,11 +200,13 @@ def _kept(
 
 
 def _loaded(target: Any, context: Any) -> None:
+    """The mapper's `load` hook: a record read by an `IN_PLACE` session gets its copies."""
     if context.session.info.get(IN_PLACE):
         _kept(context.session, attributes.instance_state(target))
 
 
 def _refreshed(target: Any, context: Any, keys: Iterable[str] | None) -> None:
+    """The mapper's `refresh` hook: the copies of the refreshed `keys` taken again."""
     if context.session.info.get(IN_PLACE):
         _kept(context.session, attributes.instance_state(target), keys)
 
@@ -214,6 +225,13 @@ def changed_in_place(session: Session, records: Iterable[Any] | None = None) -> 
     1. A column assigned since is left to the engine: it already knows, and its value is no
        longer the object the copy was taken from.
     2. The value before is the copy, so the change tracking reads `(before, after)`.
+
+        invoice read with address {"city": "La Paz"}; invoice.address["city"] = "Sucre"
+        changed_in_place(session, [invoice])
+            ->  None; address flagged modified, its value before {"city": "La Paz"}
+        invoice.address = {"city": "Sucre"}   assigned instead: left to the engine
+
+    A record without copies, already collected, or held by another session is skipped.
     """
     states = (
         list(_watched(session))
@@ -252,7 +270,18 @@ def watch_in_place(sessions: Any) -> None:
     """Watches what the sessions of `sessions` — a `sessionmaker` — read and write.
 
     The mappers' `load` and `refresh` are listened to once per process, and copy only for a
-    session marked `IN_PLACE`; the rest is registered on `sessions` alone."""
+    session marked `IN_PLACE`; the rest is registered on `sessions` alone.
+
+        open_session = sessionmaker(bind=engine, info={IN_PLACE: True})
+        watch_in_place(open_session)   ->  None
+        with open_session() as session:
+            invoice = session.get(Invoice, 1)        # tags, a JSON list column
+            invoice.tags.append("urgent"); session.commit()
+                ->  the tags column written, though it was never assigned
+
+    On `sessions`: a flush compares what it watches before, takes the copies again after; a
+    commit compares once more; a record attached from another session is watched too.
+    """
     if not event.contains(Mapper, "load", _loaded):
         event.listen(Mapper, "load", _loaded)
         event.listen(Mapper, "refresh", _refreshed)

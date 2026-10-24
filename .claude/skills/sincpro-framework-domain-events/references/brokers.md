@@ -58,7 +58,7 @@ FastStreamQueue(broker, channel_of=lambda _event: "billing")
 
 ```python
 from sincpro_framework.data_layer.caching import KeyValueRecords
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue          # [redis]
+from sincpro_framework.store.adapters.redis import RedisKeyValue          # [redis]
 from sincpro_framework.entrypoints.adapters.queue import QueueOptions
 
 subscribe(broker, Subscriber(accounting),

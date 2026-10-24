@@ -17,6 +17,11 @@ class Chain:
 
     @property
     def key(self) -> str:
+        """`context/store` — how a chain is named in a status, a refusal and a `requires`,
+        and what `InMemoryEngine` keys its positions by.
+
+            Chain("chat", "main", folder).key  ->  "chat/main"
+        """
         return f"{self.context}/{self.store}"
 
 
@@ -38,10 +43,16 @@ class Step:
 
     @property
     def chain_key(self) -> str:
+        """The key of the chain the step belongs to — `context/store`."""
         return f"{self.context}/{self.store}"
 
     @property
     def key(self) -> str:
+        """The step's key across every chain — `context/store/id` — the form a `requires`
+        names it in.
+
+            step.key  ->  "chat/main/0192a1f3…"
+        """
         return f"{self.context}/{self.store}/{self.id}"
 
 
@@ -55,6 +66,16 @@ class Position:
 
 
 class ChainState(StrEnum):
+    """What a store's position means against the steps the code knows for its chain.
+
+    - `UP_TO_DATE` — it stands on the last step (or there are none and it stands on none).
+    - `BEHIND` — it stands on an earlier step, or on none: `upgrade` moves it.
+    - `AHEAD` — it stands on a step the code does not have: a newer release, or an abandoned
+      branch; every run is refused until it is downgraded with that release or resolved.
+    - `DIRTY` — a step of a store without transactional DDL failed part-way; every run is
+      refused until a human cleans it up and runs `resolve`.
+    """
+
     UP_TO_DATE = "up to date"
     BEHIND = "behind"
     AHEAD = "ahead"

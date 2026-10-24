@@ -37,7 +37,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing impor
     HIDDEN,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
-from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.store import Store
+from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.repository_state import (
+    RepositoryState,
+)
 from sincpro_framework.ddd.criteria import (
     Criteria,
     conditions_of,
@@ -83,7 +85,7 @@ def _by_dependency(records: list[Any]) -> list[list[Any]]:
     return [by_table[table] for table in sort_tables(by_table)]
 
 
-class Writing(Store, Extends):
+class Writing(RepositoryState, Extends):
     """Writes take the aggregate, whole with the children it owns, because a write that skips the
     aggregate skips its rules; the two that skip it on purpose say so in their name."""
 
@@ -132,7 +134,13 @@ class Writing(Store, Extends):
         return after[-1] if len(after) > seen else None
 
     def _not_kept(self, session: Session, events: list[Any]) -> list[Any]:
-        """The events not kept yet, each once — by id, in the order given."""
+        """The events not kept yet, each once — by id, in the order given.
+
+        Context: an event-sourced entity hands its unsaved events on every save; one already
+        in the event table (or twice in the batch) would break its primary key.
+
+            [e1, e2, e1] with e1 stored   ->  [e2]
+        """
         map_new_event_classes()
         fresh: list[Any] = []
         seen: set[str] = set()
@@ -210,6 +218,8 @@ class Writing(Store, Extends):
         return written
 
     def _announced(self, plan: Plan, newness: list[bool]) -> None:
+        """The after-hooks of a written plan: `after_remove` for each removed record, then
+        `after_save` and `after_create` / `after_update` for each stored one."""
         for one in plan.removed:
             self._after_remove(one)
         self._after_writes(plan.stored, newness)
@@ -241,6 +251,16 @@ class Writing(Store, Extends):
 
         Not a merge. A record built by hand with an id that already exists is a duplicate,
         not an update — the update path is to read the record and change it.
+
+        1. Refused in a preview, inside another write's hook, and in a read-only unit.
+        2. One record or several as a list; nothing given is nothing done.
+        3. In the call's session: a consolidated record first gets the extension rows it
+           lacks; an event-sourced one stands for the events it recorded since it was rebuilt.
+        4. The cascade planned (`planned_save`) and carried out — scope, before-hooks,
+           version moves, then detached, removed and written in dependency order.
+        5. A duplicate `entity_version` of an event is a writer that appended first:
+           `StaleAggregate`; any other duplicate is raised as it is.
+        Final: after the session closed, the after-hooks of everything removed and stored.
         """
         refuse_writing_in_preview("save")
         self._refuse_reentrant_write()
@@ -265,7 +285,14 @@ class Writing(Store, Extends):
     def reclassify(self, entity: type) -> int:
         """Writes the type of every row of a core that stores it, worked out from the rows its
         extensions have. For a core that adopts the column once extensions already hold data, or
-        after rows were written outside the framework. Answers how many rows it set."""
+        after rows were written outside the framework. Answers how many rows it set.
+
+            repository.reclassify(Move)      ->  1200, every row of move typed again
+            repository.reclassify(Partner)   ->  ProgrammingError, it stores no type
+
+        One statement in the call's session; refused in a preview, inside another write's
+        hook and in a read-only unit, as any write.
+        """
         refuse_writing_in_preview("reclassify")
         self._refuse_reentrant_write()
         self._refuse_read_only()
@@ -284,6 +311,13 @@ class Writing(Store, Extends):
         **It deletes, and only deletes.** Putting a record away without losing it is
         `archive`: a different fact, and a different method, because other records point at it
         and a name that lies about which of the two happened is worse than two names.
+
+        1. Refused in a preview, inside another write's hook, and in a read-only unit.
+        2. One record or several as a list; nothing given is nothing done.
+        3. In the call's session: the rows of extensions below each record's class deleted.
+        4. The removal planned (`planned_removal`) — the parts each root owns taken along,
+           detached or refused as its relations say — and carried out.
+        Final: after the session closed, the after-hooks of everything removed and detached.
         """
         refuse_writing_in_preview("remove")
         self._refuse_reentrant_write()
@@ -300,7 +334,14 @@ class Writing(Store, Extends):
     def extend(self, record: Any, extension: type) -> None:
         """Gives a stored record the rows of an extension it does not have: one per level between
         its class and `extension`, each with the defaults of its fields. The record is then read
-        again as the extension and saved as any other."""
+        again as the extension and saved as any other.
+
+            move = repository.get(Move, move_id)              no delivery yet
+            repository.extend(move, MoveDelivery)             ->  None; a move_delivery row
+            repository.get(Move, move_id)                     ->  MoveDelivery(…, route=None)
+
+        No hook runs: the rows given are empty until the record is saved as the extension.
+        """
         refuse_writing_in_preview("extend")
         self._refuse_reentrant_write()
         self._refuse_read_only()
@@ -314,6 +355,13 @@ class Writing(Store, Extends):
         lost, because invoices point at it. A reading leaves it out unless its criteria names
         `archived_at`. Refused for an aggregate that is not `ArchivableMixin`, which has
         nowhere to write it.
+
+            repository.archive(partner)                 ->  None; partner.archived_at = now
+            repository.get(Partner, partner.id)         ->  None, it no longer appears
+            repository.archive(invoice_line)            ->  ProgrammingError, not archivable
+
+        Each record's `before_archive` hook, then `archive()`, then one `save` of all of them
+        — with its own hooks — and finally each `after_archive`.
         """
         refuse_writing_in_preview("archive")
         self._refuse_reentrant_write()
@@ -345,6 +393,8 @@ class Writing(Store, Extends):
         return sql_translator.where_clause(model, expression)
 
     def _executed(self, statement: Any, subject: str) -> Any:
+        """One bulk statement run in the call's session, an engine refusal named after
+        `subject`."""
         with self._session() as session, named(subject):
             return session.execute(statement)
 
@@ -360,6 +410,15 @@ class Writing(Store, Extends):
         What it keeps is what a stale copy needs to be refused later: `version` is raised and
         `updated_at` stamped. The scope it was narrowed to and the archived apply as in a read;
         a page, or a condition the aggregate cannot answer, is refused.
+
+        1. Refused in a preview, inside another write's hook, and in a read-only unit.
+        2. The WHERE: the filter, the scope, the archived left out — refused for a page or a
+           condition that cannot be answered.
+        3. Refused when a value names something that is not a column, or one the framework
+           keeps — the identity, `created_at`, `version`, `updated_at`.
+        4. The values, with `version` raised by one and `updated_at` stamped now when the
+           table has them.
+        Final: one `UPDATE` in the call's session, and the number of rows it changed.
         """
         refuse_writing_in_preview("update_all")
         self._refuse_reentrant_write()

@@ -21,9 +21,7 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore
-from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.data_layer.caching import QueryCachePolicy, QueryCaching
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Criteria, Entity
 from sincpro_framework.ddd.events import DomainEvent
@@ -33,6 +31,8 @@ from sincpro_framework.event_driven import (
     SyncQueue,
 )
 from sincpro_framework.runtime.testing import ManualClock
+from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 
 @dataclass
@@ -122,7 +122,7 @@ class World:
     store: KeyValueStore
 
 
-def _world(store_name: str = "in memory", policy: CachePolicy | None = None) -> World:
+def _world(store_name: str = "in memory", policy: QueryCachePolicy | None = None) -> World:
     clock = ManualClock(datetime(2026, 9, 27, tzinfo=UTC))
     repository, executions = MemoryRepository(), []
     repository.save(Customer(id="c1", name="Ana"))
@@ -130,7 +130,7 @@ def _world(store_name: str = "in memory", policy: CachePolicy | None = None) -> 
     billing = _billing(repository, executions)
     store = STORES[store_name](clock)
     caching = QueryCaching(store, now=clock.now)
-    caching.on(billing, QueryBalance, policy or CachePolicy(ttl=timedelta(minutes=5)))
+    caching.on(billing, QueryBalance, policy or QueryCachePolicy(ttl=timedelta(minutes=5)))
     return World(billing, caching, repository, executions, clock, store)
 
 
@@ -190,7 +190,7 @@ def test_what_the_answer_depends_on_is_what_it_read_nobody_declares_it():
 
 def test_an_answer_that_read_nothing_is_not_kept_unless_its_dependencies_are_declared():
     world = _world()
-    world.caching.on(world.billing, QueryPing, CachePolicy(ttl=timedelta(minutes=5)))
+    world.caching.on(world.billing, QueryPing, QueryCachePolicy(ttl=timedelta(minutes=5)))
 
     world.billing(QueryPing(), ResponsePing)
     world.billing(QueryPing(), ResponsePing)
@@ -199,7 +199,9 @@ def test_an_answer_that_read_nothing_is_not_kept_unless_its_dependencies_are_dec
 
 
 def test_the_answer_expires_after_its_ttl():
-    world = _world(policy=CachePolicy(ttl=timedelta(minutes=5), jitter=0, early_expiry=0))
+    world = _world(
+        policy=QueryCachePolicy(ttl=timedelta(minutes=5), jitter=0, early_expiry=0)
+    )
     _balance(world)
 
     world.clock.advance(minutes=6)
@@ -209,7 +211,7 @@ def test_the_answer_expires_after_its_ttl():
 
 
 def test_each_tenant_has_its_own_answer():
-    world = _world(policy=CachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
+    world = _world(policy=QueryCachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
 
     with world.billing.context({"tenant_id": "acme"}):
         _balance(world)
@@ -225,7 +227,7 @@ def test_a_sensitive_context_key_the_policy_does_not_vary_by_is_refused():
     clock = ManualClock(datetime(2026, 9, 27, tzinfo=UTC))
     billing = _billing(MemoryRepository(), [])
     caching = QueryCaching(InMemoryKeyValue(now=clock.now), sensitive=("user_id",))
-    caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
+    caching.on(billing, QueryBalance, QueryCachePolicy(ttl=timedelta(minutes=5)))
 
     with billing.context({"user_id": "u1"}), pytest.raises(
         exceptions.ProgrammingError, match="user_id"
@@ -235,7 +237,7 @@ def test_a_sensitive_context_key_the_policy_does_not_vary_by_is_refused():
 
 def test_a_stale_answer_is_served_while_another_replica_recomputes_it():
     world = _world(
-        policy=CachePolicy(
+        policy=QueryCachePolicy(
             ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5), jitter=0, early_expiry=0
         )
     )
@@ -272,7 +274,7 @@ def test_an_answer_about_to_expire_is_recomputed_early_once_in_a_while():
     caching = QueryCaching(
         InMemoryKeyValue(now=clock.now), now=clock.now, random=lambda: 1e-300
     )
-    caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5), jitter=0))
+    caching.on(billing, QueryBalance, QueryCachePolicy(ttl=timedelta(minutes=5), jitter=0))
 
     billing(QueryBalance(customer_id="c1"), ResponseBalance)
     clock.advance(minutes=4, seconds=59)
@@ -301,7 +303,9 @@ def test_a_query_without_a_declared_response_cannot_be_cached():
             return ResponsePing(pong=True)
 
     with pytest.raises(TypeError, match="declare"):
-        QueryCaching(InMemoryKeyValue()).on(billing, QueryPing, CachePolicy(ttl=timedelta(1)))
+        QueryCaching(InMemoryKeyValue()).on(
+            billing, QueryPing, QueryCachePolicy(ttl=timedelta(1))
+        )
 
 
 def test_the_near_cache_answers_in_process_and_still_sees_an_invalidation():
@@ -311,7 +315,7 @@ def test_the_near_cache_answers_in_process_and_still_sees_an_invalidation():
     billing = _billing(repository, executions)
     shared = InMemoryKeyValue(now=clock.now)
     caching = QueryCaching(shared, now=clock.now, near=timedelta(seconds=30))
-    caching.on(billing, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
+    caching.on(billing, QueryBalance, QueryCachePolicy(ttl=timedelta(minutes=5)))
     billing(QueryBalance(customer_id="c1"), ResponseBalance)
 
     QueryCaching(shared, now=clock.now).invalidate(Invoice)
@@ -328,8 +332,8 @@ def test_two_contexts_sharing_a_store_invalidate_only_their_own():
     first, second = _billing(repository, first_runs), _billing(repository, second_runs)
     one = QueryCaching(shared, now=clock.now, namespace="billing-a")
     other = QueryCaching(shared, now=clock.now, namespace="billing-b")
-    one.on(first, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
-    other.on(second, QueryBalance, CachePolicy(ttl=timedelta(minutes=5)))
+    one.on(first, QueryBalance, QueryCachePolicy(ttl=timedelta(minutes=5)))
+    other.on(second, QueryBalance, QueryCachePolicy(ttl=timedelta(minutes=5)))
     first(QueryBalance(customer_id="c1"), ResponseBalance)
     second(QueryBalance(customer_id="c1"), ResponseBalance)
 
@@ -354,10 +358,10 @@ def test_switched_off_every_query_runs_its_use_case_and_nothing_is_kept():
 
 
 def test_the_caching_says_which_queries_it_keeps_and_how():
-    world = _world(policy=CachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
+    world = _world(policy=QueryCachePolicy(ttl=timedelta(minutes=5), vary_by=("tenant_id",)))
 
     assert world.caching.policies() == {
-        "billing-cache.QueryBalance": CachePolicy(
+        "billing-cache.QueryBalance": QueryCachePolicy(
             ttl=timedelta(minutes=5), vary_by=("tenant_id",)
         )
     }

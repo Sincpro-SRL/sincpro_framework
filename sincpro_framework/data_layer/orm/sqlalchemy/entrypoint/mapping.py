@@ -101,6 +101,30 @@ def map_aggregates(
     the columns it owns are columns of that table, and a row has the extension when any of them
     holds a value. Its migration adds columns to a table that is not its own, which is why the
     migrations compare each chain only with the columns it declares.
+
+        map_aggregates(registry, {Author: author_table, Work: work_table})   ->  None
+        sqlalchemy.inspect(Work).local_table   ->  work_table
+        RELATIONS[Work]["author"]
+            ->  Relation.foreign_key(Author, identified_by="author_id"), from work.author_id
+
+    1. The classes the registry already maps are noted; `delegated` is recorded as the classes
+       whose answers nest their extensions.
+    2. Each class of `tables`, parents first (fewest bases first), unless already mapped:
+       2.1 to a `Consolidated`: mapped as one flat record over the core and its extensions;
+       2.2 otherwise its computed fields and its `properties` are its properties, and
+           2.2.1 a root — no mapped parent — takes the version check when it is an `Entity`
+                 with a `version` column, and the options that let it answer its extensions;
+           2.2.2 an extension takes its own table, joined to its parent's, or its columns of
+                 the parent's table;
+           2.2.3 mapped imperatively, its mapper finished, the table recorded as the class's;
+       2.3 a `load` listener gives a loaded record the defaults no column holds.
+    3. `properties` of a class mapped before this call: the attributes it lacks are added.
+    4. `overlay` applied field by field, and every entity's cached description cleared.
+    5. `uses` and `requires` checked — a field the core lacks, a contract out of range, stop
+       the start here.
+    6. The declared `relations` installed.
+    Final: the relations the foreign keys say installed on every mapped class — this call's
+    and earlier ones' — never over a declared one.
     """
     already = {mapper.class_ for mapper in mapper_registry.mappers}
     mapped_before = set(already)
@@ -175,6 +199,20 @@ def map_events(mapper_registry: registry, base: type[DomainEvent], table: Table)
 
     A base per context, so two contexts in one process keep two tables; mapping it again is a
     no-op.
+
+        map_events(registry, BillingDomainEvent, event_table("billing_events", metadata))
+            ->  None; InvoicePaid(invoice_id="F-1") saved is one row named "InvoicePaid"
+        map_events(registry, Invoice, table)   ->  ProgrammingError, not a DomainEvent class
+
+    1. Refused when `base` is not a `DomainEvent` class; nothing done when it is mapped.
+    2. Every class of the tree — the base and each subclass, depth by depth — claims its
+       `name` in `table` first, so a name two classes share refuses before anything maps.
+    3. The base mapped to `table`, the `name` column as discriminator and `payload` as what
+       subclasses add.
+    4. Listeners on the whole tree: the payload packed before an insert, unpacked on load.
+    5. The base's `__new__` maps a subclass declared later before its first instance.
+    Final: the base recorded with its registry and table, and every subclass already declared
+    mapped under it.
     """
     if not (isinstance(base, type) and issubclass(base, DomainEvent)):
         raise exceptions.ProgrammingError(

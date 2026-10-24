@@ -7,9 +7,9 @@ process's memory, or the Redis of production. Optional, optimistic, and always w
 
 ```python
 from sincpro_framework.context import KeyValueContexts
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 
-billing.context_store(KeyValueContexts(RedisKeyValue(redis)))   # once: where the context is kept
+billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))   # once: where the context is kept
 
 drafts = self.context.drafts()                     # in a Feature — or use_context().drafts()
 drafts = self.context.drafts(by=["session_id"])    # a session's instead of a user's
@@ -17,7 +17,7 @@ drafts = self.context.drafts(by=["session_id"])    # a session's instead of a us
 
 | Call | What it does |
 |---|---|
-| `drafts.keep(subject, values, origin_version, expected)` | keeps `values` under a new version, when `expected` is the version there now; `Draft` back — the one `read` gives until the next keep |
+| `drafts.save(subject, values, origin_version, expected)` | keeps `values` under a new version, when `expected` is the version there now; `Draft` back — the one `read` gives until the next keep |
 | `drafts.read(subject)` | the live `Draft`, or `None` (none, discarded, expired) |
 | `drafts.discard(subject)` | drops it; a key with none is not an error |
 | `refuse_stale(draft, record)` (`sincpro_framework.ddd`) | `StaleAggregate` when the record changed since the draft started |
@@ -68,8 +68,16 @@ rule serves every shape a system has, and none is forced on a project.
 
 A value that is `None`, empty or missing says nothing, as if the key were absent. Values are encoded,
 so a `/`, a `,`, a `=`, a `:` or a `|` inside a tenant or a user is never read as a separator: a
-tenant called `acme/user_id=bob` never reads the drafts of the user `bob` of `acme`. One draft meant
-to be shared by everybody of a tenant editing a record is `by=[]`.
+tenant called `acme/user_id=bob` never reads the drafts of the user `bob` of `acme`.
+
+The owner is exactly the keys `by` names — `BY_TENANT_AND_USER` by default, nothing imposed:
+
+| `by=` | Whose the draft is |
+|---|---|
+| `BY_TENANT_AND_USER` (default) | a user's, within the tenant |
+| `BY_TENANT` | everybody's of the tenant |
+| `["session_id"]` | a session's |
+| `()` | nobody's: one draft of the record, for every user that opens it |
 
 The desktop, the browser and the phone of one user in one tenant read and write the same draft of a
 record: a draft belongs to no execution and no session, and outlives every browser that closed.
@@ -83,12 +91,12 @@ In the context's store — the one store the context has, and the one a project 
 SINCPRO_ENTITY_DRAFT_CONTEXT : tenant_id=acme,tenant_ids=,user_id=ana : billing.Invoice%3A<uuid>
 ```
 
-Set once — `bus.context_store(store)` for a bus, `use_context().root.set(ContextStore, store)` for
+Set once — `bus.store_context_in(store)` for a bus, `use_context().root.set(ContextStore, store)` for
 the process — or handed to the call, `drafts(store=...)`; with none set, the process's memory keeps
-them, said once in the logs. Each store keeps an entry `kept_ttl` after its last keep, seven days
-unless told: `KeyValueContexts(RedisKeyValue(redis), kept_ttl=timedelta(hours=1))`. A project's own
-`ContextStore` keeps drafts when it implements its entries: `keep_entry`, `entry`, `discard_entry`,
-`entries`.
+them, said once in the logs. Each store keeps an entry `entry_ttl` after its last keep, seven days
+unless told: `KeyValueContexts(RedisKeyValue(redis), entry_ttl=timedelta(hours=1))`. A project's own
+`ContextStore` keeps drafts when it implements its entries: `save_entry`, `get_entry`, `delete_entry`,
+`list_entries`.
 
 ## Versions and conflicts
 
@@ -99,7 +107,7 @@ nothing is locked: the losing tab reads again, merges or reloads, and keeps with
 
 ```python
 draft = drafts.read(key)                       # tab B reads the draft
-drafts.keep(key, values_b, origin, expected=draft.version)   # tab A kept meanwhile
+drafts.save(key, values_b, origin, expected=draft.version)   # tab A kept meanwhile
 # DraftConflict: draft … is at version <A's>, not <the one B read>
 ```
 
@@ -113,7 +121,7 @@ started after the old one expired.
 
 ## The TTL
 
-Every draft has one, the store's `kept_ttl`, and every keep starts it again: an abandoned draft
+Every draft has one, the store's `entry_ttl`, and every keep starts it again: an abandoned draft
 disappears on its own and the store never grows without end. Days for an edit people come back
 to, minutes or hours for a wizard.
 

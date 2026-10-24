@@ -82,12 +82,20 @@ class GrpcTransport:
     """The caller's side for one address: one channel, shared by every context and thread."""
 
     def __init__(self, hosted_at: HostedAt) -> None:
+        """The channel opened lazily by gRPC — nothing connects until the first call, so an
+        address that is down fails that call, not the build. Plaintext: TLS is not offered."""
         self.hosted_at = hosted_at
         self._channel = grpc.insecure_channel(hosted_at.address)
         self._call = self._channel.stream_stream(PATH)
 
     def execute(self, context: str, dto: Any, request: Mapping[str, Any]) -> Payload:
-        """1. The message as a stream of chunks — the DTO by its identity, its values, the
+        """One execution on the hosting service, its answer read back whole.
+
+            transport.execute("billing", CommandPay(amount=10), {"correlation_id": "c1"})
+            ->  Payload(type="billing.ResponsePay", data={"paid": True}, ...)
+            <the host raised InvoiceNotFound>   ->  InvoiceNotFound raised here, as itself
+
+        1. The message as a stream of chunks — the DTO by its identity, its values, the
            request context; the context, the trace and who the call acts for as metadata.
         2. One streaming call, with the address's deadline.
         3. Final: the answer's message, or the failure raised as `_raised` says.
@@ -109,4 +117,5 @@ class GrpcTransport:
             raise _raised(error, context, self.hosted_at) from None
 
     def close(self) -> None:
+        """The channel closed — a call made after it fails."""
         self._channel.close()

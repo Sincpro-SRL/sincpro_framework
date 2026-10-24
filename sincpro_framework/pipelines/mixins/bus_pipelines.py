@@ -22,14 +22,23 @@ class BusPipelinesMixin:
     if TYPE_CHECKING:
 
         @property
-        def name(self) -> str: ...
+        def name(self) -> str:
+            """The bus's name — declared for the type checker; `UseFramework` defines it."""
+            ...
 
-        def feature_handlers(self) -> dict[type, type]: ...
+        def feature_handlers(self) -> dict[type, type]:
+            """Each DTO and the Feature that answers it — `UseFramework` defines it."""
+            ...
 
-        def app_service_handlers(self) -> dict[type, type]: ...
+        def app_service_handlers(self) -> dict[type, type]:
+            """Each DTO and the ApplicationService that answers it — `UseFramework` defines
+            it."""
+            ...
 
     def _pipeline_recorders(self) -> list[InterceptorRegistration]:
-        """1. Each ApplicationService that is a `Pipeline` and records.
+        """The recorders the pipelines of this bus bring — one interceptor per pipeline.
+
+        1. Each ApplicationService that is a `Pipeline` and records.
         2. What its recipes ask is said in the logs, never refused: a step this bus does not
            answer, a field the input lacks.
         Final: one recorder per pipeline, wrapping its Command and the steps this bus answers — an

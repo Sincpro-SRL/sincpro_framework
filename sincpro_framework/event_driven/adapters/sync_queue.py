@@ -30,6 +30,8 @@ class SyncQueue:
     """
 
     def __init__(self, subscriber: "Subscriber | Callable[[], Subscriber]") -> None:
+        """Keep the subscriber, or the function that builds it — refused at once, as a
+        `ProgrammingError`, when `subscriber` is neither."""
         if not hasattr(subscriber, "handle") and not callable(subscriber):
             raise exceptions.ProgrammingError(
                 f"SyncQueue takes a Subscriber or a function that builds one; "
@@ -47,7 +49,10 @@ class SyncQueue:
         return self._built
 
     def put(self, event: DomainEvent) -> list[Any]:
+        """Handle `event` now, in this call — what each bus that listens answered."""
         return self.subscriber.handle(event)
 
     async def aput(self, event: DomainEvent) -> list[Any]:
+        """Handle `event` now, through the subscriber's async twin — the buses run on worker
+        threads, so the event loop is not blocked."""
         return await self.subscriber.get_async_subscriber().handle(event)

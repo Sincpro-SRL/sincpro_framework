@@ -54,10 +54,9 @@ from typing import Any, TypeVar, cast
 
 from sincpro_framework import exceptions
 from sincpro_framework.common.failures import refined_failure_kind
-from sincpro_framework.common.store import KeyValueStore, StoreUnavailable
-from sincpro_framework.context.adapters.stores import process_contexts
-from sincpro_framework.context.entrypoint.facade import use_context
 from sincpro_framework.sincpro_logger import logger
+from sincpro_framework.store import KeyValueStore, StoreUnavailable
+from sincpro_framework.store.entrypoint.resolution import current_store, key_value_store_of
 
 FAILURES = 5
 """Consecutive failures that open a circuit, unless it says."""
@@ -86,6 +85,9 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 class CircuitState(StrEnum):
+    """Where a circuit stands, as `Circuit.state()` reads it off the store — for a health
+    page, a metric or a test; a call never needs it, `admit` decides on its own."""
+
     CLOSED = "closed"
     """Calls go through."""
     OPEN = "open"
@@ -103,6 +105,12 @@ class CircuitOpen(exceptions.ServiceUnavailableError):
     """Declared, so it is a `timedelta` again once rebuilt across a remote boundary."""
 
     def __init__(self, name: str, retry_after: timedelta) -> None:
+        """Refused with the time left floored at `LEAST_RETRY_AFTER` — a clock or a
+        whole-second TTL that rounds the time left to nothing never tells a caller to retry at
+        once.
+
+            CircuitOpen("siat", timedelta(0)).retry_after   ->  timedelta(seconds=1)
+        """
         retry_after = max(retry_after, LEAST_RETRY_AFTER)
         super().__init__(
             f"circuit {name} is open — the call was not made; "
@@ -137,6 +145,17 @@ last — per thread and per task, so one circuit guards any number of calls at o
 
 
 class Circuit:
+    """A named breaker around one dependency — its state kept in a store, not the object.
+
+    Context: built once with the adapter, shared by every thread, task and replica; what a
+    call may do is read at the call (`admit`) and what its end means is written after it
+    (`settle`), so the object itself holds only its settings and the store-bypass deadline.
+
+        siat = Circuit("siat", failures=3, open_for=timedelta(minutes=1))
+        siat.call(client.send, invoice)      ->  the answer, or `CircuitOpen` while it is open
+        siat.state()                         ->  CircuitState.CLOSED
+    """
+
     def __init__(
         self,
         name: str,
@@ -152,7 +171,18 @@ class Circuit:
         the store; `store` pins one instead of the context's; `clock` is seconds since the epoch,
         which a test moves by hand; `probe_for` is how long the call let through half-open keeps
         the others out — `open_for` unless said: give more than the longest call takes, or a
-        probe still waiting lets a second one in."""
+        probe still waiting lets a second one in.
+
+            Circuit("siat", failures=3, open_for=timedelta(minutes=1))
+                ->  probe_for 60s; its state in the context's store, "sincpro:circuit:siat:*"
+            Circuit("siat", failures=0)
+                ->  ProgrammingError("circuit siat: failures=0 would never close — ...")
+
+        1. Refused at once (`ProgrammingError`): `failures` under 1, an `open_for` that is no
+           time, a `probe_for` given that is no time.
+        2. The settings kept; `probe_for` is `open_for` when not given.
+        Final: no store is touched and nothing is bypassed yet — the store is read per call.
+        """
         if failures < 1:
             raise exceptions.ProgrammingError(
                 f"circuit {name}: failures={failures} would never close — give 1 or more"
@@ -174,32 +204,23 @@ class Circuit:
         self.clock = clock
         self._store = store
         self._unguarded_until = 0.0
-        self._said_memory = False
 
     def _key(self, part: str) -> str:
+        """The store key of one part of the state: `sincpro:circuit:siat:open`."""
         return f"{self.prefix}:{self.name}:{part}"
 
     def store(self) -> KeyValueStore:
-        """Where the state is: the store given, else where the running context keeps its leases —
-        read at every call, so a circuit built before any execution follows the bus it runs in.
-
-        Context: a project's own `ContextStore` that keeps no leases still has circuits — in
-        this process's memory, said once — so a call never fails for where its circuit is kept.
-        """
+        """Where the state is: the store given, else the `KeyValueStore` of the running
+        context — the bus in play, else the process, else memory — read at every call, so a
+        circuit built before any execution follows the bus it runs in."""
         if self._store is not None:
             return self._store
-        try:
-            return use_context().leases().store
-        except exceptions.ProgrammingError:
-            if not self._said_memory:
-                self._said_memory = True
-                logger.warning(
-                    f"circuit {self.name}: the context store keeps no leases — the circuit is "
-                    "kept in this process's memory"
-                )
-            return process_contexts().leases().store
+        return key_value_store_of(current_store())
 
     def _unanswered(self, error: StoreUnavailable) -> _Admission:
+        """The store did not answer: calls go through unguarded for `STORE_BYPASS` — kept in
+        this object, per process, so no call waits on the store meanwhile — and it is logged.
+        """
         self._unguarded_until = self.clock() + STORE_BYPASS.total_seconds()
         logger.warning(
             f"circuit {self.name}: its store did not answer ({error}); calls go through "
@@ -234,6 +255,12 @@ class Circuit:
     def admit(self) -> _Admission:
         """Whether a call may be made now.
 
+            siat.admit()   ->  _Admission()                       # closed, nothing failing
+            siat.admit()   ->  _Admission(failing=True)           # closed, 2 failures counted
+            siat.admit()   ->  CircuitOpen("siat", 18s left)      # open
+            siat.admit()   ->  _Admission(probe=True)             # half-open, won the probe
+            siat.admit()   ->  CircuitOpen("siat", 1s)            # half-open, probe taken
+
         1. The store did not answer a moment ago: through, unguarded.
         2. Open: `CircuitOpen`, with the seconds it stays open — a second at least.
         3. Half-open: through only for whoever wins the probe, held `probe_for`; the others
@@ -260,6 +287,13 @@ class Circuit:
 
     def settle(self, admission: _Admission, error: BaseException | None) -> None:
         """What a call's end does to the circuit.
+
+            siat.settle(_Admission(), SiatDown())         ->  failures 4 → 5: open for 30s
+            siat.settle(_Admission(probe=True), None)     ->  closed — the dependency answered
+            siat.settle(_Admission(failing=True), InvoiceNotFound())
+                                                          ->  an answer: the count cleared
+            siat.settle(_Admission(probe=True), KeyboardInterrupt())
+                                                          ->  the probe let go, nothing else
 
         1. A failure that counts: half-open, it opens again; closed, one more — and at
            `failures`, it opens.
@@ -291,6 +325,15 @@ class Circuit:
             logger.exception(f"circuit {self.name}: the call's end could not be kept")
 
     def state(self) -> CircuitState:
+        """Where the circuit stands now — open while `open` lives, half-open while only
+        `tripped` does, else closed. A read only: it admits nothing and, unlike a call, lets a
+        store that does not answer raise.
+
+            siat.state()   ->  CircuitState.CLOSED          # nothing written
+            siat.state()   ->  CircuitState.OPEN            # 5 failures in a row, 10s ago
+            siat.state()   ->  CircuitState.HALF_OPEN       # 31s after it opened
+
+        One `get_many` of `open` and `tripped`; the failure count is not read."""
         store = self.store()
         opened, tripped = store.get_many([self._key("open"), self._key("tripped")])
         if opened is not None:
@@ -304,6 +347,15 @@ class Circuit:
         self._close(store)
 
     def call(self, function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """`function(*args, **kwargs)` made through the circuit — for a call that is not worth
+        a decorator or a block.
+
+            siat.call(client.send, invoice)   ->  what `send` answers
+
+        1. Admitted, or `CircuitOpen` — and the function is not called.
+        2. Its failure is settled and raised as it was.
+        Final: its answer, settled as one.
+        """
         admission = self.admit()
         try:
             answer = function(*args, **kwargs)
@@ -314,6 +366,8 @@ class Circuit:
         return answer
 
     def __enter__(self) -> "Circuit":
+        """A block admitted — or `CircuitOpen` before it runs; the admission is kept in the
+        running context, innermost last, for `__exit__` to settle."""
         _ADMITTED.set((*_ADMITTED.get(), (self, self.admit())))
         return self
 
@@ -340,12 +394,17 @@ class Circuit:
         )
 
     async def __aenter__(self) -> "Circuit":
+        """`async with` — the same admission as `with`; the store is read synchronously."""
         return self.__enter__()
 
     async def __aexit__(self, kind: Any, error: BaseException | None, trace: Any) -> None:
+        """`async with`'s end — settled as `__exit__` does."""
         self.__exit__(kind, error, trace)
 
     def _guarded_coroutine(self, function: Callable[..., Any]) -> Callable[..., Any]:
+        """A coroutine function guarded per await: admitted when the coroutine starts running,
+        not when it is created, and settled when it answers or fails."""
+
         @functools.wraps(function)
         async def guarded(*args: Any, **kwargs: Any) -> Any:
             admission = self.admit()

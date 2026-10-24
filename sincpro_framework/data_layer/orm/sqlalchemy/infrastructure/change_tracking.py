@@ -47,6 +47,18 @@ def changed_columns(record: ChangeTrackingMixin) -> dict[str, tuple[Any, Any]]:
 
     The value after is a copy: the record keeps the object and may change it inside again, and
     an event is what was written, not what the record holds later.
+
+        invoice loaded with total=500, then invoice.total = 900; invoice.version = 4
+        changed_columns(invoice)   ->  {"total": (500, 900)}      the version is bookkeeping
+        invoice.total = 900 when it already held 900
+        changed_columns(invoice)   ->  {}
+
+    1. The fields the aggregate tracks, and the record's mapped state.
+    2. For each mapped column the aggregate tracks, the engine's history of it:
+       2.1 no change pending — skipped;
+       2.2 otherwise `(before, after)`: the loaded value (`None` when none was loaded) and a
+           deep copy of the pending one.
+    Final: the changes by field name — empty when nothing tracked is about to be written.
     """
     tracked = record.tracked_fields()
     changes: dict[str, tuple[Any, Any]] = {}

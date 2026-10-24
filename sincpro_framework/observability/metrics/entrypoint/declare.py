@@ -61,11 +61,20 @@ type Labels = Any | tuple[Any, ...]
 
 
 def _labels(by: Labels) -> tuple[FieldPath, ...]:
+    """The `by=` of a declaration as field paths — a value handed instead is refused, a label
+    that is not bounded (an Enum, a Literal, a bool) warned about once.
+
+        _labels(None)                                ->  ()
+        _labels(of(Command).currency)                ->  (of(Command).currency,)
+        _labels((of(Command).currency, of(Command).channel))  ->  both, in that order
+    """
     references = by if isinstance(by, tuple) else (() if by is None else (by,))
     return tuple(bounded_label(field_path(one, "a label")) for one in references)
 
 
 def _refuse_foreign_paths(cls: type, declaration: Declaration) -> None:
+    """Refuse, at import, a declaration on `cls` whose labels or value start anywhere but the
+    use case's own Command, Response or declared context type."""
     refuse_foreign_paths(
         cls,
         (*declaration.labels, *(() if declaration.value is None else (declaration.value,))),
@@ -73,6 +82,9 @@ def _refuse_foreign_paths(cls: type, declaration: Declaration) -> None:
 
 
 def _declaring(declaration: Declaration):  # type: ignore[no-untyped-def]
+    """The class decorator `counts`/`sums`/`measures` answer: it checks the paths against the
+    decorated use case and registers `declaration` on it, answering the class unchanged."""
+
     def declared[T: type](cls: T) -> T:
         _refuse_foreign_paths(cls, declaration)
         declare(cls, declaration)
@@ -99,12 +111,16 @@ class BoundInstrument:
         owner: type,
         who: BusObservability | None = None,
     ):
+        """Keep the instrument, the label paths, the use case they belong to and the bus
+        (`who`) that judges whether a failure timed by `time` is a fault."""
         self.instrument = instrument
         self._labels = labels
         self._owner = owner
         self._who = who
 
     def _read(self, sources: tuple[Any, ...]) -> dict[str, str]:
+        """The label values — each path read off the source of its root's type (a context
+        path off the execution context), `none` when none was handed."""
         return read_labels(self._labels, sources, self._owner)
 
     def add(self, value: float, *sources: Any) -> None:
@@ -117,7 +133,16 @@ class BoundInstrument:
 
     @contextmanager
     def time(self, *sources: Any) -> Iterator[None]:
-        """The block's duration, in seconds, with its outcome — a failure as its kind."""
+        """The block's duration, in seconds, with its outcome — a failure as its kind.
+
+            with self.pricing.time():
+                ...      ->  0.042 observed with {"sincpro.outcome": "ok",
+                             "sincpro.fault": "false", "error.type": ""}
+            raising SiatDown (a ServiceUnavailableError)
+                         ->  {"sincpro.outcome": "unavailable", "sincpro.fault": "true",
+                              "error.type": "SiatDown"}, and SiatDown still propagates
+
+        Measured on success and on failure alike; the fault is the bus's judgement (`who`)."""
         started = time.perf_counter()
         error: BaseException | None = None
         try:
@@ -145,6 +170,15 @@ class DeclaredInstrument:
         buckets: tuple[float, ...] | None,
         timed: bool = False,
     ) -> None:
+        """Keep what the instrument will be; its name waits for `__set_name__` and its
+        bounded context for the first `bound_to`. `timed` adds the outcome labels.
+
+            DeclaredInstrument(InstrumentKind.COUNTER, of(CommandIssueInvoice).channel, "",
+                               "", None)
+                ->  labels (of(CommandIssueInvoice).channel,), owner None, attribute ""
+
+        The labels are checked here, as written (`_labels`): a value instead of a field
+        reference is refused, an unbounded one warned about."""
         self.kind = kind
         self.labels = _labels(by)
         self.unit = unit
@@ -156,9 +190,25 @@ class DeclaredInstrument:
         self._bound: dict[str, BoundInstrument] = {}
 
     def __set_name__(self, owner: type, name: str) -> None:
+        """Learn the use case and the attribute — the last segment of the metric's name."""
         self.owner, self.attribute = owner, name
 
     def bound_to(self, context: str, who: BusObservability | None = None) -> BoundInstrument:
+        """The instrument as the bus `context` records it — built once per context and kept.
+
+        Context: one use case class can run on two buses; each gets its own series
+        (`billing.issue_invoice.retries`, `sales.issue_invoice.retries`).
+
+            IssueInvoice.retries.bound_to("billing")
+                ->  BoundInstrument("billing.issue_invoice.retries", label_keys=("channel",))
+            IssueInvoice.pricing.bound_to("billing").instrument.label_keys
+                ->  ("sincpro.outcome", "sincpro.fault", "error.type")      # a timer, no by=
+
+        1. A context already bound answers what it bound.
+        2. The instrument is named `{context}.{use_case}.{attribute}`; a `timer` also carries
+           `sincpro.outcome`, `sincpro.fault` and `error.type` among its label keys.
+        Final: the `BoundInstrument`, kept for `context`.
+        """
         known = self._bound.get(context)
         if known is not None:
             return known
@@ -177,6 +227,12 @@ class DeclaredInstrument:
         return bound
 
     def __get__(self, instance: Any, owner: type | None = None) -> Any:
+        """On the class, the declaration itself; on a use case instance, the instrument bound
+        to the bus that instance runs on (its `_context_binder`; none outside a bus).
+
+            IssueInvoice.retries          ->  DeclaredInstrument
+            self.retries                  ->  BoundInstrument("billing.issue_invoice.retries")
+        """
         if instance is None:
             return self
         binder = getattr(instance, "_context_binder", None)
@@ -235,9 +291,14 @@ class Metrics:
     # by hand — a class attribute of the use case, named by it
 
     def counter(self, by: Labels = None, unit: str = "", description: str = "") -> Any:
+        """A counter recorded by hand — `self.<attribute>.add(1, dto)`; only goes up.
+
+        retries = metrics.counter(by=of(CommandIssueInvoice).channel)
+        """
         return DeclaredInstrument(InstrumentKind.COUNTER, by, unit, description, None)
 
     def up_down(self, by: Labels = None, unit: str = "", description: str = "") -> Any:
+        """An up-down counter recorded by hand — `self.<attribute>.add(-1, dto)` goes down."""
         return DeclaredInstrument(InstrumentKind.UP_DOWN, by, unit, description, None)
 
     def histogram(
@@ -247,6 +308,8 @@ class Metrics:
         buckets: tuple[float, ...] | None = None,
         description: str = "",
     ) -> Any:
+        """A histogram recorded by hand — `self.<attribute>.record(value, dto)`; `buckets`
+        `None` leaves them to the recorder."""
         return DeclaredInstrument(InstrumentKind.HISTOGRAM, by, unit, description, buckets)
 
     def timer(
@@ -270,6 +333,7 @@ class Metrics:
 
     @property
     def recorder(self) -> Recorder | None:
+        """The recorder this process records into — `None` when metrics are off."""
         return active.get()
 
     def use(self, recorder: Recorder | None) -> None:

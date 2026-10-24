@@ -26,6 +26,13 @@ def began(session: Session, transaction: Transaction) -> None:
        refusal of a write, which holds everywhere.
     3. Final: a timeout is a `SET LOCAL` on Postgres; elsewhere it is warned about and the
        statements run unbounded.
+
+        began(session, Transaction(isolation=Isolation.REPEATABLE_READ, timeout=2.5))
+            Postgres  ->  "REPEATABLE READ"; SET LOCAL statement_timeout = 2500
+            SQLite    ->  "SERIALIZABLE"; a warning, no timeout
+        began(session, Transaction())   ->  nothing asked: the database's own defaults
+
+    SQLite only serializes, so any isolation asked of it is opened as serializable.
     """
     options: dict[str, Any] = dict(transaction.engine)
     dialect = session.get_bind().dialect.name

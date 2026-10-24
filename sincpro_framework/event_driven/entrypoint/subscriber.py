@@ -22,8 +22,8 @@ import json
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.common.store import KeyValueStore
 from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.store import KeyValueStore
 from sincpro_framework.use_bus import UseFramework
 
 RECEIPT = "subscriber"
@@ -31,6 +31,7 @@ RECEIPT = "subscriber"
 
 
 class Subscriber:
+    """Hands an event to every bus, of the ones given, that answers its wire name."""
 
     def __init__(
         self,
@@ -50,7 +51,15 @@ class Subscriber:
         return [bus for bus in self.buses if name in bus.dto_registry]
 
     def event_type(self, name: str) -> type[DomainEvent] | None:
-        """The class an event of that name rebuilds as, or `None` when no bus knows it."""
+        """The class an event of that name rebuilds as, or `None` when no bus knows it.
+
+            Subscriber(planning, assurance).event_type("billing.InvoicePaid")
+                ->  planning's InvoicePaid    # the first bus that registered the name
+            subscriber.event_type("billing.Unknown")         ->  None
+            subscriber.event_type("billing.CommandPay")      ->  None    # not an event
+
+        Context: a name a bus registered for a Command or a Query is no event, passed by.
+        """
         for bus in self.buses:
             found = bus.dto_registry.get(name)
             if found is not None and issubclass(found, DomainEvent):
@@ -86,14 +95,32 @@ class Subscriber:
             and self.receipts.get(f"{RECEIPT}:{bus.name}:{event.id}") is not None
         )
 
-    def keep_receipt(self, bus: UseFramework, event: DomainEvent) -> None:
+    def save_receipt(self, bus: UseFramework, event: DomainEvent) -> None:
+        """Note that `bus` handled this event, for `keep_for` — nothing without `receipts`."""
         if self.receipts is not None:
             self.receipts.set(f"{RECEIPT}:{bus.name}:{event.id}", b"1", self.keep_for)
 
     def handle(self, event: DomainEvent) -> list[Any]:
         """The event to every bus that answers it, now — but the ones a receipt says already
         did; what each one returned, in order — or, once every bus ran, what failed: the error
-        when one did, an `ExceptionGroup` when several did."""
+        when one did, an `ExceptionGroup` when several did.
+
+            Subscriber(planning, assurance).handle(InvoicePaid(…))
+                ->  [<planning's answer>, <assurance's answer>]
+            # assurance raised  ->  raises that error, after planning ran and kept its receipt
+            # both raised  ->  raises ExceptionGroup("billing.InvoicePaid failed in 2 buses")
+            # redelivered, planning's receipt kept  ->  only assurance runs again
+
+        1. The buses that answer the event's name, in the order they were given.
+        2. For each:
+           2.1 one whose receipt says it handled this event already is passed by;
+           2.2 it is handed the event as it declared it (`as_known_by`) — a failure is noted
+               and the next bus still runs;
+           2.3 a bus that answered gets its receipt, its answer kept.
+        3. One failure: raised as it is.
+        4. Several: raised together, as an `ExceptionGroup`.
+        Final: every answer, in the order the buses ran.
+        """
         answers: list[Any] = []
         failures: list[Exception] = []
         for bus in self.listeners(event.name):
@@ -104,7 +131,7 @@ class Subscriber:
             except Exception as error:  # noqa: BLE001 - the other buses still hear it
                 failures.append(error)
                 continue
-            self.keep_receipt(bus, event)
+            self.save_receipt(bus, event)
         if len(failures) == 1:
             raise failures[0]
         if failures:
@@ -117,14 +144,32 @@ class Subscriber:
 
 
 class AsyncSubscriber:
+    """`Subscriber` for an `async def` caller — each bus through its `get_async_bus()`."""
 
     def __init__(self, subscriber: Subscriber) -> None:
+        """The async face of `subscriber` — its buses, receipts and rebuilding are reused."""
         self._subscriber = subscriber
 
     async def handle(self, event: DomainEvent) -> list[Any]:
         """The event to every bus that answers it, each through its async facade — or, once
         every bus ran, what failed: the error when one did, an `ExceptionGroup` when several
-        did."""
+        did.
+
+            await subscriber.get_async_subscriber().handle(InvoicePaid(…))
+                ->  [<planning's answer>, <assurance's answer>]
+            # both raised  ->  raises ExceptionGroup("billing.InvoicePaid failed in 2 buses")
+
+        1. The buses that answer the event's name, in the order they were given.
+        2. For each:
+           2.1 one whose receipt says it handled this event already is passed by;
+           2.2 the event rebuilt as the bus declared it (`as_known_by`) — outside the guard,
+               so a rebuild that fails stops the whole delivery at once;
+           2.3 awaited on the bus's async facade — a failure is noted and the next bus runs;
+           2.4 a bus that answered gets its receipt, its answer kept.
+        3. One failure: raised as it is.
+        4. Several: raised together, as an `ExceptionGroup`.
+        Final: every answer, in the order the buses ran.
+        """
         answers: list[Any] = []
         failures: list[Exception] = []
         for bus in self._subscriber.listeners(event.name):
@@ -136,7 +181,7 @@ class AsyncSubscriber:
             except Exception as error:  # noqa: BLE001 - the other buses still hear it
                 failures.append(error)
                 continue
-            self._subscriber.keep_receipt(bus, event)
+            self._subscriber.save_receipt(bus, event)
         if len(failures) == 1:
             raise failures[0]
         if failures:

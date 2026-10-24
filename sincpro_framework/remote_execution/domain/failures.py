@@ -34,6 +34,13 @@ def error_details(error: BaseException) -> bytes:
 
     Context: dunder attributes (`__notes__`, what the framework marks a failure with) describe
     this process's handling of the error, not the error — they stay here.
+
+        error_details(ContextRequired("CommandPay", ["tenant_id"]))
+        ->  b'{"args": [...], "attributes": {"missing": ["tenant_id"], ...}}'
+        error_details(<args that JSON cannot write>)     ->  args as their `str` each
+        error_details(<details past 4096 bytes>)         ->  b""
+
+    An empty answer makes the error travel by its message alone.
     """
     attributes = {
         name: written

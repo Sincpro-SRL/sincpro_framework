@@ -13,10 +13,10 @@ from datetime import timedelta
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import Cache, Idempotency
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics
+from sincpro_framework.store import InMemoryKeyValue
 
 
 @pytest.fixture

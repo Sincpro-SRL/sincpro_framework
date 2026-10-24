@@ -4,6 +4,10 @@ import yaml
 
 
 def load_yaml_file(file_path: str) -> dict:
-    """Load a yaml file and return the content as a dictionary"""
+    """The YAML file at `file_path`, parsed with `safe_load` — no tag of the file builds a
+    Python object.
+
+        load_yaml_file("conf/payments.yml")   ->  {"sincpro_payments_sdk": {"qr": {...}}}
+    """
     with open(file_path) as file:
         return yaml.safe_load(file)

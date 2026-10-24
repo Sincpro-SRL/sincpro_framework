@@ -45,6 +45,12 @@ which."""
 
 
 class ErrorCode(NamedTuple):
+    """One row of the catalogue: a JSON-RPC code, the failure kinds it answers and whether a
+    retry usually helps — published once under OpenRPC `components.errors`.
+
+        ErrorCode("NotFound", -32004, "Not found", ("not_found",), False)
+    """
+
     name: str
     """The key under OpenRPC `components.errors`."""
     code: int
@@ -102,10 +108,24 @@ type Answer = tuple[int, str, dict[str, Any]]
 
 
 def upper_snake(name: str) -> str:
+    """A class name as an UPPER_SNAKE reason — acronyms kept whole.
+
+        upper_snake("InvoiceNotFound")  ->  "INVOICE_NOT_FOUND"
+        upper_snake("HTTPTimeout")      ->  "HTTP_TIMEOUT"
+
+    What a domain error's class name becomes as its `reason`.
+    """
     return UPPER_SNAKE_BOUNDARY.sub("_", name).upper()
 
 
 def error_data(kind: str, reason: str, retryable: bool, **disclosed: Any) -> dict[str, Any]:
+    """An error's `data`: the three members every error carries, then what it discloses.
+
+        error_data("invalid", "BATCH_TOO_LARGE", False, limit=50)
+        ->  {"kind": "invalid", "reason": "BATCH_TOO_LARGE", "retryable": False, "limit": 50}
+
+    The extra keywords are what the error chose to disclose.
+    """
     return {"kind": kind, "reason": reason, "retryable": retryable, **disclosed}
 
 
@@ -120,6 +140,13 @@ def protocol_error(code: ErrorCode, reason: str, **disclosed: Any) -> Answer:
 
 def answer_for(error: Exception) -> Answer:
     """The code, message and `data` a failure of a method is answered with.
+
+        answer_for(InvoiceNotFound("F-9 does not exist"))
+        ->  (-32004, "Not found", {"kind": "not_found", "reason": "INVOICE_NOT_FOUND",
+                                   "retryable": False, "message": "F-9 does not exist"})
+        answer_for(RuntimeError("postgres://admin:pw@db"))
+        ->  (-32603, "Internal error", {"kind": "internal", "reason": "INTERNAL_ERROR",
+                                        "retryable": True})
 
     1. A `ValidationError` is invalid params, with the validation errors.
     2. An auth refusal keeps what the caller comes back with (`step_up`, `requirement`), its
@@ -167,6 +194,11 @@ def error_components() -> dict[str, dict[str, Any]]:
 
 
 def method_error_refs() -> list[dict[str, str]]:
+    """A method's OpenRPC `errors`: a reference to each code a method may answer — the
+    protocol errors are left out, they come before any method is known.
+
+        method_error_refs()  ->  [{"$ref": "#/components/errors/InvalidParams"}, ...]
+    """
     return [{"$ref": f"#/components/errors/{one.name}"} for one in METHOD_ERRORS]
 
 

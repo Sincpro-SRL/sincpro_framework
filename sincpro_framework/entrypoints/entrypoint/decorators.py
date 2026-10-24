@@ -41,6 +41,13 @@ def declare[T: type](cls: T, binding: Binding) -> T:
 
 
 def _deprecation(deprecated: Deprecated) -> Deprecation | None:
+    """What a decorator's `deprecated=` says, as the binding holds it — `True` a deprecation
+    with no dates, a `Deprecation` as given, nothing else none.
+
+        _deprecation(True)                                  ->  Deprecation()
+        _deprecation(Deprecation(sunset=date(2027, 1, 1)))  ->  the same Deprecation
+        _deprecation(None) / _deprecation(False)            ->  None
+    """
     if deprecated is True:
         return Deprecation()
     return deprecated or None
@@ -60,7 +67,10 @@ def _declared_only[B: Binding](binding_type: type[B], **fields: Any) -> B:
 
 
 def _declaring[T: type](binding: Binding) -> Callable[[T], T]:
+    """The class decorator that records `binding` for the class it decorates."""
+
     def declared(cls: T) -> T:
+        """Record the binding for `cls` and hand `cls` back unchanged."""
         return declare(cls, binding)
 
     return declared
@@ -83,6 +93,16 @@ class _Rest:
         concurrency: RestConcurrency | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """An HTTP operation, its method left to be derived unless given.
+
+            @rest("/invoices/{number}")              # GET for a Query, POST for a Command
+            @rest(method="PUT")                      # the path derived from the DTO's name
+
+        `status` the success code, `location` the `Location` template of a 201, `responses`
+        the domain errors to document, `body="merge-patch"` a partial body, `concurrency=
+        "if-match"` an `If-Match` precondition — a REST host refuses at build time what it
+        does not serve yet. A field not given is derived by the REST wire.
+        """
         binding = _declared_only(
             RestBinding,
             method=method,
@@ -112,6 +132,7 @@ class _Rest:
         concurrency: RestConcurrency | None,
         deprecated: Deprecated,
     ) -> Callable[[T], T]:
+        """The decorator with `method` fixed — what each verb below calls."""
         return self(
             path,
             method=method,
@@ -137,6 +158,12 @@ class _Rest:
         concurrency: RestConcurrency | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """A `GET` at `path` — a read: the Command must be a `Query`.
+
+            @rest.get("/invoices/{number}")
+
+        Every other field as `rest(...)` takes it.
+        """
         return self._verb(
             "GET",
             path,
@@ -162,6 +189,12 @@ class _Rest:
         concurrency: RestConcurrency | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """A `POST` at `path` — create or act.
+
+            @rest.post("/invoices", status=201, location="/invoices/{number}")
+
+        Every other field as `rest(...)` takes it.
+        """
         return self._verb(
             "POST",
             path,
@@ -187,6 +220,12 @@ class _Rest:
         concurrency: RestConcurrency | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """A `PUT` at `path` — replace the resource whole.
+
+            @rest.put("/invoices/{number}")
+
+        Every other field as `rest(...)` takes it.
+        """
         return self._verb(
             "PUT",
             path,
@@ -212,6 +251,11 @@ class _Rest:
         concurrency: RestConcurrency | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """A `PATCH` at `path` — change part of a resource; with no `body="merge-patch"`
+        the Command may require no field outside the path.
+
+            @rest.patch("/invoices/{number}", body="merge-patch")
+        """
         return self._verb(
             "PATCH",
             path,
@@ -237,6 +281,12 @@ class _Rest:
         concurrency: RestConcurrency | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """A `DELETE` at `path` — it answers no body: `execute` answers `None`.
+
+            @rest.delete("/invoices/{number}", status=204)
+
+        Every other field as `rest(...)` takes it.
+        """
         return self._verb(
             "DELETE",
             path,
@@ -252,12 +302,20 @@ class _Rest:
 
 
 rest = _Rest()
+"""The REST decorator — `@rest.post("/invoices")`, or `@rest()` to derive it all."""
 
 
 def rpc[T: type](
     name: str | None = None, notification: bool = False, deprecated: Deprecated = None
 ) -> Callable[[T], T]:
-    """A JSON-RPC method — `name` derived (`billing.issue_invoice`) when not given."""
+    """A JSON-RPC method — `name` derived (`billing.issue_invoice`) when not given.
+
+        @rpc()                                    # billing.issue_invoice
+        @rpc("billing.invoices.issue")
+        @rpc(notification=True)                   # answers nothing to the caller
+
+    A name starting with `rpc.` is refused — the specification reserves it.
+    """
     binding = _declared_only(
         RpcBinding, name=name, notification=notification, deprecated=_deprecation(deprecated)
     )
@@ -268,7 +326,14 @@ def rpc[T: type](
 def grpc[T: type](
     service: str | None = None, method: str | None = None, deprecated: Deprecated = None
 ) -> Callable[[T], T]:
-    """A gRPC method — the context's `{Alias}Service` and the DTO's name, unless given."""
+    """A gRPC method — the context's `{Alias}Service` and the DTO's name without its kind,
+    unless given.
+
+        @grpc()                                   # BillingService / IssueInvoice
+        @grpc(service="InvoicesService", method="Issue")
+
+    `service` splits one context's single service in several.
+    """
     binding = _declared_only(
         GrpcBinding, service=service, method=method, deprecated=_deprecation(deprecated)
     )
@@ -284,7 +349,15 @@ def mcp[T: type](
     open_world: bool = False,
     deprecated: Deprecated = None,
 ) -> Callable[[T], T]:
-    """An MCP tool — its name derived from the DTO, `read_only` from the Command's kind."""
+    """An MCP tool — its name derived from the DTO, `read_only` from the Command's kind.
+
+        @mcp(title="Emitir factura", destructive=False)
+        @mcp(open_world=True)                     # it reaches outside the system
+
+    `read_only` may not contradict the Command's kind (a `Query` reads). `destructive` is the
+    hint the framework cannot prove: undeclared, a tool that writes stays destructive. Hints
+    are never authorization.
+    """
     binding = _declared_only(
         McpBinding,
         name=name,
@@ -310,6 +383,14 @@ class _Queue:
         concurrency: int | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """Run this Command for each message on `channel` — point to point, one handler per
+        channel.
+
+            @queue.consumes("billing.invoices.issue", producers=("urn:svc:sales",))
+
+        `producers` the identities allowed to send it, `max_attempts` the deliveries before
+        the message is dead-lettered, `concurrency` how many workers run it at once.
+        """
         binding = _declared_only(
             QueueBinding,
             kind="consumes",
@@ -330,6 +411,14 @@ class _Queue:
         concurrency: int | None = None,
         deprecated: Deprecated = None,
     ) -> Callable[[T], T]:
+        """Run this handler for each DomainEvent of its type, in a consumer `group` — every
+        group hears every event once.
+
+            @queue.hears(group="billing-ledger")
+
+        `group` defaults to the context's namespace or alias; `channel` to the event's wire
+        name.
+        """
         binding = _declared_only(
             QueueBinding,
             kind="hears",
@@ -344,3 +433,5 @@ class _Queue:
 
 
 queue = _Queue()
+"""The queue decorator — `@queue.consumes(channel)` for a Command, `@queue.hears()` for an
+event."""

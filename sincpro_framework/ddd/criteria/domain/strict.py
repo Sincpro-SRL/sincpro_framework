@@ -21,6 +21,7 @@ TOLERANT: dict[str, Any] = {"unknown_keys": "ignore"}
 
 
 def tolerates(info: ValidationInfo | None) -> bool:
+    """Whether this validation was asked to leave unknown keys out (`context=TOLERANT`)."""
     return bool(
         info is not None and info.context and info.context.get("unknown_keys") == "ignore"
     )
@@ -34,6 +35,11 @@ class Strict(DataTransferObject):
     @model_validator(mode="before")
     @classmethod
     def _without_unknown_keys_when_tolerated(cls, data: Any, info: ValidationInfo) -> Any:
+        """Under `TOLERANT`, drops the keys this model does not have — by name or alias — so
+        `extra="forbid"` never sees them; otherwise the data passes untouched and is refused.
+
+            {"field": "a", "value": 1, "boost": 2}, TOLERANT   ->  {"field": "a", "value": 1}
+        """
         if not (isinstance(data, dict) and tolerates(info)):
             return data
         known = set(cls.model_fields) | {
@@ -43,6 +49,13 @@ class Strict(DataTransferObject):
 
 
 def refused_or_dropped(value: dict, known: set[str], tolerant: bool) -> dict:
+    """A filter node's mapping with only the keys it takes — the same rule as `Strict`, for
+    the nodes read by hand before a model is built.
+
+        {"field": "a", "valeu": 1}, {"field", "operator", "value"}, False
+        ->  InvalidCriteria: a filter node has no 'valeu'; it takes [...]
+        same, tolerant=True   ->  {"field": "a"}
+    """
     unknown = sorted(set(value) - known)
     if unknown and not tolerant:
         raise exceptions.InvalidCriteria(

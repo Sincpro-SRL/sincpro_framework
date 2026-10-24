@@ -19,6 +19,9 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class IdentityKind(StrEnum):
+    """What kind of caller an `Identity` is — a person, a peer service, the system acting on
+    its own (which every requirement admits), or nobody."""
+
     USER = "user"
     SERVICE = "service"
     SYSTEM = "system"
@@ -54,6 +57,7 @@ class Credentials(DataTransferObject):
     @field_validator("headers")
     @classmethod
     def _lower_case(cls, headers: Mapping[str, str]) -> Mapping[str, str]:
+        """Header names lower-cased, so a provider looks one up without caring how it came."""
         return {name.lower(): value for name, value in headers.items()}
 
     @property
@@ -63,13 +67,27 @@ class Credentials(DataTransferObject):
         return token.strip() or None if scheme.lower() == "bearer" else None
 
     def __repr__(self) -> str:
-        """Context: never the values — a log line that printed credentials would leak them."""
+        """The transport and the header names only.
+
+        Context: never the values — a log line that printed credentials would leak them.
+
+            Credentials(transport="http", headers={"Authorization": "Bearer x"})
+                ->  "Credentials(transport='http', headers=['authorization'])"
+        """
         return f"Credentials(transport={self.transport!r}, headers={sorted(self.headers)})"
 
     __str__ = __repr__
 
 
 class Identity(DataTransferObject):
+    """Who a call acts as, once a provider vouched for it — or as opened by hand.
+
+    Identity.user("user:42", tenant="bo", permissions={"billing.invoice.issue"})
+    Identity.service("billing")         ->  subject "service:billing"
+    Identity.system("nightly close")    ->  admitted by every requirement, reason logged
+    Identity.anonymous()                ->  nobody — what is in play outside `as_identity`
+    """
+
     model_config = ConfigDict(frozen=True)
 
     subject: str
@@ -95,9 +113,19 @@ class Identity(DataTransferObject):
 
     @property
     def is_anonymous(self) -> bool:
+        """Whether nobody is calling."""
         return self.kind == IdentityKind.ANONYMOUS
 
     def claims_as[T: DataTransferObject](self, shape: type[T]) -> T:
+        """The raw `claims`, validated into a DTO of the project's — typed access to what the
+        credential said besides.
+
+            class OdooClaims(DataTransferObject):
+                uid: int
+                company_ids: list[int]
+
+            identity.claims_as(OdooClaims).company_ids   ->  [1, 3]
+        """
         return shape.model_validate(dict(self.claims))
 
     @classmethod
@@ -108,6 +136,8 @@ class Identity(DataTransferObject):
         permissions: Iterable[str] = (),
         roles: Iterable[str] = (),
     ) -> "Identity":
+        """A person, opened by hand — a test, in-process code; its `permissions` are the
+        answer, as no provider vouched for it."""
         return cls(
             subject=subject,
             kind=IdentityKind.USER,
@@ -118,6 +148,7 @@ class Identity(DataTransferObject):
 
     @classmethod
     def service(cls, name: str, permissions: Iterable[str] = ()) -> "Identity":
+        """A peer service, subject `service:<name>` — also the `actor` of a service token."""
         return cls(
             subject=f"service:{name}",
             kind=IdentityKind.SERVICE,
@@ -126,10 +157,12 @@ class Identity(DataTransferObject):
 
     @classmethod
     def system(cls, reason: str) -> "Identity":
+        """The system acting on its own, for `reason` — prefer `as_system`, which logs it."""
         return cls(subject="system", kind=IdentityKind.SYSTEM, reason=reason)
 
     @classmethod
     def anonymous(cls) -> "Identity":
+        """Nobody — what a call no provider recognized acts as."""
         return cls(subject="anonymous", kind=IdentityKind.ANONYMOUS)
 
 

@@ -23,6 +23,8 @@ from sincpro_framework.ddd import exceptions
 
 
 def refuse_no_count(count: int) -> None:
+    """Refuses `take` asked for fewer than one number — what every implementation checks
+    before it touches the counter row."""
     if count < 1:
         raise exceptions.ProgrammingError(f"take at least one number, not {count}")
 

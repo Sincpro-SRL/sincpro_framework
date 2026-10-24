@@ -28,6 +28,14 @@ def identity_of(entity: type) -> str:
 
 @dataclass(frozen=True)
 class EntityExtension:
+    """One registered extension of an entity: the class that adds fields, the root it adds
+    them to, and what everything else needs to know about it without reading the class again.
+
+        register(Move, MoveDelivery, ("route",))
+        ->  EntityExtension(entity=MoveDelivery, root=Move, fields=("route",),
+                            key="delivery", identity="billing.domain.MoveDelivery", depth=…)
+    """
+
     entity: type
     """The class that adds the fields."""
     root: type
@@ -65,6 +73,26 @@ def key_of(root: type, entity: type) -> str:
 
 
 def register(root: type, entity: type, fields: tuple[str, ...]) -> EntityExtension:
+    """Records `entity` as an extension of `root` adding `fields` — what `map_aggregates`
+    calls for each extension it maps.
+
+    Context: registering the same class again replaces it rather than doubling it, so a module
+    mapped twice (a test, a reload) stays one extension.
+
+        register(Move, MoveDelivery, ("route",))
+            ->  EntityExtension(entity=MoveDelivery, root=Move, fields=("route",),
+                                key="delivery", identity="billing.domain.MoveDelivery", …)
+        register(Move, MoveDelivery, ("route", "carrier"))   # again: replaces the first
+        register(Move, OtherDelivery, ...)    # key "other_delivery" — no clash, appended
+        # a class elsewhere also named MoveDelivery  ->  raises ProgrammingError(
+        #     "... would both be `delivery` in a delegated answer of Move: rename one ...")
+
+    1. The extension described: its key under the root, its identity, its depth (`__mro__`).
+    2. Any earlier registration of the same class under this root is dropped.
+    3. Another extension already answering under the same key is refused — a delegated answer
+       would nest both under one name.
+    Final: appended in registration order, and handed back.
+    """
     found = EntityExtension(
         entity, root, fields, key_of(root, entity), identity_of(entity), len(entity.__mro__)
     )

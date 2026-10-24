@@ -47,6 +47,14 @@ class Payload:
     def of(
         cls, identity: str, value: Any, context: Mapping[str, Any] | None = None
     ) -> "Payload":
+        """A call or an answer about to leave: `identity` is the registered name of the DTO's
+        class, `value` the DTO itself, and the correlation and causation lifted out of
+        `context` to the top.
+
+            Payload.of("billing.CommandPay", dto, {"correlation_id": "c1", "tenant": "a"})
+                ->  Payload(type="billing.CommandPay", data=dto, correlation_id="c1",
+                            context={"tenant": "a"})
+        """
         given = dict(context or {})
         return cls(
             type=identity,
@@ -57,6 +65,18 @@ class Payload:
         )
 
     def as_json(self) -> bytes:
+        """The compact JSON document that travels — only what it holds is written.
+
+            Payload.of("billing.CommandPay", CommandPay(amount=10), {"correlation_id": "c1"})
+            .as_json()
+            ->  b'{"type":"billing.CommandPay","data":{"amount":10},"correlation_id":"c1"}'
+
+        1. `type` and `data`, the DTO as JSON values (`values_of`).
+        2. The correlation and the causation, at the top, when there are.
+        3. The context, when there is — each value JSON cannot write stays in this process,
+           with a warning, instead of failing the call.
+        Final: UTF-8 bytes, no spaces.
+        """
         written: dict[str, Any] = {"type": self.type, "data": values_of(self.data)}
         if self.correlation_id:
             written[ContextKey.CORRELATION_ID] = self.correlation_id
@@ -69,7 +89,15 @@ class Payload:
     @classmethod
     def from_json(cls, raw: bytes | str | Mapping[str, Any]) -> "Payload":
         """Read by name: what the document does not say is left at its default, what this
-        process does not know is ignored. `data` stays values until a class rebuilds it."""
+        process does not know is ignored. `data` stays values until a class rebuilds it.
+
+            Payload.from_json(b'{"type":"billing.CommandPay","data":{"amount":10}}')
+            ->  Payload(type="billing.CommandPay", data={"amount": 10}, context={})
+            Payload.from_json(b"[1, 2]")
+            ->  ValueError: a payload is a JSON object with its type and its data
+
+        A `context` that is not an object is read as none.
+        """
         read = read_values(raw)
         if not isinstance(read, Mapping):
             raise ValueError("a payload is a JSON object with its type and its data")

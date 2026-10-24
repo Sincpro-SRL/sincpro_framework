@@ -47,7 +47,17 @@ def _with_months[D: date](day: D, months: int) -> D:
 
 
 def snapped[D: date](day: D, grain: Grain, week_starts_on: int) -> D:
-    """The start of the calendar unit a day falls in; a datetime also loses its time."""
+    """The start of the calendar unit a day falls in; a datetime also loses its time.
+
+        snapped(date(2026, 8, 14), Grain.QUARTER, 0)          ->  date(2026, 7, 1)
+        snapped(date(2026, 10, 24), Grain.WEEK, 0)            ->  date(2026, 10, 19)  # Monday
+        snapped(date(2026, 10, 24), Grain.WEEK, 6)            ->  date(2026, 10, 18)  # Sunday
+        snapped(datetime(2026, 10, 24, 15, 9), Grain.MONTH, 0)
+            ->  datetime(2026, 10, 1, 0, 0)
+
+    Context: `week_starts_on` counts as `date.weekday()` does — 0 is Monday; only a week
+    reads it.
+    """
     match grain:
         case Grain.DAY:
             start = day
@@ -101,6 +111,10 @@ def _window(
     assert count is not None
 
     def units(amount: int) -> date | datetime:
+        """The start of the unit `amount` units away from the current one.
+
+        unit = month, current = 2026-03-01:   units(-2)  ->  2026-01-01
+        """
         return moved(
             current,
             Span(
@@ -124,7 +138,19 @@ def _window(
 def range_of(
     period: Period, resolution: ResolutionContext
 ) -> tuple[date | datetime, date | datetime]:
-    """The `[start, end)` a period covers, in dates of the context's timezone."""
+    """The `[start, end)` a period covers, in dates of the context's timezone.
+
+        # now = 2026-10-24 15:00 UTC, weeks starting on Monday
+        range_of(Period(name="last_month"), resolution)
+            ->  (date(2026, 9, 1), date(2026, 10, 1))
+        range_of(Period(unit="day", last=30), resolution)
+            ->  (date(2026, 9, 24), date(2026, 10, 24))     # today left out
+        range_of(Period(unit="week", next=2, include_current=True), resolution)
+            ->  (date(2026, 10, 19), date(2026, 11, 2))
+
+    Context: a named period is its unit moved from today and snapped to its start, one unit
+    long; a window is counted from the current unit by `_window`.
+    """
     today = resolution.now.astimezone(resolution.timezone).date()
     if period.name is None:
         return _window(period, today, resolution)

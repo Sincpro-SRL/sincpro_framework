@@ -83,11 +83,15 @@ class ExtensionType(ColumnElement):
     _traverse_internals: list = []
 
     def __init__(self, root: Entities, within: Entities | None = None) -> None:
+        """`root` is the chain's top entity; `within` the class being read (the root when
+        not given) — only it and what extends it are candidates."""
         super().__init__()
         self.root = root
         self.within = within or root
 
     def _gen_cache_key(self, anon_map, bindparams):  # type: ignore[no-untyped-def]  # noqa: ARG002
+        """The statement-cache key: the classes, the root's mode (strict, stored) and the
+        identities registered now — so a compiled statement never outlives a new extension."""
         # The statement is compiled from what is registered, so what is registered is part
         # of its identity: a module installed later never meets a stale compiled statement.
         known = tuple(one.identity for one in extensions.chain(self.root, self.root))
@@ -103,7 +107,17 @@ class ExtensionType(ColumnElement):
 
 def derived(root: Entities, within: Entities | None = None) -> ColumnElement:
     """The type of a row worked out from the rows that exist: what `ExtensionType` is when the
-    table stores nothing, and what `reclassify` writes when it does."""
+    table stores nothing, and what `reclassify` writes when it does.
+
+        derived(Move)
+            ->  CASE WHEN EXISTS (… move_tracking …) THEN 'billing.MoveTracking'
+                     WHEN EXISTS (… move_delivery …) THEN 'billing.MoveDelivery'
+                     ELSE 'billing.Move' END
+        derived(Partner)   ->  'contacts.Partner', a literal: nothing extends it
+
+    The deepest extension is asked first, so a row answers the most derived class it has;
+    `within` starts the choice lower down the chain.
+    """
     within = within or root
     branches = [
         (PROOFS[one.entity], literal(one.identity, String()))
@@ -116,6 +130,17 @@ def derived(root: Entities, within: Entities | None = None) -> ColumnElement:
 
 @compiles(ExtensionType)
 def compile_extension_type(element: ExtensionType, compiler, **kw):  # type: ignore[no-untyped-def]
+    """The SQL an `ExtensionType` compiles to, from what is registered at compile time.
+
+    1. A strict root: the identity of the class read, a literal — never an extension.
+    2. No stored type column: `derived` — a CASE over each extension's proof.
+    3. A stored type column: only the extensions sharing the root's table (no row of their
+       own) are worked out; otherwise the stored value, when it names the class read or one
+       below it.
+    Final: the class read itself, for a value of a class no longer installed.
+
+        select(Move) on a row in move and move_delivery   ->  'MoveDelivery'
+    """
     # Reading from an extension decides only among that extension and what extends it: a sibling
     # with a row of its own is another kind of the same record, not a level below this one.
     root, within = element.root, element.within

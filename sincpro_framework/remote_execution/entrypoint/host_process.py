@@ -16,9 +16,16 @@ DEFAULT_GRACE = 5.0
 
 
 def main(argv: Sequence[str]) -> int:
-    """1. Import the contexts, bind the port; say where it listens, or why it could not.
+    """Host the contexts named in `argv` in this child process until the parent lets go.
+
+        main(["127.0.0.1:0", "billing.bus:billing"])
+        ->  stdout 'sincpro-host-ready {"listening": "127.0.0.1:50123"}'; 0 once released
+        main(["127.0.0.1:0", "billing.nope:billing"])
+        ->  stdout 'sincpro-host-ready {"failed": "ModuleNotFoundError: ..."}'; 1
+
+    1. Import the contexts, bind the port; say where it listens, or why it could not.
     2. Wait for the parent: a grace on stdin, or stdin closing with it.
-    3. Final: drain the calls in progress, then exit.
+    Final: drain the calls in progress, then exit.
     """
     from sincpro_framework.remote_execution.entrypoint.hosts import (
         _bound,

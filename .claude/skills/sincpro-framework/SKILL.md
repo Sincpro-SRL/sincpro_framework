@@ -212,7 +212,7 @@ Anything that fits none of these: stop and ask. Do not invent a fourth kind of s
 | Aggregate, table, repository, unit of work, hooks, mixins | `sincpro-framework-persistence` |
 | Filter, order, page, count, aggregate, relations | `sincpro-framework-criteria` |
 | Domain events, outbox, event sourcing, brokers | `sincpro-framework-domain-events` |
-| Cache a Query's answer, idempotency | `sincpro-framework-caching` |
+| Cache a function or a Query's answer (`bus.cache`), idempotency (`bus.idempotency`) | `sincpro-framework-caching` |
 | Traces, errors, logs, metrics | `sincpro-framework-observability` |
 | Configuration, secrets, environment | `sincpro-framework-settings` |
 | REST / FastAPI / RPC / gRPC / MCP / queue, context map | `sincpro-framework-entrypoints` |

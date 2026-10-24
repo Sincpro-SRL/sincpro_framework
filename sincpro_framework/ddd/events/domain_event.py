@@ -96,6 +96,17 @@ class DomainEvent(Entity):
     the same place. `None` for an event about an entity whose state is a row of its own."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Gives every event class its wire name, and refuses the ways of getting it wrong.
+
+            class InvoicePaid(BillingDomainEvent): ...     name == "InvoicePaid"
+            class Paid(...): name = "billing.invoice.v1.paid"     the name declared wins
+
+        1. `name: str` declared as a typed field is refused — the name is reserved for the
+           wire, and a field would make it a per-instance value.
+        2. A class that does not set `name` itself is named after the class — never inheriting
+           its parent's name, which would make two events one on the wire.
+        Final: a name that is not text or is blank is refused.
+        """
         super().__init_subclass__(**kwargs)
         if NAME in own_annotations(cls):
             raise exceptions.ProgrammingError(
@@ -166,4 +177,5 @@ class DomainEvent(Entity):
         )
 
     def __repr__(self) -> str:
+        """Who the event is and what it is about, never its payload — it is logged."""
         return f"{self.name}(id={self.id}, label={self.label}, entity_type={self.entity_type}, entity_id={self.entity_id}, created_at={self.created_at.isoformat()})"

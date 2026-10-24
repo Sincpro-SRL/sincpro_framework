@@ -35,7 +35,9 @@ from sincpro_framework import exceptions
 
 
 def refused(message: str) -> Exception:
-    """Context: imported here, not at the top — the bus measures every run through this
+    """A `ProgrammingError` with `message`, for a path that cannot be declared.
+
+    Context: imported here, not at the top — the bus measures every run through this
     package, and a service that only runs buses must not load the DDD layer for it."""
 
     return exceptions.ProgrammingError(message)
@@ -70,7 +72,14 @@ def _declared_fields(cls: type) -> dict[str, Any] | None:
 
 
 def without_none(annotation: Any) -> Any:
-    """`X | None` as `X` — an optional label or value is still bounded, or still a number."""
+    """`X | None` as `X` — an optional label or value is still bounded, or still a number.
+
+        without_none(str | None)             ->  str
+        without_none(Optional[Currency])     ->  Currency
+        without_none(int | str | None)       ->  int | str | None      # two left: unchanged
+
+    Only a union that leaves exactly one type is narrowed; anything else comes back as it is.
+    """
     if get_origin(annotation) in (Union, types.UnionType):
         kept = [one for one in get_args(annotation) if one is not type(None)]
         if len(kept) == 1:
@@ -84,20 +93,25 @@ class FieldPath:
     __slots__ = ("_root", "_names", "_annotation")
 
     def __init__(self, root: type, names: tuple[str, ...], annotation: Any) -> None:
+        """Set the three slots past `__setattr__`, which refuses every write — a path is
+        immutable once built."""
         object.__setattr__(self, "_root", root)
         object.__setattr__(self, "_names", names)
         object.__setattr__(self, "_annotation", annotation)
 
     @property
     def root(self) -> type:
+        """The class the path starts at — the Command, the Response or a context type."""
         return self._root
 
     @property
     def names(self) -> tuple[str, ...]:
+        """The attributes walked from the root, in order — `("customer", "segment")`."""
         return self._names
 
     @property
     def annotation(self) -> Any:
+        """The declared type of the last step — it tells a number from a bounded label."""
         return self._annotation
 
     @property
@@ -106,6 +120,17 @@ class FieldPath:
         return self._names[-1] if self._names else ""
 
     def __getattr__(self, name: str) -> "FieldPath":
+        """One step further — `of(Command).customer` → `of(Command).customer.segment`.
+
+        Context: this is where a renamed or mistyped field fails, at import, instead of a
+        dashboard going silently empty.
+
+        1. A private name is a plain `AttributeError` — copy, pickle and friends probe them.
+        2. The current step must be a DTO (a model, a dataclass, a TypedDict), `X | None`
+           read as `X`.
+        3. It must declare `name`; the error lists the fields it does have.
+        Final: a new path, one name longer, typed as that field.
+        """
         if name.startswith("_"):
             raise AttributeError(name)
         current = without_none(self._annotation)
@@ -127,9 +152,15 @@ class FieldPath:
         return self.__getattr__(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
+        """Refused — a field reference is read-only."""
         raise AttributeError("a field reference is read-only")
 
     def __repr__(self) -> str:
+        """The path as it was written — what a warning or a refusal quotes.
+
+        of(CommandIssueInvoice).customer.segment
+        of(BillingContext)['company']
+        """
         if is_context_type(self._root):
             return f"of({self._root.__name__})" + "".join(f"[{one!r}]" for one in self._names)
         return f"of({self._root.__name__}).{'.'.join(self._names)}"
@@ -141,7 +172,15 @@ class FieldPath:
 
     def read(self, source: Any) -> Any:
         """The value on `source`, walking the path — `None` where a step is `None`. A mapping
-        (the execution context) is read by key."""
+        (the execution context) is read by key.
+
+            of(CommandIssueInvoice).customer.segment.read(command)    ->  "retail"
+            of(CommandIssueInvoice).customer.segment.read(no_customer)  ->  None
+            of(BillingContext)["company"].read({"company": 3})        ->  3
+            of(BillingContext)["company"].read({})                    ->  None
+
+        An attribute the object lacks raises `AttributeError`: the path was checked against
+        the class, so that is an object of another class."""
         value = source
         for name in self._names:
             if value is None:
@@ -201,7 +240,19 @@ def bounded_label(path: FieldPath) -> FieldPath:
 
     Context: every distinct value is one more series in the backend for as long as it lives —
     worth saying where the label is declared. What a service measures by is its decision
-    (PRD_03 §4.10), so it is never refused."""
+    (PRD_03 §4.10), so it is never refused.
+
+        bounded_label(of(CommandIssueInvoice).currency)      ->  the path   # a Currency(Enum)
+        bounded_label(of(CommandIssueInvoice).customer_id)
+            ->  the path, and the first time only the warning
+                "metrics: label of(CommandIssueInvoice).customer_id is str, not an Enum, ..."
+
+    1. The declared type of the last step, `X | None` read as `X`.
+    2. A `bool`, a `Literal` or an `Enum` is bounded: the path as it is.
+    3. Anything else, the first time this path (by its `repr`) is seen: one warning naming
+       the path and its type, on the framework's logger — a logger that fails is ignored.
+    Final: the path, always — a label is never refused.
+    """
     annotation = without_none(path.annotation)
     if annotation is bool or get_origin(annotation) is Literal:
         return path
@@ -224,6 +275,10 @@ def bounded_label(path: FieldPath) -> FieldPath:
 
 
 def _members(annotation: Any) -> tuple[type, ...]:
+    """The classes an annotation admits — every class of a union, the class itself, or none.
+
+    _members(CommandA | CommandB)  ->  (CommandA, CommandB)      _members("x")  ->  ()
+    """
     if get_origin(annotation) in (Union, types.UnionType):
         return tuple(one for one in get_args(annotation) if isinstance(one, type))
     return (annotation,) if isinstance(annotation, type) else ()
@@ -231,7 +286,14 @@ def _members(annotation: Any) -> tuple[type, ...]:
 
 def context_types_of(cls: type) -> tuple[type, ...]:
     """The context types a handler declares — the `ContextT` of `Feature[C, R, ContextT]`,
-    `ApplicationService[C, R, ContextT]` or `Hook[ContextT]`, anywhere in what it inherits."""
+    `ApplicationService[C, R, ContextT]` or `Hook[ContextT]`, anywhere in what it inherits.
+
+        class IssueInvoice(Feature[CommandIssueInvoice, ResponseIssueInvoice, BillingContext])
+        context_types_of(IssueInvoice)   ->  (BillingContext,)
+        context_types_of(Untyped)        ->  ()                 # a Feature with no ContextT
+
+    Every generic base along the MRO is read; each context type once, in the order found.
+    """
     found: list[type] = []
     for one in getattr(cls, "__mro__", ()):
         for base in getattr(one, "__orig_bases__", ()):
@@ -259,7 +321,23 @@ def refuse_foreign_paths(cls: type, paths: tuple[FieldPath, ...]) -> None:
     """A path starts at the use case's Command, its Response, or the context type it declares —
     read off `execute`'s annotations and its generic parameters; unchecked when it has none.
     Shared by everything that reads a run off a declaration: the metrics and the span
-    attributes."""
+    attributes.
+
+        refuse_foreign_paths(IssueInvoice, (of(CommandIssueInvoice).currency,))   ->  None
+        refuse_foreign_paths(IssueInvoice, (of(CommandRefund).amount,))
+            ->  ProgrammingError("IssueInvoice: of(CommandRefund).amount — CommandRefund is
+                neither the Command nor the Response of IssueInvoice (CommandIssueInvoice,
+                ResponseIssueInvoice)")
+
+    1. A context path must start at a context type the handler declares
+       (`context_types_of`); unchecked when it declares none.
+    2. The DTO paths are left; none, and there is nothing more to check.
+    3. The classes they may start at, read off `execute`'s annotations:
+       3.1 hints that cannot be read, or no annotated parameter: unchecked;
+       3.2 the first parameter's class (each of a union) and the return's — none: unchecked.
+    4. A path whose root is neither one of those classes nor a base of one is refused.
+    Final: `None` — every path starts where it may.
+    """
     _refuse_foreign_context(cls, paths)
     paths = tuple(one for one in paths if not one.reads_context)
     if not paths:
@@ -300,7 +378,13 @@ def numeric_value(path: FieldPath) -> FieldPath:
 
 
 def label_value(value: Any) -> str:
-    """How a label value travels: an Enum's value, `true`/`false`, `none`, the text."""
+    """How a label value travels: an Enum's value, `true`/`false`, `none`, the text.
+
+        label_value(Currency.BOB)  ->  "BOB"        label_value(True)  ->  "true"
+        label_value(None)          ->  "none"       label_value(3)     ->  "3"
+
+    A `bool` is read before the text, so it travels as `true`, never as `True`.
+    """
     if value is None:
         return "none"
     if isinstance(value, bool):

@@ -67,10 +67,13 @@ def give_rows(session: Session, record: Any, extension: type) -> None:
     """Gives a stored record the rows of an extension it does not have: one per level between its
     class and `extension`, the shallowest first, each with the defaults of its fields.
 
-        in      the Move that `get` returned with no delivery, MoveDelivery
-        out     a row in move_delivery under the move's id; the move itself is not touched
+        give_rows(session, move, MoveDelivery)    # the Move `get` returned, no delivery
+            ->  INSERT INTO move_delivery (id, route) VALUES (move.id, NULL)
+        give_rows(session, move, MoveTracking)    # MoveTracking extends MoveDelivery
+            ->  a move_delivery row, then a move_tracking row; the move itself not touched
 
-    An extension that keeps its columns in the entity's own table has nothing to insert.
+    An extension that keeps its columns in the entity's own table has nothing to insert. A
+    core that stores the type of its rows is told the record is `extension` now.
     """
     missing = sorted(
         (
@@ -96,7 +99,19 @@ def give_rows(session: Session, record: Any, extension: type) -> None:
 
 def complete_consolidated(session: Session, records: list[Any]) -> None:
     """A stored consolidated record that changed a field of an extension it has no row of gets the
-    row first, holding what the record says: the update that follows finds it."""
+    row first, holding what the record says: the update that follows finds it.
+
+        consolidated (move with no move_fiscal row), record.cufd = "A1"
+        complete_consolidated(session, [record])
+            ->  INSERT INTO move_fiscal (id, cufd) VALUES (record.id, 'A1'); type redone
+        record.route changed and its move_delivery row exists   ->  nothing inserted
+
+    1. Each record that is a stored consolidated class — anything else is skipped.
+    2. Per extension it spans: skipped when none of the fields that table holds changed, or
+       when the table already has the record's row.
+    3. Otherwise a row under the record's identity, with the record's values of those fields.
+    Final: the root's stored type of the record worked out again, when it stores one.
+    """
     for record in records:
         parts = extension_typing.CONSOLIDATED.get(type(record))
         state = sqlalchemy.inspect(record, raiseerr=False)
@@ -118,7 +133,15 @@ def complete_consolidated(session: Session, records: list[Any]) -> None:
 def remove_rows(session: Session, records: list[Any]) -> None:
     """A record removed as the entity, while rows of an extension still hold its key, takes them
     with it: the extension's rows are the entity's, and nothing else points at them. The deepest
-    go first, because each points up the chain."""
+    go first, because each points up the chain.
+
+        remove_rows(session, [move])    # read as Move; rows in move_delivery, move_tracking
+            ->  DELETE FROM move_tracking WHERE id = :id; DELETE FROM move_delivery WHERE …
+        remove_rows(session, [tracking_move])   ->  nothing: it is the deepest class
+
+    An extension that keeps its columns in the entity's table goes with the entity's row; an
+    unmapped record is skipped.
+    """
     for record in records:
         if sqlalchemy.inspect(type(record), raiseerr=False) is None:
             continue
@@ -140,7 +163,14 @@ def remove_rows(session: Session, records: list[Any]) -> None:
 
 def reclassify_rows(session: Session, entity: type) -> int:
     """Writes the stored type of every row of a core that stores it, from the extension rows that
-    exist. Answers how many rows it set."""
+    exist. Answers how many rows it set.
+
+        reclassify_rows(session, Move)          ->  1200, every row of move
+        reclassify_rows(session, MoveDelivery)  ->  1200 as well: its root's rows are written
+        reclassify_rows(session, Partner)       ->  ProgrammingError, no extension_type column
+
+    One `UPDATE` of the whole table, the type worked out per row by `derived`.
+    """
     root = extension_typing.ROOT_OF.get(entity, entity)
     stored = extension_typing.STORED_TYPE.get(root)
     if stored is None:

@@ -14,15 +14,22 @@ class Incomes:
     """The starts of one bus: who hears them, and announcing one."""
 
     def __init__(self, bus: str) -> None:
+        """Nobody listening yet but the process's listeners of starts, who hear every bus."""
         self.bus = bus
         """The bounded context whose use cases it announces."""
         self.started = Listeners(process=starts)
 
     def began(self, dto: Any, level: str, node: "ContextNode") -> None:
-        """1. Nobody hears: nothing is built.
-        2. The event of the execution, which was handed `dto` — never one for an execution event:
-           hearing one is not announced, or a listener that hands them to a bus would hear its own
-           hearing without end.
+        """Announce that a use case began running `dto` at `level` — to whoever listens.
+
+            began(CommandReserve(sku="A1"), "feature", node)
+            ->  None; each listener heard ExecutionStarted(use_case="stock.CommandReserve")
+            began(ExecutionStarted(...), "feature", node)    ->  None, nobody told
+
+        1. Nobody hears: nothing is built.
+        2. The event of the execution, which was handed `dto` — never one for an execution
+           event: hearing one is not announced, or a listener that hands them to a bus would
+           hear its own hearing without end.
         Final: each listener, in turn, never raising — announcing never stops the use case."""
         if not self.started.heard():
             return

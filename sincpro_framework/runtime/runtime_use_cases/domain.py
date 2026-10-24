@@ -29,6 +29,11 @@ class RuntimeUseCase(DataTransferObject):
 
     @property
     def checksum(self) -> str:
+        """The first 16 hex digits of the SHA-256 of `source` — tells two sources apart where
+        `version` alone does not, as a draft checked under the version in force.
+
+            RuntimeUseCase(name="quote", source="...").checksum   ->  "9f2c41d07ab3e815"
+        """
         return hashlib.sha256(self.source.encode()).hexdigest()[:16]
 
 

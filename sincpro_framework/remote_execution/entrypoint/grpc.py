@@ -41,13 +41,40 @@ if TYPE_CHECKING:
 
 
 def _header(metadata: Sequence[tuple[str, Any]], key: str) -> Any:
+    """The first value of `key` in a call's metadata, `None` when it does not carry it."""
     return next((value for name, value in metadata if name == key), None)
 
 
 def open_host_handler(contexts: "Mapping[str, UseFramework]") -> Any:
-    """`/sincpro.Contexts/Execute` for `contexts`, keyed by their names."""
+    """`/sincpro.Contexts/Execute` for `contexts`, keyed by their names.
+
+        server.add_generic_rpc_handlers((open_host_handler({"billing": billing}),))
+        <call, sp-bounded-context "billing", a CommandPay>  ->  the answer, in chunks
+        <call, sp-bounded-context "sales">                  ->  aborted NOT_FOUND
+
+    1. `execute`, the stream-stream method for one call:
+       1.1 `sp-accepted` sent first, before the DTO is read;
+       1.2 the context, trace and credentials from the metadata; the chunks joined and run
+           (`execute_hosted`);
+       1.3 a context not hosted: aborted NOT_FOUND;
+       1.4 any other failure: its module, class and details as trailing metadata, aborted
+           UNKNOWN — logged unless already reported;
+       1.5 the answer in chunks.
+    Final: a generic handler serving it at `sincpro.Contexts/Execute`.
+    """
 
     def execute(requests: Iterator[bytes], call: Any) -> Iterator[bytes]:
+        """One call from a calling service, answered as a stream of chunks.
+
+        1. `sp-accepted` sent first, before the DTO is read — a call lost after it may have
+           run, and the caller says so (`ContextOutcomeUnknown`).
+        2. The context from the metadata, the chunks joined into the message, the trace and
+           the credentials taken from the metadata; executed (`execute_hosted`).
+        3. A `LookupError`: aborted `NOT_FOUND` — this service does not host the context.
+        4. Any other failure: logged unless already reported, its module, class and details as
+           trailing metadata, aborted `UNKNOWN` — the caller raises it as itself.
+        Final: the answer's message in `CHUNK_SIZE` chunks.
+        """
         from sincpro_framework.auth.entrypoint.transports import credentials_from_headers
 
         call.send_initial_metadata(((ACCEPTED_HEADER, "1"),))
@@ -90,6 +117,9 @@ class OpenHostDoor:
     def __init__(
         self, contexts: "Sequence[UseFramework] | Mapping[str, UseFramework]"
     ) -> None:
+        """The contexts by name — as given, or each under its own name — each told to run in
+        this process (`run_here`), whatever the context map says — a service whose map names
+        itself never calls itself."""
         self.contexts: "dict[str, UseFramework]" = (
             dict(contexts)
             if isinstance(contexts, Mapping)
@@ -99,10 +129,17 @@ class OpenHostDoor:
             bus.run_here()
 
     def is_ready(self) -> bool:
+        """Whether every context it hosts is ready — what the health service answers."""
         return all(one.is_ready for one in self.contexts.values())
 
     def handlers(self, health: bool = True) -> tuple[Any, ...]:
-        """`sincpro.Contexts/Execute` and, with `health`, `grpc.health.v1.Health` for it."""
+        """`sincpro.Contexts/Execute` and, with `health`, `grpc.health.v1.Health` for it.
+
+            OpenHostDoor([billing]).handlers()              ->  (<Execute>, <Health>)
+            OpenHostDoor([billing]).handlers(health=False)  ->  (<Execute>,)
+
+        Without `grpcio-health-checking` there is no health handler to add.
+        """
         found: list[Any] = [open_host_handler(self.contexts)]
         probe = health_handler([SERVICE], self.is_ready) if health else None
         if probe is not None:

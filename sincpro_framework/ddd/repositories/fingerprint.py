@@ -24,6 +24,18 @@ def fingerprint_of(
     scope: Criteria | None = None,
     resolution: ResolutionContext | None = None,
 ) -> str:
+    """The key of one read of `model`: 32 hex characters, the same for every page of it.
+
+        fingerprint_of(Invoice, Criteria(where=Condition(field="total", value="100")))
+        ==  fingerprint_of(Invoice, Criteria(where=Condition(field="total", value=100),
+                                             pagination={"limit": 10}))
+
+    1. The filter accepted by the model — values read as their fields' types, dynamic
+       values resolved against `resolution` — then put in its canonical form.
+    2. The scope, when the repository reads under one, the same way.
+    3. Final: the aggregate's qualified name, filter, scope, order and specification as
+       sorted JSON, hashed with SHA-256 and cut to 32 characters; the pagination left out.
+    """
     meta = describe_class(model)
     where = canonical(meta.accept(criteria.expression, resolution)[0])
     scoped = (

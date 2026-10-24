@@ -52,7 +52,15 @@ UPPER_SNAKE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-
 def refined_failure_kind(error: Exception) -> exceptions.FailureKind:
     """The kind every wire answers a failure with: what the error declares (`failure_kind` on its
     class — every base of `sincpro_framework.exceptions` declares one), a request that did not
-    validate as its DTO, and a crash for anything else."""
+    validate as its DTO, and a crash for anything else.
+
+        refined_failure_kind(InvoiceNotFound("F-7"))       ->  FailureKind.NOT_FOUND
+        refined_failure_kind(pydantic ValidationError)     ->  FailureKind.INVALID
+        refined_failure_kind(KeyError("total"))            ->  FailureKind.INTERNAL
+
+    Context: a declared kind that is not a `FailureKind` value is ignored, not trusted —
+    the error is then classified as if it declared nothing.
+    """
     declared = getattr(error, "failure_kind", None)
     if isinstance(declared, str):
         try:
@@ -125,7 +133,23 @@ def retry_after(error: Exception, kind: exceptions.FailureKind) -> timedelta | N
     """How long a caller waits before retrying — `None` when retrying as it is will not help.
     The error may say (`retry_after`: seconds, a `timedelta`, or the ISO-8601 duration a
     `timedelta` travels as — `"PT25S"` — once rebuilt from another service); a second
-    otherwise."""
+    otherwise.
+
+        retry_after(error with retry_after=30, FailureKind.EXHAUSTED)
+            ->  timedelta(seconds=30)
+        retry_after(error with retry_after="PT25S", FailureKind.UNAVAILABLE)
+            ->  timedelta(seconds=25)
+        retry_after(error declaring nothing, FailureKind.IN_PROGRESS)
+            ->  timedelta(seconds=1)
+        retry_after(InvoiceNotFound("F-7"), FailureKind.NOT_FOUND)   ->  None
+
+    1. A kind not in `RETRYABLE`: `None` — the same call fails the same way.
+    2. The error's `retry_after` is read, when it has one.
+       2.1 Text is read as an ISO-8601 duration; text that is not one is the default second.
+    3. A `timedelta`, given or read, is the answer as it is.
+    4. A number of seconds — not a bool, not negative — becomes a `timedelta`.
+    Final: anything else, or nothing declared, is `DEFAULT_RETRY_AFTER`, a second.
+    """
     if kind not in RETRYABLE:
         return None
     declared = getattr(error, "retry_after", None)

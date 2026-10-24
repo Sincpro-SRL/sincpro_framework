@@ -58,6 +58,8 @@ UNKNOWN_EVENT = "unknown_event"
 
 
 def _is_mapped(cls: type) -> bool:
+    """Whether SQLAlchemy already maps `cls` — inspected, since a class mapped elsewhere
+    carries no attribute of ours to look for."""
     try:
         sqlalchemy.inspect(cls)
     except NoInspectionAvailable:
@@ -79,7 +81,15 @@ def packed(_mapper: Any, _connection: Any, target: Any) -> None:
 
 def unpacked(target: Any, _context: Any) -> None:
     """After an event is loaded: the fields its class adds, from `payload`, typed as the class
-    declares them — the mapper builds the event without calling `__init__`."""
+    declares them — the mapper builds the event without calling `__init__`.
+
+        row: name "InvoicePaid", payload {"invoice_id": "F-1", "amount": "10.50"}
+        unpacked(event, context)   ->  None; event.invoice_id == "F-1",
+                                       event.amount == Decimal("10.50") as the class declares
+
+    The envelope the row already set is kept; only the fields missing from the event are
+    taken from the event rebuilt out of envelope and payload.
+    """
     known = target.__dict__
     whole = {name: known[name] for name in ENVELOPE if name in known}
     whole.update(known.get("payload_of_class") or {})
@@ -110,7 +120,15 @@ def claim(table: Table, cls: type) -> None:
 
 
 def map_new_event_classes() -> None:
-    """Maps every subclass of a mapped base that is not mapped yet, parents before children."""
+    """Maps every subclass of a mapped base that is not mapped yet, parents before children.
+
+        class RefundIssued(BillingDomainEvent): ...     declared after map_events
+        map_new_event_classes()   ->  None; RefundIssued mapped to billing_events under its
+                                      name, inheriting BillingDomainEvent's mapping
+
+    Each new class claims its name in the table first — a name another class holds refuses —
+    and inherits from its nearest mapped ancestor.
+    """
     for base, (mapper_registry, table) in list(bases.items()):
         pending = list(base.__subclasses__())
         while pending:
@@ -162,8 +180,13 @@ _warned: set[tuple[str, str]] = set()
 def readable_clause(model: type, clause: Any) -> Any:
     """`clause`, narrowed to the names this process can read when `model` is a mapped event base.
 
-    in      LedgerEvent, entity_id = 'a1'
-    out     entity_id = 'a1' AND name IN ('Posted', 't.ledger.v1.event', …)
+        readable_clause(LedgerEvent, entity_id = 'a1')
+            ->  entity_id = 'a1' AND name IN ('Posted', 't.ledger.v1.event', …)
+        readable_clause(LedgerEvent, None)   ->  name IN ('Posted', 't.ledger.v1.event', …)
+        readable_clause(Posted, entity_id = 'a1')   ->  entity_id = 'a1', as given
+
+    A subclass, or anything that is not a mapped base, keeps its clause: its read is narrowed
+    to its own names already.
     """
     readable = readable_names(model)
     if readable is None:
@@ -173,7 +196,15 @@ def readable_clause(model: type, clause: Any) -> Any:
 
 
 def warn_unreadable(model: type, names: list[str]) -> None:
-    """Each unknown name once per process: which event base holds rows nobody can read."""
+    """Each unknown name once per process: which event base holds rows nobody can read.
+
+        warn_unreadable(LedgerEvent, ["t.ledger.v2.event"])
+            ->  None; WARNING "LedgerEvent holds events named 't.ledger.v2.event' and no
+                class of this process is named like them: …"
+        warn_unreadable(LedgerEvent, ["t.ledger.v2.event"])   ->  None, nothing logged again
+
+    Remembered by the base's class name and the event name, for the life of the process.
+    """
     for name in names:
         if (model.__name__, name) in _warned:
             continue

@@ -80,6 +80,7 @@ class Plan:
 
     @property
     def removed(self) -> list[Any]:
+        """Every record this plan deletes, level after level."""
         return [one for level in self.removals for one in level]
 
     @property
@@ -96,6 +97,13 @@ class Plan:
         neither was checked, and an invariant over the lines — a total, a limit — breaks unseen.
         The root is marked through `updated_at`, which the write stamps anyway: SQLAlchemy cannot
         be told to raise `version_id_col` alone.
+
+            invoice (version 3) whose line 1 changed; plan.moved == [invoice]
+            plan.version_moves()   ->  None; invoice.updated_at flagged modified
+            after the flush        ->  UPDATE invoice … WHERE version = 3; version 4
+
+        A root mapped without a version check is left alone; one without `updated_at` is
+        marked through its first plain column — neither key, version nor hidden.
         """
         for root in self.moved:
             mapper = sqlalchemy.inspect(root).mapper
@@ -107,7 +115,14 @@ class Plan:
 
     def written(self) -> None:
         """Marks every assignment this plan carried out as written: the set it wrote is now
-        what was read, and the next `save` does not settle it again."""
+        what was read, and the next `save` does not settle it again.
+
+            workspace.repositories = [a, b]; held(...) == Held.ASSIGNED
+            plan.written()   ->  None; held(workspace, "repositories") == Held.WHOLE
+                                 read_before(workspace, "repositories") == {a.id, b.id}
+
+        A blind assignment becomes `CUT` the same way; anything else is left as it is.
+        """
         for record, name in self.carried_out:
             how = held(record, name)
             after = WRITTEN.get(how) if how is not None else None
@@ -137,6 +152,11 @@ def _plain_column(mapper: Any) -> str | None:
 def _refused(
     owned: Owned, root: type, children: list[Any], moment: str
 ) -> exceptions.ProgrammingError:
+    """The error for orphans a relation with `Orphans.REFUSE` would leave — naming the
+    relation and the two declarations that would allow it.
+
+        "removing it would leave 2 Line of Invoice.lines, and the relation does not say …"
+    """
     return exceptions.ProgrammingError(
         f"{moment} {len(children)} {owned.related.__name__} of {root.__name__}.{owned.name}, and "
         "the relation does not say what that does — remove them first, or declare it: "
@@ -158,7 +178,19 @@ def _held_by_the_root(model: type, here: str, identity: str) -> bool:
 
 def owned_by(model: type) -> list[Owned]:
     """The to-manys this aggregate writes. Context: read on every write rather than cached,
-    because a class mapped later can still add a relation to one mapped before."""
+    because a class mapped later can still add a relation to one mapped before.
+
+        owned_by(Invoice)
+            ->  [Owned("lines", Line, here="id", there="invoice_id", orphans=Orphans.DELETE)]
+        owned_by(Line)   ->  []      its `invoice` is a to-one: a child never owns its parent
+
+    1. The aggregate's fields and its relations.
+    2. Each relation kept only when it is a to-many `foreign_key` that is not `owned=False`.
+    3. Its two sides: the root's field and the child's field that holds it.
+    4. Skipped when the root's side is not unique — a field many roots share reaches their
+       children too.
+    Final: each kept one with what its orphans become — `REFUSE` when it does not say.
+    """
     meta = describe(model)
     owned: list[Owned] = []
     for name, relation in relations_of(model).items():
@@ -190,6 +222,7 @@ def _read_without_flushing(session: Session, statement: Any) -> list[Any]:
 
 
 def _by_model(records: Iterable[Any]) -> dict[type, list[Any]]:
+    """The records grouped by their class, in the order first met — one read per class."""
     grouped: dict[type, list[Any]] = {}
     for one in records:
         grouped.setdefault(type(one), []).append(one)
@@ -200,11 +233,19 @@ def planned_removal(session: Session, records: list[Any]) -> Plan:
     """What removing these records takes with it: the levels to delete, the records first and
     their descendants after, and the children whose key is set to NULL instead.
 
+        planned_removal(session, [invoice])          # lines: Orphans.DELETE, 2 stored
+            ->  Plan(removals=[[invoice], [line_1, line_2]], detached=[])
+        planned_removal(session, [workspace])        # repositories: Orphans.DETACH
+            ->  Plan(removals=[[workspace]], detached=[repo_a])   repo_a.workspace_id = None
+        planned_removal(session, [order])            # items: Orphans.REFUSE, 1 stored
+            ->  ProgrammingError("removing it would leave 1 Item of Order.items, …")
+
     1. The records are the first level.
     2. Per level and per relation the level owns, one read of every stored child of the
        whole level, by the foreign key alone — a relation's scope narrows what it shows, not
        what depends on the root.
-    3. A child whose key is nullable is detached; the rest are the next level.
+    3. What the relation's `orphans` says: `REFUSE` raises naming it, `DETACH` sets the
+       child's key to NULL, `DELETE` makes the child part of the next level.
     4. Final: repeat until a level owns nothing. A reference (`owned=False`) is left to its
        foreign key, which refuses the delete while children point at the root.
     """
@@ -248,6 +289,9 @@ def _changed(record: Any) -> bool:
 
 
 def _refuse_a_child_removed_before(records: list[Any]) -> None:
+    """A child about to be written that this unit of work already deleted — as the orphan of
+    the root that held it — is refused: writing it again would not bring it back. Moving
+    children between roots is one `save` of both roots."""
     for one in records:
         state = sqlalchemy.inspect(one, raiseerr=False)
         if state is not None and (state.deleted or state.was_deleted):
@@ -260,6 +304,13 @@ def _refuse_a_child_removed_before(records: list[Any]) -> None:
 
 def planned_save(session: Session, records: list[Any]) -> Plan:
     """Everything one `save` of these roots writes.
+
+        invoice read whole with lines [l1, l2]; invoice.lines = [l1, l3]; l1 unchanged
+        planned_save(session, [invoice])          # lines: Orphans.DELETE
+            ->  Plan(writes=[invoice, l3], removals=[[l2]], moved=[invoice],
+                     carried_out=[(invoice, "lines")])
+        a new invoice with lines [l1]
+            ->  Plan(writes=[invoice, l1], moved=[]): a new root has no version to raise
 
     1. Walk each root and, through every relation it writes, its children, depth first: the
        roots are always written, a child only when it is new or changed.
@@ -282,6 +333,17 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
     root_by_key: dict[tuple[type, str, Any], list[Any]] = {}
 
     def visit(record: Any, explicit: bool, root: Any) -> None:
+        """Step 1 for one record, then its children, depth first.
+
+        1. Each record once; its identity noted as held by this save.
+        2. Written when it is a root (`explicit`) or has changed; a changed child marks
+           its root moved.
+        3. Per relation it owns that holds a value: each child given the record's key, then
+           visited.
+           3.1 An assignment it carries out is noted, to mark it written afterwards.
+           3.2 Blind: logged, nothing settled. Assigned over a whole reading on a stored
+               record: what that reading saw is kept to find the orphans (step 2).
+        """
         if id(record) in seen:
             return
         seen.add(id(record))

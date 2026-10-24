@@ -1,7 +1,21 @@
 """What a consumer's test suite needs from the framework: doubles for dependencies, a queue
 that keeps what was published, an identity to act as, the contracts an adapter proves itself
 by, and checks that keep the import graph, the layers and — for a team that wants it — each
-context's settings honest."""
+context's settings honest.
+
+    with override_dependencies(sales, partner_lookup=FakePartnerLookup()):    # a double
+        sales(CommandCreateContact(name="Ana"))
+
+    with granting("billing.invoice.issue"):                                  # be someone
+        billing(CommandIssueInvoice(invoice_id="F-1"))
+
+    class TestRedisKeyValue(KeyValueStoreContract):                        # prove an adapter
+        def make_store(self): return RedisKeyValue(fakeredis.FakeRedis())
+
+    def test_architecture():                                                 # keep it honest
+        assert import_cycles("my_sdk") == [] and layer_violations("my_sdk") == []
+        assert unregistered_dependencies(sales) == {}
+"""
 
 from sincpro_framework.entrypoints.adapters.cron.adapters import ManualClock
 

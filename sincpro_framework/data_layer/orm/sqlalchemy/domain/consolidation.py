@@ -18,5 +18,7 @@ class Consolidated:
     """
 
     def __init__(self, core: type, *extensions: type) -> None:
+        """The core entity first, then each extension, in the order their tables are
+        written."""
         self.core = core
         self.extensions = extensions

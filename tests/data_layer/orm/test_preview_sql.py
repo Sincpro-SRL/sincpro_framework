@@ -211,12 +211,12 @@ def test_a_draft_is_activated_over_the_stored_sale_and_refused_once_someone_else
     derivations recompute the total on the way."""
     store = Repository(database)
     sale = a_stored_sale(store)
-    contexts = InMemoryContexts(kept_ttl=timedelta(hours=1))
+    contexts = InMemoryContexts(entry_ttl=timedelta(hours=1))
     drafts = Drafts(contexts, {"user_id": "ana"})
     with store.context() as repository:
         stored = repository.get(Sale, sale.id)
         assert stored is not None
-        draft = drafts.keep(f"sale:{sale.id}", {"discount": "33"}, stored.version, 0)
+        draft = drafts.save(f"sale:{sale.id}", {"discount": "33"}, stored.version, 0)
 
     with store.context() as repository:
         stored = repository.get(Sale, sale.id)
@@ -231,7 +231,7 @@ def test_a_draft_is_activated_over_the_stored_sale_and_refused_once_someone_else
         assert activated is not None
         assert (activated.discount, activated.total) == (Decimal("33.00"), Decimal("100.00"))
 
-    late = Drafts(contexts, {"user_id": "beto"}).keep(
+    late = Drafts(contexts, {"user_id": "beto"}).save(
         f"sale:{sale.id}", {"discount": "5"}, activated.version, 0
     )
     with store.context() as repository:
@@ -266,7 +266,7 @@ class QueryGetSale(Get[Sale, ResponseSale]):
 def a_sales_desk(store: Repository) -> UseFramework:
     bus = UseFramework("sales-desk", log_after_execution=False)
     bus.add_dependency("repository", store)
-    bus.context_store(InMemoryContexts())
+    bus.store_context_in(InMemoryContexts())
 
     @bus.feature([QueryGetSale, CommandEditSale])
     class SaleForms(EntityEdits[Sale]):

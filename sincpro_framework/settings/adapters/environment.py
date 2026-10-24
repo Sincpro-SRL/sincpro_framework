@@ -43,8 +43,20 @@ def with_environment_by_path(
 ) -> dict[str, Any]:
     """The document with every `<PREFIX>__<PATH>` variable of `environ` placed at its path.
 
-    PAYMENTS__QR__TIMEOUT=5, anchor "sincpro_payments_sdk"
-    →  document["sincpro_payments_sdk"]["qr"]["timeout"] == "$ENV:PAYMENTS__QR__TIMEOUT"
+        with_environment_by_path({"sincpro_payments_sdk": {"qr": {"timeout": 30}}},
+                                 "payments", "sincpro_payments_sdk",
+                                 {"PAYMENTS__QR__TIMEOUT": "5", "HOME": "/root"})
+            ->  {"sincpro_payments_sdk": {"qr": {"timeout": "$ENV:PAYMENTS__QR__TIMEOUT"}}}
+        # PAYMENTS__QR__TIMEOUT__UNIT=s, with qr.timeout a value  ->  warned, ignored
+
+    1. The head every variable of the prefix starts with: `<PREFIX>__`, in upper case.
+    2. Each variable of `environ`, by name in order:
+       2.1 one without the head, or naming no path after it (`PAYMENTS__`), is passed by;
+       2.2 its path: the parts between `__`, lower-cased, empty parts dropped — below
+           `anchor` when one is given;
+       2.3 the `$ENV:<NAME>` sentinel placed there, every section on the way copied;
+       2.4 a path crossing a value that is not a section is logged and ignored.
+    Final: the document with every sentinel placed — `document` itself left untouched.
     """
     head = f"{prefix.upper()}{SEPARATOR}"
     placed = dict(document)

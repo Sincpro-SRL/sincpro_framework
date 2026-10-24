@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 
 class AuthProvider(ABC):
+    """The port every way of authenticating implements — see the module for the contract."""
+
     name: str = "provider"
     """What `Identity.provider`, the logs and `describe()` call it."""
 
@@ -58,6 +60,7 @@ class AuthProvider(ABC):
         resource: Any,
         context: Mapping[str, Any] | None,
     ) -> bool:
+        """`has_permission`, a `PermissionDenied` read as `False` — one item of a batch."""
         try:
             return self.has_permission(identity, permission, resource, context)
         except exceptions.PermissionDenied:

@@ -119,6 +119,8 @@ class _ManyMembers(ColumnElement[bool]):
     type = Boolean()
 
     def __init__(self, column: Any, values: Sequence[Any], negated: bool) -> None:
+        """The values are kept as a list; which form is written is decided at compile time,
+        by the dialect."""
         self.column = column
         self.values = list(values)
         self.negated = negated
@@ -126,6 +128,7 @@ class _ManyMembers(ColumnElement[bool]):
 
 @compiles(_ManyMembers)
 def _members_in_a_list(element: _ManyMembers, compiler: Any, **kw: Any) -> str:
+    """Every engine but PostgreSQL: the ordinary `IN` / `NOT IN`, one parameter per value."""
     chosen = (
         element.column.not_in(element.values)
         if element.negated
@@ -136,6 +139,11 @@ def _members_in_a_list(element: _ManyMembers, compiler: Any, **kw: Any) -> str:
 
 @compiles(_ManyMembers, "postgresql")
 def _members_in_an_array(element: _ManyMembers, compiler: Any, **kw: Any) -> str:
+    """PostgreSQL: the values as ONE array parameter.
+
+    in      column, 100_000 ids          ->  column = ANY(:values)
+    negated                              ->  column != ALL(:values)
+    """
     values = bindparam(None, element.values, type_=postgresql.ARRAY(element.column.type))
     chosen = (
         element.column != all_(values) if element.negated else element.column == any_(values)
@@ -219,6 +227,20 @@ def clause_over(
 
     The tree is the same wherever it is applied; only the name lookup changes. `WHERE` resolves
     a name to a model column, `HAVING` to the labelled aggregate a group folded.
+
+        clause_over(lambda name: getattr(Invoice, name),
+                    All([total > 100, Not(owner = "ana")]))
+            ->  invoice.total > 100 AND NOT ((invoice.owner = 'ana') IS true)
+        clause_over({"count": count(*)}.__getitem__, count > 10)   ->  count(*) > 10
+        clause_over(resolve, None)                                 ->  None
+
+    1. No expression — no clause.
+    2. A condition: its field resolved — and its value too when it names another field
+       (`FromField`) — then compared by its operator.
+    3. `All` and `Any_`: each part translated, the empty ones left out, joined by AND / OR.
+    4. `Not`: the inner clause is not true — so a row whose comparison is NULL stays in, as
+       memory answers it.
+    Final: the clause, ready for `where` or `having`.
     """
     match expression:
         case None:
@@ -274,6 +296,12 @@ def column_attribute(entity: type, field: str) -> Any:
 
     An event's `name` is a class attribute — its wire name — so the table's `name` column is
     mapped under another attribute; a criteria still names it `name`.
+
+    1. An attribute of that name the mapper instruments is the answer.
+    2. Otherwise a field an extension below the entity adds — its column, or a correlated
+       subquery into the extension's table.
+    3. Otherwise the table's column of that name, as the attribute it is mapped under.
+    Final: none of those — whatever the class holds under the name, `None` when nothing.
     """
     attribute = getattr(entity, field, None)
     if isinstance(attribute, QueryableAttribute):
@@ -357,6 +385,14 @@ def resume_clause(
     range scan over the composite index. A mixed one has no single tuple comparison, so it
     expands to the lexicographic disjunction `a < :a OR (a = :a AND b > :b)` — same rows,
     leading column still indexed.
+
+    1. The keys the cursor carries for this ordering; none — a first page, an offset — is
+       no clause.
+    2. Each sort's column on the model.
+    3. Every sort one way: one tuple comparison, `<` when they all descend, `>` otherwise.
+    4. Mixed directions: per sort, the sorts before it equal to their keys and this one
+       past its key in its own direction.
+    Final: those alternatives joined by OR.
     """
     resumed = pagination.keys_for(sorts)
     if resumed is None:
@@ -514,6 +550,7 @@ def _postgresql_part(column: Any, part: str) -> ColumnElement[Any]:
 
 
 def _duckdb_part(column: Any, part: str) -> ColumnElement[Any]:
+    """DuckDB's `date_part`, with PostgreSQL's names for the parts, answered as an integer."""
     return cast(func.date_part(_POSTGRESQL_PARTS[part], column), Integer)
 
 
@@ -544,6 +581,13 @@ def grouping_column(model: type, level: Level, dialect: str = "sqlite") -> Colum
 
     Without a grain, grouping a catalogue by date answers one bucket per row: a listing with
     extra steps. A dialect with no translator is refused, naming how to register one.
+
+    1. The field's column on the model.
+    2. A part of a date (`level.part`): the dialect's part translator over it — refused when
+       the dialect has none.
+    3. No grain: the column as it is.
+    4. A grain that is not one of `GRAINS` is refused.
+    Final: the dialect's grain translator over the column — refused when it has none.
     """
     column = column_attribute(model, level.field)
     if level.part is not None:
@@ -577,12 +621,19 @@ def bucket_range(grain: str, value: str) -> tuple[datetime, datetime]:
         in   "year",  "2026"        →  out  (2026-01-01, 2027-01-01)
         in   "month", "2026-09"     →  out  (2026-09-01, 2026-10-01)
         in   "day",   "2026-09-13"  →  out  (2026-09-13, 2026-09-14)
-        in   "week",  "2026-W37"    →  out  (2026-09-14, 2026-09-21)
+        in   "week",  "2026-W37"    →  out  (2026-09-07, 2026-09-14)
         in   "quarter", "2026-Q3"   →  out  (2026-07-01, 2026-10-01)
 
     **The end is OUT**, and that is not a detail: with an inclusive `between`, a row saved at
     00:00:00 on the first of the next month would fall in both buckets, and the counts of the
     levels would stop adding up to the parent's.
+
+    1. A year: its January 1st, to the next year's.
+    2. A month: its 1st, to the next month's — January of the next year after December.
+    3. A quarter: the 1st of its first month, to the next quarter's.
+    4. An ISO week: its Monday, seven days on.
+    5. A day: its midnight, one day on.
+    Final: any other grain is refused as `InvalidCriteria`.
     """
     if grain == "year":
         start = datetime(int(value), 1, 1)

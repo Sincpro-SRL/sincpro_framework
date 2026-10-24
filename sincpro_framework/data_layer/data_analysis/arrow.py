@@ -38,6 +38,11 @@ ARROW_TYPES = {
 
 
 def _scale(values: tuple[Any, ...]) -> int:
+    """The largest number of decimal places among a column's decimals — 0 when it has none —
+    so one `decimal128` holds every value exactly.
+
+        _scale((Decimal("1.5"), Decimal("2.125"), None))  ->  3
+    """
     scales = [0]
     for value in values:
         if isinstance(value, Decimal):
@@ -47,6 +52,12 @@ def _scale(values: tuple[Any, ...]) -> int:
 
 
 def _arrow_type(kind: str, values: tuple[Any, ...]) -> Any:
+    """The Arrow type of a column of the frame: a decimal at the scale its values need, a
+    datetime as a UTC instant when any of its values is aware (naive otherwise), every other
+    kind by `ARROW_TYPES`.
+
+        _arrow_type("decimal", (Decimal("1.50"),))  ->  decimal128(38, 2)
+    """
     if kind == "decimal":
         return pyarrow.decimal128(38, _scale(values))
     if kind == "datetime" and any(
@@ -66,6 +77,9 @@ def _as_text_when_mixed(kind: str, values: tuple[Any, ...]) -> list[Any]:
 
 
 def arrow_table(frame: "DataFrame") -> Any:
+    """The frame as a `pyarrow.Table`, one column per column of the frame, typed by the
+    frame's own types — what Parquet, the Arrow stream and the PyCapsule interface hand on.
+    """
     fields = [
         (name, _arrow_type(kind, values))
         for name, kind, values in zip(frame.columns, frame.types, frame.values)
@@ -109,12 +123,23 @@ def frame_columns(
 
 
 def parquet_bytes(frame: "DataFrame") -> bytes:
+    """The frame as a Parquet file in memory — the form a client downloads and opens in
+    pandas, polars, DuckDB or a spreadsheet tool.
+    """
     buffer = io.BytesIO()
     pyarrow.parquet.write_table(arrow_table(frame), buffer)
     return buffer.getvalue()
 
 
 def ipc_bytes(frame: "DataFrame") -> bytes:
+    """The frame as an Arrow IPC stream in memory — what a client that reads Arrow (a browser
+    with Arrow JS, another service) takes without parsing anything.
+
+        ipc_bytes(DataFrame.from_rows([{"id": 1}]))          ->  b"\\xff\\xff\\xff\\xff..."
+        pyarrow.ipc.open_stream(that).read_all().num_rows   ->  1
+
+    The schema goes first, then the table's record batches — read back, the same rows.
+    """
     table = arrow_table(frame)
     buffer = io.BytesIO()
     with pyarrow.ipc.new_stream(buffer, table.schema) as stream:

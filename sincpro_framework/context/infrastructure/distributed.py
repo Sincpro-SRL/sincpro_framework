@@ -1,7 +1,7 @@
 """The context kept in a store — the same tree, its nodes kept where every service that set the
 store reads them.
 
-    billing.context_store(KeyValueContexts(RedisKeyValue(redis)))    said by each bus that shares
+    billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))    said by each bus that shares
 
     global          "global"                    every service and replica that set the store
      └ process      "process:<service>"         this service's replicas, never another service
@@ -29,8 +29,8 @@ from typing import Any
 from sincpro_framework.context.domain.execution import CHAIN_KEYS
 from sincpro_framework.context.domain.level import Level
 from sincpro_framework.context.domain.node import ContextNode, Values
-from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.infrastructure.shared import SharedValues
+from sincpro_framework.store.domain.store import ContextStore
 
 GLOBAL_KEY = "global"
 CHAIN_LIMIT = 64
@@ -38,6 +38,8 @@ CHAIN_LIMIT = 64
 
 
 def _named(values: Mapping[Any, Any]) -> dict[str, Any]:
+    """The values under text keys — what a store keeps; one under a type (a `ContextStore`, a
+    settings class) stays in this process."""
     return {key: value for key, value in values.items() if isinstance(key, str)}
 
 
@@ -53,6 +55,14 @@ class WrittenThrough(Values):
         ttl: timedelta,
         values: Mapping[Any, Any] | None = None,
     ) -> None:
+        """Hold `values` locally and keep them under `key` for `ttl` — at once when there are
+        any, so a receiver handed this node finds what it already says.
+
+            WrittenThrough(store, "node:01J…", timedelta(hours=1), {"tenant_id": "acme"})
+                ->  store.save("node:01J…", {"tenant_id": "acme"}, 1h) at once
+            WrittenThrough(store, "node:01J…", timedelta(hours=1))   ->  nothing saved yet
+
+        Only the keys that are text are kept (`_named`); one under a type stays here."""
         super().__init__(values)
         self._store = store
         self._key = key
@@ -61,21 +71,26 @@ class WrittenThrough(Values):
             self._kept()
 
     def _kept(self) -> None:
-        self._store.keep(self._key, _named(self._current), self._ttl)
+        """Save what this node says now under its key — the whole mapping, its TTL renewed."""
+        self._store.save(self._key, _named(self._current), self._ttl)
 
     def set(self, key: Any, value: Any) -> None:
+        """Written locally, then kept in the store."""
         super().set(key, value)
         self._kept()
 
     def update(self, values: Mapping[Any, Any]) -> None:
+        """Written locally, then kept in the store."""
         super().update(values)
         self._kept()
 
     def unset(self, key: Any) -> None:
+        """Taken away locally, then kept in the store."""
         super().unset(key)
         self._kept()
 
     def replace(self, values: Mapping[Any, Any]) -> None:
+        """Replaced locally, then kept in the store."""
         super().replace(values)
         self._kept()
 
@@ -84,21 +99,26 @@ class ReadBack(SharedValues):
     """A node of another execution — the sender's — read from the store, never written here."""
 
     def _refused(self) -> None:
+        """Every write here is a mistake: `TypeError`, saying where to write instead."""
         raise TypeError(
             "this node belongs to the execution that handed the context on: it is read here, "
             "never written — write your own, self.context[...] or use_context().set(...)"
         )
 
     def set(self, key: Any, value: Any) -> None:
+        """Refused: the sender's node is read here, never written."""
         self._refused()
 
     def update(self, values: Mapping[Any, Any]) -> None:
+        """Refused: the sender's node is read here, never written."""
         self._refused()
 
     def unset(self, key: Any) -> None:
+        """Refused: the sender's node is read here, never written."""
         self._refused()
 
     def replace(self, values: Mapping[Any, Any]) -> None:
+        """Refused: the sender's node is read here, never written."""
         self._refused()
 
 
@@ -113,6 +133,8 @@ class SharedContext:
 
     @staticmethod
     def node_key(node_id: str) -> str:
+        """Where a node's values are kept: `node_key("01J…")  ->  "node:01J…"` — its meta
+        beside them, under `"node:01J…:meta"`."""
         return f"node:{node_id}"
 
     def kept(self, node: ContextNode, node_id: str) -> ContextNode:
@@ -120,10 +142,17 @@ class SharedContext:
 
         1. The meta: the nearest kept node above it, its level, its label.
         2. Final: its values written through from now on.
-        """
+
+            sharing.kept(feature_node, "01J9")
+                ->  "node:01J9:meta" = {"parent": "01J8", "level": "feature",
+                                        "label": "IssueInvoice"};  "node:01J9" = its values
+                    and `feature_node.key == "01J9"`
+
+        The same node object is answered, now kept: its `key` set, its values replaced by a
+        `WrittenThrough` seeded with what it said."""
         above = node.parent
         parent = next((one.key for one in above.chain() if one.key), None) if above else None
-        self.store.keep(
+        self.store.save(
             f"{self.node_key(node_id)}:meta",
             {"parent": parent or "", "level": node.level.value, "label": node.label},
             self.ttl,
@@ -140,12 +169,17 @@ class SharedContext:
 
         1. Each node's meta, up its `parent`, until none is kept or the chain repeats.
         2. Final: the nodes rebuilt outermost first, each one's values read back from the store.
-        """
+
+            sharing.chain_from("01J9", root)     # kept: 01J9 → 01J8 (its parent) → none
+                ->  feature "01J9"  under  application "01J8"  under  root, both `ReadBack`
+            sharing.chain_from("gone", root)     ->  root
+
+        At most `CHAIN_LIMIT` (64) nodes are read; a level the meta lacks is `Level.SCOPE`."""
         found: list[tuple[str, Mapping[str, Any]]] = []
         seen: set[str] = set()
         following = node_id
         while following and following not in seen and len(found) < CHAIN_LIMIT:
-            meta = self.store.restore(f"{self.node_key(following)}:meta")
+            meta = self.store.load(f"{self.node_key(following)}:meta")
             if meta is None:
                 break
             found.append((following, meta))
@@ -168,6 +202,16 @@ class SharedContext:
         """Where an entrance of a bus that shares opens: under the sender's chain when a node was
         handed on — and what of `values` it still says itself: the store is the source of what
         the sender's chain says, the identity always travels with the call.
+
+        1. Nothing handed on: the entrance opens under `top`, saying all of `values`.
+        2. The sender's chain is read back from the store and hung under `top`.
+        3. Every key a node of that chain says is the store's to answer — read fresh from
+           there.
+        Final: the chain's innermost node, and of `values` only the identity (`CHAIN_KEYS`)
+        and the keys the chain does not say.
+
+            entrance({"tenant_id": "acme", "correlation_id": "c1"}, "01J…", root)
+            ->  (sender's feature node, {"correlation_id": "c1"})    the chain says tenant_id
         """
         if not handed:
             return top, dict(values)
@@ -186,7 +230,14 @@ class SharedContext:
 
 
 def sharing_of(node: ContextNode | None) -> SharedContext | None:
-    """How the nearest bus above `node` shares its context — `None` when it does not."""
+    """How the nearest bus above `node` shares its context — `None` when it does not.
+
+        sharing_of(feature_node_of_billing)   ->  SharedContext(store=KeyValueContexts(...),
+                                                    ttl=..., every=...)
+        sharing_of(root)                      ->  None      # no bus above the process
+        sharing_of(None)                      ->  None
+
+    Read off each node's `owner` up the chain — its `_shared_context`, the first one set."""
     if node is None:
         return None
     for one in node.chain():

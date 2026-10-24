@@ -388,7 +388,7 @@ See [docs/events/brokers.md](docs/events/brokers.md).
 See [docs/caching/](docs/caching/README.md).
 
 - Infrastructure the use case never sees: the composition says which Queries keep their answers —
-  `QueryCaching(store).on(bus, Query, CachePolicy(ttl=…, vary_by=("tenant_id",)))`.
+  `QueryCaching(store).on(bus, Query, QueryCachePolicy(ttl=…, vary_by=("tenant_id",)))`.
 - An answer is tagged by what the repository noted it read and let go of when a commit writes it;
   `KeyValueStore` is the provider contract — memory in the core, Redis/Valkey, Memcached and
   DynamoDB as extras — and what contexts, drafts, pipeline runs, cron ticks, idempotency and

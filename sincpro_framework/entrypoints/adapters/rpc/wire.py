@@ -44,6 +44,13 @@ STATUS_BY_REASON = {"BODY_TOO_LARGE": 413, "UNSUPPORTED_MEDIA_TYPE": 415}
 
 
 def snake_case(name: str) -> str:
+    """A CamelCase or kebab-case name in snake_case — acronyms kept whole.
+
+        snake_case("IssueInvoice")  ->  "issue_invoice"
+        snake_case("sincpro-billing")  ->  "sincpro_billing"
+
+    What a namespace and an operation name are made of.
+    """
     return WORD_BOUNDARY.sub("_", name).replace("-", "_").lower()
 
 
@@ -53,12 +60,16 @@ def operation_name(dto_name: str) -> str:
 
 
 def positive_limit(name: str, value: int) -> int:
+    """`value`, refused with `ValueError` below 1 — a limit of 0 would refuse every
+    request."""
     if value < 1:
         raise ValueError(f"RPC [{name}] must be at least 1, got {value}")
     return value
 
 
 def method_name_of(resolved: Resolved[RpcBinding]) -> str:
+    """The method name a resolved binding carries — every one has a name once the wire
+    derived it; a binding without one is refused with `ValueError`."""
     name = resolved.binding.name
     if name is None:
         raise ValueError(f"{resolved.operation.command.__name__} has no JSON-RPC name")
@@ -77,6 +88,15 @@ class RpcSurface:
         max_batch_size: int = DEFAULT_MAX_BATCH_SIZE,
         max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     ) -> None:
+        """Index `surface` by method name; the limits are refused below 1.
+
+            RpcSurface([<CommandIssueInvoice in billing>]).methods
+            ->  {"billing.issue_invoice": <resolved>}   — 50 a batch, 1 MiB a body
+            RpcSurface(surface, max_batch_size=0)
+            ->  ValueError: RPC [max_batch_size] must be at least 1, got 0
+
+        The document is not built here — on first use of `document`.
+        """
         self.methods: MethodIndex = {method_name_of(one): one for one in surface}
         self.title = title
         self.version = version
@@ -85,6 +105,8 @@ class RpcSurface:
 
     @cached_property
     def document(self) -> dict[str, Any]:
+        """The OpenRPC document — `rpc.discover` and every method, the nested models of their
+        DTOs hoisted into one `components.schemas`, the limits under `x-sincpro-limits`."""
         schemas: dict[str, Any] = {}
         published = [method_object(name, one, schemas) for name, one in self.methods.items()]
         return openrpc_document(
@@ -97,9 +119,11 @@ class RpcSurface:
         )
 
     def discover(self) -> dict[str, Any]:
+        """What `rpc.discover` answers — the document."""
         return self.document
 
     def buses(self) -> list[UseFramework]:
+        """The buses the methods run on, each once, in the order first published."""
         return list(dict.fromkeys(one.operation.bus for one in self.methods.values()))
 
     @cached_property
@@ -124,6 +148,8 @@ class JsonRpcWire(Wire[RpcBinding]):
         max_batch_size: int = DEFAULT_MAX_BATCH_SIZE,
         max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     ) -> None:
+        """What the built surface carries — the document's title and version, the batch and
+        body limits (refused below 1)."""
         self.title = title
         self.version = version
         self.max_batch_size = positive_limit("max_batch_size", max_batch_size)
@@ -135,17 +161,40 @@ class JsonRpcWire(Wire[RpcBinding]):
         return f"{namespace}.{group.version}" if group.version else namespace
 
     def operation_of(self, dto_name: str) -> str:
+        """The operation half of a method's name — `operation_name`; override to change it.
+
+            operation_of("CommandIssueInvoice")  ->  "issue_invoice"
+
+        The namespace half is `namespace_of`.
+        """
         return operation_name(dto_name)
 
     def derive(self, operation: Operation, group: Group) -> RpcBinding:
+        """The binding a use case gets when nothing declares its name —
+        `{namespace}.{operation}`.
+
+            derive(<CommandIssueInvoice>, Group(alias="billing", version="v2"))
+            ->  RpcBinding(name="billing.v2.issue_invoice")
+
+        A declared `name` replaces it whole.
+        """
         name = f"{self.namespace_of(group)}.{self.operation_of(operation.command.__name__)}"
         return RpcBinding(name=name)
 
     def name_of(self, resolved: Resolved[RpcBinding]) -> str:
+        """The method name — what the manifest lists the operation under."""
         return method_name_of(resolved)
 
     def validate(self, surface: Sequence[Resolved[RpcBinding]]) -> list[str]:
-        """1. Every name is `namespace.operation`, dotted snake_case (the `rpc.` prefix is
+        """Every reason the surface cannot be served on JSON-RPC — empty when it can.
+
+            validate([<@rpc(name="Billing.Issue") on CommandIssue>])
+            ->  ["CommandIssue (rpc): 'Billing.Issue' is not a namespace.operation name ..."]
+            validate([<billing:CommandIssue>, <ventas:CommandIssue>, both "shared.issue"])
+            ->  ["rpc: shared.issue is answered by billing:CommandIssue, ventas:CommandIssue
+                 — name one with @rpc(name=...) or override(..., name=...)"]
+
+        1. Every name is `namespace.operation`, dotted snake_case (the `rpc.` prefix is
            refused by the core, for every binding).
         2. Final: no two operations answer one name."""
         problems: list[str] = []
@@ -169,6 +218,8 @@ class JsonRpcWire(Wire[RpcBinding]):
         return problems
 
     def build(self, surface: Sequence[Resolved[RpcBinding]]) -> RpcSurface:
+        """The validated surface as an `RpcSurface`, with this wire's title, version and
+        limits."""
         return RpcSurface(
             surface,
             title=self.title,
@@ -190,6 +241,12 @@ def dispatch(
 ) -> Reply:
     """Answer one JSON-RPC body — the path the gateway's own route runs, for a route of the
     project's under any framework.
+
+        dispatch(gateway.build(), b'{"jsonrpc": "2.0", "id": 1,
+                 "method": "billing.issue_invoice", "params": {"total": 10}}')
+        ->  {"jsonrpc": "2.0", "id": 1, "result": {"invoice_id": "F-1", "total": 10}}
+        dispatch(gateway.build(), b"not json")
+        ->  {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, ...}}
 
     1. A surface as `gateway.surface()` answers is built with the default limits;
        `gateway.build()` carries the gateway's.
@@ -224,7 +281,21 @@ def http_status(
 ) -> tuple[int, dict[str, str]]:
     """The HTTP status and headers a reply is sent with (PRD_15 §4): 204 for nothing, 413 /
     415 for a limit, 401 + `WWW-Authenticate` for a lone unauthenticated request, else 200 —
-    a JSON-RPC error is still a 200."""
+    a JSON-RPC error is still a 200.
+
+        http_status(surface, None)                                   ->  (204, {})
+        http_status(surface, body_too_large(1048576))                ->  (413, {})
+        http_status(surface, <error -32001, one request>)
+        ->  (401, {"www-authenticate": <the buses' challenges, comma-joined>})
+        http_status(surface, <error -32004, not found>)              ->  (200, {})
+
+    1. No reply: 204.
+    2. A batch: 200 — each of its replies speaks for itself.
+    3. An error whose reason is a limit (`STATUS_BY_REASON`): 413 or 415.
+    4. An unauthenticated error: 401, with the challenges of the surface's buses when they
+       have any.
+    Final: 200 — a result, or any other JSON-RPC error.
+    """
     if reply is None:
         return 204, {}
     if not isinstance(reply, dict):

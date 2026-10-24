@@ -24,10 +24,18 @@ from typing import Any
 
 
 def in_context[R](function: Callable[..., R]) -> Callable[..., R]:
-    """`function`, run in a copy of the context it was wrapped in — whichever thread calls it."""
+    """`function`, run in a copy of the context it was wrapped in — whichever thread calls it.
+
+        with billing.context({"tenant_id": "acme"}):
+            task = in_context(work)
+        executor.submit(task, invoice)   ->  `work(invoice)` reads tenant_id "acme"
+
+    The copy is taken when wrapped, not when called, and keeps `function`'s name and doc.
+    """
     captured = copy_context()
 
     def run(*args: Any, **kwargs: Any) -> R:
+        """`function` with the arguments given, inside the captured copy."""
         return captured.run(function, *args, **kwargs)
 
     run.__name__ = getattr(function, "__name__", "in_context")
@@ -39,10 +47,13 @@ class ContextThread(threading.Thread):
     """A `threading.Thread` that starts in the context of whoever created it."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """A thread as `threading.Thread` builds it, plus a copy of the creator's context —
+        taken here, where the creator stands, not when the thread starts."""
         super().__init__(*args, **kwargs)
         self._captured: Context = copy_context()
 
     def run(self) -> None:
+        """The thread's target, inside the creator's context."""
         self._captured.run(super().run)
 
 
@@ -50,4 +61,6 @@ class ContextExecutor(ThreadPoolExecutor):
     """A `ThreadPoolExecutor` whose every task runs in a copy of its submitter's context."""
 
     def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+        """`fn` submitted to run in a fresh copy of the submitter's context — one per task, so
+        concurrent workers never share a copy."""
         return super().submit(copy_context().run, fn, *args, **kwargs)

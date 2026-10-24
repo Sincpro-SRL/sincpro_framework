@@ -47,6 +47,8 @@ class Holds(StrEnum):
 
 
 class FailureOutcome(StrEnum):
+    """What the relay does with a failed event — the four answers a policy picks among."""
+
     RETRY_IN_PLACE = "retry_in_place"
     """Try it again at `retry_at`; nothing after it is handed on until then."""
     RETRY_LATER = "retry_later"
@@ -71,6 +73,13 @@ class HandlingFailure:
 
 @dataclass(frozen=True)
 class FailureDecision:
+    """What a policy decided for one failure — the outcome, when to try again, and whether
+    its entity's later events wait.
+
+        FailureDecision(FailureOutcome.RETRY_LATER, retry_at=now + 30s, holds_stream=True)
+        FailureDecision(FailureOutcome.PARK)
+    """
+
     outcome: FailureOutcome
     retry_at: datetime | None = None
     holds_stream: bool = False
@@ -89,10 +98,15 @@ class BackoffStrategy(ABC):
 
 
 class FixedBackoff(BackoffStrategy):
+    """The same wait after every failure — for a destination whose recovery does not depend on
+    being left alone longer."""
+
     def __init__(self, delay: timedelta = timedelta(seconds=5)) -> None:
+        """Wait `delay` every time."""
         self._delay = delay
 
     def delay(self, attempts: int) -> timedelta:
+        """The configured wait, whatever `attempts` is."""
         return self._delay
 
 
@@ -106,6 +120,17 @@ class ExponentialBackoff(BackoffStrategy):
         multiplier: float = 2.0,
         maximum: timedelta = timedelta(minutes=10),
     ) -> None:
+        """The curve; a `multiplier` below 1 is a `ProgrammingError` — a backoff that shrinks
+        would hammer a destination that is down.
+
+            ExponentialBackoff()                     ->  1s, 2s, 4s, … up to 10min
+            ExponentialBackoff(timedelta(seconds=30), multiplier=1.0)
+                ->  30s every time — a fixed wait, allowed
+            ExponentialBackoff(multiplier=0.5)
+                ->  raises ProgrammingError("a backoff never shrinks: multiplier 0.5 < 1")
+
+        Refused at construction, so a misconfigured relay never starts.
+        """
         if multiplier < 1:
             raise exceptions.ProgrammingError(
                 f"a backoff never shrinks: multiplier {multiplier} < 1"
@@ -115,6 +140,12 @@ class ExponentialBackoff(BackoffStrategy):
         self.maximum = maximum
 
     def delay(self, attempts: int) -> timedelta:
+        """`initial × multiplier^(attempts − 1)`, capped at `maximum`.
+
+        ExponentialBackoff().delay(1)    ->  1s
+        ExponentialBackoff().delay(4)    ->  8s
+        ExponentialBackoff().delay(20)   ->  10min   (the maximum)
+        """
         grown = self.initial * (self.multiplier ** max(attempts - 1, 0))
         return min(grown, self.maximum)
 
@@ -129,13 +160,16 @@ class DeliveryFailurePolicy(ABC):
     """What an event this policy sent back to wait for its retry holds, in the passes after."""
 
     @abstractmethod
-    def decide(self, failure: HandlingFailure) -> FailureDecision: ...
+    def decide(self, failure: HandlingFailure) -> FailureDecision:
+        """What to do with `failure` — a pure decision: no reading, publishing or writing."""
+        ...
 
 
 class ParkAndContinue(DeliveryFailurePolicy):
     """Keeps the event aside, with its reason, and goes on — a dead-letter queue."""
 
     def decide(self, failure: HandlingFailure) -> FailureDecision:
+        """Park, whatever the failure."""
         return FailureDecision(FailureOutcome.PARK)
 
 
@@ -143,10 +177,14 @@ class SkipAndContinue(DeliveryFailurePolicy):
     """Leaves the event with a log line and goes on — for a destination that can lose one."""
 
     def decide(self, failure: HandlingFailure) -> FailureDecision:
+        """Skip, whatever the failure."""
         return FailureDecision(FailureOutcome.SKIP)
 
 
 class _Retrying(DeliveryFailurePolicy):
+    """What both retrying policies share: the attempts, the backoff, the fallback and the
+    errors never retried — they differ only in the outcome and what a wait holds."""
+
     outcome: FailureOutcome
 
     def __init__(
@@ -168,9 +206,14 @@ class _Retrying(DeliveryFailurePolicy):
         self.never_retry = never_retry
 
     def decided(self, failure: HandlingFailure, holds_stream: bool) -> FailureDecision:
-        """1. Spent — the last attempt, an error `never_retry` names, or one of a kind that
+        """The decision of a retrying policy, with `outcome` and `holds_stream` its own.
+
+            RetryLater(attempts=3), failure at attempt 1  ->  RETRY_LATER at now + 1s
+            RetryLater(attempts=3), failure at attempt 3  ->  PARK (then decides)
+
+        1. Spent — the last attempt, an error `never_retry` names, or one of a kind that
            fails the same way every time (`PERMANENT`): `then` decides.
-        2. Final: tried again after the backoff, or after what the error asks to wait
+        Final: tried again after the backoff, or after what the error asks to wait
            (`retry_after`), whichever is longer."""
         kind = refined_failure_kind(failure.error)
         if (
@@ -195,6 +238,7 @@ class RetryInPlace(_Retrying):
     holds = Holds.EVERYTHING
 
     def decide(self, failure: HandlingFailure) -> FailureDecision:
+        """Retry in place — the hold is `Holds.EVERYTHING`, so no stream flag is needed."""
         return self.decided(failure, holds_stream=False)
 
 
@@ -213,11 +257,13 @@ class RetryLater(_Retrying):
         never_retry: tuple[type[Exception], ...] = (),
         holds_stream: bool = True,
     ) -> None:
+        """As `RetryInPlace`, plus `holds_stream`: whether its entity's later events wait."""
         super().__init__(attempts, backoff, then, never_retry)
         self.holds_stream = holds_stream
         self.holds = Holds.ENTITY if holds_stream else Holds.NOTHING
 
     def decide(self, failure: HandlingFailure) -> FailureDecision:
+        """Retry later, holding its entity's stream when configured to."""
         return self.decided(failure, self.holds_stream)
 
 

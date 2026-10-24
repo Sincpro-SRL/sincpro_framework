@@ -96,6 +96,10 @@ class Periods(StrEnum):
 
 
 def _is_none(value: Any) -> bool:
+    """`exclude_if` for an optional part: a unit nobody asked for does not travel.
+
+    Span(days=-30).model_dump()  ->  {"days": -30}       not six `None`s beside it
+    """
     return value is None
 
 
@@ -296,9 +300,15 @@ that travels as JSON — `{"$": "param", "name": "text"}` — and a client fills
 def item_kind(value: Any) -> str:
     """Which side of a value's union an item belongs to: a dynamic value or a literal.
 
-    in      {"$": "today"}, Today()      →  out  "dynamic"
-    in      {"a": 1}, "2026-01-01", 3    →  out  "literal"
-    in      {"$": "todya"}               →  InvalidCriteria naming what is known
+        item_kind({"$": "today"})   ->  "dynamic"
+        item_kind(Today())          ->  "dynamic"
+        item_kind({"a": 1})         ->  "literal"    # a dict without `$` is a literal
+        item_kind("2026-01-01")     ->  "literal"
+        item_kind({"$": "todya"})
+            ->  InvalidCriteria: 'todya' is not a value the engine resolves; use one of …
+
+    Context: a `$` naming no `ValueKind` is refused rather than read as a literal — a typo
+    would otherwise filter on the dict itself.
     """
     if isinstance(value, DYNAMIC):
         return "dynamic"

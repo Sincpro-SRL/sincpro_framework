@@ -19,27 +19,52 @@ WRITTEN = "sincpro_written_aggregates"
 
 
 def _note_written(session: Session) -> None:
+    """At each flush: the classes of what is about to be inserted, updated or deleted, added
+    to what the transaction has written so far."""
     written: set[type] = session.info.setdefault(WRITTEN, set())
     written.update(type(one) for one in (*session.new, *session.dirty, *session.deleted))
 
 
 def _forget_written(session: Session) -> None:
+    """On a rollback: what was noted is dropped — nothing it named was written."""
     session.info.pop(WRITTEN, None)
 
 
 class Invalidates(Protocol):
     """What a cache lets go of by aggregate — `QueryCache`, `QueryCaching`, yours."""
 
-    def invalidate(self, target: type | None = None) -> None: ...
+    def invalidate(self, target: type | None = None) -> None:
+        """Let go of what is held about `target` — of everything, for `None`."""
+        ...
 
 
 def invalidate_on_commit[C: Invalidates](
     database: Database, cache: C, *aggregates: type
 ) -> C:
     """`cache`, told to `invalidate` each of `aggregates` — a subclass written counts — on every
-    commit of `database` that wrote it; every aggregate written, when none is named."""
+    commit of `database` that wrote it; every aggregate written, when none is named.
+
+        frames = invalidate_on_commit(database, QueryCache(), Run)   ->  the same QueryCache
+        a unit that saves a Run commits      ->  frames.invalidate(Run)
+        a unit that saves a Run rolls back   ->  nothing let go
+        a unit that saves only a Dataset     ->  nothing let go: Run was the one named
+
+    1. At each flush, the classes of what is inserted, updated or deleted are noted on the
+       session.
+    2. On a rollback, what was noted is dropped.
+    3. At the commit, what was noted is taken:
+       3.1 no aggregates named — each written class is invalidated;
+       3.2 otherwise each named aggregate a written class is, or descends from.
+    Final: `cache` answered as given, so it is wired where it is built.
+    """
 
     def let_go(session: Session) -> None:
+        """At the commit: each written class invalidated, or — when aggregates were named —
+        each named aggregate a written class is, or descends from.
+
+            written {MoveDraft}, aggregates (Move,)   ->  cache.invalidate(Move)
+            written {Run}, no aggregates              ->  cache.invalidate(Run)
+        """
         written: set[type] = session.info.pop(WRITTEN, set())
         if not aggregates:
             for one in written:

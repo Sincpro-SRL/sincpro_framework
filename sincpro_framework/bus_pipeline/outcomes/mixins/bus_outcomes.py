@@ -19,6 +19,7 @@ class BusOutcomesMixin:
         def name(self) -> str: ...
 
     def _init_outcomes(self) -> None:
+        """The outcomes of this bus, named after it — handed to the buses when built."""
         self._outcomes = Outcomes(self.name)
 
     def on_completion(

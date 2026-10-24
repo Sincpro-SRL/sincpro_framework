@@ -46,17 +46,31 @@ def prometheus_name(instrument: Instrument) -> str:
 
 
 def prometheus_label(key: str) -> str:
+    """A label key under Prometheus' rules — `sincpro.context` → `sincpro_context`."""
     return _INVALID.sub("_", key)
 
 
 class PrometheusRecorder(Recorder):
+    """Records into `prometheus_client` metrics on one registry, and answers the scrape
+    (`exposition`, `asgi_app`, `serve`)."""
+
     def __init__(self, registry: Any | None = None) -> None:
+        """On `registry`, else `prometheus_client`'s default — a test passes its own so its
+        series never collide with another test's."""
         self.registry = registry if registry is not None else prometheus_client.REGISTRY
         self._lock = threading.Lock()
         self._metrics: dict[str, tuple[Instrument, Any]] = {}
         self._differing: set[str] = set()
 
     def _created(self, name: str, instrument: Instrument) -> Any:
+        """The `prometheus_client` metric for an instrument seen for the first time.
+
+        1. Its label keys translated, its description (else its name) as the documentation.
+        2. A counter is a `Counter`; an up-down counter a `Gauge` — `livesum` across workers
+           when `PROMETHEUS_MULTIPROC_DIR` is set; anything else a `Histogram`, with the
+           instrument's buckets when it has some.
+        Final: the metric, registered on this recorder's registry.
+        """
         labels = [prometheus_label(one) for one in instrument.label_keys]
         common: dict[str, Any] = {
             "name": name,
@@ -114,11 +128,13 @@ class PrometheusRecorder(Recorder):
         )
 
     def add(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
+        """`inc` on the series — nothing when the instrument was refused (`_metric`)."""
         known = self._metric(instrument)
         if known is not None:
             self._series(known, labels).inc(value)
 
     def record(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
+        """`observe` on the series — nothing when the instrument was refused (`_metric`)."""
         known = self._metric(instrument)
         if known is not None:
             self._series(known, labels).observe(value)

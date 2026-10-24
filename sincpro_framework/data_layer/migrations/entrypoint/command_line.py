@@ -26,6 +26,9 @@ from sincpro_framework.data_layer.migrations.entrypoint.orchestrator import Migr
 
 
 def _parser() -> argparse.ArgumentParser:
+    """The command line's grammar: one subcommand per operation of `Migrations`, `upgrade` and
+    `downgrade` with `--plan` to say what would run without running it.
+    """
     parser = argparse.ArgumentParser(description="Migrate every context and store, in order.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="where every store stands, and the timeline")
@@ -64,6 +67,13 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _print_status(migrations: Migrations) -> None:
+    """Where every store stands, then the timeline with a mark per step: `✔` applied, `·`
+    pending.
+
+        billing/main                     behind      head=0192a1…
+          ✔ 0192a1…  billing/main             baseline
+          · 0192b7…  billing/main             add due_date
+    """
     status = migrations.status()
     for key, chain in status.chains.items():
         print(f"{key:<32} {chain.state.value:<11} head={chain.position.head or '-'}")
@@ -73,12 +83,17 @@ def _print_status(migrations: Migrations) -> None:
 
 
 def _print_plan(verb: str, steps: Sequence[Step]) -> None:
+    """What a `--plan` would do: how many steps, then each in the order it would run."""
     print(f"would {verb} {len(steps)} step(s)")
     for step in steps:
         print(f"  {step.id}  {step.chain_key:<24} {step.message}")
 
 
 def _dispatch(migrations: Migrations, arguments: argparse.Namespace) -> int:
+    """Run the subcommand the arguments name and answer its exit code — 0, except `check` that
+    answers 1 when it found a problem. A refusal or a failed step raises, and `command_line`
+    turns it into 1.
+    """
     if arguments.command == "status":
         _print_status(migrations)
     elif arguments.command == "upgrade" and arguments.plan:
@@ -122,6 +137,15 @@ def _dispatch(migrations: Migrations, arguments: argparse.Namespace) -> int:
 def command_line(migrations: Migrations, argv: Sequence[str] | None = None) -> int:
     """Run one command — `status`, `upgrade`, `downgrade`, `revision`, `check`, `hash`,
     `resolve`, `adopt` — and answer the exit code. `argv` defaults to the process's arguments.
+
+        command_line(migrations, ["upgrade"])            ->  0, "applied 2 step(s)" on stdout
+        command_line(migrations, ["upgrade", "--plan"])  ->  0, "would apply 2 step(s)"
+        command_line(migrations, ["check"])              ->  1 when a problem was found
+        command_line(migrations, ["downgrade", "--to", "base"])
+            ->  1 when refused, the reason on stderr
+
+    A refusal or a failed step is printed and answered as 1; anything else raises as it is —
+    arguments argparse cannot read exit with its own code, 2.
     """
     arguments = _parser().parse_args(argv)
     try:

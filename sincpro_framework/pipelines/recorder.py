@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Any
 from sincpro_framework.common.failures import refined_failure_kind, retry_after
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
-from sincpro_framework.common.store import Lease
 from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.context.entrypoint.facade import use_context
 from sincpro_framework.context.infrastructure.tree import current_execution
@@ -36,6 +35,7 @@ from sincpro_framework.pipelines.run import (
 )
 from sincpro_framework.pipelines.runs import PipelineRuns
 from sincpro_framework.sincpro_logger import logger
+from sincpro_framework.store import Lease
 
 if TYPE_CHECKING:
     from sincpro_framework.pipelines.pipeline import Pipeline
@@ -45,15 +45,17 @@ class PipelineRecorder:
     """The interceptor of one pipeline: its Command and its steps."""
 
     def __init__(self, pipeline: "type[Pipeline]", command: type) -> None:
+        """The recorder of `pipeline`, registered for its `command` and its steps."""
         self.pipeline = pipeline
         self.command = command
 
     def _runs(self) -> PipelineRuns:
+        """The runs of whoever the context of the call says, by the pipeline's `owned_by`."""
         return use_context().pipelines(by=self.pipeline.owned_by)
 
     def _keep(self, holder: RunInProgress, changed: dict[str, Any]) -> PipelineRun:
         """The run as it is now, written over the version this execution last kept."""
-        holder.run = self._runs().keep(
+        holder.run = self._runs().save(
             holder.run.model_copy(update=changed), holder.run.store_version
         )
         return holder.run
@@ -109,7 +111,10 @@ class PipelineRecorder:
         )
 
     def _opened(self, dto: Any, name: str, bus: str, run_id: str) -> PipelineRun:
-        """1. The recipe this input runs, and its version.
+        """The run this execution drives, opened and kept.
+
+        1. The recipe this input runs, and its version — a hash of its steps' names, `always`
+           included.
         2. The run: continued when the pipeline says so and it ran this recipe, else new.
         Final: kept over what was there."""
         recipe = [*self.pipeline.recipe_of(dto)]
@@ -162,7 +167,7 @@ class PipelineRecorder:
                 correlation_id=correlation,
                 started_at=datetime.now(UTC),
             )
-        return runs.keep(run, 0 if before is None else before.store_version)
+        return runs.save(run, 0 if before is None else before.store_version)
 
     def _driven(
         self,
@@ -173,7 +178,9 @@ class PipelineRecorder:
         run_id: str,
         lease: Lease | None,
     ) -> Any:
-        """1. The run opened, and the context of this execution says which run it is.
+        """The run opened, the pipeline run inside it, and the run closed.
+
+        1. The run opened, and the context of this execution says which run it is.
         Final: the run closed — failed with the exception that escaped, or by its steps — and
         what the caller gets is the run as kept. A run whose lease was lost is not closed: it
         is no longer this execution's to write."""
@@ -283,6 +290,16 @@ class PipelineRecorder:
         return response
 
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
+        """The interceptor: drive a run around the pipeline's Command, mark a step around a
+        step of this pipeline's run, and stay out of everything else.
+
+        1. The pipeline's own Command: the run is opened, driven and closed (`_run`).
+        2. A step whose execution stands in a run of this pipeline —
+           `SINCPRO_PIPELINE_CONTEXT` names it and the run is on the node — is marked
+           (`_step`).
+        Final: anything else — a step called by a script, or by another pipeline's run — runs
+        untouched.
+        """
         execution = current_execution()
         bus = execution.bus if execution is not None else ""
         name = registered_name(self.command, bus)

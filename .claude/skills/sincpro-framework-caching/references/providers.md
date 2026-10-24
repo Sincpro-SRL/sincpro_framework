@@ -13,8 +13,8 @@ it is not abstract, so a store of yours without it is still a store until a leas
 | Provider | Import | Install |
 |---|---|---|
 | `InMemoryKeyValue(now=)` | `sincpro_framework.data_layer.caching` | none (standard library); one process only |
-| `RedisKeyValue(client, prefix=)` | `sincpro_framework.data_layer.caching.adapters.redis` | `sincpro-framework[redis]` (Valkey too; `take` needs Redis 6.2+) |
-| `MemcachedKeyValue(client, prefix=)` | `sincpro_framework.data_layer.caching.adapters.memcached` | `sincpro-framework[memcached]` (ttl in whole seconds) |
+| `RedisKeyValue(client, prefix=)` | `sincpro_framework.store.adapters.redis` | `sincpro-framework[redis]` (Valkey too; `take` needs Redis 6.2+) |
+| `MemcachedKeyValue(client, prefix=)` | `sincpro_framework.store.adapters.memcached` | `sincpro-framework[memcached]` (ttl in whole seconds) |
 
 `RedisKeyValue`/`MemcachedKeyValue` are not exported from `sincpro_framework.data_layer.caching`: the extra
 is loaded only by the module that names it. The client is yours (pool, TLS, timeouts); `prefix`
@@ -22,7 +22,7 @@ lets several services share one server.
 
 ```python
 import redis
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 STORE = RedisKeyValue(redis.Redis.from_url("redis://cache:6379/0"), prefix="billing:")
 ```
@@ -34,7 +34,7 @@ A store of yours proves itself with the contract the built-ins pass:
 
 ```python
 from sincpro_framework.runtime.testing import KeyValueStoreContract
-from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework.store import KeyValueStore
 
 
 class TestDictStore(KeyValueStoreContract):
@@ -67,7 +67,7 @@ within that database.
 The record several cron replicas share: one of them runs each tick.
 
 ```python
-from sincpro_framework.common.store import InMemoryKeyValue
+from sincpro_framework.store import InMemoryKeyValue
 from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns
 
 shared = InMemoryKeyValue()                   # RedisKeyValue(...) on real replicas

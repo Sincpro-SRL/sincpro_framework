@@ -23,7 +23,15 @@ outlives the call, so a probe still waiting never lets a second one in."""
 
 
 class Transport(Protocol):
-    def execute(self, context: str, dto: Any, request: Mapping[str, Any]) -> Payload: ...
+    """The caller's side of one wire for one address — built once per address, shared by
+    every thread and context that calls there."""
+
+    def execute(self, context: str, dto: Any, request: Mapping[str, Any]) -> Payload:
+        """Run `dto` on the context hosted at the address, with the caller's `request`
+        context; the answer as the message the calling bus rebuilds — or the failure, raised
+        as the remote exception itself or as a `ContextUnavailable`/`ContextTimeout`/
+        `ContextOutcomeUnknown` marked unreached when the call itself failed."""
+        ...
 
 
 @lru_cache(maxsize=None)
@@ -51,6 +59,13 @@ def circuit_for(hosted_at: HostedAt) -> Circuit | None:
 
 @lru_cache(maxsize=None)
 def transport_for(hosted_at: HostedAt) -> Transport:
+    """The transport of an address — one per address for the process, cached, so its channel
+    or its per-thread connections are reused by every call there. The gRPC module, and gRPC
+    with it, is imported only for a `grpc://` address.
+
+        transport_for(HostedAt(Wire.GRPC, "billing:50051"))       ->  GrpcTransport
+        transport_for(HostedAt(Wire.HTTPS, "billing.internal:443")) ->  HttpTransport
+    """
     match hosted_at.wire:
         case Wire.GRPC:
             from sincpro_framework.remote_execution.adapters.grpc import (

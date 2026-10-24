@@ -24,13 +24,23 @@ _decided: ContextVar[str | None] = ContextVar("sincpro_access_decided", default=
 
 
 def current_identity() -> Identity:
+    """Who the execution in progress acts as — `Identity.anonymous()` outside any
+    `as_identity`, never `None`."""
     return _current.get()
 
 
 @contextmanager
 def as_identity(identity: Identity) -> Generator[Identity, None, None]:
     """Act as `identity` inside the block — what an entrypoint opens once it authenticated the
-    caller, and what a test opens to be someone. A use case called inside is decided anew."""
+    caller, and what a test opens to be someone. A use case called inside is decided anew.
+
+        with as_identity(Identity.user("user:42", tenant="bo")) as identity:
+            current_identity().subject   ->  "user:42"
+        current_identity().subject       ->  "anonymous"    # as it was before the block
+
+    Context: both the identity and the access decision are restored on leaving, even when
+    the block raises.
+    """
     current, decided = _current.set(identity), _decided.set(None)
     try:
         yield identity

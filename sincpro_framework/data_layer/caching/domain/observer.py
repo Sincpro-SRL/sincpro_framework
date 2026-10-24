@@ -9,6 +9,8 @@ from typing import Protocol
 
 
 class CacheOutcome(StrEnum):
+    """What a `Cache` or a `QueryCaching` call did — exactly one per call."""
+
     HIT = "hit"
     """A kept value, fresh and valid, served as is."""
     STALE = "stale"
@@ -26,6 +28,8 @@ class CacheOutcome(StrEnum):
 
 
 class IdempotencyOutcome(StrEnum):
+    """What an idempotent run did with its key — exactly one per call."""
+
     CLAIMED = "claimed"
     """This caller won the key and ran the write."""
     REPLAYED = "replayed"
@@ -37,6 +41,8 @@ class IdempotencyOutcome(StrEnum):
 
 
 class CacheObserver(Protocol):
+    """The port: told every outcome, by namespace — a span, a metric, a test list."""
+
     def observed(self, outcome: str, namespace: str) -> None:
         """`outcome` is a `CacheOutcome` or an `IdempotencyOutcome`; `namespace` is the cache's
         or the idempotency's. Never raises into the call it observes."""

@@ -62,17 +62,27 @@ class Resolver(Protocol):
     of records; each record carries `identified_by` (to-many) or its own identity (to-one).
     """
 
-    def __call__(self, keys: Sequence[Any], criteria: Criteria) -> Any: ...
+    def __call__(self, keys: Sequence[Any], criteria: Criteria) -> Any:
+        """The related records of these parent keys; `criteria` already filters by them
+        (`IN` on the matching field) and carries the order, page and mask the node asked."""
+        ...
 
 
 class BusResolver:
     """A command on another bounded context's bus, carrying the reflected criteria."""
 
     def __init__(self, bus: Any, command: type) -> None:
+        """`command` is the other context's search DTO; it is built with `criteria=` alone."""
         self.bus = bus
         self.command = command
 
     def __call__(self, keys: Sequence[Any], criteria: Criteria) -> Any:
+        """Executes the command on the other bus with the reflected criteria. `keys` is not
+        sent apart: the criteria already filters by them (`_reflected`).
+
+            BusResolver(projects_bus, CommandSearchEvents)(["p1"], criteria)
+            ->  projects_bus(CommandSearchEvents(criteria=criteria))
+        """
         return self.bus(self.command(criteria=criteria))
 
 
@@ -107,6 +117,16 @@ class Relation:
         related_field: str | None = None,
         many: bool | None = None,
     ) -> None:
+        """Holds the declaration as given; nothing is checked or resolved until a reading
+        brings the relation. Prefer `resolved_by` or `bus` (or an adapter's own kind) to
+        calling this directly.
+
+            Relation("resolver", Shelf, identified_by="shelf_id", resolver=shelves_by_ids)
+                ->  .kind == "resolver", .related is Shelf, .many is None, .scope is None
+            Relation(…, many=True)   # installed by an extension on a class it does not own
+
+        `many` stays `None` when the annotation will say it.
+        """
         self.kind = kind
         self.many = many
         """To-many (`True`) or to-one (`False`), when the declaration says it. A relation an
@@ -320,7 +340,17 @@ def resolve_elsewhere(
     many: bool,
     limit: int | None,
 ) -> tuple[Groups, Meta | None]:
-    """One node through its resolver: one call with every parent's key, the answer regrouped."""
+    """One node through its resolver: one call with every parent's key, the answer regrouped.
+
+        # two works on shelves s1 and s2, Work.shelf resolved by `shelves_by_ids`
+        resolve_elsewhere(meta, [w1, w2], Work.shelf, node, many=False, limit=None)
+            ->  ({"w1": <s1>, "w2": <s2>}, <Shelf's Meta, when the resolver answered one>)
+            # shelves_by_ids called once: (["s1", "s2"], Criteria(where=id in [s1, s2], …))
+        # no parent holds a key, or the relation has no resolver  ->  ({}, None)
+
+    Context: with a `limit`, a page per key is asked (`grouping` by the key); a resolver
+    that honours it answers each parent exactly, one that does not is cut here afterwards.
+    """
     field, ids = _keys_for(meta, parents, relation, many)
     if not ids or relation.resolver is None:
         return {}, None

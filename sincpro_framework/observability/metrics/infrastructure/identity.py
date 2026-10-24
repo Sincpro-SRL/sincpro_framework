@@ -35,9 +35,13 @@ class BusObservability(Protocol):
     and every read is shielded: a bus that answers neither is measured all the same."""
 
     @property
-    def identity(self) -> ObservabilityIdentity: ...
+    def identity(self) -> ObservabilityIdentity:
+        """Who the bus is — the service and version its series name."""
+        ...
 
-    def faulted(self, error: BaseException) -> bool: ...
+    def faulted(self, error: BaseException) -> bool:
+        """Whether the bus judges `error` a problem of the service — `sincpro.fault`."""
+        ...
 
 
 CONTEXT_INFO = Instrument(
@@ -62,7 +66,17 @@ _lock = threading.Lock()
 
 def announce(recorder: Recorder, identity: ObservabilityIdentity, context: str) -> bool:
     """`sincpro.context.info` once per context and recorder — whichever recorder records, even
-    one chosen after the bus was built. Answers whether it had to be announced now."""
+    one chosen after the bus was built. Answers whether it had to be announced now.
+
+        announce(recorder, ObservabilityIdentity(artifact="billing-sdk", version="1.2.0"),
+                 "billing")
+            ->  True: sincpro.context.info{sincpro.context="billing",
+                sincpro.artifact="billing-sdk", sincpro.version="1.2.0",
+                sincpro.tenant="acme"} += 1
+        announce(recorder, the same identity, "billing")   ->  False, nothing recorded
+
+    Recorded straight on `recorder`, not through the shield: a recorder that raises reaches
+    the caller, after the series was already marked as announced."""
     labels = {
         "sincpro.context": context,
         "sincpro.artifact": identity.service,
@@ -80,4 +94,6 @@ def announce(recorder: Recorder, identity: ObservabilityIdentity, context: str) 
 
 
 def identity_of(who: BusObservability | None) -> ObservabilityIdentity | None:
+    """The identity of the bus `who`, read only now — `None` when there is no bus or it
+    answers none."""
     return getattr(who, "identity", None) if who is not None else None

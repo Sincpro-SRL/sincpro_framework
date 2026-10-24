@@ -63,7 +63,7 @@ def forge(
     did: list[str] = []
     pending = list(fails or [])
     bus = UseFramework("forge-pipelines", log_after_execution=False)
-    bus.context_store(InMemoryContexts())
+    bus.store_context_in(InMemoryContexts())
 
     @bus.feature(CommandRefine)
     class Refine(Feature):
@@ -221,7 +221,7 @@ def test_a_read_that_names_no_pipeline_says_how():
 
 def test_an_await_its_input_cannot_answer_is_a_programming_error():
     bus = UseFramework("forge-await-wrong", log_after_execution=False)
-    bus.context_store(InMemoryContexts())
+    bus.store_context_in(InMemoryContexts())
 
     class CommandRun(DataTransferObject):
         run_id: str = ""

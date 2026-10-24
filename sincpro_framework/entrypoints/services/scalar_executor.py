@@ -4,6 +4,10 @@ UseFramework's own contract stays typed (DTO in, DTO out); it never learns about
 dicts or JSON. This module is the boundary that does that marshalling, so any
 wire host (MCP, JSON-RPC, tomorrow REST/CLI) can call a Feature/ApplicationService
 with a plain Scalar instead of constructing the DTO itself.
+
+    run = extract_executor_fn(billing, CommandIssueInvoice)
+    execute(billing, run, {"invoice_id": 7}, context={"tenant_id": "acme"})
+    ->  {"invoice_id": 7, "status": "issued"}
 """
 
 from collections.abc import Mapping
@@ -30,6 +34,11 @@ def dump_scalar_result(result: Any) -> Scalar:
     a Zeep SOAP response parked on an `Any` field — instead of raising inside the
     host, after the Feature already ran its side effect.
 
+        dump_scalar_result(ResponseIssueInvoice(invoice_id=7, status="issued"))
+        ->  {"invoice_id": 7, "status": "issued"}
+        dump_scalar_result([1, 2])      ->  {"result": [1, 2]}
+        dump_scalar_result(None)        ->  {}
+
     1. None becomes {}.
     2. Everything else is rendered in JSON mode, leaf by leaf.
         2.1 A leaf Pydantic cannot render is stringified, and warned about naming
@@ -42,6 +51,7 @@ def dump_scalar_result(result: Any) -> Scalar:
     coerced: list[str] = []
 
     def stringify(value: Any) -> str:
+        """The fallback for a leaf JSON cannot hold — its type noted for the warning."""
         coerced.append(type(value).__name__)
         return str(value)
 
@@ -61,6 +71,10 @@ def extract_executor_fn(framework_instance: UseFramework, dto_type: Any) -> RunF
     A factory, not a closure written inline in a loop: each entry needs its own
     `dto_type` bound at closure-creation time, not the loop variable's final value.
 
+        run = extract_executor_fn(billing, CommandIssueInvoice)
+        run({"invoice_id": 7})              ->  {"invoice_id": 7, "status": "issued"}
+        run({"invoice_id": "seven"})        ->  ValidationError, the bus never called
+
     1. Validate the payload as the DTO (Value Objects run here). A dataclass
        Command validates through a TypeAdapter and raises the same
        `ValidationError` the wires already map to an invalid-params status.
@@ -74,6 +88,12 @@ def extract_executor_fn(framework_instance: UseFramework, dto_type: Any) -> RunF
     )
 
     def run(payload: Scalar) -> Scalar:
+        """One call: the payload validated as `dto_type`, run on the bus, the answer dumped.
+
+            run({"invoice_id": 7})  ->  {"status": "issued"}
+
+        A payload that does not validate raises the `ValidationError` before the bus runs.
+        """
         return dump_scalar_result(framework_instance(validate(payload)))
 
     return run
@@ -86,6 +106,21 @@ def _within_context(
     context: Mapping[str, Any] | None,
     kind: EntrypointKind,
 ) -> Scalar:
+    """Run `run(payload)` inside the context the caller carried, and under its trace when it
+    carried one.
+
+    Context: a wire hands one mapping — the tenant, the user, and the trace keys mixed in.
+    The trace keys are not context: they name the parent span (`with_trace`), so they are
+    split off before the context opens and never reach `self.context`.
+
+        _within_context(bus, run, {...}, {"tenant_id": "acme", "trace_id": "4bf9…"}, kind)
+        # context {"tenant_id": "acme"}; with_trace(trace_id="4bf9…")
+
+    1. Split `trace_id`, `span_id`, `carrier` off a copy of the context; a `None` one is
+       dropped.
+    2. Open the bus's context with the rest — the flow's entrypoint, of `kind`.
+    3. Final: run inside `with_trace` when a trace key was carried, else directly.
+    """
     extra = dict(context or {})
     trace_kwargs: dict[str, Any] = {}
     for key in TRACE_KEYS:

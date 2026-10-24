@@ -56,6 +56,15 @@ def hearing(use_cases: Iterable[type | str] | None = None, when: Any = None) -> 
 
     A use case is its Command or its name, `billing.CommandIssueInvoice`. `when` builds the
     filter once, here; the criteria vocabulary is imported only by whoever writes one.
+
+    1. Neither said: `None`, every event heard.
+    2. The use cases named, as names — a Command by its class name.
+    3. `when` given:
+       3.1 one filter, or a list of them;
+       3.2 each one written as JSON read into an expression;
+       3.3 one kept as it is, several joined under `All`.
+    Final: `hears` — an event is heard when its use case is named, in full or by its last
+    segment, and `when` holds over its fields.
     """
     if use_cases is None and when is None:
         return None
@@ -73,6 +82,8 @@ def hearing(use_cases: Iterable[type | str] | None = None, when: Any = None) -> 
         holds_over = partial(holds, parts[0] if len(parts) == 1 else All(all=parts))
 
     def hears(event: "DomainEvent") -> bool:
+        """Whether this one event is heard: its use case named — in full or by its Command's
+        name alone — and `when` holding over its fields."""
         use_case = getattr(event, "use_case", "")
         if names is not None and not {use_case, use_case.rsplit(".", 1)[-1]} & names:
             return False
@@ -85,6 +96,8 @@ class Listeners:
     """The listeners of one kind of fact: the ones added here, and the process's."""
 
     def __init__(self, process: "Listeners | None" = None) -> None:
+        """`process` is the process-wide `Listeners` of the same kind of fact — every bus's
+        listeners also tell it; `None` for the process's own."""
         self._own: list[tuple[Listener, Hears | None]] = []
         self._process = process
         self._lock = threading.Lock()
@@ -103,6 +116,8 @@ class Listeners:
         return listener
 
     def unsubscribe(self, listener: Listener) -> None:
+        """`listener` hears nothing more here — every time it was added; the process's
+        listeners are not touched."""
         with self._lock:
             self._own = [one for one in self._own if one[0] != listener]
 
@@ -117,7 +132,12 @@ class Listeners:
         return bool(self._own) or (self._process is not None and self._process.heard())
 
     def listening(self) -> list[tuple[Listener, Hears | None]]:
-        """Who hears, and what: the process's first, then the ones added here — each once."""
+        """Who hears, and what: the process's first, then the ones added here — each once.
+
+            process: [audit]; here: [alert, audit]    ->  [(audit, None), (alert, None)]
+
+        A listener added both to the process and here is kept where it came first.
+        """
         with self._lock:
             own = list(self._own)
         heard = [*(self._process.listening() if self._process is not None else []), *own]
@@ -128,7 +148,13 @@ class Listeners:
         return unique
 
     def announce(self, event: "DomainEvent") -> None:
-        """`event` to each listener that hears it, in turn, never raising."""
+        """`event` to each listener that hears it, in turn, never raising.
+
+            announce(ExecutionFailed(use_case="billing.CommandPay", ...))
+            ->  None; audit and alert called with it, a raising one logged and skipped
+
+        A listener that raises is logged with its qualified name; the next one still hears.
+        """
         for listener, hears in self.listening():
             try:
                 if hears is None or hears(event):

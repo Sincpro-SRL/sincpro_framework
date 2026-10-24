@@ -77,6 +77,16 @@ MESSAGES: dict[str, Fact] = {
 
 
 def _fact_of(orig: Any) -> Fact | None:
+    """What a driver's error means, read from what that driver carries; `None` when unknown.
+
+    1. The SQLSTATE (`sqlstate`, or psycopg2's `pgcode`) — Postgres and any standard driver.
+    2. MySQL's error number, the first of the error's `args`.
+    3. SQLite's extended error name (`sqlite_errorname`, Python 3.11+).
+    Final: the start of the message, for a SQLite older than that.
+
+        IntegrityError(sqlstate="23505")             ->  DUPLICATE
+        sqlite3.IntegrityError("UNIQUE constraint failed: …")  ->  DUPLICATE
+    """
     sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
     if sqlstate in SQLSTATES:
         return SQLSTATES[sqlstate]
@@ -95,7 +105,15 @@ def _fact_of(orig: Any) -> Fact | None:
 @contextmanager
 def named(subject: str) -> Generator[None]:
     """Runs a block against the engine and re-raises what it refused as the vocabulary's own
-    exception about `subject`, carrying the engine's message."""
+    exception about `subject`, carrying the engine's message.
+
+        with named("Invoice F-1"): session.flush()     # a second F-1 on Postgres
+            ->  DuplicateAggregate("Invoice F-1 collides with a record already stored: …")
+        with named("the unit of work"): session.commit()   # a version written over
+            ->  StaleAggregate("the unit of work changed since it was read; read it again …")
+
+    A driver error none of the tables names is re-raised as SQLAlchemy raised it.
+    """
     try:
         yield
     except StaleDataError as error:

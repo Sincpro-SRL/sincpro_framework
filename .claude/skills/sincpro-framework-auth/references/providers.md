@@ -58,7 +58,7 @@ permissions)`, `Identity.system(reason)`, `Identity.anonymous()`. Never `None`.
 | `ServiceTokenProvider(issuer, keys={kid: secret}, audience="sincpro", ttl_seconds=60)` | `x-sp-service-token` | HS256 JWT between Sincpro services: `sub`, `kind`, `tenant`, `permissions`, `act`; newest key signs, every key verifies (rotation) |
 | `RolePermissions(roles, implies)` | — | `.resolve(identity)` adds what its roles (and implied roles) grant |
 
-`ApiKeyStore` is the port for a project's own key table (`find`, `keep`); `issue(ApiKey(...))`
+`ApiKeyStore` is the port for a project's own key table (`find`, `save`); `issue(ApiKey(...))`
 returns the secret once and keeps only its SHA-256; `revoke(secret_or_digest)`.
 `InMemoryApiKeys` is the in-memory adapter.
 

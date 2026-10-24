@@ -5,7 +5,7 @@
 | Level | Opened by | Holds |
 |---|---|---|
 | `ROOT` | the process, once | defaults (`lang`, `tz`, a default tenant), flags, settings and stores under their type |
-| `BUS` | the first call or `bus.context(...)` that reaches a bus | what the bus publishes: `bus.context({...}, global_scope=True)`, `bus.context_store(store)` |
+| `BUS` | the first call or `bus.context(...)` that reaches a bus | what the bus publishes: `bus.context({...}, global_scope=True)`, `bus.store_context_in(store)` |
 | `ENTRYPOINT` | REST, JSON-RPC, gRPC, MCP, a queue consumer, a cron, `remote_execution`, or the first `bus.context(...)` / `carrying(...)` of a flow (`DIRECT`) | who, for which tenant, lang, the identity — and `kind` |
 | `APPLICATION` / `FEATURE` | every `execute`, by itself | what the handler `set`s; its `Execution` |
 | `HOOK` | every run of a repository hook | what the hook `set`s |

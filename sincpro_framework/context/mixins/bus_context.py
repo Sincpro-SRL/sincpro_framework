@@ -13,7 +13,6 @@ from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context.domain.execution import CONTEXT_NODE
 from sincpro_framework.context.domain.level import SCOPES, EntrypointKind, Level
 from sincpro_framework.context.domain.node import ContextNode, Values
-from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.entrypoint.bus import FrameworkContext
 from sincpro_framework.context.entrypoint.facade import Context
 from sincpro_framework.context.entrypoint.providers import (
@@ -22,6 +21,7 @@ from sincpro_framework.context.entrypoint.providers import (
 )
 from sincpro_framework.context.infrastructure.distributed import SharedContext, joined
 from sincpro_framework.context.infrastructure.tree import ROOT, current, entered
+from sincpro_framework.store.domain.store import ContextStore
 
 if TYPE_CHECKING:
     from sincpro_framework.bus import FrameworkBus
@@ -39,21 +39,27 @@ class BusContextMixin:
     if TYPE_CHECKING:
 
         @property
-        def name(self) -> str: ...
+        def name(self) -> str:
+            """The bus's name — declared for the type checker; `UseFramework` defines it."""
+            ...
 
     def _init_context_storage(self) -> None:
+        """The context state a bus starts with: nothing published, no schema, no providers, no
+        shared store — called once when the `UseFramework` is built."""
         self._published = Values()
         """What this bus publishes for every execution of its own — its `Level.BUS` node's values."""
         self._context_schema: TypeAdapter[Any] | None = None
         self._context_providers: list[ContextProvider] = []
         self._shared_context: SharedContext | None = None
-        """The store this bus shares its context through — `bus.context_store(store)`."""
+        """The store this bus shares its context through — `bus.store_context_in(store)`."""
 
     def _entered_here(self) -> bool:
         """Whether the node in play stands in a scope of this bus already."""
         return any(node.owner is self and node.level in SCOPES for node in current().chain())
 
     def _bus_node(self, parent: ContextNode) -> ContextNode:
+        """This bus's own node under `parent` — holding the bus's published values, shared, so
+        a `global_scope=True` write reaches every execution of the bus live."""
         return ContextNode(Level.BUS, parent, self._published, self.name, owner=self)
 
     @contextmanager
@@ -112,9 +118,11 @@ class BusContextMixin:
         }
 
     def _set_context(self, context: Mapping[Any, Any]) -> None:
+        """`self.context = {...}`: the scope of the call says exactly `context`."""
         self._get_context().replace(context)
 
     def _clean_context(self) -> None:
+        """The scope of the call says nothing any more."""
         self._set_context({})
 
     def _coerced(self, values: Mapping[Any, Any]) -> dict[Any, Any]:
@@ -137,30 +145,33 @@ class BusContextMixin:
         context_to_set: Mapping[Any, Any] | None = None,
         global_scope: bool = False,
         kind: EntrypointKind | None = None,
-        restore: str | list[str] | None = None,
-        keep_as: str | None = None,
-        ttl: timedelta | None = None,
-        store: ContextStore | None = None,
     ) -> FrameworkContext:
-        """A scope of this bus for the block — every execution inside reads it, nothing outside does.
+        """A scope of this bus for a `with` block: every execution inside reads its values,
+        nothing outside does.
 
-            with app.context({"correlation_id": "123", "user_id": "456"}) as app_with_context:
-                app_with_context(some_dto)
+        Context: what a use case needs and is not part of its Command — who calls
+        (`tenant_id`, `user_id`), a language, a correlation id, credentials of a tenant — is
+        said once, around the calls, and read anywhere below with `self.context` or
+        `use_context()`. Isolated per thread and task: two requests never see each other's.
 
-            with app.context({"tenant_id": "acme"}, global_scope=True):    every execution of
-                ...                                                          this bus reads it
-            with app.context(restore=["tenant:acme", f"session:{sid}"]):    what a store kept
-            with app.context(values, keep_as="sale-77", ttl=timedelta(hours=1)):
+            with billing.context({"tenant_id": "acme", "user_id": "ana"}):
+                billing(CommandIssueInvoice(total=100))     # the Feature reads tenant_id
 
-        Context: isolated per thread and task. The first scope of a flow is its entrypoint —
-        `kind` says which entrance opened it, `EntrypointKind.DIRECT` when none is named; a scope
-        inside another is a child of it. `restore` reads each key from the store (`store`, else
-        the nearest `ContextStore` in the context), in order, under `context_to_set`; `keep_as`
-        keeps what the scope sees, with the flow's chain, for whoever resumes it.
+            with billing.context({"lang": "es"}, global_scope=True):
+                ...                                         # every execution of billing reads it
+
+            with billing.context({"tenant_id": "acme"}, kind=EntrypointKind.QUEUE):
+                ...                                         # an entrance of its own says which
+
+        - `global_scope=True` writes this bus's own node — every execution of this bus reads
+          it, running ones included — and the block's end puts back what was there.
+        - `kind` names the entrance that opened the flow (`HTTP`, `QUEUE`, `CRON`, …);
+          `DIRECT` when unsaid. Only the first scope of a flow is an entrypoint; a scope
+          inside another is its child.
+
+        Final: the scope, a context manager that answers this bus.
         """
-        return FrameworkContext(
-            cast(Any, self), context_to_set, global_scope, kind, restore, keep_as, ttl, store
-        )
+        return FrameworkContext(cast(Any, self), context_to_set, global_scope, kind)
 
     def context_provider(
         self, needs: Sequence[str] = (), gives: Sequence[str] = ()
@@ -175,6 +186,8 @@ class BusContextMixin:
         """
 
         def register(function: ContextProviderFunction) -> ContextProviderFunction:
+            """Record the provider on this bus, and the same registration for every bus
+            generation built from it; answer the function unchanged."""
             self._context_providers.append(
                 ContextProvider(function, tuple(needs), tuple(gives))
             )
@@ -195,15 +208,16 @@ class BusContextMixin:
         self._context_schema = TypeAdapter(schema)
         self._registrations.append(lambda bus: bus.context_schema(schema))
 
-    def context_store(
+    def store_context_in(
         self,
         store: ContextStore,
         ttl: timedelta = timedelta(hours=24),
         every: timedelta = timedelta(seconds=1),
     ) -> None:
-        """Share this bus's context through `store` — and keep and restore with it.
+        """Share this bus's context through `store` — and keep there what the bus keeps beside
+        it: drafts, pipeline runs, leases, `bus.cache`, `bus.idempotency` (`bus.store()`).
 
-            billing.context_store(KeyValueContexts(RedisKeyValue(redis)))
+            billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))
 
         The API does not change: `self.context`, `use_context()`, `bus.context(...)` read and
         write as always, and every node of this bus's executions is kept in the store for `ttl`.
@@ -215,4 +229,6 @@ class BusContextMixin:
         self._published.set(ContextStore, store)
         self._shared_context = SharedContext(store, ttl, every)
         joined(ROOT, self._shared_context, self.observability.identity.service_name)
-        self._registrations.append(lambda bus: bus.context_store(store, ttl=ttl, every=every))
+        self._registrations.append(
+            lambda bus: bus.store_context_in(store, ttl=ttl, every=every)
+        )

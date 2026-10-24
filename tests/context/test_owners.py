@@ -1,26 +1,26 @@
-"""Whose a draft or a pipeline run is — read from the context, always in one shape, for every shape a
-system has, refusing none.
+"""Whose a draft or a pipeline run is — read from the context by exactly the keys asked for, for
+every shape a system has, refusing none.
 
-    tenant_id=…,tenant_ids=…,<the keys of by>=…
+    <each key of by>=…        tenant and user by default for a draft, the tenant for a run
 
 No tenant and no user, a tenant, a user, a user in a tenant, a user across several tenants: each is
 a way a system is, and none is forced on a project. A key the context does not say — missing,
-`None`, empty — says nothing, and its value is left empty. Values are encoded, so no value is ever
-read as a separator."""
+`None`, empty — says nothing, and its value is left empty. No keys at all is nobody's: shared by
+every caller. Values are encoded, so no value is ever read as a separator."""
 
 from datetime import UTC, datetime
 
 import pytest
 
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.context import (
     ContextStore,
     InMemoryContexts,
     KeyValueContexts,
     use_context,
 )
-from sincpro_framework.context.entrypoint.owner import owner_of
+from sincpro_framework.context.entrypoint.owner import BY_TENANT, BY_TENANT_AND_USER, owner_of
 from sincpro_framework.pipelines import PipelineRun
+from sincpro_framework.store import InMemoryKeyValue
 
 SHAPES = [
     pytest.param({}, "tenant_id=,tenant_ids=,user_id=", id="no tenant, no user"),
@@ -61,7 +61,7 @@ STORES = [
 
 @pytest.mark.parametrize(("said", "owner"), SHAPES)
 def test_the_owner_has_one_shape_whatever_the_context_says(said, owner):
-    assert owner_of(said, ["user_id"]) == owner
+    assert owner_of(said, BY_TENANT_AND_USER) == owner
 
 
 @pytest.mark.parametrize("make", STORES)
@@ -72,7 +72,7 @@ def test_a_draft_is_kept_and_read_back_for_every_shape_and_refused_for_none(
     store = make()
     with use_context().scoped(said) as context:
         drafts = context.drafts(store=store)
-        kept = drafts.keep("billing.Invoice:01a2", {"discount": "10"}, 3, 0)
+        kept = drafts.save("billing.Invoice:01a2", {"discount": "10"}, 3, 0)
         read = drafts.read("billing.Invoice:01a2")
         listed = drafts.subjects()
 
@@ -88,8 +88,8 @@ def test_a_pipeline_run_is_kept_and_found_for_every_shape_and_refused_for_none(
 ):
     store = make()
     with use_context().scoped(said) as context:
-        runs = context.pipelines(by=["user_id"], store=store)
-        runs.keep(
+        runs = context.pipelines(by=BY_TENANT_AND_USER, store=store)
+        runs.save(
             PipelineRun(
                 pipeline="billing.CommandRun", run_id="r-1", started_at=datetime.now(UTC)
             )
@@ -104,7 +104,7 @@ def test_a_pipeline_run_is_kept_and_found_for_every_shape_and_refused_for_none(
 def keep_and_read(store: ContextStore, writer: dict, reader: dict) -> bool:
     """Whether what `writer`'s context keeps is what `reader`'s context reads."""
     with use_context().scoped(writer) as context:
-        context.drafts(store=store).keep("cart", {"items": 1}, 0, 0)
+        context.drafts(store=store).save("cart", {"items": 1}, 0, 0)
     with use_context().scoped(reader) as context:
         return context.drafts(store=store).read("cart") is not None
 
@@ -117,11 +117,11 @@ def test_the_desktop_the_browser_and_the_phone_of_one_user_share_one_draft(make)
 
     with use_context().scoped({**ana, "device": "desktop"}) as desktop:
         drafts = desktop.drafts(store=store)
-        first = drafts.keep("billing.Invoice:01a2", {"discount": "10"}, 3, 0)
+        first = drafts.save("billing.Invoice:01a2", {"discount": "10"}, 3, 0)
     with use_context().scoped({**ana, "device": "browser"}) as browser:
         read = browser.drafts(store=store).read("billing.Invoice:01a2")
     with use_context().scoped({**ana, "device": "phone"}) as phone:
-        phone.drafts(store=store).keep(
+        phone.drafts(store=store).save(
             "billing.Invoice:01a2", {"discount": "20"}, 3, first.version
         )
 
@@ -174,19 +174,41 @@ def test_a_value_that_spells_a_separator_never_reads_another_owners_draft(
 def test_what_is_meant_to_be_shared_by_the_tenant_is_owned_by_nobody_but_it(make):
     store = make()
     with use_context().scoped({"tenant_id": "acme", "user_id": "ana"}) as ana:
-        ana.drafts(by=[], store=store).keep("settings", {"theme": "dark"}, 0, 0)
+        ana.drafts(by=BY_TENANT, store=store).save("settings", {"theme": "dark"}, 0, 0)
     with use_context().scoped({"tenant_id": "acme", "user_id": "bob"}) as bob:
-        assert bob.drafts(by=[], store=store).read("settings") is not None
+        assert bob.drafts(by=BY_TENANT, store=store).read("settings") is not None
     with use_context().scoped({"tenant_id": "globex", "user_id": "bob"}) as other:
-        assert other.drafts(by=[], store=store).read("settings") is None
+        assert other.drafts(by=BY_TENANT, store=store).read("settings") is None
 
 
-def test_the_keys_a_project_says_a_draft_belongs_to_come_after_the_tenant_keys():
+@pytest.mark.parametrize("make", STORES)
+def test_a_record_five_users_edit_together_has_one_draft_owned_by_nobody(make):
+    """A draft of one record that every user opens — no tenant, no user in its owner."""
+    store = make()
+    for user in ("ana", "bob", "cai", "dan", "eva"):
+        with use_context().scoped({"tenant_id": "acme", "user_id": user}) as context:
+            drafts = context.drafts(by=(), store=store)
+            found = drafts.read("billing.Invoice:F-7")
+            drafts.save(
+                "billing.Invoice:F-7", {"editor": user}, 1, found.version if found else 0
+            )
+
+    with use_context().scoped({}) as anyone:
+        shared = anyone.drafts(by=(), store=store).read("billing.Invoice:F-7")
+
+    assert shared is not None and shared.values == {"editor": "eva"}
+    assert owner_of({"tenant_id": "acme", "user_id": "ana"}, ()) == ""
+
+
+def test_the_owner_is_exactly_the_keys_a_project_names():
     assert (
         owner_of({"tenant_id": "acme", "session_id": "s-1"}, ["session_id"])
+        == "session_id=s-1"
+    )
+    assert (
+        owner_of({"tenant_id": "acme", "session_id": "s-1"}, [*BY_TENANT, "session_id"])
         == "tenant_id=acme,tenant_ids=,session_id=s-1"
     )
     assert (
-        owner_of({"tenant_id": "acme"}, ["tenant_id", "user_id"])
-        == "tenant_id=acme,tenant_ids=,user_id="
+        owner_of({"tenant_id": "acme"}, ["tenant_id", "user_id"]) == "tenant_id=acme,user_id="
     )

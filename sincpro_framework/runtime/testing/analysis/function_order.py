@@ -45,12 +45,19 @@ class Item:
     """One statement of a body, with the comment lines that sit right above it."""
 
     def __init__(self, statement: ast.stmt, start: int, end: int) -> None:
+        """``start`` is the 0-based index of its first line (decorators and comments above
+        included); ``end`` is one past its last line, so ``lines[start:end]`` is the item."""
         self.statement = statement
         self.start = start
         self.end = end
 
 
 def _decorator_names(function: Function) -> set[str]:
+    """The last name of each decorator, called or not — ``"?"`` for one that is neither a
+    name nor an attribute.
+
+        @app.get("/x")  @property  @value.setter   ->  {"get", "property", "setter"}
+    """
     names = set()
     for decorator in function.decorator_list:
         node = decorator.func if isinstance(decorator, ast.Call) else decorator
@@ -59,6 +66,8 @@ def _decorator_names(function: Function) -> set[str]:
 
 
 def _registers_when_defined(function: Function) -> bool:
+    """Whether a decorator may act when the function is defined — any not in
+    ``SAFE_DECORATORS`` nor a property accessor; such a function never moves."""
     return any(
         name not in SAFE_DECORATORS and not name.endswith(ACCESSORS)
         for name in _decorator_names(function)
@@ -66,6 +75,12 @@ def _registers_when_defined(function: Function) -> bool:
 
 
 def _defined_names(statement: ast.stmt) -> set[str]:
+    """The names ``statement`` binds: a ``def``'s or ``class``'s own name; otherwise every
+    name it stores and every name it imports (the top package of a dotted import).
+
+        x, y = 1, 2             ->  {"x", "y"}
+        import os.path          ->  {"os"}
+    """
     if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return {statement.name}
     names = set()
@@ -78,6 +93,14 @@ def _defined_names(statement: ast.stmt) -> set[str]:
 
 
 def _needed_when_defined(function: Function, annotated_lazily: bool) -> set[str]:
+    """The names read when ``function`` is defined, not when it runs: its decorators, its
+    defaults and — unless ``from __future__ import annotations`` defers them — its argument
+    and return annotations. Moving it above the statement that binds one would break it.
+
+        @retry(LIMIT)
+        def call(x: Order = DEFAULT) -> Answer: ...     ->  {"retry", "LIMIT", "Order",
+                                                             "DEFAULT", "Answer"}
+    """
     parts: list[ast.expr] = [
         *function.decorator_list,
         *function.args.defaults,
@@ -116,6 +139,8 @@ def _uses(function: Function, names: set[str], inside_a_class: bool) -> set[str]
 
 
 def _items(lines: list[str], body: list[ast.stmt]) -> list[Item]:
+    """Each statement of ``body`` as an ``Item`` — starting at its first decorator, and
+    taking the comment lines right above it at its own indentation, so they move with it."""
     items = []
     for statement in body:
         decorators = getattr(statement, "decorator_list", None)
@@ -133,6 +158,22 @@ def _items(lines: list[str], body: list[ast.stmt]) -> list[Item]:
 def _reordered_body(
     lines: list[str], body: list[ast.stmt], inside_a_class: bool, annotated_lazily: bool
 ) -> tuple[int, int, list[str]] | None:
+    """The edit that puts one body's functions in dependency order — ``(first, last, text)``
+    to replace ``lines[first:last]`` with — or ``None`` when nothing moves.
+
+    Context: inside a class a use is ``self.name`` or ``cls.name``; at module level it is a
+    bare ``name``. Only functions defined once and not dunder take part.
+
+    1. The body is split into items; the movable functions and who uses whom are indexed.
+    2. Until nothing moves (2000 rounds at most):
+       2.1 the first caller, from the top, that uses a function defined below it is found;
+       2.2 that function moves to just above the caller — unless the two reach each other,
+           its decorator registers something, or a name it needs while defined is bound
+           between the two places;
+       2.3 one move per round, then the positions are read again.
+    3. Final: the items are written back in the new order into the slots of the old one —
+       the blank and stray lines between slots stay where they were.
+    """
     items = _items(lines, body)
     counted: dict[str, int] = {}
     for item in items:
@@ -156,6 +197,7 @@ def _reordered_body(
     }
 
     def reaches(origin: str, target: str, seen: set[str]) -> bool:
+        """Whether `origin` uses `target`, directly or through others — a depth-first walk."""
         for step in graph.get(origin, ()):
             if step == target:
                 return True
@@ -214,6 +256,15 @@ def _reordered_body(
 
 
 def _one_pass(source: str) -> str:
+    """Reorder the module body and every class body once.
+
+    1. Whether ``from __future__ import annotations`` is on decides if annotations count as
+       needed at definition time.
+    2. The module body and each class body, nested ones too, are reordered on their own.
+    3. Final: only the innermost edits are applied, from the bottom of the file up so the
+       line numbers of the others still hold; an outer edit that contains one waits for the
+       next pass, read from the new source.
+    """
     lines = source.split("\n")
     tree = ast.parse(source)
     annotated_lazily = any(
@@ -225,6 +276,7 @@ def _one_pass(source: str) -> str:
     edits: list[tuple[int, int, list[str]]] = []
 
     def visit(body: list[ast.stmt], inside_a_class: bool) -> None:
+        """Collect the edit of `body`, then of every class body inside it."""
         edit = _reordered_body(lines, body, inside_a_class, annotated_lazily)
         if edit:
             edits.append(edit)
@@ -251,6 +303,12 @@ def in_dependency_order(source: str) -> str:
 
     >>> in_dependency_order("def use():\\n    return base()\\n\\n\\ndef base():\\n    return 1\\n")
     'def base():\\n    return 1\\n\\n\\ndef use():\\n    return base()\\n'
+
+        in_dependency_order(already_ordered)   ->  already_ordered, the same text
+        two functions that call each other     ->  left where they are: no order exists
+
+    Pass after pass until a pass changes nothing — at most twelve, so a source that never
+    settles is answered as the last pass left it.
     """
     for _ in range(12):
         ordered = _one_pass(source)

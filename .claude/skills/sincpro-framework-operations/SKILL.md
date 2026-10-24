@@ -78,7 +78,7 @@ CronProcess) needs only the stdlib. `sincpro_framework.data_layer.migrations` (`
 port; `adapters/` InMemoryEngine; `manifest` meta_migration.json; `orchestrator` Migrations;
 `entrypoint/` command_line) needs no database. Optional extras: `AlembicEngine` in
 `sincpro_framework.data_layer.orm` (`[migrations]` = sqlalchemy + alembic); the Redis/Valkey or
-Memcached store behind `KeyValueRuns` (`sincpro_framework.data_layer.caching.adapters.redis` /
+Memcached store behind `KeyValueRuns` (`sincpro_framework.store.adapters.redis` /
 `.memcached`, extras `[redis]` / `[memcached]`).
 
 **In a consumer service** (one `UseFramework` bus per bounded context, created in

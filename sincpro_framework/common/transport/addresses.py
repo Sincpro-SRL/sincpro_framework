@@ -192,7 +192,14 @@ class HostedAt:
     @classmethod
     def of(cls, value: object) -> "HostedAt":
         """`value` as an address — one already built, or one written as a URL; anything else is
-        refused."""
+        refused.
+
+            HostedAt.of(address)                    ->  address, the same object
+            HostedAt.of("http://catalog:8080")      ->  HostedAt(Wire.HTTP, "catalog:8080")
+            HostedAt.of(8080)   ->  raises InvalidAddress("8080 is not an address — …")
+
+        Context: a URL is read by `parse`, so it is refused for the same reasons it is there.
+        """
         if isinstance(value, HostedAt):
             return value
         if isinstance(value, str):
@@ -220,6 +227,14 @@ def _seconds(value: float) -> str:
 def _number(
     written: str, options: dict[str, list[str]], name: str, default: float, unit: str = ""
 ) -> float:
+    """One numeric option of an address's query, or `default` when it is not written.
+
+        "grpc://host:50051?timeout=2.5", {"timeout": ["2.5"]}, "timeout", 5.0   ->  2.5
+        "…?timeout=soon", {"timeout": ["soon"]}, "timeout", 5.0   ->  InvalidAddress
+            'grpc://…': timeout=soon is not a number — write ?timeout=5
+
+    The first value wins when the option is repeated; `unit` is said in the refusal.
+    """
     if name not in options:
         return default
     raw = options[name][0]

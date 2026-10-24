@@ -38,12 +38,16 @@ class RecordingProvider(AuthProvider):
     `inner`, what the identity's permissions say."""
 
     def __init__(self, inner: AuthProvider | None = None, name: str | None = None) -> None:
+        """Wrap `inner`, taking its `name` and `needs_body` so a chain treats the recording as
+        the provider it wraps; with no `inner` it is named `"recording"`."""
         self.inner = inner
         self.name = name or (inner.name if inner is not None else "recording")
         self.needs_body = inner.needs_body if inner is not None else False
         self.asked: list[tuple[Any, ...]] = []
 
     def authenticate(self, credentials: Credentials) -> Identity | None:
+        """Keep `("authenticate", transport)` — never the secret — and answer what `inner`
+        answers; with no `inner`, `None`: these credentials are not its kind."""
         self.asked.append(("authenticate", credentials.transport))
         return self.inner.authenticate(credentials) if self.inner is not None else None
 
@@ -54,6 +58,8 @@ class RecordingProvider(AuthProvider):
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> bool:
+        """Keep `("has_permission", subject, permission)` and answer what `inner` answers;
+        with no `inner`, the port's default — the permissions the identity carries."""
         self.asked.append(("has_permission", identity.subject, permission))
         if self.inner is not None:
             return self.inner.has_permission(identity, permission, resource, context)

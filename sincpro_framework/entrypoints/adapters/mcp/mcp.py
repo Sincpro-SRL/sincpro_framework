@@ -53,6 +53,11 @@ def tool_function(
 ) -> Callable[..., Any]:
     """Build a typed function FastMCP 3 inspects to generate the MCP schema.
 
+        fn = tool_function(CommandIssueInvoice, "issue_invoice", "Issue an invoice.",
+                           operation.run, billing)
+        inspect.signature(fn)       ->  (*, amount: int, customer_id: str) -> dict[str, Any]
+        fn(amount=10, customer_id="C-1")                   ->  {"invoice_id": "F-1", ...}
+
     1. Forward keyword arguments to `run` — the bus, DTO validation inside — acting as whoever
        called, authenticated by `bus`'s `AccessControl` when a bus is given.
     2. Stamp a keyword-only signature from the Command's fields so FastMCP sees
@@ -67,6 +72,11 @@ def tool_function(
     """
 
     def tool_fn(**kwargs: Any) -> dict[str, Any]:
+        """One tool call: the arguments as the payload `run` validates, run as whoever called
+        and — given a bus — inside its context opened as an MCP entrypoint.
+
+            tool_fn(amount=10, customer_id="C-1")  ->  {"invoice_id": "F-1", ...}
+        """
         from sincpro_framework.entrypoints.adapters.mcp.auth import acting_for_tool_call
 
         with acting_for_tool_call(bus):

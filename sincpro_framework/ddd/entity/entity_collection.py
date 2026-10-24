@@ -29,6 +29,7 @@ class Count(DataTransferObject):
     exact: bool
 
     def __str__(self) -> str:
+        """`"42"` when exact, `"10000+"` when it is a floor."""
         return str(self.value) if self.exact else f"{self.value}+"
 
 
@@ -47,8 +48,12 @@ def identity_name(aggregate: type) -> str:
     """The name of the identity field: the first one declared, the convention `identity_of`
     reads by, for a dataclass or a pydantic model alike.
 
-    >>> identity_name(Dataset)
-    'dataset_id'
+        identity_name(Dataset)     ->  "dataset_id"    # its first field, dataclass or model
+        identity_name(Invoice)     ->  "id"            # an Entity's first field is `id`
+        identity_name(int)         ->  raises TypeError("int declares no identity")
+
+    Context: a class that is neither a dataclass nor a model with fields has no identity to
+    read, and saying so beats keying records by something arbitrary.
     """
     if is_dataclass(aggregate):
         return fields(aggregate)[0].name
@@ -63,8 +68,11 @@ def identity_of(record: Any) -> Any:
     has to be registered. Works over a dataclass and a pydantic model alike, because making
     those two share a base class would be a migration demanded by a convenience.
 
-    >>> identity_of(Dataset(dataset_id="ds_1", ...))
-    'ds_1'
+        identity_of(Dataset(dataset_id="ds_1", ...))   ->  "ds_1"
+        identity_of(Invoice(id="0192…", ...))          ->  "0192…"
+        identity_of("ds_1")                            ->  "ds_1"   # not a record: itself
+
+    A value that is neither a dataclass nor a model is its own identity — an id already.
     """
     if is_dataclass(record):
         return getattr(record, fields(record)[0].name)
@@ -150,6 +158,7 @@ class Changes[T]:
     unchanged: tuple[T, ...] = ()
 
     def __repr__(self) -> str:
+        """How many in each bucket, never the records: `Changes(added=2, removed=1, …)`."""
         return (
             f"Changes(added={len(self.added)}, removed={len(self.removed)}, "
             f"changed={len(self.changed)}, unchanged={len(self.unchanged)})"
@@ -209,15 +218,19 @@ class EntityCollection[T]:
         )
 
     def __len__(self) -> int:
+        """How many records are held — this page, never the total (`count` is that)."""
         return len(self.items)
 
     def __iter__(self) -> Iterator[T]:
+        """The records held, in order."""
         return iter(self.items)
 
     def __bool__(self) -> bool:
+        """Whether any record is held — an empty page is falsy even when `count` says more."""
         return bool(self.items)
 
     def __getitem__(self, index: int) -> T:
+        """The record at this position of the page."""
         return self.items[index]
 
     def __or__(self, other: "EntityCollection[T]") -> "EntityCollection[T]":
@@ -311,8 +324,12 @@ class EntityCollection[T]:
         """Context: which aggregate this collection is of, read off the generic parameter the
         subclass already declares. `None` for the plain `EntityCollection`, which holds anything.
 
-        >>> Datasets.holds()      # class Datasets(EntityCollection[Dataset])
-        <class 'Dataset'>
+            Datasets.holds()           ->  Dataset
+            EntityCollection.holds()   ->  None
+            # class Datasets(EntityCollection[Dataset])
+
+        A subclass of `Datasets` that declares no parameter of its own answers `Dataset` too:
+        it reads the generic bases it inherits.
         """
         for base in getattr(cls, "__orig_bases__", ()):
             if get_origin(base) is EntityCollection or base is EntityCollection:
@@ -393,8 +410,10 @@ class EntityCollection[T]:
     ) -> tuple["EntityCollection[T]", "EntityCollection[T]"]:
         """Those that match and those that do not, in one pass and in order.
 
-        in      EntityCollection([a(1), b(9), c(2)]), lambda x: x.size < 5
-        out     (EntityCollection([a, c]), EntityCollection([b]))
+            EntityCollection([a(1), b(9), c(2)]).partition(lambda x: x.size < 5)
+                ->  (EntityCollection([a, c]), EntityCollection([b]))
+
+        Both halves are derived collections, as `filtered` answers: no cursor, no count.
         """
         yes: list[T] = []
         no: list[T] = []

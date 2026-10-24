@@ -19,6 +19,7 @@ class BusIncomesMixin:
         def name(self) -> str: ...
 
     def _init_incomes(self) -> None:
+        """The incomes of this bus, named after it — handed to both layer buses when built."""
         self._incomes = Incomes(self.name)
 
     def on_start(

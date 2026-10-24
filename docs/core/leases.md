@@ -11,8 +11,8 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 ```python
 from datetime import timedelta
 
-from sincpro_framework.common.store import InMemoryKeyValue, Leases, LeaseState
-from sincpro_framework.common.store import exceptions as store_exceptions
+from sincpro_framework.store import InMemoryKeyValue, Leases, LeaseState
+from sincpro_framework.store.domain import exceptions as store_exceptions
 
 leases = Leases(InMemoryKeyValue())                    # RedisKeyValue, DynamoKeyValue on replicas
 
@@ -92,7 +92,7 @@ class CommandReadFile(DataTransferObject):
 
 
 imports = UseFramework("imports-leased", log_after_execution=False)
-imports.context_store(InMemoryContexts())
+imports.store_context_in(InMemoryContexts())
 
 
 @imports.feature(CommandReadFile)

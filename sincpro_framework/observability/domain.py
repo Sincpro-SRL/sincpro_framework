@@ -4,6 +4,13 @@ Two things every backend asks for and used to resolve on its own: **who is
 emitting** (``ObservabilityIdentity``) and **whether a backend came up**
 (``ComponentStatus``). Resolving them once, here, is what keeps the GlitchTip
 release and the Tempo ``service.name`` from drifting apart.
+
+    identity = ObservabilityIdentity(artifact="registry.example.com/team/sincpro-odoo:18.5.0")
+    identity.service_name      ->  "sincpro-odoo"
+    identity.service_version   ->  "18.5.0"
+    identity.release           ->  "registry.example.com/team/sincpro-odoo:18.5.0"
+    on("installed")            ->  ComponentStatus(active=True, state="on",
+                                                   reason="installed")
 """
 
 import importlib.metadata
@@ -101,6 +108,11 @@ class ObservabilityIdentity(BaseModel):
 
     @property
     def service_version(self) -> str:
+        """The version out of the release — the image tag or what follows `@` — or the one a
+        library gave apart; empty when none is known.
+
+            "sincpro-odoo:18.5.0"  ->  "18.5.0"        "sincpro-odoo@sha256:ab…"  ->  ""
+        """
         return self._split()[1]
 
 
@@ -137,6 +149,13 @@ def describing_attributes(identity: ObservabilityIdentity) -> dict[str, str]:
 
     Context: `Resource.create` puts explicit attributes over `OTEL_RESOURCE_ATTRIBUTES`; left
     in, a derived value would silently replace the one the operator chose.
+
+        describing_attributes(ObservabilityIdentity(artifact="sincpro-odoo:18.5.0"))
+            ->  {"service.version": "18.5.0", "release": "sincpro-odoo:18.5.0",
+                 "tenant": "acme"}                                    # TENANT=acme
+        OTEL_RESOURCE_ATTRIBUTES="tenant=acme"   ->  the same, without "tenant"
+
+    An unknown artifact gives no `release`; no version, no `service.version`.
     """
     declared = declared_resource_keys()
     attributes: dict[str, str] = {}
@@ -153,7 +172,20 @@ def describing_attributes(identity: ObservabilityIdentity) -> dict[str, str]:
 def log_fields(identity: ObservabilityIdentity) -> dict[str, str]:
     """Who a log line comes from and for whom, on the line itself: the same release, service,
     version and tenant the spans, the metrics and GlitchTip carry — readable without the
-    collector's labels. The tenant and the user are the execution's (PRD_03 §4.10)."""
+    collector's labels. The tenant and the user are the execution's (PRD_03 §4.10).
+
+        log_fields(ObservabilityIdentity(artifact="sincpro-odoo:18.5.0"))
+            ->  {"service_name": "sincpro-odoo", "service_version": "18.5.0",
+                 "release": "sincpro-odoo:18.5.0", "tenant": "acme", "user_id": "u7"}
+        log_fields(ObservabilityIdentity(bus="billing"))   ->  {"service_name": "billing"}
+
+    1. `service_name` always — the bus stands in when no artifact resolved.
+    2. `service_version` when a version is known.
+    3. `release` when an artifact resolved.
+    4. `tenant`: the execution's (`correlation.tenant`), when there is one.
+    5. `user_id`: who the execution acts for, when known.
+    Final: the fields, never a blank one.
+    """
     from sincpro_framework.observability import correlation
     from sincpro_framework.observability.correlation import user_id
 
@@ -187,18 +219,28 @@ class ObservabilityStatus(BaseModel):
 
 
 def on(reason: str) -> ComponentStatus:
+    """A backend that came up — `reason` says how (`installed`, `host`)."""
     return ComponentStatus(active=True, state="on", reason=reason)
 
 
 def off(reason: str) -> ComponentStatus:
+    """A backend left down on purpose or for lack of something — `sdk_missing`,
+    `no_endpoint` — not an error."""
     return ComponentStatus(active=False, state="off", reason=reason)
 
 
 def failed(reason: str) -> ComponentStatus:
+    """A backend that tried to come up and could not — `reason` says why."""
     return ComponentStatus(active=False, state="failed", reason=reason)
 
 
 def failure_of(exc: BaseException) -> ComponentStatus:
+    """A `failed` status out of the exception that broke a backend's setup: its message, or
+    its type when the message is empty, cut to 200 characters for a log line.
+
+        failure_of(ConnectionError("refused"))
+            ->  ComponentStatus(active=False, state="failed", reason="refused")
+    """
     text = str(exc).strip() or exc.__class__.__name__
     if len(text) > 200:
         text = text[:197] + "..."
@@ -285,6 +327,17 @@ def caller_module() -> str:
     Must be read while that frame is still on the stack (at ``UseFramework``
     construction). Resolved later, from a request, the stack belongs to the host
     application and this would name Odoo instead of the library.
+
+        # in sincpro_siat_soap/bus.py:  UseFramework("siat") -> Observability(...)
+        caller_module()   ->  "sincpro_siat_soap.bus"
+        caller_module()   ->  ""                        # only framework frames on the stack
+
+    1. Walk the stack outward, skipping this function's own frame.
+    2. For each frame:
+       2.1 a frame with no module, or a module with no name, is skipped;
+       2.2 `sincpro_framework` or one of its submodules is skipped.
+    3. The first other module's name is the answer.
+    Final: `""` when none is found or reading the stack fails.
     """
     try:
         for frame_info in inspect.stack(0)[1:]:
@@ -355,6 +408,13 @@ def resolve_identity(
     bus: str, package: str = "", version: str = "", module_name: str = ""
 ) -> ObservabilityIdentity:
     """Resolve who is emitting. The first source that names an artifact wins.
+
+        resolve_identity("siat", module_name="sincpro_siat_soap.bus")
+            ->  ObservabilityIdentity(artifact="sincpro-siat-soap", version="8.0.4",
+                                      bus="siat")
+        resolve_identity("")   ->  ObservabilityIdentity(artifact="unknown", version="",
+                                                         bus="sincpro_framework")
+                                   # nothing installed, no APP_RELEASE, no OTEL_SERVICE_NAME
 
     1. What the caller declared explicitly — rarely used, an escape hatch.
     2. The library that built the bus, by the module → distribution convention.

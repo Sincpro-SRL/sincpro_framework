@@ -15,6 +15,8 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class Measure(StrEnum):
+    """Which of the three decorators declared it — what the bus does with the run's value."""
+
     COUNTS = "counts"
     """One more for each successful run."""
     SUMS = "sums"
@@ -24,6 +26,14 @@ class Measure(StrEnum):
 
 
 class Declaration(DataTransferObject):
+    """One metric a use case declared with a decorator — what it measures, read off which
+    field, by which labels; its name is derived when the bus first records it.
+
+        @metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency)
+            ->  Declaration(measure=SUMS, value=of(ResponseIssueInvoice).total,
+                            labels=(of(CommandIssueInvoice).currency,))
+    """
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     measure: Measure

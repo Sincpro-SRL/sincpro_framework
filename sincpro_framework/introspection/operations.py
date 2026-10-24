@@ -1,6 +1,13 @@
 """What a bus can execute, with the schema of each input and response — read off the live bus, so
 a workflow is checked against what really runs, and an agent writes one against what really
-exists."""
+exists.
+
+    operations = operations_of(billing)
+    quote = operations["CommandQuote"]
+    quote.required_input    ->  {"amount"}
+    quote.response_fields   ->  {"total", "currency"}
+    quote.to_json()         ->  {"description": "...", "input": {...}, "response": {...}}
+"""
 
 from dataclasses import dataclass
 from typing import Any
@@ -13,6 +20,9 @@ from sincpro_framework.use_bus import UseFramework
 
 @dataclass(frozen=True)
 class Operation:
+    """One Command the bus executes: its name, its input model, what it answers, and the
+    description its handler gives."""
+
     name: str
     input: type[BaseModel]
     response: Any
@@ -24,7 +34,15 @@ class Operation:
     @property
     def response_fields(self) -> set[str] | None:
         """The fields a later step may reference; `None` when the response is not declared, so
-        they cannot be checked."""
+        they cannot be checked.
+
+            Operation(response=ResponseInvoice, …).response_fields  ->  {"id", "total", …}
+            Operation(response=NoneType, …).response_fields         ->  set()  # no answer
+            Operation(response=None, …).response_fields             ->  None   # undeclared
+            Operation(response=dict[str, int], …).response_fields   ->  None   # no model
+
+        Only a Pydantic model has fields to name; any other declared type is as unknown.
+        """
         if self.response is type(None):
             return set()
         if isinstance(self.response, type) and issubclass(self.response, BaseModel):
@@ -33,11 +51,14 @@ class Operation:
 
     @property
     def required_input(self) -> set[str]:
+        """The input fields with no default — what a workflow step must fill."""
         return {
             name for name, field in self.input.model_fields.items() if field.is_required()
         }
 
     def to_json(self) -> dict[str, Any]:
+        """The operation as JSON Schema, for an agent or a UI — `response` is `None` unless it
+        is a Pydantic model."""
         is_model = isinstance(self.response, type) and issubclass(self.response, BaseModel)
         return {
             "description": self.description,

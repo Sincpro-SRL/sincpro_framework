@@ -120,6 +120,11 @@ class Problem(BaseModel):
 
 
 def _pointer(location: Sequence[Any]) -> str:
+    """A validation error's location as a JSON pointer into the DTO (RFC 6901) — where the
+    value came from (`body`, `query`, ...) dropped, `~` and `/` escaped.
+
+        _pointer(("body", "lines", 0, "amount"))  ->  "#/lines/0/amount"
+    """
     parts = list(location)
     if parts and parts[0] in ("body", "query", "path", "header", "cookie"):
         parts = parts[1:]
@@ -127,6 +132,13 @@ def _pointer(location: Sequence[Any]) -> str:
 
 
 def _errors(errors: Iterable[Mapping[str, Any]]) -> list[dict[str, str]]:
+    """Pydantic's or FastAPI's errors as a problem's `errors` — a pointer and a message each.
+
+        _errors([{"loc": ("body", "total"), "msg": "Field required"}])
+        ->  [{"pointer": "#/total", "detail": "Field required"}]
+
+    Each `loc` becomes a JSON pointer (`_pointer`).
+    """
     return [
         {"pointer": _pointer(one.get("loc", ())), "detail": str(one.get("msg", ""))}
         for one in errors
@@ -145,6 +157,8 @@ def _trace_id(request: Request) -> str | None:
 
 
 def _challenges(request: Request) -> list[str]:
+    """The `WWW-Authenticate` challenges of a 401 — those of the buses the request called
+    (noted by `bus_call`), `Bearer` when none says one."""
     buses = getattr(request.state, BUSES_STATE, None) or ()
     return challenges_of(buses) or ["Bearer"]
 
@@ -157,6 +171,15 @@ def _body(
     detail: str | None,
     **extensions: Any,
 ) -> dict[str, Any]:
+    """A problem's body: the RFC 9457 members, `kind`, `reason`, the trace, and each
+    extension that holds a value.
+
+        _body(request, FailureKind.NOT_FOUND, 404, "INVOICE_NOT_FOUND", "F-9 does not exist")
+        ->  {"type": "urn:sincpro:problem:not_found", "title": "Not found", "status": 404,
+             "instance": "/v1/billing/invoices/F-9", "kind": "not_found",
+             "reason": "INVOICE_NOT_FOUND", "trace_id": "4bf9…",
+             "detail": "F-9 does not exist"}
+    """
     body: dict[str, Any] = {
         "type": f"urn:sincpro:problem:{kind.value}",
         "title": TITLE_OF[kind],
@@ -173,6 +196,7 @@ def _body(
 
 
 def _answer(body: dict[str, Any], headers: Mapping[str, str] | None = None) -> JSONResponse:
+    """The problem as a response — its own status, `application/problem+json`."""
     return JSONResponse(
         body, status_code=body["status"], headers=dict(headers or {}), media_type=PROBLEM_JSON
     )
@@ -180,6 +204,14 @@ def _answer(body: dict[str, Any], headers: Mapping[str, str] | None = None) -> J
 
 def problem_of(request: Request, error: Exception) -> JSONResponse:
     """The answer to `error`, raised anywhere a request is served.
+
+        problem_of(request, InvoiceNotFound("F-9 does not exist"))
+        ->  404 {"kind": "not_found", "reason": "INVOICE_NOT_FOUND",
+                 "detail": "F-9 does not exist", ...}
+        problem_of(request, HTTPException(405, headers={"Allow": "GET"}))
+        ->  405 {"title": "Method Not Allowed", "reason": "METHOD_NOT_ALLOWED", ...}, Allow
+        problem_of(request, RuntimeError("postgres://admin:pw@db"))
+        ->  500 {"kind": "internal", ...} — no detail; logged here
 
     1. What could not be read — FastAPI's JSON error, a query string that is not JSON, a
        missing `Idempotency-Key` — is a 400; what does not validate a 422, each field pointed.
@@ -292,17 +324,26 @@ class ProblemMiddleware:
     Context: pure ASGI, so a streamed response already started is left alone (re-raised)."""
 
     def __init__(self, app: Asgi) -> None:
+        """Wrap `app` — what Starlette hands a middleware added with `add_middleware`."""
         self.app = app
 
     async def __call__(
         self, scope: MutableMapping[str, Any], receive: Receive, send: Send
     ) -> None:
+        """Serve one ASGI call, answering a failure as a problem while nothing was sent yet.
+
+        1. Anything but HTTP (lifespan, websocket) passes through untouched.
+        2. `send` is watched: once the response has started, a failure is re-raised — a
+           second start would break the protocol.
+        Final: a failure before that answers `problem_of(request, error)`.
+        """
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
         started = False
 
         async def sending(message: MutableMapping[str, Any]) -> None:
+            """`send`, noting when the response starts."""
             nonlocal started
             if message["type"] == "http.response.start":
                 started = True
@@ -317,6 +358,12 @@ class ProblemMiddleware:
 
 
 def _referenced(node: Any) -> set[str]:
+    """The name of every schema a `$ref` points at anywhere in `node`, nested lists and dicts
+    walked.
+
+        _referenced({"a": {"$ref": "#/components/schemas/Problem"}, "b": [{"$ref": "#/X"}]})
+        ->  {"Problem", "X"}
+    """
     found: set[str] = set()
     if isinstance(node, dict):
         for key, value in node.items():
@@ -333,7 +380,23 @@ def _referenced(node: Any) -> set[str]:
 def problem_document(document: dict[str, Any]) -> dict[str, Any]:
     """The document with `Problem` in its components, every response FastAPI described with its
     `HTTPValidationError` answered as a problem, each operation's security schemes lifted into
-    `components/securitySchemes`, and a body without its path fields put in place. Running it twice changes nothing.
+    `components/securitySchemes`, and a body without its path fields put in place. Running it
+    twice changes nothing.
+
+        problem_document({"paths": {"/invoices": {"post": {"responses": {"422":
+            {"content": {"application/json": {"schema":
+                {"$ref": "#/components/schemas/HTTPValidationError"}}}}}}}}})
+        ->  the same, its 422 as {"application/problem+json": {"schema":
+            {"$ref": "#/components/schemas/Problem"}}}, `Problem` in components/schemas
+
+    1. `Problem` and the models it nests into `components/schemas`.
+    2. Per operation:
+       2.1 its `x-sincpro-security-schemes` popped and gathered;
+       2.2 its `x-sincpro-request-body` put in place of FastAPI's body schema;
+       2.3 a response FastAPI described with `HTTPValidationError` answered as
+           `application/problem+json`.
+    3. The gathered schemes into `components/securitySchemes`.
+    Final: `HTTPValidationError` and `ValidationError` dropped when nothing points at them.
     """
     components = document.setdefault("components", {})
     schemas = components.setdefault("schemas", {})
@@ -368,16 +431,21 @@ def problem_document(document: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _handled(request: Request, error: Exception) -> JSONResponse:
+    """`problem_of` as a FastAPI exception handler — which must be async."""
     return problem_of(request, error)
 
 
 def install_problem_handlers(app: FastAPI) -> FastAPI:
     """Every failure of `app` answered as a problem, and its document saying so.
 
+        install_problem_handlers(FastAPI())   ->  the same app, problems answered
+        GET /nowhere                          ->  404 application/problem+json
+
     1. `RequestValidationError` and Starlette's `HTTPException` — 404 and 405 too.
     2. `ProblemMiddleware` for anything else: a domain refusal, an auth refusal, an idempotency
        refusal, a 500.
-    3. Final: `app.openapi` wrapped by `problem_document`.
+    3. `app.openapi` wrapped by `problem_document`.
+    Final: the app marked as installed — what `FastApiGateway.verify` checks.
     """
     app.add_exception_handler(RequestValidationError, _handled)
     app.add_exception_handler(starlette.exceptions.HTTPException, _handled)
@@ -385,6 +453,7 @@ def install_problem_handlers(app: FastAPI) -> FastAPI:
     generate = app.openapi
 
     def openapi() -> dict[str, Any]:
+        """FastAPI's document, then `problem_document` over it."""
         return problem_document(generate())
 
     app.openapi = openapi  # pyright: ignore[reportAttributeAccessIssue]
@@ -393,6 +462,15 @@ def install_problem_handlers(app: FastAPI) -> FastAPI:
 
 
 def problem_response(description: str) -> dict[str, Any]:
+    """One entry of an operation's `responses=`: `description`, answered as a `Problem`.
+
+        problem_response("Not found")
+        ->  {"description": "Not found",
+             "content": {"application/problem+json":
+                         {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+
+    The schema is referenced, so a document carries `Problem` once.
+    """
     return {
         "description": description,
         "content": {PROBLEM_JSON: {"schema": {"$ref": PROBLEM_REF}}},

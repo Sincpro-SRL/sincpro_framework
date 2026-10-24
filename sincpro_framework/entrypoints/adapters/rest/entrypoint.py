@@ -52,6 +52,18 @@ DOCS_PAGE = """<!doctype html>
 
 
 class RestGateway(Gateway):
+    """The REST wire on Starlette — every published use case a route, the whole described by
+    one OpenAPI 3.1 document.
+
+    Context: the catalog wire of PRD_12 — it names no `wire`, so it publishes every use case
+    of its layers with no declaration; `FastApiGateway` is the declared one. Its route table
+    and its document are built without a web library; Starlette is only what serves them.
+
+        RestGateway([billing], prefix="/api/v1").rest_routes()
+        ->  [RestRoute(path="/api/v1/billing/command-issue-invoice", methods=("POST",), ...),
+             RestRoute(path="/api/v1/billing/query-invoices", methods=("GET", "POST"), ...)]
+    """
+
     def __init__(
         self,
         instances: Buses | None = None,
@@ -67,11 +79,19 @@ class RestGateway(Gateway):
         super().__init__(instances, layers, title, version)
 
     def validate_alias(self, alias: str) -> str:
+        """An alias is a path segment: letters, digits, `_` and `-`, not starting with a
+        symbol — refused with `ValueError` otherwise."""
         if not ALIAS_PATTERN.match(alias):
             raise ValueError(f"REST alias [{alias}] must match {ALIAS_PATTERN.pattern}")
         return alias
 
     def alias_for(self, framework_instance: UseFramework) -> str:
+        """The bus's name with anything a path segment refuses turned into `-`.
+
+            alias_for(<bus "billing.v2">)  ->  "billing-v2"
+
+        What a bus added without an alias is published under.
+        """
         return re.sub(r"[^A-Za-z0-9_-]", "-", framework_instance.name)
 
     def route(self, dto: type | str, spec: str) -> "RestGateway":
@@ -86,9 +106,13 @@ class RestGateway(Gateway):
         return build_routes(self.operations(), self._prefix, self._overrides)
 
     def openapi(self, servers: Iterable[str] = ()) -> dict[str, Any]:
+        """The OpenAPI 3.1 document of `rest_routes()` — what `/openapi.json` serves;
+        `servers` are the base URLs a generated client may call."""
         return openapi_document(self._title, self._version, self.rest_routes(), servers)
 
     def challenges(self) -> list[str]:
+        """The `WWW-Authenticate` challenges a 401 carries — one per provider of the guarded
+        buses."""
         return challenges_of(self.buses())
 
     def call(
@@ -99,7 +123,15 @@ class RestGateway(Gateway):
         credentials: Credentials | None = None,
     ) -> tuple[int, Any]:
         """One call of `route`, answered as `(status, body)` — what a web library turns into a
-        response; the transport-free path a test or another host takes."""
+        response; the transport-free path a test or another host takes.
+
+            gateway.call(<POST /billing/command-issue-invoice>, {"total": 10})
+            ->  (200, {"invoice_id": "F-1", "total": 10})
+            gateway.call(<same route>, {"total": "ten"})
+            ->  (422, {"error": {"kind": "invalid", "detail": [...]}})
+
+        A 500 is logged here unless a bus already reported it; the body never says why.
+        """
         try:
             return 200, execute(
                 route.bus,
@@ -116,6 +148,16 @@ class RestGateway(Gateway):
             return status, {"error": body}
 
     async def _payload(self, request: Any, route: RestRoute) -> dict[str, Any]:
+        """The payload a request carries for `route`, before any validation — the DTO's.
+
+            GET  /billing/invoices/F-9?status=open
+            ->  {"status": "open", "invoice_id": "F-9"}
+            POST /billing/command-issue-invoice  {"total": 10}  ->  {"total": 10}
+
+        1. `GET`: the query string, each non-plain field decoded from JSON.
+        2. Any other method: the body, a JSON object — or `InvalidRequest` (400).
+        Final: the path's fields over either.
+        """
         if request.method == "GET":
             payload = payload_from_query(
                 dict(request.query_params), route.operation.json_schema
@@ -139,7 +181,23 @@ class RestGateway(Gateway):
         health_path: str | None = "/healthz",
     ) -> list[Any]:
         """This gateway's Starlette routes, mountable into any app — every use case, and, unless
-        `None`, the OpenAPI document, its docs page and a health check."""
+        `None`, the OpenAPI document, its docs page and a health check.
+
+            gateway.routes()
+            ->  [Route("/billing/command-issue-invoice", methods=["POST"]), ...,
+                 Route("/openapi.json"), Route("/docs"), Route("/healthz")]
+            gateway.routes(openapi_path=None, health_path=None)  ->  the use cases only
+
+        1. Starlette imported — refused with the extra-install hint without it.
+        2. One `Route` per REST route, named by its `operationId`, whose endpoint:
+           2.1 reads the payload (`_payload`) — an unreadable one answered 400;
+           2.2 merges the context the caller carried (`merge_http_context`);
+           2.3 runs `call` in a worker thread, with the request's credentials;
+           2.4 answers its `(status, body)` as JSON — a 401 with the challenges.
+        3. The OpenAPI document at `openapi_path`, built per request.
+        4. The Swagger UI page at `docs_path` — only when there is a document to read.
+        Final: the health check at `health_path` — 200 `ok`, or 503 `unhealthy`.
+        """
         try:
             from starlette.requests import Request  # pyright: ignore[reportMissingImports]
             from starlette.responses import (  # pyright: ignore[reportMissingImports]
@@ -152,7 +210,17 @@ class RestGateway(Gateway):
         gateway = self
 
         def endpoint(route: RestRoute) -> Any:
+            """The Starlette endpoint of one route."""
+
             async def answer(request: Request) -> JSONResponse:
+                """Answer one request on this route.
+
+                1. The payload out of the request — a 400 when it cannot be read.
+                2. The context the caller carried (`merge_http_context`).
+                3. `gateway.call` in a worker thread, with the request's credentials.
+                Final: its `(status, body)` as JSON — a 401 with the buses' challenges in
+                `WWW-Authenticate`.
+                """
                 try:
                     payload = await gateway._payload(request, route)
                 except exceptions.InvalidRequest as error:
@@ -185,6 +253,7 @@ class RestGateway(Gateway):
         if openapi_path is not None:
 
             async def document(_request: Request) -> JSONResponse:
+                """The OpenAPI document, built per request — it follows the catalog."""
                 return JSONResponse(gateway.openapi())
 
             served.append(Route(openapi_path, document, methods=["GET"]))
@@ -192,12 +261,14 @@ class RestGateway(Gateway):
             page = DOCS_PAGE.format(title=self._title, openapi=openapi_path)
 
             async def docs(_request: Request) -> HTMLResponse:
+                """A Swagger UI page reading `openapi_path`."""
                 return HTMLResponse(page)
 
             served.append(Route(docs_path, docs, methods=["GET"]))
         if health_path is not None:
 
             async def health(_request: Request) -> JSONResponse:
+                """200 `{"status": "ok"}` while every bus is built, else 503 `unhealthy`."""
                 healthy = gateway.is_healthy()
                 return JSONResponse(
                     {"status": "ok" if healthy else "unhealthy"},
@@ -228,6 +299,8 @@ class RestGateway(Gateway):
         )
 
     def run(self, host: str = "127.0.0.1", port: int = 8080, **kwargs: Any) -> None:
+        """Serve `app()` with uvicorn until stopped — a quick start; a deployment serves
+        `app()` with its own server and settings. `kwargs` go to `uvicorn.run`."""
         try:
             import uvicorn  # pyright: ignore[reportMissingImports]
         except ImportError as error:
@@ -242,4 +315,8 @@ def build_rest_app(
     version: str = "1.0.0",
     prefix: str = "",
 ) -> Any:
+    """`RestGateway(...).app()` in one call — the buses served alone, nothing to compose.
+
+    uvicorn.run(build_rest_app([billing], prefix="/api/v1"))
+    """
     return RestGateway(instances, layers, title, version, prefix).app()

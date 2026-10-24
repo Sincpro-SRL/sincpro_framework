@@ -60,6 +60,8 @@ RECORDED = "_recorded_events"
 
 @lru_cache(maxsize=None)
 def json_serializer(cls: type) -> TypeAdapter:
+    """The pydantic `TypeAdapter` of a dataclass, built once per class — building one is the
+    expensive part of dumping or reading an entity or an event as JSON."""
     return TypeAdapter(cls)
 
 
@@ -101,8 +103,15 @@ calls it."""
 def reserved_fields(declared: type) -> dict[str, str]:
     """The fields of `declared` the framework writes, each with the class that declares it.
 
-    in      Spec(Entity)                        →  {"id": "Entity", …, "version": "Entity"}
-    in      Client(ArchivableMixin, Entity)     →  … plus {"archived_at": "ArchivableMixin"}
+        reserved_fields(Spec)      # class Spec(Entity)
+            ->  {"id": "Entity", "created_at": "Entity", "updated_at": "Entity",
+                 "version": "Entity"}
+        reserved_fields(Client)    # class Client(ArchivableMixin, Entity)
+            ->  {"archived_at": "ArchivableMixin", "id": "Entity", …, "version": "Entity"}
+
+    Context: only the framework's own classes in the MRO count — `Entity` and its mixins; a
+    project's base entity, or another entity it inherits from, declares fields of its own.
+    The first class to declare a name keeps it; a class variable is no field.
     """
     found: dict[str, str] = {}
     for owner in declared.__mro__[1:]:

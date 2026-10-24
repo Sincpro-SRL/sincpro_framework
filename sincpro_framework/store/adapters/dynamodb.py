@@ -27,7 +27,7 @@ from datetime import timedelta
 from typing import Any
 
 from sincpro_framework.common.aws import aws_client
-from sincpro_framework.common.store import KeyValueStore
+from sincpro_framework.store.domain.key_value import KeyValueStore
 
 KEY = "key"
 VALUE = "value"
@@ -38,11 +38,20 @@ BATCH = 100
 
 
 def _conditional_failure(error: Exception) -> bool:
+    """Whether `error` is DynamoDB refusing a write's condition — botocore's `ClientError`
+    read by its code, so this module never imports botocore.
+
+    Context: a refused condition is an answer (`add` lost, `replace` saw another value), not a
+    failure; every other error is raised.
+    """
     response = getattr(error, "response", None) or {}
     return response.get("Error", {}).get("Code") == "ConditionalCheckFailedException"
 
 
 class DynamoKeyValue(KeyValueStore):
+    """The `KeyValueStore` port on one DynamoDB table, expiry checked against `clock` on every
+    read."""
+
     def __init__(
         self,
         table: str,
@@ -58,6 +67,12 @@ class DynamoKeyValue(KeyValueStore):
         self.clock = clock
 
     def _key(self, key: str) -> dict[str, Any]:
+        """The item's partition key, prefixed.
+
+            _key("a")  ->  {"key": {"S": "billing:a"}}
+
+        The prefix keeps the services that share one table apart.
+        """
         return {KEY: {"S": self.prefix + key}}
 
     def _live(self, item: dict[str, Any] | None) -> bytes | None:
@@ -74,6 +89,8 @@ class DynamoKeyValue(KeyValueStore):
         return None
 
     def _item(self, key: str, value: bytes, ttl: timedelta | None) -> dict[str, Any]:
+        """The item a put writes: the key, the bytes, and `expires_at` in epoch seconds when
+        there is a ttl — never zero or less, so a zero ttl still expires rather than lives."""
         item: dict[str, Any] = {**self._key(key), VALUE: {"B": value}}
         if ttl is not None:
             item[EXPIRES_AT] = {"N": str(self.clock() + max(ttl.total_seconds(), 0.001))}
@@ -81,7 +98,16 @@ class DynamoKeyValue(KeyValueStore):
 
     def get_many(self, keys: list[str]) -> list[bytes | None]:
         """`BatchGetItem` by hundreds, strongly consistent, again for what DynamoDB left
-        unprocessed."""
+        unprocessed.
+
+            store.get_many(["open", "tripped", "open"])   ->  [b"1729…", None, b"1729…"]
+
+        1. The keys prefixed and each asked once, in the order first named.
+        2. By batches of 100 (`BATCH`), `ConsistentRead`:
+           2.1 each item found is read as live or not (`_live`) — expired, `None`;
+           2.2 what DynamoDB left in `UnprocessedKeys` is asked again, until nothing is.
+        Final: one answer per key asked, in its order — `None` for a key with no item.
+        """
         with self._reaching():
             found: dict[str, bytes | None] = {}
             unique = list(dict.fromkeys(self.prefix + key for key in keys))
@@ -100,11 +126,17 @@ class DynamoKeyValue(KeyValueStore):
             return [found.get(self.prefix + key) for key in keys]
 
     def set(self, key: str, value: bytes, ttl: timedelta | None = None) -> None:
+        """An unconditional `PutItem` — it replaces whatever the item held, a counter too."""
         with self._reaching():
             self.client.put_item(TableName=self.table, Item=self._item(key, value, ttl))
 
     def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
-        """Written when the key is absent or its time passed — one conditional `PutItem`."""
+        """Written when the key is absent or its time passed — one conditional `PutItem`.
+
+            store.add("probe", b"1", timedelta(seconds=30))   ->  True    # nobody held it
+            store.add("probe", b"1", timedelta(seconds=30))   ->  False   # held, still live
+
+        A refused condition is the answer `False`; any other error of DynamoDB is raised."""
         with self._reaching():
             try:
                 self.client.put_item(
@@ -122,7 +154,20 @@ class DynamoKeyValue(KeyValueStore):
 
     def increment(self, key: str) -> int:
         """`ADD` on a live counter; an expired one is deleted first — by whoever gets there
-        first, the others find it gone — and counted again from zero."""
+        first, the others find it gone — and counted again from zero.
+
+        1. `UpdateItem ADD count 1`, on the condition that the item has no expiry or it is
+           still ahead — a missing item is created at 1.
+        2. The condition refused: the item expired. Deleted on the condition that it still is,
+           a refusal there meaning another caller already cleared or renewed it; back to 1.
+        Final: the counter after this caller's addition.
+
+            store.increment("failures")   ->  1        # no item: created at 1
+            store.increment("failures")   ->  2
+            store.increment("failures")   ->  1        # its expires_at had passed
+
+        It loops until an `ADD` passes; only an error that is not a refused condition leaves.
+        """
         with self._reaching():
             while True:
                 try:
@@ -155,6 +200,7 @@ class DynamoKeyValue(KeyValueStore):
                         raise
 
     def delete(self, key: str) -> None:
+        """An unconditional `DeleteItem` — nothing happens when the item is not there."""
         with self._reaching():
             self.client.delete_item(TableName=self.table, Key=self._key(key))
 
@@ -170,7 +216,13 @@ class DynamoKeyValue(KeyValueStore):
         self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
     ) -> bool:
         """A `PutItem` — a `DeleteItem` for `None` — on the condition that the item is live and
-        holds `expected`: one conditional write, so of many racing exactly one passes."""
+        holds `expected`: one conditional write, so of many racing exactly one passes.
+
+            store.replace("lease", b"owner-a", b"owner-b", timedelta(seconds=30))  ->  True
+            store.replace("lease", b"owner-a", None)   ->  False   # it holds owner-b now
+            store.replace("gone", b"x", b"y")          ->  False   # no item, or expired
+
+        A refused condition is the answer `False`; any other error of DynamoDB is raised."""
         condition = {
             "ConditionExpression": "#v = :expected AND (attribute_not_exists(#e) OR #e > :now)",
             "ExpressionAttributeNames": {"#v": VALUE, "#e": EXPIRES_AT},

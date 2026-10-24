@@ -21,6 +21,12 @@ FLUSHING = "sincpro_flushing"
 
 @contextmanager
 def only(session: Session, records: Iterable[Any]) -> Generator[None]:
+    """While the block runs, `goes_out` answers true only for `records` — by identity, so
+    an unhashable record is fine.
+
+        with only(session, [invoice]):
+            flush_only(session, [invoice])     the stamping touches `invoice` alone
+    """
     session.info[FLUSHING] = {id(one) for one in records}
     try:
         yield

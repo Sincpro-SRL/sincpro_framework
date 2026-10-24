@@ -37,6 +37,8 @@ class Outcomes:
     """The outcomes of one bus: who hears them, and announcing one."""
 
     def __init__(self, bus: str) -> None:
+        """Nobody listening yet, but the process's listeners of completions and of failures:
+        they hear every bus."""
         self.bus = bus
         """The bounded context whose use cases it announces."""
         self.completed = Listeners(process=completions)
@@ -46,7 +48,14 @@ class Outcomes:
         self, error: BaseException, dto: Any, level: str, node: "ContextNode"
     ) -> None:
         """The use case `error` was raised in — the innermost one, left on the exception for
-        whoever announces it when it escapes."""
+        whoever announces it when it escapes.
+
+            failed_in(ValueError("x"), CommandPay(...), "feature", node)
+            ->  None; the error carries FailedAt(bus="billing", level="feature", ...)
+            failed_in(<same error, again in its application service>)  ->  None, kept as was
+
+        A node with no execution, or an exception that takes no attribute, is left untouched.
+        """
         if node.execution is None or hasattr(error, FAILED_AT):
             return
         try:
@@ -59,7 +68,13 @@ class Outcomes:
             pass
 
     def answered(self, dto: Any, response: Any, level: str, node: "ContextNode") -> None:
-        """1. Nobody hears: nothing is built.
+        """Announce that a use case answered `response` for `dto` — to whoever listens.
+
+            answered(CommandPay(amount=10), ResponsePay(id="p1"), "feature", node)
+            ->  None; listeners heard ExecutionCompleted(response={"id": "p1"},
+                response_type="ResponsePay")
+
+        1. Nobody hears: nothing is built.
         2. The event of the execution, with what it was handed and what it gave — never one for
            an execution event: hearing one is not announced.
         Final: each listener, in turn, never raising — announcing never replaces the response.
@@ -91,6 +106,10 @@ class Outcomes:
 
     def escaped(self, error: BaseException, dto: Any, fault: bool | None = None) -> None:
         """The exception that left the whole call, told where the caller receives it.
+
+            escaped(<ValueError failed in billing.CommandPay>, CommandCheckout(...))
+            ->  None; billing's listeners heard ExecutionFailed(use_case="billing.CommandPay",
+                error_type="ValueError", kind="internal", ...) and the error carries its id
 
         1. Where it first failed — the use case, its bus, its execution — else the call itself.
         2. Nobody hears the bus it failed in, nor the process: nothing is built.

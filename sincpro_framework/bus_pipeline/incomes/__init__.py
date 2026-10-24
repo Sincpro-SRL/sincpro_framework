@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
+    """`ExecutionStarted`, imported on first use — see the module's last note."""
     if name == "ExecutionStarted":
         from sincpro_framework.bus_pipeline.incomes import events
 

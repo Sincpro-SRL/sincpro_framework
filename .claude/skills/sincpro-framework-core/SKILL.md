@@ -288,4 +288,4 @@ on them.
 - Bootstrap, hard rules, DTO/dependency typing: `sincpro-framework`
 - Metrics, traces, errors reporting, `with_trace`: `sincpro-framework-observability`
 - Auth is the outermost interceptor: `sincpro-framework-auth`
-- Real idempotency and query caching: `sincpro-framework-caching`
+- Real idempotency and query caching — `bus.cache`, `bus.cache.queries(Query)`, `bus.idempotency` on every bus, kept where its context is kept: `sincpro-framework-caching`

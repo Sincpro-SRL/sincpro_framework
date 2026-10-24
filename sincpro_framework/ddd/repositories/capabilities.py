@@ -129,7 +129,20 @@ class ReadsAggregates(ABC):
         for_update: bool = False,
         skip_locked: bool = False,
         nowait: bool = False,
-    ) -> EntityCollection: ...
+    ) -> EntityCollection:
+        """One page of the aggregates the criteria matches — the reading most screens make.
+
+        The page is the criteria's `pagination` (fifty rows unless it says otherwise), never
+        the whole table: a result whose size nobody bounded is `fetch_all` or `stream`, said
+        by name. A collection class as `target` answers that class, so a domain collection
+        keeps its own methods.
+
+            repository.search(Invoice, Criteria(where=Condition(field="total", operator=">",
+                                                                 value=100)))
+            ->  EntityCollection(50 records of 197, more)     `cursor` resumes the next page
+
+        `for_update`, `skip_locked` and `nowait` claim the rows as `get` claims one.
+        """
 
     def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
         """One key for every read of `target` that answers the same rows, whatever page it asks
@@ -139,7 +152,15 @@ class ReadsAggregates(ABC):
         return fingerprint_of(model, criteria or Criteria())
 
     @abstractmethod
-    def count(self, target: type, criteria: Criteria | None = None) -> Count: ...
+    def count(self, target: type, criteria: Criteria | None = None) -> Count:
+        """How many aggregates the criteria matches, page and order aside.
+
+        The answer is a `Count`: a store may stop counting at a ceiling so the cost does not
+        grow with the table, and then says `exact=False` — at least that many.
+
+            repository.count(Invoice, Criteria.where("state", "=", "open"))
+            ->  Count(value=42, exact=True)
+        """
 
     @overload
     def browse[C: EntityCollection](self, target: type[C], ids: Sequence[Any]) -> C: ...

@@ -60,7 +60,19 @@ class MemoryUnit:
 
 def restored(stored: dict[type, dict[Any, Any]], key: Key, before: Any) -> None:
     """The record under `key` as it was: the object the store holds keeps its identity and takes
-    the values it had, so whoever holds it sees them too; one the block added is gone."""
+    the values it had, so whoever holds it sees them too; one the block added is gone.
+
+        before: Invoice(id="F-1", total=500); the block set total = 900 on that object
+        restored(stored, (Invoice, "F-1"), copy_before)
+            ->  None; the same object, its total 500 again
+        restored(stored, (Invoice, "F-9"), ABSENT)   ->  None; F-9, added by the block, gone
+
+    1. The records stored of the key's class.
+    2. Nothing before the block: the record is removed.
+    3. The store still holds an object of the same class with attributes: its attributes
+       replaced by the ones it had.
+    Final: otherwise the copy from before takes its place.
+    """
     kind, identity = key
     held = stored.setdefault(kind, {})
     if before is ABSENT:
@@ -88,12 +100,26 @@ class RowLocks:
     """The rows each block holds, across the threads of the process."""
 
     def __init__(self) -> None:
+        """No row held; one condition wakes every waiter when any row is let go of."""
         self._held: dict[Key, MemoryUnit] = {}
         self._changed = threading.Condition()
 
     def claim(self, unit: MemoryUnit, key: Key, skip_locked: bool, nowait: bool) -> bool:
         """Whether `unit` holds the row now: it waits for another block's, unless told to pass
-        over it (`False`) or to refuse at once."""
+        over it (`False`) or to refuse at once.
+
+            locks.claim(unit_a, (Invoice, "F-1"), False, False)   ->  True, unit_a holds it
+            locks.claim(unit_a, (Invoice, "F-1"), False, False)   ->  True, already its own
+            locks.claim(unit_b, (Invoice, "F-1"), True, False)    ->  False, passed over
+            locks.claim(unit_b, (Invoice, "F-1"), False, True)    ->  TimedOut, at once
+            locks.claim(unit_b, (Invoice, "F-1"), False, False)   ->  True once unit_a ends
+
+        1. While another unit holds the row:
+           1.1 `skip_locked` — `False`, the row passed over;
+           1.2 `nowait`, or waits that add up to `WAIT_FOR_A_ROW` seconds — `TimedOut`;
+           1.3 otherwise wait to be woken, at most 0.05 s at a time.
+        Final: the row held by `unit` and noted among its claims — `True`.
+        """
         with self._changed:
             waited = 0.0
             while self._held.get(key) not in (None, unit):
@@ -110,6 +136,13 @@ class RowLocks:
             return True
 
     def release(self, unit: MemoryUnit) -> None:
+        """Every row `unit` holds let go, and every block waiting on one woken to try again —
+        what the end of a transaction does to its row locks, commit or rollback alike.
+
+            locks.release(unit_a)   ->  None; (Invoice, "F-1") free, unit_b's wait claims it
+
+        A row another unit took over is left to that unit: only what `unit` still holds goes.
+        """
         with self._changed:
             for key in unit.claimed:
                 if self._held.get(key) is unit:

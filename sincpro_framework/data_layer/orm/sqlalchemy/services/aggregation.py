@@ -79,6 +79,22 @@ def measure_columns(
       not have**. It is refused here, by name, rather than reaching the database and coming
       back as "no such function": a caller reading that message would look for the bug in the
       wrong place.
+
+        measure_columns(Invoice, meta, {"total": ("sum", "total"),
+                                        "clients": ("count_distinct", "client_id")}, "sqlite")
+            ->  [sum(invoice.total) AS total, count(DISTINCT invoice.client_id) AS clients]
+        measure_columns(Invoice, meta, {"mid": ("median", "total")}, "sqlite")
+            ->  InvalidCriteria("'sqlite' does not compute percentiles; …")
+
+    1. Each measure read as `Measure.read` writes it, and its field checked on the model.
+    2. Its column, then by function:
+       2.1 `count_distinct` — `count(DISTINCT column)`;
+       2.2 `percentile` and `median` — refused on a dialect without them, otherwise
+           `percentile_cont(fraction) WITHIN GROUP (ORDER BY column)`, 0.5 for the median;
+       2.3 `bool_and` and `bool_or` — refused over a field that is not boolean, otherwise in
+           the dialect's own words (`_boolean_fold`);
+       2.4 anything else — `func.<function>(column)`.
+    Final: the columns, each labelled with its measure's name, in the order given.
     """
     columns = []
     for name, written in measures.items():
@@ -143,9 +159,14 @@ def where_measures_clause(grouping: Grouping, measures: dict[str, Any]) -> Any:
 def group_order(grouping: Grouping, keys: list[Any], measures: dict[str, Any]) -> list[Any]:
     """How the groups of a level come back: by its own columns, or by what they folded.
 
-    in      nothing asked                    →  out  the group columns, ascending
-    in      Sort(count, descending=True)     →  out  count(*) DESC
-    in      Sort("debit", descending=True)   →  out  sum(debit) DESC
+        keys [journal_id], measures {"debit": sum(debit), "count": count(*)}
+        nothing asked                  ->  [journal_id]       the group columns as they are
+        order count, descending        ->  [count(*) DESC]
+        order "debit", descending      ->  [sum(debit) DESC]
+        order "journal_id"             ->  [journal_id ASC]
+
+    A name that is neither a measure, `count`, nor a level of the grouping is refused as
+    `InvalidCriteria`.
     """
     if not grouping.order:
         return list(keys)
@@ -183,6 +204,15 @@ def ids_per_group(
     wants, and the specification never runs for rows nobody will look at. The cursor per
     group is minted from the sort values of its last id, so going on inside the group is an
     ordinary `search` with `bucket.criteria.resuming_from(bucket.cursor)`.
+
+    1. The criteria's order, as sorts and as clauses; the group columns labelled.
+    2. The inner select: the sort columns, the group columns, each row's position in its
+       group under that order, and its group's total — over the rows `clause` keeps.
+    3. The outer select keeps the first `criteria.limit` rows of each group, ordered by group
+       then position.
+    4. Each row read: its ids appended under its group's path; the group's last row kept.
+    Final: per group, its ids and a cursor minted from its last row — `None` when the page
+    already holds every row of the group.
     """
     sorts = sql_translator.ordering_for(criteria, meta)
     order = sql_translator.order_clauses(model, sorts)
@@ -241,6 +271,18 @@ def filled_levels(
     Each level is completed under every parent it has, parents first, and ordered again by the
     level's own values unless the grouping chose another order: a filled group has no number to
     be placed by, so under a chosen order it follows the groups that have rows.
+
+    1. The criteria's filter as the model accepts it, and the empty value of each measure.
+    2. Each level, top first:
+       2.1 one that does not `fill` is kept as it came;
+       2.2 otherwise the values its axis can take — the field's choices, true and false for
+           a boolean — narrowed by the filter;
+       2.3 its parents: none for the first level, else every distinct path of the level
+           above as completed;
+       2.4 under each parent, each value with no row added as `(*parent, value, 0, *empties)`;
+       2.5 without a chosen order, sorted by the path — `None` last, and by text when the
+           values cannot be compared.
+    Final: every level's rows, filled.
     """
     where, _ = meta.accept(criteria.expression)
     empties = [empty_measure(measure) for measure in grouping.measures.values()]
@@ -404,7 +446,16 @@ def pivot_cells(
     folded: list[Any],
     measures: dict[str, str],
 ) -> list[PivotCell]:
-    """One `GROUP BY` over whichever axes were handed in; no axis at all is the total."""
+    """One `GROUP BY` over whichever axes were handed in; no axis at all is the total.
+
+        rows [journal_id], columns [month], measures {"debit": "sum(debit)"}
+            ->  [PivotCell(row=[1], column=["2026-08"], count=4, measures={"debit": 400}),
+                 PivotCell(row=[1], column=["2026-09"], count=2, measures={"debit": 150}), …]
+        no rows, no columns
+            ->  [PivotCell(row=[], column=[], count=6, measures={"debit": 550})]
+
+    The cells come ordered by the row axes, then the column axes.
+    """
     keys = [*row_columns, *column_columns]
     statement = select(*keys, func.count(), *folded).select_from(model)
     if clause is not None:

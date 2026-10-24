@@ -19,7 +19,7 @@ class CommandEditInvoice(Edit[Invoice, ResponseEditInvoice]):
 class InvoiceForms(EntityEdits[Invoice]):     # an EntityReads too: the form's reads and edits
     pass
 
-billing.context_store(KeyValueContexts(RedisKeyValue(redis)))   # drafts live where the context does
+billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))   # drafts live where the context does
 ```
 
 ## 2. The client's calls

@@ -19,11 +19,26 @@ from sincpro_framework.runtime.runtime_use_cases import RuntimeUseCase, UseCaseS
 
 
 class SqlUseCases(UseCaseStore):
+    """Stored use cases in `table` on `database` — shared by every replica that reads it."""
+
     def __init__(self, database: Database, table: Table) -> None:
+        """`table` is the one `template_table.use_case_table` declares on the
+        project's `MetaData`."""
         self.database = database
         self.table = table
 
     def active(self) -> list[RuntimeUseCase]:
+        """The active use cases, in the order they were first saved (`position`) — a row
+        saved again keeps its place.
+
+            store.save(RuntimeUseCase(name="discount", source=..., version=1))
+            store.save(RuntimeUseCase(name="tax", source=..., version=1))
+            store.save(RuntimeUseCase(name="discount", source=..., version=2))
+            [one.name for one in store.active()]      ->  ["discount", "tax"]
+            [one.version for one in store.active()]   ->  [2, 1]
+
+        A row saved with `active=False` is kept in the table and left out here.
+        """
         table = self.table
         query = select(table).where(table.c.active.is_(True)).order_by(table.c.position)
         with self.database.session() as session:
@@ -40,7 +55,15 @@ class SqlUseCases(UseCaseStore):
         ]
 
     def save(self, use_case: RuntimeUseCase) -> None:
-        """Update the row under the use case's name, or add it after the last one."""
+        """Update the row under the use case's name, or add it after the last one.
+
+            store.save(RuntimeUseCase(name="tax", source=...))              ->  position 1
+            store.save(RuntimeUseCase(name="fee", source=...))              ->  position 2
+            store.save(RuntimeUseCase(name="tax", source=..., version=2))   ->  still 1
+
+        One session: the row looked up by name, then updated — or inserted at the highest
+        position plus one — and `saved_at` set to now either way.
+        """
         table = self.table
         values = {
             "source": use_case.source,

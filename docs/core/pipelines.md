@@ -45,7 +45,7 @@ class StepAnswer(DataTransferObject):
 
 
 billing = UseFramework("billing-pipelines", log_after_execution=False)
-billing.context_store(InMemoryContexts())                  # where the runs are kept
+billing.store_context_in(InMemoryContexts())                  # where the runs are kept
 credit = {"enough": False}
 did: list[str] = []
 
@@ -135,29 +135,31 @@ assert [(one.run_id, one.state) for one in kept] == [("2026-10-23", PipelineStat
 
 | Where | How |
 |---|---|
-| The memory of the process | `bus.context_store(InMemoryContexts())` — and with no store at all, the same, said once in the logs |
-| Redis, Valkey, Memcached | `bus.context_store(KeyValueContexts(RedisKeyValue(redis)))` |
-| A project's own storage | its own `ContextStore`, with its entries — `keep_entry`, `entry`, `discard_entry`, `entries` |
+| The memory of the process | `bus.store_context_in(InMemoryContexts())` — and with no store at all, the same, said once in the logs |
+| Redis, Valkey, Memcached | `bus.store_context_in(KeyValueContexts(RedisKeyValue(redis)))` |
+| A project's own storage | its own `ContextStore`, with its entries — `save_entry`, `get_entry`, `delete_entry`, `list_entries` |
 
 There is no store of pipelines: whatever keeps the context keeps the runs. A run lasts the store's
-`kept_ttl` from its last write. Every write names the version it read, and a second writer of the
+`entry_ttl` from its last write. Every write names the version it read, and a second writer of the
 same run — another replica — loses with `EntryConflict` instead of overwriting it in silence; the
 run that lost fails, out loud. The run being driven is kept on its own execution, so each change of
 a step is one write to the store and no read.
 
 ## Whose a run is
 
-The context says, by the rule a draft uses — and it serves every shape a system has:
+The context says, by exactly the keys `owned_by` names — `BY_TENANT` by default — and it serves
+every shape a system has:
 
 | The context says | The owner of a run |
 |---|---|
 | nothing: no tenant, no user | `tenant_id=,tenant_ids=` |
 | a tenant | `tenant_id=acme,tenant_ids=` |
-| a user — with `owned_by = ("user_id",)` | `tenant_id=acme,tenant_ids=,user_id=ana` |
+| a user — with `owned_by = BY_TENANT_AND_USER` | `tenant_id=acme,tenant_ids=,user_id=ana` |
+| nobody — with `owned_by = ()` | (empty): one run of a `run_id` for everybody |
 | a user across several tenants | `tenant_id=,tenant_ids=acme\|globex,user_id=ana` |
 
-A value that is `None`, empty or missing says nothing. The tenant keys always take part, so a run
-never crosses tenants; the keys of `owned_by` are whatever else a project says a run belongs to.
+A value that is `None`, empty or missing says nothing. With the default a run never crosses tenants;
+`owned_by` says whatever else — or less — a project wants a run to belong to.
 Values are encoded: no value is ever read as a separator.
 
 ## What a run says about everything it executes
@@ -240,7 +242,7 @@ class GatewayBusy(Exception):
 
 busy = {"times": 2}
 retrying = UseFramework("billing-retry", log_after_execution=False)
-retrying.context_store(InMemoryContexts())
+retrying.store_context_in(InMemoryContexts())
 
 
 @retrying.feature(CommandCollect)
@@ -282,7 +284,7 @@ class CommandRunApproved(DataTransferObject):
 
 
 approvals = UseFramework("billing-approvals", log_after_execution=False)
-approvals.context_store(InMemoryContexts())
+approvals.store_context_in(InMemoryContexts())
 billed: list[str] = []
 
 

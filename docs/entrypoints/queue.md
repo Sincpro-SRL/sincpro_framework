@@ -144,7 +144,7 @@ Before the bus runs, the delivery is claimed as `inbox:{context.Command}:{source
 
 ```text
 from sincpro_framework.data_layer.caching import KeyValueRecords
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
+from sincpro_framework.store.adapters.redis import RedisKeyValue
 QueueOptions(inbox=KeyValueRecords(RedisKeyValue(...)))   # shared across replicas
 QueueOptions(inbox=None)                                  # off
 ```

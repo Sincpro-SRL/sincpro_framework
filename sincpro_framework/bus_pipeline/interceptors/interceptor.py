@@ -24,6 +24,10 @@ type Interceptor = Callable[[Any, CallNext[Any]], Any]
 
 @dataclass(frozen=True)
 class InterceptorRegistration:
+    """One `@bus.interceptor(...)` as it was asked: the function, the Commands it wraps and
+    where it goes in the order — kept as asked, so the order is worked out again at each build
+    with every interceptor registered by then."""
+
     interceptor: Interceptor
     commands: tuple[type, ...]
     """Empty means every Command of the bus."""
@@ -34,43 +38,68 @@ class InterceptorRegistration:
 
     @property
     def placement(self) -> Placement:
+        """Its place in the order, as `common.ordering` reads it for every extension point."""
         return Placement(
             self.interceptor, self.sequence, self.before, self.after, self.replaces
         )
 
     @property
     def name(self) -> str:
+        """The interceptor's name, for a log line or refusal: `billing.hooks.credit_check`."""
         return name_of(self.interceptor)
 
     def wraps(self, command: type) -> bool:
+        """Whether it runs around `command` — every Command when it named none.
+
+        InterceptorRegistration(audit, ()).wraps(CommandCreateInvoice)          ->  True
+        InterceptorRegistration(check, (CommandPay,)).wraps(CommandCreateInvoice) ->  False
+        """
         return not self.commands or command in self.commands
 
 
 def interceptors_for(
     command: type, registrations: Sequence[InterceptorRegistration]
 ) -> tuple:
+    """The interceptors that wrap `command`, in the order of `registrations` — already
+    ordered, outermost first."""
     return tuple(one.interceptor for one in registrations if one.wraps(command))
 
 
 def run_around(
     interceptors: Sequence[Interceptor], handler: Callable[[Any], Any], dto: Any
 ) -> Any:
-    """Context: the first interceptor is the outermost; the handler is the end.
+    """Run `handler` on `dto` wrapped by `interceptors`, each guarding the type it passes on.
+
+    Context: the first interceptor is the outermost; the handler is the end.
+
+        run_around((), feature.execute, CommandPay(amount=10))  ->  feature.execute's answer
+        run_around((audit, retry), feature.execute, dto)        ->  audit(retry(execute))
+        run_around((<passes CommandRefund on>,), feature.execute, CommandPay(...))
+        ->  ProgrammingError: passed CommandRefund on, but it intercepts CommandPay
 
     1. Each interceptor gets a `call_next` bound to the next position.
     2. What reaches `call_next` must be the class the call started with.
-    3. Final: what an interceptor returns after calling `call_next` must be the class the next
-       one answered with.
+    Final: what an interceptor returns after calling `call_next` must be the class the next
+    one answered with — or anything, when the next one answered `None`.
     """
     command = type(dto)
 
     def call_at(position: int, current: Any) -> Any:
+        """The chain from `position` inward, run on `current`.
+
+        1. Past the last interceptor: the handler answers.
+        2. The interceptor at `position` runs with a `call_next` that refuses a Command of
+           another class, and keeps what the inner chain answered.
+        Final: its result — refused when it called `call_next`, got an answer, and returned
+        something of another class.
+        """
         if position == len(interceptors):
             return handler(current)
         interceptor = interceptors[position]
         answered: list[Any] = []
 
         def call_next(next_dto: Any) -> Any:
+            """The next position, on the Command as this interceptor passes it — same type."""
             if type(next_dto) is not command:
                 raise exceptions.ProgrammingError(
                     f"{name_of(interceptor)} passed {type(next_dto).__name__} on, but it "

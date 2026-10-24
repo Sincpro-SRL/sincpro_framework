@@ -1,3 +1,8 @@
+"""The typed surface of `UseFramework` — what an IDE shows a project: every mixin's methods on
+one class, `bus(dto, ResponseType)` answering that type, `bus.deps` typed by its
+`DependencyContextType`. The implementation is `use_bus.py`.
+"""
+
 from datetime import timedelta
 from typing import (
     Any,
@@ -25,22 +30,24 @@ from .bus_pipeline.interceptors.interceptor import Interceptor
 from .circuits import Circuit
 from .common.transport.addresses import HostedAt
 from .context.domain.level import EntrypointKind
-from .context.domain.store import ContextStore
 from .context.entrypoint.bus import FrameworkContext
 from .context.entrypoint.facade import Context
 from .context.entrypoint.providers import ContextProviderFunction
 from .context.mixins.bus_context import BusContextMixin
+from .data_layer.caching.entrypoint.facades import CacheFacade, IdempotencyFacade
 from .dependencies import TDeps
 from .error_handler import ErrorHandler
 from .remote_execution.entrypoint.hosts import Attach, OpenHost
 from .sincpro_abstractions import DataTransferObject, TypeDTO, TypeDTOResponse
+from .store.domain.store import ContextStore
 
 DTOClass = Type[DataTransferObject] | Type[DataclassInstance]
 DTORegistration = DTOClass | list[DTOClass]
 
 class UseFramework(BusContextMixin, Generic[TDeps]):
     """
-    Main class to use the framework, this is the main entry point to configure the framework.
+    One bounded context's bus — where its use cases are registered, its dependencies
+    wired, and it is called.
 
     Parameterize with ``DependencyContextType`` so ``framework.deps`` is typed::
 
@@ -73,57 +80,37 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         hide_in_logs: Iterable[str] = (),
         metric_labels: Iterable[Any] = (),
     ) -> None:
-        """
-        Initialize the framework.
+        """A bus for the bounded context `bundled_context_name`, built on its first call.
 
-        Args:
-            bundled_context_name: Name of the logger context / GlitchTip app
-            log_after_execution: Enable/disable execution logging
-            log_app_services: Enable/disable application service logging
-            log_features: Enable/disable feature logging
-            package: Optional Poetry distribution name used in Sentry release and OTel service.name
-            hide_in_logs: Context keys kept off every signal (logs, spans, metrics, GlitchTip)
-            metric_labels: Context keys on every metric series — "company" or
-                of(BillingContext).company — beside release, service, version and tenant
+            UseFramework("billing", hide_in_logs=["TOKEN"], metric_labels=["company"])
+
+        The name is its logger, its GlitchTip app and the prefix of its use cases' names.
+        `log_*` silence execution logs (all, or one kind); `package` is the distribution named
+        in the Sentry release and OTel `service.name`; `hide_in_logs` keeps context keys off
+        every signal; `metric_labels` puts context keys on every metric series — a key
+        (`"company"`) or `of(BillingContext).company` — declared before the build.
         """
         ...
     # Improved overloads for framework execution
     @overload
     def __call__(self, dto: TypeDTO, return_type: Type[TypeDTOResponse]) -> TypeDTOResponse:
-        """
-        Execute a DTO with specified return type for better IDE support.
+        """Execute `dto` and answer its response typed as `return_type` — for the IDE; the
+        type is not checked at runtime.
 
-        Args:
-            dto: The Data Transfer Object to execute
-            return_type: The expected response DTO type
-
-        Returns:
-            The response DTO of the specified type
+            billing(CommandIssueInvoice(total=100), ResponseInvoice)  ->  ResponseInvoice
         """
         ...
 
     @overload
     def __call__(self, dto: TypeDTO) -> DataTransferObject | None:
-        """
-        Execute a DTO without specifying return type.
-
-        Args:
-            dto: The Data Transfer Object to execute
-
-        Returns:
-            The response DTO or None if no response
-        """
+        """Execute `dto` and answer what its use case answered — `None` when it answers
+        nothing."""
         ...
 
     def get_async_bus(self) -> AsyncBus:
-        """
-        Return a stateless async facade over this framework's bus.
-
-        Builds the root bus if it wasn't built yet (same lazy behavior as
-        `__call__`). Use this from a caller that is itself `async def` and
-        wants to fan out several DTOs concurrently, e.g. via `asyncio.gather`,
-        without blocking its event loop.
-        """
+        """A stateless async facade over this bus — each call runs on a worker thread, so an
+        `async def` caller fans out DTOs with `asyncio.gather` without blocking its loop. The
+        bus is built on first use, as `__call__` builds it."""
         ...
 
     def build_root_bus(self) -> None:
@@ -139,21 +126,12 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def add_dependency(self, name: str, dep: Any, replaces: Any = None) -> None:
-        """
-        Add a dependency to the framework.
+        """Register `dep` under `name` — every Feature and ApplicationService reads it as
+        `self.<name>`. A name already taken is refused (`DependencyAlreadyRegistered`) unless
+        `replaces` names what is there; naming something else only warns. Added after the
+        build, it reaches the handlers from the next execution.
 
-        The dependency will be injected as an attribute into all Features and ApplicationServices.
-        Added after the bus was built, it reaches them from the next execution.
-
-        Args:
-            name: The attribute name for the dependency
-            dep: The dependency instance, function, or class
-            replaces: The object registered under `name` now, when `dep` takes its place; not
-                the one registered — or nothing — is a warning, and `dep` takes the name
-
-        Raises:
-            DependencyAlreadyRegistered: If the name is already registered and `replaces` is not
-                given
+            billing.add_dependency("cache", RedisCache(...), replaces=memory_cache)
         """
         ...
 
@@ -215,9 +193,9 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def extend(self, extension: Callable[[UseFramework[TDeps]], None]) -> None:
-        """Wire a component into this bus and into every bus `fresh()` makes of it — `extension(bus)`
-        registers its interceptors, dependencies or handlers. After the bus was built, the
-        extension answers from the next execution, whole."""
+        """Wire a component into this bus and into every bus `fresh()` makes of it —
+        `extension(bus)` registers its interceptors, dependencies or handlers. After the bus
+        was built, the extension answers from the next execution, whole."""
         ...
 
     @property
@@ -254,9 +232,15 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     @overload
-    def serve(self, address: str) -> None: ...
+    def serve(self, address: str) -> None:
+        """Host this bounded context at `address`, over gRPC — blocking until it stops."""
+        ...
+
     @overload
-    def serve(self, address: str, attach: Literal[Attach.FOREGROUND]) -> None: ...
+    def serve(self, address: str, attach: Literal[Attach.FOREGROUND]) -> None:
+        """The same, said explicitly: blocking until it stops."""
+        ...
+
     @overload
     def serve(
         self,
@@ -301,7 +285,8 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     def on_start[L: Callable[..., Any]](
         self, listener: L, use_cases: Iterable[type | str] | None = None, when: Any = None
     ) -> L:
-        """Hear every use case of this bus that begins — an `ExecutionStarted`. `use_cases` / `when` hear less."""
+        """Hear every use case of this bus that begins — an `ExecutionStarted`. `use_cases` /
+        `when` hear less."""
         ...
 
     @overload
@@ -317,14 +302,16 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     def publish_starts(
         self, to: Any, use_cases: Iterable[type | str] | None = None, when: Any = None
     ) -> None:
-        """Hand every use case of this bus that begins to `to`, a Publisher. `use_cases` / `when` hand on less."""
+        """Hand every use case of this bus that begins to `to`, a Publisher. `use_cases` /
+        `when` hand on less."""
         ...
 
     @overload
     def on_completion[L: Callable[..., Any]](
         self, listener: L, use_cases: Iterable[type | str] | None = None, when: Any = None
     ) -> L:
-        """Hear every use case of this bus that answered — an `ExecutionCompleted`. `use_cases` / `when` hear less."""
+        """Hear every use case of this bus that answered — an `ExecutionCompleted`.
+        `use_cases` / `when` hear less."""
         ...
 
     @overload
@@ -340,14 +327,16 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     def publish_completions(
         self, to: Any, use_cases: Iterable[type | str] | None = None, when: Any = None
     ) -> None:
-        """Hand every use case of this bus that answered to `to`, a Publisher. `use_cases` / `when` hand on less."""
+        """Hand every use case of this bus that answered to `to`, a Publisher. `use_cases` /
+        `when` hand on less."""
         ...
 
     @overload
     def on_failure[L: Callable[..., Any]](
         self, listener: L, use_cases: Iterable[type | str] | None = None, when: Any = None
     ) -> L:
-        """Hear every failure of this bus that escaped its call — an `ExecutionFailed`. `use_cases` / `when` hear less."""
+        """Hear every failure of this bus that escaped its call — an `ExecutionFailed`.
+        `use_cases` / `when` hear less."""
         ...
 
     @overload
@@ -363,7 +352,8 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     def publish_failures(
         self, to: Any, use_cases: Iterable[type | str] | None = None, when: Any = None
     ) -> None:
-        """Hand every failure of this bus that escaped its call to `to`, a Publisher. `use_cases` / `when` hand on less."""
+        """Hand every failure of this bus that escaped its call to `to`, a Publisher.
+        `use_cases` / `when` hand on less."""
         ...
 
     def execution_ids(self, generator: Callable[[], str]) -> None:
@@ -384,13 +374,14 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         after: Sequence[ErrorHandler] = (),
         sequence: int = 10,
     ) -> None:
-        """
-        Add a global error handler. First registered = first to execute.
+        """Answer any failure of this bus with `handler` — `(error) -> answer`, first
+        registered first; `before` / `after` / `sequence` place it, `replaces` puts it where
+        another was.
 
-        On re-raise the framework delegates to the next handler in the chain.
+        What it returns is the bus's answer and the error is gone; a handler that only watches
+        ends with `raise`, handing the error to the next one — from the last, to the caller.
 
-        Args:
-            handler: An ``ErrorHandler`` callable.
+            billing.add_global_error_handler(not_found)
         """
         ...
 
@@ -402,14 +393,8 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         after: Sequence[ErrorHandler] = (),
         sequence: int = 10,
     ) -> None:
-        """
-        Add an error handler specifically for Feature errors.
-
-        Same composition semantics as ``add_global_error_handler``.
-
-        Args:
-            handler: An ``ErrorHandler`` callable.
-        """
+        """Answer a Feature's failure with `handler` — the same chain rules as
+        `add_global_error_handler`."""
         ...
 
     def add_app_service_error_handler(
@@ -420,14 +405,8 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         after: Sequence[ErrorHandler] = (),
         sequence: int = 10,
     ) -> None:
-        """
-        Add an error handler specifically for ApplicationService errors.
-
-        Same composition semantics as ``add_global_error_handler``.
-
-        Args:
-            handler: An ``ErrorHandler`` callable.
-        """
+        """Answer an ApplicationService's failure with `handler` — the same chain rules as
+        `add_global_error_handler`."""
         ...
 
     def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
@@ -445,7 +424,8 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         span_id: Optional[str] = None,
         carrier: Optional[Mapping[str, Any]] = None,
     ) -> FrameworkSpanContext:
-        """Create a tracing context manager for an execution block."""
+        """Open a trace around a `with` block — every use case run inside is a span of it; the
+        parent is a `carrier`'s `traceparent`, else `trace_id`/`span_id`, else a new root."""
         ...
 
     def with_parent_trace(self) -> FrameworkSpanContext:
@@ -457,21 +437,13 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         context_to_set: Mapping[Any, Any] | None = None,
         global_scope: bool = False,
         kind: EntrypointKind | None = None,
-        restore: str | list[str] | None = None,
-        keep_as: str | None = None,
-        ttl: timedelta | None = None,
-        store: ContextStore | None = None,
     ) -> FrameworkContext:
-        """A scope of this bus for the block — every execution inside reads it.
+        """A scope of this bus for a `with` block: every execution inside reads its values,
+        nothing outside does — `global_scope=True` for every execution of this bus, `kind` for
+        the entrance that opened the flow.
 
-            with framework.context({"user_id": "123", "correlation_id": "abc"}) as app:
-                app(some_dto)
-            with framework.context({"tenant_id": "acme"}, global_scope=True): ...
-            with framework.context(restore=["tenant:acme", f"session:{sid}"]): ...
-            with framework.context(values, keep_as="sale-77", ttl=timedelta(hours=1)): ...
-
-        The first scope of a flow is its entrypoint (`kind`, `DIRECT` by default); `restore` reads
-        what a store kept, under `context_to_set`; `keep_as` keeps what the scope sees.
+            with billing.context({"tenant_id": "acme", "user_id": "ana"}):
+                billing(CommandIssueInvoice(total=100))
         """
         ...
 
@@ -489,18 +461,42 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         """Validate and type what a scope of this bus is opened with against `schema`."""
         ...
 
-    def context_store(
+    def store_context_in(
         self,
         store: ContextStore,
         ttl: timedelta = ...,
         every: timedelta = ...,
     ) -> None:
-        """Share this bus's context through `store` — and keep and restore with it. The API does
-        not change; every node of its executions is kept for `ttl`, what others wrote is read
-        again at most once per `every` (PRD_24)."""
+        """Share this bus's context through `store`, and keep there what the bus keeps beside
+        it — drafts, pipeline runs, leases, `cache`, `idempotency`. The API does not change;
+        every node of its executions is kept for `ttl`, what others wrote is read again at
+        most once per `every`.
+
+            billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))
+        """
+        ...
+
+    def store(self) -> ContextStore:
+        """Where this bounded context keeps what it keeps: its own store
+        (`bus.store_context_in`), else the process's (`store_context_in`), else this process's
+        memory."""
+        ...
+
+    @property
+    def cache(self) -> CacheFacade:
+        """This bounded context's cache, kept where its context is kept — `@billing.cache`,
+        `@billing.cache.ttl(...)`, `.sliding(...)`, `.versioned(...)`, or handed to an
+        adapter.
+        """
+        ...
+
+    @property
+    def idempotency(self) -> IdempotencyFacade:
+        """This bounded context's idempotency, kept where its context is kept —
+        `@billing.idempotency` on a Feature or an ApplicationService."""
         ...
 
     @property
     def logger(self) -> LoggerProxy:
-        """Get the framework logger instance."""
+        """The bounded context's logger — created on first use, named after the bus."""
         ...

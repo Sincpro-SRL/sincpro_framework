@@ -24,7 +24,6 @@ from faststream.redis import RedisBroker, TestRedisBroker
 
 from sincpro_framework import Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Permission
-from sincpro_framework.common.store import InMemoryKeyValue
 from sincpro_framework.data_layer.caching import (
     IdempotencyRecord,
     KeyValueRecords,
@@ -45,6 +44,7 @@ from sincpro_framework.entrypoints.adapters.queue import (
 )
 from sincpro_framework.entrypoints.entrypoint.decorators import queue
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue
+from sincpro_framework.store import InMemoryKeyValue
 
 from .test_queue_gateway import (
     ISSUE_CHANNEL,

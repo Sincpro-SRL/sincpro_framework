@@ -46,7 +46,18 @@ def _date_read(given: Any, what: str) -> date | datetime:
 def _shifted(
     value: Today | Now | FromContext | Param, anchor: Any, resolution: ResolutionContext
 ) -> Any:
-    """What a value reads, moved by its `plus` and then snapped to its `start_of`."""
+    """What a value reads, moved by its `plus` and then snapped to its `start_of`.
+
+        Today(plus=Span(days=-30), start_of="month"), anchor 2026-03-14  ->  2026-02-01
+
+    1. Neither asked: the anchor as it is — a non-date value passes untouched.
+    2. The anchor read as a date; a naive datetime is taken as UTC.
+    3. `plus` moves it by the span.
+    3.1 `start_of` snaps a datetime in the resolution's zone — "the start of the month" is
+        the local one — and hands it back in UTC.
+    3.2 A date is snapped as it is.
+    Final: the moved, snapped value.
+    """
     if value.plus is None and value.start_of is None:
         return anchor
 
@@ -66,7 +77,22 @@ def _shifted(
 
 
 def value_of(value: Today | Now | FromContext | Param, resolution: ResolutionContext) -> Any:
-    """The literal a dynamic value stands for."""
+    """The literal a dynamic value stands for.
+
+        # now 2026-10-24 15:00 UTC; context {"user": {"id": 7}};
+        # params {"since": "2026-01-01"}
+        value_of(Today(), resolution)                         ->  date(2026, 10, 24)
+        value_of(Today(plus=Span(days=-30), start_of="month"), resolution)
+            ->  date(2026, 9, 1)
+        value_of(Now(), resolution)          ->  datetime(2026, 10, 24, 15, 0, tzinfo=UTC)
+        value_of(FromContext(key="user.id"), resolution)      ->  7
+        value_of(Param(name="since"), resolution)             ->  "2026-01-01"
+        value_of(Param(name="nope"), resolution)
+            ->  InvalidCriteria: the parameters has no 'nope'
+
+    Context: today is the date in the resolution's timezone, now is the instant in UTC; what
+    each reads is then moved and snapped as the value asks (`_shifted`).
+    """
     match value:
         case Today():
             anchor: Any = resolution.now.astimezone(resolution.timezone).date()
@@ -80,7 +106,15 @@ def value_of(value: Today | Now | FromContext | Param, resolution: ResolutionCon
 
 
 def item_of(value: Any, field: str, resolution: ResolutionContext) -> Any:
-    """One value of a condition, read when it is dynamic and left alone when it is not."""
+    """One value of a condition, read when it is dynamic and left alone when it is not.
+
+        item_of(Today(), "made_at", resolution)     ->  date(2026, 10, 24)
+        item_of("SAL", "journal", resolution)       ->  "SAL"
+        item_of(Period(name="this_month"), "made_at", resolution)
+            ->  InvalidCriteria: a period is a range and cannot be one item of a list; …
+
+    Context: a period is a range, so it stands only for a whole `between`, never one item.
+    """
     if isinstance(value, Period):
         raise exceptions.InvalidCriteria(
             f"a period is a range and cannot be one item of a list; '{field}' asked for it so"

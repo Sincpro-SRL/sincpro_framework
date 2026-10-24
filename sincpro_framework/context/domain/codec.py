@@ -13,8 +13,22 @@ from typing import Any
 
 
 class ContextCodec(ABC):
-    @abstractmethod
-    def dumps(self, context: Mapping[str, Any]) -> bytes: ...
+    """How a context becomes bytes and comes back — the one choice between reaching any reader
+    (`PlainCodec`) and getting the same values back as themselves (`TypedCodec`,
+    `PickleCodec`)."""
 
     @abstractmethod
-    def loads(self, data: bytes) -> dict[str, Any]: ...
+    def dumps(self, context: Mapping[str, Any]) -> bytes:
+        """`context` as bytes a store keeps or a message carries — what `loads` reads
+        back.
+
+            PlainCodec().dumps({"tenant_id": "acme"})  ->  b'{"tenant_id":"acme"}'
+        """
+
+    @abstractmethod
+    def loads(self, data: bytes) -> dict[str, Any]:
+        """The context `data` was written from — as typed as this codec keeps it: plain JSON
+        values, or the values themselves.
+
+            PlainCodec().loads(b'{"tenant_id":"acme"}')  ->  {"tenant_id": "acme"}
+        """

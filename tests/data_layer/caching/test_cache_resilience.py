@@ -13,18 +13,18 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from sincpro_framework import DataTransferObject
-from sincpro_framework.common.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.data_layer.caching import (
     Cache,
     CacheOutcome,
+    CachePolicy,
     CountingObserver,
     ExternalVersion,
     FailSafe,
     JsonCodec,
-    KeepPolicy,
     TimeToLive,
 )
 from sincpro_framework.runtime.testing import ManualClock
+from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
 
 
 class Tenant(DataTransferObject):
@@ -101,7 +101,7 @@ class World:
     source: Source = field(default_factory=Source)
     store: FlakyStore | None = None
 
-    def ask(self, policy: KeepPolicy[Tenant] | None = None, key: str = "tok") -> Tenant:
+    def ask(self, policy: CachePolicy[Tenant] | None = None, key: str = "tok") -> Tenant:
         return self.cache.get_or_compute(
             ("tenant", key), self.source.resolve, policy, self.codec
         )
@@ -126,7 +126,7 @@ def _world(tier: str) -> World:
 
 
 TIERS = ["process", "store"]
-FAIL_SAFE = KeepPolicy[Tenant](
+FAIL_SAFE = CachePolicy[Tenant](
     freshness=TimeToLive(ttl=timedelta(minutes=5)),
     failure=FailSafe(serve_for=timedelta(hours=1), throttle_for=timedelta(seconds=30)),
 )
@@ -197,7 +197,7 @@ def test_a_computation_that_fails_after_the_last_resort_passed_is_the_error(tier
 def test_without_a_failure_policy_nothing_is_served_past_its_servable_life(tier):
     """Serving stale data is a choice, never a surprise: the default raises."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](freshness=TimeToLive(ttl=timedelta(minutes=5)))
+    policy = CachePolicy[Tenant](freshness=TimeToLive(ttl=timedelta(minutes=5)))
     world.ask(policy)
     world.clock.advance(minutes=6)
     world.source.down = True
@@ -211,9 +211,9 @@ def test_a_value_its_validation_rejected_is_never_served_as_a_fallback(tier):
     """Fail-safe covers a source that cannot answer, not one that answered no: a tenant whose
     access the registry revoked is not handed out because recomputing it then failed."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         validation=ExternalVersion(
-            world.source.current_version, kept=lambda one: one.version
+            world.source.current_version, version_of=lambda one: one.version
         ),
         failure=FailSafe(serve_for=timedelta(hours=1)),
     )
@@ -230,9 +230,9 @@ def test_a_value_its_validation_rejected_is_never_served_as_a_fallback(tier):
 def test_a_validation_that_cannot_tell_falls_back_and_spares_the_version_endpoint(tier):
     """A version endpoint timing out is "cannot tell", not "wrong": the policy decides."""
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         validation=ExternalVersion(
-            world.source.current_version, kept=lambda one: one.version
+            world.source.current_version, version_of=lambda one: one.version
         ),
         failure=FailSafe(serve_for=timedelta(hours=1), throttle_for=timedelta(seconds=30)),
     )
@@ -250,8 +250,10 @@ def test_a_validation_that_cannot_tell_falls_back_and_spares_the_version_endpoin
 
 def test_a_validation_that_cannot_tell_is_the_error_without_a_failure_policy():
     world = _world("process")
-    policy = KeepPolicy[Tenant](
-        validation=ExternalVersion(world.source.current_version, kept=lambda one: one.version)
+    policy = CachePolicy[Tenant](
+        validation=ExternalVersion(
+            world.source.current_version, version_of=lambda one: one.version
+        )
     )
     world.ask(policy)
     world.source.version_down = True
@@ -263,7 +265,7 @@ def test_a_validation_that_cannot_tell_is_the_error_without_a_failure_policy():
 def test_an_error_the_policy_does_not_list_is_raised():
     """A timeout is not a 401: `errors` names the failures the last good value stands in for."""
     world = _world("process")
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         freshness=TimeToLive(ttl=timedelta(minutes=5)),
         failure=FailSafe(serve_for=timedelta(hours=1), errors=(TimeoutError,)),
     )
@@ -405,10 +407,10 @@ def test_forgetting_while_the_store_fails_is_an_error_not_a_silent_no_op():
 @pytest.mark.parametrize("tier", TIERS)
 def test_every_call_reports_exactly_one_final_outcome(tier):
     world = _world(tier)
-    policy = KeepPolicy[Tenant](
+    policy = CachePolicy[Tenant](
         freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=5)),
         validation=ExternalVersion(
-            world.source.current_version, kept=lambda one: one.version
+            world.source.current_version, version_of=lambda one: one.version
         ),
         failure=FailSafe(serve_for=timedelta(hours=1)),
         wait_for_others=timedelta(milliseconds=20),

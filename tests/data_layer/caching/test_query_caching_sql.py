@@ -9,8 +9,7 @@ from sqlalchemy import Column, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.common.store import InMemoryKeyValue
-from sincpro_framework.data_layer.caching import CachePolicy, QueryCaching
+from sincpro_framework.data_layer.caching import QueryCachePolicy, QueryCaching
 from sincpro_framework.data_layer.orm import (
     Database,
     Repository,
@@ -19,6 +18,7 @@ from sincpro_framework.data_layer.orm import (
     template_table,
 )
 from sincpro_framework.ddd import Entity
+from sincpro_framework.store import InMemoryKeyValue
 
 
 @dataclass
@@ -87,7 +87,7 @@ def _shop(tmp_path: Path) -> tuple[UseFramework, list[str]]:
             self.repository.save(Shipment(id=dto.shipment_id, carrier="dhl"))
 
     caching = QueryCaching(InMemoryKeyValue())
-    caching.on(shop, QueryOrderCount, CachePolicy(ttl=timedelta(minutes=5)))
+    caching.on(shop, QueryOrderCount, QueryCachePolicy(ttl=timedelta(minutes=5)))
     invalidate_on_commit(database, caching)
     return shop, counted
 

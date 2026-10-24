@@ -4,6 +4,16 @@ running — and the exposure a project declares on its use cases.
 
 Importing this package loads no extra: each wire lives in `adapters/` and is imported by whoever
 serves it.
+
+    from sincpro_framework.entrypoints import rest, rpc
+    from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
+
+    @billing.feature(CommandIssueInvoice)
+    @rest.post("/invoices", status=201)
+    @rpc()
+    class IssueInvoice(Feature): ...
+
+    app = FastApiGateway([billing]).app()    # an ASGI app, returned, never started
 """
 
 from sincpro_framework.entrypoints.domain.bindings import (

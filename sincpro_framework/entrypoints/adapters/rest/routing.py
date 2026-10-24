@@ -60,6 +60,7 @@ class RestRoute:
 
     @property
     def dto_name(self) -> str:
+        """The name of the DTO this route answers — `CommandIssueInvoice`."""
         return self.operation.name
 
 
@@ -79,6 +80,14 @@ def build_routes(
 ) -> list[RestRoute]:
     """Every use case's route. A DTO named on two buses is published under both, its
     `operationId` qualified by the alias so a generated client tells them apart.
+
+        build_routes([("billing", billing, <CommandIssueInvoice>),
+                      ("billing", billing, <QueryInvoice>)], "/api", {})
+        ->  [RestRoute(path="/api/billing/command-issue-invoice", methods=("POST",)),
+             RestRoute(path="/api/billing/query-invoice", methods=("GET", "POST"))]
+        build_routes([...], "", {"QueryInvoice": "GET /billing/invoices/{invoice_id}"})
+        ->  QueryInvoice on GET /billing/invoices/{invoice_id}, path_parameters
+            ("invoice_id",)
 
     1. The route the project gave the DTO, or `{prefix}/{alias}/{kebab(name)}` — GET and POST for
        a `Query`, POST for anything else.
@@ -124,7 +133,14 @@ def build_routes(
 
 def is_plain(schema: Mapping[str, Any]) -> bool:
     """A field the query string carries as itself: a string, a number, a boolean, an enum of
-    them, or an optional one. Anything else travels as JSON."""
+    them, or an optional one. Anything else travels as JSON.
+
+        is_plain({"type": "integer"})                                     ->  True
+        is_plain({"anyOf": [{"type": "string"}, {"type": "null"}]})       ->  True
+        is_plain({"type": "array", "items": {"type": "string"}})          ->  False
+
+    A union is plain only when every member is — `null` aside.
+    """
     if schema.get("type") in PLAIN_TYPES or "enum" in schema or "const" in schema:
         return True
     options = schema.get("anyOf") or schema.get("oneOf")
@@ -136,7 +152,19 @@ def is_plain(schema: Mapping[str, Any]) -> bool:
 def payload_from_query(query: Mapping[str, str], schema: Mapping[str, Any]) -> Scalar:
     """The DTO's values out of a query string — each plain field as it came, pydantic coercing
     it; any other decoded from JSON. A name the DTO does not have is left for validation to
-    refuse."""
+    refuse.
+
+        payload_from_query({"status": "open", "tags": '["a","b"]'}, <schema>)
+        ->  {"status": "open", "tags": ["a", "b"]}
+        payload_from_query({"tags": "a,b"}, <schema>)
+        ->  InvalidRequest: tags is not JSON: Expecting value
+
+    1. The schema's properties.
+    2. For each query value:
+       2.1 a name the DTO does not have, or a plain field (`is_plain`): kept as it came;
+       2.2 any other: decoded from JSON — refused as `InvalidRequest` (400) when it is not.
+    Final: the payload, still to be validated as the DTO.
+    """
     properties = schema.get("properties") or {}
     payload: dict[str, Any] = {}
     for name, value in query.items():
@@ -170,7 +198,18 @@ STATUS_OF = {
 def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
     """The status and body a failure is answered with — its kind (`common.failures`, the same
     on every wire), and the reason for what the caller may read, never the inside of the
-    process. A request that could not be read at all is a 400."""
+    process. A request that could not be read at all is a 400.
+
+        failure_answer(InvalidRequest("the body is not JSON"))
+        ->  (400, {"kind": "invalid", "message": "the body is not JSON"})
+        failure_answer(RuntimeError("db password=..."))
+        ->  (500, {"kind": "internal", "message": "Internal error"})
+
+    1. What could not be read: 400.
+    2. Anything else classified once (`refined_failure_kind`), its status by kind.
+    3. Its body: the validation errors, the auth refusal (`refusal_body`), or the message.
+    Final: an internal failure says nothing of the inside.
+    """
     if isinstance(error, exceptions.InvalidRequest):
         return 400, {"kind": exceptions.FailureKind.INVALID.value, "message": str(error)}
     kind = refined_failure_kind(error)

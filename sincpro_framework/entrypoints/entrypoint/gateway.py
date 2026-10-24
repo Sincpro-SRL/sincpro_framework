@@ -70,6 +70,8 @@ type Buses = Mapping[str, UseFramework] | Iterable[UseFramework]
 """`{"billing": billing}` names each bus; `[billing, sales]` publishes each under its own name."""
 
 type Published = tuple[str, UseFramework, PackedFeatureOrAppService]
+"""One use case as a gateway publishes it — `("billing", billing, packed)`: alias, bus,
+entry."""
 
 
 def _fields_of(cls: Any) -> set[str] | None:
@@ -82,12 +84,27 @@ def _fields_of(cls: Any) -> set[str] | None:
 
 
 def _required_fields_of(cls: type) -> set[str]:
+    """A DTO's fields with no default — empty for what is not a Pydantic model."""
     if isinstance(cls, type) and issubclass(cls, BaseModel):
         return {name for name, info in cls.model_fields.items() if info.is_required()}
     return set()
 
 
 def _json_safe(value: Any) -> Any:
+    """A binding's field as a manifest holds it — what `json.dumps` and a snapshot diff take.
+
+    Context: a binding holds classes (a `replacement`, a `request`), tuples, nested DTOs and
+    dates; the manifest is data a CI test compares, so each becomes its JSON form.
+
+        _json_safe(CommandIssue)            ->  "billing.commands.CommandIssue"
+        _json_safe(("a", date(2027, 1, 1)))  ->  ["a", "2027-01-01"]
+
+    1. A class by its dotted name.
+    2. A tuple or a list, item by item.
+    3. A Pydantic model, field by field.
+    4. A date in ISO format.
+    Final: anything else as it is.
+    """
     if isinstance(value, type):
         return f"{value.__module__}.{value.__qualname__}"
     if isinstance(value, tuple | list):
@@ -100,13 +117,22 @@ def _json_safe(value: Any) -> Any:
 
 
 def _fields_set(binding: Binding) -> dict[str, Any]:
+    """Only the fields a binding was given — its defaults left out, so a layer that did not
+    name a field never overrides one below it.
+
+        _fields_set(RestBinding(method="POST"))  ->  {"method": "POST"}
+    """
     return {name: getattr(binding, name) for name in binding.model_fields_set}
 
 
 def _merged(baseline: Binding | None, declared: Mapping[str, Any]) -> dict[str, Any]:
     """The declared fields over what the wire derived: a scalar declared wins, a collection
     declared adds to the derived one (a group's tags) — the closest layer wins, collections
-    are additive."""
+    are additive.
+
+        _merged(RestBinding(method="POST", tags=("Billing",)), {"tags": ("Invoices",)})
+        ->  {"method": "POST", "tags": ("Billing", "Invoices")}
+    """
     merged: dict[str, Any] = {} if baseline is None else _fields_set(baseline)
     for name, value in declared.items():
         held = merged.get(name)
@@ -120,6 +146,24 @@ def _merged(baseline: Binding | None, declared: Mapping[str, Any]) -> dict[str, 
 def _rest_problems(
     where: str, command: type, response: Any, binding: RestBinding
 ) -> list[str]:
+    """What a REST binding claims that its Command and its answer contradict.
+
+    Context: HTTP has rules a route can break silently — a path naming a field the Command
+    does not have never fills it, a `GET` that writes is cached by a proxy, a 204 with a body
+    is cut. They are refused before anything is served.
+
+        _rest_problems("CommandIssue (rest)", CommandIssue, None,
+                       RestBinding(method="GET", path="/invoices/{id}"))
+        ->  ["…: path /invoices/{id} names {id}, which is not a field of CommandIssue — …",
+             "…: GET on a Command that is not a Query — a read is a Query"]
+
+    1. Every `{field}` of the path is a field of the Command.
+    2. Every `{field}` of `location` is a field of what it answers.
+    3. `GET` only on a `Query`.
+    4. `DELETE` or a 204 answers nothing.
+    5. `PATCH` without `body="merge-patch"` leaves no required field outside the path.
+    Final: every problem found, said at once.
+    """
     problems: list[str] = []
     fields = _fields_of(command) or set()
     in_path = TEMPLATE_FIELD.findall(binding.path or "")
@@ -160,7 +204,14 @@ def _binding_problems(
     command: type, response: Any, binding: Binding, today: date
 ) -> list[str]:
     """What a binding claims that the facts of its use case contradict (PRD_14 §7, PRD_15
-    §2.2) — the same whatever wire builds it."""
+    §2.2) — the same whatever wire builds it.
+
+    1. A deprecation whose sunset is past: the binding must be removed.
+    2. By wire — REST its HTTP rules; MCP a `read_only` that contradicts the Command's kind;
+       JSON-RPC a name in the reserved `rpc.` space; the queue a DomainEvent consumed, a
+       Command heard, or a consumer with no channel.
+    Final: every problem found, each naming the Command and the wire.
+    """
     where = f"{command.__name__} ({binding.wire})"
     problems: list[str] = []
     deprecation = binding.deprecated
@@ -216,6 +267,22 @@ def _responses_of(bus: UseFramework) -> dict[type, Any]:
 
 
 class Gateway:
+    """What every entrypoint shares: the buses it serves, each as a filtered `Catalog`, and
+    the resolution of which use cases its wire publishes.
+
+        gateway = FastApiGateway([billing, sales])
+        gateway.group(billing, prefix="/billing").override(CommandIssue, status=201)
+        gateway.verify()     ->  []           # every reason it would be refused
+        gateway.manifest()   ->  (ManifestEntry(wire="rest", context="billing", …), …)
+        app = gateway.app()
+
+    Context: each wire extends it — `FastApiGateway`, `RpcGateway`, gRPC, MCP, the queue — and
+    so does a project for a transport of its own, through a `Wire` port. A gateway that names
+    no wire publishes its catalog (PRD_12); one that names a wire resolves a declared surface
+    by precedence and refuses, every reason listed, a surface that does not hold. What it
+    builds is returned, never started.
+    """
+
     wire: ClassVar[str | None] = None
     """The wire whose bindings this gateway publishes — `"rest"`, `"rpc"`, `"grpc"`, `"mcp"`,
     `"queue"` — set by each wire's gateway once it resolves a declared surface. `None` keeps the
@@ -231,8 +298,20 @@ class Gateway:
         unguarded: bool = False,
         port: Wire[Any] | None = None,
     ) -> None:
-        """`exposure` is the mode of a gateway that names a wire; `unguarded=True` says its
-        buses have no `AccessControl` on purpose; `port` is a project's own transport."""
+        """Publish `instances` — `{"ventas": sales}` under each alias, `[billing]` under each
+        bus's own name — in `layers`.
+
+        `exposure` is the mode of a gateway that names a wire; `unguarded=True` says its buses
+        have no `AccessControl` on purpose; `port` is a project's own transport. `title` and
+        `version` are what a wire's document (OpenAPI, OpenRPC) is titled with.
+
+            Gateway({"ventas": sales}, layers=("features",), unguarded=True)
+
+        1. The layers, title, version, exposure, unguarded and port kept as given.
+        2. No catalog, group or composition yet; nothing resolved.
+        3. `instances` read as aliases to buses when a mapping, as buses otherwise.
+        Final: each one added (`add`) — under its alias, or the bus's own name.
+        """
         self._catalogs: dict[str, Catalog] = {}
         self._layers = tuple(layers)
         self._title = title
@@ -254,7 +333,8 @@ class Gateway:
             self.add(alias or framework_instance, framework_instance)
 
     def validate_alias(self, alias: str) -> str:
-        """What this wire accepts as a bus's alias — refused with the rule it breaks."""
+        """What this wire accepts as a bus's alias — refused with the rule it breaks. The base
+        accepts any; a wire narrows it (a gRPC package, a JSON-RPC namespace)."""
         return alias
 
     def alias_for(self, framework_instance: UseFramework) -> str:
@@ -273,7 +353,17 @@ class Gateway:
         wrap: Mapping[type | str, Wrapper] | None = None,
     ) -> Self:
         """Publish a bus — `add(billing)` under its own name, `add("ventas", sales)` under one of
-        the caller's — narrowed by `include` / `exclude` and with `wrap`ped runs."""
+        the caller's — narrowed by `include` / `exclude` and with `wrap`ped runs.
+
+            gateway.add(billing, exclude=[CommandReconcile])
+            gateway.add("ventas", sales, include=["CommandQuote"], wrap={"CommandQuote": f})
+
+        1. A bus given alone takes the alias this wire derives for it (`alias_for`).
+        2. Its catalog narrowed and wrapped as asked.
+        3. The alias validated by the wire; a second bus under the same alias replaces the
+           first.
+        Final: the resolved surface let go, the wire told (`added`), the gateway returned.
+        """
         if isinstance(alias, UseFramework):
             framework_instance, alias = alias, self.alias_for(alias)
         if framework_instance is None:
@@ -293,9 +383,12 @@ class Gateway:
 
     @property
     def catalogs(self) -> Mapping[str, Catalog]:
+        """Each added bus's catalog, by the alias it is published under — a copy."""
         return dict(self._catalogs)
 
     def buses(self) -> list[UseFramework]:
+        """Every bus added, in the order added — one bus added under two aliases is listed
+        twice."""
         return [catalog.framework_instance for catalog in self._catalogs.values()]
 
     @property
@@ -305,6 +398,8 @@ class Gateway:
         return self._port is not None and self._port.carries_bytes
 
     def _published(self) -> list[Published]:
+        """Every use case of every catalog in this gateway's layers — the catalog view, before
+        any binding is resolved. A wire that holds JSON only leaves out what carries bytes."""
         return [
             (alias, catalog.framework_instance, operation)
             for alias, catalog in self._catalogs.items()
@@ -320,6 +415,8 @@ class Gateway:
         return self._port.binding.wire if self._port is not None else type(self).wire
 
     def _binding_type(self) -> type[Binding]:
+        """The binding DTO of this gateway's wire — its port's, else the built-in one its
+        `wire` names; a wire the framework does not know is refused."""
         if self._port is not None:
             return self._port.binding
         wire = type(self).wire
@@ -350,6 +447,13 @@ class Gateway:
         return layers, bound
 
     def _access_of(self, bus: UseFramework, command: type) -> str | None:
+        """Who may call `command` — what it declared to its bus's `AccessControl`, `unguarded`
+        when the bus has none, `None` when the bus is guarded and it declared nothing.
+
+            _access_of(billing, CommandIssue)   ->  "billing.invoice.issue"   # @auth.requires
+            _access_of(billing, QueryInvoice)   ->  "public"                  # @auth.public
+            _access_of(unguarded, CommandIssue) ->  "unguarded"
+        """
         guard = access_control_of(bus)
         if guard is None:
             return UNGUARDED
@@ -357,6 +461,8 @@ class Gateway:
         return None if declaration is None else str(declaration)
 
     def _operation(self, published: Published, handler: type) -> Operation:
+        """The facts of one published use case a wire derives from — its kind, schemas,
+        access, whether it runs once, and the `run` that goes through the bus."""
         from sincpro_framework.data_layer.caching import declares_once
 
         alias, bus, packed = published
@@ -522,6 +628,17 @@ class Gateway:
         return problems
 
     def _resolve(self) -> tuple[list[tuple[Resolved[Any], Published]], list[str]]:
+        """The surface of this gateway's wire and every reason to refuse it — nothing raised
+        for a problem, so `verify` lists them all.
+
+        1. A gateway that names no wire has no surface: refused as a programming error.
+        2. The problems no wire can get wrong: declarations, stages, bytes on a JSON wire.
+        3. Each published use case resolved by precedence; what is not on the wire is left
+           out.
+        4. The port's own clashes over the resolved surface, when there is a port.
+        Final: the resolved use cases with their published entry, and the problems without
+        repeats, in the order found.
+        """
         wire = self.wire_name
         if wire is None:
             raise exceptions.ProgrammingError(
@@ -540,6 +657,21 @@ class Gateway:
         return resolved, list(dict.fromkeys(problems))
 
     def _resolve_validated(self) -> list[tuple[Resolved[Any], Published]]:
+        """The surface, resolved once and kept until a catalog or a bus changes — refused with
+        every problem at once.
+
+        Context: a wire asks for the surface on every build, every document and every
+        `operations()`; resolving it validates every binding of every bus, so the answer is
+        kept and let go when a catalog's revision moves (an `include`, a use case registered
+        late). `add`, `group`, `override` and `bind` let it go themselves.
+
+        1. Kept, and no catalog changed since: answered as kept.
+        2. Resolve; any problem refuses the whole surface with `ProgrammingError`.
+        3. Keep it with the revisions it was read at.
+        4. In `Exposure.CATALOG`, log every operation published, so an automatic surface is
+           never a surprise.
+        Final: the resolved surface.
+        """
         revisions = tuple(catalog.revision for catalog in self._catalogs.values())
         if self._resolved is not None and revisions == self._resolved_revisions:
             return self._resolved
@@ -572,6 +704,7 @@ class Gateway:
 
     @property
     def exposure(self) -> Exposure:
+        """The mode this gateway resolves its surface in — `DECLARED` unless it was told."""
         return self._exposure
 
     @property
@@ -592,7 +725,12 @@ class Gateway:
         package: str | None = None,
     ) -> Self:
         """The conventions of one bounded context on this wire — the bus, or its alias; every
-        alias it is added under. What a field leaves `None` is the wire's default."""
+        alias it is added under. What a field leaves `None` is the wire's default.
+
+            gateway.group(billing, prefix="/billing", tags=("Billing",), version="v2")
+
+        A second call for the same context replaces the first; a bus not added is refused.
+        """
         aliases = [
             alias
             for alias, catalog in self._catalogs.items()
@@ -619,6 +757,11 @@ class Gateway:
     def override(self, target: type, **fields: Any) -> Self:
         """Change fields of the binding `target` — a Command or its handler — has on this wire,
         over its decorator's; the last call wins. It shapes, it never publishes: `bind` does.
+
+            gateway.override(CommandIssue, status=201, tags=("Invoices",))
+
+        A field the wire's binding does not have is refused at once; one on a use case with no
+        binding for the wire is refused when the surface resolves.
         """
         binding_type = self._binding_type()
         unknown = sorted(set(fields) - set(binding_type.model_fields))
@@ -633,7 +776,12 @@ class Gateway:
 
     def bind(self, target: type, binding: Binding) -> Self:
         """Publish `target` — a Command or its handler — on this wire with `binding`, merged
-        field by field over its decorator's; the last call wins."""
+        field by field over its decorator's; the last call wins.
+
+            gateway.bind(CommandIssue, RestBinding(method="POST", path="/invoices"))
+
+        A binding of another wire is refused at once.
+        """
         binding_type = self._binding_type()
         if not isinstance(binding, binding_type):
             raise exceptions.ProgrammingError(
@@ -660,6 +808,9 @@ class Gateway:
         return surface if self._port is None else self._port.build(surface)
 
     def _entry(self, resolved: Resolved[Any]) -> ManifestEntry:
+        """One resolved operation as a manifest line — the Command and its replacement by
+        identity (`billing.CommandIssue`), the name the wire calls it, the binding JSON-safe
+        without its deprecation (said by `deprecated`, `sunset`, `replacement`)."""
         operation, binding = resolved.operation, resolved.binding
         deprecation = binding.deprecated
         replacement = None if deprecation is None else deprecation.replacement

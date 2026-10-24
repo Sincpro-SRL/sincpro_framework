@@ -31,7 +31,7 @@ from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework
-from sincpro_framework.context.adapters.stores import InMemoryContexts
+from sincpro_framework.store.adapters.stores import InMemoryContexts
 from sincpro_framework.data_layer.orm import (
     Consolidated,
     Database,
@@ -325,7 +325,7 @@ class CommandEditMove(Edit[Move, ResponseEditMove]):
 
 bus = UseFramework("accounting", log_after_execution=False)
 bus.add_dependency("repository", store)
-bus.context_store(InMemoryContexts())
+bus.store_context_in(InMemoryContexts())
 
 
 @bus.feature([QueryGetMove, QuerySearchMoves, CommandEditMove])

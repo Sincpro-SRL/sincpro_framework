@@ -25,8 +25,8 @@ ends it with the exception, after `always`.
 **Where the run is kept is the context's** (`use_context().pipelines()`), beside the drafts — in the
 process's memory, a Redis, or a store of the project's own. With no context store it is kept in the
 process's memory, and said once in the logs. Whose it is comes from the context — no tenant and no
-user, a tenant, a user, a user across tenants — and `owned_by` adds the keys a project says a run
-belongs to. The same `run_id`, run again, is the same run: it starts over, or with
+user, a tenant, a user, a user across tenants — by the keys `owned_by` names, the tenant's by
+default. The same `run_id`, run again, is the same run: it starts over, or with
 `resume = Resume.CONTINUE` goes on after the last step that succeeded.
 
 **Retrying a step** is said once, for every step: `retry = Retry()` runs again a step whose failure
@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from sincpro_framework.common.failures import RETRYABLE, refined_failure_kind, retry_after
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context.entrypoint.facade import use_context
+from sincpro_framework.context.entrypoint.owner import BY_TENANT
 from sincpro_framework.context.infrastructure.tree import current_execution
 from sincpro_framework.pipelines import exceptions
 from sincpro_framework.pipelines.run import (
@@ -129,8 +130,9 @@ class Pipeline:
     always: ClassVar[type | None] = None
     """A Command that runs last whatever happened. It may take `ok` and `failure`."""
     resume: ClassVar[Resume] = Resume.RESTART
-    owned_by: ClassVar[Sequence[str]] = ()
-    """The keys of the context a run belongs to, beside the tenant: `("user_id",)`."""
+    owned_by: ClassVar[Sequence[str]] = BY_TENANT
+    """The keys of the context a run belongs to — the tenant's by default; `(*BY_TENANT,
+    "user_id")` a user's, `()` nobody's: one run of a `run_id` for everybody."""
     records: ClassVar[bool] = True
     """Whether the bus attaches the recorder that keeps the run."""
     retry: ClassVar[Retry | None] = None
@@ -151,7 +153,14 @@ class Pipeline:
 
     @classmethod
     def recipe_of(cls, dto: Any) -> list[type | Await]:
-        """The steps `dto` runs, in order — the list, or the recipe its `by` field picks."""
+        """The steps `dto` runs, in order — the list, or the recipe its `by` field picks.
+
+            steps = [Reserve, Charge]                         ->  [Reserve, Charge], always
+            steps = {"card": [Reserve, Charge], "cash": [Reserve]}, by = "method"
+            recipe_of(CommandCheckout(method="cash"))         ->  [Reserve]
+            recipe_of(CommandCheckout(method="crypto"))       ->  ProgrammingError, no recipe
+
+        A recipe per value with no `by` declared is `ProgrammingError` too."""
         if not isinstance(cls.steps, Mapping):
             return list(cls.steps)
         if cls.by is None:
@@ -185,7 +194,16 @@ class Pipeline:
 
     def answer(self, dto: Any, failure: str) -> Any:
         """What the call answers: the run as it stands, with how it ended — or that it waits. A
-        project that wants another answer overrides this."""
+        project that wants another answer overrides this.
+
+            answer(command, "")                   ->  PipelineRun(state=SUCCEEDED, error="")
+            answer(command, "Charge failed")      ->  PipelineRun(state=FAILED,
+                                                                  error="Charge failed")
+            answer(command, "")  waiting for "approval"
+                                  ->  PipelineRun(state=WAITING, waiting_for="approval")
+
+        The run kept for this execution when there is one; else a new one named after the
+        Command, its `run_id` and the moment now."""
         holder = use_context().get(RunInProgress)
         if holder is not None:
             run = holder.run
@@ -245,13 +263,23 @@ class Pipeline:
         return False
 
     def execute(self, dto: Any) -> Any:
-        """1. The steps of the recipe, in order; the ones an earlier run of this `run_id` already
+        """Run the recipe of `dto`, step by step, and answer how the run ended.
+
+            pipeline.execute(CommandCheckout(method="card", ...))
+                ->  Reserve, Charge, then `always` — PipelineRun(state=SUCCEEDED)
+            ... Charge answers ok=False, summary="card declined"
+                ->  Reserve, Charge, `always` with ok=False — PipelineRun(state=FAILED,
+                    error="card declined")
+
+        1. The steps of the recipe, in order; the ones an earlier run of this `run_id` already
            did are left, when it continues.
         2. Each step is filled from the input and run on the feature bus — again, while `retry`
            says so; one that answers `ok=False` ends the run as failed.
         3. An `Await` whose field the input leaves empty stops the run there, waiting.
-        4. The `always` Command last, whatever happened — unless the run waits: it has not ended.
-        Final: the answer."""
+        4. The `always` Command last, whatever happened — given `ok` and `failure` — unless
+           the run waits (it has not ended) or its lease was lost (it is no longer this
+           execution's).
+        Final: `answer(dto, failure)` — the run as it stands, by default."""
         holder = use_context().get(RunInProgress)
         done = {
             index

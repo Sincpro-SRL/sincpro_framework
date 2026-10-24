@@ -31,6 +31,8 @@ from sincpro_framework.event_driven.adapters.envelope import cloud_event_headers
 
 
 def _sent(service: str, event: DomainEvent, send: Any) -> None:
+    """Call `send`; any error from AWS becomes a `ServiceUnavailableError` naming the service
+    and the event — the relay and a caller read it as "retry later", whatever boto raised."""
     try:
         send()
     except Exception as error:
@@ -40,6 +42,8 @@ def _sent(service: str, event: DomainEvent, send: Any) -> None:
 
 
 class SnsQueue:
+    """A `Queue` publishing each event to one SNS topic — fan-out to every subscription."""
+
     def __init__(
         self,
         topic_arn: str,
@@ -55,6 +59,13 @@ class SnsQueue:
         self.attributes_of = attributes_of
 
     def put(self, event: DomainEvent) -> None:
+        """Publish `event` to the topic and wait for SNS to take it.
+
+        1. The envelope is read here, in the publishing execution.
+        2. The body is the event's JSON; the envelope and the filter fields go as message
+           attributes; a `.fifo` topic adds the group (entity, else flow) and dedup id.
+        Final: SNS took it — or `ServiceUnavailableError`.
+        """
         headers = cloud_event_headers(event, source=self.source)
         _sent(
             "SNS",
@@ -68,10 +79,13 @@ class SnsQueue:
         )
 
     async def aput(self, event: DomainEvent) -> None:
+        """`put` on a worker thread — boto is blocking, the event loop is not held."""
         await asyncio.to_thread(self.put, event)
 
 
 class SqsQueue:
+    """A `Queue` sending each event to one SQS queue — one consumer group reads it."""
+
     def __init__(
         self,
         queue_url: str,
@@ -86,6 +100,8 @@ class SqsQueue:
         self.attributes_of = attributes_of
 
     def put(self, event: DomainEvent) -> None:
+        """Send `event` to the queue and wait for SQS to take it — the same body, attributes
+        and FIFO fields as `SnsQueue.put`."""
         headers = cloud_event_headers(event, source=self.source)
         _sent(
             "SQS",
@@ -99,10 +115,13 @@ class SqsQueue:
         )
 
     async def aput(self, event: DomainEvent) -> None:
+        """`put` on a worker thread — boto is blocking, the event loop is not held."""
         await asyncio.to_thread(self.put, event)
 
 
 class EventBridgeQueue:
+    """A `Queue` putting each event on an EventBridge bus, for its rules to route."""
+
     def __init__(
         self, bus: str = "default", source: str = "sincpro", client: Any = None
     ) -> None:
@@ -113,6 +132,21 @@ class EventBridgeQueue:
         self.client = aws_client("events", client)
 
     def put(self, event: DomainEvent) -> None:
+        """Put `event` on the bus as one entry and wait for EventBridge to take it.
+
+            detail      {"metadata": {"ce_id": "…", "ce_type": "billing.InvoicePaid", …},
+                         "data": {…the event…}}
+            DetailType  "billing.InvoicePaid"
+
+            EventBridgeQueue(bus="billing").put(InvoicePaid(…))    ->  None, once taken
+            # FailedEntryCount 1, ErrorCode "ThrottlingException"
+                ->  raises ServiceUnavailableError("EventBridge did not take
+                    billing.InvoicePaid: RuntimeError: ThrottlingException: …")
+
+        Context: `put_events` answers 200 even when it refused the entry; the refusal is in
+        `FailedEntryCount`, read here and raised — so it becomes a `ServiceUnavailableError`
+        like a transport error.
+        """
         headers = cloud_event_headers(event, source=self.source)
         detail = {"metadata": headers, "data": json.loads(event.as_json())}
 
@@ -134,4 +168,5 @@ class EventBridgeQueue:
         _sent("EventBridge", event, send)
 
     async def aput(self, event: DomainEvent) -> None:
+        """`put` on a worker thread — boto is blocking, the event loop is not held."""
         await asyncio.to_thread(self.put, event)

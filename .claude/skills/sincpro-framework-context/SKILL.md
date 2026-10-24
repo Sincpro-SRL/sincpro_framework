@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-context
-description: Read, scope, carry and keep the execution context of a sincpro_framework service — use_context() from anywhere, the tree of levels (ROOT, BUS, ENTRYPOINT, APPLICATION, FEATURE, HOOK, SCOPE), bus.context(...) and self.context, set vs mapping writes, threads and pools (ContextExecutor, ContextThread, in_context), context_provider, context_schema, requires_context, Secret, stores (InMemoryContexts, KeyValueContexts over Redis; keep_as/restore; root.share across replicas), propagation (inject/extract, baggage, sincpro-context) and the execution identity (execution_id, causation_id, correlation_id). Use whenever a task reads or passes tenant/user/lang/correlation, hands work to a thread, derives credentials per tenant, keeps a session or a flow, keeps a form's draft per user or session, shares settings across replicas, or carries context to another service, a broker or the frontend.
+description: Read, scope, carry and keep the execution context of a sincpro_framework service — use_context() from anywhere, the tree of levels (ROOT, BUS, ENTRYPOINT, APPLICATION, FEATURE, HOOK, SCOPE), bus.context(...) and self.context, set vs mapping writes, threads and pools (ContextExecutor, ContextThread, in_context), context_provider, context_schema, requires_context, Secret, stores (InMemoryContexts, KeyValueContexts over Redis; store_context_in; root.share across replicas), propagation (inject/extract, baggage, sincpro-context) and the execution identity (execution_id, causation_id, correlation_id). Use whenever a task reads or passes tenant/user/lang/correlation, hands work to a thread, derives credentials per tenant, keeps a session or a flow, keeps a form's draft per user or session, shares settings across replicas, or carries context to another service, a broker or the frontend.
 ---
 
 # sincpro-framework-context
@@ -26,11 +26,11 @@ can be kept in a store for whoever resumes the flow.
 | Term | What it is | Kind | Import |
 |---|---|---|---|
 | `use_context(level=None)` | The context in play, from anywhere — a `dict` of what its node sees; with a level, that level's node or `None` | function | `from sincpro_framework.context import use_context` |
-| `Context` | That object: `dict` reads, navigation (`.level`, `.parent`, `.root`, `.bus`, `.entrypoint`, `.application`, `.feature`, `.hook`, `.at(level)`, `.own`, `.origin(key)`, `.lineage()`, `.execution`), writes (`[]=` / `.set`), `.scoped(...)`, `.keep`, `.restored`, `.to_client()`, `.share` (root only) | DTO | `sincpro_framework.context` |
+| `Context` | That object: `dict` reads, navigation (`.level`, `.parent`, `.root`, `.bus`, `.entrypoint`, `.application`, `.feature`, `.hook`, `.at(level)`, `.own`, `.origin(key)`, `.lineage()`, `.execution`), writes (`[]=` / `.set`), `.scoped(...)`, `.save`, `.loaded`, `.to_client()`, `.share` (root only) | DTO | `sincpro_framework.context` |
 | `Level` | `ROOT · BUS · ENTRYPOINT · APPLICATION · FEATURE · HOOK · SCOPE` | setting (StrEnum) | `sincpro_framework.context` |
 | `EntrypointKind` | `DIRECT · REST · RPC · GRPC · MCP · QUEUE · CRON · REMOTE` — which entrance opened the flow | setting (StrEnum) | `sincpro_framework.context` |
 | `Origin` | `(level, label, execution_id)` — who said a value | DTO | `sincpro_framework.context` |
-| `bus.context(values, global_scope, kind, restore, keep_as, ttl, store)` | Opens a scope of the bus for a `with` block (the first of a flow is its ENTRYPOINT); `global_scope=True` writes the bus's own node | function | method of `UseFramework` |
+| `bus.context(values, global_scope, kind)` | Opens a scope of the bus for a `with` block (the first of a flow is its ENTRYPOINT); `global_scope=True` writes the bus's own node | function | method of `UseFramework` |
 | `self.context` | The same `Context`, in a handler | DTO | attribute of `Feature` / `ApplicationService` |
 | `bus.current_context()` | The same `Context`, read-only | function | method of `UseFramework` |
 | `ContextExecutor` / `ContextThread` / `in_context(fn)` | A pool, a thread, a wrapped function that start in the submitter's context | adapter | `sincpro_framework.context` |
@@ -39,13 +39,13 @@ can be kept in a store for whoever resumes the flow.
 | `requires_context(*keys)` | Declares keys a use case cannot run without; `ContextRequired` before the handler when missing | decorator | `sincpro_framework.context` |
 | `ContextRequired` | Raised for a declared key that is missing | DTO | `sincpro_framework.exceptions` |
 | `Secret` | pydantic's: masked on every signal, never travels, `.get_secret_value()` where it is used | DTO | `from pydantic import Secret` |
-| `ContextStore` | The one port of the context: `keep(key, values, ttl)`, `restore(key)`, `forget(key)`, `version(key)`, and its entries — `keep_entry` / `entry` / `discard_entry` / `entries(folder)`, versioned (`EntryConflict`), each with a TTL (`kept_ttl`) — where drafts and pipeline runs are kept | port | `sincpro_framework.context` |
-| `Drafts` | `use_context().drafts(by=...)`: what a form keeps between requests, by user (default), session or any keys of the context, in the context's store; `keep` / `read` / `discard`, `DraftConflict`. Kept under `SINCPRO_ENTITY_DRAFT_CONTEXT`, an owner always shaped `tenant_id=…,tenant_ids=…,user_id=…` (values encoded, empty when the context says nothing) and the subject: one draft for the desktop, the browser and the phone of a user. Refuses none | class | `sincpro_framework.context` |
+| `ContextStore` | The one port of the context: `save(key, values, ttl)`, `load(key)`, `delete(key)`, `version(key)`, and its entries — `save_entry` / `get_entry` / `delete_entry` / `list_entries(folder)`, versioned (`EntryConflict`), each with a TTL (`entry_ttl`) — where drafts and pipeline runs are kept | port | `sincpro_framework.context` |
+| `Drafts` | `use_context().drafts(by=...)`: what a form keeps between requests, by user (default), session or any keys of the context, in the context's store; `save` / `read` / `discard`, `DraftConflict`. Kept under `SINCPRO_ENTITY_DRAFT_CONTEXT`, an owner always shaped `tenant_id=…,tenant_ids=…,user_id=…` (values encoded, empty when the context says nothing) and the subject: one draft for the desktop, the browser and the phone of a user. Refuses none | class | `sincpro_framework.context` |
 | `use_context().leases()` | The `Leases` kept where the context is kept — memory, or the `KeyValueStore` of `KeyValueContexts`, shared by replicas | function | `sincpro_framework.context` |
-| `use_context().pipelines(by=...)` | The runs of a `Pipeline` (`sincpro_framework.pipelines`): entries of the same store under `SINCPRO_PIPELINE_CONTEXT`, by the same owner rule as a draft; `read` / `find(pipeline)` / `keep`, `EntryConflict` | function | `sincpro_framework.context` |
+| `use_context().pipelines(by=...)` | The runs of a `Pipeline` (`sincpro_framework.pipelines`): entries of the same store under `SINCPRO_PIPELINE_CONTEXT`, by the same owner rule as a draft; `read` / `find(pipeline)` / `save`, `EntryConflict` | function | `sincpro_framework.context` |
 | `InMemoryContexts` / `KeyValueContexts(store, codec)` | One process / every replica over any `KeyValueStore` (Redis, Valkey, Memcached) | adapter | `sincpro_framework.context` |
 | `PlainCodec` / `TypedCodec(schema)` / `PickleCodec` | How a store writes a context: any language / types back / anything picklable | adapter | `sincpro_framework.context` |
-| `bus.context_store(store, ttl=, every=)` | Shares this bus's context through the store — every node kept, the sender's chain read back across services — and keeps/restores with it | function | method of `UseFramework` |
+| `bus.store_context_in(store, ttl=, every=)` | Shares this bus's context through the store — every node kept, the sender's chain read back across services — and keeps/restores with it | function | method of `UseFramework` |
 | `Level.GLOBAL` | Above every process: what every service that set the same store shares — `use_context().at(Level.GLOBAL)` | enum member | `sincpro_framework.context` |
 | `inject(context)` / `extract(headers)` | The context as text headers and back: `baggage`, `sincpro-context`, `x-correlation-id`/`x-causation-id`/`x-execution-id` | function | `sincpro_framework.context.adapters.propagation` |
 | `Execution` / `current_execution()` | `execution_id`, `causation_id`, `correlation_id`, `use_case`, `bus`, `level`, `started_at` | DTO / function | `sincpro_framework.context` |
@@ -79,9 +79,9 @@ entrypoint/      facade.py (Context, use_context) · bus.py (BusContextMixin, Fr
 **The tree:**
 
 ```text
-GLOBAL       only with bus.context_store(store): shared by every service that set the store
+GLOBAL       only with bus.store_context_in(store): shared by every service that set the store
 ROOT         the process: defaults, flags, settings under their type, a store
- └─ BUS       what a bounded context publishes (global_scope=True, context_store)
+ └─ BUS       what a bounded context publishes (global_scope=True, store_context_in)
      └─ ENTRYPOINT   what the entrance knew + its EntrypointKind (opened by REST/RPC/gRPC/MCP/queue/cron/remote, or DIRECT)
          └─ APPLICATION / FEATURE   each execution, a node of its own, with its Execution
              └─ HOOK                each run of a repository's hook
@@ -95,7 +95,7 @@ task; nodes are immutable mappings replaced whole (copy-on-write), so threads ne
 
 ```text
 domains/<ctx>/infrastructure/framework.py    bus = UseFramework(...); bus.context_schema(MyContext)
-domains/<ctx>/infrastructure/context.py      @bus.context_provider(...) functions; bus.context_store(...)
+domains/<ctx>/infrastructure/context.py      @bus.context_provider(...) functions; bus.store_context_in(...)
 domains/<ctx>/services/*.py                  read self.context / use_context(); @requires_context where a key is vital
 domains/<ctx>/adapters/*.py                  read use_context() (tenant, credentials) — never write
 entrypoints/*                                gateways open the ENTRYPOINT themselves; a cron or a poll uses carrying(...)
@@ -121,14 +121,18 @@ entrypoints/*                                gateways open the ENTRYPOINT themse
 - **A secret as a plain string.** Wrap it: `Secret(token)` — its `repr` is masked by pydantic; it
   travels like any value (as its value in headers and `to_client()`): the framework filters nothing.
 - **Expecting another service to see the context without a store.** Sharing is explicit: each bus
-  that shares calls `bus.context_store(store)` with the same store. Without it only what travelled
+  that shares calls `bus.store_context_in(store)` with the same store. Without it only what travelled
   in the call or the message is there.
 - **Passing values along to share them.** With a store, only an id travels (`x-context-node`): the
   receiver reads the sender's chain from the store, fresh. Don't copy values into the DTO for that.
 - **`"user.id"` / `"tenant"`.** The framework does not read them — write `ContextKey.USER_ID` /
   `ContextKey.TENANT_ID`. Use `ContextKey.TENANT_IDS` (a list) for an execution acting across tenants.
-- **Restoring with no store.** `restore=`/`keep_as=` find the nearest `ContextStore` — set one with
-  `use_context().root.set(ContextStore, store)`, `bus.context_store(store)` or `store=`.
+- **Saving a context by name to resume it elsewhere.** There is no such API: every event, queue
+  message, remote call and frontend answer carries the context, and the entrance opens with it. Set
+  the store once — `store_context_in(store)` for the process (the same as
+  `use_context().root.set(ContextStore, KeyValueContexts(store))`), `bus.store_context_in(store)` for
+  one bus. The same store keeps, on its `key_value_store()`, the leases, circuits and every bus's
+  `bus.cache` / `bus.idempotency` (`sincpro-framework-caching`) — a cache is never a context entry.
 - **Expecting `bus.current_context()` to be writable.** It is read-only by contract.
 
 ## The rule that shapes everything
@@ -175,9 +179,10 @@ with siat.context({"nit_id": nit.id}):                # the caller says which te
 - **Values under their type** — settings, clients, a store: `root.set(SiatSettings, settings)`,
   `use_context()[SiatSettings]`. Only text keys travel.
 - **Threads:** `ContextExecutor` / `ContextThread` / `in_context`. `asyncio` needs nothing.
-- **Stores keep what a flow is:** `keep_as="sale-77"` / `restore="sale-77"`, `restore=["tenant:acme",
-  f"session:{sid}"]` (in order, the last wins), `ttl=` always for sessions. `KeyValueContexts` over
-  Redis for replicas; `TypedCodec(schema)` to get the types back in the same codebase.
+- **Stores keep what the framework keeps for the context** — drafts, pipeline runs, leases,
+  circuits, caches, idempotency — each owned by exactly the keys it names (`by=`, `owned_by`):
+  `()` is nobody's, shared by every caller. `KeyValueContexts` over Redis for replicas;
+  `TypedCodec(schema)` to get the types back in the same codebase.
 - **The process across replicas:** `use_context().root.share(store, every=timedelta(seconds=5))` —
   read locally, re-read when the version moved.
 - **Across services:** buses in one process share the tree; `remote_execution` sends the whole
@@ -192,7 +197,7 @@ with siat.context({"nit_id": nit.id}):                # the caller says which te
 - [references/threads.md](references/threads.md) — pools, threads, async, why the framework hands it on
 - [references/providers-and-requirements.md](references/providers-and-requirements.md) — `context_provider`, `context_schema`, `requires_context`, `Secret`
 - [references/drafts.md](references/drafts.md) — what a form keeps between requests, by user or session, where the context is kept; conflicts; activating with `refuse_stale`
-- [references/stores-and-propagation.md](references/stores-and-propagation.md) — `ContextStore`, codecs, the context shared across services (`bus.context_store`, `Level.GLOBAL`), `keep_as`/`restore`, `root.share`, `inject`/`extract`, the frontend
+- [references/stores-and-propagation.md](references/stores-and-propagation.md) — `ContextStore`, codecs, the context shared across services (`bus.store_context_in`, `Level.GLOBAL`), `root.share`, `inject`/`extract`, the frontend
 
 Deep docs in the framework repo: `docs/core/context-manager.md` (runs as a test),
 `docs/prd/PRD_22_context-component.md`, `docs/prd/PRD_24_shared-context.md`,

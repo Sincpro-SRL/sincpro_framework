@@ -36,7 +36,7 @@ WITH_SKIP_LOCKED = frozenset({"postgresql", "mysql", "mariadb", "oracle"})
 """The dialects that render `SKIP LOCKED` and `NOWAIT`."""
 
 
-class Store(IRepository):
+class RepositoryState(IRepository):
     """One database seen through one session, one scope and one transaction — the state every
     reading and every write of the repository runs in."""
 
@@ -51,7 +51,16 @@ class Store(IRepository):
     ) -> None:
         """`hooks` second, so a wiring reads as what it is — `Repository(database, billing_hooks)`.
         The rest are what a unit of work and a narrowing carry: its session, its scope, what
-        the transaction was opened with, and the repository they are a view of."""
+        the transaction was opened with, and the repository they are a view of.
+
+            Repository(database, billing_hooks)
+                ->  no session held (it joins a unit of work in play), no scope,
+                    Transaction() — what the database does on its own
+            Repository(database, session=session, scope=mine, transaction=asked)
+                ->  the view `context()` hands its block, bound to that session
+
+        Nothing is opened here: a repository holds a session only when it is handed one.
+        """
         super().__init__(hooks, guard)
         self.database = database
         self._held = session
@@ -130,6 +139,8 @@ class Store(IRepository):
         return self._scope is None or matches(record, self._scope.expression)
 
     def _refuse_outside(self, record: Any) -> None:
+        """A record outside the scope this repository was narrowed to is refused — a narrowed
+        repository writes and removes only what it can read."""
         if not self._in_scope(record):
             raise exceptions.ProgrammingError(
                 f"{type(record).__name__} lies outside what this repository was narrowed to; "
@@ -137,6 +148,8 @@ class Store(IRepository):
             )
 
     def _refuse_read_only(self) -> None:
+        """Any write inside a unit of work opened `read_only=True` is refused, before the
+        engine is asked."""
         if self._transaction.read_only:
             raise exceptions.ProgrammingError(
                 "this unit of work was opened read_only=True; nothing may be written in it"

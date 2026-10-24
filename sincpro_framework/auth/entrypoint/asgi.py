@@ -35,11 +35,23 @@ type ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 
 class IdentityMiddleware:
+    """ASGI middleware that authenticates each HTTP or WebSocket request and runs the app
+    inside `as_identity` of who it turned out to be."""
+
     def __init__(self, app: ASGIApp, access: "AccessControl[Any]") -> None:
+        """Wrap `app`, authenticating with `access` — the same `AccessControl` that guards the
+        buses the app calls, so they agree on who may do what."""
         self.app = app
         self.access = access
 
     async def _refused(self, send: Send, error: exceptions.AuthError) -> None:
+        """Answer the request with the refusal, as JSON — the body every transport answers.
+
+        Unauthenticated("unknown token")  ->  401, www-authenticate: <each challenge>,
+            {"error": {"kind": "unauthenticated", "reason": "unknown token"}}
+        PermissionDenied(...)             ->  403, {"error": {"kind": "permission_denied",
+            "reason": "lacks billing.invoice.issue", "requirement": "billing.invoice.issue"}}
+        """
         status = http_status_of(error)
         headers = [(b"content-type", b"application/json")]
         if status == 401:
@@ -52,6 +64,17 @@ class IdentityMiddleware:
         await send({"type": "http.response.body", "body": body})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Run the app for one connection as the identity its credentials stand for.
+
+        1. A scope that is neither HTTP nor WebSocket (lifespan) passes through untouched.
+        2. `send` is wrapped to note whether the response has started.
+        3. Credentials are read from the scope and authenticated on a worker thread.
+        4. The app runs inside `as_identity(identity)`.
+        5. An `AuthError` — from authenticating, or raised by a use case on the way:
+           5.1 the response already started, or the scope is a WebSocket: it propagates;
+           5.2 else it is answered as a 401/403 by `_refused`.
+        Final: nothing — the app's own answer, or the refusal, went out through `send`.
+        """
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return

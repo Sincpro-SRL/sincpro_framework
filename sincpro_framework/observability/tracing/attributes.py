@@ -94,6 +94,13 @@ def _unwrapped(annotation: Any) -> Any:
 
 
 def _scalar_annotation(annotation: Any) -> bool:
+    """Whether one annotation is a single value a span holds — a scalar type, an Enum, or a
+    `Literal` of scalars; `bytes` never.
+
+        _scalar_annotation(Decimal)              ->  True
+        _scalar_annotation(Literal["a", "b"])    ->  True
+        _scalar_annotation(bytes)                ->  False
+    """
     annotation = _unwrapped(annotation)
     if get_origin(annotation) is Literal:
         return all(isinstance(one, (str, bool, int, float)) for one in get_args(annotation))
@@ -103,6 +110,10 @@ def _scalar_annotation(annotation: Any) -> bool:
 
 
 def _members_of(annotation: Any) -> tuple[Any, ...]:
+    """The members of a union without `None`, or the annotation alone.
+
+    _members_of(str | int | None)  ->  (str, int)        _members_of(str)  ->  (str,)
+    """
     if get_origin(annotation) in (Union, types.UnionType):
         return tuple(one for one in get_args(annotation) if one is not type(None))
     return (annotation,)
@@ -111,7 +122,16 @@ def _members_of(annotation: Any) -> tuple[Any, ...]:
 def holds_on_a_span(annotation: Any) -> bool:
     """Whether a field annotated `annotation` fits in a span attribute: a scalar, an Enum, a
     Literal, or a sequence of them — optional or a union of them too. A DTO, a mapping, bytes or
-    `Any` do not: a span holds values, not documents."""
+    `Any` do not: a span holds values, not documents.
+
+        holds_on_a_span(str | None)           ->  True
+        holds_on_a_span(list[Currency])       ->  True
+        holds_on_a_span(tuple[int, ...])      ->  True
+        holds_on_a_span(dict[str, str])       ->  False
+        holds_on_a_span(list)                 ->  False      # its items are not named
+
+    Every member of a union must hold; `Annotated` and `NewType` are read as what they wrap.
+    """
     for member in _members_of(_unwrapped(annotation)):
         member = _unwrapped(member)
         origin = get_origin(member)
@@ -125,6 +145,15 @@ def holds_on_a_span(annotation: Any) -> bool:
 
 
 def _scalar(value: Any) -> str | bool | int | float:
+    """One value as OpenTelemetry takes it — an Enum as its value, a Decimal as a float, a
+    UUID as text, a date (or datetime) as ISO 8601; anything else raises `TypeError`.
+
+    Context: `bool` is checked before `int` — it is one — so `True` stays `True`, not `1`; a
+    `str` or `int` subclass travels as the plain type.
+
+        _scalar(Decimal("10.5"))     ->  10.5
+        _scalar(date(2026, 1, 31))   ->  "2026-01-31"
+    """
     if isinstance(value, Enum):
         value = value.value
     if isinstance(value, bool):
@@ -146,7 +175,16 @@ def _scalar(value: Any) -> str | bool | int | float:
 
 def span_value(value: Any) -> AttributeValue | None:
     """`value` as OpenTelemetry takes it — see `SpanValue`. `None` stays off the span; a value a
-    span cannot hold raises `TypeError`."""
+    span cannot hold raises `TypeError`.
+
+        span_value(Currency.BOB)       ->  "BOB"
+        span_value(["a", None, "b"])   ->  ("a", "b")
+        span_value([1, "x"])           ->  ("1", "x")        # mixed types: all as text
+        span_value(None)               ->  None
+        span_value({"a": 1})           ->  TypeError("dict is not a value a span holds")
+
+    A list, tuple, set or frozenset becomes a tuple, its `None`s dropped; a set keeps the
+    order it iterates in."""
     if value is None:
         return None
     if isinstance(value, (list, tuple, set, frozenset)):
@@ -181,6 +219,12 @@ def declared_attributes(cls: type) -> tuple[SpanAttribute, ...]:
 
 
 def _declared(reference: Any, key: str) -> SpanAttribute:
+    """One declared attribute, checked where it is written: `reference` must be a field path,
+    `key` some text, and the field a value a span can hold — refused at import otherwise.
+
+        _declared(of(CommandSendDocument).nit, "siat.nit")
+            ->  SpanAttribute(key="siat.nit", path=of(CommandSendDocument).nit)
+    """
     path = field_path(reference, f"span attribute '{key}'")
     problem = key_problem(key)
     if problem is not None:
@@ -195,6 +239,13 @@ def _declared(reference: Any, key: str) -> SpanAttribute:
 
 
 def _declaring(attributes: tuple[SpanAttribute, ...]):  # type: ignore[no-untyped-def]
+    """The class decorator `traces.attributes` answers.
+
+    1. Every path must start at the use case's Command, Response or declared context type.
+    2. A key the class — or what it inherits — already declared is refused.
+    Final: the attributes kept for the class, after the ones it had; the class unchanged.
+    """
+
     def declared[T: type](cls: T) -> T:
         refuse_foreign_paths(cls, tuple(one.path for one in attributes))
         known = {one.key for one in declared_attributes(cls)}
@@ -214,6 +265,8 @@ _warned: set[str] = set()
 
 
 def _warn_once(key: str, problem: str) -> None:
+    """Log `problem` the first time `key` has one — a use case that runs a million times
+    must not log a million lines. Never raises."""
     if key in _warned:
         return
     _warned.add(key)
@@ -224,6 +277,8 @@ def _warn_once(key: str, problem: str) -> None:
 
 
 def _set(span: Any, key: str, value: Any) -> None:
+    """Set one attribute on `span`, converted (`span_value`); `None` is left off, a value a
+    span cannot hold dropped and warned about once."""
     try:
         converted = span_value(value)
     except TypeError as error:
@@ -235,7 +290,16 @@ def _set(span: Any, key: str, value: Any) -> None:
 
 def describe(span: Any, use_case: type, source: Any) -> None:
     """The attributes `use_case` declared that start at `source` — its Command before it runs,
-    its Response after a success. Never raises; with no span, costs one check."""
+    its Response after a success. Never raises; with no span, costs one check.
+
+        describe(span, SendDocument, CommandSendDocument(nit="1234", branch_office=0))
+            ->  span: siat.nit="1234", siat.branch=0
+        describe(span, SendDocument, ResponseSendDocument(reception_code="R-9"))
+            ->  span: siat.reception_code="R-9"
+        describe(None, SendDocument, command)   ->  nothing
+
+    A context path is read off the execution context on every call, whatever `source` is;
+    an error on the way is warned about once per use case."""
     if span is None:
         return
     try:
@@ -259,7 +323,16 @@ class Traces:
     ):
         """Attributes of the use case's span, read off its Command (before `execute`, so a
         failed run has them) and its Response (after a success). A reference `of(X).a.b` is
-        `{namespace}.a.b`; a named one, `{namespace}.{name}`."""
+        `{namespace}.a.b`; a named one, `{namespace}.{name}`.
+
+            traces.attributes(of(CommandSendDocument).nit, namespace="siat",
+                              branch=of(CommandSendDocument).branch_office)
+                ->  a class decorator declaring "siat.nit" and "siat.branch"
+            traces.attributes(namespace="siat")          ->  ProgrammingError, none declared
+            traces.attributes(of(X).nit, namespace="")   ->  ProgrammingError, no namespace
+
+        Each attribute is checked as it is written (`_declared`); the decorator then checks
+        them against the use case it decorates (`_declaring`)."""
         if not isinstance(namespace, str) or not namespace.strip():
             raise refused(
                 f"span attributes: namespace {namespace!r} — the prefix every key takes: "
@@ -281,7 +354,22 @@ class Traces:
         (a code the provider answered, an id computed in `execute`).
 
         Context: never raises. A key that breaks the rules, or a value a span cannot hold, is
-        dropped and logged once; outside a use case, or with tracing off, nothing happens."""
+        dropped and logged once; outside a use case, or with tracing off, nothing happens.
+
+            traces.annotate({"siat.cuf": cuf, "siat.retries": 2})
+                ->  both on the use case's span
+            traces.annotate({"": "x", "siat.raw": b"..."})
+                ->  neither: an empty key and bytes, each warned about once
+
+        1. The attributes as `(key, value)` pairs — not a mapping: nothing happens.
+        2. The span of the use case running now (`use_case_span`).
+        3. For each pair:
+           3.1 a key that is not some text is warned about once and skipped, span or not;
+           3.2 no span: skipped;
+           3.3 the value converted and set (`_set`) — `None` left off, a value a span cannot
+               hold dropped and warned about once; a span that raises, warned about once.
+        Final: nothing returned, nothing raised.
+        """
         try:
             items = list(attributes.items())
         except Exception:

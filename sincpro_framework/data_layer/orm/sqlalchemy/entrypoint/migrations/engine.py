@@ -65,6 +65,15 @@ LONGEST_NAME = 63
 
 
 def version_table(chain: Chain) -> str:
+    """The Alembic version table of one chain — one per (context × store), lower-cased and
+    reduced to `[a-z0-9_]`.
+
+        version_table(Chain(context="billing", store="main", …))
+            ->  "alembic_version__billing__main"
+
+    Refused when the name and its `_dirty` table would pass Postgres' 63 characters: a
+    truncated name could put two chains on one version table.
+    """
     name = re.sub(
         r"[^a-z0-9_]", "_", f"alembic_version__{chain.context}__{chain.store}".lower()
     )
@@ -78,11 +87,22 @@ def version_table(chain: Chain) -> str:
 
 def only_tables_of(metadata: MetaData) -> IncludeNameFn:
     """Autogenerate and drift look only at the context's own tables — the other contexts' tables
-    and version tables on the same database are someone else's."""
+    and version tables on the same database are someone else's.
+
+        include = only_tables_of(billing_metadata)         # declares "invoice"
+        include("invoice", "table", {})                    ->  True
+        include("chat_message", "table", {})               ->  False
+        include("alembic_version__chat__main", "table", {})  ->  False
+        include("ix_invoice_number", "index", {...})       ->  True, left to the other filters
+
+    A table in a schema is looked up as `<schema>.<name>`, as `MetaData` keys it.
+    """
 
     def include_name(
         name: str | None, type_: NameFilterType, parent_names: NameFilterParentNames
     ) -> bool:
+        """A table only when `metadata` declares it (schema-qualified when it has one);
+        anything that is not a table is left to the other filters."""
         if type_ != "table":
             return True
         schema = parent_names.get("schema_name")
@@ -106,6 +126,8 @@ def declared_elsewhere(mine: MetaData, others: Sequence[MetaData]) -> IncludeObj
     def include_object(
         obj: Any, name: str | None, type_: str, reflected: bool, compare_to: Any
     ) -> bool:
+        """Skips only a reflected column this chain does not declare and another chain
+        does; everything else is compared."""
         if type_ != "column" or not reflected or compare_to is not None or name is None:
             return True
         table = obj.table.name
@@ -138,13 +160,24 @@ def _written_as(
 def rendering_types(render_types: RenderTypes) -> RenderItemFn:
     """How autogenerate writes a column type in a step body.
 
-    Context: the chosen type goes back through Alembic's own `_repr_type`, so its `sqlalchemy.` prefix,
-    its dialect imports and a decorator nested in another are written as Alembic writes any
-    type."""
+    Context: the chosen type goes back through Alembic's own `_repr_type`, so its
+    `sqlalchemy.` prefix, its dialect imports and a decorator nested in another are written as
+    Alembic writes any type.
+
+        render = rendering_types({Vector: sa.Text()})
+        render("type", Vector(3), autogen_context)      ->  "sa.Text()"
+        render("type", JsonText(), autogen_context)     ->  "sa.Text()", its impl
+        render("type", sa.Integer(), autogen_context)   ->  False, Alembic writes it
+        render("column", column, autogen_context)       ->  False
+
+    A type `render_types` maps wins over a project decorator's own impl.
+    """
 
     def render_item(
         type_: str, obj: Any, autogen_context: AutogenContext
     ) -> str | Literal[False]:
+        """The rendered type for a column type `_written_as` replaces; `False` hands every
+        other item back to Alembic's default rendering."""
         written = (
             _written_as(obj, render_types, autogen_context.dialect)
             if type_ == "type"
@@ -173,6 +206,7 @@ def _describe(difference: tuple) -> str:
 
 
 def _dirty_table(chain: Chain) -> Table:
+    """`<version table>_dirty`: one row naming the head a non-transactional step failed on."""
     return Table(f"{version_table(chain)}_dirty", MetaData(), Column("head", String(64)))
 
 
@@ -196,6 +230,14 @@ class AlembicEngine(MigrationEngine):
     def __init__(
         self, metadata: MetaData, database: Database, render_types: RenderTypes | None = None
     ) -> None:
+        """`transactional` is read from the dialect: SQLite and MySQL have no transactional
+        DDL, so the orchestrator marks the store dirty around each of their steps.
+
+            AlembicEngine(tables.metadata, postgres_database).transactional   ->  True
+            AlembicEngine(tables.metadata, sqlite_database).transactional     ->  False
+
+        No neighbours yet: `Migrations` tells it the others on the same database (`coexist`).
+        """
         self.metadata = metadata
         self.database = database
         self.render_types: RenderTypes = dict(render_types or {})
@@ -213,6 +255,9 @@ class AlembicEngine(MigrationEngine):
         ]
 
     def _config(self, chain: Chain, connection: Connection) -> Config:
+        """An Alembic `Config` built in code — no `alembic.ini`: the framework's environment,
+        the chain's folder, its version table, and the rendering and column filters, all
+        over `connection` so the command runs in the caller's transaction."""
         config = Config()
         config.set_main_option("script_location", str(ENVIRONMENT))
         config.set_main_option("version_locations", str(chain.folder))
@@ -227,6 +272,17 @@ class AlembicEngine(MigrationEngine):
         return config
 
     def position(self, chain: Chain) -> Position:
+        """The head from the chain's version table, dirty when its `_dirty` table holds a row.
+
+        Refused when the version table holds several heads: this chain is linear, so a fork
+        there came from outside and someone must look before it is resolved.
+
+            engine.position(billing_main)   ->  Position(head="0192…b7", dirty=False)
+            on a fresh database             ->  Position(head=None, dirty=False)
+            after a step failed part-way    ->  Position(head="0192…a1", dirty=True)
+
+        Read on one connection, nothing written: a missing version table is no head.
+        """
         dirty = _dirty_table(chain)
         with self.database.engine.connect() as connection:
             migration = MigrationContext.configure(
@@ -244,6 +300,19 @@ class AlembicEngine(MigrationEngine):
         return Position(heads[0] if heads else None, is_dirty)
 
     def record(self, chain: Chain, position: Position) -> None:
+        """Stamps the version table on `position.head` (`base` for none), and the `_dirty`
+        table to match — all in one transaction.
+
+            engine.record(billing_main, Position("0192…a1", dirty=True))   ->  None
+            engine.position(billing_main)   ->  Position(head="0192…a1", dirty=True)
+            engine.record(billing_main, Position("0192…b7"))               ->  None
+            engine.position(billing_main)   ->  Position(head="0192…b7", dirty=False)
+
+        1. `alembic stamp --purge`: the version table holds that one head, nothing else.
+        2. Dirty: the `_dirty` table created when missing.
+        3. Final: the `_dirty` table, when there is one, emptied — and given the head again
+           when the position is dirty.
+        """
         dirty = _dirty_table(chain)
         with self.database.engine.begin() as connection:
             command.stamp(
@@ -257,16 +326,27 @@ class AlembicEngine(MigrationEngine):
                     connection.execute(insert(dirty).values(head=position.head))
 
     def apply(self, chain: Chain, step: Step) -> None:
+        """`alembic upgrade <step>` in one transaction — rolled back whole on a store with
+        transactional DDL."""
         with self.database.engine.begin() as connection:
             command.upgrade(self._config(chain, connection), step.id)
 
     def revert(self, chain: Chain, step: Step) -> None:
+        """`alembic downgrade` to the step's parent (`base` for the first step)."""
         with self.database.engine.begin() as connection:
             command.downgrade(self._config(chain, connection), step.parent or "base")
 
     def scaffold(self, chain: Chain, step: Step) -> Path:
         """Autogenerated from the context's tables against the store as it stands — which must be
-        on the chain's last step, as for any autogenerate."""
+        on the chain's last step, as for any autogenerate.
+
+            engine.scaffold(chat_main, Step("…c2", parent="…b7", message="add read_at"))
+                ->  Path("<chain folder>/…c2_add_read_at.py")
+            on a store still behind the chain's last step
+                ->  MigrationRefused("chat/main: … — upgrade it before writing a new step")
+
+        The revision id is the step's id, its down revision the step's parent — `base` first.
+        """
         chain.folder.mkdir(parents=True, exist_ok=True)
         try:
             with self.database.engine.begin() as connection:
@@ -285,6 +365,11 @@ class AlembicEngine(MigrationEngine):
         return Path(cast(Script, script).path)
 
     def drift(self, chain: Chain) -> list[str] | None:
+        """Alembic's `compare_metadata` over the context's own tables, each difference as a
+        sentence — never `None`: this engine can always tell.
+
+            ["column move.zone is declared but no step adds it"]
+        """
         with self.database.engine.connect() as connection:
             migration = MigrationContext.configure(
                 connection,

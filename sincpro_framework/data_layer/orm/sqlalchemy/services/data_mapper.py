@@ -69,11 +69,26 @@ class RelatedAttribute:
     def __init__(
         self, name: str, relation: relations.Relation, default: Callable[[], Any]
     ) -> None:
+        """`default` is what the field shows a serializer — the declared shape, never a
+        resolution."""
         self.name = name
         self.relation = relation
         self.default = default
 
     def __get__(self, record: Any, owner: type | None = None) -> Any:
+        """The relation's value on `record`, resolving it whole inside a unit of work.
+
+        1. Read on the class: the descriptor itself.
+        2. While an answer is being serialised: the field's default, so pydantic sees the
+           declared shape and nothing is resolved.
+        3. Resolved on the record: that value — unless it was cut (a page, a filter) and a
+           unit of work is open, where the Feature gets the whole relation instead.
+        4. No unit of work on the record's session: `RelationNotResolved`, naming the fix.
+        5. Resolved whole now through the repository on the session.
+           5.1 The resolver wrote nothing — a relation declared the wrong way round:
+               `RelationNotResolved` explaining the declaration.
+        Final: the value just resolved.
+        """
         if record is None:
             return self
         if serialising():
@@ -221,6 +236,17 @@ def with_transient_defaults(
 
     The mapper builds a record without calling `__init__`, so without this a field like
     `drafts: list[Draft] = field(default_factory=list)` would simply not exist on the record.
+
+        fill = with_transient_defaults(Invoice, {"id", "total", "tags"})
+        fill(invoice_just_loaded, context)   ->  None
+        invoice_just_loaded.drafts           ->  []      not a column: its default
+        invoice_just_loaded.tags             ->  []      a NULL in a non-optional list field
+
+    1. The class's dataclass fields — none for a class that is not a dataclass.
+    2. The transient ones: not a column, with a default to make.
+    3. The non-optional column fields with a default: what replaces a NULL the row holds.
+    Final: the `load` hook — each transient field not on the record and not a relation gets
+    its default, and each of those columns read as NULL gets its default too.
     """
     declared_fields = list(fields(aggregate)) if is_dataclass(aggregate) else []
     transient = {
@@ -241,6 +267,11 @@ def with_transient_defaults(
     }
 
     def fill(record: Any, _context: Any) -> None:
+        """The `load` hook: each transient field not on the record (and not a relation) gets
+        its default; each non-optional column field the row left NULL gets its default.
+
+            row tags=NULL, field `tags: list[str] = field(default_factory=list)`  ->  []
+        """
         for name, make in transient.items():
             if name in RELATIONS.get(aggregate, {}) or name in record.__dict__:
                 continue
@@ -278,7 +309,21 @@ def computed_properties(entity: type, table: Table) -> dict[str, Any]:
 
 def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None:
     """Registers the relations and puts the attribute that resolves them on the class. What
-    was declared wins over what is inferred; a second call changes nothing."""
+    was declared wins over what is inferred; a second call changes nothing.
+
+        install(Dataset, {"runs": Relation.foreign_key(Run, identified_by="dataset_id")})
+            ->  None; RELATIONS[Dataset]["runs"] set, Dataset.runs a RelatedAttribute
+        install(Dataset, {"runs": another})   ->  None; the first one kept
+
+    1. The class's registered relations, created empty the first time.
+    2. Each relation whose name is not registered yet:
+       2.1 registered;
+       2.2 when it says its cardinality and the class does not annotate the name, the
+           annotation written — `list[Related]` or `Related | None`;
+       2.3 the attribute that resolves it set on the class, with the field's default.
+    Final: when anything was added, every cached description cleared — one read before knew
+    no relations.
+    """
     known = RELATIONS.setdefault(aggregate, {})
     added = False
     for name, relation in declared.items():
@@ -318,6 +363,17 @@ def inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[st
         Repo.workspace_id  →  ForeignKey("ws.workspace_id")
                            →  Ws.repositories by parent_field="workspace_id",
                               related_field="workspace_id"
+
+    1. The table of every mapped class; nothing inferred for a class that is not mapped.
+    2. Each annotation of the class that is not one of its columns and points at a mapped
+       class — one or a list of it.
+    3. The foreign keys between the two tables: on the related table pointing here for a
+       list, on this table pointing there for one.
+    4. Several: only the column named `<attribute>_id` — for a list, `<this table>_id` —
+       is kept; anything but exactly one infers nothing.
+    5. A key to the related primary key relates by `identified_by`; a key to another unique
+       column relates by `parent_field` and `related_field`.
+    Final: the relations by attribute name — what `install` takes, after the declared ones.
     """
     tables = {mapper.class_: mapper.local_table for mapper in mapper_registry.mappers}
     own = tables.get(aggregate)
@@ -357,6 +413,8 @@ def inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[st
 
 
 def parent_table(mapper_registry: registry, parent: type) -> Table:
+    """The table `parent` is mapped to in `mapper_registry` — what an extension joins to;
+    refused when `parent` is not mapped."""
     for mapper in mapper_registry.mappers:
         if mapper.class_ is parent and isinstance(mapper.local_table, Table):
             return mapper.local_table

@@ -75,6 +75,18 @@ TRUTHY = frozenset({"1", "true", "yes", "on", "t"})
 
 
 class FieldType(StrEnum):
+    """The logical type of a field — what a client renders and which operators it offers — as
+    opposed to the Python type it was declared with.
+
+        describe(Dataset).fields["row_count"].type   ->  FieldType.INTEGER   ("integer")
+        describe(Dataset).fields["runs"].type        ->  FieldType.ONE2MANY
+
+    Context: a small, closed vocabulary that travels as text in the definition, so a client
+    in any language branches on it. Odoo's words for the three relations, because they
+    already say the cardinality and the side of the key. `UNKNOWN` is what a type nobody
+    mapped reads as: it is offered no comparison, so it is shown but not filtered by value.
+    """
+
     TEXT = "text"
     INTEGER = "integer"
     NUMBER = "number"
@@ -105,20 +117,27 @@ class FieldType(StrEnum):
     def read(self, raw: Any, timezone: tzinfo = UTC) -> Any:
         """Reads a value written as text into what this type holds.
 
-            in      "1000" as INTEGER          the text a URL carries
-            out     1000
+            FieldType.INTEGER.read("1000")     ->  1000      # the text a URL carries
+            FieldType.DATETIME.read("2026-03-14T15:09:26")
+                ->  datetime(2026, 3, 14, 15, 9, 26)
+            FieldType.DATETIME.read(date(2026, 3, 14), timezone=ZoneInfo("America/La_Paz"))
+                ->  datetime(2026, 3, 14, 4, 0, tzinfo=UTC)    # La Paz's midnight
+            FieldType.BOOLEAN.read("yes")      ->  True
+            FieldType.INTEGER.read("banana")
+                ->  Unreadable: invalid literal for int() with base 10: 'banana'
 
         Anything not text is already read and comes back untouched. A text that will not
         convert raises `Unreadable`, which the model turns into a dropped condition.
 
-        >>> FieldType.INTEGER.read("1000")
-        1000
-        >>> FieldType.DATETIME.read("2026-03-14T15:09:26")
-        datetime.datetime(2026, 3, 14, 15, 9, 26)
-        >>> FieldType.BOOLEAN.read("yes")
-        True
-        >>> FieldType.INTEGER.read("banana")
-        Unreadable: invalid literal for int() with base 10: 'banana'
+        1. A date asked as a DATETIME: its midnight in `timezone`, as a UTC instant.
+        2. Anything else that is not text: as it is.
+        3. Text, by type:
+           3.1 INTEGER, NUMBER — `int`, `float`;
+           3.2 BOOLEAN — one of the truthy words, any case; any other word is `False`;
+           3.3 DATETIME, DATE — ISO text; a datetime keeps the zone the text wrote, if any;
+           3.4 UUID — a `uuid.UUID`;
+           3.5 any other type — the text as it is.
+        Final: a `ValueError` on the way is `Unreadable`, saying why.
         """
         if (
             self is FieldType.DATETIME
@@ -304,10 +323,15 @@ def choice_translations_of(annotation: Any) -> dict[str, Translated]:
     as text, as JSON keys travel, in the order the enum declares its values. Empty when the
     annotation is not an enum or the enum names none; a value it leaves out has no label.
 
-    in  Priority   choice_translations() → {Priority.HIGH: {"default": "High", "es": "Alta"}}
-    out {"high": {"default": "High", "es": "Alta"}}
+        # Priority.choice_translations() -> {Priority.HIGH: {"default": "High", "es": "Alta"}}
+        choice_translations_of(Priority | None)
+            ->  {"high": {"default": "High", "es": "Alta"}}
+        choice_translations_of(str)   ->  {}
+        # choice_translations() naming "urgent", not a Priority value
+            ->  raises ProgrammingError("Priority.choice_translations() names 'urgent', …")
 
     A key that is not one of the enum's values is a typo, refused when the model is described.
+    A key may be the member or its value: each is read back as the member first.
     """
     members = enum_of(annotation)
     translator = getattr(members, "choice_translations", None)
@@ -345,6 +369,16 @@ def field_translations(declared: type, key: str) -> dict[str, Translated]:
 
     A field that declares no `label` is called what its type calls itself: a category named once,
     in its enum, is named the same in every aggregate that uses it. The field's own `label` wins.
+
+        # class Ticket: title = field(metadata={"label": {"default": "Title"}});
+        #               priority: Priority — whose translations() name it "Priority"
+        field_translations(Ticket, "label")
+            ->  {"priority": {"default": "Priority", "es": "Prioridad"},
+                 "title": {"default": "Title"}}
+        field_translations(Ticket, "help")   ->  {}    # no field declared one
+        field_translations(dict, "label")    ->  {}    # not a dataclass
+
+    Only `label` falls back on the type's name; `help` is what the fields declared, alone.
     """
     if not dataclasses.is_dataclass(declared):
         return {}
@@ -361,10 +395,13 @@ def field_translations(declared: type, key: str) -> dict[str, Translated]:
 def related_class(annotation: Any) -> tuple[type | None, bool]:
     """The class an annotation points at, and whether it names several of them.
 
-    in  list[Run]    →  out  (Run, True)
-    in  Shelf | None →  out  (Shelf, False)
-    in  str          →  out  (str, False)      a plain type is still a class
-    in  dict[str, str] → out (None, False)
+        related_class(list[Run])         ->  (Run, True)
+        related_class(Shelf | None)      ->  (Shelf, False)
+        related_class(str)               ->  (str, False)     # a plain type is still a class
+        related_class(dict[str, str])    ->  (None, False)
+        related_class(set[Run])          ->  (None, False)
+
+    Context: only a `list` names several; a set or a tuple of records is not a relation here.
     """
     base = without_optional(annotation)
     many = get_origin(base) is list
@@ -384,6 +421,13 @@ def logical_type(annotation: Any) -> FieldType:
 
     Read from the annotation and not the column, because `column_names` is `Text` on disk and
     `list[str]` in the model — and only the second admits `contains`.
+
+    1. The optional stripped: `int | None` is read as `int`.
+    2. A list: `TEXT_LIST` when it holds `str`, else `UNKNOWN`.
+    3. `dict[str, str]`: `TRANSLATED`.
+    4. An enum: as the primitive it is — a `StrEnum` text, an `IntEnum` integer — and
+       `UNKNOWN` when it is neither.
+    Final: the primitive's type by `LOGICAL_TYPES` — `UNKNOWN` for any other class.
     """
     base = without_optional(annotation)
     if get_origin(base) is list:
@@ -404,6 +448,17 @@ def logical_type(annotation: Any) -> FieldType:
 
 
 class FieldMeta(DataTransferObject):
+    """The definition of one field as a client needs it: its type, what it may be asked, how a
+    form shows it and, for a relation or a value object, what is on the other side.
+
+        describe(Dataset).fields["row_count"]
+        ->  FieldMeta(type=INTEGER, nullable=False, sortable=True, ops=(=, !=, >, …))
+
+    Derived, never declared — built by `for_column`, `for_relation` or `for_embedded` from
+    what the reader knows. It also reads a condition's value as its type (`read`), which is
+    why the rules of a field live with its definition and not with whoever asks.
+    """
+
     type: FieldType
     nullable: bool
 
@@ -491,8 +546,11 @@ class FieldMeta(DataTransferObject):
         row, a value object inside the row, or another aggregate to bring. Travels with the
         definition so a client branches on one word.
 
-        >>> describe(Work).fields["author"].kind, describe(Work).fields["size"].kind
-        ('relation', 'embedded')
+            describe(Work).fields["author"].kind      ->  "relation"    # MANY2ONE
+            describe(Work).fields["size"].kind        ->  "embedded"
+            describe(Work).fields["title"].kind       ->  "scalar"      # TEXT
+
+        Every type that is neither relational nor embedded is a scalar.
         """
         if self.type.is_relational:
             return "relation"
@@ -580,6 +638,15 @@ class FieldMeta(DataTransferObject):
         return operator in self.ops
 
     def _value(self, raw: Any, timezone: tzinfo = UTC) -> Any:
+        """One raw value read as this field holds it.
+
+            exact field, "0.10"   ->  Decimal("0.10")      never through a float
+            INTEGER, "1000"       ->  1000
+
+        1. A decimal field reads text and numbers (not booleans) as a `Decimal` from their
+           text, so `0.1` stays `0.1` — a failure is `Unreadable`.
+        2. Final: anything else is read by the type (`FieldType.read`).
+        """
         if self.exact and isinstance(raw, (str, int, float)) and not isinstance(raw, bool):
             try:
                 return Decimal(str(raw))
@@ -590,13 +657,19 @@ class FieldMeta(DataTransferObject):
     def read(self, condition: Condition, timezone: tzinfo = UTC) -> Condition:
         """Context: the same condition with its value in the type this column compares against.
 
-        >>> row_count.read(Condition(field="row_count", value="1000", operator=Operator.GT))
-        Condition(field='row_count', value=1000, operator=<Operator.GT: '>'>)
-
+            row_count.read(Condition(field="row_count", value="1000", operator=Operator.GT))
+                ->  Condition(field='row_count', value=1000, operator=<Operator.GT: '>'>)
+            row_count.read(Condition(field="row_count", value="5", operator=Operator.IN))
+                ->  Condition(field='row_count', value=[5], operator=<Operator.IN: 'in'>)
+            row_count.read(Condition(..., value="1000", operator=Operator.BETWEEN))
+                ->  Unreadable: 'between' compares against two bounds; got '1000'
 
         1. `is_null` is the exception: its value is the question asked, not the field's type.
-        2. A multi-valued operator reads every member.
-        3. Final: `contains` asks about one member, so its value is a member's type.
+        2. `between` reads both of its two bounds — anything but a pair is `Unreadable`.
+        3. A multi-valued operator reads every member; one value alone is a list of one.
+        4. A list of texts: `eq` and `ne` take the list as it came; `contains` asks about one
+           member, so its value is a member's type.
+        Final: any other condition has its value read as the field's type (`_value`).
         """
         if condition.operator is Operator.IS_NULL:
             return condition.model_copy(
@@ -635,7 +708,16 @@ class FieldMeta(DataTransferObject):
 
 def ambient_resolution() -> ResolutionContext:
     """What a dynamic value reads when nobody gave it a resolution: this moment, and the server's
-    own context — its `timezone` (an IANA name, UTC without one) and `week_starts_on`."""
+    own context — its `timezone` (an IANA name, UTC without one) and `week_starts_on`.
+
+        # inside bus.context({"timezone": "America/La_Paz", "week_starts_on": 6})
+        ambient_resolution()
+            ->  ResolutionContext(now=<now, UTC>, timezone=ZoneInfo("America/La_Paz"),
+                                  week_starts_on=6, context=<the context>)
+        # {"timezone": "La Paz"}  ->  raises ProgrammingError("the context's timezone ...")
+
+    A timezone that is not an IANA name is the server's wiring mistake, not the caller's.
+    """
     context = use_context()
     zone = context.get("timezone", "UTC")
     try:
@@ -815,6 +897,15 @@ class Meta(DataTransferObject):
 
         The identity always stays: a record whose id did not travel cannot be opened,
         refreshed or cached, so masking it away makes the rest useless.
+
+        1. Nothing asked: every field but the relations — a relation is brought only when
+           asked for by name.
+        2. Else the names, the identity first and each once: the identity, then what the
+           specification keeps (`masked` — the display when it names none).
+           2.1 A name this definition does not have is skipped.
+           2.2 An embedded field whose node asks for a specification of its own has its
+               definition cut by it, in turn.
+        Final: a copy of this definition holding only those fields, in that order.
         """
         if specification is None:
             return self.model_copy(
@@ -857,10 +948,26 @@ class Meta(DataTransferObject):
         the SQL, the key of a cache — sees only what actually ran. Without a `resolution` it is
         built from this moment and the framework's own context.
 
-        >>> meta.accept(Condition(field="row_count", operator=Operator.GT, value="1000"))
-        (Condition(field='row_count', operator=<Operator.GT>, value=1000), [])
-        >>> meta.accept(Condition(field="gone", value="1"))
-        (None, [Dropped(field='gone', reason='unknown_field')])
+            meta.accept(Condition(field="row_count", operator=Operator.GT, value="1000"))
+                ->  (Condition(field='row_count', operator=<Operator.GT>, value=1000), [])
+            meta.accept(Condition(field="gone", value="1"))
+                ->  (None, [Dropped(field='gone', reason='unknown_field')])
+            meta.accept(All([row_count > "1000", row_count > "lots"]))
+                ->  (Condition(row_count > 1000),
+                     [Dropped(field='row_count', reason='bad_value')])
+
+        1. Dynamic values resolved — by `resolution`, or the ambient one when none is given.
+        2. No resolution yet, and a plain date compared with a DATETIME field: the ambient
+           one is taken anyway, so the date's midnight is read in the context's timezone.
+        3. The timezone: the resolution's, else UTC.
+        4. Each leaf through `_kept`:
+           4.1 an unknown field — `unknown_field`; an operator its type does not take —
+               `unsupported_operator`;
+           4.2 another column (`FromField`): it must exist, be of the same type and be
+               compared by a same-row operator — else `bad_value`;
+           4.3 else its value read as the field's type — a value that will not read is
+               `bad_value`.
+        Final: the tree of what was kept, a group that lost every part gone, and the drops.
         """
         if has_dynamic_values(expression):
             resolution = resolution or ambient_resolution()
@@ -879,6 +986,7 @@ class Meta(DataTransferObject):
         dropped: list[Dropped] = []
 
         def kept(condition: Condition) -> Condition | None:
+            """One leaf through `_kept`: read, or `None` with its loss noted in `dropped`."""
             read, loss = self._kept(condition, timezone)
             if loss is not None:
                 dropped.append(loss)
@@ -1068,7 +1176,17 @@ def _while(
     owner: str, answered: object, part: str, annotations: dict[str, Any]
 ) -> dict[str, Expression]:
     """Each field a `When` covers, with its condition. A field covered twice is covered while
-    either holds. The condition is a criteria's own, over fields the entity has."""
+    either holds. The condition is a criteria's own, over fields the entity has.
+
+        [When(state = draft, a.partner_id), When(locked = true, a.partner_id, a.date)]
+        ->  {"partner_id": Any([state = draft, locked = true]), "date": locked = true}
+
+    1. Each entry must be a `When` whose condition is a `Condition`, `All`, `Any` or `Not` —
+       anything else is refused with the spelling that works.
+    2. Every field the condition asks about must be a field of the entity.
+    3. Each covered field collects the conditions that cover it.
+    Final: one condition per field — itself alone, or an `Any` of all of them.
+    """
     covered: dict[str, list[Expression]] = {}
     for entry in _entries(answered):
         if not isinstance(entry, When):
@@ -1107,6 +1225,15 @@ def _named(answered: object, form: str) -> frozenset[str]:
 def framework_fields(declared: type) -> frozenset[str]:
     """The fields a framework class declares — `Entity`'s, a mixin's: written by the framework,
     so a form shows them read-only. Found by the class that declares each one, never by name.
+
+        framework_fields(Invoice)       # class Invoice(Entity)
+            ->  frozenset({"id", "created_at", "updated_at", "version",
+                           "derivations", "presentation"})
+        framework_fields(Client)        # class Client(ArchivableMixin, Entity)
+            ->  the same, plus "archived_at"
+
+    Context: every annotation of a framework class counts, its class variables
+    (`derivations`, `presentation`) included — a caller intersects with the fields it has.
     """
     found: set[str] = set()
     for owner in declared.__mro__:
@@ -1135,8 +1262,17 @@ def _required_by_structure(declared: type, system: frozenset[str]) -> frozenset[
 def defaults_of(declared: type) -> dict[str, Any]:
     """What a new record of `declared` starts with, as JSON: each plain dataclass default.
 
-    in      Invoice(currency_id="BOB", state=InvoiceState.DRAFT, lines=factory)
-    out     {"currency_id": "BOB", "state": "draft"}
+        # class Invoice(Entity): currency_id = "BOB"; state = InvoiceState.DRAFT;
+        #                        lines = field(default_factory=list); note: str | None = None
+        defaults_of(Invoice)   ->  {"version": 0, "currency_id": "BOB", "state": "draft"}
+        defaults_of(dict)      ->  {}     # not a dataclass
+
+    1. A class that is not a dataclass has no defaults to offer.
+    2. Each field, in declaration order:
+       2.1 no plain default, or `None` — skipped; a factory is never run here;
+       2.2 the default written as JSON by its field's annotation;
+       2.3 a default nothing can write as JSON is skipped, left for the client.
+    Final: the defaults, by field name — read once per class.
     """
     if not dataclasses.is_dataclass(declared):
         return {}
@@ -1158,6 +1294,13 @@ def defaults_of(declared: type) -> dict[str, Any]:
 def presentation_of(declared: type) -> Presented:
     """What the class answers about how it is read and shown, read once and checked against
     its fields.
+
+        presentation_of(Account)    # DEFAULT_GET_ID "code", presentation required=[a.name]
+            ->  Presented(get_id="code", display="name", order=(Sort(code),), …,
+                          readonly={"id", "created_at", "updated_at", "version"},
+                          required={"name", …})
+        presentation_of(Money)      # a value object: no DEFAULT_*, no presentation
+            ->  Presented()
 
     1. How it is read comes from its `DEFAULT_*` class methods (every `Entity` has them, with
        their defaults); a class without them — a value object, a plain model — answers none.
@@ -1245,7 +1388,16 @@ class Derivation:
 
 def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
     """The derived fields, each after the derived fields it reads (Kahn, declaration order among
-    the free ones). A cycle is refused, naming it."""
+    the free ones). A cycle is refused, naming it.
+
+        total ← (subtotal, discount) · subtotal ← (lines,)   ->  ["subtotal", "total"]
+
+    1. For each derived field, the other derived fields it reads — what it waits for; a
+       field read from outside the derivations waits for nothing.
+    2. A field that reads itself is refused.
+    3. Round by round, every field waiting for nothing is placed and freed from the rest.
+    Final: a round with nothing free is a cycle, refused naming every field still waiting.
+    """
     waiting = {
         name: {one for one in derivation.depends if one in read and one != name}
         for name, derivation in read.items()
@@ -1276,11 +1428,14 @@ def derivations_of(declared: type) -> tuple[Derivation, ...]:
     """The class's `derivations`, read once, checked against its fields and put in the order
     they have to run.
 
-    in      Invoice: total ← (subtotal, discount), subtotal ← (lines,)
-    out     (Derivation(subtotal, (lines,)), Derivation(total, (subtotal, discount)))
+        # Invoice: total ← (subtotal, discount), subtotal ← (lines,)
+        derivations_of(Invoice)
+            ->  (Derivation(subtotal, (lines,)), Derivation(total, (subtotal, discount)))
+        derivations_of(Box)    ->  ()     # declares no derivations
 
     1. A class with no `Derivations` computes nothing.
     2. The lambda runs once over `Fields`; an unknown name is refused, naming it.
+       2.1 An entry that is not a `Derive`, or whose `by` is not callable, is refused.
     3. A field derived twice is refused: two computations would race for it.
     4. Ordered so a field is computed after every derived field it reads; among the free ones,
        the order they were declared in.

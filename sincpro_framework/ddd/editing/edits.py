@@ -67,7 +67,9 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class EditAction(StrEnum):
-    KEEP = "keep"
+    """What an `Edit` does with the record the form holds — keep it, store it, or drop it."""
+
+    SAVE_DRAFT = "save_draft"
     """The record as the form holds it, kept as the caller's draft: nothing is stored."""
     SAVE = "save"
     """The record stored, and the draft dropped."""
@@ -103,7 +105,7 @@ class Edit[T, R: ResponseEdit](DataTransferObject):
     origin_version: int | None = None
     """The stored record's version the caller read, for a save with no draft: refused when the
     record moved past it. A draft remembers its own."""
-    action: EditAction = EditAction.KEEP
+    action: EditAction = EditAction.SAVE_DRAFT
 
 
 class EntityEdits[T](EntityReads[T]):
@@ -169,8 +171,16 @@ class EntityEdits[T](EntityReads[T]):
             setattr(promoted, field.name, getattr(record, field.name))
         return promoted
 
-    def keep(self, dto: Any) -> Any:
+    def save_draft(self, dto: Any) -> Any:
         """The edit kept as the caller's draft; nothing is stored.
+
+            # invoice 0192… stored at version 3, no draft yet
+            save_draft(CommandEditInvoice(id="0192…", values={"discount": "5"},
+                                          changed=["discount"]))
+                ->  ResponseEditInvoice(invoice=Invoice(discount=5, total=95, …),
+                        draft=DraftState(version=1, origin_version=3, stale=False), …)
+            # the same edit again with version=0, another tab having kept first
+                ->  raises DraftConflict
 
         1. The working copy, inside `previewing()`: a copy of the stored record — or a new one
            under `id` — with the caller's draft on it, changed by this edit, its derivations
@@ -202,7 +212,7 @@ class EntityEdits[T](EntityReads[T]):
             origin = dto.origin_version
         else:
             origin = current
-        draft = drafts.keep(subject, form_values(entity, dumped(record)), origin, dto.version)
+        draft = drafts.save(subject, form_values(entity, dumped(record)), origin, dto.version)
         return self.answered(
             entity, response, record, draft, stored is not None and current != origin, advice
         )
@@ -225,6 +235,8 @@ class EntityEdits[T](EntityReads[T]):
         2. The stored record is read as the store holds it — or a new one is made under `id` — and
            refused (`StaleAggregate`) when it moved past the version the edit started from: the
            draft's, else `origin_version` when the caller gave one.
+           2.1 A stored record whose values need an extension's class it does not have yet is
+               given that extension's rows (`Extends`), then read again.
         3. The draft's values, then this edit's change, on the record itself — the domain's
            methods record their events as on any write — and the record saved.
         Final: the draft dropped; the record as saved, with no draft.
@@ -271,7 +283,15 @@ class EntityEdits[T](EntityReads[T]):
 
     def discard(self, dto: Any) -> Any:
         """The caller's draft dropped; the record as stored — or a new one under `id` — answered
-        with no draft."""
+        with no draft.
+
+            discard(CommandEditInvoice(id="0192…", version=2, action=EditAction.DISCARD))
+                ->  ResponseEditInvoice(invoice=<as stored>, draft=None, advice=[], …)
+            # no stored invoice under the id  ->  a blank Invoice keyed "0192…", draft=None
+
+        Context: the version the caller read is not checked — dropping a draft another tab
+        kept since is still dropping it.
+        """
         entity, response = declared_by(type(dto))
         self.drafts().discard(self.draft_subject(entity, dto.id))
         stored = self.stored(entity, dto.id)
@@ -280,7 +300,16 @@ class EntityEdits[T](EntityReads[T]):
 
     def nested_names(self, entity: type, changed: list[str]) -> list[str]:
         """The fields a form reports as changed, as flat names: `delivery` is every field of the
-        extension, `delivery.route` is `route`."""
+        extension, `delivery.route` is `route`.
+
+            # Move delegates the extension `delivery` (fields route, carrier)
+            nested_names(Move, ["number", "delivery.route"])   ->  ["number", "route"]
+            nested_names(Move, ["delivery"])                   ->  ["route", "carrier"]
+            nested_names(Invoice, ["delivery.route"])          ->  ["delivery.route"]
+            # Invoice delegates no extension: its names come back as they are
+
+        A name whose prefix is no extension's key is kept as it came.
+        """
         if entity not in extensions.DELEGATED:
             return changed
         found: list[str] = []
@@ -298,14 +327,24 @@ class EntityEdits[T](EntityReads[T]):
     def flattened(self, entity: type, values: dict[str, Any]) -> dict[str, Any]:
         """The values of a form as the flat fields of one record.
 
-            {"number": "F-1", "delivery": {"route": "R7"}, "tracking": None}
-              →  {"number": "F-1", "route": "R7"}
+            flattened(Move, {"number": "F-1", "delivery": {"route": "R7"}, "tracking": None})
+                ->  {"number": "F-1", "route": "R7"}
+            flattened(Move, {"delivery": {"colour": "red"}})
+                ->  raises ClientError("delivery has no field colour: it has route, carrier")
 
         An entity whose answers nest each extension under its key (`delegated=[Move]`) is read back
         by a form in that shape, and sends it back as it read it. The nested values are the fields
         of that extension; `None` is a record that has no such extension, and writes nothing. Flat
         values are taken as they are, whatever the entity delegates, and a key that is not an
         extension of it is left for `assign` to refuse as any unknown field.
+
+        1. An entity that delegates no extension: the values as they came.
+        2. For each extension of the entity, its key among the values:
+           2.1 taken out of the values;
+           2.2 `None` writes nothing;
+           2.3 a field the extension does not have is a `ClientError`, naming it;
+           2.4 else its fields are put among the flat values.
+        Final: one record's flat fields — the caller's dict left untouched.
         """
         if entity not in extensions.DELEGATED:
             return values
@@ -325,8 +364,21 @@ class EntityEdits[T](EntityReads[T]):
         return flat
 
     def edit(self, dto: Any) -> Any:
-        """Each action is a method — `keep`, `save`, `discard` — to override and call `super()`.
-        The values arrive flat, whichever shape the form read the record in."""
+        """Run the edit's action — each one a method (`save_draft`, `save`, `discard`) to
+        override and call `super()`.
+
+            edit(CommandEditInvoice(id="0192…", values={"discount": "5"}))
+                ->  save_draft's answer — a draft kept, nothing stored
+            edit(CommandEditInvoice(id="0192…", version=1, action=EditAction.SAVE))
+                ->  save's answer — stored, draft=None
+            edit(CommandEditMove(values={"delivery": {"route": "R7"}}, changed=["delivery"]))
+                ->  save_draft of values={"route": "R7"}, changed=["route", "carrier"]
+
+        1. The values and the changed names flattened: whichever shape the form read the
+           record in — extensions nested under their key or flat — they arrive as one record's
+           fields.
+        Final: `SAVE` stores, `DISCARD` drops, anything else keeps the draft.
+        """
         entity, _ = declared_by(type(dto))
         flat = self.flattened(entity, dto.values)
         if flat != dto.values or self.nested_names(entity, dto.changed):
@@ -338,9 +390,10 @@ class EntityEdits[T](EntityReads[T]):
                 return self.save(dto)
             case EditAction.DISCARD:
                 return self.discard(dto)
-        return self.keep(dto)
+        return self.save_draft(dto)
 
     def execute(self, dto: Any) -> Any:
+        """An `Edit` is edited; every other DTO is a read `EntityReads` answers."""
         if isinstance(dto, Edit):
             return self.edit(dto)
         return super().execute(dto)

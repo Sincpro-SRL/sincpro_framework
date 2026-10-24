@@ -22,11 +22,20 @@ EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _refuse_naive(moment: datetime) -> None:
+    """Refuse a datetime without a timezone — "02:00" compared with an aware tick would mean
+    nothing, so the mistake is said where it is made."""
     if moment.tzinfo is None:
         raise ValueError(f"{moment} is naive: a cron compares aware datetimes only")
 
 
 def _number(token: str, names: tuple[str, ...], offset: int) -> int:
+    """One value of a cron field — a number, or a name read case-insensitively at its position
+    plus `offset`.
+
+        _number("mar", MONTHS, 1)     ->  3
+        _number("MON", WEEKDAYS, 0)   ->  1
+        _number("15", (), 0)          ->  15
+    """
     upper = token.upper()
     if upper in names:
         return names.index(upper) + offset
@@ -38,6 +47,19 @@ def _number(token: str, names: tuple[str, ...], offset: int) -> int:
 def _field(
     text: str, low: int, high: int, names: tuple[str, ...] = (), offset: int = 0
 ) -> frozenset[int]:
+    """Every value one cron field allows, within `low`-`high`.
+
+        _field("*/15", 0, 59)                ->  {0, 15, 30, 45}
+        _field("8-18", 0, 23)                ->  {8, 9, ..., 18}
+        _field("MON-FRI", 0, 7, WEEKDAYS)    ->  {1, 2, 3, 4, 5}
+        _field("5/20", 0, 59)                ->  {5, 25, 45}
+
+    1. Each comma-separated part is read on its own, and their values are joined.
+    2. A `/step` must be a positive number; without one the step is 1.
+    3. The base: `*` is the whole range, `a-b` a range, a single value is itself — or, with a
+       step, from it to `high`.
+    4. Final: a part outside `low`-`high` is refused, naming the part.
+    """
     values: set[int] = set()
     for part in text.split(","):
         base, has_step, step_text = part.partition("/")
@@ -61,6 +83,13 @@ def _field(
 
 
 class Trigger(Protocol):
+    """When a cron fires, as the gateway asks it: the first tick after a moment.
+
+    Context: one question is enough for everything the gateway does — the ticks due between
+    two looks, the next tick a status shows, the plan of the coming hours — so a project's own
+    schedule (business days from a calendar, say) only answers `next_after`.
+    """
+
     def next_after(self, moment: datetime) -> datetime:
         """The first tick strictly after `moment`, timezone-aware."""
         ...
@@ -70,6 +99,19 @@ class CronExpression:
     """`CronExpression("0 2 * * *", timezone="America/La_Paz")`: every day at 02:00, La Paz time."""
 
     def __init__(self, expression: str, timezone: str) -> None:
+        """Parse the five fields and the zone once, so `next_after` only compares numbers.
+
+            CronExpression("*/15 9-17 * * mon-fri", "UTC")
+            ->  minutes [0, 15, 30, 45], hours 9..17, weekdays {1, 2, 3, 4, 5}
+            CronExpression("0 2 * *", "UTC")      ->  ValueError: needs five fields, it has 4
+            CronExpression("0 2 * * *", "Mars/Base") ->  ValueError: unknown timezone
+
+        1. Exactly five fields, and a zone `zoneinfo` knows — refused with what is wrong.
+        2. Each field read into the values it allows; month and weekday also by name, and
+           weekday 7 is Sunday as 0 is.
+        3. Final: whether each day field was `*` — it decides how the two combine
+           (`_runs_on`).
+        """
         parts = expression.split()
         if len(parts) != 5:
             raise ValueError(f"cron: {expression!r} needs five fields, it has {len(parts)}")
@@ -92,6 +134,7 @@ class CronExpression:
         self._any_weekday = weekday.startswith("*")
 
     def __str__(self) -> str:
+        """How logs and errors name it — `0 2 * * * (America/La_Paz)`."""
         return f"{self.expression} ({self.timezone})"
 
     def _runs_on(self, day: date) -> bool:
@@ -113,6 +156,16 @@ class CronExpression:
         return wall.astimezone(UTC).astimezone(self._zone)
 
     def next_after(self, moment: datetime) -> datetime:
+        """The first tick strictly after `moment`, walked day by day in the cron's zone.
+
+            CronExpression("0 2 * * *", "America/La_Paz").next_after(2026-03-01 07:00 UTC)
+            ->  2026-03-02 02:00-04:00
+
+        1. `moment` must be aware; its date in the cron's zone is where the walk starts.
+        2. Each day the cron runs on, its hours and minutes in order, as instants in the zone.
+        3. The first instant after `moment` is the tick.
+        4. Final: none within `SEARCH_YEARS` — `0 0 30 2 *`, a 30th of February — is refused.
+        """
         _refuse_naive(moment)
         start = moment.astimezone(self._zone).date()
         for offset in range(366 * SEARCH_YEARS):
@@ -132,13 +185,22 @@ class Every:
     replica computes the same ticks whenever it started — and claims the same one."""
 
     def __init__(self, interval: timedelta) -> None:
+        """`Every(timedelta(minutes=15))` — refused when the interval is zero or negative."""
         if interval <= timedelta(0):
             raise ValueError(f"interval must be positive, got {interval}")
         self.interval = interval
 
     def __str__(self) -> str:
+        """How logs and errors name it — `every 0:15:00`."""
         return f"every {self.interval}"
 
     def next_after(self, moment: datetime) -> datetime:
+        """The next multiple of the interval since the epoch, strictly after `moment`, in UTC.
+
+            Every(timedelta(minutes=15)).next_after(10:07 UTC)   ->  10:15 UTC
+            Every(timedelta(minutes=15)).next_after(10:15 UTC)   ->  10:30 UTC
+
+        A moment on a tick answers the next one — strictly after.
+        """
         _refuse_naive(moment)
         return EPOCH + ((moment - EPOCH) // self.interval + 1) * self.interval

@@ -10,11 +10,11 @@ import pytest
 boto3 = pytest.importorskip("boto3")
 moto = pytest.importorskip("moto")
 
-from sincpro_framework.common.store import KeyValueStore  # noqa: E402
-from sincpro_framework.data_layer.caching.adapters.dynamodb import (  # noqa: E402
+from sincpro_framework.runtime.testing import KeyValueStoreContract  # noqa: E402
+from sincpro_framework.store import KeyValueStore  # noqa: E402
+from sincpro_framework.store.adapters.dynamodb import (  # noqa: E402
     DynamoKeyValue,
 )
-from sincpro_framework.runtime.testing import KeyValueStoreContract  # noqa: E402
 
 TABLE = "sincpro-cache"
 
@@ -124,6 +124,6 @@ def test_the_whole_context_store_runs_on_it():
     contexts = KeyValueContexts(DynamoKeyValue(TABLE))
     with use_context().scoped({"tenant_id": "acme", "user_id": "ana"}) as context:
         drafts = context.drafts(store=contexts)
-        kept = drafts.keep("billing.Invoice:7", {"discount": "10"}, 3, 0)
+        kept = drafts.save("billing.Invoice:7", {"discount": "10"}, 3, 0)
         assert drafts.read("billing.Invoice:7") == kept
         assert drafts.subjects() == ["billing.Invoice:7"]

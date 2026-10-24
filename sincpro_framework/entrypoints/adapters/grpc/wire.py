@@ -99,11 +99,17 @@ BROKE_A_RULE = frozenset({exceptions.FailureKind.DOMAIN, exceptions.FailureKind.
 
 
 def struct_to_scalar(message: Struct) -> Scalar:
+    """Struct → the plain dict a DTO is validated from — every number a float, as `Struct`
+    holds them (pydantic narrows `10.0` to an `int` field)."""
     return json_format.MessageToDict(message)
 
 
 def scalar_to_struct(payload: Scalar) -> Struct:
     """Scalar → Struct, falling back to a JSON round-trip for exotic leaves.
+
+        scalar_to_struct({"id": "F-1", "total": 10})     ->  Struct {id: "F-1", total: 10.0}
+        scalar_to_struct({"pair": (1, 2), "by": {1: "a"}})
+        ->  Struct {pair: [1.0, 2.0], by: {"1": "a"}}
 
     `dump_scalar_result` guarantees the payload survives `json.dumps`, which still
     admits values `ParseDict` refuses (a tuple, a dict keyed by int). Re-parsing
@@ -124,18 +130,30 @@ class RichStatus(grpc.Status):
     """
 
     def __init__(self, code: Any, details: str, trailing_metadata: tuple[Any, ...]):
+        """The three attributes `abort_with_status` reads — nothing else is held."""
         self.code = code
         self.details = details
         self.trailing_metadata = trailing_metadata
 
 
 def _packed(message: Any) -> Any:
+    """A detail message packed as `google.protobuf.Any`, as `google.rpc.Status.details`
+    holds it."""
     found = any_pb2.Any()
     found.Pack(message)
     return found
 
 
 def _field_violations(error: ValidationError) -> Any:
+    """A validation error as `google.rpc.BadRequest` — one field violation per invalid field.
+
+        ValidationError(amount: "Input should be a valid number", type="float_parsing")
+        ->  BadRequest(field_violations=[{field: "amount",
+                                          description: "Input should be a valid number",
+                                          reason: "FLOAT_PARSING"}])
+
+    `reason` is set only when the installed `error_details_pb2` has the field (newer protos).
+    """
     request = error_details_pb2.BadRequest()
     for one in json_safe_validation_errors(error):
         violation = request.field_violations.add()
@@ -176,6 +194,11 @@ def status_for(
     error: Exception, domain: str, subject: str, framework: UseFramework
 ) -> RichStatus:
     """The `google.rpc.Status` a failure the bus raised is answered with (AIP-193).
+
+        status_for(InvoiceNotFound("F-9"), "billing.v1", "CommandVoidInvoice", billing)
+        ->  RichStatus(NOT_FOUND, "F-9", ErrorInfo(reason="INVOICE_NOT_FOUND",
+                       domain="billing.v1", metadata={"kind": "not_found"}))
+        status_for(<DuplicateAggregate>, ...)       ->  RichStatus(ALREADY_EXISTS, ...)
 
     1. The kind (`common.failures.refined_failure_kind`) picks the code — a duplicate is
        ALREADY_EXISTS, the conflict it refines.
@@ -222,6 +245,8 @@ def status_for(
 
 
 def deadline_exceeded(domain: str) -> RichStatus:
+    """The status a call whose deadline already passed is answered with — DEADLINE_EXCEEDED,
+    with an `ErrorInfo` (`reason` DEADLINE_EXCEEDED, `domain` the served package)."""
     code = grpc.StatusCode.DEADLINE_EXCEEDED
     info = error_details_pb2.ErrorInfo(reason=code.name, domain=domain)
     status = status_pb2.Status(
@@ -235,6 +260,8 @@ def deadline_exceeded(domain: str) -> RichStatus:
 
 
 def _abort(context: Any, status: RichStatus) -> NoReturn:
+    """End the call with `status`. grpcio's `abort_with_status` raises; the `RuntimeError`
+    only makes that promise checkable (`NoReturn`) should a context ever return instead."""
     context.abort_with_status(status)
     raise RuntimeError("abort_with_status returned instead of raising")
 
@@ -248,6 +275,11 @@ def through_the_bus(
     payload: Scalar,
 ) -> Scalar:
     """The one path every gRPC call takes to the bus — a generated method and `bus_call` alike.
+
+        through_the_bus(context, billing, "billing.v1", lambda: "CommandIssueInvoice",
+                        operation.run, {"total": 10.0})
+        ->  {"id": "F-1", "total": 10}
+        through_the_bus(<deadline already past>, ...)   ->  aborted DEADLINE_EXCEEDED
 
     1. Metadata → framework context, the caller's credentials, the caller's deadline →
        `context["deadline"]` (epoch seconds) for adapters' own timeouts.
@@ -277,10 +309,17 @@ def through_the_bus(
 
 def method_handler(spec: GrpcMethodSpec) -> Any:
     """Bind one spec to a unary-unary handler over Struct: the payload is validated as the DTO
-    inside `run`, on the one path (`through_the_bus`)."""
+    inside `run`, on the one path (`through_the_bus`).
+
+        method_handler(<IssueInvoice spec>)(Struct {total: 10.0}, context)
+        ->  Struct {id: "F-1", total: 10.0}
+
+    The `ErrorInfo` domain of a failure is the spec's package; its subject, the Command.
+    """
     command = spec.operation.command.__name__
 
     def handle(request: Struct, context: grpc.ServicerContext) -> Struct:
+        """One call: the Struct as a Scalar through the bus, the answer back as a Struct."""
         answered = through_the_bus(
             context,
             spec.framework,
@@ -308,11 +347,25 @@ def bus_call[R](
     what the bus answered into the servicer's message; without it the answer is a `Struct`.
     `domain` names the package in `ErrorInfo` — the bus's default package (`billing.v1`) when
     not given.
+
+        bus_call(context, billing, CommandIssueInvoice(total=10), to_invoice_pb)
+        ->  invoice_pb2.Invoice(id="F-1", total=10)
+        bus_call(context, billing, lambda: CommandIssueInvoice(total="ten"))
+        ->  aborted INVALID_ARGUMENT, a `BadRequest` naming `total`
+
+    1. A `run` for `through_the_bus` that builds the Command — calling `dto` when it is a
+       function — notes its name, and keeps what the bus answered aside.
+    2. Through the bus with an empty payload, the domain given or the bus's default
+       package; the subject of a failure is the Command, once built.
+    Final: what the bus answered — through `to_response`, or as a `Struct`.
     """
     answered: list[Any] = []
     built: list[str] = []
 
     def run(_payload: Scalar) -> Scalar:
+        """The bus's run for `through_the_bus`: build the Command here — so its validation
+        error is answered like any other — call the bus, keep the answer aside; the Scalar
+        answered is unused."""
         command = dto() if callable(dto) else dto
         built.append(type(command).__name__)
         answered.append(bus(command))
@@ -342,6 +395,17 @@ class RefusePastDeadline(grpc.ServerInterceptor):
     without running — for a hand-written servicer that never reaches `bus_call` too."""
 
     def intercept_service(self, continuation: Any, handler_call_details: Any) -> Any:
+        """Wrap a unary-unary handler in the deadline pre-check; any other handler (streaming,
+        none found) passes as it is. The `ErrorInfo` domain is the method's package.
+
+            <call to /orders.v1.OrdersService/Place, deadline already past>
+            ->  aborted DEADLINE_EXCEEDED, ErrorInfo(domain="orders.v1"); Place never runs
+            <streaming method>              ->  its handler, untouched
+
+        1. The handler the server would run, found by `continuation`.
+        2. Not unary-unary: answered untouched.
+        Final: a new unary handler, same (de)serializers, that checks the deadline first.
+        """
         handler = continuation(handler_call_details)
         if handler is None or handler.unary_unary is None:
             return handler
@@ -349,6 +413,8 @@ class RefusePastDeadline(grpc.ServerInterceptor):
         domain = _package_of(handler_call_details.method)
 
         def guarded(request: Any, context: Any) -> Any:
+            """Abort DEADLINE_EXCEEDED when the caller's deadline is past, else run the
+            call."""
             if is_past(deadline_of(context)):
                 _abort(context, deadline_exceeded(domain))
             return inner(request, context)
@@ -364,6 +430,18 @@ class LogCalls(grpc.ServerInterceptor):
     """One debug line per unary call: its method, whether it answered, how long it took."""
 
     def intercept_service(self, continuation: Any, handler_call_details: Any) -> Any:
+        """Wrap a unary-unary handler so its outcome and duration are logged at debug; any
+        other handler passes as it is.
+
+            <call to /orders.v1.OrdersService/Place, answered in 3 ms>
+            ->  debug "gRPC [/orders.v1.OrdersService/Place] answered in [3.0 ms]"
+            <same call, aborted>    ->  debug "gRPC [...] refused in [...]", abort re-raised
+
+        1. The handler the server would run, found by `continuation`.
+        2. Not unary-unary: answered untouched.
+        Final: a new unary handler, same (de)serializers, timing the inner one in `finally` —
+        `refused` when it raised (an abort included), `answered` otherwise.
+        """
         handler = continuation(handler_call_details)
         if handler is None or handler.unary_unary is None:
             return handler
@@ -371,6 +449,7 @@ class LogCalls(grpc.ServerInterceptor):
         method = handler_call_details.method
 
         def logged(request: Any, context: Any) -> Any:
+            """Run the call and log its method, `answered` or `refused`, and its duration."""
             started = time.perf_counter()
             outcome = "refused"
             try:
@@ -400,13 +479,18 @@ def framework_interceptors() -> list[Any]:
 
 
 def describe_handler(document: Scalar) -> Any:
+    """The `Describe` method: whatever it is asked, it answers `document` — built once, when
+    the handlers are, from the same surface the server serves."""
+
     def handle(_request: Struct, _context: grpc.ServicerContext) -> Struct:
+        """The catalog document as a Struct — the request is ignored."""
         return scalar_to_struct(document)
 
     return handle
 
 
 def _unary(handler: Any) -> Any:
+    """`handler` as a unary-unary method handler that reads and writes `Struct` bytes."""
     return grpc.unary_unary_rpc_method_handler(
         handler,
         request_deserializer=Struct.FromString,
@@ -422,20 +506,30 @@ class Readiness:
     health stops sending new calls while the ones in flight finish."""
 
     def __init__(self, check: Callable[[], bool], draining: threading.Event):
+        """The live check and the gateway's draining flag (`GrpcGateway.drain` sets it)."""
         self.check = check
         self.draining = draining
 
     def __call__(self) -> bool:
+        """SERVING while not draining and the check holds — the check is not run once
+        draining."""
         return not self.draining.is_set() and self.check()
 
 
 def default_health_check(specs: Mapping[str, GrpcMethodSpec]) -> Callable[[], bool]:
-    """Every published `UseFramework` is ready — built, or a reference — verified live on every `Check` instead of
-    assumed once. A caller wanting a deeper probe (a DB ping, a queue connection) passes its
-    own `health_check`."""
+    """Every published `UseFramework` is ready — built, or a reference — verified live on
+    every `Check` instead of assumed once. A caller wanting a deeper probe (a DB ping, a queue
+    connection) passes its own `health_check`.
+
+        default_health_check(specs)()    ->  True while billing and stock are both ready
+        <billing torn down>              ->  False
+
+    Each bus is asked once per check, however many methods it publishes.
+    """
     frameworks = {spec.framework for spec in specs.values()}
 
     def check() -> bool:
+        """Every published bus is ready right now."""
         return all(f.is_ready for f in frameworks)
 
     return check
@@ -445,7 +539,14 @@ def generic_handlers(
     specs: Mapping[str, GrpcMethodSpec], document: Scalar, is_ready: Callable[[], bool]
 ) -> list[Any]:
     """One generic handler per service, the Introspection service, and — when
-    `grpcio-health-checking` is installed — the standard `grpc.health.v1.Health`."""
+    `grpcio-health-checking` is installed — the standard `grpc.health.v1.Health`.
+
+        generic_handlers(<IssueInvoice, VoidInvoice, Reserve>, document, is_ready)
+        ->  [<billing.v1.BillingService: IssueInvoice, VoidInvoice>,
+             <stock.v1.StockService: Reserve>, <sincpro.Introspection: Describe>, <Health>]
+
+    Health answers for every served service and for `Describe`, by `is_ready`.
+    """
     handlers = [
         grpc.method_handlers_generic_handler(
             service, {spec.method: _unary(method_handler(spec)) for spec in entries}
@@ -467,6 +568,12 @@ def generic_handlers(
 
 
 def _file_descriptor_proto(package: str, services: Mapping[str, list[GrpcMethodSpec]]) -> Any:
+    """The descriptor reflection reads for one package — what `proto_files` renders as source.
+
+    Context: no `.proto` is compiled anywhere; reflection still needs a `FileDescriptorProto`,
+    so the same `{service: specs}` the `.proto` export renders is built here as one, named
+    `sincpro/billing/v1/billing.proto`, `Struct` in and out, `deprecated` carried per method.
+    """
     file_proto = descriptor_pb2.FileDescriptorProto()
     file_proto.name = f"sincpro/{proto.file_name(package)}"
     file_proto.package = package
@@ -486,6 +593,8 @@ def _file_descriptor_proto(package: str, services: Mapping[str, list[GrpcMethodS
 
 
 def _introspection_file() -> Any:
+    """The descriptor of `sincpro.Introspection/Describe` — `sincpro/sincpro.proto` for
+    reflection, `Struct` in and out, as `introspection_proto` renders it."""
     file_proto = descriptor_pb2.FileDescriptorProto()
     file_proto.name = f"sincpro/{proto.INTROSPECTION_PACKAGE}.proto"
     file_proto.package = proto.INTROSPECTION_PACKAGE
@@ -566,6 +675,17 @@ def descriptor_pool_for(
 
     Private, not `descriptor_pool.Default()`: two gateways in one process (or one rebuilt
     between tests) would otherwise add the same file name twice.
+
+        descriptor_pool_for(<billing.v1 specs>, reflection_pb2)
+        .FindServiceByName("billing.v1.BillingService")     ->  its ServiceDescriptor
+        ... .FindServiceByName("grpc.reflection.v1.ServerReflection")   ->  found too
+
+    1. A new pool, with `Struct`'s file — every served method takes and answers one.
+    2. One file per served package (`_file_descriptor_proto`).
+    3. The introspection file, `sincpro.Introspection/Describe`.
+    4. Each hand-written file in `extra`, after the files it imports — each once.
+    Final: given `reflection_pb2`, its file once per reflection version, renamed to that
+    version's package.
     """
     pool = descriptor_pool.DescriptorPool()
     added: set[str] = set()
@@ -590,6 +710,13 @@ def reflection_handlers(
 
     `grpcio-reflection` serves v1alpha only, and current clients ask v1 first: the two are the
     same messages field for field, so one servicer answers both.
+
+        reflection_handlers(specs, [orders_pb2.DESCRIPTOR])
+        ->  (<grpc.reflection.v1.ServerReflection>, <grpc.reflection.v1alpha...>), listing
+            billing.v1.BillingService, orders.v1.OrdersService, sincpro.Introspection, ...
+        <without grpcio-reflection>     ->  (), a warning logged
+
+    The reflection services list themselves too.
     """
     try:
         from grpc_reflection.v1alpha import (  # pyright: ignore[reportMissingImports]
@@ -628,7 +755,16 @@ def server_options(
     """The server's channel options: keepalive, `max_connection_age`, the message size limit
     both ways — each replaced by the caller's option of the same key.
 
-    `max_connection_age=None` keeps connections for ever (grpcio's default)."""
+    `max_connection_age=None` keeps connections for ever (grpcio's default).
+
+        server_options()
+        ->  [("grpc.keepalive_time_ms", 60000), ..., ("grpc.max_receive_message_length",
+             4194304), ..., ("grpc.max_connection_age_ms", 300000), ...]
+        server_options([("grpc.keepalive_time_ms", 30000)], max_connection_age=None)
+        ->  keepalive every 30 s, no `max_connection_age_ms` nor its grace
+
+    A key the caller gives keeps its place when it replaces one; a new key goes last.
+    """
     chosen: dict[str, Any] = dict(KEEPALIVE_OPTIONS)
     chosen["grpc.max_receive_message_length"] = max_message_bytes
     chosen["grpc.max_send_message_length"] = max_message_bytes

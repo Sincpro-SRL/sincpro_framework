@@ -39,9 +39,9 @@ from enum import StrEnum
 from typing import Any
 
 from sincpro_framework.common.ids import new_entity_id
-from sincpro_framework.common.store import exceptions
-from sincpro_framework.common.store.key_value import KeyValueStore
 from sincpro_framework.sincpro_logger import logger
+from sincpro_framework.store.domain import exceptions
+from sincpro_framework.store.domain.key_value import KeyValueStore
 
 TTL = timedelta(minutes=1)
 """How long a lease lives without a renewal, unless the taker says."""
@@ -50,6 +50,8 @@ REMEMBER_FOR = timedelta(days=7)
 
 
 class LeaseState(StrEnum):
+    """Where a name stands, as `Leases.state` reads it — three: expired is not free."""
+
     FREE = "free"
     """Never taken, or released by its holder."""
     HELD = "held"
@@ -70,6 +72,15 @@ class Lease:
         ttl: timedelta,
         claimed: bytes,
     ) -> None:
+        """Built by `Leases.take` once the claim is written — never by hand: `claimed` must be
+        the exact bytes in the store, or every renewal reads as lost.
+
+            leases.take("sandbox:S-1", owner="worker-a", ttl=timedelta(minutes=2))
+                ->  Lease(name="sandbox:S-1", owner="worker-a", fence=4, ttl=2 min,
+                          claimed=b'{"owner": "worker-a", "token": "01J…"}')
+
+        It starts not lost: `lost` is set only by a renewal or a release that found it
+        taken."""
         self.leases = leases
         self.name = name
         self.owner = owner
@@ -87,7 +98,14 @@ class Lease:
             raise exceptions.LeaseLost(self.name, self.owner)
 
     def renew(self) -> None:
-        """Its time starts again — or `LeaseLost`, when it ran out and is no longer this holder's."""
+        """Its time starts again — or `LeaseLost`, when it ran out and is no longer this holder's.
+
+            lease.renew()   ->  None: the claim kept for another `ttl`
+            lease.renew()   ->  LeaseLost("sandbox:S-1", "worker-a"), `lease.lost` set
+                                # it ran out and worker-b took it
+
+        The memory of the last holder is kept for `remember_for` again, while it still names
+        this lease's fence."""
         store = self.leases.store
         if not store.replace(
             self.leases.claim_key(self.name), self.claimed, self.claimed, self.ttl
@@ -126,14 +144,25 @@ class Leases:
         prefix: str = "sincpro:lease",
         remember_for: timedelta = REMEMBER_FOR,
     ) -> None:
+        """`store` must answer `replace` to renew or release; `prefix` keeps these keys apart
+        from the store's other users; `remember_for` is how long the last holder is kept."""
         self.store = store
         self.prefix = prefix
         self.remember_for = remember_for
 
     def claim_key(self, name: str) -> str:
+        """The key the live claim is written under, with the lease's time as its expiry.
+
+        Leases(store).claim_key("sandbox:S-1")  ->  "sincpro:lease:sandbox:S-1"
+        """
         return f"{self.prefix}:{name}"
 
     def last_key(self, name: str) -> str:
+        """The key the last holder is remembered under — it outlives the claim, so `EXPIRED`
+        can be told from `FREE` and the next fence counted on.
+
+            Leases(store).last_key("sandbox:S-1")  ->  "sincpro:lease:last:sandbox:S-1"
+        """
         return f"{self.prefix}:last:{name}"
 
     def last(self, name: str) -> dict[str, Any] | None:
@@ -147,6 +176,11 @@ class Leases:
         1. The claim is one atomic `add`, with the lease's time: of many racing, one takes it.
         2. Its fence is one more than the last holder's, written by the one that took it.
         Final: the lease, its fence, the value it renews and releases against.
+
+            leases.take("sandbox:S-1", owner="worker-a")   ->  Lease(fence=1)   # never taken
+            leases.take("sandbox:S-1", owner="worker-b")   ->  None             # held
+            ... after worker-a released, or its time ran out
+            leases.take("sandbox:S-1", owner="worker-b")   ->  Lease(fence=2)
         """
         claimed = json.dumps({"owner": owner, "token": new_entity_id()}).encode()
         if not self.store.add(self.claim_key(name), claimed, ttl):
@@ -161,7 +195,12 @@ class Leases:
         return Lease(self, name, owner, fence, ttl, claimed)
 
     def holder(self, name: str) -> str | None:
-        """Who holds the name now — or, when it expired, who held it last."""
+        """Who holds the name now — or, when it expired, who held it last.
+
+            leases.holder("sandbox:S-1")   ->  "worker-a"     # held, or expired under it
+            leases.holder("sandbox:S-1")   ->  None           # released, or never taken
+
+        `""` for a holder that took it without saying its name."""
         live = self.store.get(self.claim_key(name))
         if live is not None:
             return json.loads(live).get("owner", "")
@@ -169,6 +208,18 @@ class Leases:
         return None if last is None or last.get("released") else last.get("owner", "")
 
     def state(self, name: str) -> LeaseState:
+        """Where the name stands now.
+
+        1. A live claim: `HELD`.
+        2. No claim, but a last holder that never released it: `EXPIRED` — it may still work.
+        Final: otherwise `FREE` — never taken, released, or forgotten after `remember_for`.
+
+            leases.state("sandbox:S-1")   ->  LeaseState.HELD       # worker-a renewing
+            leases.state("sandbox:S-1")   ->  LeaseState.EXPIRED    # stopped, never released
+            leases.state("sandbox:S-1")   ->  LeaseState.FREE       # released
+
+        Two reads, not one: a lease taken or released between them can be read either way.
+        """
         if self.store.get(self.claim_key(name)) is not None:
             return LeaseState.HELD
         last = self.last(name)
@@ -188,7 +239,22 @@ class Leases:
         and released at its end; `LeaseTaken` when somebody else holds it.
 
         A renewal that finds it taken sets `lease.lost` and stops: the block learns it at its next
-        `lease.check()`. One the store did not answer is tried again at the next tick."""
+        `lease.check()`. One the store did not answer is tried again at the next tick.
+
+            with leases.held("sandbox:S-1", "worker-a", timedelta(minutes=2)) as lease:
+                ...       ->  renewed every 40s; released when the block ends, raised or not
+            ... while worker-b holds it
+                          ->  LeaseTaken("sandbox:S-1", "worker-b"), the block never runs
+
+        1. Taken (`take`) — or `LeaseTaken`, naming who holds it.
+        2. A daemon thread renews it every `renew_every` (a third of `ttl` by default):
+           2.1 `LeaseLost` stops it for good — `lease.lost` is already set;
+           2.2 any other failure is warned about and tried again at the next tick.
+        3. The block runs with the lease.
+        4. Whatever the block did: the renewer is stopped and joined.
+        Final: the lease released — a release that fails is warned about, never raised over
+        what the block raised; the lease then runs out on its own.
+        """
         lease = self.take(name, owner, ttl)
         if lease is None:
             raise exceptions.LeaseTaken(name, self.holder(name) or "")
@@ -196,6 +262,8 @@ class Leases:
         every = (renew_every or ttl / 3).total_seconds()
 
         def renewing() -> None:
+            """The renewer thread: renews every tick until the block ends, stops for good on
+            `LeaseLost`, and logs and retries anything else — the lease's own time decides."""
             while not stopped.wait(every):
                 try:
                     lease.renew()

@@ -48,6 +48,12 @@ from sincpro_framework.ddd.entity.relations import key_pair
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:
+    """The field type a relation is described as.
+
+    ("many_to_many", _)       ->  MANY2MANY
+    ("foreign_key", True)     ->  ONE2MANY
+    ("foreign_key", False)    ->  MANY2ONE
+    """
     if kind == "many_to_many":
         return FieldType.MANY2MANY
     return FieldType.ONE2MANY if many else FieldType.MANY2ONE
@@ -66,8 +72,11 @@ def _members_of(annotation: Any) -> list[Any]:
 def is_mapped(candidate: Any) -> TypeGuard[type]:
     """Whether the ORM maps this class.
 
-    in  Dataset  →  True        it has a table
-    in  str      →  False       a plain value
+        is_mapped(Dataset)       ->  True     it has a table
+        is_mapped(str)           ->  False    a plain value
+        is_mapped(Dataset(...))  ->  False    an instance, not a class
+
+    SQLAlchemy is asked, so a class mapped by any registry counts.
     """
     if not isinstance(candidate, type):
         return False

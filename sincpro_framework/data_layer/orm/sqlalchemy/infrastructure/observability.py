@@ -44,6 +44,8 @@ ANONYMOUS = "%("
 
 
 def _elapsed_ms(connection: Any) -> float:
+    """Milliseconds since the newest statement on `connection` started — its start popped,
+    so a nested statement is timed by its own; 0 when nothing was noted."""
     started = connection.info.get(STARTED_AT) if connection is not None else None
     if not started:
         return 0.0
@@ -63,14 +65,15 @@ def operation_of(statement: str) -> str:
 def table_of(context: Any) -> str:
     """The table a statement touches, read off what the compiler already resolved.
 
-    in  an execution context for `SELECT … FROM dataset`  →  out  'dataset'
-    in  one for `INSERT INTO dataset …`                    →  out  'dataset'
-    in  a count over a subquery, whose FROM is anonymous  →  out  ''
-    in  a raw statement the ORM did not compile           →  out  ''
+        table_of(context of `SELECT … FROM dataset`)            ->  "dataset"
+        table_of(context of `INSERT INTO dataset …`)            ->  "dataset", its `table`
+        table_of(context of a count over an anonymous subquery)  ->  ""
+        table_of(context of a raw SQL string)                   ->  "", no table to read
 
-    An anonymous name is dropped rather than passed through: SQLAlchemy builds it from the
-    object's id, so it differs per process, and a span named after it is a new name on every
-    deploy.
+    An `INSERT`, `UPDATE` or `DELETE` names its table; anything else is read from its first
+    FROM. An anonymous name is dropped rather than passed through: SQLAlchemy builds it from
+    the object's id, so it differs per process, and a span named after it is a new name on
+    every deploy.
     """
     try:
         statement = context.compiled.statement
@@ -112,6 +115,8 @@ def observe(engine: Engine, database: str, logger: LoggerProxy | None = None) ->
 
     @event.listens_for(engine, "before_cursor_execute")
     def _opened(connection, cursor, statement, parameters, context, executemany) -> None:
+        """Before a statement: its start noted, and — when tracing is on — its span opened,
+        named `<operation> <table>` (`SELECT dataset`), never after the statement text."""
         connection.info.setdefault(STARTED_AT, []).append(perf_counter())
         if tracer is None:
             return
@@ -131,6 +136,8 @@ def observe(engine: Engine, database: str, logger: LoggerProxy | None = None) ->
 
     @event.listens_for(engine, "after_cursor_execute")
     def _closed(connection, cursor, statement, parameters, context, executemany) -> None:
+        """After a statement: one DEBUG line with its duration and row count, its span
+        closed."""
         log.debug(
             "sql",
             operation=operation_of(statement),

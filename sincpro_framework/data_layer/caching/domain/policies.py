@@ -1,9 +1,10 @@
 """What governs a kept value and a run-once write — the policies each call is judged by.
 
-Context: frozen DTOs a composition builds once and hands every call. `KeepPolicy` is what `Cache`
-answers by — one strategy per question (`Freshness`, `Validation`, `FailurePolicy`) — `CachePolicy`
+Context: frozen DTOs a composition builds once and hands every call. `CachePolicy` is what `Cache`
+answers by — one strategy per question (`Freshness`, `Validation`, `FailurePolicy`) — `QueryCachePolicy`
 what `QueryCaching` does (a Query's ttl, what it varies by, what it depends on),
-`IdempotencyPolicy` what `Idempotency` does.
+`IdempotencyPolicy` what `Idempotency` does. A field one of them does not have is refused, never
+ignored: `CachePolicy(ttl=...)` — a `QueryCachePolicy`'s field — would otherwise keep a value forever.
 """
 
 from collections.abc import Sequence
@@ -18,8 +19,18 @@ from sincpro_framework.data_layer.caching.domain.validation import Unconditional
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
-class KeepPolicy[T](DataTransferObject):
-    model_config = ConfigDict(frozen=True)
+class CachePolicy[T](DataTransferObject):
+    """How `Cache` judges one kept value — one strategy per question, plus two bounds.
+
+        CachePolicy(
+            freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=1)),
+            failure=FailSafe(serve_for=timedelta(hours=1)),
+        )
+
+    A field it does not have is refused, never ignored.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     freshness: Freshness = Field(default_factory=TimeToLive)
     """How long a kept value is served as is — `TimeToLive`, `Sliding`, or yours."""
@@ -35,7 +46,7 @@ class KeepPolicy[T](DataTransferObject):
     @model_validator(mode="before")
     @classmethod
     def _lifetime_is_freshness(cls, data: Any) -> Any:
-        """Context: phase 1 named the field `lifetime`; `KeepPolicy(lifetime=...)` still works."""
+        """Context: phase 1 named the field `lifetime`; `CachePolicy(lifetime=...)` still works."""
         if isinstance(data, dict) and "lifetime" in data and "freshness" not in data:
             data = {**data, "freshness": data["lifetime"]}
             del data["lifetime"]
@@ -43,13 +54,22 @@ class KeepPolicy[T](DataTransferObject):
 
     @property
     def lifetime(self) -> Freshness:
+        """The `freshness` under its phase-1 name, for code written against `lifetime`."""
         return self.freshness
 
 
-class CachePolicy(DataTransferObject):
-    model_config = ConfigDict(frozen=True)
+class QueryCachePolicy(DataTransferObject):
+    """How `QueryCaching` keeps one Query's answers — flat knobs, turned into a `TimeToLive`.
+
+        QueryCachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id", depends_on=[Invoice])
+
+    Built once by the composition and handed to `QueryCaching.on`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     ttl: timedelta
+    """How long an answer is served as is, before `jitter` spreads it."""
     vary_by: Sequence[str] = ()
     """Context keys each answer is kept per — a tenant, a locale; one alone or a list, kept as a
     tuple."""
@@ -76,6 +96,13 @@ class CachePolicy(DataTransferObject):
 
     @property
     def lifetime(self) -> TimeToLive:
+        """The flat knobs as the `TimeToLive` the answer's timeline is computed with.
+
+            QueryCachePolicy(ttl=timedelta(minutes=5)).lifetime
+                ->  TimeToLive(ttl=5 min, jitter=0.1, stale_for=0, early_expiry=1.0)
+
+        Built anew on every read — the policy itself stays flat.
+        """
         return TimeToLive(
             ttl=self.ttl,
             jitter=self.jitter,
@@ -85,7 +112,14 @@ class CachePolicy(DataTransferObject):
 
 
 class IdempotencyPolicy(DataTransferObject):
-    model_config = ConfigDict(frozen=True)
+    """How `Idempotency` keeps a write to once per key — how long, and per which context keys.
+
+        IdempotencyPolicy(expires_after=timedelta(hours=24), vary_by="tenant_id")
+
+    Built once by the composition and handed to every run.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     expires_after: timedelta
     """How long a completed answer is replayed — a transport retry, not a person repeating an
@@ -96,8 +130,8 @@ class IdempotencyPolicy(DataTransferObject):
     """How long a duplicate arriving mid-run waits for the first answer before
     `AlreadyInProgress`."""
     vary_by: Sequence[str] = ()
-    """Context keys the key is kept per — a tenant, a caller; one alone or a list. Which fields
-    of the Command make the key, the Command says itself: `Annotated[str, IdempotencyKey]`."""
+    """Context keys the key is kept per — a tenant, a caller; one alone or a list. What
+    identifies the request, the Command says itself: its `idempotency_key()` method."""
 
     @field_validator("vary_by", mode="before")
     @classmethod

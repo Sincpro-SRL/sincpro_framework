@@ -4,8 +4,8 @@
 
 ```python
 store = KeyValueContexts(RedisKeyValue(redis.Redis.from_url(url)))   # the same in every service
-sales.context_store(store)        # service A — explicit, per bus; nothing shares by default
-billing.context_store(store)      # service B — another project too
+sales.store_context_in(store)        # service A — explicit, per bus; nothing shares by default
+billing.store_context_in(store)      # service B — another project too
 
 # A: an ApplicationService
 self.context["discount"] = 10     # the API never changes
@@ -25,27 +25,20 @@ use_context().at(Level.GLOBAL).set("maintenance", True)   # every service that s
 - Plain JSON codec by default — projects need no classes in common; `TypedCodec` to get types back.
 - Full design: `docs/prd/PRD_24_shared-context.md`.
 
-## A store keeps what a flow *is*
+## Where the context is kept
+
+The context reaches another process by itself — every event, queue message, remote call and answer
+to the frontend carries it, and the entrance opens its flow with it. Nothing is saved or loaded by
+name. The store keeps what the framework keeps for the context: drafts, pipeline runs, leases,
+circuits, every bus's cache and idempotency.
 
 ```python
-from sincpro_framework.data_layer.caching.adapters.redis import RedisKeyValue
-from sincpro_framework.context import ContextStore, KeyValueContexts, TypedCodec, use_context
+from sincpro_framework import store_context_in
+from sincpro_framework.store.adapters.redis import RedisKeyValue
+from sincpro_framework.context import KeyValueContexts, TypedCodec
 
-contexts = KeyValueContexts(RedisKeyValue(redis.Redis.from_url(url)))   # [redis] extra
-use_context().root.set(ContextStore, contexts)        # the process
-# or: billing.context_store(contexts)                 # one bus
-# or: bus.context(..., store=contexts)                # one block — the nearest wins
-
-contexts.keep("tenant:acme", {"lang": "es", "plan": "pro"})
-contexts.keep(f"session:{sid}", {"user_id": "ana", "tenant_id": "acme"}, ttl=timedelta(hours=8))
-
-with bus.context({"channel": "pos"}, restore=["tenant:acme", f"session:{sid}"]):   # in order
-    bus(CommandX())
-
-with bus.context(values, keep_as=f"flow:{sale_id}", ttl=timedelta(hours=1)):      # kept with its chain
-    bus(CommandStartSale())
-with bus.context(restore=f"flow:{sale_id}"):                                      # a worker resumes it
-    bus(CommandContinueSale())
+contexts = store_context_in(RedisKeyValue(redis.Redis.from_url(url)))   # the process, [redis] extra
+billing.store_context_in(KeyValueContexts(RedisKeyValue(own)))           # or one bus, its own store
 ```
 
 | Adapter | For |
@@ -59,8 +52,8 @@ with bus.context(restore=f"flow:{sale_id}"):                                    
 | `TypedCodec(schema)` | the schema's keys, validated | the same codebase: enums, datetimes, DTOs as themselves |
 | `PickleCodec()` | anything picklable, each value on its own — a reader lacking a value's class gets the context without that key (a warning), never an error for the whole | the same deployment only — it runs code when it loads |
 
-A store is **not a cache**: it keeps what a flow is (a session, a tenant's defaults, a flow to
-resume), written by the flow. Each `keep` moves the key's version.
+A store is **not a cache**: what it keeps is written by the flow — a draft, a pipeline run. Each
+`save` moves the key's version.
 
 ## The process level across replicas
 

@@ -63,6 +63,9 @@ class HostedContextMixin:
         )
 
     def _init_hosting(self, bundled_context_name: str) -> None:
+        """Run here, no circuit said — and pointed at its host when the context map of this
+        process's configuration (`configured_host`) names one for `bundled_context_name`, so a
+        reference needs no code to forward."""
         self._hosted_at: HostedAt | None = None
         """Where another service hosts this bounded context — the context map, or `hosted_by`."""
         self._runs_here: bool = False

@@ -2,9 +2,9 @@
 it is, guarded by its version.
 
     drafts = use_context().drafts()                       this tenant's, this user's
-    draft = drafts.keep("invoice:01a1", values, origin_version=invoice.version, expected=0)
+    draft = drafts.save("invoice:01a1", values, origin_version=invoice.version, expected=0)
     draft = drafts.read("invoice:01a1")                   the latest, or None
-    drafts.keep("invoice:01a1", newer, invoice.version, expected=draft.version)
+    drafts.save("invoice:01a1", newer, invoice.version, expected=draft.version)
                                                           DraftConflict if another tab kept in between
     drafts.discard("invoice:01a1")
 

@@ -8,8 +8,19 @@ from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE
 
 
 def span_error(span: Any, error: BaseException, where: CodeLocation | None) -> None:
-    """Context: called once, on the span of the handler that raised. The status of every span
-    the error crosses is set by the span itself as the error escapes it."""
+    """Put `error` on `span` — the exception event and where in the code it failed.
+
+    Context: called once, on the span of the handler that raised. The status of every span
+    the error crosses is set by the span itself as the error escapes it.
+
+        span_error(span, KeyError("x"),
+                   CodeLocation("billing.features", "CreateInvoice.execute", "/app/f.py", 42))
+            ->  an exception event; error.type="KeyError",
+                code.function.name="billing.features.CreateInvoice.execute",
+                code.file.path="/app/f.py", code.line.number=42
+        span_error(None, error, where)   ->  nothing
+
+    With `where` unknown only the event and `error.type` are set; the status is untouched."""
     try:
         if not (OTEL_AVAILABLE and span is not None):
             return
@@ -27,7 +38,12 @@ def span_error(span: Any, error: BaseException, where: CodeLocation | None) -> N
 def span_in_error(span: Any, error: BaseException) -> None:
     """The span's status ERROR — set on every span a fault crosses; a failure that is not one
     (something not found, refused, invalid) leaves it unset, as OpenTelemetry asks of a server
-    span answering a client's mistake. Never raises."""
+    span answering a client's mistake. Never raises.
+
+        span_in_error(span, KeyError("x"))   ->  span status Status(ERROR, "KeyError")
+        span_in_error(None, KeyError("x"))   ->  nothing
+
+    It does not judge: the caller decides the error is a fault (`Observability.faulted`)."""
     try:
         if not (OTEL_AVAILABLE and span is not None):
             return
@@ -39,6 +55,8 @@ def span_in_error(span: Any, error: BaseException) -> None:
 
 
 def span_attributes(span: Any, attributes: Mapping[str, str]) -> None:
+    """Set `attributes` on `span` as they are — text already; nothing without a span or
+    without opentelemetry."""
     if not (OTEL_AVAILABLE and span is not None):
         return
     for key, value in attributes.items():
@@ -47,7 +65,19 @@ def span_attributes(span: Any, attributes: Mapping[str, str]) -> None:
 
 def span_correlation(span: Any, keys: Mapping[str, Any]) -> None:
     """The execution's context on its span (PRD_03 §4.10): each value as OpenTelemetry takes
-    it, and as its text when a span cannot hold it. Never raises."""
+    it, and as its text when a span cannot hold it. Never raises.
+
+        span_correlation(span, {"tenant": "acme", "company": 3, "region": Region.EU,
+                                "filters": {"a": 1}, "note": None})
+            ->  tenant="acme", company=3, region="eu", filters="{'a': 1}"; no note
+
+    1. No span, or no OpenTelemetry: nothing.
+    2. For each key and value:
+       2.1 converted as `span_value` does — an Enum's value, a Decimal as a float, …;
+       2.2 a value a span cannot hold (`TypeError`) travels as its `str`;
+       2.3 `None` is left off; anything else is set under its key.
+    Final: a key whose conversion or setting raises otherwise is skipped, the rest still set.
+    """
     if not (OTEL_AVAILABLE and span is not None):
         return
     from sincpro_framework.observability.tracing.attributes import span_value

@@ -1,3 +1,18 @@
+"""Error handlers: what answers a use case's failure instead of raising it — three chains,
+global, feature and application service, each run first-registered-first.
+
+    def not_found(error):
+        if isinstance(error, InvoiceNotFound):
+            return ResponseEmpty()          # the answer — the error is gone
+        raise error                         # the next handler, or the caller
+
+    billing.add_global_error_handler(not_found)
+    billing.add_global_error_handler(audit, before=[not_found])    runs first, same chain
+    billing.without_error_handler(audit)                            switched off again
+
+A handler that only watches errors must end with `raise`: what it returns is the bus's answer.
+"""
+
 from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, TypeAlias
 
 from sincpro_framework.common.ordering import DEFAULT_SEQUENCE, Placement, name_of, ordered
@@ -27,15 +42,16 @@ def compose_handler(
 ) -> ErrorHandler:
     """Wrap ``handler`` so that on re-raise ``next_handler`` is called automatically.
 
-    Args:
-        handler: The handler to wrap.
-        next_handler: The next handler in the chain (``None`` for the last one).
+    Context: one link of the chain — a handler never calls the next one itself, it raises.
+    What reaches the next is what it raised, so a handler that maps an error to another type
+    hands the mapped one on. `next_handler` is `None` for the last link: its raise reaches
+    the caller.
 
-    Returns:
-        A single composed ``ErrorHandler``.
+        compose_handler(log_and_raise, answer_empty)(KeyError("x"))  ->  answer_empty's answer
     """
 
     def _wrapped(error: Exception) -> Any:
+        """`handler`'s answer — or, when it raised, the next link's answer to that error."""
         try:
             return handler(error)
         except Exception as exc:
@@ -47,13 +63,16 @@ def compose_handler(
 
 
 def build_error_handler_chain(handlers: list[ErrorHandler]) -> Optional[ErrorHandler]:
-    """Build a handler chain where the first registered handler executes first.
+    """Build a handler chain where the first handler in `handlers` executes first — or `None`
+    for no handlers, which the bus reads as "raise".
 
-    Args:
-        handlers: Handlers in registration order.
+        build_error_handler_chain([])                       ->  None
+        chain = build_error_handler_chain([to_problem, log_and_raise])
+        chain(InvoiceNotFound("F-9"))   ->  what to_problem answers; were it to raise,
+                                            log_and_raise gets what it raised
 
-    Returns:
-        A single composed ``ErrorHandler``, or ``None`` if the list is empty.
+    1. Composed from the last handler back, so each wraps the one after it.
+    Final: the first handler's link, the whole chain behind it.
     """
     if not handlers:
         return None
@@ -75,6 +94,8 @@ class BusErrorHandlersMixin:
         def _registered(self, replay: Callable[[Any], Any], what: str) -> None: ...
 
     def _init_error_handlers(self) -> None:
+        """Empty chains: the placements asked for, per kind; the handlers switched off; and
+        the three composed chains, `None` until a handler is added — the bus then raises."""
         self._global_error_handlers: list[Placement] = []
         self._feature_error_handlers: list[Placement] = []
         self._app_service_error_handlers: list[Placement] = []
@@ -117,6 +138,9 @@ class BusErrorHandlersMixin:
         ]
 
     def _error_chain(self, placements: list[Placement]) -> Optional[ErrorHandler]:
+        """One chain composed from its placements, in the order they ask for (`sequence`,
+        `before`, `after`, `replaces`), without the handlers switched off — only those of this
+        chain, so switching one off never touches another chain it is not in."""
         registered = {one.item for one in placements}
         off = [one for one in self._error_handlers_off if one in registered]
         return build_error_handler_chain(ordered(placements, off).items)
@@ -138,7 +162,9 @@ class BusErrorHandlersMixin:
         sequence: int,
         replay: Callable[[Any], Any],
     ) -> None:
-        """Context: registered after the bus was built, the handler answers from the next
+        """Place `handler` among the error handlers of one layer and rebuild the chains.
+
+        Context: registered after the bus was built, the handler answers from the next
         execution."""
         if not callable(handler):
             raise TypeError("The handler must be a callable")

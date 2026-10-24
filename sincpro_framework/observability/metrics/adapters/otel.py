@@ -27,6 +27,11 @@ INSTRUMENTATION = "sincpro_framework"
 
 
 def host_meter_provider_is_real() -> bool:
+    """Whether someone registered a real meter provider — not the API's proxy or no-op
+    stand-in. `False` without opentelemetry.
+
+    Context: a provider the host set (Odoo, auto-instrumentation) is used and never replaced.
+    """
     try:
         import opentelemetry.metrics
 
@@ -39,7 +44,14 @@ def host_meter_provider_is_real() -> bool:
 
 def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> Any:
     """A meter provider exporting to `endpoint` every 60 s, set as the global one — only when
-    nobody registered one first. Answers the global provider either way."""
+    nobody registered one first. Answers the global provider either way.
+
+        install_otlp_meter_provider("http://collector:4317", {"service.name": "sincpro-odoo"})
+            ->  MeterProvider(resource=service.name="sincpro-odoo" + OTEL_RESOURCE_ATTRIBUTES)
+        install_otlp_meter_provider(...)   ->  the host's provider, untouched, inside Odoo
+
+    The resource is `Resource.create`d — the deployment's attributes and the SDK defaults
+    merged in; the exporter is built for `endpoint` explicitly (`metric_exporter`)."""
     import opentelemetry.metrics
 
     if host_meter_provider_is_real():
@@ -59,7 +71,19 @@ def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> An
 
 
 class OtelRecorder(Recorder):
+    """Records into an OpenTelemetry meter — the instrument for each name created once and
+    kept; the labels go as the measurement's attributes."""
+
     def __init__(self, meter_provider: Any | None = None) -> None:
+        """A meter of `meter_provider`, else of the global one. Raises `ImportError` with the
+        install hint when opentelemetry is missing — choosing this recorder without the extra
+        is a mistake to see at once.
+
+            OtelRecorder()                      ->  meter "sincpro_framework" of the global
+            OtelRecorder(meter_provider=mine)   ->  meter "sincpro_framework" of `mine`
+            OtelRecorder()                      ->  ImportError(OTEL_MISSING)   # no extra
+
+        No instrument exists yet: each one is created on its first measurement."""
         try:
             import opentelemetry.metrics
         except ImportError as error:
@@ -72,7 +96,13 @@ class OtelRecorder(Recorder):
     @classmethod
     def for_process(cls) -> "OtelRecorder":
         """On the host's provider; or, with an OTLP endpoint and none registered, on one this
-        installs under the process identity."""
+        installs under the process identity.
+
+            OtelRecorder.for_process()   ->  OtelRecorder on a provider installed for
+                                             `process.identity` (otlp_endpoint set, no host)
+            OtelRecorder.for_process()   ->  OtelRecorder on the host's provider (Odoo)
+
+        Without an endpoint nothing is installed: the recorder rides the global provider."""
         from sincpro_framework.sincpro_conf import settings
 
         if settings.otlp_endpoint and not host_meter_provider_is_real():
@@ -87,6 +117,15 @@ class OtelRecorder(Recorder):
         return cls()
 
     def _instrument(self, instrument: Instrument) -> Any:
+        """The OpenTelemetry instrument for `instrument`'s name — created the first time,
+        reused after.
+
+        1. A known name answers without the lock — the common path.
+        2. Under the lock, checked again: a racing caller may have created it.
+        3. Created by kind: a counter, an up-down counter, or a histogram with its buckets as
+           an advisory; an API older than the advisory gets a histogram without it.
+        Final: the instrument, kept under its name.
+        """
         known = self._instruments.get(instrument.name)
         if known is not None:
             return known
@@ -117,7 +156,9 @@ class OtelRecorder(Recorder):
             return created
 
     def add(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
+        """`add` on the counter or up-down counter, the labels as attributes."""
         self._instrument(instrument).add(value, attributes=dict(labels))
 
     def record(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
+        """`record` on the histogram, the labels as attributes."""
         self._instrument(instrument).record(value, attributes=dict(labels))

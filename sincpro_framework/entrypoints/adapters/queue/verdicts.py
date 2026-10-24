@@ -23,6 +23,8 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class Settlement(StrEnum):
+    """How one delivery is settled with the broker — the rows of the table above."""
+
     ACK = "ack"
     REPLAY = "replay"
     SKIP = "skip"

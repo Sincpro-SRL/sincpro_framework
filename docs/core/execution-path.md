@@ -115,7 +115,7 @@ Anything can be registered at any time; nothing registered is ignored.
 | `feature`, `app_service` (with or without `replaces=`), `add_dependency` (with or without `replaces=`), `extend` | answers from the next execution | yes |
 | `interceptor`, `without_interceptor`, `execution_ids` | answers from the next execution | yes |
 | error handlers (`add_*_error_handler`, `without_error_handler`) | answers from the next execution | yes |
-| `context_provider`, `context_schema`, `context_store` | read by each execution as it opens | yes |
+| `context_provider`, `context_schema`, `store_context_in` | read by each execution as it opens | yes |
 | income and outcome listeners (`on_start`, `on_completion`, `on_failure`, `publish_*`) | read when something is announced | yes |
 | the recorder of a `Pipeline` | — attached by each generation when it is built, not registered | each generation attaches its own |
 

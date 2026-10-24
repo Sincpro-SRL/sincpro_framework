@@ -1,3 +1,17 @@
+"""The buses a `UseFramework` dispatches through: a `FrameworkBus` facade that routes each DTO
+to the `FeatureBus` or the `ApplicationServiceBus` that has it registered.
+
+    billing(CommandIssueInvoice(amount=10), ResponseIssueInvoice)   the FrameworkBus routes
+    self.feature_bus(CommandReserve(sku="A1"), ResponseReserve)     in an ApplicationService
+
+Built by the container, never by hand outside a test. Every run of a use case goes the same
+way, whichever layer it is in: an execution node in the context tree, a span and a measurement
+around it, the context providers and `requires_context`, the incomes, the interceptors around
+`execute`; on a failure the outcomes, the metric, the span and GlitchTip are told, and the
+error handler of that layer may answer instead. The `FrameworkBus` adds what only the
+outermost call can do: report the error that leaves the whole call, once.
+"""
+
 from logging import Logger
 from typing import Callable, Dict, Optional, Type
 
@@ -30,8 +44,13 @@ from .sincpro_logger import is_logger_in_debug, logger
 
 
 def prepared(node: ContextNode, handler: object, providers: list[ContextProvider]) -> None:
-    """1. What the bus's providers give, on the execution's node.
-    2. Final: what the handler declared it requires — refused when missing; nothing declared,
+    """Fill the execution's node from the providers and check what the handler requires.
+
+        prepared(node, IssueInvoice(), [tenant_provider])   ->  None, tenant_id on the node
+        prepared(node, <requires tenant_id>, [])            ->  ContextRequired("...", ...)
+
+    1. What the bus's providers give, on the execution's node.
+    Final: what the handler declared it requires — refused when missing; nothing declared,
        nothing checked."""
     provided(node, providers)
     required = required_by(handler)
@@ -55,6 +74,22 @@ class FeatureBus(Bus):
         new_execution_id: Optional[Callable[[], str]] = None,
         log_after_execution: bool = True,
     ):
+        """Every collaborator optional, so a test builds one bare; the container hands in the
+        ones the whole `UseFramework` shares — its observability, incomes, outcomes, context
+        owner and providers — so both layers report to the same places. The registry,
+        interceptors, replacements and `handle_error` are filled after, by the container.
+
+            FeatureBus()                                    ->  empty registry, no handler
+            FeatureBus(observability=Observability("billing"))
+            ->  incomes and outcomes of their own, both named "billing"
+
+        1. Empty registry, interceptors and replacements; no `handle_error` yet.
+        2. The logger given, else the framework's; the observability given, else a bare one.
+        3. The incomes and the outcomes given, else new ones named after the bus.
+        4. The execution id factory given, else `new_entity_id`.
+        Final: the context owner, the providers (none by default) and whether to log each
+        execution kept as given.
+        """
         self.feature_registry: Dict[type, Feature] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
         self.replacements: Dict[type, tuple[str, ...]] = dict()
@@ -75,7 +110,14 @@ class FeatureBus(Bus):
         self.log_after_execution = log_after_execution
 
     def register_feature(self, dto: Type[DataTransferObject], feature: Feature) -> bool:
-        """Register a feature to the bus"""
+        """Register the feature that answers `dto` — one per DTO type; a second is
+        `DTOAlreadyRegistered`. Called by the container, not by a bounded context.
+
+            register_feature(CommandReserve, Reserve())   ->  True
+            register_feature(CommandReserve, Other())     ->  DTOAlreadyRegistered
+
+        Logged at info, so the boot log lists every feature the bus answers.
+        """
         if dto in self.feature_registry:
             raise exceptions.DTOAlreadyRegistered(
                 f"Data transfer object {dto.__name__} is already registered"
@@ -88,7 +130,25 @@ class FeatureBus(Bus):
     def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
-        """Execute a feature, and handle error if exists error handler"""
+        """Run the feature registered for the DTO's type, observed and guarded as every one.
+
+        `return_type` only types the answer for the caller — nothing is converted.
+
+            execute(CommandReserve(sku="A1"), ResponseReserve)  ->  ResponseReserve(...)
+            execute(CommandUnregistered())                      ->  UnknownDTOToExecute
+
+        1. The feature for `type(dto)`, else `UnknownDTOToExecute`.
+        2. Opened together: the execution's node (`Level.FEATURE`), its span, its measurement.
+        3. The span described with what the DTO declares, and with what the feature replaces.
+        4. Run, under `handling` so a failure names the chain it crossed:
+           4.1 the context providers fill the node; `requires_context` refuses what is
+               missing;
+           4.2 the incomes are told it began;
+           4.3 the interceptors registered for the type run around `feature.execute`.
+        5. A failure: outcomes, metric and span/GlitchTip told; with no feature error handler
+           it is raised, else what the handler answers is the answer — logged as handled.
+        Final: the response, measured, told to the outcomes, described on the span.
+        """
         dto_type = dto.__class__
         dto_name = dto_type.__name__
 
@@ -147,7 +207,9 @@ class FeatureBus(Bus):
     def __call__(
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
-        """Context: inside an ApplicationService, `self.feature_bus(dto, Response)` reads as the
+        """`execute`, as a call.
+
+        Context: inside an ApplicationService, `self.feature_bus(dto, Response)` reads as the
         root bus does, `bus(dto, Response)`."""
         return self.execute(dto, return_type)
 
@@ -168,6 +230,20 @@ class ApplicationServiceBus(Bus):
         new_execution_id: Optional[Callable[[], str]] = None,
         log_after_execution: bool = True,
     ):
+        """As `FeatureBus.__init__` — the same shared collaborators, so a feature and the
+        application service that runs it report to the same places.
+
+            ApplicationServiceBus()                         ->  empty registry, no handler
+            ApplicationServiceBus(incomes=shared, outcomes=shared)
+            ->  told to the same incomes and outcomes as the feature bus
+
+        1. Empty registry, interceptors and replacements; no `handle_error` yet.
+        2. The logger given, else the framework's; the observability given, else a bare one.
+        3. The incomes and the outcomes given, else new ones named after the bus.
+        4. The execution id factory given, else `new_entity_id`.
+        Final: the context owner, the providers (none by default) and whether to log each
+        execution kept as given.
+        """
         self.app_service_registry: Dict[type, ApplicationService] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
         self.replacements: Dict[type, tuple[str, ...]] = dict()
@@ -190,8 +266,14 @@ class ApplicationServiceBus(Bus):
     def register_app_service(
         self, dto: Type[DataTransferObject], app_service: ApplicationService
     ) -> bool:
-        """Register an application service to the bus
-        This method is not used directly, the decorator inject_app_service_to_bus is used
+        """Register the application service that answers `dto` — one per DTO type; a second
+        is `DTOAlreadyRegistered`. Called by the container when `@bus.app_service(...)` is
+        built, not by a bounded context.
+
+            register_app_service(CommandCheckout, Checkout())   ->  True
+            register_app_service(CommandCheckout, Other())      ->  DTOAlreadyRegistered
+
+        Logged at info, so the boot log lists every application service the bus answers.
         """
         if dto in self.app_service_registry:
             raise exceptions.DTOAlreadyRegistered(
@@ -205,7 +287,19 @@ class ApplicationServiceBus(Bus):
     def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
-        """Execute an application service, and handle error if exists error handler"""
+        """Run the application service registered for the DTO's type — the same way
+        `FeatureBus.execute` runs a feature, at `Level.APPLICATION`, with the application
+        service error handler.
+
+            execute(CommandCheckout(cart_id="c1"), ResponseCheckout) ->  ResponseCheckout(...)
+            execute(CommandReserve(sku="A1"))   ->  UnknownDTOToExecute (a feature, not here)
+
+        1. The application service for `type(dto)`, else `UnknownDTOToExecute`.
+        2. Node, span and measurement opened; the span described.
+        3. Providers and `requires_context`, incomes, interceptors around `execute`.
+        4. A failure: told everywhere; raised, or answered by the error handler.
+        Final: the response, measured, told to the outcomes, described on the span.
+        """
         dto_type = dto.__class__
         dto_name = dto_type.__name__
 
@@ -289,6 +383,19 @@ class FrameworkBus(Bus):
         outcomes: Optional[Outcomes] = None,
         log_after_execution: bool = True,
     ):
+        """The two layer buses, already filled — a DTO registered in both is refused here,
+        when the bus is built (`DTOAlreadyRegistered`), not at its first call. `outcomes` is
+        the feature bus's unless given, so the error that escapes is told where the rest is.
+
+            FrameworkBus(feature_bus, app_service_bus)      ->  no global error handler yet
+            FrameworkBus(<CommandReserve in both buses>)    ->  DTOAlreadyRegistered
+
+        1. Both layer buses kept; no `handle_error` yet.
+        2. The logger given, else the framework's; the observability given, else a bare one.
+        3. The outcomes given, else the feature bus's.
+        4. The DTO types registered in each layer bus, collected.
+        Final: a type in both is logged as an error and refused, naming every one of them.
+        """
         self.feature_bus = feature_bus
         self.app_service_bus = app_service_bus
         self.handle_error: Optional[Callable] = None
@@ -313,6 +420,15 @@ class FrameworkBus(Bus):
             )
 
     def _dispatch(self, dto: TypeDTO) -> TypeDTOResponse | None:
+        """The layer bus that has the DTO's type registered runs it.
+
+        1. Registered in both (one added to a registry after the build):
+           `DTOAlreadyRegistered`.
+        2. A feature: the feature bus.
+        3. An application service: the application service bus.
+        Final: neither — `UnknownDTOToExecute`, most often a use case whose decorator never
+        ran because its module was never imported.
+        """
         dto_type = dto.__class__
         dto_name = dto_type.__name__
         if (
@@ -337,11 +453,26 @@ class FrameworkBus(Bus):
     def execute(  # type: ignore[override]
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
-        """Main method to execute the framework
+        """Run a DTO through the layer bus that has it — what `UseFramework.__call__` ends in.
 
-        This method will execute the DTO in the app service bus
-        if the DTO is present in the app service bus
-        otherwise will execute the DTO in the feature bus
+        Context: the layer buses already reported a failure where it happened; this is the
+        last place an error is seen before the caller, so only here, and only when this call
+        is the outermost one (not a bus called from inside a use case), is it told as escaped
+        — once per call, not once per bus it crossed.
+
+            execute(CommandReserve(sku="A1"))      ->  the feature bus's ResponseReserve
+            execute(CommandUnregistered())         ->  UnknownDTOToExecute, told as escaped
+            execute(<fails, global handler set>)   ->  what the handler answers
+
+        1. `observability.execution()` says whether this call is the outermost.
+        2. Dispatched (`_dispatch`).
+        3. A failure:
+           3.1 a routing one — unknown DTO, registered twice — reached no layer bus: it is
+               recorded here, as a framework error;
+           3.2 no global error handler: told as escaped when outermost, and raised;
+           3.3 the handler raises: what it raised is told as escaped when outermost, and
+               raised.
+        Final: what the global handler answered, logged as handled — or the response.
         """
         with self.observability.execution() as outermost:
             try:

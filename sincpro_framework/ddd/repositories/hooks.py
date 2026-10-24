@@ -71,10 +71,19 @@ class _Gates:
     __slots__ = ("own", "inherited")
 
     def __init__(self, inherited: "Sequence[_Gates]" = ()) -> None:
+        """`inherited` are the gates of the collections this one was copied or combined from —
+        held, not copied, so what they gain later still counts here."""
         self.own: list[HookGate] = []
         self.inherited = tuple(inherited)
 
     def all(self) -> tuple[HookGate, ...]:
+        """Every gate in force, each once, own first.
+
+            own [audit] · inherited ([access], [access, audit])   ->  (audit, access)
+
+        1. This collection's own gates, then each inherited source's, read now — recursively.
+        2. Final: a gate already found is skipped, so one reached along two paths runs once.
+        """
         found: list[HookGate] = []
         for gate in (*self.own, *(one for source in self.inherited for one in source.all())):
             if gate not in found:
@@ -111,10 +120,15 @@ class Hook(Generic[ContextT]):
     _hooks: "Hooks | None" = None
 
     def _given_bus(self) -> "UseFramework | None":
+        """The bus of the collection that built this instance, `None` before it was given one.
+        Read through `object.__getattribute__` so a missing `_hooks` never falls into
+        `__getattr__`, which would look it up as a dependency."""
         hooks = object.__getattribute__(self, "_hooks")
         return hooks.bus if hooks is not None else None
 
     def _refuse_no_bus(self, name: str) -> exceptions.DependencyNotRegistered:
+        """The error for a hook reading `name` before its collection was given a bus — naming
+        the line that is missing from the composition root."""
         return exceptions.DependencyNotRegistered(
             f"{type(self).__name__}.{name}: its collection was never given a bus — "
             "`hooks.inject(bus)` in the composition root"
@@ -160,6 +174,11 @@ class Hook(Generic[ContextT]):
 
 
 def _implemented(hook: type[Hook]) -> tuple[str, ...]:
+    """The moments a hook class implements, in the order of `MOMENTS`.
+
+    class Checks(Hook):  def before_save(...)  ·  def after_read(...)
+    _implemented(Checks)  ->  ("after_read", "before_save")
+    """
     return tuple(moment for moment in MOMENTS if getattr(hook, moment, None) is not None)
 
 
@@ -216,6 +235,13 @@ class Hooks:
     def __init__(self, package: "str | None" = INFER) -> None:
         """`package` is walked on first read — never here, where the modules it holds cannot
         import the collection yet. Left out, it is the calling module; `None` walks nothing.
+
+            billing_hooks = Hooks()          # in myapp/billing/hooks/__init__.py
+                ->  walks "myapp.billing.hooks" on first read
+            Hooks("myapp.billing.hooks")     ->  walks that package on first read
+            Hooks(None)                      ->  walks nothing — hooks register by import
+
+        It starts empty, open to registrations, with no gate and no bus.
         """
         self._placements: list[Placement] = []
         self._entities: dict[type[Hook], tuple[type, ...]] = {}
@@ -228,6 +254,8 @@ class Hooks:
         self._package = _calling_package() if package is INFER else package
 
     def _refuse_late(self, hook: type[Hook]) -> None:
+        """Refuses a registration once a repository has read the collection: the chain was
+        compiled without it, so it would silently never run."""
         if self._read:
             raise exceptions.ProgrammingError(
                 f"{hook.__name__} registered late: this collection was already read by a "
@@ -295,6 +323,7 @@ class Hooks:
         entities = tuple(entity) if isinstance(entity, Sequence) else (entity,)
 
         def register(hook: H) -> H:
+            """The decorator itself: checks, records and places `hook`, then hands it back."""
             self._refuse_late(hook)
             takes_the_place_of = self._checked(hook, replaces, extends)
             self._entities[hook] = entities
@@ -313,6 +342,7 @@ class Hooks:
 
     @property
     def bus(self) -> "UseFramework | None":
+        """The bus given with `inject`, `None` until then — what the hooks resolve against."""
         return self._bus
 
     def gate(self, gate: HookGate) -> "Hooks":
@@ -325,6 +355,8 @@ class Hooks:
 
     @property
     def gates(self) -> tuple[HookGate, ...]:
+        """Every gate this collection asks — its own and those of what it was copied or
+        combined from, each once."""
         return self._gates.all()
 
     def registered(self) -> tuple[type[Hook], ...]:
@@ -333,12 +365,19 @@ class Hooks:
         return tuple(one.item for one in self._placements)
 
     def entities_of(self, hook: type[Hook]) -> tuple[type, ...]:
+        """The aggregates `hook` was registered for — kept here, never on the class, so one
+        hook class can sit in two collections for different aggregates."""
         return self._entities[hook]
 
     def load(self, package: str) -> "Hooks":
         """Import every module under `package`, so the hooks in them register.
 
-        billing_hooks = Hooks(None).load("myapp.services.hooks")
+            billing_hooks = Hooks(None).load("myapp.services.hooks")
+                ->  billing_hooks, every module under myapp.services.hooks imported
+            Hooks(None).load("myapp.services.hooks.invoice")   # a module: only itself
+
+        Context: it walks now, not on first read, and marks the collection loaded so the first
+        read does not walk again; a package is walked recursively.
         """
         found = importlib.import_module(package)
         if hasattr(found, "__path__"):
@@ -390,9 +429,11 @@ class Hooks:
         return result
 
     def __iter__(self) -> Iterator[type[Hook]]:
+        """The hooks in the order they run; reading closes the collection (`_ordered`)."""
         yield from self._ordered().items
 
     def __len__(self) -> int:
+        """How many hooks run — replaced and switched-off ones aside; closes the set."""
         return len(self._ordered().items)
 
     @property
@@ -408,9 +449,16 @@ class Hooks:
 
     @property
     def switched_off(self) -> tuple[str, ...]:
+        """The names of the hooks `without` took out — for a report of what does not run."""
         return tuple(name_of(item) for item in self._off)
 
     def _copy(self) -> "Hooks":
+        """A new, unread collection with the same registrations, bus and switches.
+
+        Context: what `without` and `combined_with` build on. Package `None`, because the
+        original already walked its own; gates inherited, not copied, so a gate added to the
+        original afterwards still holds here.
+        """
         copied = Hooks(None)
         copied._placements = list(self._placements)
         copied._entities = dict(self._entities)
@@ -447,12 +495,19 @@ class Hooks:
         return combined
 
     def __repr__(self) -> str:
+        """The hooks registered, in registration order, without reading the collection.
+
+        repr(billing_hooks)  ->  "Hooks(InvoiceMustBalance, Audits)"
+        """
         names = ", ".join(one.item.__name__ for one in self._placements) or "empty"
         return f"Hooks({names})"
 
 
 @dataclass(frozen=True)
 class _Link:
+    """One hook of a compiled chain with the aggregates it is for — what `fire` checks a
+    record against with `isinstance`."""
+
     hook: type[Hook]
     entities: tuple[type, ...]
 
@@ -478,6 +533,14 @@ class HookChain:
     """
 
     def __init__(self, hooks: Hooks | None) -> None:
+        """Holds the collection and reads nothing — `None` is a repository with no hooks.
+
+            HookChain(billing_hooks)   ->  compiled on the first `fire`, `read` or `searched`
+            HookChain(None)            ->  every moment runs no hook
+
+        Context: no order is worked out and no hook is built here, so a chain can be made
+        before the modules that register its hooks are imported.
+        """
         self._hooks = hooks
         self._by_moment: dict[str, tuple[_Link, ...]] | None = None
         self._compiling = Lock()
@@ -522,6 +585,8 @@ class HookChain:
             return built
 
     def _admits(self, hook: type[Hook], moment: str, subject: Any) -> bool:
+        """Whether every gate of the collection lets this moment of `hook` run on `subject`;
+        a gate that raises refuses the whole write, which is the gate's choice to make."""
         hooks = self._hooks
         return hooks is None or all(
             gate(hooks, hook, moment, subject) for gate in hooks.gates
@@ -553,7 +618,15 @@ class HookChain:
 
     def searched(self, model: type, page: Any) -> Any:
         """`after_search`, once for the page, for the hooks whose aggregate `model` is; a hook
-        that answers a page puts it in place."""
+        that answers a page puts it in place.
+
+            searched(Invoice, page)   # a hook hiding voided invoices answers a filtered page
+                ->  page.filtered(lambda invoice: not invoice.voided)
+            searched(Partner, page)   ->  page, as it came — no hook is for Partner
+
+        Context: matched by the model asked for, not by each record — the page is one answer,
+        and a hook returning `None` keeps it.
+        """
         for link in self._compiled()["after_search"]:
             if issubclass(model, link.entities) and self._admits(
                 link.hook, "after_search", page

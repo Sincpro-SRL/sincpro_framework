@@ -33,6 +33,11 @@ from sincpro_framework.ddd.criteria.domain.strict import Strict, tolerates
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
+# No class docstring: pydantic publishes it as the description in the committed
+# `criteria.schema.json` contract, which the TypeScript package copies.
+# How much a page pays to say how many there are in total: NONE asks no total (the cheapest
+# page), CAPPED counts up to a ceiling and answers `Count(exact=False)` past it (the default),
+# EXACT counts to the end, whatever it costs.
 class CountMode(StrEnum):
     NONE = "none"
     CAPPED = "capped"
@@ -97,15 +102,19 @@ class Specification(RootModel[dict[str, "Criteria"]]):
     root: dict[str, "Criteria"] = {}
 
     def __iter__(self) -> Iterator[str]:  # type: ignore[override]
+        """The field names asked for, in order — not pydantic's own fields."""
         return iter(self.root)
 
     def __contains__(self, name: str) -> bool:
+        """Whether `name` was asked for."""
         return name in self.root
 
     def __len__(self) -> int:
+        """How many fields were asked for."""
         return len(self.root)
 
     def __getitem__(self, name: str) -> "Criteria":
+        """How to bring `name` — empty for a scalar."""
         return self.root[name]
 
     @property
@@ -138,6 +147,12 @@ class Specification(RootModel[dict[str, "Criteria"]]):
         )
 
 
+# No class docstring: pydantic publishes it as the description in the committed
+# `criteria.schema.json` contract, which the TypeScript package copies.
+# One reading of an aggregate: which rows (`where`), in what order, which page, what of each
+# (`specification`), and how to group them when counted instead of listed. The same object on
+# every wire, and strict: a key it does not have is refused. `Criteria()` is the store's first
+# page of everything, in the store's order.
 class Criteria(Strict):
     where: Expression | None = None
     """The filter: a `Condition`, or an `All`/`Any`/`Not` grouping more of them.

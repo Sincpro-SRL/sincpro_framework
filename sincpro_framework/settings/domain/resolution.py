@@ -39,6 +39,23 @@ def locate(
     Context: the first key of the path is the project's own section of the file; nothing beside
     it or above it is the project's, so the cascade never reaches past it — a flat class read at
     `"my_project"`, as every project reads it today, takes nothing from the rest of the file.
+
+        document = {"payments": {"environment": "test", "qr": {"timeout": 5}}, "other": {}}
+        locate(document, "payments.qr", "conf.yaml")
+            ->  ({"timeout": 5}, [("payments", {"environment": "test", "qr": {…}})])
+        locate(document, "payments", "conf.yaml")    ->  ({"environment": "test", …}, [])
+        locate(document, None, "conf.yaml")          ->  (the whole document, [])
+        locate(document, "payments.qr.timeout", "conf.yaml")
+            ->  raises ValueError("Config section payments.qr.timeout in conf.yaml is not
+                a section")
+
+    1. No `sub_key`: the whole document, nothing above it.
+    2. Down the dotted path, key by key:
+       2.1 past the first key, the section just left is put first among those above — the
+           document itself never is;
+       2.2 a key missing on the way is `ValueError`, naming the path and the file.
+    3. What the path reaches must be a section, else `ValueError`.
+    Final: a copy of the section, and the sections above it, nearest first.
     """
     if not sub_key:
         return dict(document), []
@@ -57,7 +74,16 @@ def locate(
 
 
 def nested_shape(annotation: Any) -> type[SincproConfig] | None:
-    """The shape a field holds — `QRSettings`, or `QRSettings | None` — or `None` for a value."""
+    """The shape a field holds — `QRSettings`, or `QRSettings | None` — or `None` for a value.
+
+        nested_shape(QRSettings)                  ->  QRSettings
+        nested_shape(QRSettings | None)           ->  QRSettings
+        nested_shape(QRSettings | CardSettings)   ->  None    # which one is not said
+        nested_shape(list[QRSettings])            ->  None    # a list is a value
+        nested_shape(int)                         ->  None
+
+    A union holding exactly one shape is that shape; two or more say nothing.
+    """
     if isinstance(annotation, type) and issubclass(annotation, SincproConfig):
         return annotation
     if get_origin(annotation) in (Union, UnionType):
@@ -97,6 +123,12 @@ def is_shared(shape: type[SincproConfig], name: str) -> bool:
 
 
 def _defaults_of(shape: type[SincproConfig], prefix: str, sources: dict[str, str]) -> None:
+    """Record every leaf of `shape` as `default` in `sources`, nested shapes walked into —
+    for a section left out of the file, whose fields all keep their defaults.
+
+        _defaults_of(PostgresConf, "postgresql.", sources)
+            ->  sources {"postgresql.host": "default", "postgresql.log_level": "default"}
+    """
     for name, field in shape.model_fields.items():
         inner = nested_shape(field.annotation)
         if inner is not None:

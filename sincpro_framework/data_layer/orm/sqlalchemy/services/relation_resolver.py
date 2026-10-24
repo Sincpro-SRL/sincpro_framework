@@ -68,7 +68,21 @@ def _partitioned(
     limit: int | None,
 ) -> list[tuple[Any, Any, int]]:
     """The rows of one node as `(related record, parent key, total)`, ordered as the node
-    asked, at most `limit` per parent, in one statement over a window."""
+    asked, at most `limit` per parent, in one statement over a window.
+
+    Context: a page of 50 invoices showing their first 5 lines is one query, not 50 — and
+    each parent still gets its exact total, for the "5 of 23" a client shows.
+
+        SELECT * FROM (SELECT line.*, invoice_id AS parent,
+                              row_number() OVER (PARTITION BY invoice_id ORDER BY …) AS pos,
+                              count(*) OVER (PARTITION BY invoice_id) AS total
+                       FROM line WHERE invoice_id IN (…) AND <node's filter>)
+        WHERE pos <= 5 ORDER BY parent, pos
+
+    1. The node's ordering, a `row_number` and a `count` partitioned by the parent key.
+    2. The node's filter applied inside, so the numbering and the total count only matches.
+    3. Final: ordered by parent then position, cut at `limit` when there is one.
+    """
     order = sql_translator.order_clauses(related, sorts)
     position = func.row_number().over(partition_by=parent_key, order_by=order).label(POSITION)
     total = func.count().over(partition_by=parent_key).label(TOTAL)
@@ -128,7 +142,17 @@ def _nested(
 def _by_foreign_key_on_related(
     prepare, session, meta, parents, relation, node, limit, dropped
 ):
-    """A to-many: the related aggregate holds the field this one is matched by."""
+    """A to-many: the related aggregate holds the field this one is matched by.
+
+        Invoice.lines (line.invoice_id → invoice.id)
+            ->  {invoice_id: EntityCollection[Line]}
+
+    1. The node prepared against the related aggregate: its filter, ordering and definition.
+    2. The value each parent is matched by; none at all answers no groups.
+    3. One windowed read of every parent's related rows (`_partitioned`), grouped per value.
+    4. The groups re-keyed by each parent's identity — the matched field need not be it.
+    Final: the groups, and the node's own relations resolved over all the rows at once.
+    """
     related = relation.related
     here, there = key_pair(meta.identity, relation, many=True)
     clause, sorts, definition, node_dropped = prepare(related, node)
@@ -154,7 +178,16 @@ def _by_foreign_key_on_related(
 
 
 def _by_foreign_key_here(prepare, session, meta, parents, relation, node, dropped):
-    """A to-one: this aggregate holds the field the related one is matched by."""
+    """A to-one: this aggregate holds the field the related one is matched by.
+
+        Line.invoice (line.invoice_id → invoice.id)
+            ->  {line_id: EntityCollection[(Invoice,)]}
+
+    1. The distinct non-NULL values the parents hold; none answers no groups.
+    2. One read of the related records matching them, the node's filter added.
+    3. Final: each parent gets a one-item collection of its match — none when the filter left
+       it out — and the node's own relations are resolved over what was found.
+    """
     related = relation.related
     here, there = key_pair(meta.identity, relation, many=False)
     clause, sorts, definition, node_dropped = prepare(related, node)
@@ -178,7 +211,16 @@ def _by_foreign_key_here(prepare, session, meta, parents, relation, node, droppe
 
 
 def _through_table(prepare, session, meta, parents, relation, node, limit, dropped):
-    """A many-to-many: the pairs live in a table in between."""
+    """A many-to-many: the pairs live in a table in between.
+
+        Dataset.tags through dataset_tag(dataset_id, tag_id)   ->  {dataset_id: [Tag, …]}
+
+    1. The parents' identities; none answers no groups.
+    2. Refused when the relation has no table in between or no key on it for the related side.
+    3. The related aggregate joined to the pairs, kept for these parents, read windowed per
+       parent (`_partitioned`).
+    Final: one collection per parent, and the node's own relations over all the rows.
+    """
     related = relation.related
     clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
@@ -207,7 +249,16 @@ def _through_table(prepare, session, meta, parents, relation, node, limit, dropp
 
 def _by_id_list(prepare, session, meta, parents, relation, node, limit, dropped):
     """A to-many whose ids this aggregate holds in a column; the cut per parent is in memory,
-    because the related aggregate has no column pointing back."""
+    because the related aggregate has no column pointing back.
+
+        Dataset.sources (dataset.source_ids = ["ds_1", "ds_2"])
+            ->  {dataset_id: [Dataset, …]}
+
+    1. Every id any parent holds; none answers no groups.
+    2. One read of those records, filtered and ordered as the node asked.
+    3. Per parent: the records whose id it holds, cut to `limit` with an exact count.
+    Final: the groups, and the node's own relations over everything read.
+    """
     related = relation.related
     clause, sorts, definition, node_dropped = prepare(related, node)
     dropped.extend(node_dropped)
@@ -314,6 +365,12 @@ def resolve_relations(
 ) -> Meta:
     """Every relation the specification names, resolved onto the records; the definition back
     with each expanded relation's own definition, cut by its node.
+
+        resolve_relations(prepare, session, Dataset, [d1, d2], Specification({"runs":
+                          Criteria()}), meta, dropped)
+            ->  meta with fields["runs"].definition = Run's; d1.runs, d2.runs held WHOLE
+        the same with Specification({"name": Criteria()})   # name is text
+            ->  meta unchanged; dropped == [Dropped(field="name", reason="not_expandable")]
 
     1. A scalar with children is `not_expandable`; an unknown name was already reported.
     2. A relation nobody declared how to resolve is `not_expandable` too.

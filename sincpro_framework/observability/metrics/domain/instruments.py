@@ -36,6 +36,9 @@ in its first bucket."""
 
 
 class InstrumentKind(StrEnum):
+    """The three kinds every backend has — a sum that only grows, one that moves both ways,
+    and a distribution. Which `Recorder` method receives it: `add` or `record`."""
+
     COUNTER = "counter"
     """Only goes up: runs, amounts issued. A negative value is dropped."""
     UP_DOWN = "up_down"
