@@ -22,6 +22,7 @@ from sincpro_framework.remote_execution.domain.exceptions import (
     ContextTimeout,
     ContextUnavailable,
     DTODoesNotFit,
+    is_unreached,
 )
 from sincpro_framework.remote_execution.entrypoint.hosts import (
     Attach,
@@ -45,6 +46,7 @@ __all__ = [
     "InvalidAddress",
     "OpenHost",
     "Wire",
+    "is_unreached",
     "open_host",
     "open_host_routes",
     "serve_contexts",

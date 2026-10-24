@@ -16,6 +16,7 @@ so read it only when the framework repo is at hand.
 | Boundaries, `common/`, domain vs adapters | `runtime/testing/analysis/architecture.py` (the checks) | [context-boundaries.md](context-boundaries.md) | `docs/architecture/ARCHITECTURE.md` |
 | The context: `use_context()`, the tree of levels, threads, providers, stores, propagation, execution identity | `context/` | `sincpro-framework-context` | `docs/core/context-manager.md` |
 | Interceptors + `replaces=` | `bus_pipeline/interceptors/` | `sincpro-framework-core` | `docs/core/interceptors.md` |
+| Circuit breaker for an adapter or a bus hosted elsewhere (`Circuit`, `CircuitOpen`) | `circuits/` | `sincpro-framework-core` | `docs/core/circuits.md` |
 | Error handlers | `error_handler.py` | `sincpro-framework-core` | README "Error Handling" |
 | Failure classification (`DomainError`, `failure_kind`) | `ddd/exceptions.py`, `common/failures/` | `sincpro-framework-entrypoints` | `docs/entrypoints/README.md` |
 | Settings / configuration per context | `settings/`, `conf/` | `sincpro-framework-settings` | `docs/core/settings.md` |

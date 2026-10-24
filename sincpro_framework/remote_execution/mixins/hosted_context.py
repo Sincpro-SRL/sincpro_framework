@@ -5,6 +5,7 @@ Context: the context map (`hosted_by` in the settings) is read when the bus is c
 process serves (`run_here`) runs here whatever the map says.
 """
 
+from dataclasses import replace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -19,11 +20,13 @@ from typing import (
 from pydantic import ValidationError
 from sincpro_log.logger import LoggerProxy
 
+from sincpro_framework.circuits import Circuit, CircuitOpen
 from sincpro_framework.common.serialization import rebuilt
 from sincpro_framework.common.transport.addresses import HostedAt
 from sincpro_framework.context.infrastructure.tree import handed_on
-from sincpro_framework.remote_execution.adapters.transport import transport_for
+from sincpro_framework.remote_execution.adapters.transport import circuit_for, transport_for
 from sincpro_framework.remote_execution.domain import exceptions
+from sincpro_framework.remote_execution.domain.payload import Payload
 from sincpro_framework.remote_execution.entrypoint.hosts import (
     Attach,
     OpenHost,
@@ -64,6 +67,9 @@ class HostedContextMixin:
         """Where another service hosts this bounded context — the context map, or `hosted_by`."""
         self._runs_here: bool = False
         """Run in this process whatever the map says — it serves the context (`run_here`)."""
+        self._circuit: Circuit | bool | None = None
+        """What `hosted_by(circuit=...)` said: a circuit of the project's, the address's own one
+        (`True`), none (`False`) — or nothing (`None`): the address decides."""
         configured = configured_host(bundled_context_name)
         if configured is not None:
             self._reach_at(configured)
@@ -74,6 +80,50 @@ class HostedContextMixin:
         handler = self.handler_of(dto_type)
         declared = None if handler is None else get_type_hints(handler.execute).get("return")
         return None if declared is Any else declared
+
+    def _guarding(self, hosted_at: HostedAt) -> Circuit | None:
+        """The circuit a call goes through: the one `hosted_by` was handed, the address's own when
+        `hosted_by(circuit=True)`, none when `circuit=False` — else what the address says
+        (`circuit=on`), and none by default."""
+        match self._circuit:
+            case Circuit():
+                return self._circuit
+            case True:
+                return circuit_for(replace(hosted_at, circuit=True))
+            case False:
+                return None
+        return circuit_for(hosted_at)
+
+    def _forwarded(
+        self, hosted_at: HostedAt, dto: Any, context: Mapping[str, Any]
+    ) -> Payload:
+        """The call sent where the context is hosted — through its circuit, when it has one: while
+        the service keeps not answering, `ContextUnavailable` at once, with the seconds left as
+        its `retry_after`, instead of every call waiting out the deadline.
+
+        Context: admitted apart from the call, so only this circuit's refusal becomes
+        `ContextUnavailable` — a `CircuitOpen` the hosting service raised is its answer, and
+        arrives as itself.
+        """
+        transport = transport_for(hosted_at)
+        circuit = self._guarding(hosted_at)
+        if circuit is None:
+            return transport.execute(self.name, dto, context)
+        try:
+            admission = circuit.admit()
+        except CircuitOpen as refused:
+            unavailable = exceptions.ContextUnavailable(
+                f"{self.name} at {hosted_at.address}: {refused}"
+            )
+            unavailable.retry_after = refused.retry_after
+            raise unavailable from refused
+        try:
+            answer = transport.execute(self.name, dto, context)
+        except BaseException as error:
+            circuit.settle(admission, error)
+            raise
+        circuit.settle(admission, None)
+        return answer
 
     def _executed_where_hosted(self, dto: Any, return_type: Any) -> Any:
         """The DTO executed by the service hosting this context, answered as `return_type` — or
@@ -88,7 +138,7 @@ class HostedContextMixin:
                 f"'{self.name}' is not hosted by another service"
             )
         context = handed_on({**self._inherited_context(), **self.current_context()})
-        answer = transport_for(hosted_at).execute(self.name, dto, context)
+        answer = self._forwarded(hosted_at, dto, context)
         response = (
             return_type
             if return_type is not None
@@ -122,19 +172,27 @@ class HostedContextMixin:
             self._runs_here = True
             self._registrations.append(lambda bus: bus.run_here())
 
-    def hosted_by(self, address: HostedAt | str) -> None:
+    def hosted_by(
+        self, address: HostedAt | str, circuit: Circuit | bool | None = None
+    ) -> None:
         """Execute every DTO of this context on the service at `address` — what the context map
-        says, in code: a URL, or the typed address.
+        says, in code: a URL, or the typed address — and, when `circuit` says, stop calling it
+        while it does not answer.
 
             billing.hosted_by("grpc://10.0.0.5:50051?timeout=5")
             billing.hosted_by(HostedAt(Wire.HTTPS, "billing-service:443", timeout=5))
+            billing.hosted_by("grpc://b:50051", circuit=True)                   the address's own
+            billing.hosted_by("grpc://b:50051", circuit=Circuit("billing", failures=3))
 
-        An address no wire reaches is refused here (`InvalidAddress`), saying what to write.
+        `circuit` wins over what the address says (`?circuit=on`): `True` its own circuit,
+        `False` none, a `Circuit` that one; left out, the address decides — none by default. An
+        address no wire reaches is refused here (`InvalidAddress`), saying what to write.
 
-        See `docs/entrypoints/bounded-contexts-across-services.md`.
+        See `docs/entrypoints/bounded-contexts-across-services.md`, `docs/core/circuits.md`.
         """
         self._reach_at(HostedAt.of(address))
-        self._registrations.append(lambda bus: bus.hosted_by(address))
+        self._circuit = circuit
+        self._registrations.append(lambda bus: bus.hosted_by(address, circuit))
 
     @overload
     def serve(self, address: str) -> None: ...

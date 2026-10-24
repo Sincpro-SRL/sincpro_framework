@@ -659,4 +659,4 @@ def test_the_default_observer_puts_each_outcome_on_the_active_span():
     (span,) = exporter.get_finished_spans()
     attributes = [dict(event.attributes or {}) for event in span.events]
     assert [one["outcome"] for one in attributes] == ["claimed", "replayed"]
-    assert {one["namespace"] for one in attributes} == {"billing"}
+    assert [one["namespace"] for one in attributes] == ["billing", "billing"]

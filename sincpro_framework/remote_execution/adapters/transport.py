@@ -8,15 +8,45 @@ that implement it, not in `domain/`.
 """
 
 from collections.abc import Mapping
+from datetime import timedelta
 from functools import lru_cache
 from typing import Any, Protocol
 
+from sincpro_framework.circuits import Circuit
 from sincpro_framework.common.transport.addresses import HostedAt, Wire
+from sincpro_framework.remote_execution.domain.exceptions import is_unreached
 from sincpro_framework.remote_execution.domain.payload import Payload
+
+PROBE_FOR_DEADLINES = 2
+"""How many of the address's deadlines the call let through half-open keeps the others out — it
+outlives the call, so a probe still waiting never lets a second one in."""
 
 
 class Transport(Protocol):
     def execute(self, context: str, dto: Any, request: Mapping[str, Any]) -> Payload: ...
+
+
+@lru_cache(maxsize=None)
+def circuit_for(hosted_at: HostedAt) -> Circuit | None:
+    """The circuit of an address that asks for one (`circuit=on`) — one per address, its state
+    where the calling context keeps its leases, so every replica sharing that store stops calling
+    a service that does not answer. `None` when the address asks for none, as by default.
+
+    It counts only what this process's transport raised (`is_unreached`): the context not
+    reached, or no answer back. Whatever the hosting service raised — even its own
+    `CircuitOpen`, an outcome it does not know, a context it could not reach — is its answer:
+    it is up, and an outage behind it never cuts its callers off.
+    """
+    if not hosted_at.circuit:
+        return None
+    open_for = timedelta(seconds=hosted_at.circuit_open_for)
+    return Circuit(
+        f"remote:{hosted_at.wire}://{hosted_at.address}",
+        failures=hosted_at.circuit_failures,
+        open_for=open_for,
+        counts=is_unreached,
+        probe_for=max(open_for, timedelta(seconds=hosted_at.timeout) * PROBE_FOR_DEADLINES),
+    )
 
 
 @lru_cache(maxsize=None)

@@ -47,23 +47,28 @@ def _raised(error: Any, context: str, hosted_at: HostedAt) -> Exception:
 
     1. No answer in time: `ContextTimeout` — it may have run.
     2. The connection lost: `ContextOutcomeUnknown` once the host accepted the call,
-       `ContextUnavailable` before. Nobody hosting it there: `ContextUnavailable`.
+       `ContextUnavailable` before. Nobody hosting it there: `ContextUnavailable`. Each marked
+       `unreached` — raised here, what an address's circuit counts.
     3. Final: the remote exception as itself — see `raised_as_itself`.
     """
     code, details = error.code(), error.details() or ""
     where = f"{context} at {hosted_at.address}"
     if code == grpc.StatusCode.DEADLINE_EXCEEDED:
-        return exceptions.ContextTimeout(
-            f"{where} did not answer within {hosted_at.timeout:g}s"
+        return exceptions.unreached(
+            exceptions.ContextTimeout(f"{where} did not answer within {hosted_at.timeout:g}s")
         )
     if code == grpc.StatusCode.UNAVAILABLE:
         if ACCEPTED_HEADER in dict(error.initial_metadata() or ()):
-            return exceptions.ContextOutcomeUnknown(
-                f"{where} took the call and was lost: {details}"
+            return exceptions.unreached(
+                exceptions.ContextOutcomeUnknown(
+                    f"{where} took the call and was lost: {details}"
+                )
             )
-        return exceptions.ContextUnavailable(f"{where} is not answering: {details}")
+        return exceptions.unreached(
+            exceptions.ContextUnavailable(f"{where} is not answering: {details}")
+        )
     if code in (grpc.StatusCode.UNIMPLEMENTED, grpc.StatusCode.NOT_FOUND):
-        return exceptions.ContextUnavailable(f"{where}: {details}")
+        return exceptions.unreached(exceptions.ContextUnavailable(f"{where}: {details}"))
     trailing = dict(error.trailing_metadata() or ())
     return raised_as_itself(
         trailing.get(ERROR_MODULE),

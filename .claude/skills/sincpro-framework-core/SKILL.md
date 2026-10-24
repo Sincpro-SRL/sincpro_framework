@@ -47,6 +47,7 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `extend(module.attach)` | Install a module: a function (or an object's `attach`) that registers on the bus; before or after the build — after, it answers from the next execution | method | method of `UseFramework`; guide `docs/core/extending.md` |
 | `add_dependency(name, dep, replaces=old)` | Put another adapter in the place of a registered one; without `replaces`, a taken name raises `DependencyAlreadyRegistered` | method | method of `UseFramework` |
 | `describe` / `features` | What answers a Command and which interceptors wrap it | function | `from sincpro_framework.introspection import describe, features` |
+| `Circuit(name, failures=5, open_for=30s)` | Stops calling a dependency that keeps failing: `with circuit:`, `@circuit` (functions, methods, coroutines, generators — guarded while iterated), `circuit.call(fn, ...)`, or handed to an adapter's constructor; open → `CircuitOpen` (`UNAVAILABLE` + `retry_after`, ≥ 1 s) without calling; `probe_for=` (default `open_for`) longer than the slowest call; state where the context keeps its leases | component | `from sincpro_framework.circuits import Circuit, CircuitOpen`; guide `docs/core/circuits.md` |
 
 Look-alikes: `bus.context(...)` **opens** a context; `self.context` **reads** it inside a handler;
 `bus.current_context()` **reads** it from anywhere else. `replaces=` on a Feature swaps the handler;
@@ -249,6 +250,23 @@ refusal); `Await("approval")` in the steps makes the run wait (`PipelineState.WA
 by a `PipelineReads` Feature read the runs on any wire; `lease = timedelta(minutes=2)` makes it one run
 of a `run_id` at a time across replicas, renewed while it runs, and `use_context().pipelines().abandoned(…)`
 lists the runs whose worker died. Depth: `docs/core/pipelines.md`, `docs/core/leases.md`.
+
+**Guarding a call out of the process** (`sincpro_framework.circuits`). An adapter that reaches
+SIAT, a gateway or another API takes a `Circuit("siat")` in its constructor (registered once in
+`dependencies.py`, shared by every Feature) and wraps its calls `with self.circuit:` — or decorates
+the method, or `circuit.call(...)`. After `failures` calls in a row that say the dependency is not
+answering (`UNAVAILABLE`, `UNKNOWN_OUTCOME`, `EXHAUSTED`, or an undeclared crash — never an answer
+like `DomainError` or not found; `counts=` overrides) it opens: calls raise `CircuitOpen` at once,
+then one call is let through to try. A cancelled or interrupted call (`CancelledError`,
+`KeyboardInterrupt`, a generator closed early) neither counts nor clears — put the deadline inside
+the guarded call, not `asyncio.wait_for` around it. "In a row" is approximate under concurrency.
+No store is named: it reads where the running context keeps
+its leases (memory, or Redis shared by replicas); a store that does not answer lets calls through.
+A Feature never holds a circuit, and retrying is the orchestrator's (pipeline `Retry`, a queue) —
+one layer only. A bus hosted elsewhere has one only when asked: `?circuit=on` on its address, or
+`hosted_by(address, circuit=True | Circuit(...) | False)` in code, which wins; it counts only what
+the caller's transport raised (`is_unreached`), never what the host answered — not even the host's
+own `CircuitOpen`. Depth: `docs/core/circuits.md`.
 
 An income and its outcome name the same `execution_id`. What a listener must not do: keep state a
 process depends on (it may not run) or change the answer. The whole path, step by step:

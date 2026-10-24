@@ -22,6 +22,7 @@ from sincpro_framework.observability.tracing.span_context import FrameworkSpanCo
 from .aio import AsyncBus
 from .bus import FrameworkBus
 from .bus_pipeline.interceptors.interceptor import Interceptor
+from .circuits import Circuit
 from .common.transport.addresses import HostedAt
 from .context.domain.level import EntrypointKind
 from .context.domain.store import ContextStore
@@ -241,10 +242,14 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         does."""
         ...
 
-    def hosted_by(self, address: HostedAt | str) -> None:
+    def hosted_by(
+        self, address: HostedAt | str, circuit: Circuit | bool | None = None
+    ) -> None:
         """Execute every DTO of this context on the service at `address` — a URL
-        (`grpc://host:port?timeout=5`, `http://host:port`) or the typed `HostedAt`; refused with
-        `InvalidAddress` when no wire reaches it.
+        (`grpc://host:port?timeout=5`, `http://host:port?circuit=on`) or the typed `HostedAt`;
+        refused with `InvalidAddress` when no wire reaches it. `circuit` stops calling it while it
+        does not answer — `True` the address's own circuit, a `Circuit` that one, `False` none;
+        left out, the address decides (none by default).
         """
         ...
 

@@ -78,6 +78,14 @@ transparency make the same promise: the bus is the API, where it runs is configu
    travels with its type — a `Secret`, an enum, a `Decimal`, a DTO; the framework filters nothing,
    what a project puts in its context is its decision. The host's spans land in the caller's trace.
 9. **Bounded in time.** Each call has a deadline — the address's `timeout`, 30 seconds when not said.
+   **And, when asked, not called while it does not answer:** `?circuit=on` on the address — or
+   `hosted_by(address, circuit=True)`, or a `Circuit` of the project's — gives it a circuit: after
+   `circuit_failures` calls in a row that did not reach the context (5), calls fail at once with
+   `ContextUnavailable` and its `retry_after` for `circuit_open_for` seconds (30), then one is let
+   through to try. It counts only what this process's transport raised — the context not reached,
+   no answer back; whatever the host raised, even its own `CircuitOpen` or a context *it* could
+   not reach, is an answer, arrives as itself with its `retry_after`, and never counts. None
+   unless asked. See [core/circuits.md](../core/circuits.md).
 10. **What only a network can do is named**: `ContextUnavailable` — it did not run, retry;
     `ContextOutcomeUnknown` / `ContextTimeout` — it may have run, verify before retrying or
     undoing.
@@ -122,9 +130,13 @@ context_map:                        the conf file — a list
   - context: <bus name>
     at: <address>
 SINCPRO_CONTEXT_MAP = <bus>=<address>[,<bus>=<address>…]      the environment — wins per context
-address = grpc://<host>:<port>[?timeout=<seconds>]
-        | http://<host>:<port>[?timeout=<seconds>]
-        | https://<host>:<port>[?timeout=<seconds>]
+address = grpc://<host>:<port>[?<options>]
+        | http://<host>:<port>[?<options>]
+        | https://<host>:<port>[?<options>]
+options = timeout=<seconds>              each call's deadline (30)
+        & circuit=on|off                 stop calling it while it does not answer (off)
+        & circuit_failures=<count>       calls in a row not reaching it that open it (5) — with circuit=on
+        & circuit_open_for=<seconds>     how long an open one fails calls at once (30) — with circuit=on
 ```
 
 - The name is the bus's own — the one given to `UseFramework("billing")`.
@@ -143,7 +155,7 @@ typed, immutable `HostedAt`, as SQLAlchemy reads a database URL into its `URL`:
 | | Type | |
 |---|---|---|
 | `Wire` | `StrEnum` — `GRPC`, `HTTP`, `HTTPS` | the scheme; it picks the transport |
-| `HostedAt` | `wire`, `address` (`host:port`), `timeout` | `HostedAt.parse(url)`, or built in code |
+| `HostedAt` | `wire`, `address` (`host:port`), `timeout`, `circuit`, `circuit_failures`, `circuit_open_for` | `HostedAt.parse(url)`, or built in code |
 | `HostedContext` | `context`, `at` | one entry of `context_map:` in the settings |
 
 The conf file's entries are validated **when it is loaded**, each error at its path; the

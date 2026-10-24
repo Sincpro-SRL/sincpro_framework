@@ -9,9 +9,9 @@ only when this process already imported its class.
 
 import json
 import sys
-from typing import Any
+from typing import Any, get_type_hints
 
-from sincpro_framework.common.serialization import read_values, values_of
+from sincpro_framework.common.serialization import read_values, rebuilt, values_of
 from sincpro_framework.remote_execution.domain import exceptions
 
 DETAILS_LIMIT = 4096
@@ -56,6 +56,26 @@ def imported_class(module: str | None, qualname: str | None) -> Any:
     return found if isinstance(found, type) else None
 
 
+def _declared(raised: type[Exception], attributes: dict[str, Any]) -> dict[str, Any]:
+    """`attributes` as the class declares them — a `retry_after: timedelta` travels as
+    `"PT25S"` and is a `timedelta` again; one it does not declare, or that does not fit, as it
+    came. A dunder attribute is this process's mark, never one a remote service sets: dropped.
+    """
+    try:
+        hints = get_type_hints(raised)
+    except Exception:
+        hints = {}
+    declared: dict[str, Any] = {}
+    for name, value in attributes.items():
+        if name.startswith("__"):
+            continue
+        try:
+            declared[name] = rebuilt(value, hints[name]) if name in hints else value
+        except Exception:
+            declared[name] = value
+    return declared
+
+
 def _rebuilt(raised: type[Exception], details: bytes) -> Exception | None:
     """`raised` with the `args` and attributes it was sent with, never calling its `__init__` —
     `None` when they did not travel."""
@@ -64,7 +84,7 @@ def _rebuilt(raised: type[Exception], details: bytes) -> Exception | None:
         error = raised.__new__(raised)
         error.args = tuple(read["args"])
         if hasattr(error, "__dict__"):
-            error.__dict__.update(read["attributes"])
+            error.__dict__.update(_declared(raised, read["attributes"]))
         return error
     except Exception:
         return None

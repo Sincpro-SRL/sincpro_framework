@@ -43,10 +43,27 @@ in code**) → `run_here()` / serving wins over both. Don't hard-code `hosted_by
 production wiring — leave the address to its configuration. `billing.hosted_at`,
 `billing.is_reference` tell what was decided.
 
-Typed: the URL is read into `HostedAt(wire: Wire, address: "host:port", timeout)` — `Wire` is a
-`StrEnum` (`GRPC`, `HTTP`, `HTTPS`). `context_map:` entries are `HostedContext`, validated when the
-conf file loads (errors at `context_map.N.at`); `SINCPRO_CONTEXT_MAP` errors name the variable.
-A wrong address raises `InvalidAddress` saying what to write.
+Typed: the URL is read into `HostedAt(wire: Wire, address: "host:port", timeout, circuit,
+circuit_failures, circuit_open_for)` — `Wire` is a `StrEnum` (`GRPC`, `HTTP`, `HTTPS`).
+`context_map:` entries are `HostedContext`, validated when the conf file loads (errors at
+`context_map.N.at`); `SINCPRO_CONTEXT_MAP` errors name the variable. A wrong address raises
+`InvalidAddress` saying what to write.
+
+**A circuit, when asked for** — none by default, every call made as always. In the address
+(`grpc://b:50051?circuit=on`, tuned with `&circuit_failures=3&circuit_open_for=10` — tuning one
+that is off is refused) or in code, which wins: `hosted_by(address, circuit=True)` the address's
+own, `circuit=Circuit("billing", failures=3)` the project's, `circuit=False` none. Once on, after
+the calls in a row that did not reach the context (5) the calls fail at once with
+`ContextUnavailable` — `retry_after` is what is left of the time open (30 s, never under 1 s) —
+then one is let through to try, keeping the others out for two `timeout`s. It counts only what
+this process's transport raised (`ContextUnavailable` / `ContextOutcomeUnknown` /
+`ContextTimeout`, marked `is_unreached`); whatever the host raised — even its own `CircuitOpen`,
+or the same classes rebuilt from it — is its answer, arrives as itself (a `retry_after:
+timedelta` comes back a `timedelta`) and never counts. A project's `Circuit` counts by its own
+`counts=` (default: every `UNAVAILABLE`, host answers included) — `counts=is_unreached`
+(`from sincpro_framework.remote_execution import is_unreached`) for the address's rule. Seconds
+must be finite (`inf`/`nan` → `InvalidAddress`). Its state is kept where the calling context
+keeps its leases. Depth: `docs/core/circuits.md`.
 
 On the caller `billing` is a **reference** (`billing.is_reference`): a client with the face of the
 bus — never built, no Feature instantiated, no dependency resolved, nothing emitted (the real bus
