@@ -78,8 +78,8 @@ class HttpTransport:
             return connection
         except (OSError, http.client.HTTPException) as error:
             self._forget()
-            raise exceptions.ContextUnavailable(
-                f"{where} is not answering: {error}"
+            raise exceptions.unreached(
+                exceptions.ContextUnavailable(f"{where} is not answering: {error}")
             ) from None
         except BaseException:
             self._forget()
@@ -101,20 +101,24 @@ class HttpTransport:
                 return Payload.from_json(body)
         except TimeoutError:
             self._forget()
-            raise exceptions.ContextTimeout(
-                f"{where} did not answer within {self.hosted_at.timeout:g}s"
+            raise exceptions.unreached(
+                exceptions.ContextTimeout(
+                    f"{where} did not answer within {self.hosted_at.timeout:g}s"
+                )
             ) from None
         except (OSError, http.client.HTTPException) as error:
             self._forget()
-            raise exceptions.ContextOutcomeUnknown(
-                f"{where} took the call and was lost: {error}"
+            raise exceptions.unreached(
+                exceptions.ContextOutcomeUnknown(
+                    f"{where} took the call and was lost: {error}"
+                )
             ) from None
         except BaseException:
             self._forget()
             raise
         message = body.decode(errors="replace")
         if answer.status == 404:
-            raise exceptions.ContextUnavailable(f"{where}: {message}")
+            raise exceptions.unreached(exceptions.ContextUnavailable(f"{where}: {message}"))
         details = answer.getheader(ERROR_DETAILS_HEADER)
         raise raised_as_itself(
             answer.getheader(ERROR_MODULE_HEADER),

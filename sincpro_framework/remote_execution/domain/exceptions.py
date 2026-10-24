@@ -1,14 +1,20 @@
 """What a call to a bounded context hosted elsewhere raises.
 
-    ContextUnavailable     it did not run — nobody answered, or the service there does not host
-                           the context; a retry may succeed
+    ContextUnavailable     it did not run — nobody answered, the service there does not host
+                           the context, or the address's circuit is open; a retry may succeed
     ContextOutcomeUnknown  it may have run — the call was sent and no answer came back
     ContextTimeout         the deadline passed after the call was sent: an outcome unknown
     DTODoesNotFit          a DTO or an answer does not fit the class that rebuilds it
     ContextFailed          the host raised a class this process never imported
 
 Everything else the hosting service raises arrives as itself: how is `remote_execution.domain.failures`.
+The first three, raised by this process's own transport, are marked `unreached` — what an
+address's circuit counts; the same classes raised by the hosting service and rebuilt here are its
+answer, and are not.
 """
+
+from datetime import timedelta
+from typing import TypeVar
 
 from pydantic import ValidationError
 
@@ -22,6 +28,25 @@ from sincpro_framework.exceptions import (
     UnknownDTOToExecute,
 )
 
+UNREACHED = "__sincpro_unreached__"
+"""What this process's transport leaves on a failure it raised: the context was not reached, or
+no answer came back. A dunder attribute — it never travels with an error, so an error rebuilt
+from another service never carries it."""
+
+E = TypeVar("E", bound=BaseException)
+
+
+def unreached(error: E) -> E:
+    """`error`, marked as raised by this process's transport — see `UNREACHED`."""
+    setattr(error, UNREACHED, True)
+    return error
+
+
+def is_unreached(error: BaseException) -> bool:
+    """Whether this process's transport raised `error` because the context was not reached or
+    did not answer — never what the hosting service raised, rebuilt here."""
+    return getattr(error, UNREACHED, False) is True
+
 
 class ContextFailed(ExternalServiceError):
     """The hosting service raised something this process cannot raise as itself — its class is
@@ -34,8 +59,12 @@ class ContextFailed(ExternalServiceError):
 
 
 class ContextUnavailable(ServiceUnavailableError):
-    """It did not run: nobody answered where the context is hosted, or the service there does
-    not host it. A retry may succeed."""
+    """It did not run: nobody answered where the context is hosted, the service there does not
+    host it, or the address's circuit is open — calls that kept not reaching it stopped for a
+    while. A retry may succeed."""
+
+    retry_after: timedelta | None = None
+    """How long to wait before a retry — what is left of an open circuit; a second when unsaid."""
 
 
 class ContextOutcomeUnknown(OutcomeUnknownError):

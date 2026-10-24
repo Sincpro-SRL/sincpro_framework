@@ -15,6 +15,25 @@ How an entity answers how it is read — its key, what a record brings, the orde
 and the literal search, as `DEFAULT_*` class methods a caller's criteria overrides — and why
 that left `presentation`: [PRD_27](prd/PRD_27_entity-default-reads.md).
 
+## By problem
+
+What the framework already has for the problems every service meets once it runs for real — none
+needs a library of its own, each keeps its state where the context is kept (memory, or the store
+every replica shares), and each says its failures in the one classification every wire answers
+with:
+
+| The problem | The piece | How it is used | Page |
+|---|---|---|---|
+| A dependency — SIAT, a payment gateway, another service — is down or slow, and every call waits out its timeout | `Circuit` | `with circuit:`, `@circuit`, `circuit.call(...)`, or handed to the adapter; a bus hosted elsewhere when asked: `?circuit=on` or `hosted_by(..., circuit=True)` | [core/circuits.md](core/circuits.md) |
+| A job of several steps that must say how far it got, wait for a decision, or be tried again | `Pipeline` | `steps`, `always`, `retry = Retry()`, `Await(...)`, `lease =` | [core/pipelines.md](core/pipelines.md) |
+| Work that must not run twice at once, on any replica | `Leases` | `with use_context().leases().held("name"):` | [core/leases.md](core/leases.md) |
+| A write that a retry, a double click or a redelivered message must not repeat | `Idempotency` | `@idempotency.once(...)`, `idempotency.run(key, ...)` | [caching/README.md](caching/README.md#a-write-that-runs-once-idempotency) |
+| Something slow to compute or to fetch, with a fallback when its source fails | `Cache`, `QueryCaching` | `cache.get_or_compute(key, ...)` with `FailSafe`; a Query's answer kept by the composition | [caching/README.md](caching/README.md) |
+| What a form keeps between requests, per user | Drafts | `self.context.drafts()` | [core/drafts.md](core/drafts.md) |
+| Whether a failure is the caller's, the business's or the service's — answer it, retry it, report it | `failure_kind` | declared once on the error; every wire, `Retry`, the queue and the observability read it | [core/exceptions.md](core/exceptions.md) |
+
+## By layer
+
 | Layer | Package | Start here | What is in it |
 |---|---|---|---|
 | **Version 4.0.0** | — | [version-4.md](version-4.md) | Exploration of ORM, Criteria, Entrypoints, Entity and events: production stays on 3.x until the architect is convinced; the spec is the essence, the style may change |

@@ -17,7 +17,7 @@ import re
 from datetime import timedelta
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from sincpro_framework import exceptions
 
@@ -44,6 +44,8 @@ PERMANENT = frozenset(
 event relay gives up on them at the first failure — trying again only blocks what comes after."""
 
 DEFAULT_RETRY_AFTER = timedelta(seconds=1)
+DURATION = TypeAdapter(timedelta)
+"""Reads a `retry_after` written as text — the ISO-8601 duration a `timedelta` travels as."""
 UPPER_SNAKE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
@@ -121,10 +123,17 @@ def failure_reason(error: Exception, kind: exceptions.FailureKind) -> str:
 
 def retry_after(error: Exception, kind: exceptions.FailureKind) -> timedelta | None:
     """How long a caller waits before retrying — `None` when retrying as it is will not help.
-    The error may say (`retry_after`, seconds or a `timedelta`); a second otherwise."""
+    The error may say (`retry_after`: seconds, a `timedelta`, or the ISO-8601 duration a
+    `timedelta` travels as — `"PT25S"` — once rebuilt from another service); a second
+    otherwise."""
     if kind not in RETRYABLE:
         return None
     declared = getattr(error, "retry_after", None)
+    if isinstance(declared, str):
+        try:
+            declared = DURATION.validate_python(declared)
+        except ValidationError:
+            return DEFAULT_RETRY_AFTER
     if isinstance(declared, timedelta):
         return declared
     if (
