@@ -79,9 +79,10 @@ release then collides with all of them. We choose independence over that speed, 
 | Reach the entity's own attributes from the extension (`delivery.move.total`) | ✅ | A back-reference; see below |
 | Declare the cardinality of what it installs | ✅ | `Relation.foreign_key(…, many=False)`: the data mapper writes the annotation the module cannot (`test_a_relation_an_extension_installs_says_its_own_cardinality`) |
 | Change how a core field is shown (label, help, read-only, required) | ✅ | `map_aggregates(…, overlay={Core: {field: {…}}})`: an overlay on `Meta`, never an edit of the core's `presentation`; anything else about the field is refused as the core's |
+| Add values to a core's enum field, or name them differently | ✅ | The subclass redeclares the field with an enum of its own (`state: SiatState`) — Python refuses to subclass an enum that has members, so it is rewritten, ideally a superset of the core's. `describe` of the subclass publishes its values and labels; the core's stays as the core declared it; a query by the core or by the subclass reads the new values (`test_inheritance_of_an_enum_field.py`). A type checker flags the override (`reportIncompatibleVariableOverride`): the core's own code may meet a value it never knew, which is the subclass's to own |
 | Say what it reads from the core and what it was written against | ✅ | `uses={Core: ("total",)}` and `requires={Core: "2.1"}`, checked when the module is mapped; see [§8](#8-when-a-release-comes) |
 | Prove all of it in its own CI | ✅ | `ExtensionContract`, in `sincpro_framework.runtime.testing.contracts.extension` |
-| Remove, rename or retype a core field | ❌ | Never. The core is sealed; that is a major release of the core |
+| Remove or rename a core field | ❌ | Never. The core's columns are the core's; that is a major release of the core. Redeclaring a field's type in a subclass is not a removal: see «Add values to a core's enum field» |
 
 ## 4. Which mechanism, when
 

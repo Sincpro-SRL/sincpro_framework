@@ -29,6 +29,19 @@ class Status(StrEnum):
     POSTED = "posted"
 
 
+class Priority(StrEnum):
+    LOW = "low"
+    HIGH = "high"
+
+    @classmethod
+    def translations(cls) -> Translated:
+        return {"default": "Priority", "es": "Prioridad"}
+
+    @classmethod
+    def choice_translations(cls) -> dict[str, Translated]:
+        return {cls.LOW: {"default": "Low", "es": "Baja"}, cls.HIGH: {"default": "High"}}
+
+
 @dataclass
 class Invoice(Entity):
     number: str = field(metadata={"label": {"default": "Number", "es": "Número"}})
@@ -46,6 +59,7 @@ class Invoice(Entity):
         default_factory=lambda: {"default": "untitled"},
         metadata={"label": {"default": "Title", "es": "Título"}},
     )
+    priority: Priority = Priority.LOW
 
     @classmethod
     def translations(cls) -> Translated:
@@ -67,6 +81,7 @@ invoice_table = entity_table(
     Column("number", Text, nullable=False),
     Column("status", Text, nullable=False),
     Column("title", TranslatedText, nullable=False),
+    Column("priority", Text, nullable=False),
 )
 bare_table = Table(
     "bare", own.metadata, Column("bare_id", Text, primary_key=True), Column("label", Text)
@@ -104,6 +119,18 @@ def test_an_enum_field_publishes_its_values_as_choices():
 
     assert choices == ["draft", "posted"]
     assert describe(Invoice).fields["status"].type is FieldType.TEXT
+
+
+def test_an_enum_names_the_field_and_each_of_its_values_on_a_mapped_aggregate():
+    fields = describe(Invoice).fields
+
+    assert fields["priority"].label == {"default": "Priority", "es": "Prioridad"}
+    assert fields["priority"].choice_labels == {
+        "low": {"default": "Low", "es": "Baja"},
+        "high": {"default": "High"},
+    }
+    assert fields["status"].label["es"] == "Estado"  # its own label; its enum names nothing
+    assert fields["status"].choice_labels == {}
 
 
 def test_the_definition_travels_as_plain_json():
