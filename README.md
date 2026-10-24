@@ -124,6 +124,7 @@ not prove that the refactored APIs were published.
     - [Bus Pattern for Component Communication](#-bus-pattern-for-component-communication)
     - [Decoupled Logic Execution](#-decoupled-logic-execution)
     - [Application Service Orchestration](#-application-service-orchestration)
+    - [Jobs of steps, one at a time across replicas](#jobs-of-steps-one-at-a-time-across-replicas)
     - [IDE Support with Typing](#-ide-support-with-typing)
     - [Crons](#crons)
     - [Registry of one process](#registry-of-one-process)
@@ -346,6 +347,18 @@ async def handle_request(framework, dto_a, dto_b, dto_c):
 - Uses a **feature bus** to orchestrate multiple features into complex business workflows (e.g., customer onboarding).
 - Integrates smaller use cases into cohesive flows to manage entire business processes effectively.
 
+### Jobs of steps, one at a time across replicas
+
+See [docs/core/pipelines.md](docs/core/pipelines.md) and [docs/core/leases.md](docs/core/leases.md).
+
+- A `Pipeline` is an ApplicationService that is the order of its steps, declared as data —
+  `steps = [CommandCollect, CommandBill]` — with how far each run got kept in the context.
+- One line more when it needs it: `retry = Retry()` runs a step again when its failure is worth
+  it, `Await("approval")` makes the run wait for a decision, `lease = timedelta(minutes=2)` makes
+  it one run of a `run_id` at a time across replicas, and finds the runs whose worker died.
+- `Leases` hold a name for one owner at a time on any `KeyValueStore` — renewed in the
+  background, `EXPIRED` and not free when its holder stopped renewing, a fence per take.
+
 ### 📝 Reads and forms of one aggregate, built in
 
 - `Get`, `GetMany`, `LiteralSearch`, `Search`, `Preview` and `DomainEvents`: one Feature
@@ -377,7 +390,9 @@ See [docs/caching/](docs/caching/README.md).
 - Infrastructure the use case never sees: the composition says which Queries keep their answers —
   `QueryCaching(store).on(bus, Query, CachePolicy(ttl=…, vary_by=("tenant_id",)))`.
 - An answer is tagged by what the repository noted it read and let go of when a commit writes it;
-  `KeyValueStore` is the provider contract — memory in the core, Redis/Valkey and Memcached as extras.
+  `KeyValueStore` is the provider contract — memory in the core, Redis/Valkey, Memcached and
+  DynamoDB as extras — and what contexts, drafts, pipeline runs, cron ticks, idempotency and
+  leases share across replicas.
 
 ### Registry of one process
 
@@ -1108,7 +1123,7 @@ needs nothing installed. `sincpro_framework.data_layer.orm` is the SQLAlchemy ad
 | Extension | A subclass of an aggregate keeps its inherited fields in the parent's table, its own in its table |
 | Writes | `save` one or many, `remove`, `archive`; a stale write is refused (`StaleAggregate`) |
 | Transactions | `repository.context()`: one unit of work, commits together or not at all |
-| Reads | `get`, `get_by`, `exists`, `first`, `one`, `count`, `pluck`, `distinct`, `search`, `fetch_all`, `stream` |
+| Reads | `get`, `get_by`, `exists`, `first`, `one`, `count`, `pluck`, `distinct`, `search`, `fetch_all`, `stream`; `one` with no match is `AggregateNotFound` (404); `get`, `first`, `one`, `get_by` and `search` claim rows with `for_update` / `skip_locked` / `nowait` |
 | Queries | `Criteria`: filters, `all` / `any` / `negate`, ordering, cursor or offset pages, what to bring back of each record |
 | Aggregation | `measures`, `group_by`, `pivot`, `export`, `explain` |
 | Multi-tenant | `narrowed(criteria)`: a repository that only sees — and writes — what the criteria allows |
@@ -1118,7 +1133,7 @@ needs nothing installed. `sincpro_framework.data_layer.orm` is the SQLAlchemy ad
 | Event table | A domain event is an entity: one table per bounded context (`template_table.event_table`, `map_events`), kept by `save` with the change |
 | Delivery | `DeliverableEventMixin` keeps its delivery on the row; `EventRelay` sends it on — `SKIP LOCKED`, failure policies, at least once |
 | Event sourcing | `EventSourcedMixin`: rebuilt from its events by `get`, appended by `save`, `entity_version` against two writers |
-| Testing | `MemoryRepository`: the same vocabulary with no database |
+| Testing | `MemoryRepository`: the same vocabulary with no database, a unit of work included — `context()` commits or puts back, `for_update` holds rows across threads |
 
 ### Example
 
@@ -1447,11 +1462,14 @@ GlitchTip `environment` is `TENANT` (same value as the `tenant` tag) so events c
 
 Odoo may capture the same exception with Odoo's release. That second event is intended — two products, two releases, same traceback.
 
-The bus reports **before** the error handler runs, once, from the handler that raised: an ApplicationService the error crosses sends nothing more. The event carries a `sincpro.handler` tag and a `sincpro` context with the DTO, the chain, `error_at` and the execution's context. A handler that swallows an unexpected exception still produces a GlitchTip event. Expected domain errors can be excluded per instance:
+The bus reports **before** the error handler runs, once, from the handler that raised: an ApplicationService the error crosses sends nothing more. The event carries a `sincpro.handler` tag and a `sincpro` context with the DTO, the chain, `error_at` and the execution's context. A handler that swallows an unexpected exception still produces a GlitchTip event.
+
+**What reaches GlitchTip is what nobody expected**: a crash, a `ProgrammingError`, a service that did not answer. A `ClientError` or a `DomainError` is written for the caller — traffic, not a bug — and is kept out by default. Other expected errors are excluded per instance, and an expected one can be brought back:
 
 ```python
 app = UseFramework("payment-cybersource")  # release auto-detected from the caller package
-app.ignore_sentry_exceptions(ValidationError, InsufficientFunds)
+app.ignore_sentry_exceptions(CardDeclinedByTheGateway)   # a library's own, expected
+app.report_sentry_exceptions(SuspectedFraud)             # a DomainError the team wants to see
 ```
 
 Pass `package="sincpro-payments-sdk"` to `UseFramework` when the caller is not the library itself (tests, a thin adapter).
@@ -1764,7 +1782,7 @@ where you can define some behavior currently we support the following settings:
 - `tenant`: GlitchTip `environment` and the `tenant` tag. Resolved from `TENANT`.
 - `otel_metrics_exporter` / `otel_traces_exporter` / `otel_sdk_disabled`: OpenTelemetry's own switches, from `OTEL_METRICS_EXPORTER` (`otlp`, `prometheus`, `none`), `OTEL_TRACES_EXPORTER` (`none` builds no provider of the framework's) and `OTEL_SDK_DISABLED`.
 - `metrics_backend`: `auto`, `prometheus`, `otel` or `off`. Resolved from `SINCPRO_METRICS_BACKEND` — kept as an alias; set to anything but `auto`, it wins over `OTEL_METRICS_EXPORTER`. Default: `auto` — OpenTelemetry when a meter provider or an OTLP endpoint is configured, otherwise nothing. `prometheus` requires `sincpro-framework[prometheus]` and serves `/metrics` ([docs/observability/metrics.md](docs/observability/metrics.md)).
-- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release=APP_RELEASE` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. Use `UseFramework.ignore_sentry_exceptions(...)` for expected errors.
+- `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release=APP_RELEASE` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. A `ClientError` or a `DomainError` is not reported; use `UseFramework.ignore_sentry_exceptions(...)` for other expected errors and `report_sentry_exceptions(...)` to bring one back.
 
 Override the config file using another
 
