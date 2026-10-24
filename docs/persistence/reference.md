@@ -75,6 +75,61 @@ meta.fields["number"].help    # {"default": "As printed on the document"}
 A class that declares nothing is named after itself and says nothing else. The client reads the
 dictionary and picks the locale.
 
+### A category says its words once, in its enum
+
+A field typed by an enum is a select: its values are `choices`, in the order declared. What the
+category is called, and what each value is called, belong to the enum — every aggregate that uses
+it says the same words, written once:
+
+```python
+class Priority(StrEnum):
+    LOW = "low"
+    HIGH = "high"
+
+    @classmethod
+    def translations(cls) -> Translated:                    # its own name, as an entity's
+        return {"default": "Priority", "es": "Prioridad"}
+
+    @classmethod
+    def choice_translations(cls) -> dict[str, Translated]:  # each value's
+        return {cls.LOW: {"default": "Low", "es": "Baja"}, cls.HIGH: {"default": "High", "es": "Alta"}}
+
+
+@dataclass
+class Ticket(Entity):
+    priority: Priority = Priority.LOW                       # declares nothing
+    customer_priority: Priority = field(                    # means something narrower
+        default=Priority.LOW,
+        metadata={"label": {"default": "Customer priority", "es": "Prioridad del cliente"}},
+    )
+```
+
+```python
+meta.fields["priority"].label               # {"default": "Priority", "es": "Prioridad"}
+meta.fields["customer_priority"].label      # its own: the field's label wins
+meta.fields["priority"].choices             # ["low", "high"]
+meta.fields["priority"].choice_labels       # {"low": {"default": "Low", "es": "Baja"}, "high": {…}}
+```
+
+- **The enum stays a plain `StrEnum`**: two class methods, not members, and nothing to import.
+  What is stored is the value, `"low"`.
+- **A field's label is, in order**: its own `metadata={"label": …}`, else its enum's
+  `translations()`, else none. A change event's `field_labels` reads the same.
+- **The order is the declaration's.** `choices` lists the values as the enum declares them, and
+  `choice_labels` follows it whatever order `choice_translations()` wrote them in. A client draws a
+  select from `choices` — a list, whose order JSON keeps — and reads each label by its value.
+- **`choice_labels` is keyed by the value as text**, as JSON keys travel; a value left out has no
+  label. A key that is not one of the enum's values is a `ProgrammingError` when the model is
+  described.
+- **An enum that declares neither** publishes its values alone, as before.
+- **A context that needs other values or other words inherits and redeclares the field.** Python refuses to
+  subclass an enum that has members, so the context writes its own — a superset of the core's is
+  the good practice — and the subclass declares `state: SiatState`. `describe(InvoiceSiat)`
+  publishes its values and labels; `describe(Invoice)` stays the core's; a query by either reads the
+  new values. The core's own code may now meet a value it never knew: that is the subclass's to
+  own, and a type checker says so (`reportIncompatibleVariableOverride`). See
+  [extensibility](../spec/extensibility.md).
+
 A text in several languages is also a column type, `TranslatedText`: a JSON object on disk, searched with `like`
 across every language at once, never ordered.
 

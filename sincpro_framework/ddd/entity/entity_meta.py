@@ -288,19 +288,74 @@ def members_of(annotation: Any) -> list[Any]:
     return [] if members is None else [member.value for member in members]
 
 
+def type_translations(annotation: Any) -> Translated:
+    """What an enum calls itself — its `translations()`, the shape an `Entity` answers its own
+    name with. Empty for any other annotation, and for an enum that declares none.
+
+    in  Priority | None   Priority.translations() → {"default": "Priority", "es": "Prioridad"}
+    out {"default": "Priority", "es": "Prioridad"}
+    """
+    translator = getattr(enum_of(annotation), "translations", None)
+    return cast(Translated, translator()) if callable(translator) else {}
+
+
+def choice_translations_of(annotation: Any) -> dict[str, Translated]:
+    """What each value of an enum is called — its `choice_translations()` — keyed by the value
+    as text, as JSON keys travel, in the order the enum declares its values. Empty when the
+    annotation is not an enum or the enum names none; a value it leaves out has no label.
+
+    in  Priority   choice_translations() → {Priority.HIGH: {"default": "High", "es": "Alta"}}
+    out {"high": {"default": "High", "es": "Alta"}}
+
+    A key that is not one of the enum's values is a typo, refused when the model is described.
+    """
+    members = enum_of(annotation)
+    translator = getattr(members, "choice_translations", None)
+    if members is None or not callable(translator):
+        return {}
+    by_member: dict[Any, Translated] = {}
+    for value, translated in cast(dict[Any, Translated], translator()).items():
+        try:
+            by_member[members(value)] = translated
+        except ValueError as error:
+            raise exceptions.ProgrammingError(
+                f"{members.__name__}.choice_translations() names {value!r}, which is not one "
+                f"of its values: {', '.join(repr(one.value) for one in members)}"
+            ) from error
+    return {str(one.value): by_member[one] for one in members if one in by_member}
+
+
+@cache
+def _labels_of_types(declared: type) -> dict[str, Translated]:
+    """`{field_name: translated}` for every field whose type names itself — an enum with
+    `translations()`. Once per class: the annotations are resolved here, and a change event
+    asks for the labels at every write."""
+    return {
+        name: named
+        for name, annotation in annotations_of(declared).items()
+        if (named := type_translations(annotation))
+    }
+
+
 def field_translations(declared: type, key: str) -> dict[str, Translated]:
     """`{field_name: translated}` for every field of `declared` that carries
     `field(metadata={key: translated})` — empty for a class that is not a dataclass, or that
     declared none. `key` is `"label"` or `"help"`; read once per class, alongside the rest of
     the definition, never per instance.
+
+    A field that declares no `label` is called what its type calls itself: a category named once,
+    in its enum, is named the same in every aggregate that uses it. The field's own `label` wins.
     """
     if not dataclasses.is_dataclass(declared):
         return {}
-    return {
+    declared_here = {
         one.name: cast(Translated, one.metadata[key])
         for one in dataclasses.fields(declared)
         if key in one.metadata
     }
+    if key != "label":
+        return declared_here
+    return {**_labels_of_types(declared), **declared_here}
 
 
 def related_class(annotation: Any) -> tuple[type | None, bool]:
@@ -354,6 +409,9 @@ class FieldMeta(DataTransferObject):
 
     choices: list[Any] = []
     """The values an enum field may hold — what a select is built from."""
+    choice_labels: dict[str, Translated] = {}
+    """What each of `choices` is called, keyed by the value as text — the enum's
+    `choice_translations()`. Empty when the enum names none; a value missing here has no label."""
 
     exact: bool = False
     """A decimal: a condition's value is read as a `Decimal` and compared exactly, so `"0.1"`
@@ -485,6 +543,7 @@ class FieldMeta(DataTransferObject):
         nullable: bool,
         members: list[Any] | None = None,
         exact: bool = False,
+        choice_labels: dict[str, Translated] | None = None,
     ) -> "FieldMeta":
         """The definition of one column, from what the reader knows about it.
 
@@ -492,7 +551,7 @@ class FieldMeta(DataTransferObject):
             in      TEXT, nullable=True       →  not sortable, and `is null` offered too
 
         1. Offer the operators its type takes, plus `is_null` when it may be absent.
-        2. List the values of an enum as its choices.
+        2. List the values of an enum as its choices, with what each is called.
         3. Final: sortable only when NOT NULL and not a list or a translation — a keyset
            comparison drops rows holding NULL, and there is no order over a JSON value a
            cursor could page through.
@@ -502,6 +561,7 @@ class FieldMeta(DataTransferObject):
             type=logical,
             nullable=nullable,
             choices=list(members or []),
+            choice_labels=dict(choice_labels or {}),
             exact=exact,
             sortable=not nullable and logical not in unsortable,
             groupable=logical in AGGREGATES_BY_TYPE,
@@ -1311,6 +1371,7 @@ def describe_class(declared: type, identity: str = "") -> "Meta":
                 annotation != without_optional(annotation),
                 members_of(annotation),
                 without_optional(annotation) is Decimal,
+                choice_labels=choice_translations_of(annotation),
             )
             for field_name, annotation in annotations.items()
             if related_class(annotation)[0] is None

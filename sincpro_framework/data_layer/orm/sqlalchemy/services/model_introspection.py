@@ -32,6 +32,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     FieldType,
     Meta,
     annotations_of,
+    choice_translations_of,
     default_order_of,
     describe_class,
     enum_of,
@@ -195,6 +196,7 @@ def describe(entity: type) -> Meta:
                 nullable,
                 _members_of(annotation),
                 without_optional(annotation) is Decimal,
+                choice_labels=choice_translations_of(annotation),
             )
 
     declared = relations_of(entity)
@@ -232,7 +234,9 @@ def describe(entity: type) -> Meta:
                 continue
             own = added[name]
             absent = (
-                FieldMeta.for_column(own.type, True, own.choices, own.exact)
+                FieldMeta.for_column(
+                    own.type, True, own.choices, own.exact, choice_labels=own.choice_labels
+                )
                 if own.relation is None and own.type is not FieldType.EMBEDDED
                 else own
             )

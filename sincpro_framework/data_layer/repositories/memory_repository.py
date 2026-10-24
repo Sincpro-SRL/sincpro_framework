@@ -498,7 +498,11 @@ class MemoryRepository(
             for name, field in describe_class(kind, identity_name(kind)).fields.items():
                 if name not in inherited and name not in added:
                     added[name] = FieldMeta.for_column(
-                        field.type, True, field.choices, field.exact
+                        field.type,
+                        True,
+                        field.choices,
+                        field.exact,
+                        choice_labels=field.choice_labels,
                     ).model_copy(update={"owner": kind.__name__})
         return meta.model_copy(update={"fields": {**meta.fields, **added}}) if added else meta
 
