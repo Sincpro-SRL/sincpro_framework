@@ -20,7 +20,12 @@ from sincpro_framework.context.domain.providers import (
 from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.entrypoint.bus import FrameworkContext
 from sincpro_framework.context.entrypoint.facade import Context
-from sincpro_framework.context.infrastructure.distributed import SharedContext, joined
+from sincpro_framework.context.infrastructure.distributed import (
+    PROCESS_EVERY,
+    SharedContext,
+    joined,
+)
+from sincpro_framework.context.infrastructure.shared import SharedValues
 from sincpro_framework.context.infrastructure.tree import ROOT, current, entered
 
 if TYPE_CHECKING:
@@ -208,21 +213,38 @@ class BusContextMixin:
         ttl: timedelta = timedelta(hours=24),
         every: timedelta = timedelta(seconds=1),
     ) -> None:
-        """Share this bus's context through `store` — and save there what the bus saves beside
-        it: drafts, pipeline runs, leases, `bus.cache`, `bus.idempotency` (`bus.store()`).
+        """Share this bounded context's context through `store` — and save there what it saves
+        beside it: drafts, pipeline runs, leases, `bus.cache`, `bus.idempotency` (`bus.store()`).
 
-            billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))
+            billing.store_context_in(KeyValueContexts(RedisKeyValue(billing_redis)))
 
         The API does not change: `self.context`, `use_context()`, `bus.context(...)` read and
-        write as always, and every node of this bus's executions is saved in the store for `ttl`.
-        A bus of another service — another project too — that set the same store reads the chain
-        it was handed on, the process is saved per service, and `ContextLevel.GLOBAL` is shared by every
-        one of them; what others wrote is read again at most once per `every`. Nothing is shared
-        by a bus that did not say so. See `docs/prd/PRD_24_shared-context.md`.
+        write as always. What lives in `store`:
+
+        - this bounded context's own level (`ContextLevel.BUS`, under `bus:<name>`) — what
+          `global_scope=True` and `use_context().bus.set(...)` write, read by every pod of it;
+        - every node of its executions, for `ttl` — a bus of another service that set the same
+          store reads the chain it was handed on.
+
+        What others wrote is read again at most once per `every`. The process and the global
+        levels are the process's (`store_context_in(...)`), never a bounded context's: a
+        context with a Redis of its own keeps everything of its own there and nothing else.
         """
+        if not (isinstance(self._published, SharedValues) and self._published.store is store):
+            self._published = SharedValues(
+                store, f"bus:{self.name}", every, seed=self._published.current
+            )
         self._published.set(ContextStore, store)
         self.shared_context = SharedContext(store, ttl, every)
-        joined(ROOT, self.shared_context, self.observability.identity.service_name)
         self._registrations.append(
             lambda bus: bus.store_context_in(store, ttl=ttl, every=every)
         )
+
+    def _process_joined(self) -> None:
+        """The process level and the global shared through the process's store, once one is set
+        (`store_context_in(...)`) — named after this bus's service, resolved by now: a
+        generation is built at the first execution, after the project handed its release over.
+        Every build asks; what is joined already stays."""
+        store = ROOT.values.current.get(ContextStore)
+        if isinstance(store, ContextStore):
+            joined(ROOT, store, PROCESS_EVERY, self.observability.identity.service_name)

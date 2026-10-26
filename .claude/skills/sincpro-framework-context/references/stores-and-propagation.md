@@ -3,7 +3,8 @@
 ## The context shared across services — the same tree, persisted in a store
 
 ```python
-store = KeyValueContexts(RedisKeyValue(redis.Redis.from_url(url)))   # the same in every service
+store_context_in(RedisKeyValue(redis.Redis.from_url(url)))   # the process: process level + global
+store = KeyValueContexts(RedisKeyValue(redis.Redis.from_url(billing_url)))   # billing's own Redis
 sales.store_context_in(store)        # service A — explicit, per bus; nothing shares by default
 billing.store_context_in(store)      # service B — another project too
 
@@ -11,7 +12,7 @@ billing.store_context_in(store)      # service B — another project too
 self.context["discount"] = 10     # the API never changes
 # B: a Feature reached through a queue or the remote bus, in that execution's chain
 self.context.get("discount")      # → 10, read from the store — even if A wrote it after handing on
-use_context().at(ContextLevel.GLOBAL).set("maintenance", True)   # every service that set the store sees it
+use_context().at(ContextLevel.GLOBAL).set("maintenance", True)   # every service that set the process store sees it
 ```
 
 - Each node of an execution (entrypoint, application, feature, hook, scope) is stored under its own
@@ -19,9 +20,15 @@ use_context().at(ContextLevel.GLOBAL).set("maintenance", True)   # every service
 - Only an id travels (`x-context-node`, `sincpro.context_node` in the remote bus's context); the
   receiver opens under the sender's chain read back from the store — read-only there, its own
   writes stay on its own nodes.
-- The process is stored per service (`process:<service_name>`), never read by another service;
-  `ContextLevel.GLOBAL` (`global`) is the one level every service shares.
-- Others' nodes, the process and the global are read again at most once per `every` (default 1 s).
+- Each level lives where its owner said: the process (`process:<service_name>`) and
+  `ContextLevel.GLOBAL` (`global`) on the process's store (`store_context_in`), joined at the first
+  execution of any bus; a bounded context's level (`bus:<name>`) and its execution nodes on its own
+  store (`bus.store_context_in`) — a bounded context with its own Redis never holds the process.
+- The bounded context's level is read by every pod of it: `global_scope=True` /
+  `use_context().bus.set(...)` in one pod reaches all; a `global_scope` block puts back only its own
+  keys when it ends.
+- Others' nodes, the bounded context's level, the process and the global are read again at most
+  once per `every` (default 1 s).
 - Plain JSON codec by default — projects need no classes in common; `TypedCodec` to get types back.
 - Full design: `docs/prd/PRD_24_shared-context.md`.
 

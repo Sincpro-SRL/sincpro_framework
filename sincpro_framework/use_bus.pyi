@@ -467,12 +467,13 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ttl: timedelta = ...,
         every: timedelta = ...,
     ) -> None:
-        """Share this bus's context through `store`, and store there what the bus stores beside
-        it — drafts, pipeline runs, leases, `cache`, `idempotency`. The API does not change;
-        every node of its executions is retained for `ttl`, what others wrote is read again at
-        most once per `every`.
+        """Share this bounded context's context through `store`, and store there what it stores
+        beside it — drafts, pipeline runs, leases, `cache`, `idempotency`. Its own level
+        (`bus:<name>`) is read by every pod of it; every node of its executions is retained for
+        `ttl`; what others wrote is read again at most once per `every`. The process and the
+        global levels stay on the process's store (`store_context_in(...)`).
 
-            billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))
+            billing.store_context_in(KeyValueContexts(RedisKeyValue(billing_redis)))
         """
         ...
 

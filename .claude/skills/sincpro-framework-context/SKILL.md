@@ -45,8 +45,8 @@ can be persisted in a store for whoever resumes the flow.
 | `PipelineRuns.of(by=...)` | The runs of a `Pipeline`: entries of the context's store under `SINCPRO_PIPELINE_CONTEXT`, by the same owner rule as a draft; `read` / `find(pipeline)` / `save`, `EntryConflict` | classmethod | `sincpro_framework.pipelines` |
 | `InMemoryContexts` / `KeyValueContexts(store, codec)` | One process / every replica over any `KeyValueStore` (Redis, Valkey, Memcached) | adapter | `sincpro_framework.context` |
 | `PlainCodec` / `TypedCodec(schema)` / `PickleCodec` | How a store writes a context: any language / types back / anything picklable | adapter | `sincpro_framework.context` |
-| `bus.store_context_in(store, ttl=, every=)` | Shares this bus's context through the store — every node stored, the sender's chain read back across services — and saves/restores with it | function | method of `UseFramework` |
-| `ContextLevel.GLOBAL` | Above every process: what every service that set the same store shares — `use_context().at(ContextLevel.GLOBAL)` | enum member | `sincpro_framework.context` |
+| `bus.store_context_in(store, ttl=, every=)` | The bounded context's own store (its own Redis): its level (`bus:<name>`, read by every pod), every node of its executions, its caches, idempotency, drafts, runs, leases — never the process or the global | function | method of `UseFramework` |
+| `ContextLevel.GLOBAL` | Above every process: what every service that set the same process store (`store_context_in`) shares — `use_context().at(ContextLevel.GLOBAL)` | enum member | `sincpro_framework.context` |
 | `context_propagation.inject(context)` / `context_propagation.extract(headers)` | The context as text headers and back: `baggage`, `sincpro-context`, `x-correlation-id`/`x-causation-id`/`x-execution-id` | facade | `sincpro_framework.context` |
 | `Execution` / `use_context().execution` | `execution_id`, `causation_id`, `correlation_id`, `use_case`, `bus`, `level`, `started_at` | DTO / function | `sincpro_framework.context` |
 | `Chain.after(cause, correlation, own)` | `(causation_id, correlation_id)` of something caused — the one rule an execution and `DomainEvent.caused_by` share | DTO | `sincpro_framework.context` |
@@ -91,9 +91,9 @@ entrypoint/      facade.py (Context, use_context, carrying) · bus.py (Framework
 **The tree:**
 
 ```text
-GLOBAL       only with bus.store_context_in(store): shared by every service that set the store
-ROOT         the process: defaults, flags, settings under their type, a store
- └─ BUS       what a bounded context publishes (global_scope=True, store_context_in)
+GLOBAL       only with store_context_in(store): shared by every service that set the process's store
+ROOT         the process: defaults, flags, settings under their type, a store — on the process's store
+ └─ BUS       what a bounded context publishes (global_scope=True) — every pod of it reads it on its store
      └─ ENTRYPOINT   what the entrance knew + its EntrypointKind (opened by REST/RPC/gRPC/MCP/queue/cron/remote, or DIRECT)
          └─ APPLICATION / FEATURE   each execution, a node of its own, with its Execution
              └─ HOOK                each run of a repository's hook

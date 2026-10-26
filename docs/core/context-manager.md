@@ -273,20 +273,28 @@ except exceptions.ContextRequired as refused:
 
 ## Shared across services: the same tree, persisted in a store
 
-A bus that says so persists its context in a store — Redis through `KeyValueContexts(RedisKeyValue(redis))`.
-The API does not change: `self.context`, `use_context()`, `bus.context(...)` and the levels read and
-write as always; only where each node is stored changes. Nothing is shared by default, and no
-environment variable turns it on.
+Each level is stored where the one who owns it says: the process in the process's store, a bounded
+context in its own. Redis through `KeyValueContexts(RedisKeyValue(redis))`. The API does not change:
+`self.context`, `use_context()`, `bus.context(...)` and the levels read and write as always; only
+where each one is stored changes. Nothing is shared by default, and no environment variable turns
+it on.
 
 ```text
-billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))      each bus that shares, in code
+store_context_in(KeyValueContexts(RedisKeyValue(redis)))                  the process, in code
+billing.store_context_in(KeyValueContexts(RedisKeyValue(billing_redis)))  a bounded context, in code
 
-global          use_context().at(ContextLevel.GLOBAL) — every service and replica that set the store
- └ process      this service's replicas — never another service
-    └ bus       local
-       └ entrypoint → application → feature → hook → scope    one node per execution, stored
+global          "global"             the process's store — every service that set it
+ └ process      "process:<service>"  the process's store — this service's replicas
+    └ bus       "bus:<name>"         the bounded context's store — every pod of it
+       └ entrypoint → application → feature → hook → scope
+                "node:<id>"          the bounded context's store — one node per execution
 ```
 
+- **The process and the global are the process's**, shared from the first execution of any bus once
+  `store_context_in(...)` is set — never through a bounded context's store.
+- **A bounded context's own level is read by all its pods**: what `with billing.context({...},
+  global_scope=True)` or `use_context().bus.set(...)` writes in one pod, every pod of billing reads
+  within `every`. A `global_scope` block puts back only its own keys when it ends.
 - **Across a queue or the remote bus only an id travels** (`x-context-node`, beside the identity):
   the receiving bus that set the same store opens under the sender's nodes, read back from the
   store. What service A's ApplicationService wrote — `self.context["discount"] = 10` — service B's
@@ -296,10 +304,66 @@ global          use_context().at(ContextLevel.GLOBAL) — every service and repl
   the process is stored per service; only `ContextLevel.GLOBAL` is one for everyone.
 - Two projects that set the same store (same prefix) share as well; the default codec is plain JSON,
   so they need no classes in common.
-- `store_context_in(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))`: a node lives `ttl`;
+- `bus.store_context_in(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))`: a node lives `ttl`;
   what others wrote is read again at most once per `every`.
 
 See `docs/prd/PRD_24_shared-context.md`.
+
+## A Redis of its own per bounded context
+
+A bounded context may grow into a service of its own, so everything it stores can live on a store
+of its own — its level, its executions, its caches, idempotency, drafts, pipeline runs, leases —
+while the rest stays on the process's. The address is configuration, by the settings cascade: a
+shared field every context inherits, overridden by the context that needs its own.
+
+```python
+from sincpro_framework.settings import SincproConfig
+
+
+class SharedSettings(SincproConfig):
+    redis_url: str = "redis://localhost:6379/0"
+
+
+class BillingSettings(SharedSettings): ...
+
+
+class ServiceSettings(SharedSettings):
+    billing: BillingSettings
+```
+
+```yaml
+my_service:
+  redis_url: $ENV:REDIS_URL
+  billing:
+    redis_url: $ENV:BILLING_REDIS_URL      # absent: billing inherits the shared one
+```
+
+```python
+from sincpro_framework import UseFramework
+from sincpro_framework.context import KeyValueContexts, store_context_in
+from sincpro_framework.data_layer.store import InMemoryKeyValue
+
+# the service's wiring: the process level, the global, every context without a store of its own
+store_context_in(InMemoryKeyValue())   # RedisKeyValue(redis.Redis.from_url(settings.redis_url))
+
+# billing/infrastructure/dependencies.py — billing's own, beside its database
+# (Repository(Database(settings.billing.database_url)))
+invoicing = UseFramework("invoicing", log_after_execution=False)
+invoicing.store_context_in(
+    KeyValueContexts(InMemoryKeyValue())   # RedisKeyValue(redis.Redis.from_url(settings.billing.redis_url))
+)
+```
+
+| What | Without `billing.store_context_in` | With it |
+|---|---|---|
+| `bus.cache`, `bus.idempotency`, `bus.cache.queries` | the process's store, keyed by `billing` | billing's store |
+| drafts, pipeline runs, leases, circuits in billing's executions | the process's store | billing's store |
+| billing's own level (`bus:billing`) | in each pod | billing's store — every pod reads it |
+| billing's execution nodes, handed on by id | not stored | billing's store |
+| the process level and the global | the process's store | the process's store |
+
+Moving billing out of the service later changes none of its code: its store already holds only
+what is billing's.
 
 ## Where the context is stored
 
