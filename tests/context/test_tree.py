@@ -13,6 +13,7 @@ from sincpro_framework.context import (
     Context,
     ContextLevel,
     EntrypointKind,
+    InMemoryContexts,
     carrying,
     use_context,
 )
@@ -274,6 +275,56 @@ def test_a_hook_runs_in_a_node_of_its_own():
     assert hook.level is ContextLevel.HOOK and hook.label == "Watches"
     assert hook.feature is not None and hook.feature.label == "CommandWrite"
     assert "checked_by" not in feature
+
+
+class SavedKeys(InMemoryContexts):
+    """A store that remembers every key saved in it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.keys: list[str] = []
+
+    def save(self, key: str, values: Any, ttl: Any = None) -> None:
+        self.keys.append(key)
+        super().save(key, values, ttl)
+
+
+def test_a_reading_hook_runs_in_a_node_of_its_own_kept_in_this_process():
+    seen: list[Context] = []
+    store = SavedKeys()
+    billing = UseFramework("context-tree-reading", log_after_execution=False)
+    billing.store_context_in(store)
+    billing_hooks = Hooks(None).inject(billing)
+
+    @billing_hooks.on(Invoice)
+    class Masks(Hook):
+        def after_read(self, record: Invoice) -> None:
+            context = use_context()
+            context.set("masked_by", "hook")
+            seen.append(context)
+
+        def after_search(self, page: Any) -> None:
+            context = use_context()
+            context.set("paged_by", "hook")
+            seen.append(context)
+
+    repository = MemoryRepository(hooks=billing_hooks)
+    for total in (1, 2, 3):
+        repository.save(Invoice(total=total))
+
+    @billing.feature(CommandWrite)
+    class Read(Feature):
+        def execute(self, dto: CommandWrite) -> None:
+            repository.search(Invoice)
+            seen.append(use_context())
+
+    billing(CommandWrite())
+
+    *hooks, feature = seen
+    assert [hook.level for hook in hooks] == [ContextLevel.HOOK] * 4
+    assert {hook.label for hook in hooks} == {"Masks"}
+    assert "masked_by" not in feature and "paged_by" not in feature
+    assert len([key for key in store.keys if key.endswith(":meta")]) == 2  # entrance, feature
 
 
 # --- the flow, said by the context --------------------------------------------------------------

@@ -8,7 +8,7 @@
 | `BUS` | the first call or `bus.context(...)` that reaches a bus | what the bus publishes: `bus.context({...}, global_scope=True)`, `bus.store_context_in(store)` |
 | `ENTRYPOINT` | REST, JSON-RPC, gRPC, MCP, a queue consumer, a cron, `remote_execution`, or the first `bus.context(...)` / `carrying(...)` of a flow (`DIRECT`) | who, for which tenant, lang, the identity — and `kind` |
 | `APPLICATION` / `FEATURE` | every `execute`, by itself | what the handler `set`s; its `Execution` |
-| `HOOK` | every run of a repository hook | what the hook `set`s |
+| `HOOK` | every run of a repository hook — `after_read`/`after_search` in this process only, never saved per row | what the hook `set`s |
 | `SCOPE` | `with bus.context(...)` inside a flow, `with use_context().scoped(...)` | what the block changes for what it calls |
 
 Interceptors run **inside** the node of the use case they wrap: a value an interceptor sets is the

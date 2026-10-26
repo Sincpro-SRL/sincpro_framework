@@ -1,7 +1,8 @@
 """`KeyValueStore`: the one protocol every store engine satisfies — six operations every store has,
 and a seventh that compares before it writes.
 
-    Redis / Valkey   MGET · SET PX · SET NX PX · INCR · DEL · GETDEL · WATCH + MULTI
+    Redis / Valkey   MGET · SET PX · SET NX PX · INCR (+ PEXPIRE in MULTI) · DEL · GETDEL ·
+                     WATCH + MULTI
     Memcached        get_multi · set · add · incr · delete · gets + cas · gets + cas
     DynamoDB         BatchGetItem · PutItem · conditional PutItem · UpdateItem ADD · DeleteItem ·
                      DeleteItem ReturnValues=ALL_OLD · conditional PutItem / DeleteItem
@@ -53,9 +54,14 @@ class KeyValueStore(Protocol):
         """Store `value` only when `key` is not there, atomically; `True` when it was written."""
 
     @abstractmethod
-    def increment(self, key: str) -> int:
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
         """Add one to the counter under `key`, atomically — a missing counter starts at 0 — and
-        answer the new value."""
+        answer the new value. With `ttl` the counter lasts `ttl` from this increment, set with
+        it; without, an expiry it had stays.
+
+            store.increment("failures")                            ->  1
+            store.increment("node:01J9:version", timedelta(hours=24))
+                ->  2, gone 24 hours from now — never a counter left with no expiry"""
 
     @abstractmethod
     def delete(self, key: str) -> None:

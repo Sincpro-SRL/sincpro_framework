@@ -7,8 +7,7 @@ the context, what it sees, and what its bus hides from the signals.
     hidden_keys()                                           what its bus hides from every signal
 """
 
-from collections.abc import Generator, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
@@ -16,51 +15,52 @@ from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context.domain.level import ContextLevel, EntrypointKind
 from sincpro_framework.context.domain.node import ContextBus, ContextNode
 from sincpro_framework.context.infrastructure.distributed import sharing_of
-from sincpro_framework.context.infrastructure.tree import ROOT, current, entered
+from sincpro_framework.context.infrastructure.tree import current, entered
 
 
 def shared(node: ContextNode, node_id: str | None = None) -> ContextNode:
     """`node`, saved in the store of the nearest bus that shares its context — as it is, when
-    none does. Free when no bus of the process shares: only a shared process has a global above
-    it.
+    none does.
 
-        shared(node)            ->  node, untouched — no bus of the process shares
+        shared(node)            ->  node, untouched — no bus above it shares
         shared(node, "01J9")    ->  node saved as "node:01J9", under billing's store
         shared(node)            ->  node saved under a new entity id
 
     The same node object is answered either way: being saved changes how it writes, not what
-    it is."""
-    if ROOT.parent is None:
-        return node
+    it is. Context: asked of the bus above the node, never of the process — a bounded context
+    with a store of its own shares its executions whether the process set one or not."""
     sharing = sharing_of(node)
     if sharing is None:
         return node
     return sharing.saved(node, node_id or new_entity_id())
 
 
-@contextmanager
 def entered_child(
     level: ContextLevel,
     values: Mapping[Any, Any] | None = None,
     label: str = "",
     owner: ContextBus | None = None,
     kind: EntrypointKind | None = None,
-) -> Generator[ContextNode, None, None]:
+    saved: bool = True,
+) -> entered:
     """A node under the one in play, in play for the block — saved in the store of the bus above
-    it, when that bus shares its context.
+    it, when that bus shares its context and `saved` is left on.
 
         with entered_child(ContextLevel.HOOK, label="audit") as node:
             node.level   ->  ContextLevel.HOOK
         with entered_child(ContextLevel.SCOPE, {"tenant_id": "acme"}) as node:
             node.level   ->  ContextLevel.ENTRYPOINT, kind DIRECT   # no entrance opened the flow
+        with entered_child(ContextLevel.HOOK, label="mask", saved=False):
+            ...          # this process only: a moment that runs once per row read
 
     A scope asked for where no entrance opened the flow yet is that flow's entrypoint
-    (`ContextNode.child_level`)."""
+    (`ContextNode.child_level`). A node left unsaved still isolates what is written in it; a
+    context handed on from inside carries the nearest saved node above it."""
     parent = current()
     if level is ContextLevel.SCOPE:
         level, kind = parent.child_level(kind)
-    with entered(shared(ContextNode(level, parent, values, label, owner, kind))) as node:
-        yield node
+    node = ContextNode(level, parent, values, label, owner, kind)
+    return entered(shared(node) if saved else node)
 
 
 def live_context() -> Mapping[Any, Any]:

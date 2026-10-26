@@ -95,6 +95,26 @@ def test_a_context_kept_for_a_while_is_gone_after_it():
     assert store.load("flow:1") is None
 
 
+def test_a_context_kept_for_a_while_leaves_no_version_behind():
+    key_values = InMemoryKeyValue()
+    store = KeyValueContexts(key_values)
+    threads = [
+        threading.Thread(
+            target=store.save, args=("node:01J9", {"step": n}, timedelta(milliseconds=20))
+        )
+        for n in range(8)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert store.version("node:01J9") == 8
+    time.sleep(0.05)
+    assert store.version("node:01J9") == 0
+    assert key_values.get("sincpro:context:node:01J9:version") is None
+
+
 def test_a_typed_codec_gives_every_value_its_type_back():
     codec = TypedCodec(SiatContext)
     data = codec.dumps({"TOKEN": Secret("abc"), "SIAT_ENV": Environment.TEST, "extra": 1})

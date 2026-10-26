@@ -33,14 +33,18 @@ class ContextScopes:
         label: str = "",
         owner: ContextBus | None = None,
         kind: EntrypointKind | None = None,
+        saved: bool = True,
     ) -> AbstractContextManager[ContextNode]:
         """A node of `level` under the one in play, in play for the block — saved where the bus
-        above it shares its context.
+        above it shares its context, unless `saved=False` keeps it in this process: what runs
+        once per row read is no write to the store each.
 
             with context_scopes.child(ContextLevel.HOOK, label="audit") as node:
                 node.level   ->  ContextLevel.HOOK
+            with context_scopes.child(ContextLevel.HOOK, label="mask", saved=False):
+                ...          # isolated as any node, never written to the store
         """
-        return entered_child(level, values, label, owner, kind)
+        return entered_child(level, values, label, owner, kind, saved)
 
     def live(self) -> Mapping[Any, Any]:
         """Everything the node in play sees, read-only, as it is now — what every signal reads

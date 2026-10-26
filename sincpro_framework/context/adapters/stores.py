@@ -10,7 +10,7 @@ each lasting `entry_ttl` from its last save. Nothing else is set for them.
 
 `KeyValueContexts` stands on `KeyValueStore`, so Redis, Valkey, Memcached and DynamoDB are the
 engines of `sincpro_framework.data_layer.store` — behind their extras, nothing new to install. A
-key is written in one `SET`; its version is an atomic `INCR` beside it.
+key is written in one `SET`; its version is an atomic `INCR` beside it, with the key's ttl.
 """
 
 import threading
@@ -170,11 +170,12 @@ class KeyValueContexts(ContextStore):
 
     def save(self, key: str, values: Mapping[str, Any], ttl: timedelta | None = None) -> None:
         """`values` under `key`, its version moved — both gone after `ttl`, so a store that saves
-        a node per execution never grows without end."""
+        a node per execution never grows without end.
+
+        Context: the version moves and takes its ttl in one atomic `increment` — it never goes
+        back when two save at once, and never stays behind with no expiry."""
         self.store.set(self._key(key), self.codec.dumps(values), ttl)
-        moved = self.store.increment(self._version_key(key))
-        if ttl is not None:
-            self.store.set(self._version_key(key), str(moved).encode(), ttl)
+        self.store.increment(self._version_key(key), ttl)
 
     def load(self, key: str) -> dict[str, Any] | None:
         """The bytes under the key, read back by the codec — `None` when the store has

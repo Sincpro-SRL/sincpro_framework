@@ -44,10 +44,16 @@ class RedisKeyValue(ClientKeyValue):
                 self.client.set(self.prefix + key, value, nx=True, px=_milliseconds(ttl))
             )
 
-    def increment(self, key: str) -> int:
-        """`INCR` — Redis creates a missing counter at 0 itself; a ttl the key had stays."""
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
+        """`INCR` — Redis creates a missing counter at 0 itself; a ttl the key had stays. With
+        `ttl`, `INCR` and `PEXPIRE` in one `MULTI`: the counter never lives without it."""
         with self._reaching():
-            return int(self.client.incr(self.prefix + key))
+            if ttl is None:
+                return int(self.client.incr(self.prefix + key))
+            both = self.client.pipeline(transaction=True)
+            both.incr(self.prefix + key)
+            both.pexpire(self.prefix + key, _milliseconds(ttl))
+            return int(both.execute()[0])
 
     def delete(self, key: str) -> None:
         """`DEL`."""

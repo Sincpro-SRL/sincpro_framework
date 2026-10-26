@@ -404,6 +404,38 @@ def test_a_bounded_context_alone_shares_its_own_level_and_not_the_process():
     assert billing_store.load("global") is None
 
 
+def test_a_bounded_context_alone_shares_what_its_feature_wrote_on_its_own_level():
+    """No process store: the bounded context's store still holds every node of its executions —
+    what a Feature wrote on its own node reaches the receiver it handed the context to."""
+    store = InMemoryContexts()
+    sent: list[dict[str, str]] = []
+    read: list[dict[str, Any]] = []
+    orders = UseFramework("shared-context-feature-level", log_after_execution=False)
+    orders.store_context_in(store)
+
+    @orders.feature(CommandPublishOrder)
+    class PublishOrder(Feature):
+        def execute(self, dto: CommandPublishOrder) -> None:
+            use_context().set("carrier", "dhl")
+            sent.append(inject(use_context()))
+
+    shipping = UseFramework(
+        "shared-context-feature-level-receiver", log_after_execution=False
+    )
+    shipping.store_context_in(store)
+
+    @shipping.feature(CommandBill)
+    class Ship(Feature):
+        def execute(self, dto: CommandBill) -> None:
+            read.append({"carrier": use_context().get("carrier")})
+
+    orders(CommandPublishOrder())
+    _received(shipping, sent[0], CommandBill())
+
+    assert use_context().at(ContextLevel.GLOBAL) is None
+    assert read == [{"carrier": "dhl"}]
+
+
 # --- a bounded context's own level, across its pods ---------------------------------------------
 
 

@@ -65,6 +65,11 @@ ROOT          the process                       defaults, flags, settings
 Each node holds only its own values and a pointer to its parent. **Reading walks up and the nearest
 node wins** — a React provider's rule. Closing a node is returning to its parent.
 
+Every moment of a repository's hook runs in a `HOOK` node of its own, so what a hook writes never
+lands on the Feature that called the repository. The moments of a reading — `after_read`, once per
+row, and `after_search`, once per page — keep that node in this process: a bus that shares its
+context saves no node per row read.
+
 ```python
 assert [one.level for one in check.lineage()] == [
     ContextLevel.FEATURE,

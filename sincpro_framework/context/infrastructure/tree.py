@@ -11,9 +11,8 @@ play — a child under it, an execution opened, the context handed on — is `se
 Only the standard library and the domain: the buses import this, nothing here imports a bus.
 """
 
-from collections.abc import Generator
-from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
+from types import TracebackType
 
 from sincpro_framework.context.domain.level import ContextLevel
 from sincpro_framework.context.domain.node import ContextNode
@@ -29,16 +28,35 @@ def current() -> ContextNode:
     return _current.get() or ROOT
 
 
-@contextmanager
-def entered(node: ContextNode) -> Generator[ContextNode, None, None]:
+class entered:
     """`node` is the node in play for the block — for this thread or task only — and what was
     in play before comes back when it ends, raised or not.
 
         with entered(ContextNode(ContextLevel.SCOPE, current(), {"lang": "es"})):
             current().flattened()["lang"]   ->  "es"
-    """
-    token = _current.set(node)
-    try:
-        yield node
-    finally:
-        _current.reset(token)
+
+    Context: a class, as `contextlib.suppress` is, not a generator — it is entered once per
+    execution, scope and hook, once per row for a hook that reads, and a generator costs twice
+    as much."""
+
+    __slots__ = ("node", "_token")
+
+    def __init__(self, node: ContextNode) -> None:
+        """Holds `node`; nothing is in play until the block is entered."""
+        self.node = node
+        self._token: Token[ContextNode | None] | None = None
+
+    def __enter__(self) -> ContextNode:
+        """`node` in play, answered for `as`."""
+        self._token = _current.set(self.node)
+        return self.node
+
+    def __exit__(
+        self,
+        kind: type[BaseException] | None,
+        error: BaseException | None,
+        trace: TracebackType | None,
+    ) -> None:
+        """What was in play before, back — whatever ended the block, which is raised on."""
+        if self._token is not None:
+            _current.reset(self._token)

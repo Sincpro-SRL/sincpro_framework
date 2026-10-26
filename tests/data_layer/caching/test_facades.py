@@ -74,7 +74,7 @@ class DownStore(KeyValueStore):
     def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
         raise ConnectionError("the store is not answering")
 
-    def increment(self, key: str) -> int:
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
         raise ConnectionError("the store is not answering")
 
     def delete(self, key: str) -> None:
