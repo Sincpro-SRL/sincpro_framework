@@ -51,9 +51,9 @@ A log field is spelled as the Prometheus label is, so the same text filters Loki
 **Release, service, version and tenant are on every series**, added by the framework on every
 backend. A context key goes on every series only when named before the build, because a backend
 fixes a series' labels when it creates it: `UseFramework("billing", metric_labels=["company"])`,
-`metric_labels=(of(BillingContext)["company"],)`, or `metric_labels: [company]` in the settings.
+`metric_labels=(field_path(BillingContext)["company"],)`, or `metric_labels: [company]` in the settings.
 
-**A typed context in decorators**: `of(BillingContext)["channel"]` (a `TypedDict`, the same the
+**A typed context in decorators**: `field_path(BillingContext)["channel"]` (a `TypedDict`, the same the
 handler declares in `Feature[C, R, BillingContext]`) works in `@metrics.counts(by=...)` and
 `@traces.attributes(...)`; a key the TypedDict lacks fails at import.
 

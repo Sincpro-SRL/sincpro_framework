@@ -126,9 +126,9 @@ def _declared_instrument(
     """The instrument a decorator declaration records into on the bus `context` — built the
     first time and stored per context, use case and declaration.
 
-        @metrics.counts()         on billing  ->  counter    "billing.issue_invoice.runs"
-        @metrics.sums(of(R).total)            ->  counter    "billing.issue_invoice.total"
-        @metrics.measures(of(R).lines)        ->  histogram  "billing.issue_invoice.lines"
+        @metrics.counts()           on billing  ->  counter    "billing.issue_invoice.runs"
+        @metrics.sums(field_path(R).total)      ->  counter    "billing.issue_invoice.total"
+        @metrics.measures(field_path(R).lines)  ->  histogram  "billing.issue_invoice.lines"
 
     Context: with no description, the first line of the use case's docstring stands in, so a
     series is never undocumented on the backend.

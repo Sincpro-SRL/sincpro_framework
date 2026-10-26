@@ -1,15 +1,17 @@
 """The labels of a measurement — which field references a declaration may label by, and the
 values they read off a run (PRD_03 §4.2, §4.10).
 
-    of(CommandIssueInvoice).currency    ->  {"currency": "BOB"}       read off the Command
-    of(BillingContext)["company"]       ->  {"company": "3"}          read off the execution context
+    field_path(CommandIssueInvoice).currency
+        ->  {"currency": "BOB"}  read off the Command
+    field_path(BillingContext)["company"]
+        ->  {"company": "3"}     read off the execution context
 """
 
 from enum import Enum
 from typing import Any, Literal, get_origin
 
 from sincpro_framework.observability import correlation
-from sincpro_framework.observability.metrics.domain.paths import FieldPath, without_none
+from sincpro_framework.observability.field_paths import FieldPath, without_none
 from sincpro_framework.sincpro_logger import logger
 
 _unbounded_warned: set[str] = set()
@@ -23,10 +25,12 @@ def bounded_label(path: FieldPath) -> FieldPath:
     worth saying where the label is declared. What a service measures by is its decision
     (PRD_03 §4.10), so it is never refused.
 
-        bounded_label(of(CommandIssueInvoice).currency)      ->  the path   # a Currency(Enum)
-        bounded_label(of(CommandIssueInvoice).customer_id)
+        bounded_label(field_path(CommandIssueInvoice).currency)
+            ->  the path  # a Currency(Enum)
+        bounded_label(field_path(CommandIssueInvoice).customer_id)
             ->  the path, and the first time only the warning
-                "metrics: label of(CommandIssueInvoice).customer_id is str, not an Enum, ..."
+                "metrics: label field_path(CommandIssueInvoice).customer_id is str, not an
+                Enum, ..."
 
     1. The declared type of the last step, `X | None` read as `X`.
     2. A `bool`, a `Literal` or an `Enum` is bounded: the path as it is.
@@ -78,10 +82,11 @@ def read_labels(
 ) -> dict[str, str]:
     """Each label read off the source its path starts at — `none` when no source is one.
 
-        read_labels((of(CommandIssueInvoice).currency, of(BillingContext)["company"]),
+        read_labels((field_path(CommandIssueInvoice).currency,
+                     field_path(BillingContext)["company"]),
                     (command, response), IssueInvoice)
             ->  {"currency": "BOB", "company": "3"}
-        read_labels((of(CommandIssueInvoice).currency,), (), IssueInvoice)
+        read_labels((field_path(CommandIssueInvoice).currency,), (), IssueInvoice)
             ->  {"currency": "none"}, and one warning for IssueInvoice's `currency`
 
     1. For each path, under its key (its last attribute):

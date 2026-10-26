@@ -506,7 +506,7 @@ configuration, then `hosted_by`, then serving). The component is `sincpro_framew
 
 - **Tracing** (optional): OpenTelemetry spans on every DTO, export via OTLP (`sincpro-framework[opentelemetry]` + `OTEL_EXPORTER_OTLP_ENDPOINT`).
 - **Errors** (optional): Sentry/GlitchTip capture on bus exceptions (`sincpro-framework[sentry]` + `SENTRY_PYTHON_DSN` in conf). Isolated client — does not call `sentry_sdk.init()`, does not reuse Odoo's client.
-- **Metrics** (optional): every use case timed by bounded context and outcome, with nothing to declare; `@metrics.counts` / `sums` / `measures` on a use case by field reference (`of(Command).field`); Prometheus `/metrics` (`sincpro-framework[prometheus]`) or OTLP (`[opentelemetry]`), picked by `OTEL_METRICS_EXPORTER` — [guide](docs/observability/metrics.md).
+- **Metrics** (optional): every use case timed by bounded context and outcome, with nothing to declare; `@metrics.counts` / `sums` / `measures` on a use case by field reference (`field_path(Command).field`); Prometheus `/metrics` (`sincpro-framework[prometheus]`) or OTLP (`[opentelemetry]`), picked by `OTEL_METRICS_EXPORTER` — [guide](docs/observability/metrics.md).
 - Independent: you can enable traces, errors, both, or neither.
 
 ## ⚙️ Features vs. Application Service
@@ -1564,7 +1564,7 @@ Every span produced by the framework carries:
 | `code.function.name` / `code.file.path` / `code.line.number` | The consumer's line that failed (`error_at`) | Jump from the trace to the code |
 
 What only the use case knows — a NIT, a merchant, the code a provider answered — it puts on its
-own span with `traces`: declared with `@traces.attributes(of(Command).nit, namespace="siat")`, or
+own span with `traces`: declared with `@traces.attributes(field_path(Command).nit, namespace="siat")`, or
 by hand with `traces.annotate({"siat.cuf": cuf})`. High-cardinality values a metric refuses as
 labels belong there; see [span attributes](docs/observability/span-attributes.md).
 

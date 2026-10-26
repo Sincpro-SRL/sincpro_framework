@@ -116,8 +116,8 @@ class UseFramework(
           GlitchTip events; everything else the context says goes on all of them.
         - `metric_labels` puts context keys on every metric series, beside the release,
           service, version and tenant every series carries — a key (`"company"`) or a field
-          reference (`of(BillingContext).company`). Declared here, before the build, because a
-          backend fixes a series' labels when it creates it.
+          reference (`field_path(BillingContext).company`). Declared here, before the build,
+          because a backend fixes a series' labels when it creates it.
 
         1. The settings stored as given, so `fresh()` builds a bus with the same ones.
         2. Logger, observability, context, incomes and outcomes, each component's own state.

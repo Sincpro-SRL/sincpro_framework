@@ -40,14 +40,14 @@ its child.
 
 ```python
 from sincpro_framework.observability import traces
-from sincpro_framework.observability.metrics import of
+from sincpro_framework.observability import field_path
 
 @billing.feature(CommandIssueInvoice)
 @traces.attributes(
-    of(CommandIssueInvoice).customer_nit,              # billing.customer_nit, before execute runs
-    of(ResponseIssueInvoice).reception_code,           # billing.reception_code, on success
+    field_path(CommandIssueInvoice).customer_nit,              # billing.customer_nit, before execute runs
+    field_path(ResponseIssueInvoice).reception_code,           # billing.reception_code, on success
     namespace="billing",                               # required: the prefix every declared key takes
-    channel=of(BillingContext)["channel"],             # billing.channel, read off the execution context
+    channel=field_path(BillingContext)["channel"],             # billing.channel, read off the execution context
 )
 class IssueInvoice(Feature):
     def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:

@@ -2,11 +2,13 @@
 §4.3, §4.5).
 
     @billing.feature(CommandIssueInvoice)
-    @metrics.counts(by=of(CommandIssueInvoice).currency)                      # each success
-    @metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency)
-    @metrics.measures(of(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
+    @metrics.counts(by=field_path(CommandIssueInvoice).currency)  # each success
+    @metrics.sums(field_path(ResponseIssueInvoice).total,
+                  by=field_path(CommandIssueInvoice).currency)
+    @metrics.measures(field_path(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
     class IssueInvoice(Feature):
-        retries = metrics.counter(by=of(CommandIssueInvoice).channel)       # by hand, in execute
+        # by hand, in execute
+        retries = metrics.counter(by=field_path(CommandIssueInvoice).channel)
         pricing = metrics.timer()
 
         def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
@@ -23,6 +25,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from typing import Any
 
+from sincpro_framework.observability.field_paths import FieldPath
 from sincpro_framework.observability.metrics.domain.bus_observability import BusObservability
 from sincpro_framework.observability.metrics.domain.declarations import (
     MetricDeclaration,
@@ -34,7 +37,6 @@ from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,
 )
-from sincpro_framework.observability.metrics.domain.paths import FieldPath
 from sincpro_framework.observability.metrics.domain.recorder import Recorder
 from sincpro_framework.observability.metrics.services.declaring import (
     DeclaredInstrument,
@@ -115,7 +117,7 @@ class Metrics:
     def counter(self, by: Labels = None, unit: str = "", description: str = "") -> Any:
         """A counter recorded by hand — `self.<attribute>.add(1, dto)`; only goes up.
 
-        retries = metrics.counter(by=of(CommandIssueInvoice).channel)
+        retries = metrics.counter(by=field_path(CommandIssueInvoice).channel)
         """
         return DeclaredInstrument(InstrumentKind.COUNTER, by, unit, description, None)
 

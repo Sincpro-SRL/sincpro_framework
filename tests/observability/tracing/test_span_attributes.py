@@ -19,8 +19,7 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.observability import traces
-from sincpro_framework.observability.metrics import of
+from sincpro_framework.observability import field_path, traces
 
 pytest.importorskip("opentelemetry.sdk.trace")
 
@@ -52,12 +51,12 @@ def _siat() -> UseFramework:
 
     @siat.feature(CommandSendInvoice)
     @traces.attributes(
-        of(CommandSendInvoice).nit,
-        of(CommandSendInvoice).environment,
-        of(ResponseSendInvoice).reception_code,
+        field_path(CommandSendInvoice).nit,
+        field_path(CommandSendInvoice).environment,
+        field_path(ResponseSendInvoice).reception_code,
         namespace="siat",
-        branch=of(CommandSendInvoice).branch_office,
-        amount=of(ResponseSendInvoice).total,
+        branch=field_path(CommandSendInvoice).branch_office,
+        amount=field_path(ResponseSendInvoice).total,
     )
     class SendInvoice(Feature):
         def execute(self, dto: CommandSendInvoice) -> ResponseSendInvoice:
@@ -137,7 +136,7 @@ def test_each_attribute_stays_on_the_span_of_the_use_case_that_said_it(otel_setu
     payments = UseFramework("payments-attrs", log_after_execution=False)
 
     @payments.feature(CommandCharge)
-    @traces.attributes(of(ResponseCharge).qr_id, namespace="payment")
+    @traces.attributes(field_path(ResponseCharge).qr_id, namespace="payment")
     class Charge(Feature):
         def execute(self, dto: CommandCharge) -> ResponseCharge:
             with trace.get_tracer("bank-adapter").start_as_current_span("POST /qr"):
@@ -145,7 +144,7 @@ def test_each_attribute_stays_on_the_span_of_the_use_case_that_said_it(otel_setu
             return ResponseCharge(qr_id=42)
 
     @payments.app_service(CommandPay)
-    @traces.attributes(namespace="payment", merchant=of(CommandPay).merchant_id)
+    @traces.attributes(namespace="payment", merchant=field_path(CommandPay).merchant_id)
     class Pay(ApplicationService):
         def execute(self, dto: CommandPay) -> ResponsePay:
             charged = self.feature_bus.execute(
@@ -215,10 +214,16 @@ class CommandLogin(DataTransferObject):
 @pytest.mark.parametrize(
     ("declare", "refusal"),
     [
-        (lambda: traces.attributes(of(CommandLogin).payload, namespace="auth"), "is dict"),
-        (lambda: traces.attributes(of(CommandLogin).document, namespace="auth"), "is bytes"),
+        (
+            lambda: traces.attributes(field_path(CommandLogin).payload, namespace="auth"),
+            "is dict",
+        ),
+        (
+            lambda: traces.attributes(field_path(CommandLogin).document, namespace="auth"),
+            "is bytes",
+        ),
         (lambda: traces.attributes(namespace="auth"), "nothing declared"),
-        (lambda: traces.attributes(of(CommandLogin).code, namespace=""), "namespace"),
+        (lambda: traces.attributes(field_path(CommandLogin).code, namespace=""), "namespace"),
     ],
     ids=["a mapping", "bytes", "empty", "no namespace"],
 )
@@ -230,12 +235,12 @@ def test_a_declaration_that_could_never_work_is_refused_at_import(declare, refus
 @pytest.mark.parametrize(
     "declare",
     [
-        lambda: traces.attributes(of(CommandLogin).user_email, namespace="auth"),
-        lambda: traces.attributes(of(CommandLogin).api_key, namespace="auth"),
-        lambda: traces.attributes(namespace="auth", secret=of(CommandLogin).code),
-        lambda: traces.attributes(of(CommandLogin).code, namespace="sincpro"),
-        lambda: traces.attributes(of(CommandLogin).code, namespace="http"),
-        lambda: traces.attributes(of(CommandLogin).code, namespace="Auth"),
+        lambda: traces.attributes(field_path(CommandLogin).user_email, namespace="auth"),
+        lambda: traces.attributes(field_path(CommandLogin).api_key, namespace="auth"),
+        lambda: traces.attributes(namespace="auth", secret=field_path(CommandLogin).code),
+        lambda: traces.attributes(field_path(CommandLogin).code, namespace="sincpro"),
+        lambda: traces.attributes(field_path(CommandLogin).code, namespace="http"),
+        lambda: traces.attributes(field_path(CommandLogin).code, namespace="Auth"),
     ],
     ids=[
         "personal data",
@@ -256,13 +261,13 @@ def test_a_path_into_another_dto_or_a_key_declared_twice_is_refused_at_import():
         exceptions.ProgrammingError, match="neither the Command nor the Response"
     ):
 
-        @traces.attributes(of(CommandLogin).code, namespace="pay")
+        @traces.attributes(field_path(CommandLogin).code, namespace="pay")
         class Foreign(Feature):
             def execute(self, dto: CommandPay) -> ResponsePay: ...
 
     with pytest.raises(exceptions.ProgrammingError, match="declared twice"):
 
-        @traces.attributes(of(CommandPay).merchant_id, namespace="pay")
-        @traces.attributes(namespace="pay", merchant_id=of(CommandPay).merchant_id)
+        @traces.attributes(field_path(CommandPay).merchant_id, namespace="pay")
+        @traces.attributes(namespace="pay", merchant_id=field_path(CommandPay).merchant_id)
         class Twice(Feature):
             def execute(self, dto: CommandPay) -> ResponsePay: ...

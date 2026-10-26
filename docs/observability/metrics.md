@@ -22,7 +22,7 @@ from enum import StrEnum
 from typing import Literal
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
+from sincpro_framework.observability.metrics import InMemoryRecorder, field_path, metrics
 
 
 class Currency(StrEnum):
@@ -111,14 +111,14 @@ The framework's own pieces count what they do, declaring nothing either:
 
 ## Declared: decorate, and it counts, sums or measures
 
-`of(Command).field` is a reference to a field, written as code: the editor completes it, a rename
+`field_path(Command).field` is a reference to a field, written as code: the editor completes it, a rename
 renames it, and a field that does not exist raises right there.
 
 ```python
 @billing.feature(CommandIssueInvoice)
-@metrics.counts(by=of(CommandIssueInvoice).currency)
-@metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency, unit="BOB")
-@metrics.measures(of(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
+@metrics.counts(by=field_path(CommandIssueInvoice).currency)
+@metrics.sums(field_path(ResponseIssueInvoice).total, by=field_path(CommandIssueInvoice).currency, unit="BOB")
+@metrics.measures(field_path(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
 class IssueInvoice(Feature):
     """Issue an invoice."""
 
@@ -144,11 +144,11 @@ assert recorder.totals("billing.issue_invoice.total") == {(("currency", "BOB"), 
 | Decorator | Records, on each **successful** run | Named |
 |---|---|---|
 | `@metrics.counts(by=)` | one more | `{context}.{use_case}.runs` |
-| `@metrics.sums(of(X).field, by=, unit=)` | the field's value, added up (a counter: a negative value is dropped) | `{context}.{use_case}.{field}` |
-| `@metrics.measures(of(X).field, by=, unit=, buckets=)` | the field's value, as a distribution | `{context}.{use_case}.{field}` |
+| `@metrics.sums(field_path(X).field, by=, unit=)` | the field's value, added up (a counter: a negative value is dropped) | `{context}.{use_case}.{field}` |
+| `@metrics.measures(field_path(X).field, by=, unit=, buckets=)` | the field's value, as a distribution | `{context}.{use_case}.{field}` |
 
 `X` is the use case's Command, its Response, or the context type it declares
-(`Feature[Command, Response, BillingContext]`): `of(BillingContext)["channel"]` reads the
+(`Feature[Command, Response, BillingContext]`): `field_path(BillingContext)["channel"]` reads the
 execution context when the run is recorded. A path into any other DTO or context is refused at
 import.
 A failed run is not counted here: it is already in `sincpro.use_case.duration`, by kind.
@@ -163,7 +163,7 @@ declared:
 from structlog.testing import capture_logs
 
 with capture_logs() as said:
-    metrics.counts(by=of(CommandIssueInvoice).customer_id)
+    metrics.counts(by=field_path(CommandIssueInvoice).customer_id)
 
 assert any("customer_id is str" in line["event"] for line in said)
 ```
@@ -178,7 +178,7 @@ the execution's `tenant` (Prometheus: `service_name`, `service_version`, `releas
 added where every measurement passes, on every backend, with no collector. A context key goes on
 every series when the bus names it, before it is built, because a backend fixes a series' labels
 when it creates it — `UseFramework("billing", metric_labels=["channel"])`, a field reference
-`metric_labels=(of(BillingContext)["channel"],)`, or `metric_labels: [channel]` in the settings.
+`metric_labels=(field_path(BillingContext)["channel"],)`, or `metric_labels: [channel]` in the settings.
 The labels are the process's: every series of every bus carries them. See
 [correlation](correlation.md).
 
@@ -202,7 +202,7 @@ pricing = UseFramework("pricing", log_after_execution=False)
 
 @pricing.feature(CommandPriceOrder)
 class PriceOrder(Feature):
-    lookups = metrics.counter(by=of(CommandPriceOrder).channel)
+    lookups = metrics.counter(by=field_path(CommandPriceOrder).channel)
     pricing = metrics.timer()
     discount = metrics.histogram(unit="BOB", buckets=(0, 10, 100))
     in_flight = metrics.up_down()
@@ -265,8 +265,8 @@ assistant = UseFramework("assistant", log_after_execution=False)
 
 
 @assistant.feature(CommandAsk)
-@metrics.sums(of(ResponseAsk).input_tokens, by=of(CommandAsk).model, unit="{token}")
-@metrics.sums(of(ResponseAsk).output_tokens, by=of(CommandAsk).model, unit="{token}")
+@metrics.sums(field_path(ResponseAsk).input_tokens, by=field_path(CommandAsk).model, unit="{token}")
+@metrics.sums(field_path(ResponseAsk).output_tokens, by=field_path(CommandAsk).model, unit="{token}")
 class Ask(Feature):
     def execute(self, dto: CommandAsk) -> ResponseAsk:
         return ResponseAsk(answer="…", input_tokens=120, output_tokens=40)
@@ -283,7 +283,7 @@ assert recorder.totals("assistant.ask.output_tokens") == {
 
 On Prometheus: `assistant_ask_output_tokens_total{model="deepseek-chat"}`. When the usage is
 known only midway — a stream, several calls — record it by hand with a class-level
-`metrics.counter(by=of(Usage).model, unit="{token}")` and `self.tokens.add(n, usage)`.
+`metrics.counter(by=field_path(Usage).model, unit="{token}")` and `self.tokens.add(n, usage)`.
 
 ## Who a metric comes from: service, context, version, tenant
 
@@ -405,7 +405,7 @@ once per instrument and skipped — measuring never fails the use case it measur
 |---|---|
 | `metrics.counts(by=)` / `.sums(value, by=, unit=)` / `.measures(value, by=, unit=, buckets=)` | declared on a use case, recorded on each successful run |
 | `metrics.counter()` / `.up_down()` / `.histogram()` / `.timer()` | declared on the use case's class, recorded by hand |
-| `of(Dto).field` | a field reference: a value or a label, checked where written |
+| `field_path(Dto).field` | a field reference: a value or a label, checked where written |
 | `metrics.use(recorder)` / `metrics.using(recorder)` / `metrics.recorder` | the process's recorder |
 | `metrics.emit(instrument, value, labels)` | one measurement of an instrument described outside a use case (the cache's outcomes, a queue's deliveries), through the same shield |
 | `metrics.declared_on(cls)` | whether a use case declared a metric with a decorator |

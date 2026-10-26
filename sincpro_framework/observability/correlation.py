@@ -286,10 +286,11 @@ _metric_labels: list[str] = []
 
 def declare_metric_labels(keys: Iterable[Any]) -> tuple[str, ...]:
     """Context keys that go on every series of the process, beside `ALWAYS_ON_METRICS`. Each is
-    a key (`"company"`) or a field reference (`of(BillingContext).company`). Declared before the
-    bus is built: a backend fixes a series' label keys when it creates the instrument.
+    a key (`"company"`) or a field reference (`field_path(BillingContext).company`). Declared
+    before the bus is built: a backend fixes a series' label keys when it creates the
+    instrument.
 
-        declare_metric_labels(["company", of(BillingContext).company, "", "region"])
+        declare_metric_labels(["company", field_path(BillingContext).company, "", "region"])
             ->  ("company", "region")           # each key once; "" is not a key
         declare_metric_labels(["company"])   ->  ()   # already declared
 

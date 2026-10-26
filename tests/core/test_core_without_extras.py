@@ -68,7 +68,7 @@ class Ping(Feature):
 
 
 from sincpro_framework.observability import traces
-from sincpro_framework.observability.metrics import of
+from sincpro_framework.observability.metrics import field_path
 
 
 class CommandStamp(DataTransferObject):
@@ -76,7 +76,7 @@ class CommandStamp(DataTransferObject):
 
 
 @bus.feature(CommandStamp)
-@traces.attributes(of(CommandStamp).nit, namespace="core")
+@traces.attributes(field_path(CommandStamp).nit, namespace="core")
 class Stamp(Feature):
     def execute(self, dto: CommandStamp) -> ResponsePing:
         traces.annotate({"core.stamped": True, "core.password": "dropped, never raised"})
@@ -451,7 +451,7 @@ for gateway, serve, extra in (
 
 from enum import StrEnum as _StrEnum
 
-from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
+from sincpro_framework.observability.metrics import InMemoryRecorder, field_path, metrics
 
 
 class Channel(_StrEnum):
@@ -466,7 +466,7 @@ visits = UseFramework("core-only-metrics", log_after_execution=False)
 
 
 @visits.feature(CommandVisit)
-@metrics.counts(by=of(CommandVisit).channel)
+@metrics.counts(by=field_path(CommandVisit).channel)
 class Visit(Feature):
     def execute(self, dto: CommandVisit) -> None:
         return None
