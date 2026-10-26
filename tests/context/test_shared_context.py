@@ -416,7 +416,7 @@ def test_a_bounded_context_alone_shares_what_its_feature_wrote_on_its_own_level(
     @orders.feature(CommandPublishOrder)
     class PublishOrder(Feature):
         def execute(self, dto: CommandPublishOrder) -> None:
-            use_context().set("carrier", "dhl")
+            use_context().set("shipper", "dhl")
             sent.append(inject(use_context()))
 
     shipping = UseFramework(
@@ -427,13 +427,13 @@ def test_a_bounded_context_alone_shares_what_its_feature_wrote_on_its_own_level(
     @shipping.feature(CommandBill)
     class Ship(Feature):
         def execute(self, dto: CommandBill) -> None:
-            read.append({"carrier": use_context().get("carrier")})
+            read.append({"shipper": use_context().get("shipper")})
 
     orders(CommandPublishOrder())
     _received(shipping, sent[0], CommandBill())
 
     assert use_context().at(ContextLevel.GLOBAL) is None
-    assert read == [{"carrier": "dhl"}]
+    assert read == [{"shipper": "dhl"}]
 
 
 # --- a bounded context's own level, across its pods ---------------------------------------------

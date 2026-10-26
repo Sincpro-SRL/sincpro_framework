@@ -8,12 +8,13 @@ class ContextLevel(StrEnum):
     """A node's place in the tree — the layers of the architecture, outermost first."""
 
     GLOBAL = "global"
-    """Above every process: what every service that set the same context store shares — it
-    exists only once a bus of the process set one (`bus.store_context_in(store)`)."""
+    """Above every process: what every service that set the same process store shares — it
+    exists only once the process set one (`store_context_in(store)`)."""
     ROOT = "root"
     """The process: its defaults, its flags, what any execution of it may read."""
     BUS = "bus"
-    """What a bounded context publishes for every execution of its own (`global_scope=True`)."""
+    """What a bounded context publishes for every execution of its own (`global_scope=True`) —
+    shared by its pods through its own store (`bus.store_context_in(store)`)."""
     ENTRYPOINT = "entrypoint"
     """What the entrance knew: who, for which tenant, in which language, from which flow."""
     APPLICATION = "application"
@@ -28,6 +29,11 @@ class ContextLevel(StrEnum):
 
 SCOPES = frozenset({ContextLevel.ENTRYPOINT, ContextLevel.SCOPE})
 """The nodes a write to the context as a mapping lands on — the scope of a call."""
+
+OWNED_LEVELS = frozenset({ContextLevel.GLOBAL, ContextLevel.ROOT, ContextLevel.BUS})
+"""The levels that belong to someone — the organization, the service, a bounded context: each
+is read where it lives, on its owner's store, and never crosses a process. What crosses is the
+flow, from the entrypoint down (`ContextNode.flow`)."""
 
 
 class EntrypointKind(StrEnum):

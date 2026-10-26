@@ -367,10 +367,21 @@ class Context(dict[Any, Any]):
         """This node and every one above it, up to the process."""
         return [Context(node, self._owner) for node in self._node.chain()]
 
+    def flow(self) -> dict[str, Any]:
+        """What crosses a process from here — a message, a request, another service, the
+        frontend: the flow, from this node up to its entrypoint. The global, the process and the
+        bounded context's level stay; the other side reads its own.
+
+            use_context().flow()   ->  {"tenant_id": "acme", "user_id": "ana", "carrier": "dhl"}
+                                       # not the process's "lang", not billing's "plan"
+        """
+        return self._node.flow()
+
     def to_client(self) -> dict[str, Any]:
-        """What a client — the frontend — may hold and send back: the travelling keys, a `Secret`
-        as its value."""
-        return travelling(self)
+        """What a client — the frontend — may hold and send back: the flow's travelling keys
+        (`flow`), a `Secret` as its value. What the backend owns — the process, a bounded
+        context's level, the caches, the drafts — stays in the backend."""
+        return travelling(self.flow())
 
     def share(
         self,

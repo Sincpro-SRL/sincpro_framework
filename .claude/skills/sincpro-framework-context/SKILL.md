@@ -26,7 +26,7 @@ can be persisted in a store for whoever resumes the flow.
 | Term | What it is | Kind | Import |
 |---|---|---|---|
 | `use_context(level=None)` | The context in play, from anywhere — a `dict` of what its node sees; with a level, that level's node or `None` | function | `from sincpro_framework.context import use_context` |
-| `Context` | That object: `dict` reads, navigation (`.level`, `.parent`, `.root`, `.bus`, `.entrypoint`, `.application`, `.feature`, `.hook`, `.at(level)`, `.own`, `.origin(key)`, `.lineage()`, `.execution`), writes (`[]=` / `.set`), `.scoped(...)`, `.save`, `.loaded`, `.to_client()`, `.share` (root only) | DTO | `sincpro_framework.context` |
+| `Context` | That object: `dict` reads, navigation (`.level`, `.parent`, `.root`, `.bus`, `.entrypoint`, `.application`, `.feature`, `.hook`, `.at(level)`, `.own`, `.origin(key)`, `.lineage()`, `.execution`), writes (`[]=` / `.set`), `.scoped(...)`, `.save`, `.loaded`, `.flow()` (what crosses a process), `.to_client()`, `.share` (root only) | DTO | `sincpro_framework.context` |
 | `ContextLevel` | `ROOT · BUS · ENTRYPOINT · APPLICATION · FEATURE · HOOK · SCOPE` | setting (StrEnum) | `sincpro_framework.context` |
 | `EntrypointKind` | `DIRECT · REST · RPC · GRPC · MCP · QUEUE · CRON · REMOTE` — which entrance opened the flow | setting (StrEnum) | `sincpro_framework.context` |
 | `Origin` | `(level, label, execution_id)` — who said a value | DTO | `sincpro_framework.context` |
@@ -38,7 +38,7 @@ can be persisted in a store for whoever resumes the flow.
 | `bus.context_schema(TypedDict or DTO)` | Validates and types the keys it names when a scope opens | function | method of `UseFramework` |
 | `requires_context(*keys)` | Declares keys a use case cannot run without; `ContextRequired` before the handler when missing | decorator | `sincpro_framework.context` |
 | `ContextRequired` | Raised for a declared key that is missing | DTO | `sincpro_framework.exceptions` |
-| `Secret` | pydantic's: masked on every signal, never travels, `.get_secret_value()` where it is used | DTO | `from pydantic import Secret` |
+| `Secret` | pydantic's: masked in its `repr`, travels as the value it holds, `.get_secret_value()` where it is used | DTO | `from pydantic import Secret` |
 | `ContextStore` | The one port of the context: `save(key, values, ttl)`, `load(key)`, `delete(key)`, `version(key)`, and its entries — `save_entry` / `get_entry` / `delete_entry` / `list_entries(folder)`, versioned (`EntryConflict`), each with a TTL (`entry_ttl`) — where drafts and pipeline runs are stored | port | `sincpro_framework.context` |
 | `Drafts` | `use_context().drafts(by=...)`: what a form stores between requests, by user (default), session or any keys of the context, in the context's store; `save` / `read` / `discard`, `DraftConflict`. Stored under `SINCPRO_ENTITY_DRAFT_CONTEXT`, an owner always shaped `tenant_id=…,tenant_ids=…,user_id=…` (values encoded, empty when the context says nothing) and the subject: one draft for the desktop, the browser and the phone of a user. Refuses none | class | `sincpro_framework.context` |
 | `use_context().leases()` | The `Leases` stored where the context is stored — memory, or the `KeyValueStore` of `KeyValueContexts`, shared by replicas | function | `sincpro_framework.context` |
@@ -47,7 +47,7 @@ can be persisted in a store for whoever resumes the flow.
 | `PlainCodec` / `TypedCodec(schema)` / `PickleCodec` | How a store writes a context: any language / types back / anything picklable | adapter | `sincpro_framework.context` |
 | `bus.store_context_in(store, ttl=, every=)` | The bounded context's own store (its own Redis): its level (`bus:<name>`, read by every pod), every node of its executions, its caches, idempotency, drafts, runs, leases — never the process or the global | function | method of `UseFramework` |
 | `ContextLevel.GLOBAL` | Above every process: what every service that set the same process store (`store_context_in`) shares — `use_context().at(ContextLevel.GLOBAL)` | enum member | `sincpro_framework.context` |
-| `context_propagation.inject(context)` / `context_propagation.extract(headers)` | The context as text headers and back: `baggage`, `sincpro-context`, `x-correlation-id`/`x-causation-id`/`x-execution-id` | facade | `sincpro_framework.context` |
+| `context_propagation.inject(context=None)` / `context_propagation.extract(headers)` | The flow as text headers and back — never the global, the process or a bounded context's level: `baggage`, `sincpro-context`, `x-correlation-id`/`x-causation-id`/`x-execution-id`, `x-context-node` | facade | `sincpro_framework.context` |
 | `Execution` / `use_context().execution` | `execution_id`, `causation_id`, `correlation_id`, `use_case`, `bus`, `level`, `started_at` | DTO / function | `sincpro_framework.context` |
 | `Chain.after(cause, correlation, own)` | `(causation_id, correlation_id)` of something caused — the one rule an execution and `DomainEvent.caused_by` share | DTO | `sincpro_framework.context` |
 | `Owner.of(context, by)` / `Owner.BY_TENANT` / `Owner.BY_TENANT_AND_USER` | Whose something saved is (a draft, a pipeline run, a cached answer): the keys of `by` with what the context says, encoded | DTO | `sincpro_framework.context` |
@@ -135,8 +135,15 @@ entrypoints/*                                gateways open the ENTRYPOINT themse
 - **Expecting another service to see the context without a store.** Sharing is explicit: each bus
   that shares calls `bus.store_context_in(store)` with the same store. Without it only what travelled
   in the call or the message is there.
-- **Passing values along to share them.** With a store, only an id travels (`x-context-node`): the
-  receiver reads the sender's chain from the store, fresh. Don't copy values into the DTO for that.
+- **Passing values along to share them.** The flow travels by itself — as the headers' snapshot,
+  and by `x-context-node` live from a store both sides read. Don't copy values into the DTO for that.
+- **Expecting the process, the global or a bounded context's level to reach another service.** Only
+  the flow crosses (entrypoint down): each side reads its own owned levels. A value the other side
+  needs goes on the flow — `bus.context({...})` at the entrance or `use_context().set(...)` in the
+  use case.
+- **A large value in the context.** A draft, a cached answer, a list of thousands: save it in a store
+  and put its id in the context. Past 4 KB the headers are warned about (gRPC and proxies refuse
+  8 KiB).
 - **`"user.id"` / `"tenant"`.** The framework does not read them — write `ContextKey.USER_ID` /
   `ContextKey.TENANT_ID`. Use `ContextKey.TENANT_IDS` (a list) for an execution acting across tenants.
 - **Saving a context by name to resume it elsewhere.** There is no such API: every event, queue
@@ -197,9 +204,14 @@ with siat.context({"nit_id": nit.id}):                # the caller says which te
   `TypedCodec(schema)` to get the types back in the same codebase.
 - **The process across replicas:** `use_context().root.share(store, "process:<service>", every=timedelta(seconds=5))` —
   read locally, re-read when the version moved.
-- **Across services:** buses in one process share the tree; `remote_execution` sends the whole
-  context; brokers and HTTP/gRPC use `inject`/`extract` (`baggage` + `sincpro-context` + identity);
-  the frontend gets `to_client()` and sends `sincpro-context` back.
+- **Across services — only the flow crosses:** the global, the process and a bounded context's level
+  have an owner and are read where they live; the flow (entrypoint → application → feature → scope)
+  crosses. Buses in one process share the tree; `remote_execution` sends the caller's flow; brokers
+  and HTTP/gRPC use `inject`/`extract` (`baggage` + `sincpro-context` + identity + `x-context-node`);
+  the frontend gets `to_client()` (the flow) and sends `sincpro-context` back. On the same store the
+  receiver reads the flow live; with a store of its own, the snapshot.
+- **Cache, idempotency, drafts, runs, leases never travel:** they live in the store, keyed by what
+  the context says (tenant, user, `by=`).
 - **Identity is free:** every execution has `execution_id` / `causation_id` / `correlation_id` on
   every signal; events recorded, published or saved inside an execution join its chain.
 

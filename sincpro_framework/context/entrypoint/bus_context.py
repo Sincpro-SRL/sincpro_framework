@@ -116,10 +116,6 @@ class BusContextMixin:
         context = self._get_context()
         return Context(context._node, self, writable=False)
 
-    def _inherited_context(self) -> dict[str, Any]:
-        """What the execution in progress — on this bus or the one that called it — sees."""
-        return current().named()
-
     def _set_context(self, context: Mapping[Any, Any]) -> None:
         """`self.context = {...}`: the scope of the call says exactly `context`."""
         self._get_context().replace(context)

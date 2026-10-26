@@ -14,11 +14,13 @@ the process in the process's store, a bounded context in its own.
 A bounded context may grow into a service of its own: its level and its executions never live in
 another context's store, nor in the process's — a Redis of its own is one line in its own wiring.
 
-**Only an id travels.** Handing the context on — the remote bus, a message (`inject`) — carries
-`sincpro.context_node`, the node in play. A receiving bus that set the store opens its entrance
-under the sender's nodes, read back from the store: what the sender's ApplicationService wrote is
-what the receiver's Feature reads, and a value written after the hand-off is read fresh. The
-sender's nodes are read here, never written; the sender's process never reaches the receiver.
+**The flow travels, and its id.** Handing the context on — the remote bus, a message (`inject`) —
+carries the flow (`ContextNode.flow`) and `sincpro.context_node`, the node in play. A receiving bus
+that set the same store opens its entrance under the sender's nodes, read back from the store:
+what the sender's ApplicationService wrote is what the receiver's Feature reads, and a value written
+after the hand-off is read fresh; on a store of its own it reads the flow as it was handed on. The
+sender's nodes are read here, never written; the sender's process, global and bounded context's
+level never reach the receiver.
 
 **Reads stay local.** A node of this execution is written through on each write; the sender's
 nodes, the bounded context's level, the process and the global are refreshed by their version at
