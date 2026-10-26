@@ -232,7 +232,7 @@ class Envelope(DataTransferObject):
             }
         )
         headers = envelope.as_headers()
-        headers = {**context_propagation.inject(context_scopes.live()), **headers}
+        headers = {**context_propagation.inject(context_scopes.flow()), **headers}
         if isinstance(message, DomainEvent):
             headers[EVENT_HEADER] = message.name
         return headers

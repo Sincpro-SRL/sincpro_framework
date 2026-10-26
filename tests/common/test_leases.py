@@ -182,8 +182,8 @@ class WithoutReplace(KeyValueStore):
     def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
         return self.inner.add(key, value, ttl)
 
-    def increment(self, key: str) -> int:
-        return self.inner.increment(key)
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
+        return self.inner.increment(key, ttl)
 
     def delete(self, key: str) -> None:
         self.inner.delete(key)

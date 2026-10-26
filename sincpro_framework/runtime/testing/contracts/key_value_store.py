@@ -96,6 +96,23 @@ class KeyValueStoreContract:
         if store.increment("counted") != self.racers + 1:
             raise AssertionError("racing increments lost a count")
 
+    def test_a_counter_with_a_ttl_is_gone_after_it_and_one_without_keeps_its_own(
+        self,
+    ) -> None:
+        """`increment` with a ttl counts on and expires after it; without one, the expiry the
+        counter had stays. Uses `expire`."""
+        store = self.make_store()
+        store.increment("versioned", ttl=timedelta(seconds=1))
+        if store.increment("versioned", ttl=timedelta(seconds=1)) != 2:
+            raise AssertionError("a counter with a ttl did not count on")
+        store.increment("versioned")
+        store.increment("kept")
+        self.expire(store, 1.5)
+        if store.get("versioned") is not None:
+            raise AssertionError("a counter outlived its ttl")
+        if store.increment("kept") != 2:
+            raise AssertionError("a counter without a ttl expired")
+
     def test_delete_removes_and_tolerates_a_missing_key(self) -> None:
         """`delete` removes a key, and deleting a key that is not there does not raise."""
         store = self.make_store()

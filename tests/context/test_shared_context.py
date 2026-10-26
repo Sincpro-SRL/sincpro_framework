@@ -17,7 +17,12 @@ from typing import Any
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context import ContextLevel, InMemoryContexts, use_context
+from sincpro_framework.context import (
+    ContextLevel,
+    InMemoryContexts,
+    store_context_in,
+    use_context,
+)
 from sincpro_framework.context.adapters.propagation import extract
 from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.context.services.propagation import inject
@@ -337,35 +342,144 @@ def test_a_value_service_a_wrote_is_read_by_the_context_it_calls_on_another_serv
 # --- the process and the global level -----------------------------------------------------------
 
 
-def test_the_process_level_is_kept_per_service():
-    store = InMemoryContexts()
-    bus = UseFramework("shared-context-process", log_after_execution=False)
-    bus.store_context_in(store)
-
-    use_context().root.set("flag", 1)
-
-    kept = store.load(f"process:{bus.observability.identity.service_name}")
-    assert kept is not None and kept["flag"] == 1
-
-
-def test_the_global_level_is_seen_by_every_sharing_bus():
-    store = InMemoryContexts()
+def test_the_process_and_the_global_levels_live_on_the_processs_store():
+    process = InMemoryContexts()
+    store_context_in(process)
     read: list[Any] = []
-    billing = UseFramework("shared-context-global-reader", log_after_execution=False)
-    billing.store_context_in(store)
+    bus = UseFramework("shared-context-process", log_after_execution=False)
 
-    @billing.feature(CommandReadGlobal)
+    @bus.feature(CommandReadGlobal)
     class ReadGlobal(Feature):
         def execute(self, dto: CommandReadGlobal) -> None:
             read.append(self.context.get("maintenance"))
 
+    bus(CommandReadGlobal())
+    use_context().root.set("flag", 1)
     global_level = use_context().at(ContextLevel.GLOBAL)
     assert global_level is not None
     global_level.set("maintenance", True)
-    _in_a_new_thread(lambda: billing(CommandReadGlobal()))
+    _in_a_new_thread(lambda: bus(CommandReadGlobal()))
 
-    assert read == [True]
-    assert store.load("global") == {"maintenance": True}
+    kept = process.load(f"process:{bus.observability.identity.service_name}")
+    assert kept is not None and kept["flag"] == 1
+    assert process.load("global") == {"maintenance": True}
+    assert read == [None, True]
+
+
+def test_a_bounded_context_with_a_store_of_its_own_never_holds_the_process_level():
+    process, billing_store = InMemoryContexts(), InMemoryContexts()
+    store_context_in(process)
+    billing = UseFramework("shared-context-own-store", log_after_execution=False)
+    billing.store_context_in(billing_store)
+
+    @billing.feature(CommandReadGlobal)
+    class ReadGlobal(Feature):
+        def execute(self, dto: CommandReadGlobal) -> None:
+            self.context["seen"] = True
+
+    billing(CommandReadGlobal())
+    use_context().root.set("flag", 1)
+
+    service = billing.observability.identity.service_name
+    assert billing_store.load(f"process:{service}") is None
+    assert billing_store.load("global") is None
+    kept = process.load(f"process:{service}")
+    assert kept is not None and kept["flag"] == 1
+    assert billing.store() is billing_store
+
+
+def test_a_bounded_context_alone_shares_its_own_level_and_not_the_process():
+    billing_store = InMemoryContexts()
+    billing = UseFramework("shared-context-alone", log_after_execution=False)
+    billing.store_context_in(billing_store)
+
+    @billing.feature(CommandReadGlobal)
+    class ReadGlobal(Feature):
+        def execute(self, dto: CommandReadGlobal) -> None:
+            pass
+
+    billing(CommandReadGlobal())
+
+    assert use_context().at(ContextLevel.GLOBAL) is None
+    assert billing_store.load("global") is None
+
+
+def test_a_bounded_context_alone_shares_what_its_feature_wrote_on_its_own_level():
+    """No process store: the bounded context's store still holds every node of its executions —
+    what a Feature wrote on its own node reaches the receiver it handed the context to."""
+    store = InMemoryContexts()
+    sent: list[dict[str, str]] = []
+    read: list[dict[str, Any]] = []
+    orders = UseFramework("shared-context-feature-level", log_after_execution=False)
+    orders.store_context_in(store)
+
+    @orders.feature(CommandPublishOrder)
+    class PublishOrder(Feature):
+        def execute(self, dto: CommandPublishOrder) -> None:
+            use_context().set("shipper", "dhl")
+            sent.append(inject(use_context()))
+
+    shipping = UseFramework(
+        "shared-context-feature-level-receiver", log_after_execution=False
+    )
+    shipping.store_context_in(store)
+
+    @shipping.feature(CommandBill)
+    class Ship(Feature):
+        def execute(self, dto: CommandBill) -> None:
+            read.append({"shipper": use_context().get("shipper")})
+
+    orders(CommandPublishOrder())
+    _received(shipping, sent[0], CommandBill())
+
+    assert use_context().at(ContextLevel.GLOBAL) is None
+    assert read == [{"shipper": "dhl"}]
+
+
+# --- a bounded context's own level, across its pods ---------------------------------------------
+
+
+def _pod(store: InMemoryContexts, read: list[Any]) -> UseFramework:
+    """One pod of the bounded context `shared-context-pods`, sharing its context through `store`."""
+    pod = UseFramework("shared-context-pods", log_after_execution=False)
+    pod.store_context_in(store, every=timedelta(0))
+
+    @pod.feature(CommandReadGlobal)
+    class ReadPlan(Feature):
+        def execute(self, dto: CommandReadGlobal) -> None:
+            read.append(self.context.get("plan"))
+
+    @pod.feature(CommandPublishOrder)
+    class PublishMaintenance(Feature):
+        def execute(self, dto: CommandPublishOrder) -> None:
+            bus_level = use_context().bus
+            assert bus_level is not None
+            bus_level.set("maintenance", True)
+
+    return pod
+
+
+def test_what_one_pod_publishes_for_its_bounded_context_every_pod_reads():
+    store = InMemoryContexts()
+    read: list[Any] = []
+    first, second = _pod(store, read), _pod(store, read)
+
+    with first.context({"plan": "pro"}, global_scope=True):
+        _in_a_new_thread(lambda: second(CommandReadGlobal()))
+    _in_a_new_thread(lambda: second(CommandReadGlobal()))
+
+    assert read == ["pro", None]
+    assert store.load("bus:shared-context-pods") == {}
+
+
+def test_a_global_scope_block_puts_back_only_its_own_keys():
+    store = InMemoryContexts()
+    first, second = _pod(store, []), _pod(store, [])
+
+    with first.context({"plan": "pro"}, global_scope=True):
+        _in_a_new_thread(lambda: second(CommandPublishOrder()))
+
+    assert store.load("bus:shared-context-pods") == {"maintenance": True}
 
 
 # --- what the store is given --------------------------------------------------------------------

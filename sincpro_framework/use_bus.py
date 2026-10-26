@@ -444,8 +444,9 @@ class UseFramework(
            own — and its own handlers — and nothing the running one holds is touched.
         2. Dependencies, error chains and the settings each bus is created with.
         3. The handlers wrapped by their interceptors and bound to this bus's context.
-        Final: the generation answers from here; observability starts with the first one. A build
-        that raises leaves the generation that was answering as it was.
+        Final: the generation answers from here; observability starts with the first one, and
+        the process joins the process's store once one is set. A build that raises leaves the
+        generation that was answering as it was.
         """
         self._sp_container.feature_bus.reset()
         self._sp_container.app_service_bus.reset()
@@ -466,6 +467,7 @@ class UseFramework(
 
         if self.bus is None:
             self.observability.start(self.logger)
+        self._process_joined()
         self.bus = bus
         self._built_revision = self._revision
         # Last, so a thread that reads the flag without the lock never sees a bus half wired.

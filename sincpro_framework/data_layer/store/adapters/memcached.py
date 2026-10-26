@@ -53,11 +53,13 @@ class MemcachedKeyValue(ClientKeyValue):
                 self.client.add(self.prefix + key, value, expire=_seconds(ttl), noreply=False)
             )
 
-    def increment(self, key: str) -> int:
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
         """`incr`, and an `add` of `1` for a counter that is not there yet.
 
         1. `incr` by one — Memcached answers `None` for a missing key instead of creating it.
-        2. Missing: `add` writes `1`, with no expiry, and answers 1.
+           1.1 With `ttl`, a `touch` renews its expiry right after — Memcached has no command
+               that does both; the counter it touches already had an expiry of its own.
+        2. Missing: `add` writes `1`, with `ttl` (none when unsaid), and answers 1.
            2.1 Another client created it in between: `add` loses, back to step 1.
         Final: the counter after this caller's addition.
 
@@ -69,8 +71,12 @@ class MemcachedKeyValue(ClientKeyValue):
             while True:
                 counted = self.client.incr(self.prefix + key, 1, noreply=False)
                 if counted is not None:
+                    if ttl is not None:
+                        self.client.touch(self.prefix + key, _seconds(ttl), noreply=False)
                     return int(counted)
-                if self.client.add(self.prefix + key, b"1", expire=0, noreply=False):
+                if self.client.add(
+                    self.prefix + key, b"1", expire=_seconds(ttl), noreply=False
+                ):
                     return 1
 
     def delete(self, key: str) -> None:

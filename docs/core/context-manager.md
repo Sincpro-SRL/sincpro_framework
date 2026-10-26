@@ -65,6 +65,11 @@ ROOT          the process                       defaults, flags, settings
 Each node holds only its own values and a pointer to its parent. **Reading walks up and the nearest
 node wins** — a React provider's rule. Closing a node is returning to its parent.
 
+Every moment of a repository's hook runs in a `HOOK` node of its own, so what a hook writes never
+lands on the Feature that called the repository. The moments of a reading — `after_read`, once per
+row, and `after_search`, once per page — keep that node in this process: a bus that shares its
+context saves no node per row read.
+
 ```python
 assert [one.level for one in check.lineage()] == [
     ContextLevel.FEATURE,
@@ -273,33 +278,99 @@ except exceptions.ContextRequired as refused:
 
 ## Shared across services: the same tree, persisted in a store
 
-A bus that says so persists its context in a store — Redis through `KeyValueContexts(RedisKeyValue(redis))`.
-The API does not change: `self.context`, `use_context()`, `bus.context(...)` and the levels read and
-write as always; only where each node is stored changes. Nothing is shared by default, and no
-environment variable turns it on.
+Each level is stored where the one who owns it says: the process in the process's store, a bounded
+context in its own. Redis through `KeyValueContexts(RedisKeyValue(redis))`. The API does not change:
+`self.context`, `use_context()`, `bus.context(...)` and the levels read and write as always; only
+where each one is stored changes. Nothing is shared by default, and no environment variable turns
+it on.
 
 ```text
-billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))      each bus that shares, in code
+store_context_in(KeyValueContexts(RedisKeyValue(redis)))                  the process, in code
+billing.store_context_in(KeyValueContexts(RedisKeyValue(billing_redis)))  a bounded context, in code
 
-global          use_context().at(ContextLevel.GLOBAL) — every service and replica that set the store
- └ process      this service's replicas — never another service
-    └ bus       local
-       └ entrypoint → application → feature → hook → scope    one node per execution, stored
+global          "global"             the process's store — every service that set it
+ └ process      "process:<service>"  the process's store — this service's replicas
+    └ bus       "bus:<name>"         the bounded context's store — every pod of it
+       └ entrypoint → application → feature → hook → scope
+                "node:<id>"          the bounded context's store — one node per execution
 ```
 
-- **Across a queue or the remote bus only an id travels** (`x-context-node`, beside the identity):
-  the receiving bus that set the same store opens under the sender's nodes, read back from the
-  store. What service A's ApplicationService wrote — `self.context["discount"] = 10` — service B's
-  Feature reads with `self.context.get("discount")`, even when A wrote it after handing on.
+- **The process and the global are the process's**, shared from the first execution of any bus once
+  `store_context_in(...)` is set — never through a bounded context's store.
+- **A bounded context's own level is read by all its pods**: what `with billing.context({...},
+  global_scope=True)` or `use_context().bus.set(...)` writes in one pod, every pod of billing reads
+  within `every`. A `global_scope` block puts back only its own keys when it ends.
+- **Across a queue or the remote bus the flow travels twice** — as the headers' snapshot, and as
+  the id of the node in play (`x-context-node`). A receiving bus that set the same store opens under
+  the sender's nodes, read back from the store: what service A's ApplicationService wrote —
+  `self.context["discount"] = 10` — service B's Feature reads with `self.context.get("discount")`,
+  even when A wrote it after handing on. With a store of its own it reads the snapshot (see
+  "What crosses a process").
 - **The sender's nodes are read, never written**; B's writes land on B's nodes, by the rules above.
 - **No collision**: every node has its own id (the execution's), so five requests are five chains;
   the process is stored per service; only `ContextLevel.GLOBAL` is one for everyone.
 - Two projects that set the same store (same prefix) share as well; the default codec is plain JSON,
   so they need no classes in common.
-- `store_context_in(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))`: a node lives `ttl`;
+- `bus.store_context_in(store, ttl=timedelta(hours=24), every=timedelta(seconds=1))`: a node lives `ttl`;
   what others wrote is read again at most once per `every`.
 
 See `docs/prd/PRD_24_shared-context.md`.
+
+## A Redis of its own per bounded context
+
+A bounded context may grow into a service of its own, so everything it stores can live on a store
+of its own — its level, its executions, its caches, idempotency, drafts, pipeline runs, leases —
+while the rest stays on the process's. The address is configuration, by the settings cascade: a
+shared field every context inherits, overridden by the context that needs its own.
+
+```python
+from sincpro_framework.settings import SincproConfig
+
+
+class SharedSettings(SincproConfig):
+    redis_url: str = "redis://localhost:6379/0"
+
+
+class BillingSettings(SharedSettings): ...
+
+
+class ServiceSettings(SharedSettings):
+    billing: BillingSettings
+```
+
+```yaml
+my_service:
+  redis_url: $ENV:REDIS_URL
+  billing:
+    redis_url: $ENV:BILLING_REDIS_URL      # absent: billing inherits the shared one
+```
+
+```python
+from sincpro_framework import UseFramework
+from sincpro_framework.context import KeyValueContexts, store_context_in
+from sincpro_framework.data_layer.store import InMemoryKeyValue
+
+# the service's wiring: the process level, the global, every context without a store of its own
+store_context_in(InMemoryKeyValue())   # RedisKeyValue(redis.Redis.from_url(settings.redis_url))
+
+# billing/infrastructure/dependencies.py — billing's own, beside its database
+# (Repository(Database(settings.billing.database_url)))
+invoicing = UseFramework("invoicing", log_after_execution=False)
+invoicing.store_context_in(
+    KeyValueContexts(InMemoryKeyValue())   # RedisKeyValue(redis.Redis.from_url(settings.billing.redis_url))
+)
+```
+
+| What | Without `billing.store_context_in` | With it |
+|---|---|---|
+| `bus.cache`, `bus.idempotency`, `bus.cache.queries` | the process's store, keyed by `billing` | billing's store |
+| drafts, pipeline runs, leases, circuits in billing's executions | the process's store | billing's store |
+| billing's own level (`bus:billing`) | in each pod | billing's store — every pod reads it |
+| billing's execution nodes, handed on by id | not stored | billing's store |
+| the process level and the global | the process's store | the process's store |
+
+Moving billing out of the service later changes none of its code: its store already holds only
+what is billing's.
 
 ## Where the context is stored
 
@@ -318,6 +389,23 @@ contexts = store_context_in(KeyValueContexts(InMemoryKeyValue()))   # RedisKeyVa
 assert use_context().root.get(ContextStore) is contexts             # the process's
 sales.store_context_in(contexts)                                    # or one bus: its own store
 ```
+
+What a `KeyValueContexts` writes on Redis, under its prefix (`sincpro:context` by default):
+
+| Key | What | Lives |
+|---|---|---|
+| `global`, `process:<service>` | the global and the process level | until deleted |
+| `bus:<name>` | a bounded context's own level | until deleted |
+| `node:<id>`, `node:<id>:meta` | one node of an execution: its values, its parent, level and label | the bus's `ttl` (24 h) |
+| `…:version` beside each | moved on every write, with the key's ttl — what a reader compares | as its key |
+| `entries:…` | drafts and pipeline runs, each with a version | `entry_ttl` (7 days) from its last save |
+| `lease:…` | leases: a name held by one owner at a time | the lease's own time |
+
+Beside them, on the same `KeyValueStore`, in sections of their own: `bus.cache`, `bus.idempotency`,
+the query cache and the circuit breakers (`sincpro:circuit_breaker:<name>:…`). **None of it is ever
+a value of the context**: the context holds the keys that address it — a tenant, a user, a node's
+id — and the data stays in the store. A cache is keyed by its owner (`tenant_id`, `user_id`, the
+keys of `vary_by`) read from the context of the call; a draft by the keys `by=` names.
 
 The store holds, each under a prefix of its own and each reached from the context — never as values
 inside a node, which would be copied at every read and die with their scope: the [drafts](drafts.md)
@@ -343,19 +431,77 @@ lacking a value's class reads the context without that key, with a warning).
 **The process level, shared by every replica**:
 
 ```python
-use_context().root.share(KeyValueContexts(InMemoryKeyValue()), every=timedelta(seconds=5))
+use_context().root.share(KeyValueContexts(InMemoryKeyValue()), "process:billing", every=timedelta(seconds=5))
 use_context().root.set("maintenance", False)            # every replica reads it within 5 s
 ```
 
-Read locally, read again only when the store's version moved — never a network call per read.
+Read locally, read again only when the store's version moved — never a network call per read. A
+write lands on the latest values (`ContextStore.change`, compared before it writes): a replica
+writing `plan` never erases the `maintenance` another wrote. A default the code seeds is added when
+the store lacks it, so one a later release brings reaches every replica, and a value a replica saved
+wins. A value that does not travel — an object, a settings instance — stays in its process and is
+never dropped by a refresh. The same holds for `ContextLevel.GLOBAL`.
 
-## Across services, brokers and the frontend
+## What crosses a process — and what stays
 
-| Transport | How the context crosses |
+**Each level has an owner, and only the flow crosses.** The global, the process and a bounded
+context's level belong to someone and are read where they live, on their owner's store; the other
+side of a message reads its own. What crosses — to a queue, another service, the frontend — is the
+flow: what the request said at its entrance and what its use cases wrote, from the entrypoint down.
+
+| Level | Owner | Lives on | Crosses a process |
+|---|---|---|---|
+| global | the organization | the process store | never — every service that set the store reads it there |
+| process | the service | the process store | never — each service reads its own |
+| bus | the bounded context | its own store | never — each bounded context reads its own |
+| entrypoint → application → feature → scope | the flow (the request) | the bounded context's store | always |
+| hook (`after_read`, `after_search`) | the hook | this process only | never |
+
+`use_context().flow()` answers what crosses from where it is read; `inject`, `to_client()`, the
+envelope of a published message and the remote bus all carry exactly that. A value the flow said
+wins on the other side over that side's own levels — a request asked for French, so the receiver
+answers in French; a value the flow never said is read from the receiver's own process or bounded
+context. A plain mapping handed to `inject({...})` is the caller's word, carried as given.
+
+### Two channels, one flow
+
+| Header | Carries | For |
+|---|---|---|
+| `x-correlation-id` · `x-causation-id` · `x-execution-id` | the identity | every transport, always |
+| `sincpro-context` | the flow's travelling keys, as JSON (lists and one-level mappings too) | the snapshot every receiver reads |
+| `baggage` | the flow's scalars, W3C | OpenTelemetry and any other stack |
+| `x-context-node` | the id of the node in play, when its bus stores its context | a receiver on the same store: the flow read live |
+| `traceparent` · `tracestate` | the trace (`trace_id`, `span_id`, `carrier` never travel in the context) | the trace |
+
+What the receiver reads depends only on the store it reads:
+
+| Receiver | Reads the flow | Written after the hand-off |
+|---|---|---|
+| the same store as the sender | from the store, by `x-context-node` — live | read |
+| a store of its own (one Redis per bounded context) | from `sincpro-context` — the snapshot | not read: only one store sees it |
+| only the ids reached it | nothing but the identity | not read |
+
+A bounded context with a Redis of its own is never coupled to another's: the snapshot is enough
+for the tenant, the user, the language and what the use cases wrote. Reading what the sender wrote
+after the hand-off would mean reading the sender's store — that is the price of separating them.
+
+### How much a header weighs
+
+Only simple values travel: text, numbers, booleans, lists of them, a one-level mapping of those,
+and a `Secret` as the value it holds. An object, a connection or a callable stays in its process,
+warned about the first time. A typical flow — tenant, user, language, a few values the use cases
+wrote — weighs well under 1 KB; gRPC metadata, a W3C baggage and an nginx header buffer take 8 KiB
+by default. Past `CONTEXT_BYTES` (4 KB) the context is carried all the same and warned about once,
+naming its largest key: **a large value belongs in a store, the context carrying its id** — a draft,
+a cached answer, a file are never values of the context.
+
+### Transports
+
+| Transport | What crosses |
 |---|---|
 | A bus calling another, one process | the whole tree: the callee runs under the caller's node |
-| `remote_execution` (HTTP, gRPC) | the whole context of the caller as one packed header, caused by the calling execution |
-| A broker (FastStream), an HTTP or gRPC entrance | `context_propagation.inject` / `context_propagation.extract`: `baggage` (W3C), `sincpro-context` (JSON, lists too), the identity headers |
+| `remote_execution` (HTTP, gRPC) | the caller's flow as one packed header, caused by the calling execution |
+| A broker (FastStream), an HTTP or gRPC entrance | `context_propagation.inject` / `context_propagation.extract` |
 | The frontend | `use_context().to_client()` out; the `sincpro-context` header back, read by every HTTP entrance |
 
 ```python
@@ -375,15 +521,23 @@ class Publish(Feature):
         seen.append(context_propagation.inject(use_context()))   # what a message or a request carries
 
 
-with messages.context({"tenant_id": "acme", "tenant_ids": ["acme", "beta"]}):
-    messages(CommandPublish())
+with messages.context({"plan": "pro"}, global_scope=True):      # the bounded context's own level
+    with messages.context({"tenant_id": "acme", "tenant_ids": ["acme", "beta"]}):
+        messages(CommandPublish())
 
 carried = context_propagation.extract(seen[-1])                 # what the other side opens its flow with
 assert carried["tenant_ids"] == ["acme", "beta"] and "causation_id" in carried
+assert "plan" not in carried                                    # the receiver reads its own level
 ```
 
-Only what is simple travels: text, numbers, booleans and lists of them, and a `Secret` as the value
-it holds. An object or a connection stays in its process, with a warning the first time.
+### The frontend
+
+The browser is one more receiver. `to_client()` gives it the flow — the tenant, the user, the
+language of the request, what the use cases wrote — and the frontend sends it back in the
+`sincpro-context` header; every HTTP entrance opens its flow with it. What the backend owns stays in
+the backend: the process and the bounded context's levels, the caches, the idempotency records, the
+leases. A draft reaches the frontend as the answer of a use case (`Edit`, `Get(draft=True)`), never
+as context; the frontend's own cache of answers (React Query, SWR) is the frontend's business.
 
 ## Execution identity
 

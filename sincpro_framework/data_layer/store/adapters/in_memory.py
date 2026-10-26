@@ -65,19 +65,21 @@ class InMemoryKeyValue(KeyValueStore):
             self._values[key] = (value, self._expiry(ttl))
             return True
 
-    def increment(self, key: str) -> int:
-        """The counter stored as its decimal text, like Redis; the incremented value is stored
-        with no expiry, whatever the key had.
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
+        """The counter stored as its decimal text, like Redis — with `ttl`, a fresh expiry;
+        without, the one the key had.
 
             store.increment("failures")   ->  1          # stored as b"1"
             store.increment("failures")   ->  2
+            store.increment("v", timedelta(seconds=5))   ->  1, gone in 5 seconds
             store.set("n", b"x"); store.increment("n")   ->  ValueError: not a number
 
         An expired value counts as absent: the count starts again at 1."""
         with self._lock:
             current = self._live(key)
             counted = (int(current) if current is not None else 0) + 1
-            self._values[key] = (str(counted).encode(), None)
+            kept = self._values[key][1] if current is not None else None
+            self._values[key] = (str(counted).encode(), self._expiry(ttl) if ttl else kept)
             return counted
 
     def delete(self, key: str) -> None:

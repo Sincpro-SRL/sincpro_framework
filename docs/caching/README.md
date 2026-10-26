@@ -713,7 +713,7 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 
 | | |
 |---|---|
-| `KeyValueStore` | `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic), `get` |
+| `KeyValueStore` | `get_many`, `set`, `add` (atomic), `increment(key, ttl=)` (atomic, the ttl with it), `delete`, `take` (atomic), `get` |
 | `InMemoryKeyValue(now=)` / `RedisKeyValue(client, prefix=)` / `MemcachedKeyValue(client, prefix=)` | the providers |
 | `QueryCaching(store, near=, sensitive=, namespace=, enabled=, bus=)` | `.on(bus, Query, QueryCachePolicy(...))`, `.invalidate(Aggregate)`, `.invalidated_by({Event: [Aggregate]})` (a bus of the kind of `bus=` or of the first `.on()`), `.depends_on(query)`, `.policies()` |
 | `Cache(store=None, namespace=, enabled=, observer=, eviction=, bypass_for=)` | `.get_or_compute(key, compute, CachePolicy(freshness=, validation=, failure=, wait_for_others=, max_bytes=), codec)`, `.forget(key)` |

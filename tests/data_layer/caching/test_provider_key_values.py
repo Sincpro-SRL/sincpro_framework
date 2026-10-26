@@ -41,6 +41,14 @@ class TestMemcachedKeyValue(KeyValueStoreContract):
     def test_increment_starts_at_one_and_counts_every_racer(self) -> None: ...
 
     @pytest.mark.skip(
+        reason="pymemcache's MockMemcacheClient adds Python objects on incr, where memcached "
+        "keeps decimal text; TestMemcachedKeyValueOnAServer runs it against a real one"
+    )
+    def test_a_counter_with_a_ttl_is_gone_after_it_and_one_without_keeps_its_own(
+        self,
+    ) -> None: ...
+
+    @pytest.mark.skip(
         reason="pymemcache's MockMemcacheClient has no gets/cas; "
         "TestMemcachedKeyValueOnAServer runs take against a real one"
     )

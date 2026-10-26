@@ -152,12 +152,13 @@ class DynamoKeyValue(ClientKeyValue):
                 raise
             return True
 
-    def increment(self, key: str) -> int:
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
         """`ADD` on a live counter; an expired one is deleted first — by whoever gets there
         first, the others find it gone — and counted again from zero.
 
         1. `UpdateItem ADD count 1`, on the condition that the item has no expiry or it is
-           still ahead — a missing item is created at 1.
+           still ahead — a missing item is created at 1. With `ttl`, the same update sets
+           `expires_at`: the count and its expiry in one write.
         2. The condition refused: the item expired. Deleted on the condition that it still is,
            a refusal there meaning another caller already cleared or renewed it; back to 1.
         Final: the counter after this caller's addition.
@@ -171,16 +172,19 @@ class DynamoKeyValue(ClientKeyValue):
         with self._reaching():
             while True:
                 try:
+                    now = self.clock()
+                    values = {":one": {"N": "1"}, ":now": {"N": str(now)}}
+                    expression = "ADD #n :one"
+                    if ttl is not None:
+                        values[":until"] = {"N": str(now + max(ttl.total_seconds(), 0.001))}
+                        expression = "ADD #n :one SET #e = :until"
                     answer = self.client.update_item(
                         TableName=self.table,
                         Key=self._key(key),
-                        UpdateExpression="ADD #n :one",
+                        UpdateExpression=expression,
                         ConditionExpression="attribute_not_exists(#e) OR #e > :now",
                         ExpressionAttributeNames={"#n": COUNT, "#e": EXPIRES_AT},
-                        ExpressionAttributeValues={
-                            ":one": {"N": "1"},
-                            ":now": {"N": str(self.clock())},
-                        },
+                        ExpressionAttributeValues=values,
                         ReturnValues="UPDATED_NEW",
                     )
                     return int(answer["Attributes"][COUNT]["N"])

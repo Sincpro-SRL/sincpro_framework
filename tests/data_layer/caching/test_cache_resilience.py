@@ -79,9 +79,9 @@ class FlakyStore(KeyValueStore):
         self._operated()
         return self.inner.add(key, value, ttl)
 
-    def increment(self, key: str) -> int:
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
         self._operated(writing=True)
-        return self.inner.increment(key)
+        return self.inner.increment(key, ttl)
 
     def delete(self, key: str) -> None:
         self._operated()

@@ -1,22 +1,30 @@
-"""The context saved in a store — the same tree, its nodes saved where every service that set the
-store reads them.
+"""The context saved in a store — the same tree, each level saved where the one who owns it said:
+the process in the process's store, a bounded context in its own.
 
-    billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))    said by each bus that shares
+    store_context_in(KeyValueContexts(RedisKeyValue(redis)))              the process
+    billing.store_context_in(KeyValueContexts(RedisKeyValue(billing_redis)))   a bounded context
 
-    global          "global"                    every service and replica that set the store
-     └ process      "process:<service>"         this service's replicas, never another service
-        └ bus       — saved nowhere: what a bus publishes is its own
+    global          "global"                    the process's store: every service that set it
+     └ process      "process:<service>"         the process's store: this service's replicas
+        └ bus       "bus:<name>"                the bounded context's store: its N pods
            └ entrypoint → application → feature → hook → scope
-                    "node:<id>" + "node:<id>:meta"     one node per execution, written through
+                    "node:<id>" + "node:<id>:meta"     the bounded context's store: one node per
+                                                       execution, written through
 
-**Only an id travels.** Handing the context on — the remote bus, a message (`inject`) — carries
-`sincpro.context_node`, the node in play. A receiving bus that set the store opens its entrance
-under the sender's nodes, read back from the store: what the sender's ApplicationService wrote is
-what the receiver's Feature reads, and a value written after the hand-off is read fresh. The
-sender's nodes are read here, never written; the sender's process never reaches the receiver.
+A bounded context may grow into a service of its own: its level and its executions never live in
+another context's store, nor in the process's — a Redis of its own is one line in its own wiring.
+
+**The flow travels, and its id.** Handing the context on — the remote bus, a message (`inject`) —
+carries the flow (`ContextNode.flow`) and `sincpro.context_node`, the node in play. A receiving bus
+that set the same store opens its entrance under the sender's nodes, read back from the store:
+what the sender's ApplicationService wrote is what the receiver's Feature reads, and a value written
+after the hand-off is read fresh; on a store of its own it reads the flow as it was handed on. The
+sender's nodes are read here, never written; the sender's process, global and bounded context's
+level never reach the receiver.
 
 **Reads stay local.** A node of this execution is written through on each write; the sender's
-nodes, the process and the global are refreshed by their version at most once per `every`.
+nodes, the bounded context's level, the process and the global are refreshed by their version at
+most once per `every`.
 
 Only the standard library and the domain: the buses import this, nothing here imports a bus.
 """
@@ -33,6 +41,8 @@ from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.infrastructure.shared import SharedValues
 
 GLOBAL_KEY = "global"
+PROCESS_EVERY = timedelta(seconds=1)
+"""How often a replica reads again what another wrote on the process and the global levels."""
 CHAIN_LIMIT = 64
 """Nodes read back from a sender's chain at most — a guard against a cycle in what was saved."""
 
@@ -241,17 +251,25 @@ def sharing_of(node: ContextNode | None) -> ContextSharing | None:
     return None
 
 
-def joined(root: ContextNode, sharing: SharedContext, service: str) -> None:
-    """The process `root` joins the store: its own values saved for this service's replicas, the
-    global node above it shared by every service that set the store. Once per process."""
+def joined(root: ContextNode, store: ContextStore, every: timedelta, service: str) -> None:
+    """The process `root` joins the process's store (`store_context_in`): its own values saved
+    for this service's replicas, the global node above it shared by every service that set the
+    store. What is joined already stays as it is.
+
+        joined(ROOT, contexts, timedelta(seconds=1), "sincpro-odoo")
+            ->  ROOT reads and writes "process:sincpro-odoo", its parent the global "global"
+
+    Context: a process has one process level and one global, so they live on the process's
+    store — never on a bounded context's, which holds that context's own level and its
+    executions (`bus.store_context_in`). One set by hand (`root.share`) is left in place."""
     if not isinstance(root.values, SharedValues):
         root.values = SharedValues(
-            sharing.store, f"process:{service}", sharing.every, seed=root.values.current
+            store, f"process:{service}", every, seed=root.values.current
         )
     if root.parent is None:
         root.parent = ContextNode(
             ContextLevel.GLOBAL,
             None,
-            SharedValues(sharing.store, GLOBAL_KEY, sharing.every),
+            SharedValues(store, GLOBAL_KEY, every),
             label="global",
         )

@@ -1,7 +1,8 @@
 """`context_propagation`: the context across a transport made of text headers, as the wires
 and the brokers reach it.
 
-    headers = context_propagation.inject(use_context())    what a message or a request carries
+    headers = context_propagation.inject(use_context())    what a message or a request carries:
+                                                           the flow, never a level with an owner
     context = context_propagation.extract(headers)         what an entrance opens its flow with
     context_propagation.identity_headers                   {"x-correlation-id": "correlation_id", …}
     context_propagation.trace_keys                         what travels in the trace's own headers
@@ -15,6 +16,7 @@ from typing import Any
 
 from sincpro_framework.context.adapters.propagation import IDENTITY_HEADERS, extract
 from sincpro_framework.context.domain.keys import PLUMBING
+from sincpro_framework.context.entrypoint.facade import Context
 from sincpro_framework.context.services.propagation import inject
 
 
@@ -38,14 +40,20 @@ class ContextPropagation:
         the context never carries them: `{"trace_id", "span_id", "carrier"}`."""
         return PLUMBING
 
-    def inject(self, context: Mapping[Any, Any]) -> dict[str, str]:
-        """The headers that carry `context` — caused by the execution in play, in its flow.
+    def inject(self, context: Mapping[Any, Any] | None = None) -> dict[str, str]:
+        """The headers that carry the flow — of `context` when it is one `use_context()`
+        answered, of the node in play when none is given — caused by the execution in play.
 
-        context_propagation.inject({"tenant_id": "acme"})      # inside execution E1 of flow C
+        context_propagation.inject(use_context())               # inside execution E1 of flow C
             ->  {"x-correlation-id": "C", "x-causation-id": "E1",
                  "sincpro-context": '{"tenant_id":"acme",…}', "baggage": "tenant_id=acme,…"}
+        context_propagation.inject({"tenant_id": "beta"})       ->  exactly what was given
+
+        Context: what crosses is the flow (`Context.flow`); the global, the process and the
+        bounded context's level stay — the other side reads its own. A plain mapping is the
+        caller's word and is carried as given.
         """
-        return inject(context)
+        return inject(context.flow() if isinstance(context, Context) else context)
 
     def extract(self, headers: Mapping[str, Any]) -> dict[str, Any]:
         """The context a request or a message carried — header names read in any case.

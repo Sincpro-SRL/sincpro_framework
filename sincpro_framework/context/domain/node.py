@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 from sincpro_framework.context.domain.execution import Execution
 from sincpro_framework.context.domain.level import (
+    OWNED_LEVELS,
     SCOPES,
     ContextLevel,
     EntrypointKind,
@@ -232,6 +233,32 @@ class ContextNode:
             feature.named()       ->  {"tenant_id": "acme"}
         """
         return {key: value for key, value in self.flattened().items() if isinstance(key, str)}
+
+    def flow(self) -> dict[str, Any]:
+        """What the flow says from this node up to its entrypoint, the nearest winning — what
+        crosses a process: a message, a request, another service, the frontend. The levels with
+        an owner (`OWNED_LEVELS`: the global, the process, a bounded context) stay where they
+        live; the other side reads its own.
+
+            root {"lang": "es"} → bus {"plan": "pro"} → entrypoint {"tenant_id": "acme"}
+                → feature {"carrier": "dhl"}
+            feature.flattened()   ->  {"carrier": "dhl", "tenant_id": "acme", "plan": "pro",
+                                       "lang": "es"}
+            feature.flow()        ->  {"carrier": "dhl", "tenant_id": "acme"}
+
+        A key the flow took away (`REMOVED`) is left out, so the other side reads its own; a
+        value under a type stays here, as in `named`."""
+        found: dict[Any, Any] = {}
+        for node in self.chain():
+            if node.level in OWNED_LEVELS:
+                break
+            for key, value in node.values.current.items():
+                found.setdefault(key, value)
+        return {
+            key: value
+            for key, value in found.items()
+            if isinstance(key, str) and value is not REMOVED
+        }
 
     def missing(self, keys: Iterable[str]) -> list[str]:
         """The keys this node does not see — a key a scope took away counts as missing: what

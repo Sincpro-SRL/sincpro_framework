@@ -38,7 +38,12 @@ def store_context_in(store: KeyValueStore | ContextStore) -> ContextStore:
 
         store_context_in(RedisKeyValue(redis))   ->  KeyValueContexts(RedisKeyValue(redis))
 
-    A bus that set its own store (`bus.store_context_in(...)`) goes on using that one.
+    What lives there: the process level (`process:<service>`, read by this service's replicas)
+    and the global (`global`, every service that set the store) — shared from the next
+    generation a bus builds, its first execution, once the service is known — and what every
+    bounded context with no store of its own saves: caches, idempotency, drafts, pipeline runs,
+    leases, circuits. A bounded context that set its own (`bus.store_context_in(...)`) saves
+    everything of its own there instead; its executions are shared only through that one.
     """
     contexts = store if isinstance(store, ContextStore) else KeyValueContexts(store)
     use_context().root.set(ContextStore, contexts)

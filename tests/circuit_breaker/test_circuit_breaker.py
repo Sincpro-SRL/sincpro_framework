@@ -342,7 +342,7 @@ def test_blocks_exited_out_of_order_settle_each_its_own_call(store, clock):
 
 
 class Broken(InMemoryKeyValue):
-    def increment(self, key: str) -> int:
+    def increment(self, key: str, ttl: timedelta | None = None) -> int:
         raise RuntimeError("a bug in the store")
 
 

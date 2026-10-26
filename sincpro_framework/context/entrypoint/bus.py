@@ -56,6 +56,7 @@ class FrameworkContext:
         self._node: ContextNode | None = None
         self._block: Any = None
         self._published_before: Mapping[Any, Any] | None = None
+        self._published_keys: list[Any] = []
 
     def __enter__(self) -> "UseFramework":
         """Open the block's context and answer the bus to call inside it.
@@ -65,8 +66,8 @@ class FrameworkContext:
         `billing(dto)` inside the block are one thing.
 
         1. Entered twice is a mistake: `RuntimeError`.
-        2. `global_scope`: the bus's own node takes the values, what it held set aside for the
-           end.
+        2. `global_scope`: the bus's own node takes the values, what it held of those keys set
+           aside for the end.
         3. Otherwise a scope of the bus opens with the values — an entrypoint of `kind` when
            no flow is open.
         Final: the bus.
@@ -76,8 +77,10 @@ class FrameworkContext:
         self._is_entered = True
         framework = self.framework
         if self.global_scope:
+            published = framework._coerced(self.context)
             self._published_before = framework._published.current
-            framework._published.update(framework._coerced(self.context))
+            self._published_keys = list(published)
+            framework._published.update(published)
         else:
             self._block = framework._scope(framework._coerced(self.context), self.kind)
             self._node = self._block.__enter__()
@@ -87,14 +90,23 @@ class FrameworkContext:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Literal[False]:
         """Close the block's context and let any exception through.
 
-        1. `global_scope`: the bus's node says again what it said before the block.
+        1. `global_scope`: the bus's node says again what it said of the block's keys before
+           it — only those: what another write, or another pod of the bounded context, set
+           meanwhile stays.
         2. Otherwise the scope's values are recorded for the execution it was opened in —
            its span, metrics and error close after it — and the scope is left.
         Final: `False`, so an exception raised in the block is never swallowed.
         """
         if self.global_scope:
-            if self._published_before is not None:
-                self.framework._published.replace(self._published_before)
+            before = self._published_before
+            if before is not None:
+                published = self.framework._published
+                published.update(
+                    {key: before[key] for key in self._published_keys if key in before}
+                )
+                for key in self._published_keys:
+                    if key not in before:
+                        published.unset(key)
         elif self._block is not None and self._node is not None:
             # What the scope said still counts for the execution it was opened in: its span,
             # its metrics and its error close after the scope does (PRD_03 §4.10).

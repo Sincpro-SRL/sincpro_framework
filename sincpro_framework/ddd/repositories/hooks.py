@@ -606,12 +606,19 @@ class HookChain:
         leaves the one it was handed.
 
             read(Invoice(approved=False))   →   Invoice(approved=True)    when a hook approves it
+
+        Context: each hook runs in a node of its own (`ContextLevel.HOOK`), as in every other
+        moment — what it writes stays its own — kept in this process: it runs once per row read,
+        so it is never one write to the store per row.
         """
         for link in self._compiled()["after_read"]:
             if isinstance(record, link.entities) and self._admits(
                 link.hook, "after_read", record
             ):
-                answered = getattr(self._instance(link.hook), "after_read")(record)
+                with context_scopes.child(
+                    ContextLevel.HOOK, label=link.hook.__name__, saved=False
+                ):
+                    answered = getattr(self._instance(link.hook), "after_read")(record)
                 record = record if answered is None else answered
         return record
 
@@ -624,12 +631,16 @@ class HookChain:
             searched(Partner, page)   ->  page, as it came — no hook is for Partner
 
         Context: matched by the model asked for, not by each record — the page is one answer,
-        and a hook returning `None` leaves it as it is.
+        and a hook returning `None` leaves it as it is. Each hook runs in a node of its own
+        (`ContextLevel.HOOK`), kept in this process, as in `read`.
         """
         for link in self._compiled()["after_search"]:
             if issubclass(model, link.entities) and self._admits(
                 link.hook, "after_search", page
             ):
-                answered = getattr(self._instance(link.hook), "after_search")(page)
+                with context_scopes.child(
+                    ContextLevel.HOOK, label=link.hook.__name__, saved=False
+                ):
+                    answered = getattr(self._instance(link.hook), "after_search")(page)
                 page = page if answered is None else answered
         return page

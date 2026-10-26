@@ -40,6 +40,14 @@ IDENTITY_HEADERS: dict[str, str] = {
 """The headers an entrypoint reads the identity from — HTTP and gRPC alike, lowercase."""
 BAGGAGE_BYTES = 8192
 BAGGAGE_MEMBERS = 180
+CONTEXT_BYTES = 4096
+"""How much `sincpro-context` is expected to weigh at most — half of what gRPC metadata, a W3C
+baggage and an nginx header buffer take by default (8 KiB), the rest left to the trace, the
+identity and the transport. Past it, a warning: a value that large belongs in a store, the
+context carrying its id."""
+
+_oversized: set[str] = set()
+"""The keys already warned about as the largest of a context past `CONTEXT_BYTES`."""
 
 
 def written(context: Mapping[Any, Any]) -> str:
@@ -115,7 +123,8 @@ def headers(carried: Mapping[str, Any]) -> dict[str, str]:
     identity and the node in play among its keys.
 
     1. The identity as its own headers, and the node as `x-context-node`.
-    2. Every travelling key as the `sincpro-context` JSON.
+    2. Every travelling key as the `sincpro-context` JSON — past `CONTEXT_BYTES`, warned about
+       once per largest key, and written all the same.
     Final: the travelling scalars as `baggage` too, when there are any.
 
         headers({"tenant_id": "acme", "correlation_id": "C", "causation_id": "E1"})
@@ -131,6 +140,18 @@ def headers(carried: Mapping[str, Any]) -> dict[str, str]:
     if carried.get(CONTEXT_NODE):
         found[CONTEXT_NODE_HEADER] = str(carried[CONTEXT_NODE])
     found[CONTEXT_HEADER] = written(carried)
+    size = len(found[CONTEXT_HEADER].encode())
+    if size > CONTEXT_BYTES:
+        largest = max(travelling(carried).items(), key=lambda item: len(json.dumps(item[1])))[
+            0
+        ]
+        if largest not in _oversized:
+            _oversized.add(largest)
+            logger.warning(
+                f"the context carried weighs {size} bytes, past {CONTEXT_BYTES}: '{largest}' "
+                "is its largest key — save a large value in a store and carry its id; gRPC and "
+                "most proxies refuse headers past 8 KiB"
+            )
     members = baggage(carried)
     if members:
         found[BAGGAGE_HEADER] = members

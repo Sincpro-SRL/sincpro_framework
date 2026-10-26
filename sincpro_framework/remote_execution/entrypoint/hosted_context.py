@@ -22,7 +22,7 @@ from sincpro_log.logger import LoggerProxy
 
 from sincpro_framework.circuit_breaker import CircuitBreaker, CircuitOpen
 from sincpro_framework.common.serialization import rebuilt
-from sincpro_framework.context import context_executions
+from sincpro_framework.context import context_executions, context_scopes
 from sincpro_framework.remote_execution.domain import exceptions
 from sincpro_framework.remote_execution.domain.address import HostedAt
 from sincpro_framework.remote_execution.domain.payload import Payload
@@ -43,8 +43,6 @@ class HostedContextMixin:
 
     _registrations: list[Callable[[Any], Any]]
     handler_of: Callable[[type], "type | None"]
-    _inherited_context: Callable[[], dict[str, Any]]
-    current_context: Callable[[], Any]
 
     if TYPE_CHECKING:
 
@@ -136,16 +134,15 @@ class HostedContextMixin:
         the response its handler here declares, or the class this bus registers under the
         answer's identity; its JSON values when none of them says.
 
-        Context: it is handed the context of the execution calling it — its caller's, then what
-        this bus was given — caused by that execution and in its flow (`handed_on`)."""
+        Context: it is handed the flow of the execution calling it (`context_scopes.flow`) —
+        caused by that execution and in its flow (`handed_on`). The process, the global and a
+        bounded context's level stay: the hosting service reads its own."""
         hosted_at = self._hosted_at
         if hosted_at is None:
             raise exceptions.SincproFrameworkNotBuilt(
                 f"'{self.name}' is not hosted by another service"
             )
-        context = context_executions.handed_on(
-            {**self._inherited_context(), **self.current_context()}
-        )
+        context = context_executions.handed_on(context_scopes.flow())
         answer = self._forwarded(hosted_at, dto, context)
         response = (
             return_type
