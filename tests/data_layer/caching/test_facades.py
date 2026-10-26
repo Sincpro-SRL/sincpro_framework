@@ -12,11 +12,12 @@ duplicate in flight is refused at once.
 
 import asyncio
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import fakeredis
 import pytest
+from structlog.testing import capture_logs
 
 import sincpro_framework
 from sincpro_framework import DataTransferObject, Feature, UseFramework
@@ -32,6 +33,7 @@ from sincpro_framework.data_layer.caching import (
     CachePolicy,
     FailSafe,
     Idempotency,
+    IdempotencyOutcome,
     IdempotencyPolicy,
     JsonCodec,
     QueryCachePolicy,
@@ -42,6 +44,7 @@ from sincpro_framework.data_layer.caching.domain.validation import ExternalVersi
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.data_layer.store import KeyValueStore, RedisKeyValue
 from sincpro_framework.ddd import Entity
+from sincpro_framework.runtime.testing import ManualClock
 
 
 def keys_in(server: fakeredis.FakeServer) -> list[str]:
@@ -444,6 +447,145 @@ def test_a_store_that_fails_never_fails_the_call():
     assert asked == ["USD"]  # bypassed, answered from this process
 
 
+# The cache: near, owners, versions by argument, a clock
+
+
+class CountedRedis(RedisKeyValue):
+    """A replica's client on the shared Redis that counts its reads."""
+
+    reads = 0
+
+    def get(self, key: str) -> bytes | None:
+        self.reads += 1
+        return super().get(key)
+
+
+def counted_replica(
+    name: str, server: fakeredis.FakeServer
+) -> tuple[UseFramework, CountedRedis]:
+    store = CountedRedis(fakeredis.FakeRedis(server=server))
+    bus = UseFramework(name, log_after_execution=False)
+    bus.store_context_in(KeyValueContexts(store))
+    return bus, store
+
+
+def test_near_serves_a_shared_value_from_this_process_without_asking_the_store():
+    billing, store = counted_replica("facade-near", fakeredis.FakeServer())
+    asked: list[str] = []
+
+    @billing.cache.ttl(timedelta(minutes=5), near=timedelta(seconds=30))
+    def schema(tenant: str) -> dict[str, str]:
+        asked.append(tenant)
+        return {"invoice": "account.move"}
+
+    schema("acme")
+    reads = store.reads
+    for _ in range(5):
+        assert schema("acme") == {"invoice": "account.move"}
+
+    assert asked == ["acme"] and store.reads == reads
+
+
+def test_near_holds_a_value_larger_than_the_store_takes():
+    billing, _ = counted_replica("facade-near-large", fakeredis.FakeServer())
+    asked: list[int] = []
+
+    @billing.cache(CachePolicy(max_bytes=8), near=timedelta(seconds=30))
+    def schema(tenant: str) -> list[int]:
+        asked.append(1)
+        return list(range(1000))
+
+    assert schema("acme") == schema("acme")
+    assert asked == [1]
+
+
+def test_a_forget_lets_go_of_the_near_copy_too():
+    billing, _ = counted_replica("facade-near-forget", fakeredis.FakeServer())
+    asked: list[str] = []
+
+    @billing.cache.ttl(timedelta(minutes=5), near=timedelta(seconds=30))
+    def rate(currency: str) -> str:
+        asked.append(currency)
+        return "6.96"
+
+    rate("USD")
+    rate.forget("USD")  # type: ignore[attr-defined]
+    rate("USD")
+
+    assert asked == ["USD", "USD"]
+
+
+def test_a_version_asked_with_the_call_arguments_moves_only_its_own_answer():
+    billing = UseFramework("facade-versioned-by-argument", log_after_execution=False)
+    versions = {"token-a": "v1", "token-b": "v1"}
+    asked: list[str] = []
+
+    @billing.cache.versioned(lambda token: versions[token])
+    def schema(token: str) -> list[str]:
+        asked.append(token)
+        return [f"{token}@{versions[token]}"]
+
+    schema("token-a")
+    schema("token-b")
+    versions["token-a"] = "v2"
+
+    assert schema("token-a") == ["token-a@v2"] and schema("token-b") == ["token-b@v1"]
+    assert asked == ["token-a", "token-b", "token-a"]
+
+
+def test_a_cache_built_at_every_call_still_caches_and_warns_once_without_the_key():
+    billing = replica("facade-built-per-call", fakeredis.FakeServer())
+    asked: list[str] = []
+
+    def connection() -> object:
+        asked.append("odoo")
+        return object()
+
+    with capture_logs() as logs:
+        for token in ("t0k3n-1", "t0k3n-1", "t0k3n-2"):
+            billing.cache.ttl(timedelta(minutes=5)).get(("connection", token), connection)
+
+    warned = [log["event"] for log in logs if "in this process only" in log["event"]]
+    assert asked == ["odoo", "odoo"]
+    assert len(warned) == 1 and "t0k3n" not in warned[0]
+
+
+def test_a_value_owned_by_nobody_is_one_for_every_caller():
+    billing = UseFramework("facade-nobodys", log_after_execution=False)
+    asked: list[str] = []
+
+    @billing.cache.ttl(timedelta(minutes=5), owned_by=())
+    def schema(database: str) -> list[str]:
+        asked.append(database)
+        return ["account.move"]
+
+    schema("odoo-acme")
+    with billing.context({"tenant_id": "acme", "user_id": "ana"}):
+        schema("odoo-acme")
+
+    assert asked == ["odoo-acme"]
+
+
+def test_a_facades_clock_is_the_tests_to_move():
+    billing = UseFramework("facade-clock", log_after_execution=False)
+    clock = ManualClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
+    billing.cache.now = clock.now
+    asked: list[str] = []
+
+    @billing.cache.ttl(timedelta(minutes=5), jitter=0)
+    def rate(currency: str) -> str:
+        asked.append(currency)
+        return "6.96"
+
+    rate("USD")
+    clock.advance(minutes=4)
+    rate("USD")
+    clock.advance(minutes=2)
+    rate("USD")
+
+    assert asked == ["USD", "USD"]
+
+
 # The idempotency
 
 
@@ -477,6 +619,67 @@ def test_a_write_runs_once_across_replicas_sharing_the_context_store():
     assert charged == ["r-1"]  # the second replica replayed the first answer from Redis
     assert answers[0] == answers[1]
     assert any(key.startswith("idempotency:facade-once:") for key in keys_in(server))
+
+
+def _charges(name: str, charged: list[str]) -> UseFramework:
+    """A bounded context whose charge runs once per request."""
+    bus = UseFramework(name, log_after_execution=False)
+
+    @bus.feature(CommandCharge)
+    @bus.idempotency
+    class Charge(Feature):
+        def execute(self, dto: CommandCharge) -> ResponseCharge:
+            charged.append(dto.request_id)
+            return ResponseCharge(charge_id=f"ch-{len(charged)}")
+
+    return bus
+
+
+def test_a_preview_knows_whether_confirming_again_would_write():
+    charged: list[str] = []
+    billing = _charges("facade-completed", charged)
+    charge = CommandCharge(request_id="r-1", amount=10)
+
+    with billing.context({"tenant_id": "acme", "user_id": "ana"}):
+        before = billing.idempotency.completed(charge)
+        billing(charge)
+        after = billing.idempotency.completed(charge)
+        other_amount = billing.idempotency.completed(
+            CommandCharge(request_id="r-1", amount=99)
+        )
+    with billing.context({"tenant_id": "beta", "user_id": "ana"}):
+        other_tenant = billing.idempotency.completed(charge)
+
+    assert (before, after) == (False, True)
+    assert other_amount is False and other_tenant is False
+
+
+def test_a_caller_reads_whether_its_call_was_replayed():
+    charged: list[str] = []
+    billing = _charges("facade-outcomes", charged)
+    charge = CommandCharge(request_id="r-1", amount=10)
+
+    with billing.idempotency.outcomes() as first:
+        billing(charge)
+    with billing.idempotency.outcomes() as retry:
+        billing(charge)
+
+    assert first == [IdempotencyOutcome.CLAIMED] and retry == [IdempotencyOutcome.REPLAYED]
+    assert charged == ["r-1"]
+
+
+def test_the_outcome_is_read_back_from_a_call_on_the_async_bus():
+    charged: list[str] = []
+    billing = _charges("facade-outcomes-async", charged)
+    charge = CommandCharge(request_id="r-1", amount=10)
+    billing(charge)
+
+    async def retried() -> list[IdempotencyOutcome]:
+        with billing.idempotency.outcomes() as seen:
+            await billing.get_async_bus()(charge)
+        return seen
+
+    assert asyncio.run(retried()) == [IdempotencyOutcome.REPLAYED]
 
 
 def test_the_idempotency_defaults_replay_a_day_and_never_wait():

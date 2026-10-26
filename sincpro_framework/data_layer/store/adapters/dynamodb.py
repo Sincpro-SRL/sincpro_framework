@@ -203,6 +203,33 @@ class DynamoKeyValue(ClientKeyValue):
                     if not _conditional_failure(error):
                         raise
 
+    def touch(self, key: str, ttl: timedelta | None) -> bool:
+        """One conditional `UpdateItem` on a live item — `SET expires_at`, or `REMOVE` it for
+        no ttl; a refused condition (missing, or expired) is `False`."""
+        now = self.clock()
+        values: dict[str, Any] = {":now": {"N": str(now)}}
+        if ttl is None:
+            expression = "REMOVE #e"
+        else:
+            expression = "SET #e = :until"
+            values[":until"] = {"N": str(now + max(ttl.total_seconds(), 0.001))}
+        with self._reaching():
+            try:
+                self.client.update_item(
+                    TableName=self.table,
+                    Key=self._key(key),
+                    UpdateExpression=expression,
+                    ConditionExpression="attribute_exists(#k) AND "
+                    "(attribute_not_exists(#e) OR #e > :now)",
+                    ExpressionAttributeNames={"#k": KEY, "#e": EXPIRES_AT},
+                    ExpressionAttributeValues=values,
+                )
+            except Exception as error:
+                if _conditional_failure(error):
+                    return False
+                raise
+            return True
+
     def delete(self, key: str) -> None:
         """An unconditional `DeleteItem` — nothing happens when the item is not there."""
         with self._reaching():

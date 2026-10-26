@@ -17,13 +17,13 @@ copy-on-write, so threads never tear them.
 
     domain/          ContextLevel, EntrypointKind, Origin, ContextNode and Values, Execution and
                      Chain, the standard keys, Owner, ContextProvider, Draft, DraftConflict,
-                     ContextCodec, ContextStore and Entry, EntryConflict
+                     Session, ContextCodec, ContextStore and Entry, EntryConflict
     infrastructure/  the node in play, what closed scopes said, the levels shared through the
-                     store (process, global, a node per execution)
+                     store (process, global, a node per execution), what an outage of it does
     adapters/        the codecs a context is written with, the headers it travels in;
                      InMemoryContexts, KeyValueContexts and their entries
     services/        executions opened and handed on, nodes opened and saved, what travels, the
-                     providers prepared, Drafts
+                     providers prepared, Drafts, Sessions
     entrypoint/      Context, use_context() and carrying(), requires_context, the threads and
                      pools, what a bus holds (bus.context, bus.store()), where the context is
                      saved (store_context_in), and the facades the rest of the framework calls:
@@ -52,6 +52,7 @@ from sincpro_framework.context.domain.level import ContextLevel, EntrypointKind,
 from sincpro_framework.context.domain.node import ContextNode
 from sincpro_framework.context.domain.owner import Owner
 from sincpro_framework.context.domain.providers import ContextProvider
+from sincpro_framework.context.domain.sessions import Session
 from sincpro_framework.context.domain.store import ContextStore, Entry
 from sincpro_framework.context.entrypoint.bus import FrameworkContext
 from sincpro_framework.context.entrypoint.executions import context_executions
@@ -67,6 +68,7 @@ from sincpro_framework.context.entrypoint.threads import (
 )
 from sincpro_framework.context.infrastructure.travel import travelling
 from sincpro_framework.context.services.drafts import Drafts
+from sincpro_framework.context.services.sessions import Sessions
 
 __all__ = [
     "Chain",
@@ -93,6 +95,8 @@ __all__ = [
     "Owner",
     "PickleCodec",
     "PlainCodec",
+    "Session",
+    "Sessions",
     "TypedCodec",
     "carrying",
     "context_executions",

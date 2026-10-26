@@ -139,9 +139,9 @@ assert own.store().key_value_store() is billing_redis
 
 | Facade | By default (`@facade`) | By parameters | Configured by name |
 |---|---|---|---|
-| `bus.cache`, `cache` | a minute, the old answer served 10 s more while one caller recomputes it, at most 1 s waiting for a value another computes | `fail_safe=`, `vary_by=` on every form | `.ttl(ttl, stale_for, jitter)`, `.sliding(idle_for, at_most)`, `.versioned(current, version_of, trusted_for)`, `facade(CachePolicy(...))` for any combination |
+| `bus.cache`, `cache` | a minute, the old answer served 10 s more while one caller recomputes it, at most 1 s waiting for a value another computes | `fail_safe=`, `vary_by=`, `owned_by=`, `near=` on every form | `.ttl(ttl, stale_for, jitter)`, `.sliding(idle_for, at_most)`, `.versioned(current, version_of, trusted_for)`, `facade(CachePolicy(...))` for any combination |
 | `bus.cache.queries(Query)` | a Query's answer, a minute, let go of when an aggregate it read is written (below) | `bus.cache.queries(Query, QueryCachePolicy(...))` | — |
-| `bus.idempotency`, `idempotency` | once per request, replayed 24 h, a duplicate in flight refused at once (409) | `expires_after=`, `in_progress_for=`, `wait_for_completion=`, `vary_by=` | `.exactly_once(records)`: the answer in the write's transaction (below) |
+| `bus.idempotency`, `idempotency` | once per request, replayed 24 h, a duplicate in flight refused at once (409) | `expires_after=`, `in_progress_for=`, `wait_for_completion=`, `vary_by=` | `.exactly_once(records)`: the answer in the write's transaction (below); `.completed(dto)`, `.outcomes()` |
 
 - **The key** is the facade's name, the function — its module and name — or the key given by
   hand, its arguments written canonically (a decimal by its value, a date in ISO, a DTO by its
@@ -149,8 +149,9 @@ assert own.store().key_value_store() is billing_redis
   the context's `tenant_id`, `tenant_ids` and `user_id`, each empty when the context says nothing.
   A service with no tenants and no users keys by the function and its arguments alone; one with
   them never serves a tenant's or a user's answer to another, with nothing declared. `vary_by` adds
-  keys of the project's own. `bus.idempotency` keys a request the same way, beside the Command and
-  its idempotency key.
+  keys of the project's own; `owned_by` replaces the owner's — `owned_by=()` for a value that is
+  nobody's, one answer whoever asks. `bus.idempotency` keys a request the same way, beside the
+  Command and its idempotency key.
 - **Every configured cache (`ConfiguredCache`) is a decorator and a tool by hand**:
   `configured.get(key, compute, codec)` and `configured.forget(key)` — what an adapter uses, handed `billing.cache` where the bounded context is
   wired.
@@ -170,6 +171,69 @@ assert own.store().key_value_store() is billing_redis
 - **In production on one Redis**, caches and what must not be lost — leases, idempotency, drafts —
   share it: configure it `volatile-lru`, so memory pressure evicts what has a ttl and never a lease,
   or give the caches a Redis of their own.
+
+### When it has to do more
+
+The same facade, one option of the same call each:
+
+| Need | Option |
+|---|---|
+| a large value on Redis, read on every call without decoding it every time | `near=timedelta(seconds=30)`: also held in this process, decoded — freshness and validation still judged; a value past `max_bytes` is held here too |
+| a value larger than 1 MB on the shared store | `facade(CachePolicy(max_bytes=8_000_000))` |
+| a value that is nobody's — the same before the scope and inside it | `owned_by=()` |
+| a version per key — per token, per tenant | `.versioned(lambda token: registry.version_of(token))`: `current` is asked with the cached function's own arguments (the key, by hand) |
+| a test that moves time | `billing.cache.now = clock.now` |
+| a preview that says "confirming again writes nothing" | `billing.idempotency.completed(command)` |
+| telling the client that nothing was written again | `with billing.idempotency.outcomes() as seen:` — `seen == [IdempotencyOutcome.REPLAYED]`, also through `get_async_bus()` |
+| a Redis or Valkey client that fails fast | `RedisKeyValue.from_url(url)`: half a second, no retries — redis-py waits forever by default |
+| the process's memory, bounded | `InMemoryKeyValue(max_entries=50_000)`: the least recently used let go first; what expired is swept as it is written |
+
+A configured cache is cheap to build: built at every call (`billing.cache.ttl(...).get(...)`), it
+still caches — what it holds lives on the facade's store by name — and a value it cannot encode is
+said once per function, never with its key.
+
+```python
+from datetime import UTC, datetime
+
+from sincpro_framework.data_layer.caching import CachePolicy, IdempotencyOutcome
+from sincpro_framework.runtime.testing import ManualClock
+
+decoded: list[str] = []
+
+
+@payments.cache.ttl(timedelta(minutes=10), near=timedelta(seconds=30), owned_by=())
+def schema(database: str) -> dict[str, str]:                 # big, the same for every caller
+    decoded.append(database)
+    return {"invoice": "account.move"}
+
+
+schema("odoo-acme")
+with payments.context({"tenant_id": "acme", "user_id": "ana"}):
+    schema("odoo-acme")                                      # nobody's, read from this process
+assert decoded == ["odoo-acme"]
+
+versions = {"token-a": "v1"}
+
+
+@payments.cache.versioned(lambda token: versions[token])    # the version of each token
+def connection_of(token: str) -> list[str]:
+    return [f"conn@{versions[token]}"]
+
+
+assert connection_of("token-a") == ["conn@v1"]
+versions["token-a"] = "v2"
+assert connection_of("token-a") == ["conn@v2"]
+
+clock = ManualClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
+payments.cache.now = clock.now                               # a test's own time
+
+charge = CommandPay(request_id="r-2", amount=10)
+assert payments.idempotency.completed(charge) is False       # confirming writes
+with payments.idempotency.outcomes() as seen:
+    payments(charge, ResponsePay)
+assert seen == [IdempotencyOutcome.CLAIMED]
+assert payments.idempotency.completed(charge) is True        # confirming again replays
+```
 
 ## A use case that knows nothing
 
@@ -713,15 +777,15 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 
 | | |
 |---|---|
-| `KeyValueStore` | `get_many`, `set`, `add` (atomic), `increment(key, ttl=)` (atomic, the ttl with it), `delete`, `take` (atomic), `get` |
-| `InMemoryKeyValue(now=)` / `RedisKeyValue(client, prefix=)` / `MemcachedKeyValue(client, prefix=)` | the providers |
+| `KeyValueStore` | `get_many`, `set`, `add` (atomic), `increment(key, ttl=)` (atomic, the ttl with it), `delete`, `take` (atomic), `get`, `replace` (compare and write), `touch(key, ttl)` (a new expiry, the value untouched) |
+| `InMemoryKeyValue(now=, max_entries=)` / `RedisKeyValue(client, prefix=)`, `RedisKeyValue.from_url(url, prefix=, timeout=, retries=)` / `MemcachedKeyValue(client, prefix=)` | the providers |
 | `QueryCaching(store, near=, sensitive=, namespace=, enabled=, bus=)` | `.on(bus, Query, QueryCachePolicy(...))`, `.invalidate(Aggregate)`, `.invalidated_by({Event: [Aggregate]})` (a bus of the kind of `bus=` or of the first `.on()`), `.depends_on(query)`, `.policies()` |
-| `Cache(store=None, namespace=, enabled=, observer=, eviction=, bypass_for=)` | `.get_or_compute(key, compute, CachePolicy(freshness=, validation=, failure=, wait_for_others=, max_bytes=), codec)`, `.forget(key)` |
+| `Cache(store=None, namespace=, enabled=, observer=, eviction=, bypass_for=)` | `.get_or_compute(key, compute, CachePolicy(freshness=, validation=, failure=, wait_for_others=, max_bytes=, near=), codec)`, `.forget(key)` |
 | `TimeToLive(ttl=, jitter=, stale_for=, early_expiry=)` / `Sliding(idle_for=, at_most=)` / `Freshness` | how long a value is served as is — yours inherits `Freshness` |
 | `Unconditional()` / `ExternalVersion(current, version_of=, trusted_for=)` / `Validation` | whether it is still right — yours inherits `Validation` |
 | `Raise()` (default) / `FailSafe(serve_for, throttle_for=, errors=)` / `FailurePolicy` | what a failing source answers |
 | `Lru(max_entries=10_000)` (default) / `Unbounded()` / `Eviction` | how the process tier stays bounded |
-| `Idempotency(store \| records, namespace=, observer=)` | `@.once(expires_after=, in_progress_for=, wait_for_completion=, vary_by=)`, `.run(key, write, IdempotencyPolicy(...), codec, payload=)`, `.policies()`; `AlreadyInProgress`, `KeyReused`; `Idempotency.current_key()`; `Idempotency.declared_by(cls)` — whether a class runs once |
+| `Idempotency(store \| records, namespace=, observer=)` | `@.once(expires_after=, in_progress_for=, wait_for_completion=, vary_by=)`, `.run(key, write, IdempotencyPolicy(...), codec, payload=)`, `.completed(dto, bus=, vary_by=)`, `.policies()`; `AlreadyInProgress`, `KeyReused`; `Idempotency.current_key()`; `Idempotency.outcomes()`; `Idempotency.declared_by(cls)` — whether a class runs once |
 | `IdempotentCommand` | a Command with `idempotency_key()` — what identifies one request |
 | `IdempotencyRecords` / `KeyValueRecords(store)` | where records live — yours transactional, or on a key-value store |
 | `CacheObserver` / `SpanObserver` + `MetricsObserver` (default, via `Observers`) / `CountingObserver` / `NoObserver` | what each call did: `CacheOutcome`, `IdempotencyOutcome` |

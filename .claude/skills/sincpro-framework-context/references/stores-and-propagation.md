@@ -74,6 +74,17 @@ services on one key share one level. A write lands on the latest values, a defau
 seeds is added when the store lacks it, and a value that does not travel (a store, settings)
 stays local.
 
+## When the store is down
+
+The store syncs the replicas; reads are always this process's memory. Down, every call goes on:
+joining never fails; the shared levels serve what they read last and queue their writes, sent in
+order on the latest values when it answers (same key: whoever sent last); execution nodes stay
+local and hand-offs travel by their headers' snapshot; `bus.cache` bypasses. Drafts, pipeline
+runs, idempotency and leases **fail** (`StoreUnavailable`): they cannot pretend to persist. After a
+failure the store is not asked for 5 s (`OUTAGE_BYPASS`, a `StoreBypass` of the process — never the
+circuit breaker, whose state lives in the store). Said once down, once back. Keep the client's
+timeouts short (`socket_timeout`, no retries).
+
 ## Across a transport — only the flow crosses
 
 | Level | Owner | Lives on | Crosses |

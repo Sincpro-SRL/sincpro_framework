@@ -42,6 +42,11 @@ class CachePolicy[T](DataTransferObject):
     """How long a caller that does not lead waits for the value the leader computes."""
     max_bytes: int = 1_048_576
     """A value larger than this, encoded, is answered and not stored in a shared store."""
+    near: timedelta | None = None
+    """How long a value on a shared store is also held in this process, decoded — read from
+    here, its freshness and validation judged as always, without asking the store again; a
+    value past `max_bytes` is held here too. Another replica's `forget` reaches this copy at
+    most `near` later. `None`: every call asks the store."""
 
 
 class QueryCachePolicy(DataTransferObject):

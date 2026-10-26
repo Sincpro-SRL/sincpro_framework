@@ -189,3 +189,28 @@ def test_a_store_that_does_not_answer_is_unavailable_with_the_drivers_error_as_i
 
     assert refined_failure_kind(raised.value) is exceptions.FailureKind.UNAVAILABLE
     assert isinstance(raised.value.__cause__, ConnectionRefusedError)
+
+
+def test_from_url_builds_a_client_that_fails_fast():
+    store = RedisKeyValue.from_url("redis://localhost:1/0", prefix="billing:")
+    kwargs = store.client.connection_pool.connection_kwargs
+
+    started = time.monotonic()
+    with pytest.raises(store_exceptions.StoreUnavailable):
+        store.get("anything")
+
+    assert kwargs["socket_timeout"] == kwargs["socket_connect_timeout"] == 0.5
+    assert store.prefix == "billing:" and time.monotonic() - started < 2
+
+
+def test_from_url_passes_every_other_option_and_lets_one_override_a_default():
+    store = RedisKeyValue.from_url(
+        "redis://localhost:1/0",
+        timeout=timedelta(seconds=2),
+        socket_timeout=5,
+        client_name="billing",
+    )
+    kwargs = store.client.connection_pool.connection_kwargs
+
+    assert kwargs["socket_connect_timeout"] == 2 and kwargs["socket_timeout"] == 5
+    assert kwargs["client_name"] == "billing"

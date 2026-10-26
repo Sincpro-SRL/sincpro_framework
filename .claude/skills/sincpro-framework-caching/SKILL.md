@@ -32,8 +32,8 @@ any value, `Idempotency` runs a write once per key — built by hand when a stor
 |---|---|---|---|
 | `KeyValueStore` | The store contract: `get_many`, `set`, `add` (atomic), `increment` (atomic), `delete`, `take` (atomic), plus `get`; `replace` (compare-and-write, for leases) | protocol | `sincpro_framework.data_layer.store` |
 | `Leases(store)` | A name held by one owner at a time across replicas: `held(name, owner, ttl)` renews in the background, `state` FREE/HELD/EXPIRED, a fence per take; `LeaseTaken`, `LeaseLost` | class | `sincpro_framework.data_layer.store` |
-| `InMemoryKeyValue` | Store in this process; standard library only. One replica | adapter | `sincpro_framework.data_layer.store` |
-| `RedisKeyValue(client, prefix=)` | Store on Redis or Valkey — extra `[redis]` | adapter | `sincpro_framework.data_layer.store` |
+| `InMemoryKeyValue(now=, max_entries=)` | Store in this process; standard library only. One replica. `max_entries` bounds it (LRU, the expired first); what expired is swept as it is written | adapter | `sincpro_framework.data_layer.store` |
+| `RedisKeyValue(client, prefix=)`, `RedisKeyValue.from_url(url, prefix=, timeout=, retries=)` | Store on Redis or Valkey — extra `[redis]`. `from_url` builds a client that fails fast (0.5 s, no retries): redis-py waits forever by default on a mute server | adapter | `sincpro_framework.data_layer.store` |
 | `MemcachedKeyValue(client, prefix=)` | Store on Memcached (pymemcache) — extra `[memcached]` | adapter | `sincpro_framework.data_layer.store` |
 | `DynamoKeyValue(table, client=, prefix=)` | Store on an Amazon DynamoDB table (key `key`, TTL on `expires_at`) — extra `[aws]`; contexts, drafts, pipeline runs, cron ticks and idempotency all run on it | adapter | `sincpro_framework.data_layer.store` |
 | `QueryCaching` | Caches Query answers per bus, tagged by the aggregates the repository saw them read; `.on(bus, Query, policy)` installs an interceptor | registry | `sincpro_framework.data_layer.caching` |
@@ -41,9 +41,9 @@ any value, `Idempotency` runs a write once per key — built by hand when a stor
 | `invalidate_on_commit(database, caching)` | Invalidates every aggregate a SQL commit wrote, after the commit | function | `sincpro_framework.data_layer.orm` |
 | `QueryCaching.invalidated_by({Event: [Aggregate]})` | A bus that invalidates when another process's events arrive; hand it to the `Subscriber` | function | (method) |
 | `Cache` | Caches any value by its parameters: `get_or_compute(key, compute, CachePolicy, codec)`, `forget` | adapter | `sincpro_framework.data_layer.caching` |
-| `bus.cache` (`CacheFacade`) | A bounded context's cache, nothing built: `@billing.cache` (a minute, 10 s stale, ≤1 s wait), `.ttl(ttl, stale_for, jitter)`, `.sliding(idle_for, at_most)`, `.versioned(current, version_of, trusted_for)`, `billing.cache(CachePolicy(...))`; `fail_safe=` and `vary_by=` on every form; key = bus name + function + arguments (`self` left out) + whose it is (`tenant_id`, `tenant_ids`, `user_id` of the context, empty when unsaid); `.forget(args)`; each configured cache (`ConfiguredCache`) is also `.get(key, compute, codec)` / `.forget(key)` by hand — what an adapter handed `billing.cache` uses | facade / decorator | `sincpro_framework.data_layer.caching` |
+| `bus.cache` (`CacheFacade`) | A bounded context's cache, nothing built: `@billing.cache` (a minute, 10 s stale, ≤1 s wait), `.ttl(ttl, stale_for, jitter)`, `.sliding(idle_for, at_most)`, `.versioned(current, version_of, trusted_for)` (a `current` with parameters is asked with the function's own arguments — a version per token/tenant), `billing.cache(CachePolicy(...))`; `fail_safe=`, `vary_by=`, `owned_by=` (`()` = nobody's, one value for every caller) and `near=` (also held decoded in this process for that long) on every form; `billing.cache.now = clock.now` in tests; key = bus name + function + arguments (`self` left out) + whose it is (`tenant_id`, `tenant_ids`, `user_id` of the context, empty when unsaid); `.forget(args)`; each configured cache (`ConfiguredCache`) is also `.get(key, compute, codec)` / `.forget(key)` by hand — what an adapter handed `billing.cache` uses | facade / decorator | `sincpro_framework.data_layer.caching` |
 | `bus.cache.queries(Query, QueryCachePolicy)` | The bounded context's `QueryCaching`, on its store under its name (a minute by default); `bus.cache.queries()` answers it — for `invalidate_on_commit` | facade | (on the bus) |
-| `bus.idempotency` (`IdempotencyFacade`) | `@billing.idempotency` on a Feature/ApplicationService: once per request, 24 h, a duplicate in flight refused at once; `expires_after=`, `in_progress_for=`, `wait_for_completion=`, `vary_by=`; `.exactly_once(records)`; `.run(...)` by hand; `.policies()` | facade / decorator | `sincpro_framework.data_layer.caching` |
+| `bus.idempotency` (`IdempotencyFacade`) | `@billing.idempotency` on a Feature/ApplicationService: once per request, 24 h, a duplicate in flight refused at once; `expires_after=`, `in_progress_for=`, `wait_for_completion=`, `vary_by=`; `.exactly_once(records)`; `.run(...)` by hand; `.completed(dto)` (would it replay? — a preview); `with .outcomes() as seen:` (`REPLAYED` = nothing written, also through `get_async_bus`); `.policies()` | facade / decorator | `sincpro_framework.data_layer.caching` |
 | `cache` / `idempotency` / `store_context_in(store)` | The service's own facades (keys under `global`); the process's store in one line — a `KeyValueStore` or a `ContextStore` | facade / function | `sincpro_framework` |
 | `bus.store()` | Where the bus writes: its `store_context_in(...)`, else the process's, else memory | method | (on the bus) |
 | `CachePolicy` | A `Cache` call's `freshness` + `validation` + `failure` (+ `wait_for_others`, `max_bytes`) | setting | `sincpro_framework.data_layer.caching` |
@@ -161,6 +161,14 @@ bus(CommandIssueReceipt) → @billing.idempotency: key = bus name + Command + id
   records' database rolls back with the answer; hand the other service the request's key.
 - **A Command with no `idempotency_key()` and a generated field** (`Field(default_factory=uuid4)`,
   a timestamp): every retry is a new key and the write runs again.
+- **A large value on Redis decoded at every call** (a schema, a catalog). Add `near=` — the value is
+  also held decoded in this process for that long — and, past 1 MB, `CachePolicy(max_bytes=...)`.
+- **A version that depends on the key, rebuilt as a cache per call.** `versioned(current)` takes a
+  `current` with parameters: it is asked with the cached function's own arguments.
+- **A value that is nobody's cached twice** — once before the scope opens (authentication), once
+  inside. Say `owned_by=()`.
+- **A Redis client built with redis-py's defaults.** It waits forever on a mute server and retries
+  on top: use `RedisKeyValue.from_url(url)`.
 - **No store set, or `InMemoryKeyValue`, on several replicas.** Each replica has its own answers,
   tag versions and claims: an invalidation or a claim on one is unseen on the others.
   `store_context_in(RedisKeyValue(redis))` once, or `bus.store_context_in(...)` for a Redis of its own.

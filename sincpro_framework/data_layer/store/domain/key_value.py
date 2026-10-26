@@ -11,7 +11,8 @@ and a seventh that compares before it writes.
 
 `replace` is what a lease renews and releases with — "only if it is still mine". It is not
 abstract: a store of a project's that has no way to compare and write is still a store, and says
-so only when a lease asks it to.
+so only when a lease asks it to. `touch` — a new expiry, the value untouched — is not abstract
+either: by default it reads and replaces; every engine here has a command of its own.
 
 Context: everything clever — keys, tag versions, early expiry, single-flight, idempotency, the
 near cache, the context's entries — is built on these by the framework, so an engine is these six
@@ -87,6 +88,23 @@ class KeyValueStore(Protocol):
     def get(self, key: str) -> bytes | None:
         """The value of one key, `None` when absent — `get_many` of one."""
         return self.get_many([key])[0]
+
+    def touch(self, key: str, ttl: timedelta | None) -> bool:
+        """Give `key` a new expiry — `ttl` from now, or none at all — without writing its value
+        again; `False` when it is not there. What a sliding expiry renews with: a session kept
+        while it is used.
+
+            store.touch("session:9f", timedelta(days=30))   ->  True, 30 more days
+            store.touch("session:9f", None)                 ->  True, until deleted
+            store.touch("gone", timedelta(days=30))         ->  False
+
+        Not abstract: by default the value is read and written back compared (`replace`), so a
+        store that compares is enough; every engine here answers with its own command — Redis
+        `PEXPIRE`/`PERSIST`, Memcached `touch`, a DynamoDB `UpdateItem`."""
+        held = self.get(key)
+        if held is None:
+            return False
+        return self.replace(key, held, held, ttl)
 
     def shared(self) -> bool:
         """Whether other processes read what is written here — every engine but one in this

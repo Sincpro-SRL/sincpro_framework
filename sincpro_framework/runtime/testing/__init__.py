@@ -6,6 +6,9 @@ context's settings.
     with override_dependencies(sales, partner_lookup=FakePartnerLookup()):    # a double
         sales(CommandCreateContact(name="Ana"))
 
+    with fresh_context():                                                   # a test of its own
+        billing(CommandRate(currency="USD"))
+
     with granting("billing.invoice.issue"):                                  # be someone
         billing(CommandIssueInvoice(invoice_id="F-1"))
 
@@ -30,6 +33,7 @@ from .contracts.idempotency_records import IdempotencyRecordsContract
 from .contracts.key_value_store import KeyValueStoreContract
 from .doubles.auth import RecordingProvider, granting
 from .doubles.clock import ManualClock
+from .doubles.context import fresh_context
 from .doubles.dependencies import override_dependencies, unregistered_dependencies
 from .doubles.events import RecordingQueue
 
@@ -46,6 +50,7 @@ __all__ = [
     "RecordingProvider",
     "RecordingQueue",
     "SettingsScopeViolation",
+    "fresh_context",
     "granting",
     "import_cycles",
     "layer_violations",

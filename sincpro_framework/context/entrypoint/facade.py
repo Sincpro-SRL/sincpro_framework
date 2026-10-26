@@ -41,6 +41,7 @@ from sincpro_framework.context.infrastructure.tree import ROOT, current, entered
 from sincpro_framework.context.services.drafts import Drafts
 from sincpro_framework.context.services.executions import current_execution
 from sincpro_framework.context.services.nodes import entered_child, shared
+from sincpro_framework.context.services.sessions import DEFAULT_IDLE_FOR, Sessions
 from sincpro_framework.data_layer.store import Leases
 from sincpro_framework.sincpro_logger import logger
 
@@ -433,6 +434,25 @@ class Context(dict[Any, Any]):
         """The leases saved where the context is saved — a name held by one owner at a time, by
         every replica that shares the store."""
         return self.store_in_use(store).leases()
+
+    def sessions(
+        self,
+        idle_for: timedelta | None = DEFAULT_IDLE_FOR,
+        at_most: timedelta | None = None,
+        namespace: str = "sessions",
+        store: ContextStore | None = None,
+    ) -> Sessions:
+        """The sessions saved where the context is saved — a login that lasts while it is used,
+        read by every replica that shares the store.
+
+            use_context().sessions()                          30 days unused, renewed at each use
+            use_context().sessions(idle_for=None)             until closed
+            use_context().sessions(timedelta(hours=8), at_most=timedelta(days=7), "admin")
+
+        `idle_for` is how long one lasts unused, `at_most` however much it is used — see
+        `Sessions`."""
+        kept = self.store_in_use(store).key_value_store()
+        return Sessions(kept, idle_for, at_most, namespace)
 
 
 @overload

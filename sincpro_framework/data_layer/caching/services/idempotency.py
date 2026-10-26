@@ -61,7 +61,7 @@ from typing import Any, ClassVar, cast, get_type_hints
 from weakref import WeakKeyDictionary
 
 from sincpro_framework.common.naming import registered_name
-from sincpro_framework.context import Owner, context_executions
+from sincpro_framework.context import Owner, context_executions, use_context
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.caching.adapters.json_codec import JsonCodec
 from sincpro_framework.data_layer.caching.adapters.key_value_records import KeyValueRecords
@@ -138,6 +138,12 @@ class Idempotency:
     )
     """The key of the idempotent run in progress in this thread or task — `current_key()`."""
 
+    _watched: ClassVar[ContextVar[list[IdempotencyOutcome] | None]] = ContextVar(
+        "sincpro_idempotency_outcomes", default=None
+    )
+    """The list an `outcomes()` block collects into — handed down, so a run on a worker thread
+    appends to the very list the caller reads."""
+
     _once_wrappers: ClassVar[WeakKeyDictionary[Callable[..., Any], IdempotencyPolicy]] = (
         WeakKeyDictionary()
     )
@@ -196,6 +202,27 @@ class Idempotency:
             cls._running.reset(token)
 
     @classmethod
+    @contextmanager
+    def outcomes(cls) -> Generator[list[IdempotencyOutcome], None, None]:
+        """What every idempotent run inside the block did, in order — what a caller reads to
+        tell its client that nothing was written again.
+
+            with billing.idempotency.outcomes() as seen:
+                billing(CommandCharge(request_id="r-1", amount=10))
+            seen   ->  [IdempotencyOutcome.CLAIMED]      the charge ran
+            ...    ->  [IdempotencyOutcome.REPLAYED]     a retry: the first answer, nothing run
+
+        Context: a list handed down rather than a value set back — a use case reached through
+        `get_async_bus()` runs on a worker thread, and appends to this same list. A block inside
+        another collects its own runs; the outer one does not see them."""
+        seen: list[IdempotencyOutcome] = []
+        token = cls._watched.set(seen)
+        try:
+            yield seen
+        finally:
+            cls._watched.reset(token)
+
+    @classmethod
     def declared_by(cls, handler: type) -> bool:
         """Whether `handler` runs once per key: its `execute`, as Python resolves it, is one
         `once()` wrote — on any `Idempotency`. A subclass that inherits `execute` answers
@@ -226,7 +253,11 @@ class Idempotency:
         return prefix + KeyEncoder.key_of(key)
 
     def _observe(self, outcome: IdempotencyOutcome) -> None:
-        """Tell the observer how a run went — an observer that fails never fails the write."""
+        """Tell the `outcomes()` block in play and the observer how a run went — an observer
+        that fails never fails the write."""
+        watched = self._watched.get()
+        if watched is not None:
+            watched.append(outcome)
         try:
             self.observer.observed(outcome, self.namespace)
         except Exception:
@@ -394,6 +425,49 @@ class Idempotency:
             return (IDEMPOTENCY_KEY, transport_key)
         return command
 
+    def _identity(
+        self, dto: Any, bus: str, context: Any, vary_by: Sequence[str]
+    ) -> tuple[Any, Any, Any]:
+        """What a declared run of `dto` on `bus`, under `context`, is keyed by: its key, the
+        payload `KeyReused` compares and the key a release before this one wrote.
+
+        1. The `vary_by` values the context says.
+        2. The Command's identity on the bus (`registered_name`), its request key
+           (`request_key_of`, a transport's key beside it) and its owner (`Owner.of`).
+        Final: `((command, request, owner), (dto, vary), (command, request, vary))`.
+        """
+        vary = {one: context.get(one) for one in vary_by}
+        command = registered_name(type(dto), bus)
+        request = self.request_key_of(dto, context.get(IDEMPOTENCY_KEY))
+        owner = Owner.of(context, (*Owner.BY_TENANT_AND_USER, *vary_by))
+        return (command, request, owner), (dto, vary), (command, request, vary)
+
+    def completed(
+        self, dto: Any, bus: str | None = None, vary_by: str | Sequence[str] = ()
+    ) -> bool:
+        """Whether running `dto` now would replay an answer instead of writing — a run of the
+        same request, by the same owner and with the same payload, completed and not expired.
+
+            billing.idempotency.completed(CommandCharge(request_id="r-1", amount=10))
+                ->  False      never run: confirming writes
+                ->  True       ran: confirming again replays, nothing is written
+
+        `bus` is the bounded context the use case runs on — the one in play when unsaid;
+        `vary_by` the same keys the use case declared. Read from the context of the call, as
+        the run itself would be: ask it inside the scope the run will open with."""
+        context = use_context()
+        if bus is None:
+            running = context_executions.current()
+            bus = running.bus if running is not None else ""
+        varied = (vary_by,) if isinstance(vary_by, str) else tuple(vary_by)
+        key, payload, _ = self._identity(dto, bus, context, varied)
+        held = self.records.read(self._key(key))
+        return (
+            held is not None
+            and held.state == RecordState.COMPLETED
+            and held.fingerprint == KeyEncoder.key_of(payload)
+        )
+
     def once(
         self,
         expires_after: timedelta,
@@ -461,19 +535,16 @@ class Idempotency:
                 if not codecs:
                     codecs.append(JsonCodec(_response_of(cls, original)))
                 context = handler.context or {}
-                vary = {one: context.get(one) for one in policy.vary_by}
                 running = context_executions.current()
                 bus = running.bus if running is not None else ""
-                command = registered_name(type(dto), bus)
-                request = self.request_key_of(dto, context.get(IDEMPOTENCY_KEY))
-                owner = Owner.of(context, (*Owner.BY_TENANT_AND_USER, *policy.vary_by))
+                key, payload, before = self._identity(dto, bus, context, policy.vary_by)
                 return self.run(
-                    (command, request, owner),
+                    key,
                     lambda: original(handler, dto),
                     policy,
                     codecs[0],
-                    payload=(dto, vary),
-                    before=(command, request, vary),
+                    payload=payload,
+                    before=before,
                 )
 
             cls.execute = execute  # type: ignore[attr-defined]
