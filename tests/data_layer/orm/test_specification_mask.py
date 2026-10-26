@@ -5,13 +5,15 @@ the process stay whole.
 
 import pytest
 
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd.criteria import Criteria, Pagination, Specification
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 
 from .models import Thing, Things
 
-META = describe(Thing)
+META = ModelIntrospection.describe(Thing)
 
 
 class ResponseThings(ResponsePaginatedQuery):

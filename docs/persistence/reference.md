@@ -15,7 +15,7 @@ catalogue before it moved here.
 
 | Thing | What it is | Where it travels |
 |---|---|---|
-| `Entity` | The four fields every aggregate carries: `id` (UUID v7, 32 hex chars), `created_at`, `updated_at`, `version` | A dataclass base; a subclass keeps declaring its own fields positionally |
+| `Entity` | The four fields every aggregate carries: `id` (UUID v7, 32 hex chars), `created_at`, `updated_at`, `version` | A dataclass base; a subclass still declares its own fields positionally |
 | `Criteria` | What a caller asks: `where`, `order`, `pagination`, `grouping`, `count`, `meta` | A DTO; it is what a URL, a queue or a POST body carries |
 | `EntityCollection[T]` | What comes back: the records, the `cursor`, a typed `Count`, what was `dropped`, and the model's `meta` | Frozen; every derived collection drops its page metadata |
 | `Meta` | What the model publishes: fields, types, operators, what is sortable | Reaches the client as `entity_meta_data` |
@@ -24,9 +24,9 @@ catalogue before it moved here.
 | `Analyzes` · `WritesInBulk` · `Transacts` | Capabilities a store adds when it can honour them: folding numbers, writing past the aggregate, a unit of work | A shared component asks for exactly the ones it calls |
 | `StoreCapabilities` | What the engine under one store honours: row locks, `skip_locked`, `nowait`, savepoints, percentiles | `repository.capabilities`, read at run time |
 | `AggregateRepository[T]` | One aggregate's view over a repository, for questions that deserve names | Optional; `orm.DatabaseAggregateRepository[T]` adds the database repository's capabilities |
-| `matches(record, expression)` | The filter language evaluated in memory | Tests without a database; `EntityCollection.filtered_by` |
+| `Evaluation.matches(record, expression)` | The filter language evaluated in memory | Tests without a database; `EntityCollection.filtered_by` |
 | `Translated`, `translations()` | The words a screen shows: the aggregate names itself, each field declares its own in `field(metadata=…)` | `Meta.name` and `Meta.fields[x].label` / `.help` |
-| `DomainEvent`, `Entity.record` / `pull_events` | Records in memory; `save(aggregate)` also keeps mapped events in the context's table without draining them | See [events.md](../events/README.md) |
+| `DomainEvent`, `Entity.record` / `pull_events` | Records in memory; `save(aggregate)` also stores mapped events in the context's table without draining them | See [events.md](../events/README.md) |
 
 Three rules, each preventing a failure that was observed in real code:
 
@@ -63,7 +63,7 @@ class Invoice(Entity):
 takes, beside its type and its default — so the one place that says what `number` is also says
 what to call it. The class method answers only the aggregate's own name.
 
-`Translated` is `dict[str, str]`: a text per locale, with a `default`. `describe()` reads both:
+`Translated` is `dict[str, str]`: a text per locale, with a `default`. `ModelIntrospection.describe()` reads both:
 
 ```python
 meta.name                     # {"default": "Invoice", "es": "Factura"}
@@ -117,15 +117,15 @@ meta.fields["priority"].choice_labels       # {"low": {"default": "Low", "es": "
   `translations()`, else none. A change event's `field_labels` reads the same.
 - **The order is the declaration's.** `choices` lists the values as the enum declares them, and
   `choice_labels` follows it whatever order `choice_translations()` wrote them in. A client draws a
-  select from `choices` — a list, whose order JSON keeps — and reads each label by its value.
+  select from `choices` — a list, whose order JSON preserves — and reads each label by its value.
 - **`choice_labels` is keyed by the value as text**, as JSON keys travel; a value left out has no
   label. A key that is not one of the enum's values is a `ProgrammingError` when the model is
   described.
 - **An enum that declares neither** publishes its values alone, as before.
 - **A context that needs other values or other words inherits and redeclares the field.** Python refuses to
   subclass an enum that has members, so the context writes its own — a superset of the core's is
-  the good practice — and the subclass declares `state: SiatState`. `describe(InvoiceSiat)`
-  publishes its values and labels; `describe(Invoice)` stays the core's; a query by either reads the
+  the good practice — and the subclass declares `state: SiatState`. `ModelIntrospection.describe(InvoiceSiat)`
+  publishes its values and labels; `ModelIntrospection.describe(Invoice)` stays the core's; a query by either reads the
   new values. The core's own code may now meet a value it never knew: that is the subclass's to
   own, and a type checker says so (`reportIncompatibleVariableOverride`). See
   [extensibility](../spec/extensibility.md).
@@ -166,7 +166,7 @@ with self.repository.context() as repository:                         # several 
 | `save`, `remove` | write | Take the aggregate, whole: the children it owns are written and removed with it ([relations §8](relations.md#8-an-aggregate-is-saved-whole)) |
 | `upsert(records, on=, update=)` | write | Insert or overwrite by a key the table holds unique; no version check, `before_save`/`after_save` only |
 | `update_all`, `remove_all` | write | Every row a filter matches, one statement, the count back; no hooks or cascade, version raised; a page or an unanswerable condition is refused |
-| `archive` | write | Stamps `archived_at` and keeps the row, for an `ArchivableMixin` aggregate; refused for anything else |
+| `archive` | write | Stamps `archived_at` and leaves the row in place, for an `ArchivableMixin` aggregate; refused for anything else |
 | `retrying(work)` | write | Runs a unit of work again on `StaleAggregate` or `TransactionConflict`, and raises the last failure as it was |
 | `narrowed(criteria)` | both | The same database seen through a filter nothing can widen: a tenant, a branch, a permission |
 | `context(isolation=, read_only=, timeout=, engine=, writes=, separate=)` | both | Shared by repositories on the same Database instance; defaults to `Writes.SAVED`; `separate=True` starts another transaction ([transactions](transactions.md)) |
@@ -191,18 +191,19 @@ ApplicationService orchestrates Features — `tests/data_layer/orm/test_layers.p
 | **services/** `relation_resolver.py` | the database kinds of relation a specification names, once per node for a whole page |
 | **services/** `cascade.py` | what `save` and `remove` do with the children a root holds |
 | **services/** `upsert.py` | the dialects an upsert speaks, and whether a table holds a key unique |
-| **services/** `model_introspection.py` | `describe(cls) → Meta`: asks the mapper what a class looks like |
-| **domain/** `relations.py` | how a record keeps its relations and the words a cascade decides by: `Held`, `Orphans` |
-| **domain/** `registry.py` | what is mapped: the relations per aggregate, the aggregates per table |
+| **services/** `model_introspection.py` | `ModelIntrospection.describe(cls) → Meta`: asks the mapper what a class looks like |
+| **adapters/** `numbering.py` · `runtime_use_cases.py` · `migrations/` | what other components ask of a database: `DatabaseNumbering`, `SqlUseCases`, `AlembicEngine` |
+| **domain/** `relations.py` | what a record holds of its relations and the words a cascade decides by: `HeldRelations`, `Held`, `Orphans` |
 | **domain/** `transaction.py` | what a unit of work is opened with: `Isolation`, `Transaction` |
 | **domain/** `custom_fields.py` | column types: `TypedJson`, `JsonText`, `TranslatedText` |
 | **infrastructure/** `database.py` | `Database`: one engine, one session factory, observed from birth |
+| **infrastructure/** `mapping_registry.py` | `MappingRegistry`: what is mapped in the process — the relations per aggregate, the aggregates per table |
 | **infrastructure/** `transaction_opening.py` | applying a `Transaction` before the first statement |
 | **infrastructure/** `engine_errors.py` | the driver's errors named by what happened |
 | **infrastructure/** `transaction_hooks.py` | `after_commit` / `after_rollback` per unit of work, savepoints included |
 | **infrastructure/** `observability.py` | every statement to the logger, the tracer and the error tracker |
-| **infrastructure/** `change_tracking.py` · `read_tracking.py` · `cache_invalidation.py` | what every flush and every read goes through without being asked |
-| **infrastructure/** `in_place_changes.py` | a value changed inside — a JSON key, a model's field — written like one assigned: a copy kept when read, compared before a write |
+| **infrastructure/** `change_tracking.py` · `read_tracking.py` | what every flush and every read goes through without being asked |
+| **infrastructure/** `in_place_changes.py` | a value changed inside — a JSON key, a model's field — written like one assigned: a copy stored when read, compared before a write |
 
 What a project imports is what `sincpro_framework.data_layer.orm` exports; the paths inside are the
 framework's own.
@@ -277,7 +278,7 @@ map_aggregates(registry, {Dataset: dataset_table},
 | Mixin | Columns | What the adapter does |
 |---|---|---|
 | `AuditedMixin` | `audit_columns()` → `created_by`, `updated_by` | Stamps them on every flush from `Database(url, actor=lambda: bus.current_context().get("user_id"))`; without an actor they stay `None` |
-| `ArchivableMixin` | `archive_columns()` → `archived_at` | `archive` stamps it and keeps the row, `remove` deletes, and every reading leaves the archived out unless the criteria names `archived_at` |
+| `ArchivableMixin` | `archive_columns()` → `archived_at` | `archive` stamps it and leaves the row in place, `remove` deletes, and every reading leaves the archived out unless the criteria names `archived_at` |
 
 ```python
 @dataclass
@@ -296,7 +297,7 @@ client_table = template_table.entity_table(
 
 - **SQLite.** The pragmas a server wants (WAL, busy timeout, foreign keys) and the column types a
   legacy schema needs (ISO text timestamps, lists of dataclasses) are the project's: `sincpro_synthesis`
-  keeps both in its own `orm/`. `template_table.entity_table(..., datetime_type=...)` takes whatever the project uses.
+  holds both in its own `orm/`. `template_table.entity_table(..., datetime_type=...)` takes whatever the project uses.
 - **PostgreSQL.** The translator is portable except date grains in `grouping`, which come from a
   per-dialect registry with SQLite and Postgres built in. `contains` over a JSON-as-text column is a
   `LIKE` on the cast text on both engines; a project on `jsonb` that wants `@>` writes it through the
@@ -312,7 +313,7 @@ client_table = template_table.entity_table(
 take a `run(session)` and answer the database. They reach every write through that database, a
 repository or not; `docs/persistence/lifecycle.md` says which moment is for what.
 `invalidate_on_commit(database, cache, *aggregates)` wires a `QueryCache` to them: it lets go of
-an aggregate's reads when a write of it commits, and keeps them on a rollback.
+an aggregate's reads when a write of it commits, and retains them on a rollback.
 
 ### Observability
 
@@ -365,6 +366,6 @@ Each of these has a concrete reason to wait, and none changes the vocabulary abo
 
 - **A message broker, and any event storage.** Events have two in-process buses
   ([events.md](../events/README.md)); a broker is the third implementation of the same API. The framework
-  keeps no event table: durability is the project's decision, through its own unit of work.
+  has no event table: durability is the project's decision, through its own unit of work.
 - **An async engine.** The bus has `AsyncBus`; the engine is synchronous. Add it when a caller is.
 - **An abstract `Repository`, not a protocol.** Structural typing checked names only — five methods with the wrong signatures passed `isinstance`. Inheriting is what makes the type checker compare them.

@@ -8,7 +8,8 @@ by configuration (PRD_03 §4).
     class IssueInvoice(Feature): ...
 
 Context: the core records nothing and imports no backend; `[prometheus]` or `[opentelemetry]`
-bring one, and `SINCPRO_METRICS_BACKEND` (or `metrics.use(...)`) picks it.
+bring one, and `OTEL_METRICS_EXPORTER` (or `metrics.use(...)`) picks it. This is the one door
+of `of`, the field reference the span attributes (`traces`) take too.
 """
 
 from sincpro_framework.observability.metrics.adapters.in_memory import InMemoryRecorder
@@ -18,11 +19,7 @@ from sincpro_framework.observability.metrics.domain.instruments import (
 )
 from sincpro_framework.observability.metrics.domain.paths import FieldPath, of
 from sincpro_framework.observability.metrics.domain.recorder import Recorder
-from sincpro_framework.observability.metrics.entrypoint.declare import (
-    Metrics,
-    declares_metrics,
-    metrics,
-)
+from sincpro_framework.observability.metrics.entrypoint.facade import Metrics, metrics
 
 __all__ = [
     "FieldPath",
@@ -31,7 +28,6 @@ __all__ = [
     "InstrumentKind",
     "Metrics",
     "Recorder",
-    "declares_metrics",
     "metrics",
     "of",
 ]

@@ -247,13 +247,13 @@ def test_an_unreachable_collector_neither_blocks_nor_raises(monkeypatch):
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     from sincpro_framework import DataTransferObject, Feature, UseFramework
-    from sincpro_framework.observability.registry import registry
+    from sincpro_framework.observability.registry import observability_registry
 
     provider = TracerProvider()
     provider.add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter(endpoint="http://127.0.0.1:1"))
     )
-    registry.register_tracer_provider("dead-collector", provider)
+    observability_registry.register_tracer_provider("dead-collector", provider)
 
     class Ping(DataTransferObject):
         pass
@@ -272,4 +272,4 @@ def test_an_unreachable_collector_neither_blocks_nor_raises(monkeypatch):
 
     assert all(result == "pong" for result in results)
     assert elapsed < 5, f"{elapsed:.1f}s for 200 executions — the export is blocking"
-    registry.reset()
+    observability_registry.reset()

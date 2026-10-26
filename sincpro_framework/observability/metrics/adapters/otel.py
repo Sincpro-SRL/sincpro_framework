@@ -7,7 +7,7 @@ collector, the OTel Prometheus reader, a vendor's) — `[opentelemetry]`.
 Context: the same rule as the tracer: a meter provider the host registered (Odoo, an operator's
 auto-instrumentation) is used as it is, never replaced; with none and an OTLP endpoint set,
 `for_process()` installs one under the **process** identity, not a bus's — its artifact as a
-stable `service.name`, the version and the tenant beside it (`identity.metrics_resource`) — and
+stable `service.name`, the version and the tenant beside it (`metrics_resource`) — and
 every bus of the process records into it, told apart by `sincpro.context`.
 """
 
@@ -15,11 +15,18 @@ import threading
 from collections.abc import Mapping
 from typing import Any
 
+from sincpro_framework.observability import process
+from sincpro_framework.observability.domain import (
+    ObservabilityIdentity,
+    describing_attributes,
+)
 from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,
 )
 from sincpro_framework.observability.metrics.domain.recorder import Recorder
+from sincpro_framework.observability.otlp import metric_exporter
+from sincpro_framework.sincpro_conf import settings
 
 OTEL_MISSING = "OpenTelemetry is not installed. Install with: pip install sincpro-framework[opentelemetry]"
 PROXY_PROVIDERS = ("_ProxyMeterProvider", "ProxyMeterProvider", "NoOpMeterProvider")
@@ -42,6 +49,13 @@ def host_meter_provider_is_real() -> bool:
         return False
 
 
+def metrics_resource(identity: ObservabilityIdentity) -> dict[str, str]:
+    """The resource of the process's meter provider: a stable service name, its version and
+    tenant as attributes of their own — only what is set, and never over what the deployment
+    declared in `OTEL_RESOURCE_ATTRIBUTES`."""
+    return {"service.name": identity.service, **describing_attributes(identity)}
+
+
 def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> Any:
     """A meter provider exporting to `endpoint` every 60 s, set as the global one — only when
     nobody registered one first. Answers the global provider either way.
@@ -60,8 +74,6 @@ def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> An
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
 
-    from sincpro_framework.observability.otlp import metric_exporter
-
     provider = MeterProvider(
         resource=Resource.create(attributes),
         metric_readers=[PeriodicExportingMetricReader(metric_exporter(endpoint))],
@@ -72,7 +84,7 @@ def install_otlp_meter_provider(endpoint: str, attributes: dict[str, str]) -> An
 
 class OtelRecorder(Recorder):
     """Records into an OpenTelemetry meter — the instrument for each name created once and
-    kept; the labels go as the measurement's attributes."""
+    cached; the labels go as the measurement's attributes."""
 
     def __init__(self, meter_provider: Any | None = None) -> None:
         """A meter of `meter_provider`, else of the global one. Raises `ImportError` with the
@@ -103,14 +115,7 @@ class OtelRecorder(Recorder):
             OtelRecorder.for_process()   ->  OtelRecorder on the host's provider (Odoo)
 
         Without an endpoint nothing is installed: the recorder rides the global provider."""
-        from sincpro_framework.sincpro_conf import settings
-
         if settings.otlp_endpoint and not host_meter_provider_is_real():
-            from sincpro_framework.observability import process
-            from sincpro_framework.observability.metrics.infrastructure.identity import (
-                metrics_resource,
-            )
-
             install_otlp_meter_provider(
                 settings.otlp_endpoint, metrics_resource(process.identity)
             )
@@ -124,7 +129,7 @@ class OtelRecorder(Recorder):
         2. Under the lock, checked again: a racing caller may have created it.
         3. Created by kind: a counter, an up-down counter, or a histogram with its buckets as
            an advisory; an API older than the advisory gets a histogram without it.
-        Final: the instrument, kept under its name.
+        Final: the instrument, cached under its name.
         """
         known = self._instruments.get(instrument.name)
         if known is not None:

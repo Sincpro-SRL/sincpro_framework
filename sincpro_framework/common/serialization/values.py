@@ -21,7 +21,7 @@ BYTES = "$bytes"
 
 @lru_cache(maxsize=512)
 def _adapter(of: Any) -> TypeAdapter[Any]:
-    """The pydantic `TypeAdapter` of a type, kept for the 512 most recent — building one is
+    """The pydantic `TypeAdapter` of a type, cached for the 512 most recent — building one is
     the expensive part of writing or reading a message."""
     return TypeAdapter(of)
 

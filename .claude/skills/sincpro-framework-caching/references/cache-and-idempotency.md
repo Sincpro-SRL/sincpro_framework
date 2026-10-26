@@ -5,7 +5,7 @@ that runs once".
 
 ## The facades first: `bus.cache`, `bus.idempotency`
 
-Every bus has them, kept where its context is kept (its `store_context_in`, else the process's
+Every bus has them, stored where its context is stored (its `store_context_in`, else the process's
 `store_context_in`, else memory), keys apart by the bus's name and by whose the call is (the
 context's `tenant_id`, `tenant_ids`, `user_id`):
 
@@ -35,7 +35,7 @@ What follows is what they stand on — and how to build one by hand on a store o
 
 `QueryCaching` knows when to let go because the repository saw what an answer read. What another
 system answers — a tenant a token resolves to, a catalog a service publishes — gives no such signal;
-it gives a **version**. `Cache` keeps a value by its parameters and judges it by strategies.
+it gives a **version**. `Cache` caches a value by its parameters and judges it by strategies.
 
 ```python
 from datetime import timedelta
@@ -56,7 +56,7 @@ from sincpro_framework.data_layer.caching import (
 
 )
 
-from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 tenants = Cache(InMemoryKeyValue(), namespace="catalog")
 policy = CachePolicy[Tenant](
@@ -68,25 +68,25 @@ value = tenants.get_or_compute(("catalog", "acme"), lambda: registry.resolve("ac
 tenants.forget(("catalog", "acme"), JsonCodec(Tenant))
 ```
 
-- `Cache()` with no store keeps the objects themselves in this process (no codec, nothing leaves
-  the process — right for a value carrying a credential). `Cache(store)` keeps bytes shared by
+- `Cache()` with no store holds the objects themselves in this process (no codec, nothing leaves
+  the process — right for a value carrying a credential). `Cache(store)` stores bytes shared by
   replicas and requires a `Codec` on every call.
 - The key is the parameters, written canonically and hashed — a token used as a key is never readable
   in the store. Every parameter the value depends on (the tenant) belongs in the key.
-- `CachePolicy()` (also what a call with no policy gets) is `TimeToLive(ttl=None)`: kept until
+- `CachePolicy()` (also what a call with no policy gets) is `TimeToLive(ttl=None)`: cached until
   forgotten or until a validation rejects it. Give a shared-store value a ttl.
-- **freshness** — `TimeToLive(ttl=, jitter=, stale_for=, early_expiry=)` (alias `Lifetime`) or
+- **freshness** — `TimeToLive(ttl=, jitter=, stale_for=, early_expiry=)` or
   `Sliding(idle_for=, at_most=)`. On a shared store a sliding hit renews at most once per quarter of
   the window.
 - **validation** — `Unconditional()` (default, freshness is the whole answer) or
   `ExternalVersion(current, version_of=, trusted_for=)` (an ETag; a moved version forces recompute, never
   serves stale).
 - **failure** — `Raise()` (default) or `FailSafe(serve_for=, throttle_for=30s, errors=Exception)`
-  (serves the last good value through an outage, re-keeps it fresh for `throttle_for`; never serves a
+  (serves the last good value through an outage, stores it again as fresh for `throttle_for`; never serves a
   value validation *rejected*). Name `errors` (`ConnectionError`, `TimeoutError`): the default
   covers every exception, a 401 included.
 - On a shared store, values are bytes, so the call names its `Codec` (e.g. `JsonCodec(Tenant)`).
-- An exception is never kept; a value larger than `max_bytes` is answered and not kept.
+- An exception is never cached; a value larger than `max_bytes` is answered and not cached.
 - The process tier is bounded by an `Eviction` (`Lru(max_entries=10_000)` default, `Unbounded()`).
 
 ### Outcomes and the breaker
@@ -106,7 +106,7 @@ call. `forget` is the exception: an invalidation that reached no replica raises.
 from sincpro_framework import DataTransferObject
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.caching.domain import exceptions
-from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 class CommandIssueReceipt(DataTransferObject):
     request_id: str
@@ -134,22 +134,22 @@ class IssueReceipt(Feature): ...
 - The key: the Command's `idempotency_key()`; else the key a transport put in the context under
   `IDEMPOTENCY_KEY` (REST's `Idempotency-Key` header); else every field of the Command — so a field
   generated per call (a `default_factory` id, a timestamp) makes every retry a new request.
-- `vary_by` names the context keys the key is kept per. Without the tenant, two tenants sending
+- `vary_by` names the context keys the key is separated by. Without the tenant, two tenants sending
   the same `request_id` share one answer.
 - `in_progress_for` must outlive the longest run: an expired claim lets a duplicate run.
 - `once(...)` wraps the use case's own `execute`; the use case still runs inside the bus (Sentry,
-  span, access guard), so a replayed answer is still authorized. A subclass that keeps `execute`
-  keeps `once()`; a `replaces=` handler declares its own. An `async def execute` is refused; async
+  span, access guard), so a replayed answer is still authorized. A subclass that inherits `execute`
+  inherits `once()`; a `replaces=` handler declares its own. An `async def execute` is refused; async
   callers reach it through `bus.get_async_bus()`. `execute` must declare its return type (the
   replayed answer is decoded as it).
 - By hand, around anything: `idempotency.run(key, write, IdempotencyPolicy(expires_after=...),
   JsonCodec(Answer), payload=body)`.
-- Underneath it needs a place replicas share to claim a key and keep its answer:
+- Underneath it needs a place replicas share to claim a key and store its answer:
   `KeyValueRecords(store)` (best effort for a replica that dies after the side effect), or
   `DatabaseIdempotencyRecords(database, template_table.idempotency_table(...))` with
   `bus.idempotency.exactly_once(records)`: the claim commits on its own, the use case runs in a
   unit of work every repository on that database joins, and the answer commits with the write —
   a crash before the commit leaves neither. Records of yours answer `transaction()` and prove
-  themselves with `IdempotencyRecordsContract`. Inside the write, `current_idempotency_key()` is the key.
+  themselves with `IdempotencyRecordsContract`. Inside the write, `Idempotency.current_key()` is the key.
 - Across the upgrade: an answer an `Idempotency(store)` of the previous release completed is
   replayed by `bus.idempotency` on the same store.

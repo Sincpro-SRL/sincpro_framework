@@ -47,19 +47,20 @@ class Strict(DataTransferObject):
         }
         return {key: value for key, value in data.items() if key in known}
 
+    @classmethod
+    def known_keys_of(cls, value: dict, tolerant: bool) -> dict:
+        """A node's mapping with only the keys this model takes — the same rule as the
+        validator, for the nodes read by hand before a model is built.
 
-def refused_or_dropped(value: dict, known: set[str], tolerant: bool) -> dict:
-    """A filter node's mapping with only the keys it takes — the same rule as `Strict`, for
-    the nodes read by hand before a model is built.
-
-        {"field": "a", "valeu": 1}, {"field", "operator", "value"}, False
-        ->  InvalidCriteria: a filter node has no 'valeu'; it takes [...]
-        same, tolerant=True   ->  {"field": "a"}
-    """
-    unknown = sorted(set(value) - known)
-    if unknown and not tolerant:
-        raise exceptions.InvalidCriteria(
-            f"a filter node has no {', '.join(repr(one) for one in unknown)}; "
-            f"it takes {sorted(known)}"
-        )
-    return {key: one for key, one in value.items() if key in known}
+            Condition.known_keys_of({"field": "a", "valeu": 1}, False)
+            ->  InvalidCriteria: a filter node has no 'valeu'; it takes [...]
+            Condition.known_keys_of({"field": "a", "valeu": 1}, True)   ->  {"field": "a"}
+        """
+        known = set(cls.model_fields)
+        unknown = sorted(set(value) - known)
+        if unknown and not tolerant:
+            raise exceptions.InvalidCriteria(
+                f"a filter node has no {', '.join(repr(one) for one in unknown)}; "
+                f"it takes {sorted(known)}"
+            )
+        return {key: one for key, one in value.items() if key in known}

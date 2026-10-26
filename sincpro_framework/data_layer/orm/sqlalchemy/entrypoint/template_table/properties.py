@@ -23,7 +23,7 @@ def properties_column() -> Column:
 
         entity_table("invoice", metadata, properties_column(), Column("number", Text))
 
-    A module that needs a field and not a table of its own keeps it here, and maps it as a field
+    A module that needs a field and not a table of its own stores it here, and maps it as a field
     with `slot_field`. Adding the column later is a migration of the whole table, which is why the
     core reserves it before anyone needs it.
     """

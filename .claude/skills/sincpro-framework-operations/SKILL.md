@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-operations
-description: Run scheduled work, keep a process up, and move schemas with sincpro_framework — Crons, CronProcess/CronGateway, Process/Poll, EventRelay scheduling and the Migrations timeline across contexts and stores. Use whenever a task needs a cron, a process that stays up and runs loops, a poll of a table or a relay, a background tick, run_relay/relay_deliverable_events, a schema change, an Alembic migration, or a system upgrade/downgrade.
+description: Run scheduled work and long-lived processes, and move schemas with sincpro_framework — Crons, CronProcess/CronGateway, Process/Poll, EventRelay scheduling and the Migrations timeline across contexts and stores. Use whenever a task needs a cron, a process that stays up and runs loops, a poll of a table or a relay, a background tick, run_relay/relay_deliverable_events, a schema change, an Alembic migration, or a system upgrade/downgrade.
 ---
 
 # sincpro-framework-operations
@@ -51,7 +51,7 @@ deep docs it names live in the framework repository, not in the package.
 | `Run` / `RunOutcome` / `CronStatus` | One claimed tick / `SUCCEEDED`, `FAILED`, `SKIPPED` / `last_run`, `last_success`, `next_tick` | DTO | `from sincpro_framework.entrypoints.adapters.cron import Run, RunOutcome, CronStatus` |
 | `ManualClock` | A clock that moves when the test says (`advance(minutes=2)`) | adapter | `from sincpro_framework.runtime.testing import ManualClock` |
 | `ContextMigrations` | What one context migrates: its name, its folder, one engine per store | registry | `from sincpro_framework.data_layer.migrations import ContextMigrations` |
-| `Chain` | One (context × store): steps run in order, position kept in the store itself | DTO (frozen dataclass) | `from sincpro_framework.data_layer.migrations import Chain` |
+| `Chain` | One (context × store): steps run in order, position stored in the store itself | DTO (frozen dataclass) | `from sincpro_framework.data_layer.migrations import Chain` |
 | `Step` | One migration: UUIDv7 `id`, `parent`, `requires` (`context/store/id`), `irreversible`, `checksum` | DTO (frozen dataclass) | `from sincpro_framework.data_layer.migrations import Step` |
 | `Migrations` | The composition root: every context merged into one timeline; `status`, `upgrade`, `downgrade`, `revision`, `hash`, `check`, `resolve`, `adopt`, `*_plan` | registry | `from sincpro_framework.data_layer.migrations import Migrations` |
 | Timeline | `migrations.status().timeline`: every step of every chain in run order, with whether it is applied | function | — |
@@ -75,11 +75,12 @@ stay applied.
 **In the framework.** `sincpro_framework.entrypoints.adapters.cron` (`domain/` Cron, Tick, policies, `CronRuns` port;
 `adapters/` InMemoryRuns, KeyValueRuns, clocks; `registry` Crons; `entrypoint/` CronGateway,
 CronProcess) needs only the stdlib. `sincpro_framework.data_layer.migrations` (`domain/` Chain, Step, engine
-port; `adapters/` InMemoryEngine; `manifest` meta_migration.json; `orchestrator` Migrations;
-`entrypoint/` command_line) needs no database. Optional extras: `AlembicEngine` in
+port, ContextMigrations, ChainStatus/MigrationStatus; `adapters/` InMemoryEngine, `Manifest`
+meta_migration.json; `infrastructure/` StepIds; `services/` timeline, MigrationSystem, Moves,
+Authoring; `entrypoint/` the `Migrations` facade, command_line) needs no database. Optional extras: `AlembicEngine` in
 `sincpro_framework.data_layer.orm` (`[migrations]` = sqlalchemy + alembic); the Redis/Valkey or
-Memcached store behind `KeyValueRuns` (`sincpro_framework.store.adapters.redis` /
-`.memcached`, extras `[redis]` / `[memcached]`).
+Memcached store behind `KeyValueRuns` (`RedisKeyValue` / `MemcachedKeyValue` from
+`sincpro_framework.data_layer.store`, extras `[redis]` / `[memcached]`).
 
 **In a consumer service** (one `UseFramework` bus per bounded context, created in
 `infrastructure/framework.py` before `services/` is imported):
@@ -136,7 +137,7 @@ make migrate → python -m myapp.entrypoints.migrations upgrade
   that fell during a deploy never runs. Only shared runs let the gateway start from the last run.
 - **Logic in `Cron.run`** (repositories, adapters, HTTP) — nothing else can reuse it and it has no
   use-case span. `run` decides and executes Commands on its injected buses.
-- **State on `self` in a cron** — one instance serves every tick, from several threads. Keep state
+- **State on `self` in a cron** — one instance serves every tick, from several threads. Put state
   in locals.
 - **`tick.once(key)` assumed to retry** — it is at most once: a step that fails after `once` is not
   retried by another run of the same tick. Call it right before the side effect, keyed per item.

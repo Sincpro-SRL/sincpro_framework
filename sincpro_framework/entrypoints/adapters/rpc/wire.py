@@ -18,8 +18,8 @@ from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import Any
 
-from sincpro_framework.auth.domain.identity import Credentials
-from sincpro_framework.auth.entrypoint.transports import challenges_of
+from sincpro_framework.auth import Credentials, security
+from sincpro_framework.common.naming import snake
 from sincpro_framework.entrypoints.adapters.rpc.errors import UNAUTHENTICATED
 from sincpro_framework.entrypoints.adapters.rpc.jrpc import (
     DEFAULT_MAX_BATCH_SIZE,
@@ -39,24 +39,12 @@ from sincpro_framework.use_bus import UseFramework
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
 """`namespace.operation` — dotted snake_case segments, at least two."""
 LAYER_PREFIX = re.compile(r"^(Command|Query)(?=[A-Z0-9])")
-WORD_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 STATUS_BY_REASON = {"BODY_TOO_LARGE": 413, "UNSUPPORTED_MEDIA_TYPE": 415}
-
-
-def snake_case(name: str) -> str:
-    """A CamelCase or kebab-case name in snake_case — acronyms kept whole.
-
-        snake_case("IssueInvoice")  ->  "issue_invoice"
-        snake_case("sincpro-billing")  ->  "sincpro_billing"
-
-    What a namespace and an operation name are made of.
-    """
-    return WORD_BOUNDARY.sub("_", name).replace("-", "_").lower()
 
 
 def operation_name(dto_name: str) -> str:
     """`CommandIssueInvoice` → `issue_invoice`; a name that is only `Command` stays itself."""
-    return snake_case(LAYER_PREFIX.sub("", dto_name))
+    return snake(LAYER_PREFIX.sub("", dto_name))
 
 
 def positive_limit(name: str, value: int) -> int:
@@ -129,7 +117,7 @@ class RpcSurface:
     @cached_property
     def challenges(self) -> tuple[str, ...]:
         """The `WWW-Authenticate` values a 401 answers with — its buses' providers'."""
-        return tuple(challenges_of(self.buses()))
+        return tuple(security.challenges(self.buses()))
 
 
 class JsonRpcWire(Wire[RpcBinding]):
@@ -157,7 +145,7 @@ class JsonRpcWire(Wire[RpcBinding]):
 
     def namespace_of(self, group: Group) -> str:
         """The group's namespace — the alias made snake_case by default — and its version."""
-        namespace = group.namespace or snake_case(group.alias)
+        namespace = group.namespace or snake(group.alias)
         return f"{namespace}.{group.version}" if group.version else namespace
 
     def operation_of(self, dto_name: str) -> str:

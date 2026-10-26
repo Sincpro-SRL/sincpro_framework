@@ -10,12 +10,11 @@ import pytest
 boto3 = pytest.importorskip("boto3")
 moto = pytest.importorskip("moto")
 
-from sincpro_framework.settings import Secret  # noqa: E402
+from sincpro_framework.settings import Secret, SincproConfig, build_config_obj  # noqa: E402
 from sincpro_framework.settings.adapters.aws import (  # noqa: E402
     ParameterStore,
     SecretsManager,
 )
-from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj  # noqa: E402
 
 DOCUMENT = """
 billing:

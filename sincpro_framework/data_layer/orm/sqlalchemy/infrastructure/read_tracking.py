@@ -10,8 +10,10 @@ from sqlalchemy.orm import ORMExecuteState
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.util import find_tables
 
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import aggregates_of
-from sincpro_framework.ddd.repositories.reads import note_read, reading
+from sincpro_framework.common.reads import note_read, reading
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
 
 
 def note_statement_reads(state: ORMExecuteState) -> None:
@@ -28,5 +30,5 @@ def note_statement_reads(state: ORMExecuteState) -> None:
         return
     for table in find_tables(statement, include_joins=True):
         if isinstance(table, Table):
-            for aggregate in aggregates_of(table):
+            for aggregate in mapping_registry.aggregates_of(table):
                 note_read(aggregate)

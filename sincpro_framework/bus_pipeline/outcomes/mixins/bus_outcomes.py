@@ -39,7 +39,7 @@ class BusOutcomesMixin:
         ApplicationService runs included; none when an error handler answered instead. It
         observes: it cannot change the answer, and one that raises is logged and reaches nothing
         else. A generation of this bus (`fresh`) hears it too. Every bus of the process:
-        `sincpro_framework.bus_pipeline.outcomes.listeners.completions.subscribe(listener)`.
+        `sincpro_framework.bus_pipeline.outcomes.listeners.completion_listeners.subscribe(listener)`.
         """
         if listener is None:
             return lambda given: self.on_completion(given, use_cases, when)
@@ -79,7 +79,7 @@ class BusOutcomesMixin:
         handler answered instead. It observes: it cannot change what the call raised, and one that
         raises is logged and reaches nothing else. A generation of this bus (`fresh`) hears it
         too. Every bus of the process:
-        `sincpro_framework.bus_pipeline.outcomes.listeners.failures.subscribe(listener)`.
+        `sincpro_framework.bus_pipeline.outcomes.listeners.failure_listeners.subscribe(listener)`.
         """
         if listener is None:
             return lambda given: self.on_failure(given, use_cases, when)

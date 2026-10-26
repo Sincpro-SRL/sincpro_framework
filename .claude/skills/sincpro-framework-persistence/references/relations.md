@@ -12,10 +12,10 @@ kind at once) go deeper; this page is enough to use them.
 | Kind | How it resolves | Who writes it |
 |---|---|---|
 | **Local, mapped FK** — the common case | one statement per node, `WHERE fk IN (page ids)`, cut per parent by a window | inferred from the `ForeignKey` |
-| **Local, id list** in a `JsonText` column | one statement per node in the same session | `Relation.id_list(...)` |
-| **Many-to-many** | joined through the table in between | `Relation.many_to_many(...)`, because a list cannot say there is a table |
-| **Cross-context** | one Command on the other context's bus with every parent key | `Relation.bus(...)` |
-| **Any function** | one call of `resolver(keys, criteria)` | `Relation.resolved_by(...)` |
+| **Local, id list** in a `JsonText` column | one statement per node in the same session | `TableRelation.id_list(...)` |
+| **Many-to-many** | joined through the table in between | `TableRelation.many_to_many(...)`, because a list cannot say there is a table |
+| **Cross-context** | one Command on the other context's bus with every parent key | `TableRelation.bus(...)` |
+| **Any function** | one call of `resolver(keys, criteria)` | `TableRelation.resolved_by(...)` |
 
 ## Inference precedence
 
@@ -35,20 +35,20 @@ is a declared type.
 
 A to-many tied by a foreign key is **written by its root** (`repository-and-writes.md`).
 `remove(root)` takes the children too — they are parts of the aggregate (Evans).
-`Relation.foreign_key(Run, identified_by="dataset_id", owned=False)` declares a reference to
+`TableRelation.foreign_key(Run, identified_by="dataset_id", owned=False)` declares a reference to
 another aggregate, never written nor removed by the root.
 
 ## Declaring what the tables cannot say
 
 ```python
-from sincpro_framework.data_layer.orm import Relation
+from sincpro_framework.data_layer.orm import TableRelation
 
 map_aggregates(registry, {Author: author_table, Tag: tag_table, Work: work_table},
     relations={Work: {
-        "tags":      Relation.many_to_many(Tag, through=work_tag, this_key="work_id", related_key="tag_id"),
-        "sources":   Relation.id_list(Work, identified_by="source_ids"),
-        "reviews":   Relation.bus(Review, reviews_bus, CommandSearchReviews, identified_by="book_id"),
-        "publisher": Relation.resolved_by(Publisher, identified_by="publisher_id", resolver=fetch_publishers),
+        "tags":      TableRelation.many_to_many(Tag, through=work_tag, this_key="work_id", related_key="tag_id"),
+        "sources":   TableRelation.id_list(Work, identified_by="source_ids"),
+        "reviews":   TableRelation.bus(Review, reviews_bus, CommandSearchReviews, identified_by="book_id"),
+        "publisher": TableRelation.resolved_by(Publisher, identified_by="publisher_id", resolver=fetch_publishers),
     }})
 ```
 
@@ -108,12 +108,12 @@ way in. `repository.explain(...)` says how many calls a criteria will cost befor
 
 ## Cross-context
 
-`Relation.bus(Review, reviews_bus, CommandSearchReviews, identified_by="book_id")` calls the other
+`TableRelation.bus(Review, reviews_bus, CommandSearchReviews, identified_by="book_id")` calls the other
 context's bus with `CommandSearchReviews(criteria=…)`, the criteria carrying every parent key. The
 other side writes nothing special: a Feature that takes a `Query` and answers
 `ResponsePaginatedQuery.of(page, criteria)`. This side imports only that context's Command and the
 class it reads the answer as, never its Features or its repository.
 
 Every relation may carry a `scope=Criteria(...)`: the filter and order every reading of it starts
-from (`scope=Criteria(order=parse_order("-created_at"))` for "newest first"). What a caller names
+from (`scope=Criteria(order=Sort.parse("-created_at"))` for "newest first"). What a caller names
 in the specification merges on top and can only narrow it.

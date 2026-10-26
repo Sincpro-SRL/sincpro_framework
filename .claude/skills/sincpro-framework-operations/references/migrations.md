@@ -41,9 +41,9 @@ if __name__ == "__main__":
 - The folder is `Path(__file__).parent`, so it never depends on where the command runs. A
   relative path read from another directory finds no `meta_migration.json` and silently sees a
   context with no steps.
-- Each store is one **chain**, keeping its own position in the store itself — for Alembic, the
+- Each store is one **chain**, storing its own position in the store itself — for Alembic, the
   table `alembic_version__<context>__<store>` (plus `<that>_dirty` on SQLite/MySQL). Context and
-  store names must keep that name within 63 characters.
+  store names must fit that name in 63 characters.
 - `Migrations` refuses a context registered twice and two contexts sharing one folder.
 - `AlembicEngine(metadata, database, render_types=None)`: `metadata` is the context's own
   `MetaData`; only its tables are compared, so contexts can share one database.

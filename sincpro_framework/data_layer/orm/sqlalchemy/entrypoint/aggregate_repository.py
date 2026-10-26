@@ -36,7 +36,13 @@ from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Isolation, Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.reading import Explained
-from sincpro_framework.ddd.criteria import Bucket, Criteria, Level, Pivot, Specification
+from sincpro_framework.ddd.criteria import (
+    Bucket,
+    Criteria,
+    GroupingLevel,
+    Pivot,
+    Specification,
+)
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.repositories.aggregate_repository import AggregateRepository
 from sincpro_framework.ddd.repositories.capabilities import Upserted
@@ -150,8 +156,8 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
 
     def pivot(
         self,
-        rows: Sequence[str | Level],
-        columns: Sequence[str | Level],
+        rows: Sequence[str | GroupingLevel],
+        columns: Sequence[str | GroupingLevel],
         criteria: Criteria | None = None,
         **measures: Any,
     ) -> Pivot:

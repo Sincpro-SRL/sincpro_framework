@@ -1,12 +1,13 @@
 """The events module's layers point one way: a layer imports only the ones below it, so the tree
-keeps saying what each piece is.
+says what each piece is.
 
-    entrypoint      →  entrypoint, adapters, domain     what a project holds: publisher, subscriber, relay
+    entrypoint      →  entrypoint, services, domain     what a project holds: publisher, subscriber, relay
+    services        →  services, adapters, domain       the work: publication, dispatch, relaying
     adapters        →  adapters, domain                 the queues
-    domain          →  domain                           the port and the failure policies
+    domain          →  domain                           the ports, the envelope and the failure policies
 
-An import under `if TYPE_CHECKING:` only names a type, so it is not a dependency: the queues
-annotate the `Subscriber` that builds them without importing the entrypoint at runtime.
+An import under `if TYPE_CHECKING:` counts like any other: a queue names the subscriber it hands
+events to by the port in the domain (`Subscribes`), never by the entrypoint above it.
 
 Nothing lives at the root but `__init__.py`: an optional extra is an adapter like any other
 (`adapters/faststream/`, guarded at import), the way `store.adapters.redis` is.
@@ -20,7 +21,8 @@ import pytest
 MODULE = Path(__file__).parents[2] / "sincpro_framework" / "event_driven"
 PACKAGE = "sincpro_framework.event_driven"
 ALLOWED = {
-    "entrypoint": {"entrypoint", "adapters", "domain"},
+    "entrypoint": {"entrypoint", "services", "domain"},
+    "services": {"services", "adapters", "domain"},
     "adapters": {"adapters", "domain"},
     "domain": {"domain"},
 }
@@ -28,16 +30,7 @@ ALLOWED = {
 
 def _layers_imported(module: Path) -> set[str]:
     imported: set[str] = set()
-    tree = ast.parse(module.read_text())
-    only_typed = {
-        id(inner)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.If) and ast.unparse(node.test) == "TYPE_CHECKING"
-        for inner in ast.walk(node)
-    }
-    for node in ast.walk(tree):
-        if id(node) in only_typed:
-            continue
+    for node in ast.walk(ast.parse(module.read_text())):
         names: list[str] = []
         if isinstance(node, ast.ImportFrom) and node.module:
             names = [node.module]
@@ -98,6 +91,7 @@ def test_the_domain_holds_no_third_party_import():
                     "enum",
                     "typing",
                     "threading",
+                    "uuid",
                 }:
                     third_party.add((module.name, node.module))
     assert third_party == set()

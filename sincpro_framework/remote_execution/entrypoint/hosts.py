@@ -29,11 +29,11 @@ from collections.abc import Iterator, Sequence
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from sincpro_framework.remote_execution.entrypoint.host_process import READY
-
 if TYPE_CHECKING:
     from sincpro_framework.use_bus import UseFramework
 
+READY = "sincpro-host-ready "
+"""The line a hosting process writes once it listens — the rest of its stdout is its logs."""
 READY_WITHIN = 60.0
 """Seconds a hosting process may take to import its contexts and bind its port."""
 

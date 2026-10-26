@@ -274,7 +274,7 @@ class IssueInvoice(Feature): ...
   neither the use case's Command nor its Response (read off `execute`'s annotations), or into a
   context type it does not declare; a value that is not a number; a value handed where a reference
   is expected. A label that is not bounded is warned about, not refused (§4.4).
-- **Only successes**: a failed run is already measured, by kind, in §4.2. `declares_metrics(cls)`
+- **Only successes**: a failed run is already measured, by kind, in §4.2. `metrics.declared_on(cls)`
   answers whether a use case declared any.
 
 ### 4.4 Labels: the project's choice, warned when unbounded — normative
@@ -359,7 +359,7 @@ time it sees its name.
   `* on (job, instance, sincpro_context) group_left (sincpro_version)`. One series per context:
   never a label that multiplies every series.
 - **One source**: the identity and the tenant are the ones traces and errors already use
-  (`observability.domain`: `ObservabilityIdentity`, `tenant()`); nothing is resolved twice.
+  (`observability.domain`: `ObservabilityIdentity`, `deployment_tenant()`); nothing is resolved twice.
 
 > Version and tenant are also on every series (§4.10): the info series stays, and is no longer the
 > only place a metric says them.
@@ -405,13 +405,13 @@ time it sees its name.
 
 3. **The tenant and the user.**
    - The execution's tenant is the context's `tenant`; else the authenticated identity's
-     (`current_identity().tenant`); else the deployment's: `TENANT`, then the `tenant` key of
+     (`security.identity.tenant`); else the deployment's: `TENANT`, then the `tenant` key of
      `OTEL_RESOURCE_ATTRIBUTES` (comma-separated `key=value`, percent-decoded, stripped).
    - The execution's user is the context's `user_id`; else the authenticated identity's
      `subject`. It goes to GlitchTip as the event's user too (`scope.set_user({"id": ...})`), so
      every issue says how many users it hit.
    - The identity is read by observability itself, so every entrypoint that authenticates — REST,
-     JSON-RPC, gRPC, FastAPI, MCP, a queue, remote execution, `as_identity` by hand — gives it
+     JSON-RPC, gRPC, FastAPI, MCP, a queue, remote execution, `security.as_identity` by hand — gives it
      with no code of its own. The context wins over it: the application says for whom it works,
      and every signal follows. A service that never loads auth pays nothing for it.
 

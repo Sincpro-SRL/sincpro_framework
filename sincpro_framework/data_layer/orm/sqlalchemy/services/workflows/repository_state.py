@@ -17,10 +17,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.aggregation import (
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
+    Evaluation,
+    Node,
     Operator,
-    combined,
-    conditions_of,
-    matches,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_meta import Meta
@@ -117,18 +116,19 @@ class RepositoryState(IRepository):
         """
         expression = criteria.expression
         if self._scope is not None:
-            kept, dropped = meta.accept(self._scope.expression)
-            if dropped or kept is None:
+            accepted, dropped = meta.accept(self._scope.expression)
+            if dropped or accepted is None:
                 raise exceptions.ProgrammingError(
                     f"{meta.aggregate} cannot answer the scope this repository was narrowed "
                     f"by ({', '.join(one.field for one in dropped) or 'nothing survived'}); "
                     "reading it wide is not an option"
                 )
-            expression = combined(kept, expression)
+            expression = Node.combined(accepted, expression)
         if issubclass(model, ArchivableMixin) and not any(
-            one.field == "archived_at" for one in conditions_of(expression)
+            one.field == "archived_at"
+            for one in (expression.conditions() if expression is not None else [])
         ):
-            expression = combined(
+            expression = Node.combined(
                 expression,
                 Condition(field="archived_at", operator=Operator.IS_NULL, value=True),
             )
@@ -136,7 +136,7 @@ class RepositoryState(IRepository):
 
     def _in_scope(self, record: Any) -> bool:
         """Whether a record belongs to what this repository may see and write."""
-        return self._scope is None or matches(record, self._scope.expression)
+        return self._scope is None or Evaluation.matches(record, self._scope.expression)
 
     def _refuse_outside(self, record: Any) -> None:
         """A record outside the scope this repository was narrowed to is refused — a narrowed

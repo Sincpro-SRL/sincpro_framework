@@ -243,7 +243,7 @@ class UnitOfWork(RepositoryState):
            when it asks for options other than the ones it began with — and nothing more.
         3. Otherwise a new session: no autoflush under `Writes.SAVED`, and the transaction
            begun with what was asked (`began`).
-        4. The repository bound to that session, keeping its scope and guard, set as the one
+        4. The repository bound to that session, with its scope and guard, set as the one
            a relation touched inside resolves through.
         5. The unit put in play on the database while the block runs, so every repository on
            it joins.

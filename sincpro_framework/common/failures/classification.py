@@ -13,13 +13,13 @@ here knows the components that raise them.
 """
 
 import json
-import re
 from datetime import timedelta
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
 from sincpro_framework import exceptions
+from sincpro_framework.common.naming import upper_snake
 
 RETRYABLE = frozenset(
     {
@@ -46,7 +46,6 @@ event relay gives up on them at the first failure — trying again only blocks w
 DEFAULT_RETRY_AFTER = timedelta(seconds=1)
 DURATION = TypeAdapter(timedelta)
 """Reads a `retry_after` written as text — the ISO-8601 duration a `timedelta` travels as."""
-UPPER_SNAKE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
 def refined_failure_kind(error: Exception) -> exceptions.FailureKind:
@@ -126,7 +125,7 @@ def failure_reason(error: Exception, kind: exceptions.FailureKind) -> str:
     """
     if kind == exceptions.FailureKind.INVALID or said_to_the_caller(error) is None:
         return kind.value.upper()
-    return UPPER_SNAKE_BOUNDARY.sub("_", type(error).__name__).upper()
+    return upper_snake(type(error).__name__)
 
 
 def retry_after(error: Exception, kind: exceptions.FailureKind) -> timedelta | None:

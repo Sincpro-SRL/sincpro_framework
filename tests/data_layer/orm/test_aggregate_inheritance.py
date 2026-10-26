@@ -18,7 +18,9 @@ from sincpro_framework.data_layer.orm import (
     map_aggregates,
     template_table,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import Criteria, Entity, EntityCollection, exceptions
 
 
@@ -119,7 +121,7 @@ def test_a_criteria_reads_inherited_and_own_fields_alike(repository: Repository)
 
 def test_the_definition_of_a_subclass_lists_what_it_inherited():
     assert {"number", "total", "discount", "version"} <= set(
-        describe(DiscountedInvoice).fields
+        ModelIntrospection.describe(DiscountedInvoice).fields
     )
 
 

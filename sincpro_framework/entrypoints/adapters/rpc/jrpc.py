@@ -12,8 +12,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.domain.identity import Credentials
-from sincpro_framework.context.domain.level import EntrypointKind
+from sincpro_framework.auth import Credentials
+from sincpro_framework.context import EntrypointKind
 from sincpro_framework.entrypoints.adapters.rpc import exceptions
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     ERROR_DATA_SCHEMA,
@@ -29,7 +29,6 @@ from sincpro_framework.entrypoints.adapters.rpc.errors import (
 from sincpro_framework.entrypoints.domain.bindings import RpcBinding
 from sincpro_framework.entrypoints.domain.layers import Scalar
 from sincpro_framework.entrypoints.domain.surface import Resolved
-from sincpro_framework.entrypoints.services.scalar_executor import execute
 from sincpro_framework.observability import process
 from sincpro_framework.sincpro_logger import logger
 
@@ -145,10 +144,7 @@ def dispatch_method(
         raise exceptions.InvalidParams(
             "PARAMS_BY_POSITION", "params must be a JSON object: this API is by-name only"
         )
-    operation = resolved.operation
-    return execute(
-        operation.bus, operation.run, payload, context, credentials, EntrypointKind.RPC
-    )
+    return resolved.operation.call(payload, context, credentials, EntrypointKind.RPC)
 
 
 def is_valid_id(request_id: Any) -> bool:
@@ -303,7 +299,7 @@ def handle_payload(
 
 
 def _rewritten_refs(node: Any, names: Mapping[str, str]) -> Any:
-    """A deep copy of `node` with every `#/$defs/X` pointed at the component `X` is kept under
+    """A deep copy of `node` with every `#/$defs/X` pointed at the component `X` is stored under
     — `names[X]`, which may be qualified by its owner.
 
         _rewritten_refs({"$ref": "#/$defs/Line"}, {"Line": "billing.issue.Line"})
@@ -401,7 +397,7 @@ def method_object(
     4. Final: `deprecated` and `x-sunset` when its binding is on its way out.
 
     Context: `schemas` is the document's `components.schemas`; without one the hoisted
-    definitions go to a dict nobody keeps.
+    definitions go to a dict nobody reads.
     """
     operation = resolved.operation
     published: dict[str, Any] = schemas if schemas is not None else {}

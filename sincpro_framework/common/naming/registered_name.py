@@ -11,7 +11,7 @@ def registered_name(cls: type, context: str) -> str:
 
     A class that knows its own identity answers it (`identity_in`, which `DomainEvent` defines);
     any other is known by its bounded context and its class name, so moving it to another module
-    never changes it and two contexts with a `CommandCreate` each keep their own.
+    never changes it and two contexts with a `CommandCreate` each have their own.
     """
     own = getattr(cls, "identity_in", None)
     if callable(own):

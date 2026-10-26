@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj
+from sincpro_framework.settings import SincproConfig, build_config_obj
 
 
 def test_create_config_obj(test_conf_yaml_path: str):

@@ -26,6 +26,6 @@ The doors in code:
 - `sincpro_framework.observability.process`, the transport around the buses: the ASGI request,
   the httpx call, the server's own loggers, without borrowing a bus's identity.
 - `sincpro_framework.observability.metrics`: `metrics` (declare, pick the recorder) and `of` (field
-  references).
+  references) — the one door of `of`, the span attributes take it from there too.
 - `sincpro_framework.observability.traces`: what a use case says on its own span —
   `@traces.attributes(...)` with the same `of`, and `traces.annotate({...})` inside `execute`.

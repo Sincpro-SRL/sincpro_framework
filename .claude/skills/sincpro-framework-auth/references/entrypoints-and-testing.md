@@ -3,7 +3,7 @@
 ## Entrypoints authenticate by themselves
 
 A guarded bus needs nothing more on its entrypoints: each builds `Credentials` from what arrived,
-the bus's `AccessControl` authenticates them (`authenticated_as(bus, credentials)`), and the use
+the bus's `AccessControl` authenticates them (`security.authenticated_as(bus, credentials)`), and the use
 case runs as that identity. A bus nobody guards is left alone: nothing is authenticated, the
 identity is what the host opened.
 
@@ -12,7 +12,7 @@ identity is what the host opened.
 | REST (`FastApiGateway`) | the ASGI scope of the request | 401 (with `WWW-Authenticate`) / 403 problem responses |
 | JSON-RPC (`RpcGateway`) | headers, cookies, query, method, target | `-32001` / `-32003` with `data.kind`, `data.reason`, `data.requirement` |
 | gRPC (`GrpcGateway`) | metadata, the mTLS client certificate | `UNAUTHENTICATED` / `PERMISSION_DENIED`, `sp-auth-refusal` and `www-authenticate` in trailing metadata |
-| MCP (`build_mcp_server`) | the HTTP request of the tool call | a tool error; with `auth=`, FastMCP's own bearer check and 401 first |
+| MCP (`Entrypoint`, `McpGateway`) | the HTTP request of the tool call | a tool error; with `auth=`, FastMCP's own bearer check and 401 first |
 | A project's own ASGI app | `IdentityMiddleware(app, access=auth)` | 401 with `WWW-Authenticate`, 403 with the reason |
 | A context hosted for another service | the caller's `ServiceTokenProvider` token | the refusal raised on the caller |
 
@@ -33,7 +33,7 @@ identity is what the host opened.
 
 | Need | How |
 |---|---|
-| to be someone, no provider, no bus | `with as_identity(Identity.user("user:1", permissions={...})):` |
+| to be someone, no provider, no bus | `with security.as_identity(Identity.user("user:1", permissions={...})):` |
 | only some permissions, one line | `with granting(BillingPermission.ISSUE_INVOICE):` (`sincpro_framework.runtime.testing`) |
 | an entrypoint with fake tokens | `StaticProvider({"token-a": identity_a})` |
 | no access control at all | `AccessControl(enabled=False)`, or no `auth.on(bus)` |

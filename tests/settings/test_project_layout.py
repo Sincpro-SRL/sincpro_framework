@@ -22,7 +22,7 @@ payments_layout:
 """,
     "__init__.py": "",
     "settings/shared.py": """
-from sincpro_framework.sincpro_conf import SincproConfig
+from sincpro_framework.settings import SincproConfig
 
 
 class SharedSettings(SincproConfig):
@@ -56,7 +56,7 @@ class PaymentsSettings(SharedSettings):
     "settings/__init__.py": """
 from pathlib import Path
 
-from sincpro_framework.sincpro_conf import build_config_obj
+from sincpro_framework.settings import build_config_obj
 
 from .payments import PaymentsSettings
 

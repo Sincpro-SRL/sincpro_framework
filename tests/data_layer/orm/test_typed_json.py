@@ -31,7 +31,8 @@ from sincpro_framework.data_layer.orm import (
     map_aggregates,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.ddd.entity import ChangeTrackingMixin, Entity, EntityUpdated
+from sincpro_framework.ddd.entity import Entity
+from sincpro_framework.ddd.events import ChangeTrackingMixin, EntityUpdated
 
 from .engines import fresh
 

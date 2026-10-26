@@ -1,8 +1,8 @@
 """The repository with no database: what a Feature can be tested against without one.
 
-The reason it is worth having and not faking: the filter is answered by `matches`, the same
-evaluator the SQL translator is specified by, so a Feature that passes here and fails against
-the engine has found a bug in the engine, not in the double.
+The reason it is worth having and not faking: the filter is answered by `Evaluation.matches`,
+the same evaluator the SQL translator is specified by, so a Feature that passes here and fails
+against the engine has found a bug in the engine, not in the double.
 """
 
 from dataclasses import dataclass, field
@@ -19,13 +19,12 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Grain,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Offset,
     Operator,
     Pagination,
     Sort,
-    parse_order,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
@@ -95,7 +94,7 @@ def test_a_filter_is_answered_by_the_same_evaluator_the_engine_is_checked_agains
 
 
 def test_a_page_walks_with_its_cursor_and_repeats_nothing(ledger, accounts):
-    asked = Criteria(order=parse_order("code"), pagination=Pagination(limit=3))
+    asked = Criteria(order=Sort.parse("code"), pagination=Pagination(limit=3))
 
     walked = [one for page in ledger.stream(Accounts, asked) for one in page]
 
@@ -107,7 +106,7 @@ def test_an_offset_skips_and_the_count_is_still_the_whole_set(ledger, accounts):
     page = ledger.search(
         Accounts,
         Criteria(
-            order=parse_order("code"), pagination=Pagination(limit=3, strategy=Offset(rows=8))
+            order=Sort.parse("code"), pagination=Pagination(limit=3, strategy=Offset(rows=8))
         ),
     )
 
@@ -125,7 +124,7 @@ def test_what_the_aggregate_cannot_answer_is_dropped_and_said(ledger):
 
 def test_the_short_readings_answer_the_same_as_the_adapter(ledger, accounts):
     assert ledger.exists(Accounts, Criteria(where=Condition(field="code", value="0003")))
-    assert ledger.first(Accounts, Criteria(order=parse_order("code"))).code == "0000"
+    assert ledger.first(Accounts, Criteria(order=Sort.parse("code"))).code == "0000"
     assert (
         ledger.one(Accounts, Criteria(where=Condition(field="code", value="0003"))).balance
         == 30
@@ -158,7 +157,7 @@ def test_folds_are_answered_over_the_whole_result_set(ledger, accounts):
 def test_groups_count_fold_filter_and_order_like_the_adapter(ledger, accounts):
     asked = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="kind"),),
+            group_by=(GroupingLevel(field="kind"),),
             measures={"weight": Measure(function="sum", field="balance")},
             order=(Sort(field="weight", descending=True),),
         )
@@ -175,9 +174,9 @@ def test_groups_count_fold_filter_and_order_like_the_adapter(ledger, accounts):
 
 def test_a_page_asked_gives_every_group_its_ids(ledger):
     asked = Criteria(
-        order=parse_order("code"),
+        order=Sort.parse("code"),
         pagination=Pagination(limit=2),
-        grouping=Grouping(group_by=(Level(field="kind"),)),
+        grouping=Grouping(group_by=(GroupingLevel(field="kind"),)),
     )
 
     buckets = ledger.group_by_levels(Accounts, asked)
@@ -192,7 +191,9 @@ def test_a_date_grain_says_it_is_the_database_that_answers_it(ledger):
         ledger.group_by_levels(
             Accounts,
             Criteria(
-                grouping=Grouping(group_by=(Level(field="created_at", grain=Grain.MONTH),))
+                grouping=Grouping(
+                    group_by=(GroupingLevel(field="created_at", grain=Grain.MONTH),)
+                )
             ),
         )
 
@@ -320,7 +321,7 @@ def test_count_distinct_over_a_grouping_counts_within_each_bucket():
         Accounts,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="kind"),),
+                group_by=(GroupingLevel(field="kind"),),
                 measures={"balances": Measure(function="count_distinct", field="balance")},
             )
         ),

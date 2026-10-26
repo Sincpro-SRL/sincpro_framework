@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from sincpro_framework.auth.entrypoint.transports import challenges_of
+from sincpro_framework.auth import security
 from sincpro_framework.common.failures import (
     failure_reason,
     refined_failure_kind,
@@ -160,7 +160,7 @@ def _challenges(request: Request) -> list[str]:
     """The `WWW-Authenticate` challenges of a 401 — those of the buses the request called
     (noted by `bus_call`), `Bearer` when none says one."""
     buses = getattr(request.state, BUSES_STATE, None) or ()
-    return challenges_of(buses) or ["Bearer"]
+    return security.challenges(buses) or ["Bearer"]
 
 
 def _body(
@@ -215,7 +215,7 @@ def problem_of(request: Request, error: Exception) -> JSONResponse:
 
     1. What could not be read — FastAPI's JSON error, a query string that is not JSON, a
        missing `Idempotency-Key` — is a 400; what does not validate a 422, each field pointed.
-    2. An `HTTPException` keeps its status and headers (405 keeps `Allow`).
+    2. An `HTTPException` is answered with its own status and headers (a 405 still carries `Allow`).
     3. Anything else is classified once (`refined_failure_kind`): its status, `Retry-After`
        when retrying helps, `WWW-Authenticate` on a 401.
     4. Final: a 500 says nothing; logged here unless a bus already reported it.

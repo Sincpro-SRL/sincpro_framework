@@ -1,7 +1,7 @@
 """`PrometheusRecorder`: `prometheus_client`, scraped at `/metrics` — Sincpro's reference stack,
 `[prometheus]`.
 
-    SINCPRO_METRICS_BACKEND=prometheus                   # or metrics.use(PrometheusRecorder())
+    OTEL_METRICS_EXPORTER=prometheus                     # or metrics.use(PrometheusRecorder())
     app.mount("/metrics", metrics.recorder.asgi_app())   # FastApiGateway.app() mounts it itself
     metrics.recorder.serve(9464)                         # a worker with no HTTP server of its own
 
@@ -113,7 +113,7 @@ class PrometheusRecorder(Recorder):
             self._differing.add(name)
             logger.warning(
                 f"metrics: {instrument.name} is recorded with other labels than it was created "
-                f"with ({', '.join(declared.label_keys)}); it keeps those"
+                f"with ({', '.join(declared.label_keys)}); it still uses those"
             )
         return known
 

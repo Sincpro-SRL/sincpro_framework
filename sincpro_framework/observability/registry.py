@@ -1,13 +1,13 @@
 """Where per-bus observability state lives — outside setup, outside the buses.
 
 Setup functions build things (a TracerProvider, a GlitchTip client); they do not
-own them. Keeping the state here is what makes a second ``build_root_bus()`` reuse
+own them. Holding the state here is what makes a second ``build_root_bus()`` reuse
 what the first one created, and what lets a test reset everything with one call.
 
-    registry.register_tracer_provider("billing", provider)
-    registry.tracer_provider("billing")      ->  provider      # the second build reuses it
-    registry.tracer_provider(PROCESS)        ->  the process's own, when this framework set it
-    registry.reset()                         # a test starts from nothing
+    observability_registry.register_tracer_provider("billing", provider)
+    observability_registry.tracer_provider("billing")  ->  provider   # reused by the next build
+    observability_registry.tracer_provider(PROCESS)  ->  the process's own, when set here
+    observability_registry.reset()                         # a test starts from nothing
 """
 
 from typing import Any, Dict, Optional
@@ -37,7 +37,7 @@ class ObservabilityRegistry:
         return self._process_identity
 
     def register_tracer_provider(self, bus: str, provider: Any) -> None:
-        """Keep the provider built for `bus` — or for the process, under `PROCESS`."""
+        """Store the provider built for `bus` — or for the process, under `PROCESS`."""
         self._tracer_providers[bus] = provider
 
     def tracer_provider(self, bus: str) -> Any | None:
@@ -49,7 +49,7 @@ class ObservabilityRegistry:
         return any(owned is provider for owned in self._tracer_providers.values())
 
     def register_error_client(self, release: str, client: Any) -> None:
-        """Keep the GlitchTip client built for `release` — keyed by release, not by bus: the
+        """Store the GlitchTip client built for `release` — keyed by release, not by bus: the
         buses of one deployment share one release, and so one client."""
         self._error_clients[release] = client
 
@@ -65,4 +65,4 @@ class ObservabilityRegistry:
         self._process_identity = None
 
 
-registry = ObservabilityRegistry()
+observability_registry = ObservabilityRegistry()

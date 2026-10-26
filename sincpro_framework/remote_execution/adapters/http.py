@@ -7,7 +7,7 @@
 
 Context: the answer is a message too, rebuilt by the bus that called. Both
 are held whole on each end, so a payload travels as long as it fits in memory there. One
-connection per thread and address, kept between calls — `http.client` connections are not shared
+connection per thread and address, held between calls — `http.client` connections are not shared
 across threads. A connection left idle longer than `IDLE_REUSE` is replaced before
 it is used, rather than risking one the server already closed: a call is never retried, because
 a Command that already wrote would write twice.
@@ -20,10 +20,12 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from sincpro_framework.auth import security
 from sincpro_framework.common.naming import registered_name
-from sincpro_framework.common.transport.addresses import HostedAt, Wire
+from sincpro_framework.observability.tracing.propagation import trace_carrier
 from sincpro_framework.remote_execution.domain import exceptions
-from sincpro_framework.remote_execution.domain.failures import raised_as_itself
+from sincpro_framework.remote_execution.domain.address import HostedAt, Scheme
+from sincpro_framework.remote_execution.domain.failure_codec import FailureCodec
 from sincpro_framework.remote_execution.domain.payload import Payload
 
 PATH = "/sincpro/contexts/execute"
@@ -32,11 +34,11 @@ ERROR_MODULE_HEADER = "x-sp-error-module"
 ERROR_KIND_HEADER = "x-sp-error-kind"
 ERROR_DETAILS_HEADER = "x-sp-error-details"
 IDLE_REUSE = 2.0
-"""Seconds a kept connection may sit idle and still be used — below any server's keep-alive."""
+"""Seconds a held connection may sit idle and still be used — below any server's keep-alive."""
 
 
-class _Kept(threading.local):
-    """The connection this thread keeps for one address, and when it last answered — per
+class _Held(threading.local):
+    """The connection this thread holds for one address, and when it last answered — per
     thread, because an `http.client` connection is not safe to share."""
 
     connection: http.client.HTTPConnection | None = None
@@ -49,36 +51,36 @@ class HttpTransport:
     def __init__(self, hosted_at: HostedAt) -> None:
         """Nothing connects here: each thread opens its own connection at its first call."""
         self.hosted_at = hosted_at
-        self._kept = _Kept()
+        self._held = _Held()
 
     def _connection(self) -> http.client.HTTPConnection:
         """This thread's connection to the address, fit to write on.
 
-        1. Kept but idle past `IDLE_REUSE`: closed and dropped — the server may have closed
+        1. Held but idle past `IDLE_REUSE`: closed and dropped — the server may have closed
            it, and a request lost on it could not be retried.
-        Final: the kept one, else a new one — HTTPS when the address says so — with the
+        Final: the held one, else a new one — HTTPS when the address says so — with the
         address's deadline as its socket timeout.
         """
-        kept = self._kept
-        stale = time.monotonic() - kept.last_used > IDLE_REUSE
-        if kept.connection is not None and stale:
-            kept.connection.close()
-            kept.connection = None
-        if kept.connection is None:
+        held = self._held
+        stale = time.monotonic() - held.last_used > IDLE_REUSE
+        if held.connection is not None and stale:
+            held.connection.close()
+            held.connection = None
+        if held.connection is None:
             opener = (
                 http.client.HTTPSConnection
-                if self.hosted_at.wire is Wire.HTTPS
+                if self.hosted_at.scheme is Scheme.HTTPS
                 else http.client.HTTPConnection
             )
-            kept.connection = opener(self.hosted_at.address, timeout=self.hosted_at.timeout)
-        return kept.connection
+            held.connection = opener(self.hosted_at.address, timeout=self.hosted_at.timeout)
+        return held.connection
 
     def _forget(self) -> None:
         """This thread's connection closed and dropped — after any failure on it, so the next
         call never writes on a connection in an unknown state."""
-        if self._kept.connection is not None:
-            self._kept.connection.close()
-        self._kept.connection = None
+        if self._held.connection is not None:
+            self._held.connection.close()
+        self._held.connection = None
 
     def _sent(
         self, body: bytes, headers: Mapping[str, str], where: str
@@ -91,8 +93,8 @@ class HttpTransport:
             return connection
         except (OSError, http.client.HTTPException) as error:
             self._forget()
-            raise exceptions.unreached(
-                exceptions.ContextUnavailable(f"{where} is not answering: {error}")
+            raise exceptions.ContextUnavailable(
+                f"{where} is not answering: {error}", unreached=True
             ) from None
         except BaseException:
             self._forget()
@@ -109,31 +111,27 @@ class HttpTransport:
         try:
             answer = connection.getresponse()
             body = answer.read()
-            self._kept.last_used = time.monotonic()
+            self._held.last_used = time.monotonic()
             if answer.status == 200:
                 return Payload.from_json(body)
         except TimeoutError:
             self._forget()
-            raise exceptions.unreached(
-                exceptions.ContextTimeout(
-                    f"{where} did not answer within {self.hosted_at.timeout:g}s"
-                )
+            raise exceptions.ContextTimeout(
+                f"{where} did not answer within {self.hosted_at.timeout:g}s", unreached=True
             ) from None
         except (OSError, http.client.HTTPException) as error:
             self._forget()
-            raise exceptions.unreached(
-                exceptions.ContextOutcomeUnknown(
-                    f"{where} took the call and was lost: {error}"
-                )
+            raise exceptions.ContextOutcomeUnknown(
+                f"{where} took the call and was lost: {error}", unreached=True
             ) from None
         except BaseException:
             self._forget()
             raise
         message = body.decode(errors="replace")
         if answer.status == 404:
-            raise exceptions.unreached(exceptions.ContextUnavailable(f"{where}: {message}"))
+            raise exceptions.ContextUnavailable(f"{where}: {message}", unreached=True)
         details = answer.getheader(ERROR_DETAILS_HEADER)
-        raise raised_as_itself(
+        raise FailureCodec.rebuilt(
             answer.getheader(ERROR_MODULE_HEADER),
             answer.getheader(ERROR_KIND_HEADER),
             message,
@@ -152,14 +150,11 @@ class HttpTransport:
         2. One POST, each read and write within the address's deadline.
         Final: the answer's message, or the failure raised as itself.
         """
-        from sincpro_framework.auth.entrypoint.transports import identity_headers
-        from sincpro_framework.observability.tracing.propagation import trace_carrier
-
         headers = {
             "content-type": "application/json",
             CONTEXT_HEADER: context,
             **trace_carrier(),
-            **identity_headers(context),
+            **security.identity_headers(context),
         }
         body = Payload.of(registered_name(type(dto), context), dto, request).as_json()
         where = f"{context} at {self.hosted_at.address}"

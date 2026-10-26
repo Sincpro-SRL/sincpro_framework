@@ -1,7 +1,5 @@
 """Shared Value Object fixtures for DDD tests, and the profile the property tests run under."""
 
-from typing import NewType
-
 from hypothesis import HealthCheck, settings
 
 # One profile for the property suite: deterministic, so a rare counterexample cannot turn
@@ -16,7 +14,6 @@ settings.register_profile(
 settings.load_profile("sincpro")
 
 from sincpro_framework.ddd import ValueObject
-from sincpro_framework.ddd.value_object import new_value_object
 
 
 def _validate_non_empty(value: str) -> str | None:
@@ -43,15 +40,3 @@ CoordSetVO = ValueObject(
     set, lambda v: {abs(x) for x in v}, name="CoordSet"
 )  # abs of each element
 PointVO = ValueObject(tuple, lambda v: tuple(sorted(v)), name="Point")  # sort elements
-
-# ---------------------------------------------------------------------------
-# Legacy API (deprecated): new_value_object(NewType(...), fn)
-# ---------------------------------------------------------------------------
-
-import warnings  # noqa: E402
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", DeprecationWarning)
-    LegacyUserIdVO = new_value_object(NewType("LegacyUserId", int), lambda v: abs(v))
-    LegacyEmailVO = new_value_object(NewType("LegacyEmail", str), lambda v: v.strip().lower())
-    LegacyAmountVO = new_value_object(NewType("LegacyAmount", float), lambda v: round(v, 2))

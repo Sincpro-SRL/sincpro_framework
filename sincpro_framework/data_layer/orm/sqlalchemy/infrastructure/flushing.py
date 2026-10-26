@@ -5,7 +5,7 @@ changed beside it is not written in passing. The stamping and the change trackin
 flush; they read this to touch only what goes out.
 
 SQLAlchemy 2.1 deprecates `Session.flush(objects=...)` — the one way it has to flush some records
-and not others — with nothing in its place. `flush_only` keeps calling it and silences that one
+and not others — with nothing in its place. `flush_only` still calls it and silences that one
 warning, nothing else; the day a release removes it, this is the one place to change.
 """
 

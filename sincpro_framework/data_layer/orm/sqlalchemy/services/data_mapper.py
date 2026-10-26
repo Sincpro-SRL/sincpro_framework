@@ -28,18 +28,18 @@ from sqlalchemy import Table
 from sqlalchemy.orm import column_property, object_session, registry
 
 from sincpro_framework.data_layer import exceptions
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import (
-    RELATIONS,
-)
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import (
     REPOSITORY,
-    RESOLVED,
     Held,
-    Relation,
-    held,
-    hold,
+    HeldRelations,
+    TableRelation,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.relation_resolver import (
     resolve_whole,
 )
@@ -63,7 +63,7 @@ class RelatedAttribute:
         anywhere else              →  RelationNotResolved
 
     A data descriptor, so it wins over the value a dataclass `__init__` stores: a record built
-    in memory keeps what its constructor was given, a record the mapper loaded starts unresolved.
+    in memory holds what its constructor was given, a record the mapper loaded starts unresolved.
     """
 
     def __init__(
@@ -97,13 +97,13 @@ class RelatedAttribute:
             return self.default()
         session = object_session(record)
         repository = session.info.get(REPOSITORY) if session is not None else None
-        resolved = record.__dict__.get(RESOLVED)
-        if resolved is not None and self.name in resolved:
-            value = resolved[self.name]
+        relations = HeldRelations(record)
+        if relations.holds(self.name):
+            value = relations.value(self.name)
             # A value cut for a client — a page, a filter — is not what a Feature inside a unit
             # of work decides on: it gets the whole relation, whatever was left on the record.
             if (
-                held(record, self.name) is not Held.CUT
+                relations.held(self.name) is not Held.CUT
                 or session is None
                 or repository is None
             ):
@@ -115,10 +115,9 @@ class RelatedAttribute:
             )
 
         resolve_whole(repository.prepare, session, type(record), record, self.name)
-        answered = record.__dict__.get(RESOLVED, {})
-        if self.name not in answered:
+        if not relations.holds(self.name):
             # The resolver ran and wrote nothing, which a correct declaration never does. The
-            # usual cause is a `Relation` pointing the wrong way — `foreign_key` names the
+            # usual cause is a `TableRelation` pointing the wrong way — `foreign_key` names the
             # column on *this* aggregate, so declaring it for a to-many reads as a to-one that
             # matches nothing. Left alone this surfaced as `KeyError: '_sincpro_resolved'`.
             raise exceptions.RelationNotResolved(
@@ -127,7 +126,7 @@ class RelatedAttribute:
                 "other one, and a to-many is the foreign key on the other side — which "
                 "`map_aggregates` infers on its own when the column declares it"
             )
-        return answered[self.name]
+        return relations.value(self.name)
 
     def holds_whole(self, record: Any) -> bool:
         """Whether the record holds this relation whole, answered without reading anything.
@@ -138,10 +137,10 @@ class RelatedAttribute:
         What a save asks before a derivation reads the relation: a save never triggers a read,
         and never computes a total over lines it does not hold.
         """
-        resolved = record.__dict__.get(RESOLVED)
-        if resolved is None or self.name not in resolved:
+        relations = HeldRelations(record)
+        if not relations.holds(self.name):
             return False
-        return held(record, self.name) in (Held.WHOLE, Held.ASSIGNED)
+        return relations.held(self.name) in (Held.WHOLE, Held.ASSIGNED)
 
     def held_in_part(self, record: Any) -> str:
         """How the record holds part of this relation and not all of it, answered without
@@ -154,10 +153,10 @@ class RelatedAttribute:
         What a save asks to tell a derivation it skipped apart from one it can never miss: a
         relation never read cannot have changed; one held in part may have.
         """
-        resolved = record.__dict__.get(RESOLVED)
-        if resolved is None or self.name not in resolved:
+        relations = HeldRelations(record)
+        if not relations.holds(self.name):
             return ""
-        state = held(record, self.name)
+        state = relations.held(self.name)
         return state.value if state is Held.CUT or state is Held.BLIND else ""
 
     def _written_by_root(self, record: Any) -> bool:
@@ -191,7 +190,8 @@ class RelatedAttribute:
         replaced is known; anywhere else that is not possible, and the assignment is blind."""
         state = sqlalchemy.inspect(record, raiseerr=False)
         stored = state is not None and state.has_identity
-        before = held(record, self.name)
+        relations = HeldRelations(record)
+        before = relations.held(self.name)
         if (
             stored
             and before is not Held.WHOLE
@@ -203,9 +203,9 @@ class RelatedAttribute:
             if session is not None and repository is not None:
 
                 resolve_whole(repository.prepare, session, type(record), record, self.name)
-                before = held(record, self.name)
+                before = relations.held(self.name)
         whole = not stored or before is Held.WHOLE or before is Held.ASSIGNED
-        hold(record, self.name, value, Held.ASSIGNED if whole else Held.BLIND)
+        relations.hold(self.name, value, Held.ASSIGNED if whole else Held.BLIND)
 
 
 def _dataclass_default(declared: Any) -> Callable[[], Any] | None:
@@ -273,7 +273,7 @@ def with_transient_defaults(
             row tags=NULL, field `tags: list[str] = field(default_factory=list)`  ->  []
         """
         for name, make in transient.items():
-            if name in RELATIONS.get(aggregate, {}) or name in record.__dict__:
+            if name in mapping_registry.relations_of(aggregate) or name in record.__dict__:
                 continue
             record.__dict__[name] = make()
         for name, make in nullable.items():
@@ -311,25 +311,22 @@ def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None
     """Registers the relations and puts the attribute that resolves them on the class. What
     was declared wins over what is inferred; a second call changes nothing.
 
-        install(Dataset, {"runs": Relation.foreign_key(Run, identified_by="dataset_id")})
-            ->  None; RELATIONS[Dataset]["runs"] set, Dataset.runs a RelatedAttribute
-        install(Dataset, {"runs": another})   ->  None; the first one kept
+        install(Dataset, {"runs": TableRelation.foreign_key(Run, identified_by="dataset_id")})
+            ->  None; the registry holds Dataset's "runs", Dataset.runs a RelatedAttribute
+        install(Dataset, {"runs": another})   ->  None; the first one stands
 
-    1. The class's registered relations, created empty the first time.
-    2. Each relation whose name is not registered yet:
-       2.1 registered;
-       2.2 when it says its cardinality and the class does not annotate the name, the
+    1. Each relation whose name the registry does not hold for the class yet:
+       1.1 registered;
+       1.2 when it says its cardinality and the class does not annotate the name, the
            annotation written — `list[Related]` or `Related | None`;
-       2.3 the attribute that resolves it set on the class, with the field's default.
+       1.3 the attribute that resolves it set on the class, with the field's default.
     Final: when anything was added, every cached description cleared — one read before knew
     no relations.
     """
-    known = RELATIONS.setdefault(aggregate, {})
     added = False
     for name, relation in declared.items():
-        if name in known:
+        if not mapping_registry.add_relation(aggregate, name, relation):
             continue
-        known[name] = relation
         added = True
         if relation.many is not None and name not in aggregate.__annotations__:
             aggregate.__annotations__[name] = (
@@ -339,18 +336,20 @@ def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None
             aggregate, name, RelatedAttribute(name, relation, _default_of(aggregate, name))
         )
     if added:
-        # `describe` caches per class; a definition read before this point knew no relations.
+        # `ModelIntrospection.describe` caches per class; a definition read before this point knew no relations.
 
-        describe.cache_clear()
+        ModelIntrospection.describe.cache_clear()
 
 
-def inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[str, Relation]:
+def inferred_foreign_keys(
+    mapper_registry: registry, aggregate: type
+) -> dict[str, TableRelation]:
     """The relations the tables already say, so nobody declares them twice.
 
         Work.author: Author | None   and  work.author_id  →  ForeignKey("author.id")
-                                     →  Relation.foreign_key(Author, identified_by="author_id")
+                                     →  TableRelation.foreign_key(Author, identified_by="author_id")
         Author.works: list[Work]     and that same foreign key, seen from the other side
-                                     →  Relation.foreign_key(Work, identified_by="author_id")
+                                     →  TableRelation.foreign_key(Work, identified_by="author_id")
 
     An annotation pointing at a mapped class whose table is tied to this one by a foreign key
     is a relation. With several foreign keys between the two tables the column named after the
@@ -370,7 +369,7 @@ def inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[st
     3. The foreign keys between the two tables: on the related table pointing here for a
        list, on this table pointing there for one.
     4. Several: only the column named `<attribute>_id` — for a list, `<this table>_id` —
-       is kept; anything but exactly one infers nothing.
+       is considered; anything but exactly one infers nothing.
     5. A key to the related primary key relates by `identified_by`; a key to another unique
        column relates by `parent_field` and `related_field`.
     Final: the relations by attribute name — what `install` takes, after the declared ones.
@@ -379,7 +378,7 @@ def inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[st
     own = tables.get(aggregate)
     if own is None:
         return {}
-    inferred: dict[str, Relation] = {}
+    inferred: dict[str, TableRelation] = {}
     for name, annotation in annotations_of(aggregate).items():
         if name in own.c:
             continue
@@ -400,13 +399,13 @@ def inferred_foreign_keys(mapper_registry: registry, aggregate: type) -> dict[st
             continue
         [(holding, referenced)] = candidates.items()
         if referenced.primary_key:
-            inferred[name] = Relation.foreign_key(related, identified_by=holding)
+            inferred[name] = TableRelation.foreign_key(related, identified_by=holding)
         elif many:
-            inferred[name] = Relation.foreign_key(
+            inferred[name] = TableRelation.foreign_key(
                 related, parent_field=referenced.name, related_field=holding
             )
         else:
-            inferred[name] = Relation.foreign_key(
+            inferred[name] = TableRelation.foreign_key(
                 related, parent_field=holding, related_field=referenced.name
             )
     return inferred

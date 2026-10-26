@@ -1,6 +1,6 @@
 # Events over Kafka, RabbitMQ, Redis or NATS — `[faststream]`
 
-The domain keeps two verbs: `publish(event)`, and registering an event on a bus. Which broker
+The domain has two verbs: `publish(event)`, and registering an event on a bus. Which broker
 carries it — a topic, a queue, a channel, a subject — and with which partitions, retries or
 acknowledgements is the broker's configuration. [FastStream](https://faststream.ag2.ai) speaks to
 each one with the same API, and `sincpro_framework.event_driven.adapters.faststream` sends and `sincpro_framework.entrypoints.adapters.queue` listens:
@@ -47,7 +47,7 @@ class BookPayment(Feature):
 from faststream.kafka import KafkaBroker, TestKafkaBroker
 
 from sincpro_framework.event_driven import Publisher, Subscriber
-from sincpro_framework.entrypoints.adapters.queue import subscribe
+from sincpro_framework.entrypoints import subscribe
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
 
 broker = KafkaBroker("kafka:9092")
@@ -65,7 +65,7 @@ How each message is then settled is the framework's, not the broker's default �
 `start()` gives the queue a loop of its own, in a daemon thread, with the broker connected on it:
 `put` works from any synchronous caller and waits until the broker took the message, so an error
 surfaces where the event was published. `keyed_by_entity` makes the entity Kafka's message key,
-so one entity's events keep their order.
+so one entity's events stay in order.
 
 ```python
 async def a_synchronous_service() -> None:
@@ -120,14 +120,14 @@ assert booked == [120, 80, 5]
 
 ## What is guaranteed, and what is not
 
-Read this before relying on an event to keep two contexts in step.
+Read this before relying on an event to hold two contexts in step.
 
 - **Sending.** `put` returns once the broker took the message, so a broker that is down fails
-  the `publish` where it was called. What the broker then promises — kept on disk, replicated —
+  the `publish` where it was called. What the broker then promises — persisted on disk, replicated —
   is its configuration (a Kafka topic's replication, a durable RabbitMQ queue).
 - **Between the commit and the publish.** A Feature that saves and then publishes can crash in
   between: the state is committed and the event is lost. The context's event table closes that
-  window: the event is kept in the same transaction as the change, and an `EventRelay` publishes
+  window: the event is persisted in the same transaction as the change, and an `EventRelay` publishes
   it after, at least once
   ([persistence guide §12](../persistence/guide.md#12-delivering-events)).
 - **Receiving: at least once.** `subscribe` is the queue entrypoint over the subscriber's buses
@@ -156,7 +156,7 @@ Read this before relying on an event to keep two contexts in step.
   [queue.md](../entrypoints/queue.md) for the exchange-per-group topology until it is the default.
 - **Redis Pub/Sub and core NATS** have no acknowledgement at all: there delivery stays at most
   once whatever is settled — use Redis Streams or NATS JetStream when a lost event matters.
-- **Order.** Kafka keeps one key's messages in order — `keyed_by_entity` makes that key the
+- **Order.** Kafka preserves the order of one key's messages — `keyed_by_entity` makes that key the
   entity; across keys, and on brokers without partitions, there is no order to rely on.
 - **Unknown events.** On a channel several events share, one no bus here registered is skipped:
   it is another consumer's.
@@ -169,4 +169,4 @@ Read this before relying on an event to keep two contexts in step.
 | `queue.put(event)` / `await queue.aput(event)` | publish and wait until the broker took it |
 | `keyed_by_entity` | Kafka: `entity_id` as the message key |
 | `subscribe(broker, subscriber, channel_of_name=by_name, options=None)` | one subscription per channel of the events the buses registered — `QueueGateway` for events, `options` a `QueueOptions` |
-| `EVENT_HEADER` | `sincpro-event`: the wire name beside the payload |
+| `EVENT_HEADER` (`sincpro_framework.event_driven`) | `sincpro-event`: the wire name beside the payload |

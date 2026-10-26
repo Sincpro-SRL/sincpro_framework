@@ -30,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import registry
 
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
     JsonText,
     TranslatedText,
@@ -144,13 +144,13 @@ def declare(reviews_bus) -> None:
         {Author: author_table, Tag: tag_table, Work: work_table},
         relations={
             Work: {
-                "tags": Relation.many_to_many(
+                "tags": TableRelation.many_to_many(
                     Tag, through=work_tag, this_key="work_id", related_key="tag_id"
                 ),
-                "reviews": Relation.bus(
+                "reviews": TableRelation.bus(
                     Review, reviews_bus, CommandSearchReviews, identified_by="book_id"
                 ),
-                "publisher": Relation.resolved_by(
+                "publisher": TableRelation.resolved_by(
                     Publisher, identified_by="publisher_id", resolver=fetch_publishers
                 ),
             }

@@ -34,7 +34,7 @@ it is hosted makes it a reference:
 |---|---|---|
 | nothing | — | dev, one process, every existing project |
 | configuration | `context_map:` / `SINCPRO_CONTEXT_MAP` | **production services** — prefer this |
-| code | `billing.hosted_by("grpc://b:50051")` or `hosted_by(HostedAt(Wire.GRPC, "b:50051", timeout=5))` | tests, scripts, a hand-wired composition root |
+| code | `billing.hosted_by("grpc://b:50051")` or `hosted_by(HostedAt(Scheme.GRPC, "b:50051", timeout=5))` | tests, scripts, a hand-wired composition root |
 | forced local | `billing.run_here()` — `serve` / `open_host` / `open_host_routes` do it | runs here whatever was said |
 
 The last one applied wins: configuration at creation (`SINCPRO_CONTEXT_MAP` over the conf file,
@@ -43,27 +43,26 @@ in code**) → `run_here()` / serving wins over both. Don't hard-code `hosted_by
 production wiring — leave the address to its configuration. `billing.hosted_at`,
 `billing.is_reference` tell what was decided.
 
-Typed: the URL is read into `HostedAt(wire: Wire, address: "host:port", timeout, circuit,
-circuit_failures, circuit_open_for)` — `Wire` is a `StrEnum` (`GRPC`, `HTTP`, `HTTPS`).
+Typed: the URL is read into `HostedAt(scheme: Scheme, address: "host:port", timeout, circuit,
+circuit_breaker_failures, circuit_breaker_open_for)` — `Scheme` is a `StrEnum` (`GRPC`, `HTTP`, `HTTPS`).
 `context_map:` entries are `HostedContext`, validated when the conf file loads (errors at
 `context_map.N.at`); `SINCPRO_CONTEXT_MAP` errors name the variable. A wrong address raises
 `InvalidAddress` saying what to write.
 
 **A circuit, when asked for** — none by default, every call made as always. In the address
-(`grpc://b:50051?circuit=on`, tuned with `&circuit_failures=3&circuit_open_for=10` — tuning one
-that is off is refused) or in code, which wins: `hosted_by(address, circuit=True)` the address's
-own, `circuit=Circuit("billing", failures=3)` the project's, `circuit=False` none. Once on, after
+(`grpc://b:50051?circuit_breaker=on`, tuned with `&circuit_breaker_failures=3&circuit_breaker_open_for=10` — tuning one
+that is off is refused) or in code, which wins: `hosted_by(address, circuit_breaker=True)` the address's
+own, `circuit_breaker=CircuitBreaker("billing", failures=3)` the project's, `circuit_breaker=False` none. Once on, after
 the calls in a row that did not reach the context (5) the calls fail at once with
 `ContextUnavailable` — `retry_after` is what is left of the time open (30 s, never under 1 s) —
-then one is let through to try, keeping the others out for two `timeout`s. It counts only what
+then one is let through to try, shutting the others out for two `timeout`s. It counts only what
 this process's transport raised (`ContextUnavailable` / `ContextOutcomeUnknown` /
-`ContextTimeout`, marked `is_unreached`); whatever the host raised — even its own `CircuitOpen`,
+`ContextTimeout`, whose `unreached` is true); whatever the host raised — even its own `CircuitOpen`,
 or the same classes rebuilt from it — is its answer, arrives as itself (a `retry_after:
-timedelta` comes back a `timedelta`) and never counts. A project's `Circuit` counts by its own
-`counts=` (default: every `UNAVAILABLE`, host answers included) — `counts=is_unreached`
-(`from sincpro_framework.remote_execution import is_unreached`) for the address's rule. Seconds
-must be finite (`inf`/`nan` → `InvalidAddress`). Its state is kept where the calling context
-keeps its leases. Depth: `docs/core/circuits.md`.
+timedelta` comes back a `timedelta`) and never counts. A project's `CircuitBreaker` counts by its own
+`counts=` (default: every `UNAVAILABLE`, host answers included) —
+`counts=lambda error: getattr(error, "unreached", False)` for the address's rule. Seconds must be finite (`inf`/`nan` → `InvalidAddress`). Its state is stored where the calling context
+stores its leases. Depth: `docs/core/circuit-breaker.md`.
 
 On the caller `billing` is a **reference** (`billing.is_reference`): a client with the face of the
 bus — never built, no Feature instantiated, no dependency resolved, nothing emitted (the real bus

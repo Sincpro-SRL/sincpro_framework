@@ -19,11 +19,12 @@ import fakeredis
 import pytest
 
 import sincpro_framework
-from sincpro_framework import DataTransferObject, Feature, UseFramework, store_context_in
+from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.context import (
     ContextStore,
     InMemoryContexts,
     KeyValueContexts,
+    store_context_in,
     use_context,
 )
 from sincpro_framework.data_layer.caching import (
@@ -34,14 +35,13 @@ from sincpro_framework.data_layer.caching import (
     IdempotencyPolicy,
     JsonCodec,
     QueryCachePolicy,
-    RedisKeyValue,
 )
 from sincpro_framework.data_layer.caching.domain import exceptions
 from sincpro_framework.data_layer.caching.domain.freshness import Sliding, TimeToLive
 from sincpro_framework.data_layer.caching.domain.validation import ExternalVersion
 from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.data_layer.store import KeyValueStore, RedisKeyValue
 from sincpro_framework.ddd import Entity
-from sincpro_framework.store import KeyValueStore
 
 
 def keys_in(server: fakeredis.FakeServer) -> list[str]:

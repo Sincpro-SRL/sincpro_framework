@@ -27,7 +27,7 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class RecordState(StrEnum):
-    """Where a key is: claimed and running, or completed with its answer kept."""
+    """Where a key is: claimed and running, or completed with its answer stored."""
 
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -61,7 +61,7 @@ class IdempotencyRecords(ABC):
 
     @abstractmethod
     def complete(self, key: str, record: IdempotencyRecord, keep_for: timedelta) -> None:
-        """Replace the claim with the completed record, kept for `keep_for`."""
+        """Replace the claim with the completed record, stored for `keep_for`."""
 
     @abstractmethod
     def release(self, key: str, owner: str) -> None:

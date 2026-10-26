@@ -5,8 +5,8 @@ fields, so an impossible page — a cursor AND an offset — cannot be written d
 
 `Cursor` is the one this engine is built for: a token names the last row seen instead of a
 position, so a row inserted mid-walk changes nothing. `Offset` is what everybody else does,
-kept because somebody eventually integrates against this and counts pages; it costs what it
-costs, and the cost grows with the offset. See `docs/persistence/reference.md`.
+retained because somebody eventually integrates against this and counts pages; it costs what
+it costs, and the cost grows with the offset. See `docs/persistence/reference.md`.
 
 **Nothing here knows SQL.** A cursor mints its token and reads it back; what «past that row»
 becomes in a `WHERE` is the adapter's business, and it asks `Pagination.keys_for` for the keys.
@@ -97,7 +97,7 @@ class CursorKeys(DataTransferObject):
         """Context: the *effective* ordering, tiebreaker included — what a cursor is stamped
         with, and what reading one is checked against.
 
-        >>> CursorKeys.signature(parse_order("-registered_at,dataset_id"))
+        >>> CursorKeys.signature(Sort.parse("-registered_at,dataset_id"))
         '-registered_at,dataset_id'
         """
         return ",".join(str(sort) for sort in sorts)
@@ -106,7 +106,7 @@ class CursorKeys(DataTransferObject):
     def of(cls, record: Any, sorts: tuple["Sort", ...]) -> "CursorKeys":
         """Where a page ended, read off its last row.
 
-        >>> CursorKeys.of(Thing(thing_id="th_9", size=3), parse_order("size,-thing_id"))
+        >>> CursorKeys.of(Thing(thing_id="th_9", size=3), Sort.parse("size,-thing_id"))
         CursorKeys(keys=(3, 'th_9'), ordering='size,-thing_id')
         """
         return cls(

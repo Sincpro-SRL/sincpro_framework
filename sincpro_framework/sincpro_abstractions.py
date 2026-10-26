@@ -17,15 +17,15 @@ A bounded context never subclasses `Feature` or `ApplicationService` straight fr
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from contextvars import copy_context
-from typing import TYPE_CHECKING, Generic, Type
+from functools import partial
+from typing import TYPE_CHECKING, Any, Generic, Type
 
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypeVar
 
 from .aio import AsyncBus
-from .context.entrypoint.consumer import ContextConsumer
-from .context.infrastructure.thread_context_bus import ThreadContextBus
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -67,32 +67,25 @@ class Bus(ABC):
         Otherwise, returns None.
         """
 
-    def thread_context(self) -> "ThreadContextBus":
-        """Return a handle to this bus bound to the calling thread's current context.
+    def thread_context(self) -> "Bus":
+        """This bus, bound to the context of the calling thread — for a pool the project owns.
 
-        `context()` overlays live in a ``ContextVar``, which is isolated per OS
-        thread by design. A plain ``executor.submit(bus.execute, dto)`` runs
-        ``execute`` in a *new* thread that never saw the overlay's ``set()``, so
-        every Feature's ``self.context`` there silently falls back to the (usually
-        empty) shared context. Call ``thread_context()`` here, in the thread that
-        still has the overlay active, then hand `.execute` (not the raw bus) to
-        the executor.
-
-        Call it **once per task you submit**, not once for a whole batch — a
-        captured snapshot can only be entered by one thread at a time, so sharing
-        a single one across concurrent workers raises a ``RuntimeError``::
+        Context: the node in play lives in a `ContextVar`, and a `ThreadPoolExecutor` hands a
+        worker none of it: a plain `executor.submit(bus.execute, dto)` runs with an empty
+        `self.context`. The bus answered runs every `execute` in a copy of the context taken here
+        (as `in_context` does), whichever thread calls it.
 
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = [
                     executor.submit(self.feature_bus.thread_context().execute, dto, return_type)
-                    for dto in dtos
+                    for dto in dtos                      one per task
                 ]
+
+        Call it **once per task you submit**, not once for a whole batch — a copied context can
+        be entered by one thread at a time, so one handle shared by concurrent workers raises
+        `RuntimeError`. `ContextExecutor` takes the copy per task on its own.
         """
-        # `Self@Bus` vs. `Bus` here is a known pyright edge case when the base
-        # class is only resolvable across modules via a TYPE_CHECKING import
-        # (see context/infrastructure/thread_context_bus.py) — correct at runtime and covered
-        # by tests/context/test_thread_context_bus.py.
-        return ThreadContextBus(self, copy_context())  # pyright: ignore[reportArgumentType]
+        return ContextBoundBus(partial(copy_context().run, self.execute))
 
     def get_async_bus(self) -> "AsyncBus":
         """Return a stateless async facade bound to this bus.
@@ -107,6 +100,64 @@ class Bus(ABC):
         return AsyncBus(self.execute)
 
 
+class ContextBoundBus(Bus):
+    """`bus.thread_context()`: a bus whose every `execute` runs in the context it was bound to."""
+
+    def __init__(self, execute: Callable[..., Any]) -> None:
+        """Hold the bus's `execute`, already wrapped to run in the captured context."""
+        self._execute = execute
+
+    def execute(
+        self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
+    ) -> TypeDTOResponse | None:
+        """The bound bus's answer to `dto`, computed in the captured context."""
+        return self._execute(dto, return_type)
+
+
+class ContextConsumer:
+    """`self.context` in a Feature or an ApplicationService: the `Context` of the execution in
+    play, as its bus sees it — read and written like a mapping, navigated like `use_context()`
+    (`self.context.entrypoint`, `.parent`).
+
+    Context: the handler only holds the bus it was bound to and asks it, so this base knows
+    nothing of how the context is built. Autocomplete of ``self.context`` is declared on the
+    Feature stub as ``ContextT``, not here.
+    """
+
+    _context_binder: Any
+    _context_fallback: dict
+
+    def bind_to_framework(self, binder: Any) -> None:
+        """Bind the handler to the bus it reads its context from — done once per bus
+        generation, when the bus is built."""
+        self._context_binder = binder
+
+    @property
+    def context(self) -> Any:
+        """The bus's `Context` where the handler runs — a plain dict when no bus is bound yet
+        (a handler built by hand, in a test)."""
+        binder = self._context_binder
+        if binder is not None:
+            return binder._get_context()
+        return self._context_fallback
+
+    @context.setter
+    def context(self, value: Any) -> None:
+        """`self.context = {...}` replaces what the handler's scope says — on the bus's
+        context when bound, on the fallback dict otherwise; `None` clears it.
+
+            self.context = {"company": 3}   ->  self.context["company"]  ->  3
+            self.context = None             ->  the handler's scope says nothing of its own
+
+        The value is copied into a new dict first; a parent's keys are not touched."""
+        mapping = dict(value) if value is not None else {}
+        binder = self._context_binder
+        if binder is not None:
+            binder._set_context(mapping)
+            return
+        self._context_fallback = mapping
+
+
 class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT]):
     """
     Feature is the first layer of the framework, it is the main abstraction to execute a business logic.
@@ -118,7 +169,7 @@ class Feature(ContextConsumer, ABC, Generic[TypeDTO, TypeDTOResponse, ContextT])
     dependency injection system. These dependencies can be accessed via self.dependency_name.
 
     One instance is built per generation of its UseFramework and serves every execution, on
-    every thread: keep request data in local variables, never on ``self``. ``self.context`` is
+    every thread: hold request data in local variables, never on ``self``. ``self.context`` is
     per execution.
 
     Every bounded context wraps it once, in its ``framework.py``, with the dependencies it

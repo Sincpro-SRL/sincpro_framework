@@ -1,9 +1,9 @@
-"""`Freshness`: how long a kept value is served as is — the port, and the two the framework ships.
+"""`Freshness`: how long a cached value is served as is — the port, and the two the framework ships.
 
     TimeToLive(ttl=timedelta(minutes=5), jitter=0.1, stale_for=timedelta(minutes=1), early_expiry=1)
     Sliding(idle_for=timedelta(minutes=10), at_most=timedelta(hours=1))
 
-Context: every kept value has a timeline — fresh until `fresh_until`, served stale while one
+Context: every cached value has a timeline — fresh until `fresh_until`, served stale while one
 caller recomputes it until `stale_until`. A `Freshness` answers those moments and nothing else:
 pure, no I/O, the same answer for the same arguments. `roll` is a uniform draw in [0, 1) the cache
 supplies, so a test fixes it. A project's own proves itself with
@@ -11,9 +11,9 @@ supplies, so a test fixes it. A project's own proves itself with
 
 `TimeToLive` — the four knobs, and the incident each prevents:
 
-- **ttl** — the safety net. `None` keeps the value until its validation says otherwise, or
-  somebody forgets it; a value kept in a shared store should always have one, or it piles up.
-- **jitter** — the ttl spread by up to this fraction, up or down, so values kept together do not
+- **ttl** — the safety net. `None` caches the value until its validation says otherwise, or
+  somebody forgets it; a value stored in a shared store should always have one, or it piles up.
+- **jitter** — the ttl spread by up to this fraction, up or down, so values cached together do not
   expire together and send every caller to the source in the same second.
 - **stale_for** — past the ttl, the value is still served while one caller recomputes it
   (RFC 5861's stale-while-revalidate): nobody waits on a slow source for something that was
@@ -22,8 +22,8 @@ supplies, so a test fixes it. A project's own proves itself with
   recomputed before it lapses, with a probability that grows as expiry nears and with how long
   the last computation took. 0 never recomputes early.
 
-`Sliding` is JCache's `AccessedExpiryPolicy`: a value nobody asks for goes, one asked for keeps
-being served — never past `at_most` after it was computed, so a hot key is still recomputed.
+`Sliding` is JCache's `AccessedExpiryPolicy`: a value nobody asks for goes, one asked for is still
+served — never past `at_most` after it was computed, so a hot key is still recomputed.
 """
 
 import math
@@ -39,11 +39,11 @@ NEVER = math.inf
 
 
 class Freshness(ABC):
-    """The port: the moments of one kept value's timeline, answered without I/O."""
+    """The port: the moments of one cached value's timeline, answered without I/O."""
 
     @abstractmethod
     def fresh_until(self, now: float, roll: float) -> float:
-        """When a value kept at `now` stops being fresh — `NEVER` for no expiry."""
+        """When a value cached at `now` stops being fresh — `NEVER` for no expiry."""
 
     def stale_until(self, fresh_until: float) -> float:
         """Until when a value past `fresh_until` is still served while one caller recomputes —
@@ -64,13 +64,13 @@ class Freshness(ABC):
 
 
 class TimeToLive(DataTransferObject, Freshness):
-    """A fixed life from the moment a value is kept — spread, stretched stale, and recomputed
+    """A fixed life from the moment a value is cached — spread, stretched stale, and recomputed
     early on demand; the four knobs are in the module header."""
 
     model_config = ConfigDict(frozen=True)
 
     ttl: timedelta | None = None
-    """The safety net — `None` keeps the value until its validation says otherwise."""
+    """The safety net — `None` caches the value until its validation says otherwise."""
     jitter: float = 0.0
     """The ttl spread by up to this fraction, up or down."""
     stale_for: timedelta = timedelta(0)

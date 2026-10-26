@@ -17,8 +17,8 @@ The other pages explain *why* each piece is the way it is. This one is *how*.
 | Bring related records | [7. Relations](#7-relations) |
 | Validate or compute on every write | [8. Hooks](#8-hooks) |
 | Say what happened, and react to it | [9. Domain events](#9-domain-events) |
-| Record every field that changed, keep the events | [10. Change tracking, and the context's event table](#10-change-tracking-and-the-contexts-event-table) |
-| Keep the facts as the state | [11. Event sourcing](#11-event-sourcing) |
+| Record every field that changed, store the events | [10. Change tracking, and the context's event table](#10-change-tracking-and-the-contexts-event-table) |
+| Store the facts as the state | [11. Event sourcing](#11-event-sourcing) |
 | Deliver events to other contexts reliably | [12. Delivering events](#12-delivering-events) |
 | Test a Feature without a database | [13. Testing](#13-testing) |
 | Extend an aggregate with fields of its own | [14. Extending an aggregate](#14-extending-an-aggregate) |
@@ -86,7 +86,7 @@ The table is declared once, in infrastructure. `entity_table` adds the four `Ent
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework.data_layer.orm import Database, Relation, Repository, map_aggregates, template_table
+from sincpro_framework.data_layer.orm import Database, TableRelation, Repository, map_aggregates, template_table
 
 billing = registry()
 customer_table = template_table.entity_table(
@@ -108,7 +108,7 @@ map_aggregates(
     billing,
     {Customer: customer_table, Invoice: invoice_table},
     # An invoice is an aggregate of its own: the customer reads them, never writes or removes them.
-    relations={Customer: {"invoices": Relation.foreign_key(Invoice, identified_by="customer_id", owned=False)}},
+    relations={Customer: {"invoices": TableRelation.foreign_key(Invoice, identified_by="customer_id", owned=False)}},
 )
 
 database = Database("sqlite:///billing.sqlite3")
@@ -175,11 +175,11 @@ assert again.parcels[1].weight == Decimal("1")                # the type, never 
 ```
 
 - **Read back as the type**, validated on the way in: a model, a dataclass, a list of them, a
-  `TypedDict` — whatever pydantic validates. A `Decimal` is kept as text and read back exact.
+  `TypedDict` — whatever pydantic validates. A `Decimal` is stored as text and read back exact.
 - **A value changed inside is written.** SQLAlchemy writes what was assigned and never looks
-  inside a value; the `Database` keeps a copy of each such value it reads and compares it before
+  inside a value; the `Database` stores a copy of each such value it reads and compares it before
   writing — for `TypedJson`, `JsonText`, `JSON` or a project's own column. Without it, the save
-  above answers and the row keeps "La Paz". A change never saved is put back at the end of a
+  above answers and the row still holds "La Paz". A change never saved is put back at the end of a
   unit of work, as an assigned one is.
 - **A migration writes the store's own type** — `JSONB` on Postgres, `JSON` elsewhere — never
   `TypedJson`: a step does not import the project.
@@ -267,7 +267,7 @@ except exceptions.StaleAggregate:
 simply try again on fresh data.
 
 **Deleting and archiving.** `remove` deletes the row. `archive` — for an `ArchivableMixin`
-aggregate — stamps `archived_at` and keeps it, and every read skips it unless asked:
+aggregate — stamps `archived_at` and leaves the row in place, and every read skips it unless asked:
 
 ```python
 from sincpro_framework.ddd import Condition, Criteria, Operator
@@ -339,7 +339,7 @@ assert page.cursor is not None                      # there is a next page
 ```
 
 A URL-style ordering (`"-total,number"`) becomes that list with
-`sincpro_framework.ddd.criteria.parse_order`.
+`Sort.parse`, from `sincpro_framework.ddd.criteria`.
 
 The next page is the same criteria resumed from the cursor the page handed back — in JSON,
 `"pagination": {"limit": 2, "strategy": {"token": "<cursor>"}}`. A cursor names a row, not a
@@ -399,7 +399,7 @@ rest of the surface — see [reference.md](reference.md).
 
 **A repository per aggregate, when its questions deserve names.** The repository above answers
 everything with a type and a `Criteria`, and most Features need nothing else. When the domain
-keeps asking one aggregate the same questions, `AggregateRepository[T]` names them — a thin view
+asks one aggregate the same questions again and again, `AggregateRepository[T]` names them — a thin view
 over the same repository, with the aggregate already given:
 
 ```python
@@ -457,7 +457,7 @@ assert [invoice.number for invoice in customer.invoices] == ["F-001", "F-002"]
 ```
 
 A many-to-many, a relation that lives in another bounded context (answered by its bus), or one
-answered by any function are declared once beside the tables with `Relation` — see
+answered by any function are declared once beside the tables with `TableRelation` — see
 [relations.md](relations.md).
 
 An aggregate is saved whole: a to-many tied by a foreign key is a part of its root — written by
@@ -562,7 +562,7 @@ class BillingEvent(DomainEvent):            # every event of this bounded contex
 
 @dataclass(kw_only=True)
 class InvoicePosted(BillingEvent):
-    name = "billing.invoice.v1.posted"     # the wire name; keep it stable
+    name = "billing.invoice.v1.posted"     # the wire name; never change it
     invoice_id: str = ""
     total: int = 0
 ```
@@ -599,14 +599,14 @@ assert sent == [draft.id]
 
 `SyncQueue` runs the subscribers in the same call. `BackgroundQueue(build_subscriber).start()`
 runs them in another process, and Kafka or RabbitMQ are one more `Queue`. Nothing is wired by
-default, and nothing is kept until the context gives its events a table (§10) — see
+default, and nothing is stored until the context gives its events a table (§10) — see
 [events](../events/README.md).
 
 ## 10. Change tracking, and the context's event table
 
 `ChangeTrackingMixin` records **one** `EntityUpdated` event per save, with every field that
 changed as `(before, after)`. A field set and set back is no change. `change_event` names the
-class it records — here one of the context's own, so it is kept with the rest:
+class it records — here one of the context's own, so it is stored with the rest:
 
 ```python
 from typing import ClassVar
@@ -655,10 +655,10 @@ assert updated.changes == {"amount": (100, 120), "method": ("cash", "qr")}
 time), it is saved and searched through the repository like any other, and every event of the
 bounded context lives in **one table**: the context declares it with the `event_table`
 template and maps its base class to it. Each subclass goes to the same table — its wire `name`
-tells the rows apart — and what a subclass adds is kept in a `payload` column:
+tells the rows apart — and what a subclass adds is stored in a `payload` column:
 
 ```python
-from sincpro_framework.ddd.criteria import combined, parse_order
+from sincpro_framework.ddd.criteria import Node, Sort
 from sincpro_framework.data_layer.orm import map_events, template_table
 
 billing_events = template_table.event_table("billing_events", billing.metadata)
@@ -670,10 +670,10 @@ payment.amount = 130
 repository.save(payment)                    # the payment, and its PaymentUpdated, one commit
 
 about_the_payment = Criteria(
-    where=Condition(field="entity_id", value=payment.id), order=parse_order("id")
+    where=Condition(field="entity_id", value=payment.id), order=Sort.parse("id")
 )
-[kept] = repository.fetch_all(PaymentUpdated, about_the_payment).items   # its history
-assert kept.changes == {"amount": (120, 130)}
+[stored] = repository.fetch_all(PaymentUpdated, about_the_payment).items   # its history
+assert stored.changes == {"amount": (120, 130)}
 assert [type(one) for one in repository.fetch_all(BillingEvent, about_the_payment).items] == [
     PaymentUpdated
 ]
@@ -689,11 +689,11 @@ assert [type(one) for one in repository.fetch_all(BillingEvent, about_the_paymen
 
 What this gives, with nothing else to learn:
 
-- **Kept with the change.** `save(aggregate)` writes the events it recorded in the same
-  transaction; a rollback keeps neither. A save repeated keeps an event once.
+- **Stored with the change.** `save(aggregate)` writes the events it recorded in the same
+  transaction; a rollback writes neither. A save repeated stores an event once.
 - **Read, never taken.** The aggregate still has them: `pull_events()` hands them to whoever
   publishes by hand (§9).
-- **An event about nothing** — `repository.save([DayClosed()])` — is kept the same way, with
+- **An event about nothing** — `repository.save([DayClosed()])` — is stored the same way, with
   `entity_type` and `entity_id` empty.
 - **Queried like any entity.** `fetch_all(PaymentUpdated, criteria)` answers that class;
   `fetch_all(BillingEvent, criteria)` the whole context, each row as its class.
@@ -703,8 +703,8 @@ as in §9. More in [change-tracking.md](../events/change-tracking.md).
 
 ## 11. Event sourcing
 
-Keeping the events beside the state is *event storing*: the payment still has its row. When the
-history *is* the state — a ledger, an account — the entity keeps no row: `EventSourcedMixin`
+Storing the events beside the state is *event storing*: the payment still has its row. When the
+history *is* the state — a ledger, an account — the entity has no row: `EventSourcedMixin`
 makes its state what its events add up to. Each event it records is applied at once and numbered
 in the entity's history (`entity_version` 1, 2, 3 …); `repository.get` rebuilds it from them and
 `repository.save` appends the new ones.
@@ -779,14 +779,14 @@ The costs are the usual ones. An event is forever, so its shape is versioned in 
 (`billing.account.v1.…`) and a v2 is a new class; a correction is another event. Rebuilding on
 every read grows with the history: a snapshot is the next iteration, and until then a read model
 is an ordinary aggregate saved beside the events. Replaying a history to another system is the
-broker's job (Kafka keeps it), not a second store. See
+broker's job (Kafka retains it), not a second store. See
 [shapes.md §3](../shapes.md#3-the-facts-are-the-state).
 
 ## 12. Delivering events
 
 Publishing after the commit can lose an event: the process can die between the two. The
 transactional outbox closes that gap, and here it is the event table itself: an event marked
-`DeliverableEventMixin` is kept with the change, in the same transaction, with where its
+`DeliverableEventMixin` is stored with the change, in the same transaction, with where its
 delivery stands beside it; an `EventRelay` reads the ones not delivered yet, hands each one on,
 and marks it.
 
@@ -835,7 +835,7 @@ assert "delivered_at" not in sent.as_json()             # its delivery is never 
 
 **Delivery is the event's own state**, not a reader's checkpoint: three fields the mixin adds.
 
-| Field | Kept as | What it says |
+| Field | Stored as | What it says |
 |---|---|---|
 | `delivered_at` | column | when it went out — empty while it has not |
 | `next_delivery_at` | column | when the relay may try it — at once when it is made, later after a failure, empty once parked |
@@ -846,7 +846,7 @@ what is pending, what was parked, what one invoice sent:
 
 ```python
 pending = Criteria(
-    where=combined(
+    where=Node.combined(
         Condition(field="is_deliverable", value=True),
         Condition(field="delivered_at", operator=Operator.IS_NULL, value=True),
     )
@@ -871,7 +871,7 @@ before its retry is due — then parks it after the cap:
 |---|---|
 | `RetryInPlace(attempts, backoff, then=…, never_retry=…)` | schedules a retry; nothing after it goes out until it did, or was parked |
 | `RetryLater(attempts, backoff, then=…, holds_stream=True)` | schedules a retry; later events of its entity wait until it went out, or was parked; other entities go on |
-| `ParkAndContinue()` | kept aside with its reason; `event.replayed()` and a save put it back |
+| `ParkAndContinue()` | set aside with its reason; `event.replayed()` and a save put it back |
 | `SkipAndContinue()` | marked delivered with a log line and the reason in `delivery` |
 
 `ExponentialBackoff` and `FixedBackoff` space the attempts. An error that fails the same way every
@@ -880,11 +880,11 @@ refusal, not found…) — is parked at once, and so is any error in `never_retr
 An error that says how long to wait (`retry_after`) is not tried before that.
 
 **A parked event holds nothing.** Like a dead-letter queue, its entity's later events go on
-without it; replayed, it goes out after them. Row locks keep two replicas from taking the same event, not an entity's whole stream: two replicas can each take a different event of one entity in the same instant. Where that matters, run one relay per context, or key the broker by entity (`keyed_by_entity`).
+without it; replayed, it goes out after them. Row locks prevent two replicas from taking the same event, not an entity's whole stream: two replicas can each take a different event of one entity in the same instant. Where that matters, run one relay per context, or key the broker by entity (`keyed_by_entity`).
 
 **At least once, never lost.** A relay that dies after handing an event on and before the commit
 leaves it unmarked, and the next pass sends it again — a consumer is idempotent (the
-[inbox](../events/brokers.md)). An event no aggregate records is kept the same way through
+[inbox](../events/brokers.md)). An event no aggregate records is stored the same way through
 `Publisher(RepositoryQueue(repository))`. Run the relay from a cron:
 
 ```python
@@ -933,7 +933,7 @@ prove — a unique index, a foreign key, a lock — needs the real one; see
 ## 14. Extending an aggregate
 
 A subclass of an aggregate — an addon's `CreditInvoice` that is an `Invoice` with a credit
-reason — keeps what it inherits in the parent's table and only its own columns in its table,
+reason — stores what it inherits in the parent's table and only its own columns in its table,
 which references the parent's key:
 
 ```python
@@ -978,11 +978,11 @@ assert (stored.number, stored.total, stored.reason) == ("NC-1", 50, "returned go
 parent, and refuses a table that does not reference the parent's key. A `Criteria` filters and
 orders by inherited and own fields alike.
 
-## 15. A form's whole life: keep, save, find again
+## 15. A form's whole life: save a draft, save, find again
 
 A form that is not always saved — an edit continued tomorrow, from another device, or dropped —
-is one command, `Edit`, answered by `EntityEdits` (an `EntityReads` too). `KEEP` holds the
-caller's draft where the context is kept; `SAVE` stores it; `Get(draft=True)` and
+is one command, `Edit`, answered by `EntityEdits` (an `EntityReads` too). `SAVE_DRAFT` holds the
+caller's draft where the context is stored; `SAVE` stores it; `Get(draft=True)` and
 `Search(drafts=True)` find it again after the client lost its state:
 
 ```python
@@ -1056,15 +1056,15 @@ class QuoteForms(EntityEdits[Quote]):
 
 
 with quotes_bus.context({"tenant_id": "acme", "user_id": "ana"}):
-    kept = quotes_bus(
+    drafted = quotes_bus(
         CommandEditQuote(id="0192q1", values={"customer": "Eva", "amount": "100", "discount": "5"}),
         ResponseEditQuote,
     )
-    assert kept.quote.total == Decimal("95") and quotes.get(Quote, "0192q1") is None
+    assert drafted.quote.total == Decimal("95") and quotes.get(Quote, "0192q1") is None
 
     # the browser closed: the draft is found again, where it was left
     again = quotes_bus(QueryGetQuote(id="0192q1", draft=True), ResponseQuote)
-    assert again.draft.version == kept.draft.version
+    assert again.draft.version == drafted.draft.version
     mine = quotes_bus(QueryListQuotes(drafts=True), ResponseQuotes)
     assert [one.id for one in mine.quotes] == ["0192q1"]
 

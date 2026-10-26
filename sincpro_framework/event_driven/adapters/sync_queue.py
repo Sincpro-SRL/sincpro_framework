@@ -4,13 +4,11 @@ queue = SyncQueue(Subscriber(planning, assurance))
 """
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sincpro_framework import exceptions
 from sincpro_framework.ddd.events import DomainEvent
-
-if TYPE_CHECKING:
-    from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
+from sincpro_framework.event_driven.domain.subscribes import Subscribes
 
 
 class SyncQueue:
@@ -26,11 +24,11 @@ class SyncQueue:
     exists. It is the same shape as `Hooks.inject`, and it is why a composition root can build
     in one direction and never import backwards.
 
-    Built once, on the first publish, and kept.
+    Built once, on the first publish, and held from then on.
     """
 
-    def __init__(self, subscriber: "Subscriber | Callable[[], Subscriber]") -> None:
-        """Keep the subscriber, or the function that builds it — refused at once, as a
+    def __init__(self, subscriber: Subscribes | Callable[[], Subscribes]) -> None:
+        """Hold the subscriber, or the function that builds it — refused at once, as a
         `ProgrammingError`, when `subscriber` is neither."""
         if not hasattr(subscriber, "handle") and not callable(subscriber):
             raise exceptions.ProgrammingError(
@@ -38,10 +36,10 @@ class SyncQueue:
                 f"{type(subscriber).__name__} is neither"
             )
         self._given = subscriber
-        self._built: "Subscriber | None" = None if callable(subscriber) else subscriber
+        self._built: Subscribes | None = None if callable(subscriber) else subscriber
 
     @property
-    def subscriber(self) -> "Subscriber":
+    def subscriber(self) -> Subscribes:
         """The subscriber, built on first use when a function was handed over."""
         if self._built is None:
             given = self._given

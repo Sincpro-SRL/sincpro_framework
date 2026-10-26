@@ -36,7 +36,8 @@ from decimal import Decimal
 from enum import StrEnum
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.observability import of, traces
+from sincpro_framework.observability import traces
+from sincpro_framework.observability.metrics import of
 
 
 class Environment(StrEnum):
@@ -220,5 +221,5 @@ traces.annotate({"payment.order": "O-1", "payment.payload": {"not": "a span valu
 |---|---|
 | `@traces.attributes(*of(X).field, namespace=, **name=of(X).field)` | declared on a use case: the Command's before it runs, the Response's after a success |
 | `traces.annotate({key: value})` | by hand, on the span of the use case running now |
-| `of(Dto).field`, `of(ContextType)["key"]` | the field reference `metrics` uses — also exported by `sincpro_framework.observability` |
+| `of(Dto).field`, `of(ContextType)["key"]` | the field reference `metrics` uses — imported from `sincpro_framework.observability.metrics` |
 | `SpanValue` | what a value may be |

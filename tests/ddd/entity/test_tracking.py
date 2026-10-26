@@ -6,13 +6,8 @@ SQLAlchemy `Repository` in `tests/data_layer/orm/test_tracking.py`.
 from dataclasses import dataclass, field
 
 from sincpro_framework.data_layer.repositories import MemoryRepository
-from sincpro_framework.ddd.entity import (
-    ArchivableMixin,
-    AuditedMixin,
-    ChangeTrackingMixin,
-    Entity,
-    EntityUpdated,
-)
+from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
+from sincpro_framework.ddd.events import ChangeTrackingMixin, EntityUpdated
 
 
 @dataclass

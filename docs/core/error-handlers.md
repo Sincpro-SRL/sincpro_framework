@@ -148,14 +148,14 @@ assert payments(CommandPay(amount=500), ResponsePay).error == "declined, try ano
 ```
 
 - Replacing or switching off something that is not registered works, and the build logs a warning.
-- Switching one off **before** it is registered keeps it off when it arrives — a project can turn
+- Switching one off **before** it is registered leaves it off when it arrives — a project can turn
   off a handler of a core it installs later.
 
 ## Registered after the bus was built
 
 Handlers belong to a generation of the bus, like the handlers they protect: one registered after
 the first execution answers from the next execution, which builds a new generation first. A
-request already running keeps the chains it started with.
+request already running still runs the chains it started with.
 
 ```python
 payments = new_payments()
@@ -177,7 +177,7 @@ assert payments(CommandPay(amount=500), ResponsePay).error == "handled late"
 | reaches the caller | recorded where it was raised | logged once, by the outermost bus | `ExecutionFailed` |
 
 An error marked as expected traffic (`bus.ignore_sentry_exceptions(...)`) is logged at info and
-kept out of GlitchTip. What kind of failure it is — the caller's, the domain's, a service's — is in
+left out of GlitchTip. What kind of failure it is — the caller's, the domain's, a service's — is in
 [exceptions](exceptions.md).
 
 ## Why it is this way
@@ -192,4 +192,4 @@ kept out of GlitchTip. What kind of failure it is — the caller's, the domain's
   `sequence` and `replaces` mean the same everywhere and a module can place its handler before or
   after another's without numbers guessed against each other.
 - **Recorded before it is handled.** An error that a handler turns into an answer still happened:
-  the trace and GlitchTip keep it, and only the caller is spared it.
+  the trace and GlitchTip record it, and only the caller is spared it.

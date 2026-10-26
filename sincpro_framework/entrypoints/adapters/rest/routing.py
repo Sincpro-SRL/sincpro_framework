@@ -6,7 +6,7 @@ becomes its payload, and what HTTP answers each failure.
     POST /billing/query-invoices                     or in a body when they do not fit a URL
 
 Context: the path is the bus's alias and the DTO's name in kebab case — never the layer, so a
-Feature that becomes an ApplicationService keeps its URL. A field that is not a plain value — a
+Feature that becomes an ApplicationService is still served at the same URL. A field that is not a plain value — a
 `Criteria`, a list, a nested object — travels in the query string as JSON, the form
 `@sincpro/criteria`'s `pack()` writes. A route of the project's own (`GET
 /billing/invoices/{invoice_id}`) takes the path's fields from the path.
@@ -20,25 +20,23 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.entrypoint.transports import refusal_body
+from sincpro_framework.auth import Credentials
 from sincpro_framework.common.failures import (
     json_safe_validation_errors,
     refined_failure_kind,
 )
+from sincpro_framework.common.naming import kebab
+from sincpro_framework.context import EntrypointKind
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.adapters.rest import exceptions
 from sincpro_framework.entrypoints.domain.layers import Scalar
-from sincpro_framework.entrypoints.entrypoint.catalog import PackedFeatureOrAppService
+from sincpro_framework.entrypoints.domain.packed import PackedFeatureOrAppService
+from sincpro_framework.observability import process
+from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
 PATH_PARAMETER = re.compile(r"{([A-Za-z_][A-Za-z0-9_]*)}")
 PLAIN_TYPES = {"string", "integer", "number", "boolean"}
-
-
-def kebab(name: str) -> str:
-    """`CommandIssueInvoice` → `command-issue-invoice`; `HTTPRequest` → `http-request`."""
-    spaced = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1-\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", spaced).lower()
 
 
 def is_query(operation: PackedFeatureOrAppService) -> bool:
@@ -161,7 +159,7 @@ def payload_from_query(query: Mapping[str, str], schema: Mapping[str, Any]) -> S
 
     1. The schema's properties.
     2. For each query value:
-       2.1 a name the DTO does not have, or a plain field (`is_plain`): kept as it came;
+       2.1 a name the DTO does not have, or a plain field (`is_plain`): passed as it came;
        2.2 any other: decoded from JSON — refused as `InvalidRequest` (400) when it is not.
     Final: the payload, still to be validated as the DTO.
     """
@@ -207,7 +205,8 @@ def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
 
     1. What could not be read: 400.
     2. Anything else classified once (`refined_failure_kind`), its status by kind.
-    3. Its body: the validation errors, the auth refusal (`refusal_body`), or the message.
+    3. Its body: the validation errors, the auth refusal (`AuthError.refusal_body`), or the
+       message.
     Final: an internal failure says nothing of the inside.
     """
     if isinstance(error, exceptions.InvalidRequest):
@@ -219,7 +218,37 @@ def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
             "detail": json_safe_validation_errors(error),
         }
     if isinstance(error, exceptions.AuthError):
-        return STATUS_OF[kind], refusal_body(error)
+        return STATUS_OF[kind], error.refusal_body()
     if kind == exceptions.FailureKind.INTERNAL:
         return STATUS_OF[kind], {"kind": kind.value, "message": "Internal error"}
     return STATUS_OF[kind], {"kind": kind.value, "message": str(error)}
+
+
+def call_route(
+    route: RestRoute,
+    payload: Mapping[str, Any],
+    context: Mapping[str, Any] | None = None,
+    credentials: Credentials | None = None,
+) -> tuple[int, Any]:
+    """One call of `route`, answered as `(status, body)` — what a web library turns into a
+    response; the transport-free path a test or another host takes.
+
+        call_route(<POST /billing/command-issue-invoice>, {"total": 10})
+        ->  (200, {"invoice_id": "F-1", "total": 10})
+        call_route(<same route>, {"total": "ten"})
+        ->  (422, {"error": {"kind": "invalid", "detail": [...]}})
+
+    1. The use case's `call`, inside the context and as whoever the credentials say — a REST
+       entrypoint.
+    2. A failure answered by its kind (`failure_answer`) under `error`.
+    Final: a 500 is logged here unless a bus already reported it; the body never says why.
+    """
+    try:
+        return 200, route.operation.call(
+            dict(payload), context, credentials, EntrypointKind.REST
+        )
+    except Exception as error:
+        status, body = failure_answer(error)
+        if status == 500 and not process.was_reported(error):
+            logger.exception("REST %s failed", route.path)
+        return status, {"error": body}

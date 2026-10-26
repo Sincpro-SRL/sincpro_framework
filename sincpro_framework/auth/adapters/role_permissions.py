@@ -29,7 +29,7 @@ class RolePermissions:
         implies: Mapping[str, Iterable[str]] | None = None,
     ) -> None:
         """The table: what each role grants, and which roles each role implies — role names
-        and permissions kept as given, as frozen sets."""
+        and permissions taken as given, as frozen sets."""
         self.grants = {str(role): frozenset(granted) for role, granted in roles.items()}
         self.implies = {str(role): frozenset(more) for role, more in (implies or {}).items()}
 

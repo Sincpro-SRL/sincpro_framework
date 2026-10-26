@@ -54,10 +54,7 @@ from typing import Any, ClassVar, cast, get_args, get_origin
 
 from pydantic import field_validator
 
-from sincpro_framework.context.domain.drafts import Draft
-from sincpro_framework.context.entrypoint.drafts import Drafts
-from sincpro_framework.context.entrypoint.facade import use_context
-from sincpro_framework.context.entrypoint.owner import BY_TENANT_AND_USER
+from sincpro_framework.context import Draft, Drafts, Owner, use_context
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
@@ -65,13 +62,13 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    Evaluation,
     Expression,
+    Node,
     Operator,
     Pagination,
+    Sort,
     Specification,
-    combined,
-    matches,
-    parse_order,
 )
 from sincpro_framework.ddd.editing.editing import adapter_of, assign, owned, recompute
 from sincpro_framework.ddd.editing.preview import Advice, previewing
@@ -149,8 +146,8 @@ class Search[T, R: ResponsePaginatedQuery](Query):
 
     drafts: bool = False
     """The caller's drafts instead of the stored records: filtered and ordered by the same
-    criteria, the most recently kept first when it names no order — one page, an owner's drafts
-    being few. What a client asks after it lost its state: what was I editing?"""
+    criteria, the most recently saved first when it names no order — one page, an owner's
+    drafts being few. What a client asks after it lost its state: what was I editing?"""
 
 
 class DomainEvents[T, R: ResponsePaginatedQuery](Query):
@@ -169,8 +166,9 @@ class DomainEvents[T, R: ResponsePaginatedQuery](Query):
     id: str
     """The value of the entity's `DEFAULT_GET_ID` field: its identity unless it names a key."""
     names: list[str] | str = []
-    """Wire names to keep (`name in names`); empty keeps every event. A name no class records
-    answers no rows — it is not checked against the classes imported, which may not be yet."""
+    """Wire names to select (`name in names`); empty selects every event. A name no class
+    records answers no rows — it is not checked against the classes imported, which may not be
+    yet."""
 
     @field_validator("names", mode="before")
     @classmethod
@@ -329,8 +327,8 @@ class EntityReads[T](Feature):
             return answer
     """
 
-    drafts_by: ClassVar[Sequence[str]] = BY_TENANT_AND_USER
-    """Whose the drafts of this form are — a user's within its tenant by default; `BY_TENANT`
+    drafts_by: ClassVar[Sequence[str]] = Owner.BY_TENANT_AND_USER
+    """Whose the drafts of this form are — a user's within its tenant by default; `Owner.BY_TENANT`
     everybody's of the tenant, `()` nobody's: one draft of a record that every user opens."""
 
     def reads_from(self) -> IRepository:
@@ -360,9 +358,9 @@ class EntityReads[T](Feature):
         return use_context().drafts(by=self.drafts_by)
 
     def draft_subject(self, entity: type, key: str) -> str:
-        """What a draft of a record is kept as: its key under its entity and its bounded context —
-        `billing.Invoice:F-7` — so two contexts that keep drafts in one store, each with an
-        `Invoice` of its own, never read each other's."""
+        """What a draft of a record is stored as: its key under its entity and its bounded
+        context — `billing.Invoice:F-7` — so two contexts that store drafts in one store, each
+        with an `Invoice` of its own, never read each other's."""
         bus = use_context().bus
         return f"{bus.label if bus is not None else ''}.{entity.__name__}:{key}"
 
@@ -378,7 +376,7 @@ class EntityReads[T](Feature):
         read = (detail_of(entity) or Criteria()).replaced_by(asked)
         return read.model_copy(
             update={
-                "where": combined(where, read.expression),
+                "where": Node.combined(where, read.expression),
                 "pagination": Pagination(limit=limit),
                 "count": CountMode.NONE,
             }
@@ -427,14 +425,14 @@ class EntityReads[T](Feature):
             return None
 
     def drafted(
-        self, entity: type, response: type, key: str, kept: Draft, criteria: Criteria
+        self, entity: type, response: type, key: str, draft: Draft, criteria: Criteria
     ) -> Any:
         """A draft answered as the record it holds, the way the stored one is answered: cut by the
         same criteria, with the same definition — and said to be a draft, stale when the stored
         record moved on since the draft started.
 
-            # F-7 stored at version 4; the draft kept {"discount": "5"} from version 3
-            drafted(Invoice, ResponseInvoice, "F-7", kept, criteria)
+            # F-7 stored at version 4; the draft saved {"discount": "5"} from version 3
+            drafted(Invoice, ResponseInvoice, "F-7", draft, criteria)
                 ->  ResponseInvoice(invoice=Invoice(discount=5, …),
                         draft=DraftState(version=2, origin_version=3, stale=True))
             # only drafted, never stored  ->  a blank Invoice keyed "F-7" with the values
@@ -443,24 +441,25 @@ class EntityReads[T](Feature):
         """
         stored = self.stored(entity, key)
         record = stored if stored is not None else keyed(blank(entity), entity, key)
-        assign(record, kept.values, True)
+        assign(record, draft.values, True)
         answer = response.of(record, self.described(entity, criteria), criteria)
         answer.draft = DraftState(
-            version=kept.version,
-            origin_version=kept.origin_version,
-            kept_at=kept.kept_at,
-            stale=stored is not None and getattr(stored, "version", 0) != kept.origin_version,
+            version=draft.version,
+            origin_version=draft.origin_version,
+            kept_at=draft.kept_at,
+            stale=stored is not None
+            and getattr(stored, "version", 0) != draft.origin_version,
         )
         return answer
 
     def get(self, dto: Any) -> Any:
         """The record found by its key, as the entity reads it, or `AggregateNotFound` — the
-        caller's draft of it instead when `draft` asks and one is kept.
+        caller's draft of it instead when `draft` asks and one is saved.
 
             QueryGetAccount(id="01a1…")               ->  ResponseAccount(account=Account(…))
-            QueryGetAccount(id="01a1…", draft=True)   ->  the kept draft, with `draft` state
+            QueryGetAccount(id="01a1…", draft=True)   ->  the saved draft, with `draft` state
 
-        1. With `draft` asked, the caller's kept draft of this record, when there is one, is
+        1. With `draft` asked, the caller's saved draft of this record, when there is one, is
            answered instead (`drafted`), over the criteria a stored one would be read by.
         2. Otherwise a page of one, filtered by the entity's key and read as the entity reads
            itself, the caller's criteria replacing it part by part (`by_identity`).
@@ -468,12 +467,12 @@ class EntityReads[T](Feature):
         """
         entity, response = declared_by(type(dto))
         if dto.draft:
-            kept = self.drafts().read(self.draft_subject(entity, dto.id))
-            if kept is not None:
+            draft = self.drafts().read(self.draft_subject(entity, dto.id))
+            if draft is not None:
                 criteria = self.by_identity(
                     entity, Condition(field=key_of(entity), value=dto.id), 1, dto.criteria
                 )
-                return self.drafted(entity, response, dto.id, kept, criteria)
+                return self.drafted(entity, response, dto.id, draft, criteria)
         criteria = self.by_identity(
             entity, Condition(field=key_of(entity), value=dto.id), 1, dto.criteria
         )
@@ -511,11 +510,11 @@ class EntityReads[T](Feature):
         return response.of(self.reads_from().search(entity, criteria), criteria)
 
     def drafted_page(self, entity: type, criteria: Criteria) -> EntityCollection[Any]:
-        """The caller's drafts of `entity` as one page: each as the record it holds, kept by the
-        criteria's filter, in its order — the most recently kept first when it names none — cut
-        to its limit.
+        """The caller's drafts of `entity` as one page: each as the record it holds, selected
+        by the criteria's filter, in its order — the most recently saved first when it names
+        none — cut to its limit.
 
-            # drafts kept of Invoice F-9 (just now) and F-7 (earlier), and of a Partner
+            # drafts saved of Invoice F-9 (just now) and F-7 (earlier), and of a Partner
             drafted_page(Invoice, Criteria())
                 ->  EntityCollection(items=(<F-9 drafted>, <F-7 drafted>),
                                      count=Count(2, exact=True), meta=<Invoice's>)
@@ -523,11 +522,11 @@ class EntityReads[T](Feature):
                                                            operator=Operator.GT, value=100)))
                 ->  only the drafted invoices above 100
 
-        1. Each subject the caller has a draft of, the most recently kept first — only those
+        1. Each subject the caller has a draft of, the most recently saved first — only those
            of this entity, in this bounded context.
            1.1 The record it holds: the stored one, or a blank one under its key, with the
                draft's values put on it.
-        2. The records kept by the criteria's filter, in memory, as the engine would.
+        2. The records selected by the criteria's filter, in memory, as the engine would.
         3. Sorted by each of the criteria's sorts — the last first, so the first one wins.
         4. Cut to the criteria's limit, when it asks for a page.
         Final: one exact page, with the definition and the drops the store answers for the
@@ -537,13 +536,13 @@ class EntityReads[T](Feature):
         prefix = self.draft_subject(entity, "")
         records = []
         for subject in drafts.subjects():
-            kept = drafts.read(subject) if subject.startswith(prefix) else None
-            if kept is None:
+            draft = drafts.read(subject) if subject.startswith(prefix) else None
+            if draft is None:
                 continue
             key = subject.removeprefix(prefix)
             stored = self.stored(entity, key)
             record = stored if stored is not None else keyed(blank(entity), entity, key)
-            assign(record, kept.values, True)
+            assign(record, draft.values, True)
             records.append(record)
         page = EntityCollection(items=tuple(records)).filtered_by(criteria.expression)
         for sort in reversed(criteria.order):
@@ -622,10 +621,10 @@ class EntityReads[T](Feature):
         where = subject(entity.__name__, identity)
         wanted: list[str] = [dto.names] if isinstance(dto.names, str) else list(dto.names)
         if wanted:
-            where = combined(
+            where = Node.combined(
                 where, Condition(field="name", value=cast(Any, wanted), operator=Operator.IN)
             )
-        criteria = Criteria(where=where, order=parse_order("id")).replaced_by(dto.criteria)
+        criteria = Criteria(where=where, order=Sort.parse("id")).replaced_by(dto.criteria)
         return response.of(self.reads_from().search(events, criteria), criteria)
 
     def preview(self, dto: Any) -> Any:
@@ -792,7 +791,7 @@ def _copied(
 
 def copied(record: Any) -> Any:
     """A new record holding what `record` holds, built through its own constructor — and so is
-    every record inside it — so nothing done to it reaches what a store keeps: a store in
+    every record inside it — so nothing done to it reaches what a store holds: a store in
     memory hands back its own instances.
 
     in      the stored Invoice(discount=0, lines=[line 1, line 2])
@@ -871,7 +870,7 @@ def dumped(record: Any) -> dict[str, Any]:
 
 def _holds(record: Any, condition: Any) -> bool:
     """Whether a hint's condition holds over the record; no condition never holds."""
-    return condition is not None and matches(record, condition)
+    return condition is not None and Evaluation.matches(record, condition)
 
 
 def states_of(record: Any) -> dict[str, FieldState]:

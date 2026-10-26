@@ -13,9 +13,17 @@ from sqlalchemy.orm import registry
 from sincpro_framework.data_layer.orm import map_aggregates, template_table
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import Entity
-from sincpro_framework.ddd.criteria import Condition, Criteria, Grouping, Level, Measure
+from sincpro_framework.ddd.criteria import (
+    Condition,
+    Criteria,
+    Grouping,
+    GroupingLevel,
+    Measure,
+)
 
 from .engines import fresh
 
@@ -64,7 +72,7 @@ def world(engine_url: str):
 def test_a_key_of_the_slot_is_a_field_of_the_entity(engine_url):
     Invoice, _ = world(engine_url)
 
-    fields = describe(Invoice).fields
+    fields = ModelIntrospection.describe(Invoice).fields
 
     assert "zone" in fields and "weight" in fields and "properties" in fields
 
@@ -84,7 +92,7 @@ def test_a_key_of_the_slot_is_grouped_and_measured_like_a_column(engine_url):
         Invoice,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="zone"),),
+                group_by=(GroupingLevel(field="zone"),),
                 measures={"weight": Measure(function="sum", field="weight")},
             )
         ),
@@ -108,13 +116,13 @@ def test_a_module_maps_a_key_of_the_slot_of_an_entity_it_does_not_own(engine_url
         "invoice", md, template_table.properties_column(), Column("number", Text)
     )
     map_aggregates(reg, {Invoice: table})  # the core, mapped alone
-    assert "zone" not in describe(Invoice).fields
+    assert "zone" not in ModelIntrospection.describe(Invoice).fields
 
     map_aggregates(  # a module, later
         reg, {}, properties={Invoice: {"zone": template_table.slot_field(table, "zone")}}
     )
 
-    assert "zone" in describe(Invoice).fields
+    assert "zone" in ModelIntrospection.describe(Invoice).fields
     database = fresh(engine_url, md)
     store = Repository(database)
     record = Invoice(number="F-1")

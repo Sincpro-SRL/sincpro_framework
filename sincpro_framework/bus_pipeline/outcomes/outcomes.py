@@ -3,13 +3,17 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework import exceptions
 from sincpro_framework.bus_pipeline.listeners import Listeners
-from sincpro_framework.bus_pipeline.outcomes.listeners import completions, failures
+from sincpro_framework.bus_pipeline.outcomes.listeners import (
+    completion_listeners,
+    failure_listeners,
+)
+from sincpro_framework.common.failures import is_fault, refined_failure_kind, retry_after
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
-    from sincpro_framework.context.domain.execution import Execution
-    from sincpro_framework.context.domain.node import ContextNode
+    from sincpro_framework.context import ContextNode, Execution
 
 FAILURE_ID = "failure_id"
 """What an escaped exception carries: the id of the `ExecutionFailed` that went out with it."""
@@ -41,8 +45,8 @@ class Outcomes:
         they hear every bus."""
         self.bus = bus
         """The bounded context whose use cases it announces."""
-        self.completed = Listeners(process=completions)
-        self.failed = Listeners(process=failures)
+        self.completed = Listeners(process=completion_listeners)
+        self.failed = Listeners(process=failure_listeners)
 
     def failed_in(
         self, error: BaseException, dto: Any, level: str, node: "ContextNode"
@@ -52,7 +56,7 @@ class Outcomes:
 
             failed_in(ValueError("x"), CommandPay(...), "feature", node)
             ->  None; the error carries FailedAt(bus="billing", level="feature", ...)
-            failed_in(<same error, again in its application service>)  ->  None, kept as was
+            failed_in(<same error, again in its application service>)  ->  None, left as it was
 
         A node with no execution, or an exception that takes no attribute, is left untouched.
         """
@@ -121,14 +125,8 @@ class Outcomes:
         listeners = origin.listeners if origin is not None else self.failed
         if not listeners.heard():
             return
-        from sincpro_framework import exceptions
         from sincpro_framework.bus_pipeline.events import ExecutionEvent
         from sincpro_framework.bus_pipeline.outcomes.events import ExecutionFailed
-        from sincpro_framework.common.failures import (
-            is_fault,
-            refined_failure_kind,
-            retry_after,
-        )
 
         failed_dto = origin.dto if origin is not None else dto
         if isinstance(failed_dto, ExecutionEvent) or isinstance(dto, ExecutionEvent):

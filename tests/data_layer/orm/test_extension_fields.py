@@ -13,10 +13,13 @@ from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text, text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework, exceptions
-from sincpro_framework.data_layer.orm import Consolidated, Relation, map_aggregates
+from sincpro_framework.context.adapters.stores import InMemoryContexts
+from sincpro_framework.data_layer.orm import Consolidated, TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import (
     Criteria,
     Entity,
@@ -29,13 +32,12 @@ from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Sort,
     Specification,
 )
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
-from sincpro_framework.store.adapters.stores import InMemoryContexts
 
 from .engines import fresh
 
@@ -114,8 +116,8 @@ class World:
 def test_the_definition_of_the_core_says_whose_each_field_is(engine_url):
     world = World(engine_url)
 
-    core = describe(world.Move).fields
-    delivery = describe(world.MoveDelivery).fields
+    core = ModelIntrospection.describe(world.Move).fields
+    delivery = ModelIntrospection.describe(world.MoveDelivery).fields
 
     assert core["number"].owner is None
     assert (core["route"].owner, core["carrier"].owner, core["cufd"].owner) == (
@@ -168,7 +170,7 @@ def test_the_core_is_filtered_ordered_and_grouped_with_a_field_of_an_extension_i
         world.Move,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="route"),),
+                group_by=(GroupingLevel(field="route"),),
                 measures={"total": Measure(function="sum", field="total")},
             )
         ),
@@ -536,7 +538,7 @@ def test_an_extension_that_is_not_an_entity_does_not_repeat_the_dates_and_versio
         {Move: move_t, MoveFiscal: fiscal_t},
         relations={
             Move: {
-                "fiscal": Relation.foreign_key(
+                "fiscal": TableRelation.foreign_key(
                     MoveFiscal, parent_field="id", related_field="id", many=False
                 )
             }

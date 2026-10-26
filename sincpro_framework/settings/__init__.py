@@ -12,28 +12,26 @@
     settings = build_config_obj(PaymentsSettings, "conf/payments.yml", "sincpro_payments_sdk")
     qr = build_config_obj(QRSettings, "conf/payments.yml", "sincpro_payments_sdk.qr")
 
-`domain/` holds what a shape is (`SincproConfig`, `Secret`, the framework's shapes) and how one is
-resolved (sections, nested shapes, the cascade); `adapters/` where the document comes from (the
-YAML file, the environment by path); `building` the one function; `describe` where each value came
-from. `sincpro_framework.sincpro_conf` is the entry point projects import, as always. See
-`docs/core/settings.md`.
+`domain/` holds what a shape is (`SincproConfig`, `Secret`, `FrameworkSettings`) and what a
+description is; `adapters/` where the document comes from (the YAML file, the environment by
+path, AWS); `services/` how a shape is resolved (sections, nested shapes, the cascade), built and
+described; `entrypoint/` `build_config_obj` and the framework's own `settings`, whose door is
+`sincpro_framework.sincpro_conf`. See `docs/core/settings.md`.
 """
 
 from sincpro_framework.settings.adapters.yaml_file import load_yaml_file
-from sincpro_framework.settings.building import build_config_obj
-from sincpro_framework.settings.describe import SettingDescription, describe_settings
 from sincpro_framework.settings.domain.config import (
-    DefaultFrameworkConfig,
     FrameworkSettings,
     Secret,
     SettingSource,
     SincproConfig,
     TypeSincproConfigModel,
-    usable_env_value,
 )
+from sincpro_framework.settings.domain.description import SettingDescription
+from sincpro_framework.settings.entrypoint.building import build_config_obj
+from sincpro_framework.settings.services.description import describe_settings
 
 __all__ = [
-    "DefaultFrameworkConfig",
     "FrameworkSettings",
     "Secret",
     "SettingDescription",
@@ -43,5 +41,4 @@ __all__ = [
     "build_config_obj",
     "describe_settings",
     "load_yaml_file",
-    "usable_env_value",
 ]

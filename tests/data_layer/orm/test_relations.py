@@ -12,15 +12,17 @@ import pytest
 from sqlalchemy import event
 
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
     Operator,
     Pagination,
+    Sort,
     Specification,
-    parse_order,
 )
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
@@ -95,9 +97,9 @@ def test_a_to_many_by_foreign_key_comes_ordered_cut_and_counted_per_parent(shelf
     """Ada has three books; asked for two, longest first, she gets two, a count of three and a
     cursor to go on inside her own books."""
     asked = Criteria(
-        order=parse_order("name"),
+        order=Sort.parse("name"),
         specification=Specification(
-            {"books": Criteria(order=parse_order("-pages"), pagination=Pagination(limit=2))}
+            {"books": Criteria(order=Sort.parse("-pages"), pagination=Pagination(limit=2))}
         ),
     )
 
@@ -124,7 +126,7 @@ def test_the_cursor_of_a_relation_pages_inside_that_parent(shelf, library):
             specification=Specification(
                 {
                     "books": Criteria(
-                        order=parse_order("-pages"), pagination=Pagination(limit=2)
+                        order=Sort.parse("-pages"), pagination=Pagination(limit=2)
                     )
                 }
             ),
@@ -135,7 +137,7 @@ def test_the_cursor_of_a_relation_pages_inside_that_parent(shelf, library):
         Books,
         Criteria(
             where=Condition(field="author_id", value=ada.id),
-            order=parse_order("-pages"),
+            order=Sort.parse("-pages"),
             pagination=Pagination(limit=2).model_copy(
                 update={
                     "strategy": Pagination().strategy.model_copy(
@@ -164,7 +166,7 @@ def test_a_to_one_by_foreign_key_is_the_record_or_none(shelf):
 def test_a_many_to_many_goes_through_the_table_in_between(shelf):
     page = shelf.search(
         Books,
-        Criteria(specification=Specification({"tags": Criteria(order=parse_order("label"))})),
+        Criteria(specification=Specification({"tags": Criteria(order=Sort.parse("label"))})),
     )
     books = by_title(page)
 
@@ -203,7 +205,7 @@ def test_another_context_answers_through_its_bus_with_the_reflected_criteria(she
                 {
                     "reviews": Criteria(
                         where=Condition(field="stars", value=3, operator=Operator.GTE),
-                        order=parse_order("-stars"),
+                        order=Sort.parse("-stars"),
                         pagination=Pagination(limit=1),
                     )
                 }
@@ -319,7 +321,7 @@ def test_a_record_built_in_memory_keeps_what_its_constructor_was_given():
 
 
 def test_the_definition_publishes_the_key_and_the_expanded_target(shelf):
-    meta = describe(Book)
+    meta = ModelIntrospection.describe(Book)
     assert (
         meta.relations["author"].identified_by == "author_id"
         and not meta.relations["author"].many
@@ -360,7 +362,7 @@ def test_the_answer_on_the_wire_shows_the_mask_and_the_relations_by_name(shelf):
                 "title": Criteria(),
                 "author": Criteria(specification=Specification({"name": Criteria()})),
                 "tags": Criteria(
-                    order=parse_order("label"),
+                    order=Sort.parse("label"),
                     specification=Specification({"label": Criteria()}),
                 ),
                 "publisher": Criteria(),
@@ -440,7 +442,7 @@ def test_a_page_per_key_travels_to_the_bus_so_no_parent_starves_another(shelf):
             specification=Specification(
                 {
                     "reviews": Criteria(
-                        order=parse_order("-stars"), pagination=Pagination(limit=1)
+                        order=Sort.parse("-stars"), pagination=Pagination(limit=1)
                     )
                 }
             ),
@@ -473,7 +475,7 @@ def test_explain_counts_one_statement_per_relation_node(shelf):
 
 def test_a_relation_that_resolves_to_nothing_says_so_instead_of_raising_a_key_error():
     """The resolver ran and wrote nothing, which a correct declaration never does — a
-    `Relation` pointing the wrong way, or named for a field the aggregate does not declare.
+    `TableRelation` pointing the wrong way, or named for a field the aggregate does not declare.
     Left alone this surfaced as `KeyError: '_sincpro_resolved'`, a framework-internal key the
     caller has no way to connect to the line they wrote."""
     from dataclasses import dataclass
@@ -481,7 +483,7 @@ def test_a_relation_that_resolves_to_nothing_says_so_instead_of_raising_a_key_er
     import sqlalchemy as sa
     from sqlalchemy.orm import registry
 
-    from sincpro_framework.data_layer.orm import Relation, map_aggregates
+    from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
     from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
     from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
         entity_table,
@@ -506,7 +508,7 @@ def test_a_relation_that_resolves_to_nothing_says_so_instead_of_raising_a_key_er
     map_aggregates(
         registry(),
         {Head: head_table, Tail: tail_table},
-        relations={Head: {"tails": Relation.foreign_key(Tail, "head_id")}},
+        relations={Head: {"tails": TableRelation.foreign_key(Tail, "head_id")}},
     )
 
     database = Database("sqlite://")

@@ -23,7 +23,10 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.auth import Identity, as_identity
+from sincpro_framework.auth import (
+    Identity,
+    security,
+)
 from sincpro_framework.context import ContextKey
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
 from sincpro_framework.observability.tracing.attributes import traces
@@ -261,9 +264,11 @@ def test_the_authenticated_identity_gives_the_tenant_and_the_user_when_the_conte
         def execute(self, dto: CommandCharge) -> None:
             raise GatewayDown("down")
 
-    with as_identity(Identity.user("user:42", tenant="bo")), pytest.raises(GatewayDown):
+    with security.as_identity(Identity.user("user:42", tenant="bo")), pytest.raises(
+        GatewayDown
+    ):
         framework(CommandCharge(amount=1))
-    with as_identity(Identity.user("user:7", tenant="bo")), framework.context(
+    with security.as_identity(Identity.user("user:7", tenant="bo")), framework.context(
         {ContextKey.TENANT_ID: "acme"}
     ):
         with pytest.raises(GatewayDown):
@@ -477,7 +482,7 @@ def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_im
 def test_a_queue_message_hands_its_correlation_and_tenant_to_the_context():
     pytest.importorskip("faststream")
     from sincpro_framework.entrypoints.adapters.queue.wire import queue_context
-    from sincpro_framework.event_driven.adapters.envelope import Envelope
+    from sincpro_framework.event_driven import Envelope
 
     envelope = Envelope(correlationid="corr-1")
 

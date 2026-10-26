@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 
-class Level(StrEnum):
+class ContextLevel(StrEnum):
     """A node's place in the tree — the layers of the architecture, outermost first."""
 
     GLOBAL = "global"
@@ -26,8 +26,7 @@ class Level(StrEnum):
     """A block that changed something for what it calls."""
 
 
-EXECUTIONS = frozenset({Level.APPLICATION, Level.FEATURE})
-SCOPES = frozenset({Level.ENTRYPOINT, Level.SCOPE})
+SCOPES = frozenset({ContextLevel.ENTRYPOINT, ContextLevel.SCOPE})
 """The nodes a write to the context as a mapping lands on — the scope of a call."""
 
 
@@ -50,7 +49,7 @@ class EntrypointKind(StrEnum):
 class Origin:
     """The node a value came from."""
 
-    level: Level
+    level: ContextLevel
     label: str
     """The bus, the use case or the hook — what the node is named after."""
     execution_id: str | None

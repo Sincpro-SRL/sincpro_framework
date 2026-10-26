@@ -4,7 +4,7 @@ The one place this layer asks SQLAlchemy what a class looks like. `Meta` itself 
 vocabulary; this is the half that knows there is a mapper behind it — which columns exist,
 which may be NULL, which annotation points at another mapped class.
 
-    describe(Dataset)   →   Meta(aggregate='Dataset', identity='dataset_id', fields={…})
+    ModelIntrospection.describe(Dataset)   →   Meta(aggregate='Dataset', identity='dataset_id', …)
 
 Cached, because mappings are applied once at boot and a table grows no column at runtime.
 """
@@ -18,7 +18,9 @@ from sqlalchemy import UniqueConstraint, inspect
 from sqlalchemy.exc import NoInspectionAvailable
 
 from sincpro_framework.data_layer import exceptions
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     is_mapped_event,
     map_new_event_classes,
@@ -141,140 +143,155 @@ def _key_is_unique(entity: type, table: Any, key: str, identity: str) -> None:
     )
 
 
-@cache
-def describe(entity: type) -> Meta:
-    """Context: what a caller is told about this aggregate, read off the model itself.
+class ModelIntrospection:
+    """What this layer asks SQLAlchemy about a mapped class — the one place it does.
 
-        in      the class Dataset, mapped to the `dataset` table
-        read    annotations for logical types, columns for nullability
-        out     Meta(aggregate='Dataset', identity='dataset_id', fields={...})
-
-    1. Inspect the mapper; refuse a class with no table, since it has no fields to ask about.
-    2. Read the annotations for logical types, the columns for nullability, and carry the
-       class's `translations()` as it answered it.
-    3. A column whose annotation is a value object, a dataclass or a pydantic model with no
-       table, is an embedded field carrying that shape as its definition.
-    4. Final: any other annotation pointing at a mapped class, or any relation the data mapper
-       declared or inferred, is a relational field: `many2one`, `one2many` or `many2many`,
-       with the aggregate on the other side and what identifies the relation.
-
-    >>> describe(Dataset).identity
-    'dataset_id'
-    >>> describe(Dataset).fields["column_names"].type    # list[str] in the model, Text on disk
-    <FieldType.TEXT_LIST: 'text[]'>
+    ModelIntrospection.describe(Dataset)   ->  Meta(aggregate='Dataset', ...)
     """
-    try:
-        mapper = inspect(entity)
-    except NoInspectionAvailable:
-        mapper = None
-    if mapper is None and is_mapped_event(entity):
-        map_new_event_classes()  # an event class declared after its base was mapped
-        mapper = inspect(entity)
-    if mapper is None:
-        raise exceptions.ProgrammingError(
-            f"{entity.__name__} is not a mapped aggregate; there is nothing to query"
-        )
 
-    annotations = annotations_of(entity)
-    identity = mapper.primary_key[0].name
-    translator = getattr(entity, "translations", None)
-    aggregate_name: Translated = (
-        cast(Translated, translator())
-        if callable(translator)
-        else {"default": entity.__name__}
-    )
+    @staticmethod
+    @cache
+    def describe(entity: type) -> Meta:
+        """Context: what a caller is told about this aggregate, read off the model itself.
 
-    fields: dict[str, FieldMeta] = {}
-    for column in mapper.columns:
-        if column.key in HIDDEN:
-            continue
-        annotation = annotations.get(column.key) or _column_type(column)
-        # A computed field is an expression, not a column: it has no NOT NULL, so its annotation
-        # says whether it may be absent.
-        nullable = (
-            bool(column.nullable)
-            if hasattr(column, "nullable")
-            else annotation != without_optional(annotation)
-        )
-        shape, many = related_class(annotation)
-        if shape is not None and _is_shape(shape):
-            fields[column.key] = FieldMeta.for_embedded(describe_shape(shape), many, nullable)
-        else:
-            fields[column.key] = FieldMeta.for_column(
-                logical_type(annotation),
-                nullable,
-                _members_of(annotation),
-                without_optional(annotation) is Decimal,
-                choice_labels=choice_translations_of(annotation),
+            in      the class Dataset, mapped to the `dataset` table
+            read    annotations for logical types, columns for nullability
+            out     Meta(aggregate='Dataset', identity='dataset_id', fields={...})
+
+        1. Inspect the mapper; refuse a class with no table, since it has no fields to ask about.
+        2. Read the annotations for logical types, the columns for nullability, and carry the
+           class's `translations()` as it answered it.
+        3. A column whose annotation is a value object, a dataclass or a pydantic model with no
+           table, is an embedded field carrying that shape as its definition.
+        4. Final: any other annotation pointing at a mapped class, or any relation the data mapper
+           declared or inferred, is a relational field: `many2one`, `one2many` or `many2many`,
+           with the aggregate on the other side and what identifies the relation.
+
+        >>> ModelIntrospection.describe(Dataset).identity
+        'dataset_id'
+        >>> ModelIntrospection.describe(Dataset).fields["column_names"].type    # Text on disk
+        <FieldType.TEXT_LIST: 'text[]'>
+        """
+        try:
+            mapper = inspect(entity)
+        except NoInspectionAvailable:
+            mapper = None
+        if mapper is None and is_mapped_event(entity):
+            map_new_event_classes()  # an event class declared after its base was mapped
+            mapper = inspect(entity)
+        if mapper is None:
+            raise exceptions.ProgrammingError(
+                f"{entity.__name__} is not a mapped aggregate; there is nothing to query"
             )
 
-    declared = relations_of(entity)
-    for name, annotation in annotations.items():
-        if name in fields:
-            continue
-        related, many = related_class(annotation)
-        relation = declared.get(name)
-        if relation is None and (related is None or not is_mapped(related)):
-            continue
-        related_name = relation.related.__name__ if relation is not None else related.__name__  # type: ignore[union-attr]
-        logical = _relational_type(relation.kind if relation else "", many)
-        identified_by = relation.identified_by if relation is not None else None
-        # The pair is published expanded, whichever way it was declared, so a client reads how
-        # the two sides meet without knowing the cardinality convention `identified_by` obeys.
-        here, there = (
-            key_pair(identity, relation, many) if relation is not None else (None, None)
-        )
-        nullable = logical is FieldType.MANY2ONE
-        if nullable and here is not None and here in mapper.columns:
-            nullable = bool(mapper.columns[here].nullable)
-        fields[name] = FieldMeta.for_relation(
-            logical,
-            related_name,
-            identified_by,
-            nullable,
-            parent_field=here,
-            related_field=there,
+        annotations = annotations_of(entity)
+        identity = mapper.primary_key[0].name
+        translator = getattr(entity, "translations", None)
+        aggregate_name: Translated = (
+            cast(Translated, translator())
+            if callable(translator)
+            else {"default": entity.__name__}
         )
 
-    for extension in extensions.under(entity):
-        added = describe(extension.entity).fields
-        for name in extension.fields:
-            if name in fields or name not in added:
+        fields: dict[str, FieldMeta] = {}
+        for column in mapper.columns:
+            if column.key in HIDDEN:
                 continue
-            own = added[name]
-            absent = (
-                FieldMeta.for_column(
-                    own.type, True, own.choices, own.exact, choice_labels=own.choice_labels
+            annotation = annotations.get(column.key) or _column_type(column)
+            # A computed field is an expression, not a column: it has no NOT NULL, so its annotation
+            # says whether it may be absent.
+            nullable = (
+                bool(column.nullable)
+                if hasattr(column, "nullable")
+                else annotation != without_optional(annotation)
+            )
+            shape, many = related_class(annotation)
+            if shape is not None and _is_shape(shape):
+                fields[column.key] = FieldMeta.for_embedded(
+                    describe_shape(shape), many, nullable
                 )
-                if own.relation is None and own.type is not FieldType.EMBEDDED
-                else own
-            )
-            fields[name] = absent.model_copy(update={"owner": extension.entity.__name__})
+            else:
+                fields[column.key] = FieldMeta.for_column(
+                    logical_type(annotation),
+                    nullable,
+                    _members_of(annotation),
+                    without_optional(annotation) is Decimal,
+                    choice_labels=choice_translations_of(annotation),
+                )
 
-    labels, helps = field_translations(entity, "label"), field_translations(entity, "help")
-    if labels or helps:
-        fields = {
-            name: meta.model_copy(
-                update={"label": labels.get(name, {}), "help": helps.get(name, {})}
-            )
-            for name, meta in fields.items()
-        }
-
-    fields = hinted(with_computed(fields, entity), entity)
-    for ancestor in reversed(entity.__mro__):
-        for name, changes in extensions.OVERLAYS.get(ancestor, {}).items():
+        declared = mapping_registry.relations_of(entity)
+        for name, annotation in annotations.items():
             if name in fields:
-                fields[name] = fields[name].model_copy(update=changes)
-    presented = presentation_of(entity)
-    _key_is_unique(entity, mapper.local_table, presented.get_id, identity)
-    return Meta(
-        aggregate=entity.__name__,
-        identity=identity,
-        default_order=default_order_of(entity, identity),
-        get_id=presented.get_id,
-        display=presented.display,
-        search=presented.search,
-        detail=presented.detail,
-        fields=fields,
-        name=aggregate_name,
-    )
+                continue
+            related, many = related_class(annotation)
+            relation = declared.get(name)
+            if relation is None and (related is None or not is_mapped(related)):
+                continue
+            related_name = relation.related.__name__ if relation is not None else related.__name__  # type: ignore[union-attr]
+            logical = _relational_type(relation.kind if relation else "", many)
+            identified_by = relation.identified_by if relation is not None else None
+            # The pair is published expanded, whichever way it was declared, so a client reads how
+            # the two sides meet without knowing the cardinality convention `identified_by` obeys.
+            here, there = (
+                key_pair(identity, relation, many) if relation is not None else (None, None)
+            )
+            nullable = logical is FieldType.MANY2ONE
+            if nullable and here is not None and here in mapper.columns:
+                nullable = bool(mapper.columns[here].nullable)
+            fields[name] = FieldMeta.for_relation(
+                logical,
+                related_name,
+                identified_by,
+                nullable,
+                parent_field=here,
+                related_field=there,
+            )
+
+        for extension in extensions.under(entity):
+            added = ModelIntrospection.describe(extension.entity).fields
+            for name in extension.fields:
+                if name in fields or name not in added:
+                    continue
+                own = added[name]
+                absent = (
+                    FieldMeta.for_column(
+                        own.type,
+                        True,
+                        own.choices,
+                        own.exact,
+                        choice_labels=own.choice_labels,
+                    )
+                    if own.relation is None and own.type is not FieldType.EMBEDDED
+                    else own
+                )
+                fields[name] = absent.model_copy(update={"owner": extension.entity.__name__})
+
+        labels, helps = field_translations(entity, "label"), field_translations(
+            entity, "help"
+        )
+        if labels or helps:
+            fields = {
+                name: meta.model_copy(
+                    update={"label": labels.get(name, {}), "help": helps.get(name, {})}
+                )
+                for name, meta in fields.items()
+            }
+
+        fields = hinted(with_computed(fields, entity), entity)
+        for ancestor in reversed(entity.__mro__):
+            for name, changes in extensions.OVERLAYS.get(ancestor, {}).items():
+                if name in fields:
+                    fields[name] = fields[name].model_copy(update=changes)
+        presented = presentation_of(entity)
+        _key_is_unique(entity, mapper.local_table, presented.get_id, identity)
+        return Meta(
+            aggregate=entity.__name__,
+            identity=identity,
+            default_order=default_order_of(entity, identity),
+            get_id=presented.get_id,
+            display=presented.display,
+            search=presented.search,
+            detail=presented.detail,
+            fields=fields,
+            name=aggregate_name,
+        )

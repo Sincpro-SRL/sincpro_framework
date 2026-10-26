@@ -6,13 +6,14 @@
 Context: the internal door — the project's own services reaching a context that runs here. It is
 never mounted as a side effect: a public `GrpcGateway` publishes its declared surface only, and a
 deployment that wants both on one port mounts this one explicitly. The execution is the one both
-Open Hosts share (`entrypoint.execution.execute_hosted`); the wire is the caller's
+Open Hosts share (`services.hosted_execution.execute_hosted`); the wire is the caller's
 (`adapters.grpc`).
 """
 
 from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.auth import Credentials
 from sincpro_framework.common.transport.grpc import (
     TRACE_HEADERS,
     grpc,
@@ -30,19 +31,12 @@ from sincpro_framework.remote_execution.adapters.grpc import (
     SERVICE,
     chunks_of,
 )
-from sincpro_framework.remote_execution.domain.failures import error_details
-from sincpro_framework.remote_execution.entrypoint.execution import (
-    execute_hosted,
-)
+from sincpro_framework.remote_execution.domain.failure_codec import FailureCodec
+from sincpro_framework.remote_execution.services.hosted_execution import execute_hosted
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
     from sincpro_framework.use_bus import UseFramework
-
-
-def _header(metadata: Sequence[tuple[str, Any]], key: str) -> Any:
-    """The first value of `key` in a call's metadata, `None` when it does not carry it."""
-    return next((value for name, value in metadata if name == key), None)
 
 
 def open_host_handler(contexts: "Mapping[str, UseFramework]") -> Any:
@@ -75,11 +69,9 @@ def open_host_handler(contexts: "Mapping[str, UseFramework]") -> Any:
            trailing metadata, aborted `UNKNOWN` — the caller raises it as itself.
         Final: the answer's message in `CHUNK_SIZE` chunks.
         """
-        from sincpro_framework.auth.entrypoint.transports import credentials_from_headers
-
         call.send_initial_metadata(((ACCEPTED_HEADER, "1"),))
         metadata = call.invocation_metadata()
-        name = _header(metadata, CONTEXT_HEADER) or ""
+        name = next((value for key, value in metadata if key == CONTEXT_HEADER), None) or ""
         answer = b""
         try:
             answer = execute_hosted(
@@ -87,7 +79,7 @@ def open_host_handler(contexts: "Mapping[str, UseFramework]") -> Any:
                 name,
                 b"".join(requests),
                 {key: value for key, value in metadata if key in TRACE_HEADERS},
-                credentials_from_headers("service", metadata),
+                Credentials.from_headers("service", metadata),
             )
         except LookupError as error:
             call.abort(grpc.StatusCode.NOT_FOUND, str(error))
@@ -98,7 +90,7 @@ def open_host_handler(contexts: "Mapping[str, UseFramework]") -> Any:
                 (
                     (ERROR_MODULE, type(error).__module__),
                     (ERROR_KIND, type(error).__qualname__),
-                    (ERROR_DETAILS, error_details(error)),
+                    (ERROR_DETAILS, FailureCodec.details(error)),
                 )
             )
             call.abort(grpc.StatusCode.UNKNOWN, str(error))

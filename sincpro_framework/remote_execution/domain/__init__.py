@@ -1,5 +1,10 @@
-"""The vocabulary of executing a bounded context in another service: what a failed call raises
-(`errors`) — beside where it is hosted, `sincpro_framework.common.transport.addresses`, which the
-settings declare too, and the message it travels as, `sincpro_framework.remote_execution.domain.payload`. Standard library
-and pydantic only.
+"""The vocabulary of executing a bounded context in another service.
+
+    address        where it is hosted: `Scheme`, `HostedAt`, `HostedContext` — the settings declare it too
+    payload        the message a call and its answer travel as
+    transport      `Transport`, what every wire answers
+    exceptions     what a failed call raises
+    failure_codec  `FailureCodec`: an exception written by the host, raised as itself by the caller
+
+Standard library and pydantic only.
 """

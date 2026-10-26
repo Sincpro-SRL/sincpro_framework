@@ -23,11 +23,13 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from sincpro_framework.ddd.criteria import (
-    RESOLVERS,
     Criteria,
+    Node,
+    Resolution,
     ResolutionContext,
-    expression_from,
-    resolve,
+)
+from sincpro_framework.ddd.criteria.domain.values import (
+    RESOLVERS,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -403,9 +405,9 @@ def contract_files() -> dict[Path, str]:
 
 @pytest.mark.parametrize("one", CASES, ids=lambda one: one["name"])
 def test_a_dynamic_value_reads_to_what_the_contract_says(one: dict[str, Any]):
-    stored = expression_from(one["where"])
+    stored = Node.read(one["where"])
 
-    run = resolve(stored, resolution_of(one))
+    run = Resolution.resolve(stored, resolution_of(one))
 
     assert written(run) == one["resolved"]
 

@@ -1,10 +1,10 @@
-"""The cache and the idempotency of a bounded context — and of the whole service — kept where
-the context is kept, with nothing to build: one facade each, on every bus and global.
+"""The cache and the idempotency of a bounded context — and of the whole service — stored where
+the context is stored, with nothing to build: one facade each, on every bus and global.
 
     @billing.cache                                             the default: a minute
     def exchange_rate(currency: str) -> Decimal: ...
 
-    @billing.cache.ttl(timedelta(minutes=5))                   a strategy, by its name
+    @billing.cache.ttl(timedelta(minutes=5))                   a configured cache, by its name
     @billing.cache.sliding(timedelta(minutes=30), timedelta(hours=8))
     @billing.cache.versioned(catalog.version)
     @billing.cache.ttl(timedelta(minutes=5), fail_safe=timedelta(hours=1))
@@ -22,13 +22,13 @@ the context is kept, with nothing to build: one facade each, on every bus and gl
 
     from sincpro_framework import cache, idempotency           the same, for the whole service
 
-**Where it is kept is the context's**, read at every call: a bus's facade keeps on the store
-that bus keeps its context in, else the process's, else this process's memory; the global ones
+**Where it is stored is the context's**, read at every call: a bus's facade writes to the store
+that bus persists its context in, else the process's, else this process's memory; the global ones
 on the process's, else memory. Nothing is configured to start; `store_context_in(redis)`
 shares it all.
 
-**A strategy is a decorator and a tool by hand.** An adapter never imports a bus: it is handed
-the facade (`SiatClient(cache=billing.cache)`) and keeps by hand:
+**A configured cache is a decorator and a tool by hand.** An adapter never imports a bus: it is handed
+the facade (`SiatClient(cache=billing.cache)`) and caches by hand:
 
     products = cache.ttl(timedelta(hours=1))
     products.get(("products", nit), lambda: soap.products(nit))
@@ -38,7 +38,7 @@ the facade (`SiatClient(cache=billing.cache)`) and keeps by hand:
 given, its arguments written canonically (`self` of a method left out), and whose it is — the
 rule drafts and pipeline runs follow: the context's `tenant_id`, `tenant_ids` and `user_id`,
 empty when it says nothing, plus the keys of `vary_by`. On a store replicas share an answer is
-bytes, encoded by its function's return type; a function that declares none is kept in this
+bytes, encoded by its function's return type; a function that declares none is cached in this
 process only.
 
 **Defaults never block**: a store that fails is bypassed and the call answered from this
@@ -55,8 +55,8 @@ from datetime import timedelta
 from typing import Any, TypeVar, cast, get_type_hints
 from weakref import WeakKeyDictionary
 
-from sincpro_framework.context.entrypoint.facade import use_context
-from sincpro_framework.context.entrypoint.owner import BY_TENANT_AND_USER, owner_of
+from sincpro_framework.context import ContextStore, Owner, use_context
+from sincpro_framework.context.entrypoint.resolution import key_value_store_of, process_store
 from sincpro_framework.data_layer.caching.adapters.json_codec import JsonCodec
 from sincpro_framework.data_layer.caching.adapters.key_value_records import KeyValueRecords
 from sincpro_framework.data_layer.caching.domain import exceptions
@@ -70,37 +70,36 @@ from sincpro_framework.data_layer.caching.domain.policies import (
     QueryCachePolicy,
 )
 from sincpro_framework.data_layer.caching.domain.validation import ExternalVersion
-from sincpro_framework.data_layer.caching.entrypoint.cache import Cache
-from sincpro_framework.data_layer.caching.entrypoint.idempotency import Idempotency
-from sincpro_framework.data_layer.caching.entrypoint.query_caching import QueryCaching
+from sincpro_framework.data_layer.caching.services.cache import Cache
+from sincpro_framework.data_layer.caching.services.idempotency import Idempotency
+from sincpro_framework.data_layer.caching.services.query_caching import QueryCaching
+from sincpro_framework.data_layer.store import KeyValueStore
 from sincpro_framework.sincpro_logger import logger
-from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
-from sincpro_framework.store.domain.store import ContextStore
-from sincpro_framework.store.entrypoint.resolution import key_value_store_of, process_store
 
 GLOBAL = "global"
-"""The name the global facades keep their keys under."""
+"""The name the global facades store their keys under."""
 
 DEFAULT_CACHE = CachePolicy[Any](
     freshness=TimeToLive(ttl=timedelta(seconds=60), stale_for=timedelta(seconds=10)),
     wait_for_others=timedelta(seconds=1),
 )
-"""What `@cache` keeps by: a minute, the old answer served ten seconds more while one caller
+"""What `@cache` caches by: a minute, the old answer served ten seconds more while one caller
 recomputes it, a second at most waiting for a value another caller computes."""
 
 WAIT_FOR_OTHERS = timedelta(seconds=1)
-"""How long a caller waits for a value another is computing, under every named strategy."""
+"""How long a caller waits for a value another is computing, in every cache configured by
+name."""
 
 DEFAULT_QUERIES = QueryCachePolicy(
     ttl=timedelta(seconds=60),
     stale_for=timedelta(seconds=10),
     wait_for_others=WAIT_FOR_OTHERS,
 )
-"""What `bus.cache.queries(Query)` keeps an answer by: the same minute as `@cache` — let go of
+"""What `bus.cache.queries(Query)` caches an answer by: the same minute as `@cache` — let go of
 sooner, when an aggregate it read is written."""
 
 DEFAULT_EXPIRES_AFTER = timedelta(hours=24)
-"""How long `@idempotency` replays an answer — a day, what clients that retry by key keep
+"""How long `@idempotency` replays an answer — a day, what clients that retry by key hold
 their keys for."""
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -118,8 +117,7 @@ def _cache_on(store: KeyValueStore, name: str) -> Cache:
         per_name = _caches.setdefault(store, {})
         cache = per_name.get(name)
         if cache is None:
-            in_process = isinstance(store, InMemoryKeyValue)
-            cache = per_name[name] = Cache(None if in_process else store, namespace=name)
+            cache = per_name[name] = Cache(store if store.shared() else None, namespace=name)
         return cache
 
 
@@ -133,15 +131,6 @@ def _records_on(store: KeyValueStore) -> IdempotencyRecords:
         return records
 
 
-def _qualified(function: Callable[..., Any]) -> str:
-    """`module.Qualname` — what names a function in a cache key and in a warning, the same in
-    every replica.
-
-        _qualified(BillingRates.exchange_rate)  ->  "billing.rates.BillingRates.exchange_rate"
-    """
-    return f"{function.__module__}.{function.__qualname__}"
-
-
 def _is_method(function: Callable[..., Any]) -> bool:
     """Whether its first parameter is the instance or the class it is called on."""
     parameters = list(inspect.signature(function).parameters)
@@ -149,7 +138,7 @@ def _is_method(function: Callable[..., Any]) -> bool:
 
 
 def _codec_of(function: Callable[..., Any]) -> Codec[Any] | None:
-    """What its answer is kept as on a shared store — `None` when it declares no return
+    """What its answer is encoded as on a shared store — `None` when it declares no return
     type."""
     try:
         returned = get_type_hints(function).get("return")
@@ -172,18 +161,20 @@ def _failure(fail_safe: timedelta | FailurePolicy | None) -> FailurePolicy:
     return FailSafe(serve_for=fail_safe)
 
 
-class CacheStrategy:
-    """A cache kept by one strategy: a decorator of functions, methods and coroutines, and a
-    tool by hand — `get(key, compute)`, `forget(key)`."""
+class ConfiguredCache:
+    """A facade's cache configured with one policy (`billing.cache.ttl(...)`): a decorator of
+    functions, methods and coroutines, and a tool by hand — `get(key, compute)`,
+    `forget(key)`. The strategies it is configured with are the policy's (`Freshness`,
+    `Validation`, `FailurePolicy`)."""
 
     def __init__(
         self, facade: "CacheFacade", policy: CachePolicy[Any], vary_by: tuple[str, ...]
     ) -> None:
-        """A strategy of `facade`, keeping by `policy`, its owner read by the default keys
-        plus `vary_by` — built by the facade (`billing.cache.ttl(...)`), not by hand.
+        """`facade`'s cache configured with `policy`, its owner read by the default keys plus
+        `vary_by` — built by the facade (`billing.cache.ttl(...)`), not by hand.
 
             billing.cache.ttl(timedelta(minutes=5), vary_by="language")
-                ->  CacheStrategy(facade=billing.cache, vary_by=("language",)) — kept per
+                ->  ConfiguredCache(facade=billing.cache, vary_by=("language",)) — cached per
                     tenant, user and language, on the store the context answers at each call
 
         Beside it, a process-only `Cache` in the facade's namespace, for a value no codec
@@ -192,7 +183,7 @@ class CacheStrategy:
         self.policy = policy
         self.vary_by = vary_by
         self._in_process = Cache(None, namespace=facade.name)
-        """Where a value is kept that a shared store could not take: no codec to encode it."""
+        """Where a value is cached that a shared store could not take: no codec to encode it."""
         self._said: set[str] = set()
 
     def _owner(self) -> str:
@@ -202,7 +193,7 @@ class CacheStrategy:
             vary_by=("language",), context {"tenant_id": "acme", "language": "es"}
             ->  "tenant_id=acme,tenant_ids=,user_id=,language=es"
         """
-        return owner_of(use_context(), (*BY_TENANT_AND_USER, *self.vary_by))
+        return Owner.of(use_context(), (*Owner.BY_TENANT_AND_USER, *self.vary_by))
 
     def _cache(self, codec: Codec[Any] | None, about: str) -> tuple[Cache, Codec[Any] | None]:
         """The facade's cache on its store — or this process's, said once, when a shared store
@@ -215,14 +206,14 @@ class CacheStrategy:
         if about not in self._said:
             self._said.add(about)
             logger.warning(
-                f"{about}: no type to encode its value by, so it is kept in this process only — "
+                f"{about}: no type to encode its value by, so it is cached in this process only — "
                 "declare a return type, or pass a codec, to share it with the replicas"
             )
         return self._in_process, None
 
     def get[T](self, key: Any, compute: Callable[[], T], codec: Codec[T] | None = None) -> T:
-        """The value kept under `key` — whose it is included — or `compute()`'s, kept. On a
-        shared store `codec` encodes it; without one it is kept in this process only."""
+        """The value cached under `key` — whose it is included — or `compute()`'s, cached. On a
+        shared store `codec` encodes it; without one it is cached in this process only."""
         cache, used = self._cache(codec, f"cache {self.facade.name} key {key!r}")
         return cache.get_or_compute((self._owner(), key), compute, self.policy, used)
 
@@ -232,19 +223,19 @@ class CacheStrategy:
         cache.forget((self._owner(), key), used)
 
     def __call__(self, function: F) -> F:
-        """`function` with its answer kept.
+        """`function` with its answer cached.
 
-        1. A generator is refused: its values are produced as they are read — keep a list.
+        1. A generator is refused: its values are produced as they are read — return a list.
         2. A coroutine is answered off the event loop: the cache waits on a thread while the
            coroutine runs on the loop, which is never blocked.
-        Final: the function, its answer kept, with `forget(*args, **kwargs)`.
+        Final: the function, its answer cached, with `forget(*args, **kwargs)`.
         """
+        name = f"{function.__module__}.{function.__qualname__}"
         if inspect.isgeneratorfunction(function) or inspect.isasyncgenfunction(function):
             raise exceptions.ProgrammingError(
-                f"cannot keep the answer of {_qualified(function)}: a generator's values are "
-                "produced as they are read — return a list and keep that"
+                f"cannot cache the answer of {name}: a generator's values are "
+                "produced as they are read — return a list and cache that"
             )
-        name = _qualified(function)
         method = _is_method(function)
         codec = _codec_of(function)
 
@@ -255,13 +246,13 @@ class CacheStrategy:
             return (name, list(values), dict(sorted(kwargs.items())))
 
         def answer(args: tuple[Any, ...], kwargs: dict[str, Any], compute: Any) -> Any:
-            """The value kept for this call and its owner — `compute()`'s when none is."""
+            """The value cached for this call and its owner — `compute()`'s when none is."""
             cache, used = self._cache(codec, name)
-            kept = (self._owner(), key(args, kwargs))
-            return cache.get_or_compute(kept, compute, self.policy, used)
+            owned = (self._owner(), key(args, kwargs))
+            return cache.get_or_compute(owned, compute, self.policy, used)
 
         def forget(*args: Any, **kwargs: Any) -> None:
-            """Let go of the value kept for these arguments — called without the instance on
+            """Let go of the value cached for these arguments — called without the instance on
             a method: `Rates.exchange_rate.forget("USD")`."""
             given = (None, *args) if method else args
             cache, used = self._cache(codec, name)
@@ -303,9 +294,9 @@ class CacheFacade:
     def __init__(
         self, name: str, store_of: Callable[[], ContextStore], bus: Any = None
     ) -> None:
-        """`name` keeps its keys apart from every other facade's on one store; `store_of`
-        answers the context store it keeps on, asked at every call; `bus` is the bounded
-        context whose Queries it keeps — none for the global one.
+        """`name` separates its keys from every other facade's on one store; `store_of`
+        answers the context store it caches on, asked at every call; `bus` is the bounded
+        context whose Queries it caches — none for the global one.
 
             CacheFacade("billing", billing.store, billing)   ->  `billing.cache`
             CacheFacade("global", process_store)             ->  `cache`, no Queries
@@ -318,20 +309,20 @@ class CacheFacade:
         self._lock = threading.Lock()
 
     def store(self) -> KeyValueStore:
-        """The `KeyValueStore` it keeps on now."""
+        """The `KeyValueStore` it caches on now."""
         return key_value_store_of(self.store_of())
 
     def queries(
         self, query: type | None = None, policy: QueryCachePolicy | None = None
     ) -> QueryCaching:
-        """The bounded context's `QueryCaching` — kept on its store under its name — with
-        `query`'s answers kept by `policy` (a minute, by default) when one is given.
+        """The bounded context's `QueryCaching` — held on its store under its name — with
+        `query`'s answers cached by `policy` (a minute, by default) when one is given.
 
             billing.cache.queries(QueryBalance)
             billing.cache.queries(QueryStatement, QueryCachePolicy(ttl=timedelta(minutes=5)))
             invalidate_on_commit(database, billing.cache.queries())
 
-        1. The global cache keeps no Query: a Query runs on its bus.
+        1. The global cache holds no Query: a Query runs on its bus.
         2. One `QueryCaching` per facade, built at the first call: its tags and its flight are
            the same for every Query of the bounded context.
         Final: `query` cached on the bus — its handler registered first — and the caching
@@ -339,12 +330,14 @@ class CacheFacade:
         """
         if self.bus is None:
             raise exceptions.ProgrammingError(
-                "the global cache keeps no Query's answer: a Query runs on its bus — cache it "
+                "the global cache holds no Query's answer: a Query runs on its bus — cache it "
                 "with bus.cache.queries(Query)"
             )
         with self._lock:
             if self._queries is None:
-                self._queries = QueryCaching(namespace=self.name, store_of=self.store)
+                self._queries = QueryCaching(
+                    namespace=self.name, store_of=self.store, bus=self.bus
+                )
         if query is not None:
             self._queries.on(self.bus, query, policy or DEFAULT_QUERIES)
         return self._queries
@@ -355,8 +348,8 @@ class CacheFacade:
         fail_safe: timedelta | FailurePolicy | None = None,
         vary_by: str | Sequence[str] = (),
     ) -> Any:
-        """The default strategy — or the one a `CachePolicy` says; a decorator used bare or
-        called, or a strategy to use by hand.
+        """The default configured cache — or the one a `CachePolicy` says; a decorator used
+        bare or called, or a configured cache to use by hand.
 
             @billing.cache                         a minute
             @billing.cache(vary_by="language")     the same, per a key of the project's
@@ -366,19 +359,19 @@ class CacheFacade:
         policy = function if isinstance(function, CachePolicy) else DEFAULT_CACHE
         if fail_safe is not None:
             policy = policy.model_copy(update={"failure": _failure(fail_safe)})
-        strategy = CacheStrategy(self, policy, _keys(vary_by))
-        return strategy(function) if callable(function) else strategy
+        configured = ConfiguredCache(self, policy, _keys(vary_by))
+        return configured(function) if callable(function) else configured
 
-    def _kept(
+    def _configured(
         self,
         policy: CachePolicy[Any],
         fail_safe: timedelta | FailurePolicy | None,
         vary_by: str | Sequence[str],
-    ) -> CacheStrategy:
-        """A named strategy built on `policy` — with its failure policy and the wait every
-        named strategy shares (`WAIT_FOR_OTHERS`)."""
+    ) -> ConfiguredCache:
+        """A cache configured by name, on `policy` — with its failure policy and the wait every
+        named configuration shares (`WAIT_FOR_OTHERS`)."""
         update = {"failure": _failure(fail_safe), "wait_for_others": WAIT_FOR_OTHERS}
-        return CacheStrategy(self, policy.model_copy(update=update), _keys(vary_by))
+        return ConfiguredCache(self, policy.model_copy(update=update), _keys(vary_by))
 
     def ttl(
         self,
@@ -387,11 +380,11 @@ class CacheFacade:
         jitter: float = 0.1,
         fail_safe: timedelta | FailurePolicy | None = None,
         vary_by: str | Sequence[str] = (),
-    ) -> CacheStrategy:
-        """Served for `ttl` — spread by `jitter` so values kept together do not expire
+    ) -> ConfiguredCache:
+        """Served for `ttl` — spread by `jitter` so values cached together do not expire
         together — and `stale_for` more while one caller recomputes it."""
         freshness = TimeToLive(ttl=ttl, stale_for=stale_for, jitter=jitter)
-        return self._kept(CachePolicy(freshness=freshness), fail_safe, vary_by)
+        return self._configured(CachePolicy(freshness=freshness), fail_safe, vary_by)
 
     def sliding(
         self,
@@ -399,11 +392,11 @@ class CacheFacade:
         at_most: timedelta,
         fail_safe: timedelta | FailurePolicy | None = None,
         vary_by: str | Sequence[str] = (),
-    ) -> CacheStrategy:
-        """Served while it keeps being asked for: `idle_for` after the last time, and never
+    ) -> ConfiguredCache:
+        """Served while it is still asked for: `idle_for` after the last time, and never
         past `at_most` after it was computed."""
         freshness = Sliding(idle_for=idle_for, at_most=at_most)
-        return self._kept(CachePolicy(freshness=freshness), fail_safe, vary_by)
+        return self._configured(CachePolicy(freshness=freshness), fail_safe, vary_by)
 
     def versioned(
         self,
@@ -413,7 +406,7 @@ class CacheFacade:
         ttl: timedelta | None = None,
         fail_safe: timedelta | FailurePolicy | None = None,
         vary_by: str | Sequence[str] = (),
-    ) -> CacheStrategy:
+    ) -> ConfiguredCache:
         """Served while the source's version is the one it was computed at — `current` asks it
         (a cheap call), `version_of` reads it off the value, a check that held is trusted for
         `trusted_for`; `ttl` a safety net, none by default."""
@@ -423,7 +416,7 @@ class CacheFacade:
                 current, version_of=version_of, trusted_for=trusted_for
             ),
         )
-        return self._kept(policy, fail_safe, vary_by)
+        return self._configured(policy, fail_safe, vary_by)
 
 
 class IdempotencyFacade:
@@ -431,8 +424,8 @@ class IdempotencyFacade:
     service."""
 
     def __init__(self, name: str, store_of: Callable[[], ContextStore]) -> None:
-        """`name` keeps its keys apart from every other facade's on one store; `store_of`
-        answers the context store its records are kept on, asked at every run.
+        """`name` separates its keys from every other facade's on one store; `store_of`
+        answers the context store its records are stored on, asked at every run.
 
             IdempotencyFacade("billing", billing.store)
                 ->  `billing.idempotency`: records under the "billing" namespace, on the
@@ -483,7 +476,7 @@ class IdempotencyFacade:
             class IssueInvoice(Feature): ...
                 ->  a second CommandIssueInvoice with the same key replays the first answer
 
-        One `Idempotency` per `records` object, built once and kept while the records live."""
+        One `Idempotency` per `records` object, built once and held while the records live."""
         with self._lock:
             exact = self._exactly.get(records)
             if exact is None:

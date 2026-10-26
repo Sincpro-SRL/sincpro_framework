@@ -8,7 +8,7 @@ the rows it claims until it ends.
         unit.after_commit(lambda: notify(invoice))
     an exception inside                →  every record it touched as it was before the block
 
-It keeps the promises of the database's unit of work that a Feature can see, so a Feature tested
+It honours the promises of the database's unit of work that a Feature can see, so a Feature tested
 here behaves as it does on Postgres:
 
 - **Everything or nothing.** Each record is copied the first time the block is handed it or writes
@@ -59,7 +59,7 @@ class MemoryUnit:
 
 
 def restored(stored: dict[type, dict[Any, Any]], key: Key, before: Any) -> None:
-    """The record under `key` as it was: the object the store holds keeps its identity and takes
+    """The record under `key` as it was: the object the store holds retains its identity and takes
     the values it had, so whoever holds it sees them too; one the block added is gone.
 
         before: Invoice(id="F-1", total=500); the block set total = 900 on that object

@@ -18,7 +18,11 @@ from sincpro_framework.data_layer.orm import map_aggregates, map_events, templat
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd import Criteria, DeliverableEventMixin, DomainEvent
-from sincpro_framework.ddd.criteria import Condition, Operator, parse_order
+from sincpro_framework.ddd.criteria import (
+    Condition,
+    Operator,
+    Sort,
+)
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.event_driven import DeliveryFailurePolicy, EventRelay, RelayPass
@@ -68,7 +72,7 @@ map_events(mapper, BillingEvent, events_table)
 
 def facts(repository: Repository) -> list[DomainEvent]:
     """Every event billing kept, oldest first."""
-    return list(repository.fetch_all(BillingEvent, Criteria(order=parse_order("id"))).items)
+    return list(repository.fetch_all(BillingEvent, Criteria(order=Sort.parse("id"))).items)
 
 
 def pending(repository: Repository) -> int:

@@ -21,15 +21,7 @@ from sincpro_framework.bus_pipeline.interceptors.interceptor import Interceptor,
 from sincpro_framework.bus_pipeline.outcomes.outcomes import Outcomes
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
-from sincpro_framework.context.domain.level import Level
-from sincpro_framework.context.domain.node import ContextNode
-from sincpro_framework.context.entrypoint.providers import (
-    ContextProvider,
-    missing,
-    provided,
-    required_by,
-)
-from sincpro_framework.context.infrastructure.tree import opened_execution
+from sincpro_framework.context import ContextLevel, ContextProvider, context_executions
 from sincpro_framework.observability import Observability
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
@@ -41,23 +33,6 @@ from sincpro_framework.sincpro_abstractions import (
 )
 
 from .sincpro_logger import is_logger_in_debug, logger
-
-
-def prepared(node: ContextNode, handler: object, providers: list[ContextProvider]) -> None:
-    """Fill the execution's node from the providers and check what the handler requires.
-
-        prepared(node, IssueInvoice(), [tenant_provider])   ->  None, tenant_id on the node
-        prepared(node, <requires tenant_id>, [])            ->  ContextRequired("...", ...)
-
-    1. What the bus's providers give, on the execution's node.
-    Final: what the handler declared it requires — refused when missing; nothing declared,
-       nothing checked."""
-    provided(node, providers)
-    required = required_by(handler)
-    if required:
-        absent = missing(node, required)
-        if absent:
-            raise exceptions.ContextRequired(type(handler).__name__, absent)
 
 
 class FeatureBus(Bus):
@@ -88,7 +63,7 @@ class FeatureBus(Bus):
         3. The incomes and the outcomes given, else new ones named after the bus.
         4. The execution id factory given, else `new_entity_id`.
         Final: the context owner, the providers (none by default) and whether to log each
-        execution kept as given.
+        execution stored as given.
         """
         self.feature_registry: Dict[type, Feature] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
@@ -138,7 +113,7 @@ class FeatureBus(Bus):
             execute(CommandUnregistered())                      ->  UnknownDTOToExecute
 
         1. The feature for `type(dto)`, else `UnknownDTOToExecute`.
-        2. Opened together: the execution's node (`Level.FEATURE`), its span, its measurement.
+        2. Opened together: the execution's node (`ContextLevel.FEATURE`), its span, its measurement.
         3. The span described with what the DTO declares, and with what the feature replaces.
         4. Run, under `handling` so a failure names the chain it crossed:
            4.1 the context providers fill the node; `requires_context` refuses what is
@@ -156,10 +131,10 @@ class FeatureBus(Bus):
         if feature is None:
             raise exceptions.UnknownDTOToExecute(f"{dto_name} is not registered as a feature")
         with (
-            opened_execution(
+            context_executions.opened(
                 dto,
                 self.observability.bus_name,
-                Level.FEATURE,
+                ContextLevel.FEATURE,
                 self.new_execution_id,
                 self.context_owner,
             ) as node,
@@ -181,7 +156,7 @@ class FeatureBus(Bus):
 
             with self.observability.handling(dto_name):
                 try:
-                    prepared(node, feature, self.context_providers)
+                    context_executions.prepare(node, feature, self.context_providers)
                     self.incomes.began(dto, "feature", node)
                     chain = self.interceptors.get(dto_type, ())
                     response = run_around(chain, feature.execute, dto)
@@ -242,7 +217,7 @@ class ApplicationServiceBus(Bus):
         3. The incomes and the outcomes given, else new ones named after the bus.
         4. The execution id factory given, else `new_entity_id`.
         Final: the context owner, the providers (none by default) and whether to log each
-        execution kept as given.
+        execution stored as given.
         """
         self.app_service_registry: Dict[type, ApplicationService] = dict()
         self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
@@ -288,7 +263,7 @@ class ApplicationServiceBus(Bus):
         self, dto: TypeDTO, return_type: Type[TypeDTOResponse] | None = None
     ) -> TypeDTOResponse | None:
         """Run the application service registered for the DTO's type — the same way
-        `FeatureBus.execute` runs a feature, at `Level.APPLICATION`, with the application
+        `FeatureBus.execute` runs a feature, at `ContextLevel.APPLICATION`, with the application
         service error handler.
 
             execute(CommandCheckout(cart_id="c1"), ResponseCheckout) ->  ResponseCheckout(...)
@@ -309,10 +284,10 @@ class ApplicationServiceBus(Bus):
                 f"{dto_name} is not registered as an application service"
             )
         with (
-            opened_execution(
+            context_executions.opened(
                 dto,
                 self.observability.bus_name,
-                Level.APPLICATION,
+                ContextLevel.APPLICATION,
                 self.new_execution_id,
                 self.context_owner,
             ) as node,
@@ -334,7 +309,7 @@ class ApplicationServiceBus(Bus):
 
             with self.observability.handling(dto_name):
                 try:
-                    prepared(node, app_service, self.context_providers)
+                    context_executions.prepare(node, app_service, self.context_providers)
                     self.incomes.began(dto, "application_service", node)
                     chain = self.interceptors.get(dto_type, ())
                     response = run_around(chain, app_service.execute, dto)
@@ -390,7 +365,7 @@ class FrameworkBus(Bus):
             FrameworkBus(feature_bus, app_service_bus)      ->  no global error handler yet
             FrameworkBus(<CommandReserve in both buses>)    ->  DTOAlreadyRegistered
 
-        1. Both layer buses kept; no `handle_error` yet.
+        1. Both layer buses stored; no `handle_error` yet.
         2. The logger given, else the framework's; the observability given, else a bare one.
         3. The outcomes given, else the feature bus's.
         4. The DTO types registered in each layer bus, collected.

@@ -51,7 +51,7 @@ def within_trace(carrier: Mapping[str, str]) -> Generator[None]:
     under the span that published — one trace across the process boundary instead of two
     unrelated ones. Without a carrier, or without OpenTelemetry, it is a plain block.
 
-    The same adoption `entrypoints/rpc/entrypoint.py` does for an incoming `traceparent`
+    The same adoption `entrypoints/infrastructure/http.py` does for an incoming `traceparent`
     header; this is that boundary, asynchronous.
 
         with within_trace({"traceparent": "00-4bf92f…4736-00f067aa0ba902b7-01"}):

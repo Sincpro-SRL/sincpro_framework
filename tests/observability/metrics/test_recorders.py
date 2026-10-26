@@ -22,7 +22,7 @@ from sincpro_framework.observability.metrics.domain.instruments import (
     Instrument,
     InstrumentKind,
 )
-from sincpro_framework.observability.metrics.infrastructure import active as active_module
+from sincpro_framework.observability.metrics.services import recording
 from sincpro_framework.observability.metrics.testing import RecorderContract
 
 from .test_use_case_metrics import (
@@ -160,8 +160,7 @@ def test_one_name_declared_twice_with_other_labels_is_dropped_not_raised(prometh
 def test_the_fastapi_gateway_serves_the_scrape_when_prometheus_records(prometheus):
     from fastapi.testclient import TestClient
 
-    from sincpro_framework.entrypoints import Exposure
-    from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
+    from sincpro_framework.entrypoints import Exposure, FastApiGateway
 
     bus = _billing()
     client = TestClient(
@@ -183,8 +182,7 @@ def test_the_fastapi_gateway_serves_the_scrape_when_prometheus_records(prometheu
 def test_no_scrape_route_when_nothing_is_scraped():
     from fastapi.testclient import TestClient
 
-    from sincpro_framework.entrypoints import Exposure
-    from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
+    from sincpro_framework.entrypoints import Exposure, FastApiGateway
 
     with metrics.using(InMemoryRecorder()):
         app = FastApiGateway([_billing()], exposure=Exposure.CATALOG, unguarded=True).app()
@@ -231,34 +229,43 @@ def test_what_the_bus_measured_reaches_the_otel_meter(otel_reader):
     [("off", None), ("prometheus", PrometheusRecorder), ("otel", OtelRecorder)],
 )
 def test_the_backend_is_the_configurations(monkeypatch, backend, chosen):
-    monkeypatch.setattr(active_module.settings, "metrics_backend", backend, raising=False)
+    monkeypatch.setattr(recording.settings, "metrics_backend", backend, raising=False)
 
-    recorder = active_module.from_settings()
+    recorder = recording.from_settings()
 
     assert recorder is None if chosen is None else isinstance(recorder, chosen)
 
 
+def test_sincpro_metrics_backend_when_set_wins_over_the_standard_switch(monkeypatch):
+    """The framework's own name for the switch: set, it decides — `SINCPRO_METRICS_BACKEND=
+    prometheus` serves `/metrics` even when `OTEL_METRICS_EXPORTER` says none."""
+    monkeypatch.setattr(recording.settings, "metrics_backend", "prometheus", raising=False)
+    monkeypatch.setattr(recording.settings, "otel_metrics_exporter", "none", raising=False)
+
+    assert isinstance(recording.from_settings(), PrometheusRecorder)
+
+
 def test_auto_records_nothing_until_something_is_configured(monkeypatch):
     """Prometheus is never picked by guessing: an unscraped registry is a leak nobody reads."""
-    monkeypatch.setattr(active_module.settings, "metrics_backend", "auto", raising=False)
-    monkeypatch.setattr(active_module.settings, "otlp_endpoint", None, raising=False)
+    monkeypatch.setattr(recording.settings, "otel_metrics_exporter", None)
+    monkeypatch.setattr(recording.settings, "otlp_endpoint", None, raising=False)
     monkeypatch.setattr(
         "sincpro_framework.observability.metrics.adapters.otel.host_meter_provider_is_real",
         lambda: False,
     )
 
-    assert active_module.from_settings() is None
+    assert recording.from_settings() is None
 
 
 def test_auto_records_to_otel_when_an_endpoint_is_configured(monkeypatch):
-    monkeypatch.setattr(active_module.settings, "metrics_backend", "auto", raising=False)
-    monkeypatch.setattr(active_module.settings, "otlp_endpoint", "http://collector:4317")
+    monkeypatch.setattr(recording.settings, "otel_metrics_exporter", None)
+    monkeypatch.setattr(recording.settings, "otlp_endpoint", "http://collector:4317")
     monkeypatch.setattr(
         "sincpro_framework.observability.metrics.adapters.otel.install_otlp_meter_provider",
         lambda endpoint, service: None,
     )
 
-    assert isinstance(active_module.from_settings(), OtelRecorder)
+    assert isinstance(recording.from_settings(), OtelRecorder)
 
 
 @pytest.mark.parametrize(
@@ -275,39 +282,24 @@ def test_opentelemetrys_own_switch_picks_the_backend(monkeypatch, exporter, chos
     """`OTEL_METRICS_EXPORTER`, as OpenTelemetry defines it — the switch an operator already
     knows, the same the traces obey. An exporter the framework does not build sends nothing.
     """
-    monkeypatch.setattr(active_module.settings, "metrics_backend", "auto", raising=False)
-    monkeypatch.setattr(
-        active_module.settings, "otel_metrics_exporter", exporter, raising=False
-    )
-    monkeypatch.setattr(active_module.settings, "otlp_endpoint", "http://collector:4317")
+    monkeypatch.setattr(recording.settings, "otel_metrics_exporter", exporter, raising=False)
+    monkeypatch.setattr(recording.settings, "otlp_endpoint", "http://collector:4317")
     monkeypatch.setattr(
         "sincpro_framework.observability.metrics.adapters.otel.install_otlp_meter_provider",
         lambda endpoint, service: None,
     )
 
-    recorder = active_module.from_settings()
+    recorder = recording.from_settings()
 
     assert recorder is None if chosen is None else isinstance(recorder, chosen)
 
 
 def test_the_sdk_disabled_records_nothing_even_with_an_endpoint(monkeypatch):
-    monkeypatch.setattr(active_module.settings, "metrics_backend", "auto", raising=False)
-    monkeypatch.setattr(active_module.settings, "otel_sdk_disabled", True, raising=False)
-    monkeypatch.setattr(active_module.settings, "otlp_endpoint", "http://collector:4317")
+    monkeypatch.setattr(recording.settings, "otel_metrics_exporter", None)
+    monkeypatch.setattr(recording.settings, "otel_sdk_disabled", True, raising=False)
+    monkeypatch.setattr(recording.settings, "otlp_endpoint", "http://collector:4317")
 
-    assert active_module.from_settings() is None
-
-
-def test_sincpro_metrics_backend_when_set_wins_over_the_standard_switch(monkeypatch):
-    """The framework's own name for the switch is kept: set, it decides."""
-    monkeypatch.setattr(
-        active_module.settings, "metrics_backend", "prometheus", raising=False
-    )
-    monkeypatch.setattr(
-        active_module.settings, "otel_metrics_exporter", "none", raising=False
-    )
-
-    assert isinstance(active_module.from_settings(), PrometheusRecorder)
+    assert recording.from_settings() is None
 
 
 def test_labels_read_by_field_reference_travel_to_every_backend(prometheus):

@@ -2,12 +2,12 @@
 
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.bus_pipeline.incomes.listeners import starts
+from sincpro_framework.bus_pipeline.incomes.listeners import start_listeners
 from sincpro_framework.bus_pipeline.listeners import Listeners
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
-    from sincpro_framework.context.domain.node import ContextNode
+    from sincpro_framework.context import ContextNode
 
 
 class Incomes:
@@ -17,7 +17,7 @@ class Incomes:
         """Nobody listening yet but the process's listeners of starts, who hear every bus."""
         self.bus = bus
         """The bounded context whose use cases it announces."""
-        self.started = Listeners(process=starts)
+        self.started = Listeners(process=start_listeners)
 
     def began(self, dto: Any, level: str, node: "ContextNode") -> None:
         """Announce that a use case began running `dto` at `level` — to whoever listens.

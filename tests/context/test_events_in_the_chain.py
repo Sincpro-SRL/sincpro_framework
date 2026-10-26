@@ -5,8 +5,8 @@ by the same rule `caused_by` follows — unless it already says otherwise (PRD_2
 from dataclasses import dataclass
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.context import Execution, chained
-from sincpro_framework.context.infrastructure.tree import current_execution
+from sincpro_framework.context import Chain, Execution
+from sincpro_framework.context.services.executions import current_execution
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import DomainEvent, Entity
 from sincpro_framework.event_driven import Publisher, RepositoryQueue
@@ -127,7 +127,11 @@ def test_an_event_and_an_execution_follow_one_rule():
     cause = InvoiceIssued()
     effect = InvoiceIssued().caused_by(cause)
 
-    assert (effect.causation_id, effect.correlation_id) == chained(cause.id, None, "unused")
-    assert chained(None, None, "own") == (None, "own")
-    assert chained(None, "flow", "own") == (None, "flow")
-    assert chained("cause", "flow", "own") == ("cause", "flow")
+    chain = Chain.after(cause.id, None, "unused")
+    assert (effect.causation_id, effect.correlation_id) == (
+        chain.causation_id,
+        chain.correlation_id,
+    )
+    assert Chain.after(None, None, "own") == Chain(None, "own")
+    assert Chain.after(None, "flow", "own") == Chain(None, "flow")
+    assert Chain.after("cause", "flow", "own") == Chain("cause", "flow")

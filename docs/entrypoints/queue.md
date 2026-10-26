@@ -8,7 +8,7 @@ identity, an inbox, explicit settling, dead letters, CloudEvents and AsyncAPI.
 
 Nothing of the wire is a broker's: a broker is anything with `subscriber`, `publish`, `start` and
 `stop`, its messages anything with a body, headers and `ack` / `nack` / `reject`
-(`sincpro_framework.event_driven.domain.broker`). A broker that is not FastStream's says how it
+(`sincpro_framework.event_driven`). A broker that is not FastStream's says how it
 settles with a `flavour` — that is all `SqsBroker` adds.
 
 It is not the event-driven module. `Publisher` and `FastStreamQueue` ([events/brokers.md](../events/brokers.md))
@@ -18,7 +18,7 @@ gateway is what you use when a broker is also a door into your Commands.
 
 ```text
 from faststream.kafka import KafkaBroker
-from sincpro_framework.entrypoints.adapters.queue import QueueGateway
+from sincpro_framework.entrypoints import QueueGateway
 
 broker = KafkaBroker("kafka:9092")
 gateway = QueueGateway(broker, [billing, accounting])
@@ -100,14 +100,14 @@ events. The reason is a stable UPPER_SNAKE string: the error's class when the pr
 | Broker | Consumer group | Attempts counted by | Retry by default | Dead letter by default |
 |---|---|---|---|---|
 | Kafka | `group_id` | the `sincpro-attempts` header | **republish**: a copy with the attempt counted, then ack (a nack would re-read the offset and block the partition) | a copy to `{channel}.dlq`, then ack |
-| RabbitMQ | the queue | `x-delivery-count` (quorum queues) | **nack**: the broker redelivers | **reject**: the queue's dead-letter exchange keeps it |
+| RabbitMQ | the queue | `x-delivery-count` (quorum queues) | **nack**: the broker redelivers | **reject**: the queue's dead-letter exchange holds it |
 | Redis | none (Pub/Sub) | the `sincpro-attempts` header | republish | a copy to `{channel}.dlq` |
 | NATS | queue group | JetStream's `num_delivered` | nack | a copy to `{channel}.dlq` |
 
 - The attempt count is the larger of the broker's own count and the `sincpro-attempts` header. At
   `max_attempts` (the binding's value, else `QueueOptions.max_attempts`, default 5), a retry becomes
   a dead letter.
-- A copy on `{channel}.dlq` keeps the body and the CloudEvents headers, and adds
+- A copy on `{channel}.dlq` carries over the body and the CloudEvents headers, and adds
   `sincpro-dead-letter-reason`, `sincpro-dead-letter-kind`, `sincpro-dead-letter-from` and
   `sincpro-attempts`.
 - If a copy (dead letter or retry) cannot be published, the delivery is **nacked**. Nothing is
@@ -139,12 +139,12 @@ Before the bus runs, the delivery is claimed as `inbox:{context.Command}:{source
 - One that is still running elsewhere is retried.
 - The same source and id with another body is dead-lettered as `KEY_REUSED`.
 - A failure releases the claim, so the retry runs.
-- A time-limit timeout keeps the claim, because the first run may still be going. A redelivery
+- A time-limit timeout does not release the claim, because the first run may still be going. A redelivery
   then waits for the claim to expire.
 
 ```text
 from sincpro_framework.data_layer.caching import KeyValueRecords
-from sincpro_framework.store.adapters.redis import RedisKeyValue
+from sincpro_framework.data_layer.store import RedisKeyValue
 QueueOptions(inbox=KeyValueRecords(RedisKeyValue(...)))   # shared across replicas
 QueueOptions(inbox=None)                                  # off
 ```
@@ -156,7 +156,7 @@ within that database. On a key-value store they are best effort: a replica that 
 use case and `complete` runs the message again once the claim expires.
 
 The id is the CloudEvents `id`, else a DomainEvent's own `id`, else the broker's message id.
-`FastStreamQueue` and the AWS queues write the envelope (`cloud_event_headers`), so an event they
+`FastStreamQueue` and the AWS queues write the envelope (`Envelope.headers_for`), so an event they
 publish is run once by its own id.
 
 ### Time limits, TTL, order
@@ -179,8 +179,8 @@ the prefixes `ce_` (Kafka binding), `ce-` (HTTP) and `cloudEvents:` / `cloudEven
 producer stamps them with:
 
 ```text
-from sincpro_framework.entrypoints.adapters.queue import cloud_event_headers
-headers = cloud_event_headers(command, source="urn:svc:sales", id=request_id)
+from sincpro_framework.event_driven import Envelope
+headers = Envelope.headers_for(command, source="urn:svc:sales", id=request_id)
 await broker.publish(command.model_dump_json().encode(), "billing.invoices.issue", headers=headers)
 ```
 
@@ -252,5 +252,5 @@ Each subscription the gateway built appears there as a channel with a `receive` 
 | `await gateway.consume(message, as_=, decode=, channel=)` | full control; answers a `Verdict` |
 | `gateway.surface()`, `verify()`, `manifest()`, `asyncapi()` | as on every wire |
 | `QueueOptions(inbox, max_attempts, retry_by, dead_letter_by, dead_letter_suffix, time_limit, in_progress_for, keep_for, expires_after, identify, subscription_of)` | how the wire settles |
-| `cloud_event_headers(message, source=, type=, id=, subject=)`, `Envelope.of(headers)` | the envelope |
+| `Envelope.headers_for(message, source=, type=, id=, subject=, context=)`, `Envelope.of(headers)` | the envelope, from `sincpro_framework.event_driven` |
 | `Verdict(settlement, kind, reason, attempts, command)`, `Settlement` | the verdict |

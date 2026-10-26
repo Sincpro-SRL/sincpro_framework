@@ -14,10 +14,10 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.common.naming import upper_snake
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
-from sincpro_framework.entrypoints.adapters.rpc.errors import upper_snake
+from sincpro_framework.entrypoints import RpcGateway
 from sincpro_framework.entrypoints.entrypoint.decorators import rpc
 
 META_SCHEMA = Path(__file__).parent / "fixtures_openrpc_schema.json"

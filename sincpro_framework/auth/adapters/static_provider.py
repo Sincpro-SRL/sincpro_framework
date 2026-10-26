@@ -28,7 +28,7 @@ class StaticProvider(AuthProvider):
         return {"type": "http", "scheme": "bearer"}
 
     def authenticate(self, credentials: Credentials) -> Identity | None:
-        """The identity kept for the bearer, stamped with this provider's name.
+        """The identity stored for the bearer, stamped with this provider's name.
 
             provider = StaticProvider({"token-a": Identity.user("user:1")})
             provider.authenticate(Credentials(transport="http", headers={

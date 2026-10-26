@@ -1,7 +1,7 @@
 """Where this process's configuration hosts each bounded context — the conf file's `context_map`,
 with the environment's `SINCPRO_CONTEXT_MAP` winning per context.
 
-    configured_host("billing")    →  HostedAt(Wire.GRPC, "billing-service:50051", 5.0)   or None
+    configured_host("billing")    →  HostedAt(Scheme.GRPC, "billing-service:50051", 5.0)   or None
 
 Context: a context runs here unless this process's configuration says otherwise. Each deployment
 names only what *it* reaches elsewhere — the service hosting `billing` does not name it, so its
@@ -14,8 +14,9 @@ wrong is refused naming the variable.
 import os
 from functools import lru_cache
 
-from sincpro_framework.common.transport.addresses import HostedAt, HostedContext
 from sincpro_framework.remote_execution.domain import exceptions
+from sincpro_framework.remote_execution.domain.address import HostedAt, HostedContext
+from sincpro_framework.sincpro_conf import settings
 
 CONTEXT_MAP_ENV = "SINCPRO_CONTEXT_MAP"
 
@@ -36,7 +37,5 @@ def _configured(
 def configured_host(context: str) -> HostedAt | None:
     """Where this process's configuration hosts `context` — the conf file's `context_map`, with
     `SINCPRO_CONTEXT_MAP` winning per context — or `None` when it runs here."""
-    from sincpro_framework.sincpro_conf import settings
-
     from_environment = os.environ.get(CONTEXT_MAP_ENV) or settings.context_map_override
     return _configured(tuple(settings.context_map), from_environment).get(context)

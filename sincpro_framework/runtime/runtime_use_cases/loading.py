@@ -3,10 +3,10 @@ handler found, and registered for the Command its `execute` declares.
 
 Context: the module is `sincpro_runtime.<context>.<name>`, in `sys.modules` like any other, so
 Pydantic resolves its annotations and the bus routes its Commands by that name. Its filename,
-`<runtime <context>.<name> v<version> #<checksum>>`, is kept in `linecache`, so a traceback
+`<runtime <context>.<name> v<version> #<checksum>>`, is stored in `linecache`, so a traceback
 shows the stored line that failed — one entry per source, so a draft checked under the same
 version never shows its lines in a traceback of the one in force. Every generation compiles
-the source again: its classes are new ones, and a bus built before keeps the classes it was
+the source again: its classes are new ones, and a bus built before retains the classes it was
 built with.
 """
 
@@ -39,7 +39,7 @@ def _compiled(context: str, use_case: RuntimeUseCase) -> ModuleType:
     to this source, so a traceback quotes the stored line.
 
     1. The filename carries the context, the name, the version and 8 digits of the checksum.
-    2. The source's lines are kept in `linecache` under that filename.
+    2. The source's lines are stored in `linecache` under that filename.
     3. A new module is registered in `sys.modules` under `module_name`.
     4. The source is compiled with that filename and run in the module's namespace.
     Final: the module — one whose body raised stays in `sys.modules`; the registry settles it.

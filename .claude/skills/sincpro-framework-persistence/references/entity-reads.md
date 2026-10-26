@@ -107,7 +107,7 @@ QueryGetInvoice(id="F-001", criteria=Criteria(where=Condition(field="state", val
 #   → the key AND state = open: a closed F-001 is not found
 ```
 
-A scope a Feature adds keeps the defaults when merged with `merged_with`, which carries only
+A scope a Feature adds preserves the defaults when merged with `merged_with`, which carries only
 what either side named:
 
 ```python
@@ -124,7 +124,7 @@ def search(self, dto: QueryListInvoices) -> ResponseListInvoices:
 
 ## 6. The caller's drafts
 
-`QueryGetInvoice(id=..., draft=True)` answers the caller's draft when one is kept — the same shape
+`QueryGetInvoice(id=..., draft=True)` answers the caller's draft when one is stored — the same shape
 as the stored record for the same criteria, plus `draft` (version, `stale`); `QueryListInvoices(...,
 drafts=True)` lists the caller's drafts by the same criteria. Never implicit. The edits themselves
 are `Edit` + `EntityEdits` (an `EntityReads` too): [edits.md](edits.md). Override `drafts()` to key
@@ -141,7 +141,7 @@ class QueryIssueEvents(DomainEvents[Issue, ResponseIssueEvents]):
 ```
 
 `QueryIssueEvents(id=...)` answers the issue's events, oldest first, filtered by
-`entity_type="Issue"` and the issue's identity together; `names=[...]` (or one name) keeps only
+`entity_type="Issue"` and the issue's identity together; `names=[...]` (or one name) selects only
 those wire names, an unknown one answering no rows; the caller's criteria adds a filter or
 replaces the order. Several records at once: `repository.search(ProjectEvent,
 history_of(issue, *runs))`. Never one hand-written "list X events" Feature per aggregate.
@@ -155,11 +155,11 @@ history_of(issue, *runs))`. Never one hand-written "list X events" Feature per a
 - **A literal template without `TEXT`, or with an order or a page.** A template is a `where`
   alone that says where the text goes; the read sets the page and the order.
 - **A key that is not unique.** `DEFAULT_GET_ID` other than `id` needs a unique column, or
-  `describe` refuses the mapped class.
+  `ModelIntrospection.describe` refuses the mapped class.
 - **Returning the entity from a hand-written read Feature.** A record that crosses the bus is
   a DTO: use a `ResponseRecord`/`ResponseRecords`/`ResponsePaginatedQuery` subclass, so the
   specification cuts it on the wire.
-- **One DTO with `id: str | list[str]`.** Use `Get` for one and `GetMany` for many: each keeps
+- **One DTO with `id: str | list[str]`.** Use `Get` for one and `GetMany` for many: each has
   an exact response and its own «not found».
 - **Using `EntityReads` to change the record.** It answers reads. A Command that changes the
   invoice reads it with `repository.get(id, detail=detail_of(Invoice))` and saves it.

@@ -241,17 +241,6 @@ def _first_binding_lines(module: _Module) -> dict[str, int]:
     return bound
 
 
-def _is_handler_class(node: ast.ClassDef) -> bool:
-    """Whether a class is decorated ``@<bus>.feature(...)`` or ``@<bus>.app_service(...)`` —
-    a call on an attribute of one of those names, whatever the bus is called."""
-    return any(
-        isinstance(decorator, ast.Call)
-        and isinstance(decorator.func, ast.Attribute)
-        and decorator.func.attr in HANDLER_DECORATORS
-        for decorator in node.decorator_list
-    )
-
-
 def _bus_bypasses(module: _Module) -> set[str]:
     """The names of a service module another module may not take — they skip the bus.
 
@@ -263,7 +252,12 @@ def _bus_bypasses(module: _Module) -> set[str]:
         match node:
             case ast.FunctionDef() | ast.AsyncFunctionDef():
                 names.add(node.name)
-            case ast.ClassDef() if _is_handler_class(node):
+            case ast.ClassDef() if any(
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Attribute)
+                and decorator.func.attr in HANDLER_DECORATORS
+                for decorator in node.decorator_list
+            ):
                 names.add(node.name)
     return names
 
@@ -380,8 +374,8 @@ def _locate(module: str) -> tuple[str, str, str] | None:
 
 
 def _layer_rule(edge: _Edge, graph: _Graph) -> LayerViolation | None:
-    """The layer rule ``edge`` breaks, judged on that one import — ``None`` when it keeps them
-    all or either end sits outside every layer.
+    """The layer rule ``edge`` breaks, judged on that one import — ``None`` when it respects
+    them all or either end sits outside every layer.
 
     1. Importing ``entrypoints`` from any other layer is refused, across contexts too.
     2. Taking a registered handler or a function from a ``services`` module is refused, across
@@ -442,7 +436,7 @@ def _context_cycles(graph: _Graph) -> Iterator[LayerViolation]:
     """One violation per hop of each loop between contexts, pointing at an import that makes
     that hop.
 
-    1. The first import from each context into each other one is kept as the example.
+    1. The first import from each context into each other one is retained as the example.
     2. The contexts form a graph of their own; its cyclic groups are found.
     3. Final: for the shortest loop of each group, every hop is reported at its example
        import, with the whole loop in the message.

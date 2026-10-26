@@ -8,7 +8,6 @@ from typing_extensions import TypeVar
 
 from .aio import AsyncBus
 from .bus import FeatureBus
-from .context.infrastructure.thread_context_bus import ThreadContextBus
 
 class DataTransferObject(BaseModel): ...
 
@@ -29,19 +28,17 @@ class Bus(ABC, metaclass=abc.ABCMeta):
     @abstractmethod
     @overload
     def execute(self, dto: TypeDTO) -> TypeDTOResponse | None: ...
-    def thread_context(self) -> ThreadContextBus:
+    def thread_context(self) -> Bus:
         """
-        Return a handle to this bus bound to the calling thread's current context.
+        This bus, bound to the context of the calling thread — for a pool the project owns.
 
-        `context()` overlays live in a ContextVar, which is isolated per OS
-        thread. A plain `executor.submit(bus.execute, dto)` runs `execute` in a
-        new thread that never saw the overlay's `set()`, so every Feature's
-        `self.context` there silently falls back to the (usually empty) shared
-        context. Call `thread_context()` here, in the thread that still has the
-        overlay active, then hand `.execute` (not the raw bus) to the executor.
+        A `ThreadPoolExecutor` hands a worker none of the caller's context: a plain
+        `executor.submit(bus.execute, dto)` runs with an empty `self.context`. The bus answered
+        runs every `execute` in a copy of the context taken here (`in_context`), whichever
+        thread calls it — hand its `.execute` to the executor.
 
-        Call it once per task you submit, not once for a whole batch — see
-        `ThreadContextBus`.
+        Call it once per task you submit, not once for a whole batch: a copied context can be
+        entered by one thread at a time. `ContextExecutor` takes the copy per task on its own.
         """
         ...
 

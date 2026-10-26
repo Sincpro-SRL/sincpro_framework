@@ -17,10 +17,8 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent import futures
 from typing import Any
 
-from sincpro_framework.auth.domain.identity import Credentials
-from sincpro_framework.auth.entrypoint.transports import credentials_from_headers
-from sincpro_framework.context.adapters.propagation import extract
-from sincpro_framework.context.domain.execution import IDENTITY_HEADERS
+from sincpro_framework.auth import Credentials
+from sincpro_framework.context import context_propagation
 from sincpro_framework.observability.tracing.propagation import TRACE_HEADERS
 from sincpro_framework.sincpro_logger import logger
 
@@ -38,7 +36,7 @@ except ImportError as error:  # pragma: no cover - depends on the installed extr
 
 CONTEXT_PREFIX = "sp-ctx-"
 CORRELATION_HEADER = "x-correlation-id"
-HEADER_OF = {key: header for header, key in IDENTITY_HEADERS.items()}
+HEADER_OF = {key: header for header, key in context_propagation.identity_headers.items()}
 SHUTDOWN_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 DEADLINE_KEY = "deadline"
 """The request context's key for the caller's deadline: epoch seconds, absent without one."""
@@ -102,15 +100,15 @@ def context_from_metadata(metadata: Sequence[tuple[str, Any]]) -> dict[str, Any]
     3. `sp-ctx-<key>` → context[<key>] (tenant, user id, whatever the bus reads).
     4. Final: a context dict; empty when the caller sent none of them.
     """
-    merged: dict[str, Any] = extract(
+    merged: dict[str, Any] = context_propagation.extract(
         {key: value for key, value in metadata if isinstance(value, str)}
     )
     carrier: dict[str, str] = {}
     for key, value in metadata:
         if key.endswith("-bin") or not isinstance(value, str):
             continue
-        if key in IDENTITY_HEADERS:
-            merged[IDENTITY_HEADERS[key]] = value
+        if key in context_propagation.identity_headers:
+            merged[context_propagation.identity_headers[key]] = value
         elif key in TRACE_HEADERS:
             carrier[key] = value
         elif key.startswith(CONTEXT_PREFIX) and len(key) > len(CONTEXT_PREFIX):
@@ -152,7 +150,7 @@ def credentials_of(context: Any) -> Credentials:
     """The caller's credentials: its metadata as headers, and the client certificate of an
     mTLS channel — the first of the chain the server verified."""
     chain = context.auth_context().get("x509_pem_cert") or ()
-    return credentials_from_headers(
+    return Credentials.from_headers(
         "grpc", context.invocation_metadata(), chain[0] if chain else None
     )
 

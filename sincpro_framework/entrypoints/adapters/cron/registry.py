@@ -23,30 +23,25 @@ from sincpro_log.logger import LoggerProxy, create_logger
 
 from sincpro_framework import exceptions
 from sincpro_framework.common.ordering import name_of
-from sincpro_framework.context.domain.level import EntrypointKind
-from sincpro_framework.context.entrypoint.facade import carrying
+from sincpro_framework.context import EntrypointKind, carrying
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.repositories import IRepository
 from sincpro_framework.dependencies import DependencyLocator
-from sincpro_framework.entrypoints.adapters.cron.domain import (
+from sincpro_framework.entrypoints.adapters.cron.domain.cron import (
     Cron,
     CronDefinition,
-    CronExpression,
-    Every,
     Missed,
     Overlap,
-    RunOutcome,
     Tick,
+)
+from sincpro_framework.entrypoints.adapters.cron.domain.runs import RunOutcome
+from sincpro_framework.entrypoints.adapters.cron.domain.schedule import (
+    CronExpression,
+    Every,
     Trigger,
 )
 from sincpro_framework.event_driven import DeliveryFailurePolicy, EventRelay, Publisher
 from sincpro_framework.observability import Observability
-
-
-def _declared_dependencies(cron_class: type[Cron]) -> set[str]:
-    """Every attribute the cron and its bases annotate — the bounded context's
-    `CronDependencyContextType` included."""
-    return {name for klass in cron_class.__mro__ for name in inspect.get_annotations(klass)}
 
 
 def _trigger(
@@ -260,7 +255,7 @@ class Crons[TDeps]:
         every: timedelta = timedelta(seconds=2),
         name: str | None = None,
     ) -> EventRelay:
-        """Delivers every `DeliverableEventMixin` event of `source` the repository keeps to `to`
+        """Delivers every `DeliverableEventMixin` event of `source` the repository stores to `to`
         — a `Publisher` over the broker — at every tick of `every`.
 
             billing_crons.relay_deliverable_events(
@@ -328,7 +323,11 @@ class Crons[TDeps]:
         if self._built:
             return
         for definition in self._definitions.values():
-            declared = _declared_dependencies(definition.cron_class)
+            declared = {  # what the cron and its bases annotate, its context type included
+                name
+                for klass in definition.cron_class.__mro__
+                for name in inspect.get_annotations(klass)
+            }
             missing = sorted(declared - set(self._dependencies))
             if missing:
                 raise exceptions.DependencyNotRegistered(
@@ -344,7 +343,7 @@ class Crons[TDeps]:
 
     def execute(self, definition: CronDefinition, tick: Tick) -> RunOutcome:
         """Context: a cron is the outermost caller, so it reports a failure once — including one
-        that happened inside a bus it called, which then keeps its `failed_in`.
+        that happened inside a bus it called, which then still carries its `failed_in`.
 
             execute(<Reconcile>, Tick("cron-payments.Reconcile", 06:00, runs))
             ->  RunOutcome.SUCCEEDED, logged "cron-payments.Reconcile ran for 2026-..."

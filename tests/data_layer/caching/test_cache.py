@@ -21,9 +21,8 @@ from sincpro_framework.data_layer.caching import (
     JsonCodec,
     TimeToLive,
 )
+from sincpro_framework.data_layer.store import InMemoryKeyValue, RedisKeyValue
 from sincpro_framework.runtime.testing import ManualClock
-from sincpro_framework.store import InMemoryKeyValue
-from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 
 class Tenant(DataTransferObject):

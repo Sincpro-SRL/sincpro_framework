@@ -5,21 +5,23 @@
 Three layers, each importing only the one before it:
 
     domain/       the language: a criteria, a condition, a value that is read when it is used,
-                  and what is intrinsic to them (`combined`, `mapped`, `canonical`, `with_text`)
-    services/     the pieces that need more than the language — calendar arithmetic, reading a
-                  value, comparing — used by the entrypoints, never exposed
-    entrypoint/   what other modules call: `resolve` a filter's dynamic values, `holds` and
-                  `matches` to evaluate it over records in memory
+                  and what is intrinsic to them — `Node.combined`, `node.conditions()`,
+                  `node.canonical()`, `Sort.parse`, `Period.range`, `Part.of`
+    services/     the operations that need more than one piece of the language — evaluating a
+                  filter in memory, reading its dynamic values, listing an axis
+    entrypoint/   the facades over those operations: `Evaluation` (holds, matches), `Resolution`
+                  (resolve, has_dynamic_values) and `Aggregation` (axis_values)
 
-This module exposes the domain and the entrypoints. Whoever needs something more reaches for it
-by asking for it to be exposed here, not by importing a file.
+This module exposes the language a project writes and reads back, the three facades, and what
+the rest of the framework reads of the language — `CursorKeys` (a cursor's keys, for a
+repository's keyset page), `MULTI_VALUED` (the operators whose value is a list), `RESOLVERS` and
+`ResolverMeta` (the dynamic values offered to a filter builder), and `Any_`, the class behind `Any`.
 
 A filter written in code uses the names its JSON uses — `All`, `Any`, `Not` and `Condition`.
 Context: the class behind `Any` is `Any_`, because the modules that define and read it also use
-`typing.Any`; `Any_` stays importable, as 3.10 published it.
+`typing.Any`, and the committed `criteria.schema.json` names it so.
 """
 
-from sincpro_framework.ddd.criteria.domain.canonical import canonical
 from sincpro_framework.ddd.criteria.domain.criteria import (
     Bucket,
     CountMode,
@@ -32,16 +34,13 @@ from sincpro_framework.ddd.criteria.domain.expression import (
     Any_,
     Condition,
     Expression,
+    Node,
     Not,
     Operator,
-    combined,
-    conditions_of,
-    expression_from,
-    holds_text,
 )
 from sincpro_framework.ddd.criteria.domain.grouping import (
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Pivot,
     PivotCell,
@@ -53,9 +52,8 @@ from sincpro_framework.ddd.criteria.domain.pagination import (
     Pagination,
 )
 from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
-from sincpro_framework.ddd.criteria.domain.sort import Sort, parse_order
+from sincpro_framework.ddd.criteria.domain.sort import Sort
 from sincpro_framework.ddd.criteria.domain.strict import TOLERANT
-from sincpro_framework.ddd.criteria.domain.templates import with_text
 from sincpro_framework.ddd.criteria.domain.values import (
     RESOLVERS,
     TEXT,
@@ -71,16 +69,9 @@ from sincpro_framework.ddd.criteria.domain.values import (
     Span,
     Today,
 )
-from sincpro_framework.ddd.criteria.domain.walk import mapped
-from sincpro_framework.ddd.criteria.entrypoint.axes import (
-    axis_values,
-    check_levels,
-    check_measures,
-    empty_measure,
-    part_of,
-)
-from sincpro_framework.ddd.criteria.entrypoint.evaluation import holds, matches
-from sincpro_framework.ddd.criteria.entrypoint.resolution import has_dynamic_values, resolve
+from sincpro_framework.ddd.criteria.entrypoint.aggregation import Aggregation
+from sincpro_framework.ddd.criteria.entrypoint.evaluation import Evaluation
+from sincpro_framework.ddd.criteria.entrypoint.resolution import Resolution
 
 Any = Any_
 
@@ -89,6 +80,7 @@ __all__ = [
     "RESOLVERS",
     "TEXT",
     "TOLERANT",
+    "Aggregation",
     "All",
     "Any",
     "Any_",
@@ -98,13 +90,15 @@ __all__ = [
     "Criteria",
     "Cursor",
     "CursorKeys",
+    "Evaluation",
     "Expression",
     "FromContext",
     "FromField",
     "Grain",
     "Grouping",
-    "Level",
+    "GroupingLevel",
     "Measure",
+    "Node",
     "Not",
     "Now",
     "Offset",
@@ -116,27 +110,11 @@ __all__ = [
     "Periods",
     "Pivot",
     "PivotCell",
+    "Resolution",
     "ResolutionContext",
     "ResolverMeta",
     "Sort",
     "Span",
     "Specification",
     "Today",
-    "axis_values",
-    "canonical",
-    "check_levels",
-    "check_measures",
-    "combined",
-    "conditions_of",
-    "empty_measure",
-    "expression_from",
-    "has_dynamic_values",
-    "holds",
-    "holds_text",
-    "mapped",
-    "matches",
-    "parse_order",
-    "part_of",
-    "resolve",
-    "with_text",
 ]

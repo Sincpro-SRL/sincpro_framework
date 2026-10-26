@@ -50,7 +50,7 @@ class AggregateRepository[T]:
 
         1. Each generic base the class wrote (`__orig_bases__`), in order.
         2. Final: one whose origin is an `AggregateRepository` and whose first argument is a
-           class names the aggregate; a subclass of a subclass with no argument keeps its
+           class names the aggregate; a subclass of a subclass with no argument inherits its
            parent's.
         """
         super().__init_subclass__(**kwargs)
@@ -95,7 +95,7 @@ class AggregateRepository[T]:
 
     def bound_to(self, repository: IRepository) -> Self:
         """The same view over another repository — the one a unit of work or a narrowing
-        handed back. A copy, so a subclass keeps whatever else it was built with."""
+        handed back. A copy, so a subclass retains whatever else it was built with."""
         bound = copy(self)
         bound.repository = repository
         return bound

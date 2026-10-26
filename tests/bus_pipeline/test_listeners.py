@@ -8,9 +8,12 @@ from typing import Any
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.bus_pipeline.incomes.listeners import starts
-from sincpro_framework.bus_pipeline.outcomes.listeners import completions, failures
-from sincpro_framework.context import Level, use_context
+from sincpro_framework.bus_pipeline.incomes.listeners import start_listeners
+from sincpro_framework.bus_pipeline.outcomes.listeners import (
+    completion_listeners,
+    failure_listeners,
+)
+from sincpro_framework.context import ContextLevel, use_context
 
 
 class CommandReserveStock(DataTransferObject):
@@ -20,9 +23,9 @@ class CommandReserveStock(DataTransferObject):
 @pytest.fixture(autouse=True)
 def nobody_listens_after():
     yield
-    starts.clear()
-    completions.clear()
-    failures.clear()
+    start_listeners.clear()
+    completion_listeners.clear()
+    failure_listeners.clear()
 
 
 def _warehouse(name: str, labels: list[str] | None = None) -> UseFramework:
@@ -32,7 +35,7 @@ def _warehouse(name: str, labels: list[str] | None = None) -> UseFramework:
     class ReserveStock(Feature):
         def execute(self, dto: CommandReserveStock) -> None:
             if labels is not None:
-                bus = use_context(Level.BUS)
+                bus = use_context(ContextLevel.BUS)
                 labels.append(bus.label if bus is not None else "")
 
     return warehouse
@@ -241,7 +244,7 @@ def test_the_process_listens_with_the_same_filters():
     from sincpro_framework.ddd.criteria import Condition
 
     heard: list[str] = []
-    failures.subscribe(
+    failure_listeners.subscribe(
         heard.append, when=Condition(field="error_type", value="StockUnavailable")
     )
     warehouse = _failing_warehouse("listeners-process")

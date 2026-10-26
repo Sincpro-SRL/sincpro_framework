@@ -10,11 +10,11 @@ import pytest
 boto3 = pytest.importorskip("boto3")
 moto = pytest.importorskip("moto")
 
-from sincpro_framework.runtime.testing import KeyValueStoreContract  # noqa: E402
-from sincpro_framework.store import KeyValueStore  # noqa: E402
-from sincpro_framework.store.adapters.dynamodb import (  # noqa: E402
+from sincpro_framework.data_layer.store import KeyValueStore  # noqa: E402
+from sincpro_framework.data_layer.store.adapters.dynamodb import (  # noqa: E402
     DynamoKeyValue,
 )
+from sincpro_framework.runtime.testing import KeyValueStoreContract  # noqa: E402
 
 TABLE = "sincpro-cache"
 

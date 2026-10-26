@@ -16,8 +16,8 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Operator,
     Pagination,
+    Sort,
     Specification,
-    parse_order,
 )
 
 from .models import ROW_COUNT, Thing, Things
@@ -36,8 +36,8 @@ def test_exists_answers_without_counting_or_fetching(store: Repository, queries_
 
 
 def test_first_is_the_one_the_order_puts_in_front(store: Repository, things):
-    biggest = store.first(Things, Criteria(order=parse_order("-size,-thing_id")))
-    smallest = store.first(Things, Criteria(order=parse_order("size,thing_id")))
+    biggest = store.first(Things, Criteria(order=Sort.parse("-size,-thing_id")))
+    smallest = store.first(Things, Criteria(order=Sort.parse("size,thing_id")))
 
     assert biggest is not None and smallest is not None
     assert biggest.size == max(one.size for one in things)
@@ -91,7 +91,7 @@ def test_get_by_answers_a_natural_key(store: Repository):
 def test_pluck_answers_one_column_over_the_whole_result_set(store: Repository, things):
     """Over everything the criteria matched, like `count` and `measures`: a column of values
     fills a select or seeds a browse, and a page of it would be an accident."""
-    every = store.pluck(Things, "thing_id", Criteria(order=parse_order("thing_id")))
+    every = store.pluck(Things, "thing_id", Criteria(order=Sort.parse("thing_id")))
 
     assert len(every) == ROW_COUNT
     assert every == sorted(one.thing_id for one in things)

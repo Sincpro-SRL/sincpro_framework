@@ -27,7 +27,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints import RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     INVALID_PARAMS,
     INVALID_REQUEST,

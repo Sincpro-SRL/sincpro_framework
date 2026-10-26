@@ -59,7 +59,7 @@ permissions)`, `Identity.system(reason)`, `Identity.anonymous()`. Never `None`.
 | `RolePermissions(roles, implies)` | — | `.resolve(identity)` adds what its roles (and implied roles) grant |
 
 `ApiKeyStore` is the port for a project's own key table (`find`, `save`); `issue(ApiKey(...))`
-returns the secret once and keeps only its SHA-256; `revoke(secret_or_digest)`.
+returns the secret once and stores only its SHA-256; `revoke(secret_or_digest)`.
 `InMemoryApiKeys` is the in-memory adapter.
 
 ## A provider for an OIDC/JWT issuer (project code)

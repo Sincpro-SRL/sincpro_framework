@@ -3,7 +3,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sincpro_framework.ddd.criteria import CursorKeys
+from sincpro_framework.ddd.criteria.domain.pagination import (
+    CursorKeys,
+)
 
 
 def test_a_cursor_carries_decimals_dates_and_datetimes_and_gives_them_back_as_typed():

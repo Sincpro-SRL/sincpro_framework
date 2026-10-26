@@ -10,7 +10,7 @@ import pytest
 import sincpro_log
 
 from sincpro_framework import sincpro_conf
-from sincpro_framework.sincpro_conf import FrameworkSettings, SincproConfig, build_config_obj
+from sincpro_framework.settings import FrameworkSettings, SincproConfig, build_config_obj
 
 
 class SharedSettings(FrameworkSettings):
@@ -66,6 +66,18 @@ def test_what_the_project_set_is_what_the_framework_reads(tmp_path: Path, framew
     assert sincpro_conf.settings.sentry_dsn == "https://key@sentry.example/1"
     assert sincpro_conf.settings.app_release == "my-project:1.2.3"
     assert sincpro_conf.settings.otlp_endpoint == "http://collector:4317"
+
+
+def test_the_framework_shape_built_by_a_project_reaches_the_framework(
+    tmp_path: Path, framework
+):
+    """`FrameworkSettings` itself, not a subclass: a project that builds the framework's own
+    shape from its file configures the framework the same way."""
+    file = write(tmp_path, "sentry_dsn: https://key@sentry.example/1\n")
+
+    build_config_obj(FrameworkSettings, file)
+
+    assert sincpro_conf.settings.sentry_dsn == "https://key@sentry.example/1"
 
 
 def test_what_the_project_left_at_its_default_the_framework_keeps(tmp_path: Path, framework):
@@ -124,7 +136,8 @@ def test_a_project_not_opted_in_changes_nothing_of_the_framework(tmp_path: Path,
 
 
 def test_the_framework_reads_it_where_it_reads_its_own(tmp_path: Path, framework):
-    from sincpro_framework.observability.errors.setup import dsn, tenant
+    from sincpro_framework.observability.domain import deployment_tenant
+    from sincpro_framework.observability.errors.setup import dsn
 
     file = write(
         tmp_path,
@@ -133,7 +146,7 @@ def test_the_framework_reads_it_where_it_reads_its_own(tmp_path: Path, framework
 
     build_config_obj(ProjectSettings, file, "my_project")
 
-    assert dsn() == "https://key@glitchtip.example/2" and tenant() == "acme"
+    assert dsn() == "https://key@glitchtip.example/2" and deployment_tenant() == "acme"
 
 
 def test_a_variable_the_project_names_but_nobody_set_leaves_the_framework_its_own(

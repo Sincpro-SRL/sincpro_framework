@@ -31,7 +31,7 @@ class Registry:
         self._lock = threading.Lock()
 
     def _serving(self) -> None:
-        """Drop a bus that now only forwards. The caller keeps that object; the context map
+        """Drop a bus that now only forwards. The caller still holds that object; the context map
         says where the call goes."""
         for name, bus in list(self._buses.items()):
             if bus.is_reference:

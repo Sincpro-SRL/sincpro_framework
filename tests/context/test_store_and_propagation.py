@@ -29,10 +29,10 @@ from sincpro_framework.context.adapters.propagation import (
     BAGGAGE_HEADER,
     CONTEXT_HEADER,
     extract,
-    inject,
     unbaggaged,
 )
-from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.context.services.propagation import inject
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 
 class Environment(IntEnum):

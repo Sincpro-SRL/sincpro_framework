@@ -2,9 +2,9 @@
 
 **What is reported is a fault** (`common.failures.is_fault`, the rule every signal follows). A
 `ClientError` or a `DomainError` was written for whoever asked — the caller sent something wrong,
-a rule of the business said no — so it is an answer, not a bug: kept out of GlitchTip by default.
+a rule of the business said no — so it is an answer, not a bug: left out of GlitchTip by default.
 A crash, a `ProgrammingError`, a service that did not answer are reported. A bus says more:
-`ignore_sentry_exceptions(...)` keeps out others, `report_sentry_exceptions(...)` brings back one
+`ignore_sentry_exceptions(...)` excludes others, `report_sentry_exceptions(...)` brings back one
 it wants to see.
 """
 
@@ -109,7 +109,7 @@ def record_error(
     1. Without sentry-sdk installed, nothing is sent.
     2. An `instance` error that is not a fault (`is_fault`, with what the bus ignores and
        reports) is not sent; a `framework` one always is, under the framework's identity
-       (`framework_identity`), the bus kept.
+       (`framework_identity`), the bus preserved.
     3. Nothing either when the SDK has no `isolation_scope`, or no client exists for the
        release (`setup.client_for` — no DSN).
     4. In an isolation scope bound to the framework's own client:

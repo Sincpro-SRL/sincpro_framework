@@ -17,18 +17,17 @@ from datetime import datetime, timedelta
 from threading import BoundedSemaphore, Lock, Thread, current_thread
 
 from sincpro_framework.common.ordering import name_of, refused
-from sincpro_framework.entrypoints.adapters.cron.adapters import InMemoryRuns, InProcessClock
-from sincpro_framework.entrypoints.adapters.cron.domain import (
-    Clock,
+from sincpro_framework.entrypoints.adapters.cron.adapters.clocks import InProcessClock
+from sincpro_framework.entrypoints.adapters.cron.adapters.in_memory_runs import InMemoryRuns
+from sincpro_framework.entrypoints.adapters.cron.domain.clock import Clock
+from sincpro_framework.entrypoints.adapters.cron.domain.cron import (
     Cron,
     CronDefinition,
-    CronRuns,
     Missed,
     Overlap,
-    Run,
-    RunOutcome,
     Tick,
 )
+from sincpro_framework.entrypoints.adapters.cron.domain.runs import CronRuns, Run, RunOutcome
 from sincpro_framework.entrypoints.adapters.cron.registry import Crons
 from sincpro_framework.sincpro_logger import logger
 
@@ -128,7 +127,7 @@ class CronGateway:
 
         1. The clock given, else an `InProcessClock(look_every, jitter)`; the record of runs
            given, else an `InMemoryRuns`.
-        2. Each registry built, and one entry kept per cron it defines.
+        2. Each registry built, and one entry recorded per cron it defines.
         3. No cursor yet — `run` sets one per cron.
         4. A semaphore of `workers` slots, or none when `workers` is not given.
         Final: nothing running, nothing busy, not stopping.

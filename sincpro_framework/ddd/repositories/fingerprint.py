@@ -5,7 +5,7 @@ Context: it is taken after the filter's values are read as their fields' types, 
 `1000` are one key, and a `today` or a user is read first, so the key is of the rows it asked
 for and never of the words it was written with; the parts of an `all` or an `any`, and the items
 of an `in`, are keyed in any order; a decimal is keyed by its value, not by how many zeros it was
-written with (`criteria/canonical.py`). The order and
+written with (`Node.canonical`). The order and
 the mask are part of it — they change which rows a page holds and what each row carries — and
 so is the scope a repository reads under, so two tenants never share a key. The pagination is
 not: a later page is the same read, continued.
@@ -14,7 +14,10 @@ not: a later page is the same read, continued.
 import hashlib
 import json
 
-from sincpro_framework.ddd.criteria import Criteria, ResolutionContext, canonical
+from sincpro_framework.ddd.criteria import (
+    Criteria,
+    ResolutionContext,
+)
 from sincpro_framework.ddd.entity.entity_meta import describe_class
 
 
@@ -37,10 +40,10 @@ def fingerprint_of(
        sorted JSON, hashed with SHA-256 and cut to 32 characters; the pagination left out.
     """
     meta = describe_class(model)
-    where = canonical(meta.accept(criteria.expression, resolution)[0])
-    scoped = (
-        canonical(meta.accept(scope.expression, resolution)[0]) if scope is not None else None
-    )
+    accepted = meta.accept(criteria.expression, resolution)[0]
+    where = accepted.canonical() if accepted is not None else None
+    in_scope = meta.accept(scope.expression, resolution)[0] if scope is not None else None
+    scoped = in_scope.canonical() if in_scope is not None else None
     dumped = criteria.model_dump(mode="json")
     body = {
         "aggregate": f"{model.__module__}.{model.__qualname__}",

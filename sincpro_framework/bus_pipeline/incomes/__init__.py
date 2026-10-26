@@ -4,7 +4,7 @@
     def began(started: ExecutionStarted) -> None: ...
 
     billing.publish_starts(to=Publisher(queue))          a queue: another bus, a broker topic
-    starts.subscribe(audit)                              every bus of the process
+    start_listeners.subscribe(audit)                              every bus of the process
 
 An income says what a use case was handed, before anything runs; how it ended is the outcome's
 (`sincpro_framework.bus_pipeline.outcomes`). It is announced for every Feature and ApplicationService, the

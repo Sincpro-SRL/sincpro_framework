@@ -6,11 +6,20 @@ from typing import cast
 
 import pytest
 
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
-from sincpro_framework.ddd.criteria import Condition, Criteria, Specification, parse_order
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
+from sincpro_framework.ddd.criteria import (
+    Condition,
+    Criteria,
+    Sort,
+    Specification,
+)
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
@@ -62,7 +71,7 @@ def desk_repository(tmp_path_factory) -> Repository:
 
 @pytest.fixture
 def meta(desk_repository):
-    return describe(Manuscript)
+    return ModelIntrospection.describe(Manuscript)
 
 
 def by_title(page) -> dict[str, Manuscript]:
@@ -75,13 +84,13 @@ def by_title(page) -> dict[str, Manuscript]:
 def test_a_column_with_a_list_annotation_is_a_field_never_a_relation(meta):
     assert meta.fields["notes"].type is FieldType.TEXT_LIST
     assert "notes" not in meta.relations
-    assert "notes" not in relations_of(Manuscript)
+    assert "notes" not in mapping_registry.relations_of(Manuscript)
 
 
 def test_with_two_foreign_keys_the_column_named_after_the_attribute_is_inferred(meta):
     author = meta.fields["author"]
     assert author.type is FieldType.MANY2ONE and author.identified_by == "author_id"
-    assert relations_of(Manuscript)["author"].kind == "foreign_key"
+    assert mapping_registry.relations_of(Manuscript)["author"].kind == "foreign_key"
 
 
 def test_a_declaration_wins_over_inference(meta):
@@ -105,13 +114,20 @@ def test_a_one2many_is_inferred_from_the_child_table(meta):
 
 def test_a_dataclass_with_no_table_and_no_declaration_is_ignored(meta):
     assert "drafts" not in meta.fields
-    assert "drafts" not in relations_of(Manuscript)
+    assert "drafts" not in mapping_registry.relations_of(Manuscript)
 
 
 def test_mapping_twice_neither_duplicates_nor_replaces(meta):
     declare()
-    assert set(relations_of(Manuscript)) == {"author", "editor", "reviewer", "chapters"}
-    assert describe(Manuscript).fields["editor"].identified_by == "editor_id"
+    assert set(mapping_registry.relations_of(Manuscript)) == {
+        "author",
+        "editor",
+        "reviewer",
+        "chapters",
+    }
+    assert (
+        ModelIntrospection.describe(Manuscript).fields["editor"].identified_by == "editor_id"
+    )
 
 
 # ── a value object deserialised from JSON ─────────────────────────────────────
@@ -164,7 +180,7 @@ def test_empty_values_come_back_empty_not_missing(desk_repository):
                 "title": Criteria(),
                 "notes": Criteria(),
                 "editor": Criteria(),
-                "chapters": Criteria(order=parse_order("title")),
+                "chapters": Criteria(order=Sort.parse("title")),
             }
         )
     )
@@ -216,7 +232,7 @@ def test_an_empty_specification_node_on_an_embedded_value_brings_it_whole(desk_r
 
 
 def test_describing_before_mapping_does_not_freeze_a_definition_without_relations():
-    """`describe` is cached per class; installing relations afterwards must be seen."""
+    """`ModelIntrospection.describe` is cached per class; installing relations afterwards must be seen."""
     from dataclasses import dataclass, field
 
     from sqlalchemy import Column, ForeignKey, Text
@@ -246,8 +262,10 @@ def test_describing_before_mapping_does_not_freeze_a_definition_without_relation
         Column("name", Text),
     )
     map_aggregates(fresh, {Owner: owner_table})
-    assert "pets" not in describe(Owner).fields  # described before Pet was mapped
+    assert (
+        "pets" not in ModelIntrospection.describe(Owner).fields
+    )  # described before Pet was mapped
 
     map_aggregates(fresh, {Pet: pet_table})
 
-    assert describe(Owner).fields["pets"].type is FieldType.ONE2MANY
+    assert ModelIntrospection.describe(Owner).fields["pets"].type is FieldType.ONE2MANY

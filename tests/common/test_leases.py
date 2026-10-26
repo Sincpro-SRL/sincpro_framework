@@ -9,15 +9,15 @@ from datetime import UTC, datetime, timedelta
 import fakeredis
 import pytest
 
-from sincpro_framework.exceptions import FailureKind
-from sincpro_framework.store import (
+from sincpro_framework.data_layer.store import (
     InMemoryKeyValue,
     KeyValueStore,
     Leases,
     LeaseState,
+    RedisKeyValue,
 )
-from sincpro_framework.store.adapters.redis import RedisKeyValue
-from sincpro_framework.store.domain import exceptions as store_exceptions
+from sincpro_framework.data_layer.store.domain import exceptions as store_exceptions
+from sincpro_framework.exceptions import FailureKind
 
 
 class Clock:

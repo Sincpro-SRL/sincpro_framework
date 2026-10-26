@@ -13,7 +13,7 @@ from typing import Any
 from sincpro_framework.ddd.entity import utc_now
 
 DELIVERY_FIELDS = frozenset({"delivered_at", "next_delivery_at", "delivery"})
-"""Where a deliverable event's delivery stands — kept with the event, never sent with it."""
+"""Where a deliverable event's delivery stands — stored with the event, never sent with it."""
 
 VERSIONED = re.compile(r"\.v\d+\.")
 """A wire name with its contract's version in it: `billing.invoice.v1.paid`."""
@@ -22,7 +22,7 @@ VERSIONED = re.compile(r"\.v\d+\.")
 @dataclass(kw_only=True)
 class DeliverableEventMixin:
     """Marks the events delivered beyond this bounded context — to a broker, to other services —
-    and keeps where their delivery stands (the transactional outbox: Richardson's polling
+    and stores where their delivery stands (the transactional outbox: Richardson's polling
     publisher; Microsoft's eShop `IntegrationEventLogEntry`).
 
         @dataclass(kw_only=True)
@@ -30,7 +30,7 @@ class DeliverableEventMixin:
             name = "billing.invoice.v1.paid"
             invoice_id: str = ""
 
-    | Field | What it keeps |
+    | Field | What it stores |
     |---|---|
     | `delivered_at` | when it was delivered — empty while it is not |
     | `next_delivery_at` | when the relay may try it — now, when it is made; later, after a failure; empty once parked |
@@ -91,7 +91,7 @@ class DeliverableEventMixin:
         }
 
     def parked(self, error: str) -> None:
-        """Given up on: kept with why, and never tried again until somebody replays it."""
+        """Given up on: stored with why, and never tried again until somebody replays it."""
         self.next_delivery_at = None
         self.delivery = {
             **self.delivery,

@@ -38,7 +38,7 @@ class BusIncomesMixin:
         Context: one per Feature and ApplicationService, the Features an ApplicationService runs
         included. It observes: it cannot change what the call answers, and one that raises is
         logged and reaches nothing else. A generation of this bus (`fresh`) hears it too. Every
-        bus of the process: `sincpro_framework.bus_pipeline.incomes.listeners.starts.subscribe(listener)`.
+        bus of the process: `sincpro_framework.bus_pipeline.incomes.listeners.start_listeners.subscribe(listener)`.
         """
         if listener is None:
             return lambda given: self.on_start(given, use_cases, when)

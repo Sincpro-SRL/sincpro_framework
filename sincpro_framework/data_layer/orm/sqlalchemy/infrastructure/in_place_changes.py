@@ -1,4 +1,4 @@
-"""A value changed inside — a key of a JSON object, an item of a list, a field of a model kept in
+"""A value changed inside — a key of a JSON object, an item of a list, a field of a model stored in
 a column — is written like a value assigned.
 
     invoice = unit.get(Invoice, invoice_id)
@@ -6,16 +6,16 @@ a column — is written like a value assigned.
     unit.save(invoice)                           # written, with its Updated event
 
 **Why the framework and not the project.** SQLAlchemy writes what was *assigned*: it never looks
-inside a value, so a change made in place is lost without a word — the save answers, the row keeps
-the old value. Its own answer is `MutableDict`/`MutableList`, which sees the first level only, and
+inside a value, so a change made in place is lost without a word — the save answers, the row still
+holds the old value. Its own answer is `MutableDict`/`MutableList`, which sees the first level only, and
 a model or a dataclass not at all. Every project would have to remember it, column by column.
 
-**How.** When a record is read, a copy of each value that can change inside is kept beside it.
+**How.** When a record is read, a copy of each value that can change inside is stored beside it.
 Before a write, each value still being the object that was read is compared with its copy, and a
 difference marks the column changed, with the copy as its value before — so the change tracking
 and the stamping see it as any other change. After the write, the copies are taken again.
 
-    read      the value · its copy                       kept on the record's state
+    read      the value · its copy                       stored on the record's state
     write     same object, unlike its copy → changed     a save, a flush, a commit
     written   copies taken again                         after the flush
 
@@ -150,20 +150,15 @@ def _copied(column: TypeEngine[Any], value: Any) -> Any:
     return copy.deepcopy(value)
 
 
-def _differs(column: TypeEngine[Any], value: Any, kept: Any) -> bool:
-    """Whether `value` is no longer what was kept. A value its type cannot serialize any more is
+def _differs(column: TypeEngine[Any], value: Any, copied: Any) -> bool:
+    """Whether `value` is no longer what was copied. A value its type cannot serialize any more is
     changed: the write says what is wrong with it."""
     if isinstance(column, TypedJson):
         try:
-            return column.adapter.dump_json(value, warnings=False) != kept
+            return column.adapter.dump_json(value, warnings=False) != copied
         except ValueError:
             return True
-    return value != kept
-
-
-def _before(column: TypeEngine[Any], kept: Any) -> Any:
-    """The value before, from its copy: a `TypedJson` copy is JSON, read back as its type."""
-    return column.adapter.validate_json(kept) if isinstance(column, TypedJson) else kept
+    return value != copied
 
 
 def _watched(session: Session) -> set[InstanceState[Any]]:
@@ -172,15 +167,15 @@ def _watched(session: Session) -> set[InstanceState[Any]]:
     return session.info.setdefault(WATCHED, set())
 
 
-def _kept(
+def _copy_values(
     session: Session, state: InstanceState[Any], keys: Iterable[str] | None = None
 ) -> None:
-    """Keeps a copy of each value of the record that can change inside — of `keys`, or of every
+    """Stores a copy of each value of the record that can change inside — of `keys`, or of every
     column that can hold one — and watches the record when it has one."""
     structured = _structured(state.mapper)
     if not structured:
         return
-    kept: dict[str, tuple[Any, Any]] = (
+    copies: dict[str, tuple[Any, Any]] = (
         {} if keys is None else dict(state.info.get(IN_PLACE, {}))
     )
     for key in structured if keys is None else keys:
@@ -189,11 +184,11 @@ def _kept(
             continue
         value = state.dict.get(key, NO_VALUE)
         if _changeable(value):
-            kept[key] = (value, _copied(column, value))
+            copies[key] = (value, _copied(column, value))
         else:
-            kept.pop(key, None)
-    if kept:
-        state.info[IN_PLACE] = kept
+            copies.pop(key, None)
+    if copies:
+        state.info[IN_PLACE] = copies
         _watched(session).add(state)
     elif IN_PLACE in state.info:
         del state.info[IN_PLACE]
@@ -202,17 +197,17 @@ def _kept(
 def _loaded(target: Any, context: Any) -> None:
     """The mapper's `load` hook: a record read by an `IN_PLACE` session gets its copies."""
     if context.session.info.get(IN_PLACE):
-        _kept(context.session, attributes.instance_state(target))
+        _copy_values(context.session, attributes.instance_state(target))
 
 
 def _refreshed(target: Any, context: Any, keys: Iterable[str] | None) -> None:
     """The mapper's `refresh` hook: the copies of the refreshed `keys` taken again."""
     if context.session.info.get(IN_PLACE):
-        _kept(context.session, attributes.instance_state(target), keys)
+        _copy_values(context.session, attributes.instance_state(target), keys)
 
 
 def _attached(session: Session, record: Any) -> None:
-    """A record read by another session keeps its copies, and is watched by this one."""
+    """A record read by another session still carries its copies, and is watched by this one."""
     state = attributes.instance_state(record)
     if session.info.get(IN_PLACE) and state.info.get(IN_PLACE):
         _watched(session).add(state)
@@ -239,17 +234,24 @@ def changed_in_place(session: Session, records: Iterable[Any] | None = None) -> 
         else [attributes.instance_state(one) for one in records]
     )
     for state in states:
-        kept: dict[str, tuple[Any, Any]] | None = state.info.get(IN_PLACE)
+        copies: dict[str, tuple[Any, Any]] | None = state.info.get(IN_PLACE)
         record = state.obj()
-        if not kept or record is None or state.session_id != session.hash_key:
+        if not copies or record is None or state.session_id != session.hash_key:
             continue
         structured = _structured(state.mapper)
-        for key, (read, copied) in kept.items():
+        for key, (read, copied) in copies.items():
             if state.dict.get(key, NO_VALUE) is not read or key in state.committed_state:
                 continue
-            if _differs(structured[key], read, copied):
+            column = structured[key]
+            if _differs(column, read, copied):
                 attributes.flag_modified(record, key)
-                state.committed_state[key] = _before(structured[key], copied)
+                # The value before, from its copy: a `TypedJson` copy is JSON, read back as
+                # its type.
+                state.committed_state[key] = (
+                    column.adapter.validate_json(copied)
+                    if isinstance(column, TypedJson)
+                    else copied
+                )
 
 
 def _before_flush(session: Session, _context: Any, _instances: Any) -> None:
@@ -263,7 +265,7 @@ def _after_flush(session: Session, _context: Any) -> None:
     """What a flush wrote is what a later change is compared with."""
     for record in (*session.new, *session.dirty):
         if goes_out(session, record):
-            _kept(session, attributes.instance_state(record))
+            _copy_values(session, attributes.instance_state(record))
 
 
 def watch_in_place(sessions: Any) -> None:

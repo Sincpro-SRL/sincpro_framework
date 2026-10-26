@@ -3,7 +3,7 @@ applying them in order, and written by appending new ones.
 
     @dataclass
     class Account(EventSourcedMixin, Entity):
-        event_base = BankingDomainEvent          the table its events are kept in
+        event_base = BankingDomainEvent          the table its events are stored in
         balance: int = 0
 
         def apply(self, event: DomainEvent) -> None:
@@ -19,9 +19,9 @@ applying them in order, and written by appending new ones.
     repository.save(account)                           the new events appended
 
 **`version` counts its events.** Each new event carries `entity_version` — the entity's version
-after it — and the store keeps one event per entity and version. Two writers who rebuilt the same
-version both try to append the same next one, and the second is a `StaleAggregate`: the same
-protection a row's `version` gives an entity that has one.
+after it — and the store holds one event per entity and version. Two writers who rebuilt the
+same version both try to append the same next one, and the second is a `StaleAggregate`: the
+same protection a row's `version` gives an entity that has one.
 
 A class used this way gives every field a default: it is built empty and its events fill it.
 """
@@ -38,11 +38,11 @@ class EventSourcedMixin:
     `rebuilt` replays them, and a save appends the ones not stored yet.
 
     Mixed in before `Entity`; the entity says how each event changes it in `apply` and names
-    where its events are kept in `event_base`. `version` is the number of events applied.
+    where its events are stored in `event_base`. `version` is the number of events applied.
     """
 
     event_base: ClassVar[type]
-    """The bounded context's base event class — the table its events are kept in."""
+    """The bounded context's base event class — the table its events are stored in."""
 
     version: int
     id: str

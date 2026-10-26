@@ -1,6 +1,6 @@
 """What the JSON-RPC wire raises; its codes are `errors`, the protocol's catalogue."""
 
-from sincpro_framework.auth.domain.exceptions import AuthError
+from sincpro_framework.auth import AuthError
 from sincpro_framework.ddd.exceptions import DuplicateAggregate
 from sincpro_framework.exceptions import ClientError, FailureKind
 
@@ -10,7 +10,7 @@ class MethodNotFound(ClientError):
     named in `data`."""
 
     def __init__(self, method: str):
-        """`method` is the name the request asked for, kept for the answer's `data`."""
+        """`method` is the name the request asked for, stored for the answer's `data`."""
         self.method = method
         super().__init__(method)
 

@@ -21,7 +21,7 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
     Grain,
-    Level,
+    GroupingLevel,
     Operator,
     Pagination,
 )
@@ -138,12 +138,14 @@ def test_a_provider_registers_the_grain_translation_for_its_engine():
     register_grain_translator("acmedb", by_hand)
     try:
         rendered = str(
-            grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "acmedb")
+            grouping_column(
+                Thing, GroupingLevel(field="made_at", grain=Grain.MONTH), "acmedb"
+            )
         )
         assert "my_trunc" in rendered
     finally:
         del GRAIN_TRANSLATORS["acmedb"]
 
     with pytest.raises(exceptions.ProgrammingError, match="register_grain_translator"):
-        grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "acmedb")
+        grouping_column(Thing, GroupingLevel(field="made_at", grain=Grain.MONTH), "acmedb")
     assert Operator.GT in Operator

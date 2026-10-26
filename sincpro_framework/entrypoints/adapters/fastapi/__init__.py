@@ -1,7 +1,7 @@
-"""REST on FastAPI (PRD_15 §2) — the `[fastapi]` extra. The generated routers, and the pieces a
-route of the project's uses to run the exact same path.
+"""REST on FastAPI (PRD_15 §2) — the `[fastapi]` extra. The generated routers `FastApiGateway`
+builds, and the pieces a route of the project's uses to run the exact same path.
 
-    from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway, bus_call
+    from sincpro_framework.entrypoints.adapters.fastapi import bus_call
 
 Context: FastAPI is imported only here — importing the framework, or `entrypoints.rest`'s
 wire-neutral route table, never needs it.
@@ -25,12 +25,6 @@ from sincpro_framework.entrypoints.adapters.fastapi.calling import (
     request_context,
 )
 from sincpro_framework.entrypoints.adapters.fastapi.exceptions import IdempotencyKeyMissing
-from sincpro_framework.entrypoints.adapters.fastapi.gateway import (
-    FastApiGateway,
-    FastApiWire,
-    operation_extra,
-    problem_responses,
-)
 from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     PROBLEM_JSON,
     Problem,
@@ -39,12 +33,16 @@ from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     install_problem_handlers,
     problem_of,
 )
+from sincpro_framework.entrypoints.adapters.fastapi.wire import (
+    FastApiWire,
+    operation_extra,
+    problem_responses,
+)
 
 __all__ = [
     "IDEMPOTENCY_KEY",
     "PROBLEM_JSON",
     "BusCall",
-    "FastApiGateway",
     "FastApiWire",
     "IdempotencyKeyMissing",
     "Problem",

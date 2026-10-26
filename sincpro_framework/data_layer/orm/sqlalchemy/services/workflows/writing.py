@@ -36,13 +36,14 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
 from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
     HIDDEN,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.repository_state import (
     RepositoryState,
 )
 from sincpro_framework.ddd.criteria import (
     Criteria,
-    conditions_of,
 )
 from sincpro_framework.ddd.entity import EventSourcedMixin, utc_now
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -133,8 +134,8 @@ class Writing(RepositoryState, Extends):
         )
         return after[-1] if len(after) > seen else None
 
-    def _not_kept(self, session: Session, events: list[Any]) -> list[Any]:
-        """The events not kept yet, each once — by id, in the order given.
+    def _not_stored(self, session: Session, events: list[Any]) -> list[Any]:
+        """The events not stored yet, each once — by id, in the order given.
 
         Context: an event-sourced entity hands its unsaved events on every save; one already
         in the event table (or twice in the batch) would break its primary key.
@@ -152,14 +153,14 @@ class Writing(RepositoryState, Extends):
                 fresh.append(event)
         return fresh
 
-    def _facts_kept(self, session: Session, records: list[Any]) -> None:
-        """What the records of this write recorded, kept in their context's event table in the
+    def _store_facts(self, session: Session, records: list[Any]) -> None:
+        """What the records of this write recorded, stored in their context's event table in the
         same session — after the flush, so the events recorded while flushing (change tracking's
         `EntityUpdated`) are among them. An event whose class has no event table stays in memory.
 
-        **Read, never taken.** The aggregate keeps its events — `pull_events()` still hands them
-        to whoever wants them. An event is kept once by its id, so saving the same aggregate
-        again keeps only what is new.
+        **Read, never taken.** The aggregate still holds its events — `pull_events()` still hands
+        them to whoever wants them. An event is stored once by its id, so saving the same
+        aggregate again stores only what is new.
         """
         events = [
             event
@@ -168,7 +169,7 @@ class Writing(RepositoryState, Extends):
             for event in one.recorded_events()
             if is_mapped_event(type(event))
         ]
-        fresh = self._not_kept(session, events)
+        fresh = self._not_stored(session, events)
         if fresh:
             session.add_all(fresh)
             with named(_named(fresh)):
@@ -203,7 +204,7 @@ class Writing(RepositoryState, Extends):
             session.add_all(batch)
             self._written(session, batch)
         plan.written()
-        self._facts_kept(session, [*plan.stored, *plan.removed])
+        self._store_facts(session, [*plan.stored, *plan.removed])
         return newness
 
     def _events_of_sourced(self, session: Session, records: list[Any]) -> list[Any]:
@@ -212,7 +213,7 @@ class Writing(RepositoryState, Extends):
         written: list[Any] = []
         for one in records:
             if isinstance(one, EventSourcedMixin):
-                written.extend(self._not_kept(session, one.unsaved_events()))
+                written.extend(self._not_stored(session, one.unsaved_events()))
             else:
                 written.append(one)
         return written
@@ -349,7 +350,7 @@ class Writing(RepositoryState, Extends):
             extension_writing.give_rows(session, record, extension)
 
     def archive(self, record: Any) -> None:
-        """Stamps when it left and keeps the row — one aggregate or several.
+        """Stamps when it left and leaves the row in place — one aggregate or several.
 
         What a business usually means by deleting: it has to stop appearing and cannot be
         lost, because invoices point at it. A reading leaves it out unless its criteria names
@@ -383,7 +384,7 @@ class Writing(RepositoryState, Extends):
                 f"{verb} writes every row its filter matches; a page cannot bound it — "
                 "narrow the filter instead"
             )
-        meta = describe(model)
+        meta = ModelIntrospection.describe(model)
         expression, dropped = meta.accept(self._asked(model, meta, criteria))
         if dropped:
             raise exceptions.ProgrammingError(
@@ -406,8 +407,8 @@ class Writing(RepositoryState, Extends):
 
         **Past the aggregate, on purpose.** No hook runs, no cascade, no change tracking, no
         version check — what Django's `update()` and Rails' `update_all` skip too. For a write
-        with no rule to keep: closing expired sessions, re-stamping a column after a migration.
-        What it keeps is what a stale copy needs to be refused later: `version` is raised and
+        with no rule to enforce: closing expired sessions, re-stamping a column after a
+        migration. What it still does is what a stale copy needs to be refused later: `version` is raised and
         `updated_at` stamped. The scope it was narrowed to and the archived apply as in a read;
         a page, or a condition the aggregate cannot answer, is refused.
 
@@ -415,7 +416,7 @@ class Writing(RepositoryState, Extends):
         2. The WHERE: the filter, the scope, the archived left out — refused for a page or a
            condition that cannot be answered.
         3. Refused when a value names something that is not a column, or one the framework
-           keeps — the identity, `created_at`, `version`, `updated_at`.
+           sets — the identity, `created_at`, `version`, `updated_at`.
         4. The values, with `version` raised by one and `updated_at` stamped now when the
            table has them.
         Final: one `UPDATE` in the call's session, and the number of rows it changed.
@@ -430,12 +431,17 @@ class Writing(RepositoryState, Extends):
             for prop in sqlalchemy.inspect(model).column_attrs
             if prop.key not in HIDDEN
         }
-        fixed = {describe(model).identity, "created_at", "version", "updated_at"}
+        fixed = {
+            ModelIntrospection.describe(model).identity,
+            "created_at",
+            "version",
+            "updated_at",
+        }
         wrong = sorted(name for name in values if name not in columns or name in fixed)
         if wrong:
             raise exceptions.ProgrammingError(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a column, "
-                "or one the framework keeps"
+                "or one the framework sets"
             )
         changes: dict[str, Any] = dict(values)
         if "version" in columns:
@@ -482,7 +488,7 @@ class Writing(RepositoryState, Extends):
         on: tuple[str, ...],
         overwrite: Sequence[str] | None,
     ) -> Upserted:
-        """One model's batch as one statement: refused if no upsert can write it, kept inside the
+        """One model's batch as one statement: refused if no upsert can write it, held inside the
         scope, one record per key, the hooks around it, and what came back counted.
 
         1. What cannot be upserted is refused before anything runs (`services/upsert.py`).
@@ -500,7 +506,7 @@ class Writing(RepositoryState, Extends):
             for prop in mapper.column_attrs
             if prop.key not in HIDDEN
         }
-        identity = describe(model).identity
+        identity = ModelIntrospection.describe(model).identity
         fixed = {identity, "created_at", "version", "updated_at"}
         upsert.refuse(
             model, table, mapper.inherits is not None, dialect, names, on, overwrite, fixed
@@ -512,12 +518,14 @@ class Writing(RepositoryState, Extends):
             self._fire("before_save", one)
         scope = self._scope.expression if self._scope is not None else None
         bound = (
-            sql_translator.where_clause(model, describe(model).accept(scope)[0])
+            sql_translator.where_clause(
+                model, ModelIntrospection.describe(model).accept(scope)[0]
+            )
             if scope is not None
             else None
         )
         scope_fields = (
-            {one.field for one in conditions_of(scope)} if scope is not None else set()
+            {one.field for one in scope.conditions()} if scope is not None else set()
         )
         now = utc_now()
         statement = upsert.statement(

@@ -17,20 +17,24 @@ from sincpro_framework import (
     exceptions,
 )
 from sincpro_framework.bus_pipeline.outcomes.events import ExecutionCompleted, ExecutionFailed
-from sincpro_framework.bus_pipeline.outcomes.listeners import completions, failures
+from sincpro_framework.bus_pipeline.outcomes.listeners import (
+    completion_listeners,
+    failure_listeners,
+)
 from sincpro_framework.context import InMemoryContexts, use_context
 from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.context.domain.keys import ContextKey
-from sincpro_framework.context.entrypoint.owner import BY_TENANT
+from sincpro_framework.context.domain.owner import Owner
 from sincpro_framework.pipelines import (
     Pipeline,
     PipelineRun,
+    PipelineRuns,
     PipelineState,
     Resume,
     StepStatus,
 )
-from sincpro_framework.pipelines import pipeline as pipeline_module
-from sincpro_framework.pipelines.mixins import bus_pipelines
+from sincpro_framework.pipelines.entrypoint import pipeline as pipeline_module
+from sincpro_framework.pipelines.services import recorder as recorder_module
 
 
 class CommandRunNightly(DataTransferObject):
@@ -70,8 +74,8 @@ class SiatDown(Exception):
 @pytest.fixture(autouse=True)
 def nobody_listens_after():
     yield
-    completions.clear()
-    failures.clear()
+    completion_listeners.clear()
+    failure_listeners.clear()
 
 
 class Shop:
@@ -123,11 +127,7 @@ class Shop:
 
     def runs(self, scope: dict[str, Any] | None = None, **ask: Any) -> list[PipelineRun]:
         with self.bus.context(scope or {}):
-            return (
-                use_context()
-                .pipelines(**ask)
-                .find(f"{self.bus.name}.{self.command.__name__}")
-            )
+            return PipelineRuns.of(**ask).find(f"{self.bus.name}.{self.command.__name__}")
 
 
 def test_a_pipeline_runs_its_steps_in_order_filled_by_the_names_of_the_fields():
@@ -332,7 +332,7 @@ def test_a_run_that_continues_goes_on_after_the_last_step_that_succeeded():
 def test_a_run_kept_under_another_recipe_starts_over_and_says_so(monkeypatch):
     said: list[str] = []
     monkeypatch.setattr(
-        "sincpro_framework.pipelines.recorder.logger",
+        "sincpro_framework.pipelines.services.recorder.logger",
         type("L", (), {"warning": said.append})(),
     )
     store = InMemoryContexts()
@@ -352,22 +352,26 @@ def test_a_run_kept_under_another_recipe_starts_over_and_says_so(monkeypatch):
 @pytest.mark.parametrize(
     ("scope", "by", "owner"),
     [
-        ({}, BY_TENANT, "tenant_id=,tenant_ids="),
+        ({}, Owner.BY_TENANT, "tenant_id=,tenant_ids="),
         (
             {"tenant_id": None, "user_id": None},
-            [*BY_TENANT, "user_id"],
+            [*Owner.BY_TENANT, "user_id"],
             "tenant_id=,tenant_ids=,user_id=",
         ),
-        ({"tenant_id": "acme"}, BY_TENANT, "tenant_id=acme,tenant_ids="),
-        ({"user_id": "ana"}, [*BY_TENANT, "user_id"], "tenant_id=,tenant_ids=,user_id=ana"),
+        ({"tenant_id": "acme"}, Owner.BY_TENANT, "tenant_id=acme,tenant_ids="),
+        (
+            {"user_id": "ana"},
+            [*Owner.BY_TENANT, "user_id"],
+            "tenant_id=,tenant_ids=,user_id=ana",
+        ),
         (
             {"tenant_id": "acme", "user_id": "ana"},
-            [*BY_TENANT, "user_id"],
+            [*Owner.BY_TENANT, "user_id"],
             "tenant_id=acme,tenant_ids=,user_id=ana",
         ),
         (
             {"tenant_ids": ["globex", "acme"], "user_id": "ana"},
-            [*BY_TENANT, "user_id"],
+            [*Owner.BY_TENANT, "user_id"],
             "tenant_id=,tenant_ids=acme|globex,user_id=ana",
         ),
     ],
@@ -416,7 +420,7 @@ def test_with_no_context_store_the_runs_are_kept_in_the_memory_of_the_process():
     with bare.context({"tenant_id": "memory-only"}):
         answer = bare(CommandRunNightly(run_id="r-1"))
         assert isinstance(answer, PipelineRun)
-        found = use_context().pipelines().find("pipe-bare.CommandRunNightly")
+        found = PipelineRuns.of().find("pipe-bare.CommandRunNightly")
 
     assert answer.state is PipelineState.SUCCEEDED
     assert [one.run_id for one in found] == ["r-1"]
@@ -439,7 +443,7 @@ def test_a_step_the_bus_does_not_answer_is_said_when_the_bus_is_built_and_refuse
     monkeypatch,
 ):
     said: list[str] = []
-    monkeypatch.setattr(bus_pipelines, "logger", type("L", (), {"warning": said.append})())
+    monkeypatch.setattr(recorder_module, "logger", type("L", (), {"warning": said.append})())
 
     class CommandUnknown(DataTransferObject):
         needs: str
@@ -459,7 +463,7 @@ def test_a_generation_of_the_bus_keeps_its_runs_too():
     generation(CommandRunNightly(run_id="r-1"))
 
     with generation.context({}):
-        found = use_context().pipelines().find("pipe-fresh.CommandRunNightly")
+        found = PipelineRuns.of().find("pipe-fresh.CommandRunNightly")
     assert [one.run_id for one in found] == ["r-1"]
 
 
@@ -520,7 +524,7 @@ def test_runs_at_the_same_time_each_see_only_their_own_run():
     assert len(seen) == 24
     assert all(handed == said for handed, said in seen)
     with bus.context({}):
-        kept = use_context().pipelines().find("pipe-many.CommandRunNightly")
+        kept = PipelineRuns.of().find("pipe-many.CommandRunNightly")
     assert sorted(one.run_id for one in kept) == [f"r-{number}" for number in range(8)]
     assert all(one.state is PipelineState.SUCCEEDED for one in kept)
 
@@ -529,7 +533,7 @@ def test_a_second_writer_of_the_same_run_makes_the_run_fail_instead_of_overwriti
     """Two replicas driving one run: the one whose version moved under it loses, out loud."""
 
     def another_replica(dto: Any) -> Any:
-        runs = use_context().pipelines()
+        runs = PipelineRuns.of()
         current = runs.read("pipe-two.CommandRunNightly", "r-1")
         assert current is not None
         runs.save(current, current.store_version)

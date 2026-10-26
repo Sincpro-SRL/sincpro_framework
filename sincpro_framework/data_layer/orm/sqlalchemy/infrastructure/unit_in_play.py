@@ -14,8 +14,8 @@ Spring calls `REQUIRED` and .NET's `TransactionScope` gives by default. A reposi
 two-phase commit this framework does not offer — that is the outbox's and the saga's job.
 
 A `ContextVar`, so a thread or an async task sees only the unit of work it opened; a worker
-thread started inside a block does not inherit it, which is what keeps one session from being
-used by two threads at once.
+thread started inside a block does not inherit it, which is what prevents one session from
+being used by two threads at once.
 """
 
 from collections.abc import Generator

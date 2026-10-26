@@ -41,10 +41,11 @@ from collections.abc import Iterable
 from contextvars import ContextVar
 from typing import Any
 
-from sincpro_framework.context.infrastructure.tree import chain_for
+from sincpro_framework.context import context_executions
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.editing.editing import recompute_whole
 from sincpro_framework.ddd.editing.preview import is_previewing
+from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
@@ -105,12 +106,6 @@ class _Hooks:
         _running.reset(self._token)
 
 
-def _is_hook_class(given: Any) -> bool:
-    """Whether `given` is a `Hook` class itself — the mistake of passing the class, not the
-    collection it is registered in."""
-    return isinstance(given, type) and issubclass(given, Hook)
-
-
 def refuse_wiring_as_a_record(records: "tuple[Any, ...]") -> None:
     """Refuses wiring that was handed in where aggregates go.
 
@@ -122,7 +117,13 @@ def refuse_wiring_as_a_record(records: "tuple[Any, ...]") -> None:
     Named for what to write instead, because the two stores do not agree on the position:
     `Repository(database, billing_hooks)` on the engine, `hooks=` here.
     """
-    wrong = [one for one in records if isinstance(one, (Hooks, Hook)) or _is_hook_class(one)]
+    wrong = [
+        one
+        for one in records
+        if isinstance(one, (Hooks, Hook))
+        # a `Hook` class itself: the class passed, not the collection it is registered in
+        or (isinstance(one, type) and issubclass(one, Hook))
+    ]
     if wrong:
         named = wrong[0].__name__ if isinstance(wrong[0], type) else type(wrong[0]).__name__
         raise exceptions.ProgrammingError(
@@ -167,8 +168,6 @@ def refuse_unarchivable(records: list[Any]) -> None:
     Checked for the whole batch first so a mixed list is refused whole rather than half
     archived — `archive` either applies to all of them or to none.
     """
-    from sincpro_framework.ddd.entity import ArchivableMixin
-
     wrong = {type(one).__name__ for one in records if not isinstance(one, ArchivableMixin)}
     if wrong:
         raise exceptions.ProgrammingError(
@@ -265,14 +264,14 @@ class IRepository(ReadsAggregates, WritesAggregates):
         says otherwise — the same as one recorded or published.
 
         An aggregate that declares `derivations` computes them first — the records inside it
-        before it (`recompute_whole`) — so the hooks see, and the store keeps, what a preview of
-        the same values showed. A derivation that reads a relation nobody loaded is skipped:
-        a save that worked without derivations still works.
+        before it (`recompute_whole`) — so the hooks see, and the store persists, what a
+        preview of the same values showed. A derivation that reads a relation nobody loaded is
+        skipped: a save that worked without derivations still works.
         """
         newness = [bool(getattr(one, "is_new", False)) for one in records]
         for one, is_new in zip(records, newness):
             if is_new and isinstance(one, DomainEvent):
-                for key, value in chain_for(one).items():
+                for key, value in context_executions.chain_for(one).items():
                     setattr(one, key, value)
             recompute_whole(one)
             self._fire("before_save", one)

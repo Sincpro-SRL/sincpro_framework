@@ -16,10 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Self
 
 from sincpro_framework.common.naming import registered_name
-from sincpro_framework.context.domain.execution import Execution
-from sincpro_framework.context.domain.keys import travelling
-from sincpro_framework.context.domain.node import ContextNode
-from sincpro_framework.context.infrastructure.tree import current
+from sincpro_framework.context import ContextNode, Execution, context_scopes, travelling
 from sincpro_framework.ddd.events import DomainEvent
 
 DESCRIBED_KEYS = ("execution_id", "causation_id")
@@ -56,7 +53,9 @@ def carried_context(node: ContextNode | None = None) -> dict[str, Any]:
     travel, a `Secret` as its value."""
     return {
         key: value
-        for key, value in travelling((node or current()).flattened()).items()
+        for key, value in travelling(
+            node.flattened() if node is not None else context_scopes.live()
+        ).items()
         if key not in DESCRIBED_KEYS
     }
 

@@ -33,10 +33,10 @@ from sincpro_framework.ddd.criteria import (
     CountMode,
     Criteria,
     Grouping,
-    Level,
+    GroupingLevel,
+    Node,
     Operator,
     Pagination,
-    combined,
 )
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -103,7 +103,7 @@ class Relation:
                      scope=Criteria(where=Condition(field="entity_type", value="project")))
 
     Declaring the order there is what makes «newest first» a property of the relation instead
-    of something every caller repeats: `scope=Criteria(order=parse_order("-created_at"))`.
+    of something every caller repeats: `scope=Criteria(order=Sort.parse("-created_at"))`.
     """
 
     def __init__(
@@ -220,13 +220,13 @@ def cut(
     """One parent's related records as a collection: cut to the limit, counted, with a cursor
     when there is more."""
     total = len(items)
-    kept = items if limit is None else items[:limit]
+    shown = items if limit is None else items[:limit]
     return EntityCollection(
-        items=tuple(kept),
+        items=tuple(shown),
         count=Count(value=total, exact=exact),
         cursor=(
-            node.pagination.next_from(kept[-1], sorts)
-            if kept and limit is not None and total > limit
+            node.pagination.next_from(shown[-1], sorts)
+            if shown and limit is not None and total > limit
             else None
         ),
     )
@@ -239,7 +239,7 @@ def _keys_for(
     here, there = key_pair(meta.identity, relation, many)
     held = {getattr(parent, here) for parent in parents} - {None}
     if relation.parent_field is None and many:
-        # The identity-anchored to-many keeps sending one key per parent, in order: they are
+        # The identity-anchored to-many still sends one key per parent, in order: they are
         # unique already, and the count of what was asked for is read off this list.
         return there, [getattr(parent, here) for parent in parents]
     return there, sorted(held, key=str)
@@ -255,7 +255,7 @@ def _reflected(node: Criteria, field: str, ids: list[Any], limit: int | None) ->
     keys = Condition(field=field, operator=Operator.IN, value=ids)
     if limit is None:
         return Criteria(
-            where=combined(keys, node.expression),
+            where=Node.combined(keys, node.expression),
             order=node.order,
             pagination=Pagination(limit=10**9),
             specification=node.specification,
@@ -263,10 +263,10 @@ def _reflected(node: Criteria, field: str, ids: list[Any], limit: int | None) ->
             meta=node.specification is not None,
         )
     return Criteria(
-        where=combined(keys, node.expression),
+        where=Node.combined(keys, node.expression),
         order=node.order,
         pagination=Pagination(limit=limit),
-        grouping=Grouping(group_by=(Level(field=field),)),
+        grouping=Grouping(group_by=(GroupingLevel(field=field),)),
         specification=node.specification,
         count=CountMode.NONE,
         meta=node.specification is not None,

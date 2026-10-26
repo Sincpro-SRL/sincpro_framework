@@ -14,7 +14,7 @@ from sqlalchemy import Column, ForeignKey, Integer, MetaData, Numeric, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework
-from sincpro_framework.data_layer.orm import Orphans, Relation, map_aggregates
+from sincpro_framework.data_layer.orm import Orphans, TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
@@ -76,7 +76,7 @@ map_aggregates(
     {Order: order_table, OrderLine: line_table},
     relations={
         Order: {
-            "lines": Relation.foreign_key(
+            "lines": TableRelation.foreign_key(
                 OrderLine, identified_by="order_id", orphans=Orphans.DELETE
             )
         }

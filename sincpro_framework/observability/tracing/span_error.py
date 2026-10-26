@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework.observability.failure import CodeLocation
+from sincpro_framework.observability.tracing.attributes import span_value
 from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE
 
 
@@ -80,8 +81,6 @@ def span_correlation(span: Any, keys: Mapping[str, Any]) -> None:
     """
     if not (OTEL_AVAILABLE and span is not None):
         return
-    from sincpro_framework.observability.tracing.attributes import span_value
-
     for key, value in keys.items():
         try:
             try:

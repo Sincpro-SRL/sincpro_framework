@@ -20,7 +20,7 @@ from sincpro_framework.ddd.criteria import (
     Offset,
     Operator,
     Pagination,
-    parse_order,
+    Sort,
 )
 from sincpro_framework.ddd.repositories.repository import IRepository
 
@@ -61,7 +61,7 @@ def test_walking_every_page_yields_each_record_exactly_once(store):
 
 def test_the_walk_survives_a_non_unique_ordering(store):
     """`size` repeats five times over, so the keyset has to lean on its tiebreaker."""
-    seen = walk(store, Criteria(pagination=Pagination(limit=4), order=parse_order("size")))
+    seen = walk(store, Criteria(pagination=Pagination(limit=4), order=Sort.parse("size")))
 
     assert len(seen) == ROW_COUNT
     assert len(set(seen)) == ROW_COUNT
@@ -70,7 +70,7 @@ def test_the_walk_survives_a_non_unique_ordering(store):
 def test_the_walk_survives_a_mixed_ordering(store):
     """Mixed directions have no single tuple comparison; the compiler expands them."""
     seen = walk(
-        store, Criteria(pagination=Pagination(limit=4), order=parse_order("size,-made_at"))
+        store, Criteria(pagination=Pagination(limit=4), order=Sort.parse("size,-made_at"))
     )
 
     assert len(seen) == ROW_COUNT
@@ -142,12 +142,12 @@ def test_a_page_knows_it_is_a_fragment_and_refuses_to_fold_itself(store):
 def test_ordering_by_a_nullable_column_is_refused(store):
     """The one refusal in the compiler: a NULL in a keyset column drops the row silently."""
     with pytest.raises(exceptions.InvalidCriteria, match="nullable"):
-        store.search(Things, Criteria(order=parse_order("owner")))
+        store.search(Things, Criteria(order=Sort.parse("owner")))
 
 
 def test_ordering_by_a_field_that_does_not_exist_is_refused(store):
     with pytest.raises(exceptions.InvalidCriteria, match="no such field"):
-        store.search(Things, Criteria(order=parse_order("nope")))
+        store.search(Things, Criteria(order=Sort.parse("nope")))
 
 
 def test_an_unknown_filter_is_dropped_reported_and_does_not_narrow(store):

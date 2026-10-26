@@ -16,20 +16,20 @@ decided by the providers, applied by the guard.
 
 Context: a use case or hook that declares nothing is not checked — `strict=True` refuses the
 use cases among them entered from outside, `enabled=False` checks nothing at all. Who acts is
-`current_identity()`; an entrypoint that verified the caller with `authenticate(...)` opens
-`as_identity(...)`. The provider that authenticated an identity is the one asked about it; an
+`security.identity`; an entrypoint that verified the caller with `authenticate(...)` opens
+`security.as_identity(...)`. The provider that authenticated an identity is the one asked about it; an
 identity opened by hand — a test, in-process code — answers with its `permissions`.
 """
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from weakref import WeakKeyDictionary, WeakSet
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import (
+    AccessDeclaration,
     AnyOf,
-    Declaration,
     Permission,
     Requirement,
     WhenDenied,
@@ -42,7 +42,7 @@ from sincpro_framework.auth.services.guard import (
     Declarations,
     HookGuard,
 )
-from sincpro_framework.context.infrastructure.tree import executing_context
+from sincpro_framework.context import context_scopes
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
@@ -50,35 +50,6 @@ from sincpro_framework.sincpro_logger import logger
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria
     from sincpro_framework.use_bus import UseFramework
-
-
-_guarding: "WeakKeyDictionary[UseFramework, AccessControl[Any]]" = WeakKeyDictionary()
-"""Which `AccessControl` guards each bus — and each generation made of it — so an entrypoint
-finds the one of the bus it dispatches to, with no argument to pass."""
-
-
-def access_control_of(bus: "UseFramework") -> "AccessControl[Any] | None":
-    """The `AccessControl` guarding `bus`, or `None` when nothing does — an entrypoint then
-    leaves the identity as it found it."""
-    return _guarding.get(bus)
-
-
-def access_controls_for(context: str) -> "list[AccessControl[Any]]":
-    """Every `AccessControl` of this process, those guarding a bus of `context` first — what a
-    call to the service hosting `context` asks for the credentials it sends.
-
-        # auth_b guards the "billing" bus, auth_s the "sales" bus and its generations
-        access_controls_for("sales")     ->  [auth_s, auth_b]
-        access_controls_for("payroll")   ->  [auth_b, auth_s]    # as registered
-
-    Context: an `AccessControl` guarding several buses — the generations `fresh()` makes —
-    is listed once, where it first appears.
-    """
-    found: list[AccessControl[Any]] = []
-    for bus, access in sorted(_guarding.items(), key=lambda item: item[0].name != context):
-        if access not in found:
-            found.append(access)
-    return found
 
 
 class AccessDescription(DataTransferObject):
@@ -105,7 +76,15 @@ class AccessControl[P: Permission]:
         auth = AccessControl[BillingPermission](providers=[jwt, api_keys], strict=True)
         auth.on(billing)
         auth.verify()     ->  []    # everything declared runs, nothing undeclared
+
+    Context: the class itself knows which object guards each bus (`of`, `guarding`), so an
+    entrypoint finds the one of the bus it dispatches to with no argument to pass.
     """
+
+    _guarding: ClassVar["WeakKeyDictionary[UseFramework, AccessControl[Any]]"] = (
+        WeakKeyDictionary()
+    )
+    """Which `AccessControl` guards each bus — and each generation made of it."""
 
     def __init__(
         self,
@@ -135,6 +114,32 @@ class AccessControl[P: Permission]:
         self._hooks: list[Hooks] = []
         self._hook_guard = HookGuard(self)
 
+    @classmethod
+    def of(cls, bus: "UseFramework") -> "AccessControl[Any] | None":
+        """The `AccessControl` guarding `bus`, or `None` when nothing does — an entrypoint then
+        leaves the identity as it found it."""
+        return cls._guarding.get(bus)
+
+    @classmethod
+    def guarding(cls, context: str) -> "list[AccessControl[Any]]":
+        """Every `AccessControl` of this process, those guarding a bus of `context` first —
+        what a call to the service hosting `context` asks for the credentials it sends.
+
+            # auth_b guards the "billing" bus, auth_s the "sales" bus and its generations
+            AccessControl.guarding("sales")     ->  [auth_s, auth_b]
+            AccessControl.guarding("payroll")   ->  [auth_b, auth_s]    # as registered
+
+        Context: an `AccessControl` guarding several buses — the generations `fresh()` makes —
+        is listed once, where it first appears.
+        """
+        found: list[AccessControl[Any]] = []
+        for _, access in sorted(
+            cls._guarding.items(), key=lambda item: item[0].name != context
+        ):
+            if access not in found:
+                found.append(access)
+        return found
+
     @property
     def identity(self) -> Identity:
         """Who the execution in progress acts as — never `None`."""
@@ -151,14 +156,14 @@ class AccessControl[P: Permission]:
                 ->  "billing.read (else skipped)"
             auth.requires()   ->  raises ProgrammingError("requires() names at least one ...")
 
-        The class is returned as it was, its declaration kept in `declarations`.
+        The class is returned as it was, its declaration stored in `declarations`.
         """
         if not requirements:
             raise exceptions.ProgrammingError("requires() names at least one permission")
 
         def declared[T: type](cls: T) -> T:
             return self.declarations.add(
-                cls, Declaration("requires", tuple(requirements), when_denied)
+                cls, AccessDeclaration("requires", tuple(requirements), when_denied)
             )
 
         return declared
@@ -172,11 +177,11 @@ class AccessControl[P: Permission]:
 
     def authenticated[T: type](self, cls: T) -> T:
         """Anyone authenticated, whatever they may do."""
-        return self.declarations.add(cls, Declaration("authenticated"))
+        return self.declarations.add(cls, AccessDeclaration("authenticated"))
 
     def public[T: type](self, cls: T) -> T:
         """Anyone, authenticated or not — what a strict `AccessControl` needs to be told."""
-        return self.declarations.add(cls, Declaration("public"))
+        return self.declarations.add(cls, AccessDeclaration("public"))
 
     # Authenticating
 
@@ -300,17 +305,17 @@ class AccessControl[P: Permission]:
     def refusal(
         self,
         identity: Identity,
-        declaration: Declaration,
+        declaration: AccessDeclaration,
         what: str,
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may.
 
-            refusal(anyone, Declaration("public"), "IssueInvoice")          ->  None
-            refusal(ANONYMOUS, Declaration("authenticated"), "IssueInvoice")
+            refusal(anyone, AccessDeclaration("public"), "IssueInvoice")          ->  None
+            refusal(ANONYMOUS, AccessDeclaration("authenticated"), "IssueInvoice")
                 ->  Unauthenticated("authenticate to run IssueInvoice")
-            refusal(user_without_issue, Declaration("requires", (ISSUE,)), "IssueInvoice")
+            refusal(user_without_issue, AccessDeclaration("requires", (ISSUE,)), "IssueInvoice")
                 ->  PermissionDenied("user:42", "billing.invoice.issue")
 
         Context: public and the system pass first; nobody is refused before any provider is
@@ -332,7 +337,7 @@ class AccessControl[P: Permission]:
         identity = current_identity()
         if identity.kind == IdentityKind.SYSTEM:
             return True
-        return self._denial(identity, permission, resource, executing_context()) is None
+        return self._denial(identity, permission, resource, context_scopes.live()) is None
 
     def check(self, permission: P, resource: Any = None) -> None:
         """`allows`, raising `PermissionDenied` — or `Unauthenticated` for nobody — when not.
@@ -348,7 +353,7 @@ class AccessControl[P: Permission]:
             return
         if identity.is_anonymous:
             raise exceptions.Unauthenticated(f"authenticate to {permission.value}")
-        denied = self._denial(identity, permission, resource, executing_context())
+        denied = self._denial(identity, permission, resource, context_scopes.live())
         if denied is not None:
             raise denied
 
@@ -371,7 +376,7 @@ class AccessControl[P: Permission]:
             return [permission.value in identity.permissions] * len(resources)
         try:
             return provider.permitted(
-                identity, permission.value, resources, executing_context()
+                identity, permission.value, resources, context_scopes.live()
             )
         except exceptions.PermissionDenied:
             return [False] * len(resources)
@@ -412,7 +417,7 @@ class AccessControl[P: Permission]:
         bus.interceptor(sequence=GUARD_SEQUENCE)(BusGuard(self, bus))
         bus.add_dependency("auth", self)
         self._buses.add(bus)
-        _guarding[bus] = self
+        AccessControl._guarding[bus] = self
 
     def on(self, target: "UseFramework | Hooks") -> None:
         """Guard every use case of a bus — the bus not built yet — and inject this object in its
@@ -425,12 +430,12 @@ class AccessControl[P: Permission]:
         1. Disabled: a warning is logged — the target is wired anyway, and checks nothing.
         2. A `Hooks` collection:
            2.1 one already guarded is a `ProgrammingError`;
-           2.2 else the hook guard is set as its gate and the collection kept.
+           2.2 else the hook guard is set as its gate and the collection stored.
         3. A bus already guarded is a `ProgrammingError`.
         4. `attach` is registered as an extension of the bus — run on it and on every
            generation made of it, so the guard and `auth` reach each.
         5. Each log line of the bus gets the `identity` of who acts.
-        Final: the bus is kept among the roots this object guards.
+        Final: the bus is stored among the roots this object guards.
         """
         if not self.enabled:
             logger.warning("access control is disabled: nothing it guards is checked")
@@ -448,11 +453,11 @@ class AccessControl[P: Permission]:
 
     # Describing — read without building a bus nor closing a collection
 
-    def _use_cases(self) -> dict[str, Declaration | None]:
+    def _use_cases(self) -> dict[str, AccessDeclaration | None]:
         """What each use case of every guarded bus declared, by its Command's dotted name —
         `None` for one that declared nothing; a replaced use case answers its replacement's.
         """
-        declared: dict[str, Declaration | None] = {}
+        declared: dict[str, AccessDeclaration | None] = {}
         for bus in list(self._buses):
             for command, handler in bus.handlers().items():
                 declared[f"{command.__module__}.{command.__qualname__}"] = (
@@ -460,10 +465,10 @@ class AccessControl[P: Permission]:
                 )
         return declared
 
-    def requirements_of(self, cls: type) -> Declaration | None:
+    def requirements_of(self, cls: type) -> AccessDeclaration | None:
         """What a Command's use case, a handler or a hook declared — `None` for nothing.
 
-            auth.requirements_of(CommandIssueInvoice)  ->  Declaration("requires", (ISSUE,))
+            auth.requirements_of(CommandIssueInvoice)  ->  AccessDeclaration("requires", (ISSUE,))
             auth.requirements_of(IssueInvoice)         ->  the same, asked of the handler
             auth.requirements_of(QueryHealth)          ->  None    # declared nothing
 

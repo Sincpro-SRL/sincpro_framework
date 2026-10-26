@@ -58,7 +58,7 @@ class InMemoryEngine(MigrationEngine):
         return self._positions.get(chain.key, Position(None))
 
     def record(self, chain: Chain, position: Position) -> None:
-        """The position kept in the dict, under the chain's key."""
+        """The position stored in the dict, under the chain's key."""
         self._positions[chain.key] = position
 
     def apply(self, chain: Chain, step: Step) -> None:

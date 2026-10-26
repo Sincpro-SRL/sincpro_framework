@@ -14,8 +14,8 @@ import sys
 
 sys.modules["sqlalchemy"] = None
 
-from sincpro_framework.ddd import EntityCollection, Criteria, Entity, Pagination, matches
-from sincpro_framework.ddd.criteria import Condition, Operator
+from sincpro_framework.ddd import EntityCollection, Criteria, Entity, Pagination
+from sincpro_framework.ddd.criteria import Condition, Evaluation, Operator
 
 page = EntityCollection(items=("a", "b"))
 asked = Criteria(where=Condition(field="size", operator=Operator.GT, value=1), pagination=Pagination(limit=2))

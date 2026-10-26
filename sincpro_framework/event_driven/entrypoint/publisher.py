@@ -5,55 +5,17 @@
     publisher.publish(event, ResponseDTO)          →  ResponseDTO: wait for the subscriber's answer
     await publisher.get_async_publisher().publish(event, ResponseDTO)
 
-The typed form is the same promise `UseFramework.__call__` makes for a command: the caller
-names the type it expects and gets it back typed. It only holds where somebody can answer in
-the same call — a `SyncQueue` with exactly one bus for that event. A `BackgroundQueue` cannot
-answer from another process, and two buses have no one answer, so both are refused rather than
-guessed.
-
-An event published inside an execution goes out caused by it and in its flow (`causation_id`,
-`correlation_id`), unless it already says otherwise — as a copy; the one handed in is untouched.
+The work is `EventPublication`'s: refusing what is not a fact, chaining the event to the
+execution in play, and the one answer a typed publish promised.
 """
 
-import dataclasses
 from typing import Any, TypeVar, overload
 
-from sincpro_framework import exceptions
-from sincpro_framework.context.infrastructure.tree import chain_for
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.event_driven.domain.queue import Queue
+from sincpro_framework.event_driven.services.publication import EventPublication
 
 Response = TypeVar("Response")
-
-
-def _one_answer(queue: Queue, event: DomainEvent, answers: Any) -> Any:
-    """The single answer a typed publish promised, or the reason there is none."""
-    if not isinstance(answers, list):
-        raise exceptions.ProgrammingError(
-            f"{type(queue).__name__} cannot answer in the same call; "
-            "publish(event) without a return type"
-        )
-    if len(answers) != 1:
-        raise exceptions.ProgrammingError(
-            f"{event.name} was answered by {len(answers)} subscribers; a typed publish "
-            "needs exactly one"
-        )
-    return answers[0]
-
-
-def refuse_orders(event: Any) -> None:
-    """Refuses anything that is not a fact, by name rather than by what it lacks.
-
-    A `DataTransferObject` handed here used to fail deep inside the queue with
-    `'CommandStartRun' object has no attribute 'name'` — true, and no help at all about why a
-    command has no business being published.
-    """
-    if not isinstance(event, DomainEvent):
-        raise exceptions.ProgrammingError(
-            f"{type(event).__name__} is not a DomainEvent, and a queue carries facts rather "
-            "than orders: a command is asked of one bus directly, `bus(command)`. If this is "
-            "meant to be a fact, make it a DomainEvent and give it a wire name"
-        )
 
 
 class AsyncPublisher:
@@ -62,6 +24,7 @@ class AsyncPublisher:
     def __init__(self, queue: Queue) -> None:
         """Publish into `queue`."""
         self.queue = queue
+        self._publication = EventPublication(queue)
 
     @overload
     async def publish(self, event: DomainEvent) -> None: ...
@@ -72,9 +35,7 @@ class AsyncPublisher:
     async def publish(self, event: DomainEvent, return_type: Any = None) -> Any:
         """The event into the queue, awaited; and, when a type is named, the one answer back
         — as `Publisher.publish`."""
-        refuse_orders(event)
-        answers = await self.queue.aput(dataclasses.replace(event, **chain_for(event)))
-        return None if return_type is None else _one_answer(self.queue, event, answers)
+        return await self._publication.aput(event, return_type)
 
 
 class Publisher:
@@ -83,6 +44,7 @@ class Publisher:
     def __init__(self, queue: Queue) -> None:
         """Publish into `queue` — which one decides whether an answer can come back."""
         self.queue = queue
+        self._publication = EventPublication(queue)
 
     @overload
     def publish(self, event: DomainEvent) -> None: ...
@@ -100,9 +62,7 @@ class Publisher:
         and it is asked directly — `bus(CommandStartRun(...))`. What goes out here already
         happened, which is why everybody who hears it may react and nobody has to.
         """
-        refuse_orders(event)
-        answers = self.queue.put(dataclasses.replace(event, **chain_for(event)))
-        return None if return_type is None else _one_answer(self.queue, event, answers)
+        return self._publication.put(event, return_type)
 
     def get_async_publisher(self) -> "AsyncPublisher":
         """The same publisher for an `async def` caller."""

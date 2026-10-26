@@ -1,7 +1,7 @@
 """What a consumer's test suite needs from the framework: doubles for dependencies, a queue
-that keeps what was published, an identity to act as, the contracts an adapter proves itself
-by, and checks that keep the import graph, the layers and — for a team that wants it — each
-context's settings honest.
+that records what was published, an identity to act as, the contracts an adapter proves itself
+by, and checks that verify the import graph, the layers and — for a team that wants it — each
+context's settings.
 
     with override_dependencies(sales, partner_lookup=FakePartnerLookup()):    # a double
         sales(CommandCreateContact(name="Ana"))
@@ -12,12 +12,10 @@ context's settings honest.
     class TestRedisKeyValue(KeyValueStoreContract):                        # prove an adapter
         def make_store(self): return RedisKeyValue(fakeredis.FakeRedis())
 
-    def test_architecture():                                                 # keep it honest
+    def test_architecture():                                                 # a CI guard
         assert import_cycles("my_sdk") == [] and layer_violations("my_sdk") == []
         assert unregistered_dependencies(sales) == {}
 """
-
-from sincpro_framework.entrypoints.adapters.cron.adapters import ManualClock
 
 from .analysis.architecture import (
     ImportCycle,
@@ -31,6 +29,7 @@ from .contracts.caching_strategies import CodecContract, EvictionContract, Fresh
 from .contracts.idempotency_records import IdempotencyRecordsContract
 from .contracts.key_value_store import KeyValueStoreContract
 from .doubles.auth import RecordingProvider, granting
+from .doubles.clock import ManualClock
 from .doubles.dependencies import override_dependencies, unregistered_dependencies
 from .doubles.events import RecordingQueue
 

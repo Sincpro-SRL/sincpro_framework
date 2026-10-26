@@ -12,7 +12,7 @@ def entity_columns(datetime_type: TypeEngine | None = None) -> list[Column]:
         out     id TEXT PRIMARY KEY · created_at NOT NULL · updated_at · version INTEGER NOT NULL
 
     `datetime_type` is what a timestamp is stored as — a real `DateTime` by default, or a
-    project's own decorator when its tables predate this layer and keep ISO text.
+    project's own decorator when its tables predate this layer and store ISO text.
     """
     moment = datetime_type if datetime_type is not None else DateTime(timezone=True)
     return [

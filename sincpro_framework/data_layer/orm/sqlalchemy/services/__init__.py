@@ -2,7 +2,7 @@
 
     atomic       one job each — the data mapper (the mapping API a project writes its
                  tables with, exported by `sincpro_framework.data_layer.orm`), the SQL
-                 translator, the relation resolver, the cascade, the upsert, `describe`
+                 translator, the relation resolver, the cascade, the upsert, `ModelIntrospection.describe`
     workflows/   what orchestrates them — `UnitOfWork`, `Reading`, `Writing` over a shared
                  `RepositoryState`
 

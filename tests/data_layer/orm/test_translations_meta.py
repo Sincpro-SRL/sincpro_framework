@@ -18,7 +18,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import Tra
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator, Pagination
 from sincpro_framework.ddd.entity import Entity, Translated
 from sincpro_framework.ddd.entity.entity_meta import FieldType
@@ -106,7 +108,7 @@ def invoices() -> Repository:
 
 
 def test_the_definition_carries_the_words_exactly_as_the_class_said_them():
-    meta = describe(Invoice)
+    meta = ModelIntrospection.describe(Invoice)
 
     assert meta.aggregate == "Invoice"
     assert meta.name == Invoice.translations()
@@ -115,14 +117,14 @@ def test_the_definition_carries_the_words_exactly_as_the_class_said_them():
 
 
 def test_an_enum_field_publishes_its_values_as_choices():
-    choices = describe(Invoice).fields["status"].choices
+    choices = ModelIntrospection.describe(Invoice).fields["status"].choices
 
     assert choices == ["draft", "posted"]
-    assert describe(Invoice).fields["status"].type is FieldType.TEXT
+    assert ModelIntrospection.describe(Invoice).fields["status"].type is FieldType.TEXT
 
 
 def test_an_enum_names_the_field_and_each_of_its_values_on_a_mapped_aggregate():
-    fields = describe(Invoice).fields
+    fields = ModelIntrospection.describe(Invoice).fields
 
     assert fields["priority"].label == {"default": "Priority", "es": "Prioridad"}
     assert fields["priority"].choice_labels == {
@@ -134,7 +136,7 @@ def test_an_enum_names_the_field_and_each_of_its_values_on_a_mapped_aggregate():
 
 
 def test_the_definition_travels_as_plain_json():
-    dumped = describe(Invoice).model_dump(mode="json")
+    dumped = ModelIntrospection.describe(Invoice).model_dump(mode="json")
 
     assert dumped["name"] == {"default": "Invoice", "es": "Factura"}
     assert dumped["fields"]["number"]["label"]["es"] == "Número"
@@ -143,7 +145,7 @@ def test_the_definition_travels_as_plain_json():
 def test_a_class_with_no_translator_is_named_after_itself():
     map_aggregates(own, {Bare: bare_table})
 
-    assert describe(Bare).name == {"default": "Bare"}
+    assert ModelIntrospection.describe(Bare).name == {"default": "Bare"}
 
 
 def test_a_translated_column_round_trips_and_is_searched_in_every_language(invoices):
@@ -159,5 +161,5 @@ def test_a_translated_column_round_trips_and_is_searched_in_every_language(invoi
     )
 
     assert [one.number for one in found] == ["F-1"]
-    assert describe(Invoice).fields["title"].type is FieldType.TRANSLATED
-    assert describe(Invoice).fields["title"].sortable is False
+    assert ModelIntrospection.describe(Invoice).fields["title"].type is FieldType.TRANSLATED
+    assert ModelIntrospection.describe(Invoice).fields["title"].sortable is False

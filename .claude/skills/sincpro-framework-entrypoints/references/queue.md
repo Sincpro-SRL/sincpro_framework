@@ -9,7 +9,7 @@ this is what you use when a broker is also a door into your Commands. Full depth
 ```python
 from faststream import FastStream
 from faststream.kafka import KafkaBroker
-from sincpro_framework.entrypoints.adapters.queue import QueueGateway
+from sincpro_framework.entrypoints import QueueGateway
 
 broker = KafkaBroker("kafka:9092")
 gateway = QueueGateway(broker, [billing, accounting])
@@ -76,8 +76,8 @@ Binary-mode CloudEvents 1.0: `ce_id`, `ce_source`, `ce_type`, `ce_subject`, `ce_
 `ce_correlationid`, `ce_causationid`, plus `traceparent`. A producer stamps them:
 
 ```python
-from sincpro_framework.entrypoints.adapters.queue import cloud_event_headers
-headers = cloud_event_headers(command, source="urn:svc:sales", id=request_id)
+from sincpro_framework.event_driven import Envelope
+headers = Envelope.headers_for(command, source="urn:svc:sales", id=request_id)
 await broker.publish(command.model_dump_json().encode(), "billing.invoices.issue", headers=headers)
 ```
 
@@ -93,4 +93,4 @@ boundary — on RabbitMQ use `QueueOptions(identify=rabbit_user_id)`.
 | `gateway.build()` / `consume(message, as_=, decode=, channel=)` | subscriptions / full control (answers a `Verdict`) |
 | `gateway.surface()`, `verify()`, `manifest()`, `asyncapi()` | the surface; AsyncAPI 3.0 |
 | `QueueOptions(inbox, max_attempts, retry_by, dead_letter_by, dead_letter_suffix, time_limit, in_progress_for, keep_for, expires_after, identify, subscription_of)` | how the wire settles |
-| `cloud_event_headers(...)`, `Envelope.of(headers)`, `Verdict`, `Settlement` | the envelope and verdict |
+| `Envelope.headers_for(...)`, `Envelope.of(headers)` (`sincpro_framework.event_driven`), `Verdict`, `Settlement` | the envelope and verdict |

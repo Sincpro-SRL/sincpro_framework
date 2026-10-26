@@ -13,11 +13,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework.common.serialization import read_values, values_of
-from sincpro_framework.context.domain.keys import ContextKey
+from sincpro_framework.context import ContextKey
 from sincpro_framework.sincpro_logger import logger
 
 
-def _travelling(context: Mapping[str, Any]) -> dict[str, Any]:
+def _json_writable(context: Mapping[str, Any]) -> dict[str, Any]:
     """Each context value that JSON can write — one that cannot (a lock, a connection) stays
     here, and said."""
     written: dict[str, Any] = {}
@@ -83,7 +83,7 @@ class Payload:
         if self.causation_id:
             written[ContextKey.CAUSATION_ID] = self.causation_id
         if self.context:
-            written["context"] = _travelling(self.context)
+            written["context"] = _json_writable(self.context)
         return json.dumps(written, separators=(",", ":")).encode()
 
     @classmethod

@@ -23,7 +23,7 @@ span-attributes) and PRD_03 in the framework repo.
   context, use case, outcome, `trace_id`), with no code per use case.
 - **Tooling, not policy.** The framework adds no security or PII restrictions: any context key and
   any span attribute is accepted, nothing is refused for its name or content. What a service puts
-  on its telemetry is its decision; `hide_in_logs` is the tool to keep a key off every signal.
+  on its telemetry is its decision; `hide_in_logs` is the tool to exclude a key from every signal.
 - **It is not** a collector, a dashboard, an audit trail (use domain events), or an APM agent for
   the HTTP server (the `process` door covers the transport).
 - **Do not use** metric labels for values without bound (a customer, an invoice number): put those
@@ -39,11 +39,11 @@ span-attributes) and PRD_03 in the framework repo.
 | `ObservabilityIdentity` | who the **service** is: artifact, version, release, bus | DTO | `sincpro_framework.observability` |
 | `bus.with_trace(carrier=...)` / `bus.with_parent_trace()` | adopt an incoming `traceparent` / the host's active span | function | `UseFramework` methods |
 | `bus.context({...})` | the execution context — the source of correlation keys | function | `UseFramework` method |
-| `UseFramework(hide_in_logs=, metric_labels=)` | keys kept off every signal / context keys on every series | setting | `sincpro_framework` |
+| `UseFramework(hide_in_logs=, metric_labels=)` | keys excluded from every signal / context keys on every series | setting | `sincpro_framework` |
 | `bus.ignore_sentry_exceptions(*types)` | these are answers, not faults: no GlitchTip, an `info` line, `sincpro.fault="false"` (a `ClientError` / `DomainError` already is) — the kind stays in `sincpro.outcome` | setting | `UseFramework` method |
 | `bus.report_sentry_exceptions(*types)` | these are faults even if they are a `ClientError` / `DomainError`: GlitchTip, an `error` line, `sincpro.fault="true"` | setting | `UseFramework` method |
 | `traces` → `@traces.attributes(..., namespace=)` / `traces.annotate({...})` | business fields on the use case's span | decorator / function | `sincpro_framework.observability` |
-| `of(X).field` / `of(Ctx)["key"]` | a checked reference to a Command/Response field or a context key | function | `sincpro_framework.observability` (same object in `.metrics`) |
+| `of(X).field` / `of(Ctx)["key"]` | a checked reference to a Command/Response field or a context key | function | `sincpro_framework.observability.metrics` |
 | `metrics` (`Metrics`) | the process's metrics: decorators, instruments, recorder choice | registry | `sincpro_framework.observability.metrics` |
 | `@metrics.counts` / `.sums` / `.measures` | declared metrics, recorded on success | decorator | same |
 | `metrics.counter` / `.up_down` / `.histogram` / `.timer` | instruments declared on the class, recorded in `execute` | function | same |
@@ -53,10 +53,10 @@ span-attributes) and PRD_03 in the framework repo.
 | `OtelRecorder` | OTel meter (host's or OTLP) | adapter (`[opentelemetry]`) | `sincpro_framework.observability.metrics.adapters.otel` |
 | `RecorderContract` | proves a recorder of yours | port (test contract) | `sincpro_framework.observability.metrics.testing` |
 | GlitchTip/Sentry client, OTLP tracer provider | built per bus, internal | adapter (`[sentry]`, `[opentelemetry]`) | none — configured by env |
-| `APP_RELEASE`, `TENANT`, `SENTRY_PYTHON_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_METRICS_EXPORTER` (alias `SINCPRO_METRICS_BACKEND`), `OTEL_TRACES_EXPORTER`, `OTEL_SDK_DISABLED`, `OTEL_RESOURCE_ATTRIBUTES`, `SINCPRO_FRAMEWORK_LOG_LEVEL` | the framework's own settings | setting | environment / settings YAML |
+| `APP_RELEASE`, `TENANT`, `SENTRY_PYTHON_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_METRICS_EXPORTER` (or `SINCPRO_METRICS_BACKEND`), `OTEL_TRACES_EXPORTER`, `OTEL_SDK_DISABLED`, `OTEL_RESOURCE_ATTRIBUTES`, `SINCPRO_FRAMEWORK_LOG_LEVEL` | the framework's own settings | setting | environment / settings YAML |
 
 Look-alikes: `ObservabilityIdentity` (the service) is not `auth.Identity` (the caller — whose
-`tenant` and `subject` feed `tenant`/`user_id`). `hide_in_logs` keeps a key off **all four**
+`tenant` and `subject` feed `tenant`/`user_id`). `hide_in_logs` excludes a key from **all four**
 signals, not only logs. `metric_labels` puts a context key on every series; `by=` labels one
 declared metric. `traces.annotate` reaches only the span; `bus.context`/`self.context` reach every
 signal. `with_trace` opens a root span under the bus; `with_parent_trace` makes the bus span a
@@ -68,9 +68,11 @@ direct child of the host's.
 
 - `api.py` the two doors (`Observability` per bus, module-level `process`); `correlation.py` the
   keys on every signal; `registry.py` providers and clients by bus; `tracing/`, `errors/` the
-  OpenTelemetry and Sentry adapters; `metrics/` — `domain/` (instruments, `Recorder` port),
-  `adapters/` (`in_memory` stdlib; `prometheus`, `otel` optional), `entrypoint/` (decorators),
-  `infrastructure/` (recorder choice, per-run measurement).
+  OpenTelemetry and Sentry adapters; `metrics/` — `domain/` (instruments, field paths, `Recorder` port),
+  `adapters/` (`in_memory` stdlib; `prometheus`, `otel` optional), `services/` (per-run
+  measurement, declaring, labels, outcomes), `entrypoint/` (the `metrics` facade),
+  `infrastructure/` (the active recorder, the declarations by class). Other packages measure
+  through `metrics.emit(...)`, never the active recorder.
 - `opentelemetry`, `sentry_sdk` and `prometheus_client` are optional extras, imported only there.
   Missing, or with no endpoint/DSN, every signal but logs is a no-op; measuring never fails a use
   case.
@@ -170,7 +172,8 @@ an `info` line and nothing more. `bus.ignore_sentry_exceptions(...)` and
 ## Spans and correlation
 
 ```python
-from sincpro_framework.observability import of, traces
+from sincpro_framework.observability import traces
+from sincpro_framework.observability.metrics import of
 
 @billing.feature(CommandIssueInvoice)
 @traces.attributes(of(CommandIssueInvoice).customer_nit, namespace="billing",

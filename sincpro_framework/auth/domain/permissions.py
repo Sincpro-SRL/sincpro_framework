@@ -44,7 +44,7 @@ type Requirement = Permission | AnyOf
 
 
 @dataclass(frozen=True)
-class Declaration:
+class AccessDeclaration:
     """What a use case or a hook declared: `public`, `authenticated`, or the requirements it
     needs, and what it does when they are missing."""
 
@@ -55,9 +55,9 @@ class Declaration:
     def __str__(self) -> str:
         """How `describe()` and the logs say it.
 
-        Declaration("public")                                   ->  "public"
-        Declaration("requires", (A, AnyOf((B, C))))             ->  "a and b or c"
-        Declaration("requires", (A,), WhenDenied.SKIP)          ->  "a (else skipped)"
+        AccessDeclaration("public")                                   ->  "public"
+        AccessDeclaration("requires", (A, AnyOf((B, C))))             ->  "a and b or c"
+        AccessDeclaration("requires", (A,), WhenDenied.SKIP)          ->  "a (else skipped)"
         """
         if self.kind != "requires":
             return self.kind

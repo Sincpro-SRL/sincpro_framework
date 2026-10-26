@@ -5,9 +5,9 @@ a module added."""
 import pytest
 
 from sincpro_framework import UseFramework, exceptions
+from sincpro_framework.context.adapters.stores import InMemoryContexts
 from sincpro_framework.ddd import Get, ResponsePaginatedQuery, ResponseRecord, Search
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
-from sincpro_framework.store.adapters.stores import InMemoryContexts
 
 from .world import World
 

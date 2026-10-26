@@ -33,8 +33,7 @@ from sincpro_framework.entrypoints.adapters.queue.flavours import (
     Flavour,
     RetryBy,
 )
-from sincpro_framework.event_driven.adapters.aws.attributes import HEADERS_ATTRIBUTE
-from sincpro_framework.event_driven.adapters.envelope import EVENT_HEADER
+from sincpro_framework.event_driven import EVENT_HEADER, HEADERS_ATTRIBUTE
 from sincpro_framework.sincpro_logger import logger
 
 
@@ -225,11 +224,11 @@ class SqsBroker:
             async def handle(delivery: SqsDelivery) -> None: ...
             broker.queues_read                      ->  ["billing-invoice-v1-issued"]
 
-        Kept until `start`; the handler is handed back unchanged.
+        Held until `start`; the handler is handed back unchanged.
         """
 
         def subscribed(handler: Callable[..., Any]) -> Callable[..., Any]:
-            """Keep the handler for `start` to poll, and hand it back unchanged."""
+            """Register the handler for `start` to poll, and hand it back unchanged."""
             self._subscriptions.append((channel, handler, max_workers or 1))
             return handler
 

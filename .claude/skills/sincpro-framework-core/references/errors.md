@@ -82,7 +82,7 @@ Two consequences that give no error signal:
   catch-all global handler turns a missing registration into an ordinary answer.
 - Expected traffic (validation, "already exists", auth, idempotency refusals) raises a `ClientError`
   or a `DomainError`: an answer, not a fault — not sent to Sentry, logged at info,
-  `sincpro.fault="false"`, its kind kept in `sincpro.outcome`. `bus.ignore_sentry_exceptions(...)`
+  `sincpro.fault="false"`, its kind recorded in `sincpro.outcome`. `bus.ignore_sentry_exceptions(...)`
   (an `isinstance` match) does the same for other errors, `bus.report_sentry_exceptions(...)` the
   reverse. Handlers still run; a fault is reported even when a handler answers it. An error-rate
   alert reads `sincpro_fault="true"`.

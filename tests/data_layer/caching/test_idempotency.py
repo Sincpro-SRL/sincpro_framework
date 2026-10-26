@@ -24,9 +24,8 @@ from sincpro_framework.data_layer.caching import (
     KeyValueRecords,
 )
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
+from sincpro_framework.data_layer.store import InMemoryKeyValue, KeyValueStore, RedisKeyValue
 from sincpro_framework.runtime.testing import IdempotencyRecordsContract, ManualClock
-from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
-from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 
 class Receipt(DataTransferObject):
@@ -363,8 +362,6 @@ def test_a_subclass_that_keeps_execute_keeps_once():
 def test_whether_a_class_runs_once_is_asked_by_its_resolved_execute():
     """An entrypoint marks a use case retry-safe by asking, not by reading a method's name: a
     subclass that keeps `execute` is still once, a replacement with its own is not."""
-    from sincpro_framework.data_layer.caching import declares_once
-
     idempotency = Idempotency(InMemoryKeyValue())
 
     @idempotency.once(expires_after=timedelta(minutes=2))
@@ -383,10 +380,10 @@ def test_whether_a_class_runs_once_is_asked_by_its_resolved_execute():
         def execute(self, dto: CommandPing) -> ResponsePing:
             return ResponsePing(pong=1)
 
-    assert declares_once(IssueInvoice) and declares_once(KeepsExecute)
-    assert not declares_once(OwnExecute)
-    assert not declares_once(Plain)
-    assert not declares_once(int)
+    assert Idempotency.declared_by(IssueInvoice) and Idempotency.declared_by(KeepsExecute)
+    assert not Idempotency.declared_by(OwnExecute)
+    assert not Idempotency.declared_by(Plain)
+    assert not Idempotency.declared_by(int)
 
 
 def test_once_twice_on_one_class_and_on_an_async_use_case_are_refused():
@@ -489,20 +486,18 @@ def test_a_use_case_whose_answer_has_no_type_cannot_be_declared_once():
 def test_the_run_knows_its_key_to_hand_on_downstream():
     """A system called inside the write deduplicates by the same key: a write that ran twice
     after a crash is still one write there."""
-    from sincpro_framework.data_layer.caching import current_idempotency_key
-
     seen: list[str | None] = []
     idempotency = Idempotency(InMemoryKeyValue())
 
     idempotency.run(
         "request-1",
-        lambda: seen.append(current_idempotency_key()) or Receipt(number=1),
+        lambda: seen.append(Idempotency.current_key()) or Receipt(number=1),
         POLICY,
         JsonCodec(Receipt),
     )
 
     assert seen[0] is not None and seen[0].startswith("idempotency:")
-    assert current_idempotency_key() is None
+    assert Idempotency.current_key() is None
 
 
 def _deployed(

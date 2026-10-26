@@ -16,6 +16,7 @@ the `.proto` export work without the `[grpc]` extra.
 import re
 from collections.abc import Sequence
 
+from sincpro_framework.common.naming import pascal
 from sincpro_framework.entrypoints.adapters.grpc.proto import (
     RESERVED_SERVICES,
     GrpcMethodSpec,
@@ -37,11 +38,6 @@ def alias_of(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", name)
 
 
-def pascal(name: str) -> str:
-    """`sales_orders` → `SalesOrders`, `billing` → `Billing`; an inner capital is kept."""
-    return "".join(part[:1].upper() + part[1:] for part in name.split("_") if part)
-
-
 def method_name(command: type) -> str:
     """The DTO's name without `Command`/`Query`, PascalCase — `QueryInvoice` → `Invoice`.
 
@@ -51,7 +47,7 @@ def method_name(command: type) -> str:
         method_name(Commander)             ->  "Commander"
         method_name(QueryInvoice)          ->  "Invoice"
 
-    The rest is made PascalCase by `pascal` — an inner capital is kept.
+    The rest is made PascalCase by `pascal` — an inner capital is preserved.
     """
     name = command.__name__
     for kind in KINDS:

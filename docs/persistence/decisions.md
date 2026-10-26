@@ -72,7 +72,7 @@ operators, choices, labels in every language, relations with what identifies the
 same mask as the records.
 
 **Why.** A client that receives records but not their definition cannot build a filter form, a
-column menu or the next request without a second call and a schema to keep in step. The
+column menu or the next request without a second call and a schema to maintain in step. The
 definition is also what makes a mask *one* mask: three fields in the payload, three in the
 definition, so the interface cannot offer what it was not given.
 
@@ -131,7 +131,7 @@ separation it drew, "relations are different", is already drawn by `type`.
 
 ## 7. Types are read off Python and the tables, not declared
 
-**Decision.** `describe()` reads the field type from the annotation, nullability from the column,
+**Decision.** `ModelIntrospection.describe()` reads the field type from the annotation, nullability from the column,
 choices from the enum, labels from `translations()`. A column whose annotation is a dataclass or a
 pydantic model with no table is `embedded`, with the shape of that class as its `definition`.
 `many2one` and `one2many` are inferred from the `ForeignKey` constraints already in the tables.
@@ -167,9 +167,9 @@ MongoDB embedded documents, SQLAlchemy `composite()`.
 
 ## 9. Four ways to bring a relation, one shape, never per row
 
-**Decision.** `Relation.foreign_key` and `Relation.many_to_many` in the same database, resolved in
+**Decision.** `TableRelation.foreign_key` and `TableRelation.many_to_many` in the same database, resolved in
 one statement over a window (`row_number() OVER (PARTITION BY key ORDER BY …)`) so order and
-per-parent limit hold in SQL and each parent gets an exact count. `Relation.id_list` for ids held
+per-parent limit hold in SQL and each parent gets an exact count. `TableRelation.id_list` for ids held
 in a JSON column. `Relation.bus` for another bounded context, its command carrying the reflected
 criteria. `Relation.resolved_by` for a function: HTTP, raw SQL, a serialised dictionary, anything.
 The Feature that reads does not change between them.
@@ -247,7 +247,7 @@ otherwise turn into an archive; `retrying(work)` for a unit of work that lost a 
 
 **Why.** Every one of them was already being written, once per project, as a wrapper around
 `search` or a loop around `save` — and each wrapper is where a page slips in by accident, where
-a batch becomes a thousand round trips, where a retry forgets to back off. The rule that keeps
+a batch becomes a thousand round trips, where a retry forgets to back off. The rule that holds
 them honest is the one the layer already had: what answers over a page says so, and what answers
 over the whole result set says so. `pluck` and `distinct` are in the second group, with `count`
 and `measures`.
@@ -295,7 +295,7 @@ reads, the short readings, the folds, the groups, and writes with the version ch
 archive rule. Relations, units of work and date grains are the adapter's and say so.
 
 **Why.** A Feature that reads is most of what a bounded context is, and testing it against a
-double that somebody wrote by hand tests the double. This one filters with `matches`, the same
+double that somebody wrote by hand tests the double. This one filters with `Evaluation.matches`, the same
 evaluator the SQL translator is specified against, so a Feature that passes here and fails
 against the engine has found a bug in the engine.
 
@@ -339,7 +339,7 @@ where the words are known; `Meta` carries them and nothing merges or guesses a l
 publication contracts remain, but mapped events are now stored with the aggregate and
 `EventRelay` provides delivery. Do not use this section as the current persistence recipe.
 
-**Decision.** `Entity.record()` keeps events in memory; `pull_events()` is explicit. A `Publisher`
+**Decision.** `Entity.record()` holds events in memory; `pull_events()` is explicit. A `Publisher`
 has the bus's signature: `publish(event)` or `publish(event, ResponseDTO)`. A `Subscriber` is a
 list of `UseFramework` instances; a bus subscribes by registering a Feature for the event class,
 `@bus.feature([Command, Event])`, nothing more. `SyncQueue` runs in the call; `BackgroundQueue`
@@ -362,7 +362,7 @@ only when the process is collecting; reports every failure to GlitchTip. No para
 reaches a log, a span or a report.
 
 **Why.** Debugging a Feature down to its statements next to its own log lines is the daily need; a
-separate `instrument()` call was one more thing to forget. Values are kept out because a
+separate `instrument()` call was one more thing to forget. Values are left out because a
 repository that refuses to log dataset contents cannot let a trace do it under another name.
 
 `orm/sqlalchemy/infrastructure/observability.py`.
@@ -397,7 +397,7 @@ named after the pattern it implements and against the one it avoids, Active Reco
 ## 18. What is deliberately still open
 
 - Filtering or ordering a parent *by* a relation does not compose; it needs the value in the
-  parent's own table, kept current by an event (`Line.entry_state` in the ledger is the pattern).
+  parent's own table, maintained by an event (`Line.entry_state` in the ledger is the pattern).
 - A page of groups applies to the first level; a deeper level answers for the groups that
   survived it. Ordering groups by an aggregate has no stable keyset, so the page is an offset.
 - A message broker as a third `Queue`; an async engine; a second persistence backend.
@@ -495,7 +495,7 @@ What the commit writes is §25.
 `RETURNING`, on Postgres and SQLite — and `update_all(target, criteria, values)` /
 `remove_all(target, criteria)`, on the port and on both stores. They skip hooks (except
 `before_save`/`after_save` on an upsert), the cascade and change tracking, and say so first. They
-keep what later writes depend on: `version` is raised and `updated_at` stamped, the scope and the
+preserve what later writes depend on: `version` is raised and `updated_at` stamped, the scope and the
 archived apply as in a read.
 
 **Why.** The cases they serve have no aggregate rule to skip — an idempotent import, closing
@@ -518,7 +518,7 @@ undone. The outermost level answers to SQLAlchemy's `after_commit` and the outer
 
 **Why.** `Database.after_commit` is global, for every session the process opens; a Feature that
 must publish only if *its* write committed had no door, and §14's rule — never publish from
-inside a commit — had no tool to keep it. SQLAlchemy reports a savepoint's rollback as a
+inside a commit — had no tool to enforce it. SQLAlchemy reports a savepoint's rollback as a
 rollback too, and reports the end of a transaction before saying how it ended, which is why the
 levels are opened and closed by `savepoint()` rather than read off the events. Not raising mirrors
 Django's robust mode: the commit is final, and an exception would tell the caller otherwise.
@@ -607,7 +607,7 @@ and holds no state of its own, so it can never reach around the store.
 grandchild, an orphan deleted or detached — updates the stored root too, with its version checked
 and raised, even when none of the root's own fields moved. Two requests that edit different lines
 of one invoice no longer both commit: the second is a `StaleAggregate`. A root whose parts did not
-move keeps its version. Writing a part through `save(part)` on its own is a write of that part
+move retains its version. Writing a part through `save(part)` on its own is a write of that part
 only — the aggregate's rules and its version are reached through its root.
 
 **Why.** Optimistic concurrency guards an invariant, and the invariant is the aggregate's: a total
@@ -617,7 +617,7 @@ Axon and Marten by construction — the stream is the aggregate. Checked per row
 its own check and the invariant over all of them broke unseen. SQLAlchemy cannot raise
 `version_id_col` alone, so the root is marked through `updated_at`, which the write stamps anyway;
 change tracking ignores it, so no empty `EntityUpdated` is recorded. The cost is the one Vernon
-names: a large aggregate edited concurrently conflicts more, which is a reason to keep aggregates
+names: a large aggregate edited concurrently conflicts more, which is a reason to design aggregates
 small, not to check less.
 
 ## 29. A unit of work is joined by every repository on its database
@@ -664,9 +664,9 @@ wire `name` as discriminator, the envelope as columns (`id`, `entity_type`, `ent
 declares as a JSON `payload`, typed back on load. Events are saved and found through the
 repository the context already has — `repository.save(events)`, `repository.search(InvoicePaid,
 criteria)`, `repository.search(BillingDomainEvent, criteria)` for all of them — and
-`save(aggregate)` keeps what the aggregate recorded in the same transaction, reading them and
+`save(aggregate)` stores what the aggregate recorded in the same transaction, reading them and
 never taking them: `pull_events()` stays open to whoever publishes by hand. An event about no
-entity is kept the same way, its `entity_type` and `entity_id` empty.
+entity is stored the same way, its `entity_type` and `entity_id` empty.
 
 What leaves the context is marked `DeliverableEventMixin`, and its delivery is **the event's own
 state**: `is_deliverable`, `delivered_at` and `next_delivery_at` are columns a `Criteria`
@@ -703,8 +703,8 @@ would make the first question a union nobody maintains.
 **Why the repository and not an event store.** An event store with `append`, `events_of` and
 `history` was a second API over the same rows — a repository by another name. The repository is
 already agnostic (SQL, memory, whatever a project adapts), already transacts and already locks,
-so keeping events through it is what puts them in the same commit as the change; the in-memory
-double keeps them the same way, so a test needs nothing new.
+so storing events through it is what puts them in the same commit as the change; the in-memory
+double stores them the same way, so a test needs nothing new.
 
 **Why delivery state on the event, and no checkpoint.** A checkpoint is the model of a log read
 by many independent readers (KurrentDB, Kafka). That is the broker's job here: the context
@@ -714,7 +714,7 @@ on Postgres, a rule never to read past an uncommitted transaction, because posit
 of order. Per-row state needs none of that: `FOR UPDATE SKIP LOCKED` lets every replica take
 different rows, an uncommitted row is simply not visible yet, and "what was not delivered" is a
 filter a person can run. It is the polling publisher of the transactional outbox (Richardson;
-Microsoft eShop's `IntegrationEventLogEntry`; Wolverine and NServiceBus keep per-message state the
+Microsoft eShop's `IntegrationEventLogEntry`; Wolverine and NServiceBus store per-message state the
 same way). The mixin was named *Deliverable* and not *Integration* because what it marks is that
 the event is delivered, wherever to.
 
@@ -729,7 +729,7 @@ inbox makes the duplicate harmless. No transaction is held across the network be
 
 **Why order per entity.** A consumer that hears `InvoicePaid` before `InvoiceIssued` of the same
 invoice is wrong even if both arrive. A retry in place holds the whole pass; a retry later holds
-only the later events of that entity, so the rest of the context keeps flowing.
+only the later events of that entity, so the rest of the context still flows.
 
 **Why failures are a strategy.** Every mature consumer splits the same two decisions — whether to
 try again and how (in place, holding the rest: Spring Kafka's `DefaultErrorHandler`, NServiceBus's
@@ -747,7 +747,7 @@ winning. It is called `entity_version` because `version` is already the `Entity`
 optimistic lock — on the event it would mean the event's version, not its place in the entity's
 history. Events that are stored and not sourced leave it empty.
 
-**What the framework does not decide.** Whether a project keeps its events at all (with no table
-they are recorded and pulled as before), which events are deliverable, how long they are kept,
-and whether a consumer is idempotent are the project's. Retention and erasing a person from kept
+**What the framework does not decide.** Whether a project stores its events at all (with no table
+they are recorded and pulled as before), which events are deliverable, how long they are retained,
+and whether a consumer is idempotent are the project's. Retention and erasing a person from stored
 events (crypto-shredding) come later.

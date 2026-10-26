@@ -1,11 +1,11 @@
-"""Who the execution in progress acts as — kept beside the request context, never in it.
+"""Who the execution in progress acts as — held beside the request context, never in it.
 
     with as_identity(Identity.user("user:42", tenant="bo", permissions={...})):
         billing(CommandIssueInvoice(...))
 
 Context: a `ContextVar` of its own rather than a key of `bus.context(...)`. The context is a dict
 anyone writes — a handler's `self.context = ...`, a header `remote_execution` adopts as it came —
-so an identity kept there could be forged by writing it. Here only `as_identity` and `as_system`
+so an identity stored there could be forged by writing it. Here only `as_identity` and `as_system`
 set it; it follows the execution into every bus it calls and into `thread_context()`, and it does
 not cross to another service: that is `AuthProvider.credentials_for`'s job.
 """

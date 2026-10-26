@@ -4,13 +4,13 @@
     refuse_stale(draft, invoice)                 StaleAggregate when the invoice moved on
     assign(invoice, draft.values)
 
-The drafts themselves are kept by the context (`sincpro_framework.context.Drafts`): whose they are
-is the context's to say; what a record does with one is the domain's.
+The drafts themselves are stored by the context (`sincpro_framework.context.Drafts`): whose
+they are is the context's to say; what a record does with one is the domain's.
 """
 
 from typing import Any
 
-from sincpro_framework.context.domain.drafts import Draft
+from sincpro_framework.context import Draft
 from sincpro_framework.ddd import exceptions
 
 

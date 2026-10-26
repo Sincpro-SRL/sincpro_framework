@@ -10,7 +10,7 @@ question is not sent to the database twice.
 
 ## The rows and the cache
 
-Any `Repository` works. A `QueryCache` keeps a read under the repository's **fingerprint** of it —
+Any `Repository` works. A `QueryCache` caches a read under the repository's **fingerprint** of it —
 the filter, the order, the mask and the scope a repository reads under, never the page. The same
 question with more pages reads only the pages not held; asking again reads nothing.
 
@@ -29,7 +29,7 @@ the `Criteria` asks for is not part of the read: every read starts from the firs
 from `fetch` is usually **not complete** — check `frame.complete` before computing a total.
 
 A frame has a column per field of the aggregate (the `Entity` fields included), or the ones the
-`Criteria`'s specification keeps. Pages are read with the keyset cursor and without a count, and
+`Criteria`'s specification selects. Pages are read with the keyset cursor and without a count, and
 merged by `id`, so a row that moved between two pages is held once.
 
 ## A narrower filter, with no read
@@ -99,5 +99,5 @@ To a client, a frame travels as Parquet or as an Arrow IPC stream
 | `invalidate_on_commit(database, cache, *aggregates)` | `sincpro_framework.data_layer.orm` |
 | `repository.fingerprint(target, criteria)` | the key of a read |
 
-`QueryCaching` (`docs/caching/README.md`) is a different thing: it keeps a **bus Query's answer**
+`QueryCaching` (`docs/caching/README.md`) is a different thing: it caches a **bus Query's answer**
 across replicas.

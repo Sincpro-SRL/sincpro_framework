@@ -19,7 +19,6 @@ from sincpro_framework.observability.domain import (
     ObservabilityIdentity,
     ObservabilityStatus,
 )
-from sincpro_framework.observability.metrics.domain.paths import of
 from sincpro_framework.observability.tracing.attributes import SpanValue, Traces, traces
 from sincpro_framework.observability.tracing.propagation import (
     TRACE_HEADERS,
@@ -37,7 +36,6 @@ __all__ = [
     "SpanValue",
     "TRACE_HEADERS",
     "Traces",
-    "of",
     "process",
     "trace_carrier",
     "trace_id_of",

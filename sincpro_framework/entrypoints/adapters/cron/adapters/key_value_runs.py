@@ -1,23 +1,23 @@
-"""`KeyValueRuns`: the record of runs kept in a `KeyValueStore` — what crons on several replicas
+"""`KeyValueRuns`: the record of runs stored in a `KeyValueStore` — what crons on several replicas
 share. On Redis, Valkey or Memcached every replica claims a tick and exactly one wins.
 
     KeyValueRuns(RedisKeyValue(redis.Redis.from_url(url)))
 
 Context: `claim` is the store's atomic `add`, so the once-per-tick guarantee is the store's.
-Beside each run the record keeps two pointers per cron — its latest run and its latest success —
+Beside each run the record stores two pointers per cron — its latest run and its latest success —
 which is all `running`, `last` and `last_success` read. `running` therefore answers for the
 latest run: an older one still unfinished under a newer finished one is presumed dead, as it is
-once it is older than `since`. Runs are kept for `retention`, then the store lets them go.
+once it is older than `since`. Runs are retained for `retention`, then the store lets them go.
 """
 
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.entrypoints.adapters.cron.domain import CronRuns, Run, RunOutcome
-from sincpro_framework.store import KeyValueStore
+from sincpro_framework.data_layer.store import KeyValueStore
+from sincpro_framework.entrypoints.adapters.cron.domain.runs import CronRuns, Run, RunOutcome
 
 
 def _encoded(run: Run) -> bytes:
-    """A run as the bytes the store keeps — its JSON."""
+    """A run as the bytes the store saves — its JSON."""
     return run.model_dump_json().encode()
 
 
@@ -42,7 +42,7 @@ class KeyValueRuns(CronRuns):
         retention: timedelta = timedelta(days=30),
         prefix: str = "cron",
     ) -> None:
-        """`retention` is how long the store keeps each key; `prefix` separates this record
+        """`retention` is how long the store retains each key; `prefix` separates this record
         from anything else on the same store."""
         self.store = store
         self.retention = retention

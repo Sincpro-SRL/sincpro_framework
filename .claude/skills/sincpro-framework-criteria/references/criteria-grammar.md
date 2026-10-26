@@ -36,20 +36,19 @@ The nodes carry the names the JSON uses, from `sincpro_framework.ddd`: `Conditio
 `Not`.
 
 ```python
-from sincpro_framework.ddd import All, Condition, Criteria, Operator, Pagination
-from sincpro_framework.ddd.criteria import parse_order
+from sincpro_framework.ddd import All, Condition, Criteria, Operator, Pagination, Sort
 
 Criteria(
     where=All(all=[
         Condition(field="state", value="draft"),                       # operator defaults to "="
         Condition(field="total", operator=Operator.GT, value=100),
     ]),
-    order=parse_order("-total,number"),
+    order=Sort.parse("-total,number"),
     pagination=Pagination(limit=20),
 )
 ```
 
-`parse_order("-total,number")` turns URL-style ordering into `(Sort(total, descending), Sort(number))`.
+`Sort.parse("-total,number")` turns URL-style ordering into `(Sort(total, descending), Sort(number))`.
 It is a Python helper: the JSON `order` is always the list form. `Condition.value` is required;
 `between` takes `[low, high]`, `in`/`not in` take a list, `is null` takes `true`/`false`.
 

@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.services import extension_typing
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.extensions import identity_of
 
@@ -72,7 +74,7 @@ def give_rows(session: Session, record: Any, extension: type) -> None:
         give_rows(session, move, MoveTracking)    # MoveTracking extends MoveDelivery
             ->  a move_delivery row, then a move_tracking row; the move itself not touched
 
-    An extension that keeps its columns in the entity's own table has nothing to insert. A
+    An extension that stores its columns in the entity's own table has nothing to insert. A
     core that stores the type of its rows is told the record is `extension` now.
     """
     missing = sorted(
@@ -83,7 +85,7 @@ def give_rows(session: Session, record: Any, extension: type) -> None:
         ),
         key=lambda level: len(level.__mro__),
     )
-    identity = getattr(record, describe(type(record)).identity)
+    identity = getattr(record, ModelIntrospection.describe(type(record)).identity)
     for level in missing:
         table, key = extension_typing.STORED_IN[level]
         if key is None:
@@ -117,7 +119,7 @@ def complete_consolidated(session: Session, records: list[Any]) -> None:
         state = sqlalchemy.inspect(record, raiseerr=False)
         if not parts or state is None or not state.has_identity:
             continue
-        identity = getattr(record, describe(type(record)).identity)
+        identity = getattr(record, ModelIntrospection.describe(type(record)).identity)
         for table, key, names, level in parts:
             if not any(state.attrs[name].history.has_changes() for name in names):
                 continue
@@ -139,13 +141,13 @@ def remove_rows(session: Session, records: list[Any]) -> None:
             ->  DELETE FROM move_tracking WHERE id = :id; DELETE FROM move_delivery WHERE …
         remove_rows(session, [tracking_move])   ->  nothing: it is the deepest class
 
-    An extension that keeps its columns in the entity's table goes with the entity's row; an
+    An extension that stores its columns in the entity's table goes with the entity's row; an
     unmapped record is skipped.
     """
     for record in records:
         if sqlalchemy.inspect(type(record), raiseerr=False) is None:
             continue
-        identity = getattr(record, describe(type(record)).identity)
+        identity = getattr(record, ModelIntrospection.describe(type(record)).identity)
         below = sorted(
             (
                 one

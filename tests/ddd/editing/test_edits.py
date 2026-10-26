@@ -15,6 +15,7 @@ from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.context import ContextStore, InMemoryContexts, KeyValueContexts
 from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import (
     Criteria,
     Derivations,
@@ -31,10 +32,11 @@ from sincpro_framework.ddd import (
     Specification,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.ddd.criteria import parse_order
+from sincpro_framework.ddd.criteria import (
+    Sort,
+)
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.store import InMemoryKeyValue
 
 
 @dataclass
@@ -412,7 +414,7 @@ def test_what_was_i_editing_is_a_search_over_the_cashiers_drafts(shop: Shop):
     shop.edit(BOB, id="0192gggg", values={"partner_id": "p3"})
 
     mine = shop.drafts(ANA).invoices
-    by_partner = shop.drafts(ANA, Criteria(order=parse_order("partner_id"))).invoices
+    by_partner = shop.drafts(ANA, Criteria(order=Sort.parse("partner_id"))).invoices
     big = shop.drafts(
         ANA,
         Criteria.model_validate({"where": {"field": "total", "operator": ">", "value": 100}}),

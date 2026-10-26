@@ -8,9 +8,7 @@ from sqlalchemy import MetaData
 
 from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import DatabaseNumbering, Repository, template_table
-from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint import (
-    numbering as numbering_module,
-)
+from sincpro_framework.data_layer.orm.sqlalchemy.adapters import numbering as numbering_module
 from sincpro_framework.data_layer.repositories import MemoryNumbering
 
 from .engines import fresh

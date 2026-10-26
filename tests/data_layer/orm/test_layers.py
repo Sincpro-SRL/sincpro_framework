@@ -1,8 +1,9 @@
 """The SQLAlchemy adapter's layers point one way: a layer imports only the ones below it, so the
 structure keeps saying what each piece is.
 
-    entrypoint      →  services, infrastructure, domain        the facade
-    services        →  services, infrastructure, domain
+    entrypoint      →  services, adapters, infrastructure, domain     the facade
+    services        →  services, adapters, infrastructure, domain
+    adapters        →  adapters, infrastructure, domain               what other components ask
     infrastructure  →  infrastructure, domain
     domain          →  domain
 
@@ -21,8 +22,9 @@ ADAPTER = (
 )
 PACKAGE = "sincpro_framework.data_layer.orm.sqlalchemy"
 ALLOWED = {
-    "entrypoint": {"entrypoint", "services", "infrastructure", "domain"},
-    "services": {"services", "infrastructure", "domain"},
+    "entrypoint": {"entrypoint", "services", "adapters", "infrastructure", "domain"},
+    "services": {"services", "adapters", "infrastructure", "domain"},
+    "adapters": {"adapters", "infrastructure", "domain"},
     "infrastructure": {"infrastructure", "domain"},
     "domain": {"domain"},
 }

@@ -1,4 +1,4 @@
-"""The table a bounded context keeps its stored use cases in — declared in its own metadata and
+"""The table a bounded context stores its use cases in — declared in its own metadata and
 migrated with its other tables."""
 
 from sqlalchemy import (

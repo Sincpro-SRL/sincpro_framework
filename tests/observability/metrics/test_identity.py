@@ -14,10 +14,8 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.observability.domain import ObservabilityIdentity, installed_version
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics
-from sincpro_framework.observability.metrics.infrastructure.identity import (
-    CONTEXT_INFO,
-    metrics_resource,
-)
+from sincpro_framework.observability.metrics.adapters.otel import metrics_resource
+from sincpro_framework.observability.metrics.services.measuring import CONTEXT_INFO
 from sincpro_framework.sincpro_conf import settings
 
 

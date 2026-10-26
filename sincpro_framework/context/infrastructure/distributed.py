@@ -1,11 +1,11 @@
-"""The context kept in a store — the same tree, its nodes kept where every service that set the
+"""The context saved in a store — the same tree, its nodes saved where every service that set the
 store reads them.
 
     billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))    said by each bus that shares
 
     global          "global"                    every service and replica that set the store
      └ process      "process:<service>"         this service's replicas, never another service
-        └ bus       — kept nowhere: what a bus publishes is its own
+        └ bus       — saved nowhere: what a bus publishes is its own
            └ entrypoint → application → feature → hook → scope
                     "node:<id>" + "node:<id>:meta"     one node per execution, written through
 
@@ -27,24 +27,18 @@ from datetime import timedelta
 from typing import Any
 
 from sincpro_framework.context.domain.execution import CHAIN_KEYS
-from sincpro_framework.context.domain.level import Level
-from sincpro_framework.context.domain.node import ContextNode, Values
+from sincpro_framework.context.domain.level import ContextLevel
+from sincpro_framework.context.domain.node import ContextNode, ContextSharing, Values
+from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.infrastructure.shared import SharedValues
-from sincpro_framework.store.domain.store import ContextStore
 
 GLOBAL_KEY = "global"
 CHAIN_LIMIT = 64
-"""Nodes read back from a sender's chain at most — a guard against a cycle in what was kept."""
-
-
-def _named(values: Mapping[Any, Any]) -> dict[str, Any]:
-    """The values under text keys — what a store keeps; one under a type (a `ContextStore`, a
-    settings class) stays in this process."""
-    return {key: value for key, value in values.items() if isinstance(key, str)}
+"""Nodes read back from a sender's chain at most — a guard against a cycle in what was saved."""
 
 
 class WrittenThrough(Values):
-    """A node of this execution: read locally, kept in the store on each write."""
+    """A node of this execution: read locally, saved in the store on each write."""
 
     __slots__ = ("_store", "_key", "_ttl")
 
@@ -55,44 +49,44 @@ class WrittenThrough(Values):
         ttl: timedelta,
         values: Mapping[Any, Any] | None = None,
     ) -> None:
-        """Hold `values` locally and keep them under `key` for `ttl` — at once when there are
+        """Hold `values` locally and save them under `key` for `ttl` — at once when there are
         any, so a receiver handed this node finds what it already says.
 
             WrittenThrough(store, "node:01J…", timedelta(hours=1), {"tenant_id": "acme"})
                 ->  store.save("node:01J…", {"tenant_id": "acme"}, 1h) at once
             WrittenThrough(store, "node:01J…", timedelta(hours=1))   ->  nothing saved yet
 
-        Only the keys that are text are kept (`_named`); one under a type stays here."""
+        Only the keys that are text are saved (`named`); one under a type stays here."""
         super().__init__(values)
         self._store = store
         self._key = key
         self._ttl = ttl
         if values:
-            self._kept()
+            self._saved()
 
-    def _kept(self) -> None:
+    def _saved(self) -> None:
         """Save what this node says now under its key — the whole mapping, its TTL renewed."""
-        self._store.save(self._key, _named(self._current), self._ttl)
+        self._store.save(self._key, self.named(), self._ttl)
 
     def set(self, key: Any, value: Any) -> None:
-        """Written locally, then kept in the store."""
+        """Written locally, then saved in the store."""
         super().set(key, value)
-        self._kept()
+        self._saved()
 
     def update(self, values: Mapping[Any, Any]) -> None:
-        """Written locally, then kept in the store."""
+        """Written locally, then saved in the store."""
         super().update(values)
-        self._kept()
+        self._saved()
 
     def unset(self, key: Any) -> None:
-        """Taken away locally, then kept in the store."""
+        """Taken away locally, then saved in the store."""
         super().unset(key)
-        self._kept()
+        self._saved()
 
     def replace(self, values: Mapping[Any, Any]) -> None:
-        """Replaced locally, then kept in the store."""
+        """Replaced locally, then saved in the store."""
         super().replace(values)
-        self._kept()
+        self._saved()
 
 
 class ReadBack(SharedValues):
@@ -133,22 +127,22 @@ class SharedContext:
 
     @staticmethod
     def node_key(node_id: str) -> str:
-        """Where a node's values are kept: `node_key("01J…")  ->  "node:01J…"` — its meta
+        """Where a node's values are saved: `node_key("01J…")  ->  "node:01J…"` — its meta
         beside them, under `"node:01J…:meta"`."""
         return f"node:{node_id}"
 
-    def kept(self, node: ContextNode, node_id: str) -> ContextNode:
+    def saved(self, node: ContextNode, node_id: str) -> ContextNode:
         """`node` under `node_id`: its values written through, its place in the chain beside them.
 
-        1. The meta: the nearest kept node above it, its level, its label.
+        1. The meta: the nearest saved node above it, its level, its label.
         2. Final: its values written through from now on.
 
-            sharing.kept(feature_node, "01J9")
+            sharing.saved(feature_node, "01J9")
                 ->  "node:01J9:meta" = {"parent": "01J8", "level": "feature",
                                         "label": "IssueInvoice"};  "node:01J9" = its values
                     and `feature_node.key == "01J9"`
 
-        The same node object is answered, now kept: its `key` set, its values replaced by a
+        The same node object is answered, now saved: its `key` set, its values replaced by a
         `WrittenThrough` seeded with what it said."""
         above = node.parent
         parent = next((one.key for one in above.chain() if one.key), None) if above else None
@@ -164,17 +158,18 @@ class SharedContext:
         return node
 
     def chain_from(self, node_id: str, top: ContextNode) -> ContextNode:
-        """The nodes the store keeps from `node_id` up — read back, never written — hung under
-        `top`; `top` itself when the store keeps none of them.
+        """The nodes the store holds from `node_id` up — read back, never written — hung under
+        `top`; `top` itself when the store holds none of them.
 
-        1. Each node's meta, up its `parent`, until none is kept or the chain repeats.
+        1. Each node's meta, up its `parent`, until none is saved or the chain repeats.
         2. Final: the nodes rebuilt outermost first, each one's values read back from the store.
 
-            sharing.chain_from("01J9", root)     # kept: 01J9 → 01J8 (its parent) → none
+            sharing.chain_from("01J9", root)     # saved: 01J9 → 01J8 (its parent) → none
                 ->  feature "01J9"  under  application "01J8"  under  root, both `ReadBack`
             sharing.chain_from("gone", root)     ->  root
 
-        At most `CHAIN_LIMIT` (64) nodes are read; a level the meta lacks is `Level.SCOPE`."""
+        At most `CHAIN_LIMIT` (64) nodes are read; a level the meta lacks is `ContextLevel.SCOPE`.
+        """
         found: list[tuple[str, Mapping[str, Any]]] = []
         seen: set[str] = set()
         following = node_id
@@ -188,7 +183,7 @@ class SharedContext:
         node = top
         for one, meta in reversed(found):
             node = ContextNode(
-                Level(meta.get("level", Level.SCOPE.value)),
+                ContextLevel(meta.get("level", ContextLevel.SCOPE.value)),
                 node,
                 ReadBack(self.store, self.node_key(one), self.every),
                 label=str(meta.get("label", "")),
@@ -229,7 +224,7 @@ class SharedContext:
         return parent, own
 
 
-def sharing_of(node: ContextNode | None) -> SharedContext | None:
+def sharing_of(node: ContextNode | None) -> ContextSharing | None:
     """How the nearest bus above `node` shares its context — `None` when it does not.
 
         sharing_of(feature_node_of_billing)   ->  SharedContext(store=KeyValueContexts(...),
@@ -237,18 +232,17 @@ def sharing_of(node: ContextNode | None) -> SharedContext | None:
         sharing_of(root)                      ->  None      # no bus above the process
         sharing_of(None)                      ->  None
 
-    Read off each node's `owner` up the chain — its `_shared_context`, the first one set."""
+    Read off each node's bus up the chain — its `shared_context`, the first one set."""
     if node is None:
         return None
     for one in node.chain():
-        sharing = getattr(one.owner, "_shared_context", None)
-        if sharing is not None:
-            return sharing
+        if one.owner is not None and one.owner.shared_context is not None:
+            return one.owner.shared_context
     return None
 
 
 def joined(root: ContextNode, sharing: SharedContext, service: str) -> None:
-    """The process `root` joins the store: its own values kept for this service's replicas, the
+    """The process `root` joins the store: its own values saved for this service's replicas, the
     global node above it shared by every service that set the store. Once per process."""
     if not isinstance(root.values, SharedValues):
         root.values = SharedValues(
@@ -256,7 +250,7 @@ def joined(root: ContextNode, sharing: SharedContext, service: str) -> None:
         )
     if root.parent is None:
         root.parent = ContextNode(
-            Level.GLOBAL,
+            ContextLevel.GLOBAL,
             None,
             SharedValues(sharing.store, GLOBAL_KEY, sharing.every),
             label="global",

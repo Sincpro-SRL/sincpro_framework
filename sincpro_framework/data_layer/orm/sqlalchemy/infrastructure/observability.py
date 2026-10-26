@@ -29,7 +29,7 @@ from sincpro_framework.observability.api import process
 
 SQL_LOGGER = "sincpro_framework.sql"
 
-# Where a connection keeps what its open statements need: the spans, and the moment each one
+# Where a connection stores what its open statements need: the spans, and the moment each one
 # started. Lists and not single values because SQLAlchemy can run a nested statement on the
 # same connection.
 OPEN_SPANS = "sincpro_open_spans"

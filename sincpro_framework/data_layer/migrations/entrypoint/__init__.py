@@ -1,2 +1,2 @@
-"""How a project drives migrations: the stores of a context (`ContextMigrations`), the timeline
-across contexts and its commands (`Migrations`), and the command line a Makefile calls."""
+"""How a project drives migrations: the timeline across contexts and its commands
+(`Migrations`, a facade over the services), and the command line a Makefile calls."""

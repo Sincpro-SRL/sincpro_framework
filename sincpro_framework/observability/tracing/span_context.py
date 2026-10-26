@@ -26,7 +26,7 @@ a `carrier`; an explicit `trace_id`; else a new root span.
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 from uuid import uuid4
 
-from sincpro_framework.context.entrypoint.bus import FrameworkContext
+from sincpro_framework.context import FrameworkContext
 from sincpro_framework.observability.domain import ObservabilityIdentity
 from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE, tracer_for
 
@@ -46,10 +46,10 @@ class FrameworkSpanContext:
         carrier: Optional[Mapping[str, Any]] = None,
         adopt_active: bool = False,
     ) -> None:
-        """Keep how the trace is to be found — nothing is attached until `__enter__`.
+        """Store how the trace is to be found — nothing is attached until `__enter__`.
 
             FrameworkSpanContext(billing, identity, carrier=request.headers)
-                ->  the carrier kept; no root span, no OTel token, no logger binding yet
+                ->  the carrier stored; no root span, no OTel token, no logger binding yet
             FrameworkSpanContext(billing, identity, adopt_active=True)
                 ->  on `__enter__`, the host's active span is read, never replaced
 

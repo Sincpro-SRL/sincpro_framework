@@ -17,9 +17,9 @@ Python remains: framework(dto)                                ValueObject
 
 Real SDK evaluation (SIAT SOAP, not Greeting): **[entrypoint_mcp_use_case.md](mcp-use-case.md)**.
 
-Package path: `sincpro_framework.entrypoints.adapters.mcp` (`build_mcp_server`, `Entrypoint`). The **feature name** in docs and product language is `entrypoint_mcp`.
+Package path: `sincpro_framework.entrypoints` (`Entrypoint`, `McpGateway`); the wire, `sincpro_framework.entrypoints.adapters.mcp` (`McpWire`, `McpTool`, `tool_name_of`, `auth`). The **feature name** in docs and product language is `entrypoint_mcp`.
 
-The bus projection is `Catalog` / `PackedFeatureOrAppService` (`entrypoints/catalog.py`), built on `sincpro_framework.introspection` (features/app_services registries). This host only binds FastMCP.
+The bus projection is `Catalog` / `PackedFeatureOrAppService` (`entrypoints/services/catalog.py`), built on `sincpro_framework.introspection` (features/app_services registries). This host only binds FastMCP.
 
 ---
 
@@ -40,10 +40,10 @@ result = siat_soap_sdk(SomeCommand(...), SomeResponse)
 ## Public API
 
 ```python
-from sincpro_framework.entrypoints.adapters.mcp import build_mcp_server, Entrypoint
+from sincpro_framework.entrypoints import Entrypoint
 
 # Default — every JSON-safe Feature and ApplicationService becomes a tool
-build_mcp_server(siat_soap_sdk).run()
+Entrypoint(siat_soap_sdk).run()
 
 # Optional policies
 Entrypoint(siat_soap_sdk).include(IssueInvoice).exclude(InternalDebug).run()
@@ -57,8 +57,8 @@ pip install sincpro-framework[mcp]
 
 | Symbol | Role |
 |---|---|
-| `build_mcp_server(instance)` | Composition root. Collect tools, skip binary DTOs, return a FastMCP server. |
-| `Entrypoint(instance)` | Same projection with `include` / `exclude` / `wrap`. |
+| `Entrypoint(instance)` | The catalog of one bus, with `include` / `exclude` / `wrap`. |
+| `Entrypoint.server()` | Composition root. Collect tools, skip binary DTOs, return a FastMCP server. |
 | `Entrypoint.tools()` | In-process `PackedFeatureOrAppService` DTOs (tests, LangChain). |
 | `Entrypoint.to_callables()` | `name → payload dict → result dict`. No FastMCP required. |
 | `Entrypoint.run(**kwargs)` | Start the host. Omit transport = stdio. `transport="http"` = MCP Streamable HTTP at `/mcp` (not REST). |
@@ -75,7 +75,7 @@ tools; `Exposure.CATALOG` publishes every JSON-safe use case of every bus and lo
 ```python
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp
 from sincpro_framework.entrypoints.domain.surface import Exposure
-from sincpro_framework.entrypoints.adapters.mcp import McpGateway
+from sincpro_framework.entrypoints import McpGateway
 
 @billing.feature(CommandIssueInvoice)
 @auth.requires(BillingPermission.ISSUE)
@@ -95,7 +95,7 @@ admin = McpGateway([billing], exposure=Exposure.CATALOG).server()   # every use 
 | What | Rule |
 |---|---|
 | tool name | the DTO's name without a leading `Command` / `Query`, snake_case: `issue_invoice`, `invoice` — the same rule as JSON-RPC operations. `@mcp("name")` or `override(Command, name=...)` wins |
-| clash | a **derived** name answered by two operations is prefixed by its group — `group(bus, prefix=...)`, else the alias: `ventas_issue_invoice`; the others keep theirs. A **declared** name is never renamed: a clash on it fails the build |
+| clash | a **derived** name answered by two operations is prefixed by its group — `group(bus, prefix=...)`, else the alias: `ventas_issue_invoice`; the others are left as they are. A **declared** name is never renamed: a clash on it fails the build |
 | name rule | 1 to 64 characters of `A-Z a-z 0-9 _ -`; the MCP spec allows more, the model APIs behind the clients do not |
 | `readOnlyHint` | derived: a `Query`. `@mcp(read_only=True)` on a Command, or `read_only=False` on a Query, fails the build |
 | `destructiveHint` | false on a read; on a write what `@mcp(destructive=...)` says, else **true** — the MCP default, since a write cannot be proven harmless. `destructive=True` on a Query fails the build |
@@ -113,10 +113,9 @@ operation) without FastMCP; `gateway.manifest()` the surface as data for a CI sn
 `gateway.verify()` every reason the build would be refused. A project changes the naming by
 subclassing `McpWire` and passing `McpGateway(..., port=MyWire())`.
 
-`build_mcp_server(bus)` and `Entrypoint(bus)` stay the catalog of one bus — every JSON-safe use
-case, named by its DTO class (`CommandIssueInvoice`) as before, now with the derived hints.
-`build_mcp_server([billing, sales])` is `McpGateway` in `Exposure.CATALOG`, its unguarded buses
-accepted on purpose.
+`Entrypoint(bus)` is the catalog of one bus — every JSON-safe use case, named by its DTO class
+(`CommandIssueInvoice`), with the derived hints. The catalog over several buses is
+`McpGateway([billing, sales], exposure=Exposure.CATALOG, unguarded=True)`.
 
 ---
 
@@ -251,7 +250,7 @@ Nothing in `execute` changes. `entrypoint_mcp` is a serializer in front of the b
 
 ## Optional policies
 
-Default: `build_mcp_server(instance)` — full JSON-safe catalog.
+Default: `Entrypoint(instance).run()` — full JSON-safe catalog.
 
 | Policy | Effect |
 |---|---|
@@ -264,7 +263,7 @@ catalog is read — the same for the RPC and gRPC gateways' `add(include=, exclu
 in `exclude` would otherwise expose what it meant to hide, and one in `wrap` would serve the use
 case without its guard.
 
-There is **no runtime on/off flag** in this iteration. Shipping MCP is a process decision (`pip install …[mcp]` + `build_mcp_server(…).run()`), not a Feature flag.
+There is **no runtime on/off flag** in this iteration. Shipping MCP is a process decision (`pip install …[mcp]` + `Entrypoint(…).run()`), not a Feature flag.
 
 ---
 
@@ -274,19 +273,26 @@ There is **no runtime on/off flag** in this iteration. Shipping MCP is a process
 sincpro_framework/
 ├── introspection/                    # shared: bus → FeatureOrAppServiceMetadata/DtoMetadata (name, type, own-docstring description)
 └── entrypoints/
-    ├── scalar_executor.py            # shared: Scalar (dict) in/out execution against a UseFramework
-    ├── json_utils.py                # shared: DTO JSON Schema + binary-field detection ($defs/$ref aware)
-    ├── catalog.py                    # shared: FeatureOrAppServiceMetadata → PackedFeatureOrAppService
-    └── mcp/                          # entrypoint_mcp
-        ├── __init__.py               # re-exports Entrypoint, build_mcp_server
-        ├── mcp.py                    # FastMCP binding: tool_function, fastmcp_callable
+    ├── domain/
+    │   └── packed.py                 # shared: PackedFeatureOrAppService — a use case packed for a JSON wire
+    ├── services/
+    │   ├── scalar_execution.py       # shared: ScalarExecution — Scalar (dict) in/out against a UseFramework
+    │   ├── catalog.py                # shared: FeatureOrAppServiceMetadata → PackedFeatureOrAppService
+    │   └── gateway.py                # shared: Gateway, the base every wire extends
+    ├── infrastructure/
+    │   └── json_schema.py            # shared: DTO JSON Schema + binary-field detection ($defs/$ref aware)
+    ├── entrypoint/
+    │   └── mcp.py                    # Entrypoint, McpGateway — the services composed with the wire
+    └── adapters/mcp/                 # entrypoint_mcp — the wire, knowing nothing of the services
+        ├── __init__.py               # re-exports McpWire, McpTool, tool_name_of
+        ├── mcp.py                    # FastMCP binding: tool_function, fastmcp_callable, the servers
         ├── wire.py                   # McpWire: names, hints, validation — no FastMCP import
-        └── entrypoint.py             # orchestrates catalog.py + mcp.py — the FastMCP facade
+        └── auth.py                   # each tool call as whoever called; FastMCP's bearer check
 ```
 
 Callees above callers, public API last (`sincpro_coding_style` Principle 3). `__init__.py` files re-export only.
 
-`introspection` describes what exists (own-docstring resolution lives there, not here). `scalar_executor.py` is the boundary that marshals a Scalar (`dict[str, Any]`) into a DTO call and back — `UseFramework.__call__` itself never learns about dicts or JSON, only typed DTOs; that stays a wire concern, isolated here rather than pushed into `use_bus.py`. `json_utils.py` answers one question — can this DTO travel as JSON — by walking Pydantic's `model_json_schema()` tree (`$defs`/`$ref`/`items`/`additionalProperties`/`anyOf` included, so a `bytes` field nested inside a submodel, list, dict, or Optional is still caught). `catalog.py` packages a described handler into a `PackedFeatureOrAppService` for a JSON wire using those two — it does no reflection on classes and no JSON Schema walking itself, and is usable without FastMCP, shared with `entrypoint_rpc`. `mcp.py` is the FastMCP-only wire: keyword-only signature from DTO fields so FastMCP advertises typed parameters. `entrypoint.py` is the thin orchestrator — every protocol under `entrypoints/` follows this same `entrypoint.py` + `{protocol}.py` split (see `entrypoint_rpc.md`).
+`introspection` describes what exists (own-docstring resolution lives there, not here). `scalar_execution.py` is the boundary that marshals a Scalar (`dict[str, Any]`) into a DTO call and back — `UseFramework.__call__` itself never learns about dicts or JSON, only typed DTOs; that stays a wire concern, isolated here rather than pushed into `use_bus.py`. `json_schema.py` answers one question — can this DTO travel as JSON — by walking Pydantic's `model_json_schema()` tree (`$defs`/`$ref`/`items`/`additionalProperties`/`anyOf` included, so a `bytes` field nested inside a submodel, list, dict, or Optional is still caught). `catalog.py` packages a described handler into a `PackedFeatureOrAppService` for a JSON wire using those two — it does no reflection on classes and no JSON Schema walking itself, and is usable without FastMCP, shared with `entrypoint_rpc`. `mcp.py` is the FastMCP-only wire: keyword-only signature from DTO fields so FastMCP advertises typed parameters. `entrypoint/mcp.py` is the thin facade — every protocol follows this same split: its gateway in `entrypoint/{protocol}.py` composes the services with the library translation under `adapters/{protocol}/`, which never imports a service (see `entrypoint_rpc.md`).
 
 ---
 
@@ -339,8 +345,8 @@ Fields are flattened on purpose. A single parameter typed as the DTO (`def tool(
 `.run()` with no args is stdio (Cursor / Claude Desktop / CLI). HTTP is still MCP:
 
 ```python
-build_mcp_server(sdk).run()                                      # stdio
-build_mcp_server(sdk).run(transport="http", port=8000)           # http://127.0.0.1:8000/mcp
+Entrypoint(sdk).run()                                            # stdio
+Entrypoint(sdk).run(transport="http", port=8000)                 # http://127.0.0.1:8000/mcp
 Entrypoint(sdk).include(IssueInvoice).run(transport="http")      # same catalog, fluent
 ```
 
@@ -354,7 +360,7 @@ SSE (`transport="sse"`) exists for old clients. Do not use it for new work.
 
 - Declared surface: `tests/entrypoints/adapters/mcp/test_entrypoint_mcp.py` — DECLARED vs CATALOG, names and clashes, hints on `tools/list`, parity with the bus, hints never authorize.
 - Unit: `tests/entrypoints/test_entrypoints.py` — catalog (Feature + ApplicationService), own docstring (not base class), VO roundtrip + `validate_fn`, `Field` / attribute descriptions in schema, include/exclude/wrap, binary skip, extra import contract.
-- Manual: `pip install sincpro-framework[mcp]`, `build_mcp_server(your_sdk).run()`, point Cursor / Claude Desktop at stdio, call one Feature and one ApplicationService.
+- Manual: `pip install sincpro-framework[mcp]`, `Entrypoint(your_sdk).run()`, point Cursor / Claude Desktop at stdio, call one Feature and one ApplicationService.
 - Failure mode: a new DTO with `bytes` silently missing from MCP is expected (warning log). A Feature whose docstring is only inherited from `Feature` will publish a useless description — add a class or `execute` docstring.
 
 ---
@@ -365,11 +371,11 @@ In the bounded context package (not inside domain Features):
 
 ```python
 # your_sdk/entrypoint_mcp.py  — or entrypoints/mcp.py; the feature is still entrypoint_mcp
-from sincpro_framework.entrypoints.adapters.mcp import build_mcp_server
+from sincpro_framework.entrypoints import Entrypoint
 from your_sdk import your_framework
 
 def main() -> None:
-    build_mcp_server(your_framework).run()  # stdio; use transport="http" for a URL
+    Entrypoint(your_framework).run()  # stdio; use transport="http" for a URL
 
 if __name__ == "__main__":
     main()

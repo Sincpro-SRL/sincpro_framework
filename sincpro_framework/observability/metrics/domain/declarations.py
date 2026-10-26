@@ -14,7 +14,7 @@ from sincpro_framework.observability.metrics.domain.paths import FieldPath
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
-class Measure(StrEnum):
+class MetricDecorator(StrEnum):
     """Which of the three decorators declared it — what the bus does with the run's value."""
 
     COUNTS = "counts"
@@ -25,18 +25,18 @@ class Measure(StrEnum):
     """The value of a field, as a distribution — percentiles and averages of it."""
 
 
-class Declaration(DataTransferObject):
+class MetricDeclaration(DataTransferObject):
     """One metric a use case declared with a decorator — what it measures, read off which
     field, by which labels; its name is derived when the bus first records it.
 
         @metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency)
-            ->  Declaration(measure=SUMS, value=of(ResponseIssueInvoice).total,
+            ->  MetricDeclaration(measure=SUMS, value=of(ResponseIssueInvoice).total,
                             labels=(of(CommandIssueInvoice).currency,))
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    measure: Measure
+    measure: MetricDecorator
     value: FieldPath | None = None
     """What `sums` or `measures` reads; `None` for `counts`."""
     labels: tuple[FieldPath, ...] = ()

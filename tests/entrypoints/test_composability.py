@@ -18,14 +18,13 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.adapters.grpc.wire import (
     Struct,
     scalar_to_struct,
     struct_to_scalar,
 )
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 from sincpro_framework.entrypoints.domain.surface import Exposure
 
 

@@ -19,10 +19,8 @@ from sincpro_framework import DataTransferObject, Feature, UseFramework, excepti
 from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway, RestGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import scalar_to_struct
-from sincpro_framework.entrypoints.adapters.rest import RestGateway
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     CONFLICT,
     DOMAIN_ERROR,

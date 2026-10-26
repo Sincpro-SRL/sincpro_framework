@@ -1,12 +1,9 @@
 """Pydantic v2 integration tests for sincpro_framework.ddd.value_object."""
 
-from typing import NewType
-
 import pytest
 from pydantic import BaseModel, ValidationError
 
 from sincpro_framework.ddd import ValueObject
-from sincpro_framework.ddd.value_object import new_value_object
 from tests.ddd.conftest import AmountVO, EmailVO, ProductCodeVO, StockVO, TagVO, UserIdVO
 
 # ---------------------------------------------------------------------------
@@ -243,31 +240,6 @@ class TestBothAPIsInPydantic:
         m = Model(score=-10)
         assert m.score == 0
         assert isinstance(m.score, int)
-
-    def test_old_api_new_value_object_with_newtype_pydantic(self):
-        """API vieja: new_value_object(NewType('X', int), fn) funciona como campo Pydantic."""
-        Rating = new_value_object(NewType("Rating", int), lambda v: max(1, min(5, v)))
-
-        class Model(BaseModel):
-            rating: Rating
-
-        assert Model(rating=10).rating == 5  # clamp a 5
-        assert Model(rating=0).rating == 1  # clamp a 1
-        assert Model(rating=3).rating == 3
-
-    def test_both_apis_equivalent_in_pydantic(self):
-        """Both APIs produce VOs that are interchangeable inside Pydantic."""
-        NewApiEmail = ValueObject(str, lambda v: v.strip().lower(), name="Email")
-        OldApiEmail = new_value_object(NewType("Email", str), lambda v: v.strip().lower())
-
-        class NewModel(BaseModel):
-            email: NewApiEmail
-
-        class OldModel(BaseModel):
-            email: OldApiEmail
-
-        assert NewModel(email="  HI@X.COM  ").email == "hi@x.com"
-        assert OldModel(email="  HI@X.COM  ").email == "hi@x.com"
 
 
 class TestValueObjectJsonSchema:

@@ -21,14 +21,10 @@ from pydantic import (
 )
 
 from sincpro_framework.ddd import exceptions
-from sincpro_framework.ddd.criteria.domain.expression import (
-    Expression,
-    combined,
-    expression_from,
-)
-from sincpro_framework.ddd.criteria.domain.grouping import Grouping, Level, Measure
+from sincpro_framework.ddd.criteria.domain.expression import Expression, Node
+from sincpro_framework.ddd.criteria.domain.grouping import Grouping, GroupingLevel, Measure
 from sincpro_framework.ddd.criteria.domain.pagination import Cursor, Pagination
-from sincpro_framework.ddd.criteria.domain.sort import Sort, parse_order
+from sincpro_framework.ddd.criteria.domain.sort import Sort
 from sincpro_framework.ddd.criteria.domain.strict import Strict, tolerates
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -215,7 +211,7 @@ class Criteria(Strict):
                     f"'where' does not read as JSON: {error}"
                 ) from error
 
-        return expression_from(value, tolerates(info))
+        return Node.read(value, tolerates(info))
 
     @field_validator("grouping", mode="before")
     @classmethod
@@ -223,14 +219,14 @@ class Criteria(Strict):
         """The levels and the measures of the object, each to its type.
 
         in      {"group_by": [{"field": "produced_by"}], "measures": {"filas": ["sum", "row_count"]}}
-        out     Grouping(group_by=(Level(produced_by),), measures={'filas': Measure(sum, row_count)})
+        out     Grouping(group_by=(GroupingLevel(produced_by),), measures={'filas': Measure(sum, row_count)})
         """
         if isinstance(value, dict):
             tolerant = tolerates(info)
             value = dict(value)
             if "group_by" in value:
                 value["group_by"] = tuple(
-                    Level.read(one, tolerant) for one in value["group_by"]
+                    GroupingLevel.read(one, tolerant) for one in value["group_by"]
                 )
             if "measures" in value:
                 value["measures"] = {
@@ -238,9 +234,9 @@ class Criteria(Strict):
                     for name, measure in (value["measures"] or {}).items()
                 }
             if "where_measures" in value:
-                value["where_measures"] = expression_from(value["where_measures"], tolerant)
+                value["where_measures"] = Node.read(value["where_measures"], tolerant)
             if isinstance(value.get("order"), str):
-                value["order"] = parse_order(value["order"])
+                value["order"] = Sort.parse(value["order"])
         return value
 
     @property
@@ -312,7 +308,7 @@ class Criteria(Strict):
         filter, and a merge that changed either would page through a set that no longer exists.
         """
         merged = Criteria(
-            where=combined(self.expression, other.expression),
+            where=Node.combined(self.expression, other.expression),
             order=other.order or self.order,
             pagination=(
                 other.pagination
@@ -348,8 +344,8 @@ class Criteria(Strict):
 
         Context: how an entity's defaults meet what a caller sends. The caller wins part by
         part, and only for the parts it named (`model_fields_set`): `Criteria()` names nothing,
-        so it keeps every default, while a `Criteria(order=())` asks for the store's order on
-        purpose. Filters are the exception: both apply, so they accumulate.
+        so it retains every default, while a `Criteria(order=())` asks for the store's order
+        on purpose. Filters are the exception: both apply, so they accumulate.
 
         Not `merged_with`: that one intersects the specification, because a scope can only take
         away. A default is not a scope — a caller asking for more than the default gets it.
@@ -359,7 +355,7 @@ class Criteria(Strict):
             name: getattr(other if name in asked else self, name)
             for name in Criteria.model_fields
         }
-        values["where"] = combined(self.expression, other.expression)
+        values["where"] = Node.combined(self.expression, other.expression)
         return Criteria.model_construct(self.model_fields_set | asked, **values)
 
 

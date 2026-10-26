@@ -21,7 +21,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sincpro_framework.ddd.criteria import expression_from, matches
+from sincpro_framework.ddd.criteria import (
+    Evaluation,
+    Node,
+)
 
 PARITY = Path(__file__).resolve().parent / "criteria-parity.json"
 
@@ -194,8 +197,8 @@ CASES: list[dict[str, Any]] = [
 
 
 def _answered(case: dict[str, Any]) -> list[str]:
-    expression = None if case["where"] is None else expression_from(case["where"])
-    return [row.id for row in ROWS if matches(row, expression)]
+    expression = None if case["where"] is None else Node.read(case["where"])
+    return [row.id for row in ROWS if Evaluation.matches(row, expression)]
 
 
 def test_every_case_is_answered_by_the_in_memory_evaluator():
@@ -213,13 +216,15 @@ def test_every_case_is_answered_by_the_in_memory_evaluator():
 
 def test_the_cases_cover_every_operator_the_engine_declares():
     """A new operator with no case is a new way for the two engines to disagree in silence."""
-    from sincpro_framework.ddd.criteria import Operator, conditions_of
+    from sincpro_framework.ddd.criteria import (
+        Operator,
+    )
 
     asked = {
         condition.operator
         for case in CASES
         if case["where"] is not None
-        for condition in conditions_of(expression_from(case["where"]))
+        for condition in Node.read(case["where"]).conditions()
     }
 
     assert asked == set(Operator), f"no parity case for {sorted(set(Operator) - asked)}"

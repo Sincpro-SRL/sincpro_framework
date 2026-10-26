@@ -3,17 +3,17 @@
     context = use_context()                  in a Feature, an interceptor, a hook, an adapter
     context["tenant_id"]                     the effective value: the nearest node wins
     context.get("lang", "es")
-    context[SiatSettings]                    a value kept under its type, settings among them
+    context[SiatSettings]                    a value stored under its type, settings among them
 
     context["note"] = "x"                    the scope of the call — as `self.context` always wrote
     context.set("pos_id", 3)                 this node only: what it runs afterwards sees it
     with context.scoped({"tenant_id": "beta"}):     a child scope for a block
 
     context.level · context.parent · context.root · context.entrypoint · context.application
-    context.feature · context.hook · context.bus · context.at(Level.ENTRYPOINT)
+    context.feature · context.hook · context.bus · context.at(ContextLevel.ENTRYPOINT)
     context.own · context.origin("tenant_id") · context.lineage() · context.execution
-    context.drafts() · context.drafts(by=["session_id"])   kept where the context is kept
-    context.pipelines() · context.pipelines(by=["user_id"])   the runs of its pipelines, the same
+    context.drafts() · context.drafts(by=["session_id"])   saved where the context is saved
+    context.store_in_use()                                   the store drafts, runs and leases use
 
 **Two ways to write, on purpose.** As a mapping — `context[key] = value`, `update`, `del` — a write
 lands on the scope of the call: the `bus.context(...)` block, or the call itself; every execution of
@@ -26,32 +26,23 @@ Feature's own value, reaching what it runs and never its siblings or its caller.
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, overload
+from typing import Any, overload
 
+from sincpro_framework.context.adapters.stores import in_memory_contexts
 from sincpro_framework.context.domain.execution import Execution
-from sincpro_framework.context.domain.keys import ContextKey, travelling
-from sincpro_framework.context.domain.level import EntrypointKind, Level, Origin
+from sincpro_framework.context.domain.keys import ContextKey
+from sincpro_framework.context.domain.level import ContextLevel, EntrypointKind, Origin
 from sincpro_framework.context.domain.node import REMOVED, ContextNode
-from sincpro_framework.context.entrypoint.drafts import Drafts
-from sincpro_framework.context.entrypoint.owner import BY_TENANT, BY_TENANT_AND_USER
+from sincpro_framework.context.domain.owner import Owner
+from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.infrastructure.shared import SharedValues
-from sincpro_framework.context.infrastructure.tree import (
-    ROOT,
-    child,
-    current,
-    current_execution,
-    entered,
-    recorrelated,
-    scope_of,
-    shared,
-)
+from sincpro_framework.context.infrastructure.travel import travelling
+from sincpro_framework.context.infrastructure.tree import ROOT, current, entered
+from sincpro_framework.context.services.drafts import Drafts
+from sincpro_framework.context.services.executions import current_execution
+from sincpro_framework.context.services.nodes import entered_child, shared
+from sincpro_framework.data_layer.store import Leases
 from sincpro_framework.sincpro_logger import logger
-from sincpro_framework.store.adapters.stores import in_memory_contexts
-from sincpro_framework.store.domain.store import ContextStore
-from sincpro_framework.store.infrastructure.leases import Leases
-
-if TYPE_CHECKING:
-    from sincpro_framework.pipelines.runs import PipelineRuns
 
 
 class Context(dict[Any, Any]):
@@ -99,10 +90,10 @@ class Context(dict[Any, Any]):
                 "this context is read-only: open a scope with bus.context({...}), or write it "
                 "where it runs — self.context, use_context()"
             )
-        found = scope_of(self._node, self._owner)
+        found = self._node.scope(self._owner)
         if found is not None:
             return found
-        bus = self._node.nearest(Level.BUS)
+        bus = self._node.nearest(ContextLevel.BUS)
         if bus is not None and (self._owner is None or bus.owner is self._owner):
             return bus
         logger.warning(
@@ -128,7 +119,7 @@ class Context(dict[Any, Any]):
         two are minted by the framework — written here they only name what a root is handed.
         """
         if key == ContextKey.CORRELATION_ID:
-            recorrelated(self._node, value)
+            self._node.recorrelate(value)
         elif (
             key in (ContextKey.EXECUTION_ID, ContextKey.CAUSATION_ID)
             and self.execution is not None
@@ -144,7 +135,7 @@ class Context(dict[Any, Any]):
 
         1. The scope said it itself and nothing above says it: the scope stops saying it.
         2. Otherwise — inherited from above — the scope hides it with `REMOVED`, so the call
-           no longer sees it while the node above keeps it for everyone else.
+           no longer sees it while the node above still holds it for everyone else.
         Final: gone from this `Context`'s items too.
         """
         if key not in self:
@@ -251,7 +242,7 @@ class Context(dict[Any, Any]):
     # --- the tree -------------------------------------------------------------------------------
 
     def store(self, given: ContextStore | None = None) -> ContextStore | None:
-        """The `ContextStore` this context keeps in: the one given, else the nearest set — on
+        """The `ContextStore` this context saves in: the one given, else the nearest set — on
         a scope, on a bus (`bus.store_context_in`), on the process (`store_context_in`) — else
         `None`.
 
@@ -282,7 +273,7 @@ class Context(dict[Any, Any]):
             with use_context().scoped({"tenant_id": "acme"}) as scope:
                 scope["tenant_id"]                          ->  "acme"
             use_context().get("tenant_id")                  ->  None      outside the block
-            with use_context(Level.ENTRYPOINT).scoped():    the entrypoint's view, nothing under it
+            with use_context(ContextLevel.ENTRYPOINT).scoped():    the entrypoint's view, nothing under it
 
         1. The level: a scope under the flow's entrypoint, or the entrypoint itself when none
            is open — `kind` naming the entrance, `DIRECT` when unsaid.
@@ -290,11 +281,10 @@ class Context(dict[Any, Any]):
            execution.
         Final: the node entered for the block, answered as a `Context`.
         """
-        given = dict(values or {})
-        level = Level.SCOPE if self._node.nearest(Level.ENTRYPOINT) else Level.ENTRYPOINT
-        if level is Level.ENTRYPOINT:
-            kind = kind or EntrypointKind.DIRECT
-        node = ContextNode(level, self._node, given, owner=self._owner, kind=kind)
+        level, kind = self._node.child_level(kind)
+        node = ContextNode(
+            level, self._node, dict(values or {}), owner=self._owner, kind=kind
+        )
         running = current_execution()
         if running is not None and self.execution is not running:
             node.execution = running
@@ -302,14 +292,14 @@ class Context(dict[Any, Any]):
             yield Context(node, self._owner)
 
     @property
-    def level(self) -> Level:
-        """The level of the node this context is — `Level.FEATURE` in a Feature."""
+    def level(self) -> ContextLevel:
+        """The level of the node this context is — `ContextLevel.FEATURE` in a Feature."""
         return self._node.level
 
     @property
     def kind(self) -> EntrypointKind | None:
         """Which entrance opened the flow — read on the entrypoint (`context.entrypoint.kind`)."""
-        entrypoint = self._node.nearest(Level.ENTRYPOINT)
+        entrypoint = self._node.nearest(ContextLevel.ENTRYPOINT)
         return None if entrypoint is None else entrypoint.kind
 
     @property
@@ -324,7 +314,7 @@ class Context(dict[Any, Any]):
         parent = self._node.parent
         return None if parent is None else Context(parent, self._owner)
 
-    def at(self, level: Level) -> "Context | None":
+    def at(self, level: ContextLevel) -> "Context | None":
         """The nearest node of `level` this one stands under — itself included."""
         found = self._node.nearest(level)
         return None if found is None else Context(found, self._owner)
@@ -338,28 +328,28 @@ class Context(dict[Any, Any]):
     @property
     def bus(self) -> "Context | None":
         """The bus's node — what it publishes for every execution of its own."""
-        return self.at(Level.BUS)
+        return self.at(ContextLevel.BUS)
 
     @property
     def entrypoint(self) -> "Context | None":
         """The entrypoint of the flow — what the entrance knew: who, which tenant, which
         kind."""
-        return self.at(Level.ENTRYPOINT)
+        return self.at(ContextLevel.ENTRYPOINT)
 
     @property
     def application(self) -> "Context | None":
         """The node of the nearest ApplicationService execution — `None` outside one."""
-        return self.at(Level.APPLICATION)
+        return self.at(ContextLevel.APPLICATION)
 
     @property
     def feature(self) -> "Context | None":
         """The node of the nearest Feature execution — `None` outside one."""
-        return self.at(Level.FEATURE)
+        return self.at(ContextLevel.FEATURE)
 
     @property
     def hook(self) -> "Context | None":
         """The node of the repository hook running — `None` outside one."""
-        return self.at(Level.HOOK)
+        return self.at(ContextLevel.HOOK)
 
     # --- beyond the process ----------------------------------------------------------------------
 
@@ -389,7 +379,7 @@ class Context(dict[Any, Any]):
         every: timedelta = timedelta(seconds=5),
     ) -> None:
         """The process level shared by every replica through `store` — read locally, read again
-        when its version moved, at most once per `every`; a write is kept for the others. Only the
+        when its version moved, at most once per `every`; a write is saved for the others. Only the
         root is shared: a flow travels with its message.
 
             use_context().root.share(KeyValueContexts(redis))
@@ -407,40 +397,28 @@ class Context(dict[Any, Any]):
         super().clear()
         super().update(ROOT.flattened())
 
-    def _keeping(self, given: ContextStore | None) -> ContextStore:
-        """Where the drafts and the pipeline runs are kept: the store given, else the nearest
-        `ContextStore` — a bus's, the process's — else this process's memory, said once."""
+    def store_in_use(self, given: ContextStore | None = None) -> ContextStore:
+        """Where what the context owns is saved — drafts, pipeline runs, leases: the store given,
+        else the nearest `ContextStore` — a bus's, the process's — else this process's memory,
+        said once.
+
+            use_context().store_in_use()                    ->  billing's KeyValueContexts
+            use_context().store_in_use()                    ->  this process's memory, with none set
+        """
         found = self.store(given)
         return found if found is not None else in_memory_contexts()
 
     def drafts(
-        self, by: Sequence[str] = BY_TENANT_AND_USER, store: ContextStore | None = None
+        self, by: Sequence[str] = Owner.BY_TENANT_AND_USER, store: ContextStore | None = None
     ) -> Drafts:
         """The drafts of whoever this context says — its tenant and its user by default, any keys
-        of it with `by` (`["session_id"]`) — kept where the context is kept."""
-        return Drafts(self._keeping(store), self, by)
-
-    def pipelines(
-        self, by: Sequence[str] = BY_TENANT, store: ContextStore | None = None
-    ) -> "PipelineRuns":
-        """The runs of the pipelines of whoever this context says — its tenant, and the keys of
-        `by` — kept where the context is kept.
-
-        Context: the pipelines are a component built on the context, so they are loaded when first
-        asked for — the context never imports them at import time."""
-        from sincpro_framework.pipelines.runs import PipelineRuns
-
-        return PipelineRuns(self._keeping(store), self, by)
+        of it with `by` (`["session_id"]`) — saved where the context is saved."""
+        return Drafts(self.store_in_use(store), self, by)
 
     def leases(self, store: ContextStore | None = None) -> Leases:
-        """The leases kept where the context is kept — a name held by one owner at a time, by
+        """The leases saved where the context is saved — a name held by one owner at a time, by
         every replica that shares the store."""
-        return self._keeping(store).leases()
-
-
-def _named(values: Mapping[Any, Any]) -> dict[str, Any]:
-    """The keys a store or a message can carry — those named by text."""
-    return {key: value for key, value in values.items() if isinstance(key, str)}
+        return self.store_in_use(store).leases()
 
 
 @overload
@@ -449,13 +427,13 @@ def use_context() -> Context:
 
 
 @overload
-def use_context(level: Level) -> Context | None:
+def use_context(level: ContextLevel) -> Context | None:
     """The node of `level` above the one in play — `None` when there is none."""
 
 
-def use_context(level: Level | None = None) -> Context | None:
+def use_context(level: ContextLevel | None = None) -> Context | None:
     """The context in play — from anywhere, with no bus in hand. With a level, that level's node:
-    `use_context(Level.ENTRYPOINT)`; `None` when the node in play stands under none."""
+    `use_context(ContextLevel.ENTRYPOINT)`; `None` when the node in play stands under none."""
     context = Context(current())
     return context if level is None else context.at(level)
 
@@ -466,5 +444,5 @@ def carrying(
 ) -> Generator[None, None, None]:
     """Every bus executed inside the block starts from `context` — what a caller that is not a bus,
     a cron or a worker, hands the buses it calls."""
-    with entered(child(Level.SCOPE, dict(context), kind=kind)):
+    with entered_child(ContextLevel.SCOPE, dict(context), kind=kind):
         yield

@@ -11,12 +11,12 @@ may not).
 | `Permission` | `auth/domain/permissions.py` | the `StrEnum` base a bounded context extends with its permissions |
 | `Credentials` → `Identity` | `auth/domain/identity.py` | what the caller presented, and who they turned out to be |
 | `AuthProvider` | `auth/domain/provider.py` | **the contract**: authenticate, and answer about permissions |
-| `AccessControl` | `auth/access_control.py` | the declarations (`requires`, `authenticated`, `public`) and the checks |
-| the guard | `auth/guard.py` | what runs around a use case and before a hook |
-| `as_identity`, `as_system` | `auth/security_context.py` | who the execution acts as |
+| `AccessControl` | `auth/entrypoint/access_control.py` | the declarations (`requires`, `authenticated`, `public`) and the checks; `AccessControl.of(bus)` is the one guarding a bus |
+| the guard | `auth/services/guard.py` | what runs around a use case and before a hook |
+| `security` | `auth/entrypoint/security.py` | who the execution acts as (`identity`, `as_identity`, `as_system`), and what every entrypoint hands auth (`authenticated_as`, `challenges`, `identity_headers`) |
 | `StaticProvider`, `RolePermissions`, `ApiKeyProvider`, `ServiceTokenProvider` | `auth/adapters/` | what the framework ships; any class honouring the contract stands beside them |
-| `IdentityMiddleware` | `auth/asgi.py` | an ASGI app of the project's — FastAPI, Starlette — acting as its requests |
-| the transports | `auth/transports.py` | what every entrypoint hands auth: credentials out of a request, the refusal it answers |
+| `IdentityMiddleware` | `auth/entrypoint/asgi.py` | an ASGI app of the project's — FastAPI, Starlette — acting as its requests |
+| `Credentials.from_asgi`, `Credentials.from_headers`, `AuthError.refusal_body`, `AuthError.http_status` | `auth/domain/` | credentials out of a request, and the refusal every entrypoint answers |
 
 Nothing is forced: a use case or hook that declares nothing is not checked, and a bus with no
 `AccessControl` runs as before. JSON-RPC, gRPC, MCP and a context hosted for another service
@@ -31,7 +31,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied, as_identity, as_system
+from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied, security
 from sincpro_framework.auth.domain import exceptions
 
 
@@ -199,12 +199,12 @@ def called_with(key: str) -> Identity:
     return auth.authenticate(Credentials(transport="http", headers={"X-Api-Key": key}))
 
 
-with as_identity(called_with("k-accountant")):
+with security.as_identity(called_with("k-accountant")):
     answer = billing(CommandCheckout(customer="c-1", total=500))
     assert isinstance(answer, Answer)
     assert (answer.by, answer.credit) == ("user:1", "skipped")
 
-with as_identity(called_with("k-clerk")):
+with security.as_identity(called_with("k-clerk")):
     try:
         billing(CommandIssueInvoice(total=10))
     except exceptions.PermissionDenied as refused:
@@ -225,13 +225,13 @@ assert auth.authenticate(Credentials(transport="http")).is_anonymous
   checkout it answered `None`, logged, and the checkout went on. `Price` declares nothing: it is
   not checked. A nested use case that declares its own requirement is checked again.
 - Who acts is a `ContextVar` of its own, never a key of `bus.context(...)` — the context is a
-  dict anyone writes, so an identity kept there could be forged by writing it. It follows the
+  dict anyone writes, so an identity stored there could be forged by writing it. It follows the
   execution into every bus it calls and into `thread_context()`.
 
 ## Skipping, strict, disabled, the system
 
 ```python
-with as_system("cron: close cash registers"):
+with security.as_system("cron: close cash registers"):
     billing(CommandCreditReport(customer="c-1"))
 
 strict = AccessControl[BillingPermission](providers=[keys], strict=True)
@@ -244,8 +244,8 @@ unchecked = AccessControl[BillingPermission](enabled=False)
 | `strict=True` | a use case entered from outside that declares nothing is refused; a nested one inherits |
 | `enabled=False` | nothing is checked; `on(...)` warns once |
 | `when_denied=WhenDenied.SKIP` | a use case answers `None`, a hook's moment is left out — logged |
-| `as_system(reason)` | every requirement is met; the reason is logged |
-| a `replaces=` handler or hook that declares nothing | keeps the declaration of the one it replaces |
+| `security.as_system(reason)` | every requirement is met; the reason is logged |
+| a `replaces=` handler or hook that declares nothing | inherits the declaration of the one it replaces |
 | one bus that must not be guarded | no `auth.on(bus)` for it |
 | a new generation of the bus — `fresh()`, the runtime registry | guarded as the bus it came from, resolving its own handlers |
 
@@ -277,10 +277,10 @@ class OnlyIssuersWriteInvoices(Hook):
 auth.on(billing_hooks)
 invoices = MemoryRepository(hooks=billing_hooks)
 
-with as_identity(called_with("k-accountant")):
+with security.as_identity(called_with("k-accountant")):
     invoices.save(Invoice(total=1))
 
-with as_identity(called_with("k-clerk")):
+with security.as_identity(called_with("k-clerk")):
     try:
         invoices.save(Invoice(total=1))
     except exceptions.PermissionDenied:
@@ -291,8 +291,8 @@ A hook's declaration holds whichever use case writes the aggregate: "writing an 
 issuing them", decided before the hook's moment, inside the write. `auth.on(hooks)` registers the
 guard as a gate of the collection — `Hooks.gate`, the extension point any component can use — and
 the gate holds on every copy or combination made of it, before or after: a `without(...)` built
-at import time is guarded all the same, and a replacement made in a `combined_with(...)` keeps
-what it replaces required.
+at import time is guarded all the same, and a replacement made in a `combined_with(...)` inherits
+what the one it replaces required.
 
 ## Testing
 
@@ -304,7 +304,7 @@ with granting(BillingPermission.ISSUE_INVOICE):
 
 recording = RecordingProvider(keys)
 recorded = AccessControl[BillingPermission](providers=[recording])
-with as_identity(recorded.authenticate(Credentials(transport="http", headers={"x-api-key": "k-accountant"}))):
+with security.as_identity(recorded.authenticate(Credentials(transport="http", headers={"x-api-key": "k-accountant"}))):
     recorded.allows(BillingPermission.ISSUE_INVOICE)
 assert ("has_permission", "user:1", "billing.invoice.issue") in recording.asked
 
@@ -325,7 +325,7 @@ class TestTenantKeys(AuthProviderContract):
 
 | In a test I need… | How |
 |---|---|
-| to be someone, no provider, no bus | `with as_identity(Identity.user("user:1", permissions={...})):` |
+| to be someone, no provider, no bus | `with security.as_identity(Identity.user("user:1", permissions={...})):` |
 | only some permissions, in one line | `with granting(BillingPermission.ISSUE_INVOICE):` |
 | an entrypoint with fake tokens | `StaticProvider({"token-a": identity_a})` |
 | no access control at all | `AccessControl(enabled=False)`, or no `auth.on(bus)` |
@@ -351,7 +351,7 @@ the bus's `AccessControl` authenticates them, and the use case runs as that iden
 ```python
 from sincpro_framework.auth import ApiKey, ApiKeyProvider, InMemoryApiKeys, ServiceTokenProvider
 from sincpro_framework.entrypoints.domain.surface import Exposure
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints import RpcGateway
 
 api_keys = InMemoryApiKeys()
 bot_key = api_keys.issue(
@@ -378,7 +378,7 @@ assert refused["error"]["data"]["kind"] == "unauthenticated"
 |---|---|---|
 | JSON-RPC (`RpcGateway`) | headers, cookies, query, method, target | a single call: HTTP 401 with `WWW-Authenticate`; `-32001` / `-32003` with `data.kind`, `data.reason`, `data.requirement` |
 | gRPC (`GrpcGateway`) | metadata, the mTLS client certificate | `UNAUTHENTICATED` / `PERMISSION_DENIED`, with `sp-auth-refusal` and `www-authenticate` in the trailing metadata |
-| MCP (`build_mcp_server`) | the HTTP request of the tool call; with `auth=`, FastMCP's own bearer check first | a tool error; with `auth=`, FastMCP's 401 and — given `base_url` — the resource metadata (RFC 9728) |
+| MCP (`Entrypoint`, `McpGateway`) | the HTTP request of the tool call; with `auth=`, FastMCP's own bearer check first | a tool error; with `auth=`, FastMCP's 401 and — given `base_url` — the resource metadata (RFC 9728) |
 | An ASGI app of the project's | `IdentityMiddleware(app, access=auth)` | 401 with `WWW-Authenticate`, 403 with the reason |
 | A context hosted for another service | the caller's `ServiceTokenProvider` token | the refusal raised on the caller as itself |
 
@@ -388,7 +388,7 @@ assert refused["error"]["data"]["kind"] == "unauthenticated"
   the request context it sends is never read for identity. The system does not cross services.
 - **A bus nobody guards** is left alone by every entrypoint: nothing is authenticated, the
   identity is what the host opened.
-- **Nothing here needs an extra**: the transports and the middleware are the standard library;
+- **Nothing here needs an extra**: `security`, `Credentials` and the middleware are the standard library;
   `grpc`, `fastmcp` and `starlette` are read only by the entrypoints that already need them.
 
 ## What no contract here covers

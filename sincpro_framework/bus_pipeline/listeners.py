@@ -4,11 +4,11 @@ Each kind of fact — a use case that begins, one that answered, a failure that 
 `Listeners` on every bus, and one for the process that every bus of it also tells:
 
     billing.on_completion(audit)                    this bus
-    completions.subscribe(audit)                    every bus of the process
+    completion_listeners.subscribe(audit)                    every bus of the process
 
 **A listener observes.** It is a function, called in the thread of the execution, in the order it was
 added. One that raises is logged and never reaches the execution nor the next listener: an execution
-neither waits for its listeners nor knows whether they ran. Nothing here is retried or kept.
+neither waits for its listeners nor knows whether they ran. Nothing here is retried or stored.
 
 **It hears everything, unless told less** — the same three steps on every way to listen:
 
@@ -62,7 +62,7 @@ def hearing(use_cases: Iterable[type | str] | None = None, when: Any = None) -> 
     3. `when` given:
        3.1 one filter, or a list of them;
        3.2 each one written as JSON read into an expression;
-       3.3 one kept as it is, several joined under `All`.
+       3.3 one used as it is, several joined under `All`.
     Final: `hears` — an event is heard when its use case is named, in full or by its last
     segment, and `when` holds over its fields.
     """
@@ -75,11 +75,13 @@ def hearing(use_cases: Iterable[type | str] | None = None, when: Any = None) -> 
     )
     holds_over: Callable[[Callable[[str], Any]], bool] | None = None
     if when is not None:
-        from sincpro_framework.ddd.criteria import All, expression_from, holds
+        from sincpro_framework.ddd.criteria import All, Evaluation, Node
 
         written = [when] if not isinstance(when, list) else when
-        parts = [expression_from(one) if isinstance(one, Mapping) else one for one in written]
-        holds_over = partial(holds, parts[0] if len(parts) == 1 else All(all=parts))
+        parts = [Node.read(one) if isinstance(one, Mapping) else one for one in written]
+        holds_over = partial(
+            Evaluation.holds, parts[0] if len(parts) == 1 else All(all=parts)
+        )
 
     def hears(event: "DomainEvent") -> bool:
         """Whether this one event is heard: its use case named — in full or by its Command's
@@ -136,14 +138,14 @@ class Listeners:
 
             process: [audit]; here: [alert, audit]    ->  [(audit, None), (alert, None)]
 
-        A listener added both to the process and here is kept where it came first.
+        A listener added both to the process and here is placed where it came first.
         """
         with self._lock:
             own = list(self._own)
         heard = [*(self._process.listening() if self._process is not None else []), *own]
         unique: list[tuple[Listener, Hears | None]] = []
         for one in heard:
-            if all(one[0] != kept[0] for kept in unique):
+            if all(one[0] != added[0] for added in unique):
                 unique.append(one)
         return unique
 

@@ -9,7 +9,7 @@ reads: only the travelling keys (text, numbers, booleans, lists of them).
 **Typed** is for the same codebase: the schema a project already declares — a `TypedDict` or a DTO —
 validates what comes back and gives each value its type; keys the schema does not name are left out.
 A `Secret` is written as its value and comes back a `Secret` — what the context holds is the
-project's decision, so a store keeps it as it is.
+project's decision, so a store saves it as it is.
 **Pickle** carries anything picklable, each value on its own: a reader that has the value's class
 gets the object; one that lacks it reads the context without that key — as if it never existed, said
 in a warning — never a context that fails whole. It runs code when it loads, so it never reads bytes
@@ -24,7 +24,7 @@ from typing import Any
 from pydantic import Secret, TypeAdapter
 
 from sincpro_framework.context.domain.codec import ContextCodec
-from sincpro_framework.context.domain.keys import travelling
+from sincpro_framework.context.infrastructure.travel import travelling
 from sincpro_framework.sincpro_logger import logger
 
 
@@ -61,7 +61,7 @@ class TypedCodec(ContextCodec):
     def dumps(self, context: Mapping[str, Any]) -> bytes:
         """The context validated by the schema, written as JSON.
 
-        Context: pydantic dumps a `Secret` masked (`"**********"`); a store must keep what the
+        Context: pydantic dumps a `Secret` masked (`"**********"`); a store must save what the
         context holds, so each `Secret` is written back as its value — and `loads` turns it
         into a `Secret` again because the schema says so.
 

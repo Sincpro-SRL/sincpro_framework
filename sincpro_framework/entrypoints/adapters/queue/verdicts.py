@@ -67,7 +67,7 @@ def failed(
     command: str | None,
 ) -> Verdict:
     """The verdict on a failure — a retry past `max_attempts` becomes a dead letter, its
-    reason kept."""
+    reason preserved."""
     settlement = settlement_of(kind)
     if settlement == Settlement.RETRY and attempts >= max_attempts:
         settlement = Settlement.DEAD_LETTER
@@ -84,7 +84,7 @@ WORST_FIRST = (
     Settlement.SKIP,
 )
 """How the verdicts of several contexts on one delivery combine: a retry first — the inbox
-keeps it from re-running the contexts that completed — then a dead letter, then a run."""
+prevents it from re-running the contexts that completed — then a dead letter, then a run."""
 
 
 def combined(verdicts: list[Verdict]) -> Verdict:

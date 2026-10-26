@@ -130,7 +130,7 @@ class TestContextMixin:
         assert framework._get_context() == test_context
 
         # Test cleaning context
-        framework._clean_context()
+        framework._set_context({})
         assert framework._get_context() == {}
 
     def test_context_visible_on_features_inside_context_manager(self):

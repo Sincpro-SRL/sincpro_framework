@@ -14,7 +14,7 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.bus_pipeline.outcomes.events import ExecutionFailed
-from sincpro_framework.bus_pipeline.outcomes.listeners import failures
+from sincpro_framework.bus_pipeline.outcomes.listeners import failure_listeners
 
 
 class CommandIssueInvoice(DataTransferObject):
@@ -130,17 +130,17 @@ class OpenIncident(Feature):
 
 billing.publish_failures(to=Publisher(SyncQueue(Subscriber(ops))))
 everything: list[ExecutionFailed] = []
-failures.subscribe(everything.append)                  # every bus of the process
+failure_listeners.subscribe(everything.append)                  # every bus of the process
 
 with pytest.raises(SiatUnavailable):
     billing(CommandIssueInvoice(order_id="O-8"))
 
 assert incidents[0].dto == {"order_id": "O-8"} and len(everything) == 1
-failures.clear()
+failure_listeners.clear()
 ```
 
 - `@bus.on_failure` — a function, for the failures of one bus.
-- `failures.subscribe(fn)` — every bus of the process.
+- `failure_listeners.subscribe(fn)` — every bus of the process.
 - `bus.publish_failures(to=publisher)` — a queue: another bus (`SyncQueue`), the background
   (`BackgroundQueue`), a broker topic — the error queue (`FastStreamQueue`).
 
@@ -152,7 +152,7 @@ listener. With nobody listening, nothing is built.
 
 ```python
 from sincpro_framework.bus_pipeline.outcomes.events import ExecutionCompleted
-from sincpro_framework.bus_pipeline.outcomes.listeners import completions
+from sincpro_framework.bus_pipeline.outcomes.listeners import completion_listeners
 
 
 class CommandReserveStock(DataTransferObject):
@@ -202,25 +202,25 @@ assert completed.response_type == "ResponseReserveStock" and completed.context["
 | `context` | what the flow carried — the keys that travel |
 
 It is a `DomainEvent` (`sincpro.execution.v1.completed`), heard the same three ways as a failure:
-`@bus.on_completion`, `completions.subscribe(fn)` for every bus of the process,
+`@bus.on_completion`, `completion_listeners.subscribe(fn)` for every bus of the process,
 `bus.publish_completions(to=publisher)` for a queue. With nobody listening, nothing is built.
 
 ```python
 audit = UseFramework("audit-outcomes", log_after_execution=False)
-kept: list[str] = []
+trail: list[str] = []
 
 
 @audit.feature(ExecutionCompleted)                     # another bus, as any event
-class KeepTrail(Feature):
+class RecordTrail(Feature):
     def execute(self, dto: ExecutionCompleted) -> None:
-        kept.append(dto.use_case)
+        trail.append(dto.use_case)
 
 
 warehouse.publish_completions(to=Publisher(SyncQueue(Subscriber(audit))))
 warehouse(CommandReserveStock(order_id="O-8"))
 
-assert kept == ["warehouse-outcomes.CommandReserveStock"]   # audit's own run is not announced
-completions.clear()
+assert trail == ["warehouse-outcomes.CommandReserveStock"]   # audit's own run is not announced
+completion_listeners.clear()
 ```
 
 A bus that executes an `ExecutionCompleted` or an `ExecutionFailed` announces nothing for it: a
@@ -278,7 +278,7 @@ the bus (`fresh`) hears what the bus does.
 
 - To **change** what a call answers — veto it, adjust it, answer instead — use an
   [interceptor](interceptors.md) or an error handler.
-- To keep **state** a process depends on, or what must follow a commit, use the context's event
+- To persist **state** a process depends on, or what must follow a commit, use the context's event
   table and its relay ([events](../events/README.md)); a listener may not run.
 - To send them **out of the process**, hand them to a `Publisher` (`publish_completions`,
   `publish_failures`): from there on they travel as any event, by `event_driven`.

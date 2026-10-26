@@ -12,8 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.entrypoints import declare
-from sincpro_framework.entrypoints import internal as internal_from_entrypoints
+from sincpro_framework.entrypoints import declare, internal
 from sincpro_framework.entrypoints.domain.bindings import (
     Binding,
     Deprecation,
@@ -22,8 +21,7 @@ from sincpro_framework.entrypoints.domain.bindings import (
     RestBinding,
 )
 from sincpro_framework.entrypoints.entrypoint.decorators import grpc, mcp, queue, rest, rpc
-from sincpro_framework.entrypoints.entrypoint.internal import internal, is_internal
-from sincpro_framework.entrypoints.infrastructure.registry import registry
+from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bindings
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -51,8 +49,8 @@ def test_decorators_record_by_class_and_return_it_untouched():
             return ResponseIssueInvoice(number="F-1")
 
     assert set(Bound.__dict__) == set(Plain.__dict__)
-    assert set(registry.of(Bound)) == {"rest", "rpc", "grpc", "mcp", "queue"}
-    assert registry.of(Plain) == {}
+    assert set(entrypoint_bindings.of(Bound)) == {"rest", "rpc", "grpc", "mcp", "queue"}
+    assert entrypoint_bindings.of(Plain) == {}
 
 
 def test_the_order_decorators_are_written_in_does_not_change_the_bindings():
@@ -66,7 +64,7 @@ def test_the_order_decorators_are_written_in_does_not_change_the_bindings():
     class Reordered(Feature):
         pass
 
-    assert registry.of(Written) == registry.of(Reordered)
+    assert entrypoint_bindings.of(Written) == entrypoint_bindings.of(Reordered)
 
 
 def test_a_second_binding_for_one_wire_is_refused_where_it_is_written():
@@ -87,14 +85,14 @@ def test_the_verbs_fix_the_method_and_rest_leaves_it_to_be_derived():
     class Derived(Feature):
         pass
 
-    fixed = registry.of(Fixed)["rest"]
+    fixed = entrypoint_bindings.of(Fixed)["rest"]
     assert isinstance(fixed, RestBinding)
     assert (fixed.method, fixed.body, fixed.concurrency) == (
         "PATCH",
         "merge-patch",
         "if-match",
     )
-    assert registry.of(Derived)["rest"].model_dump()["method"] is None
+    assert entrypoint_bindings.of(Derived)["rest"].model_dump()["method"] is None
 
 
 def test_a_decorator_records_only_what_it_was_told():
@@ -105,7 +103,11 @@ def test_a_decorator_records_only_what_it_was_told():
     class Issue(Feature):
         pass
 
-    assert registry.of(Issue)["rest"].model_fields_set == {"method", "path", "status"}
+    assert entrypoint_bindings.of(Issue)["rest"].model_fields_set == {
+        "method",
+        "path",
+        "status",
+    }
 
 
 def test_a_binding_is_frozen_and_refuses_a_field_it_does_not_have():
@@ -123,8 +125,8 @@ def test_deprecated_true_is_a_deprecation_with_no_dates():
     class Old(Feature):
         pass
 
-    assert registry.of(Old)["rpc"].deprecated == Deprecation()
-    assert registry.of(Old)["mcp"].deprecated == Deprecation(
+    assert entrypoint_bindings.of(Old)["rpc"].deprecated == Deprecation()
+    assert entrypoint_bindings.of(Old)["mcp"].deprecated == Deprecation(
         since=date(2026, 1, 1), replacement=CommandIssueInvoice
     )
 
@@ -134,7 +136,7 @@ def test_queue_consumes_and_hears_are_one_queue_binding():
     class Hear(Feature):
         pass
 
-    heard = registry.of(Hear)["queue"]
+    heard = entrypoint_bindings.of(Hear)["queue"]
     assert isinstance(heard, QueueBinding)
     assert (heard.kind, heard.group) == ("hears", "accounting")
 
@@ -156,9 +158,9 @@ def test_a_replaced_handler_inherits_the_bindings_it_declares_none_for():
         def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
             return ResponseIssueInvoice(number="F-2")
 
-    inherited = registry.of(IssueV2, bus.replaced_for(CommandIssueInvoice))
+    inherited = entrypoint_bindings.of(IssueV2, bus.replaced_for(CommandIssueInvoice))
 
-    assert inherited["rest"] == registry.of(Issue)["rest"]
+    assert inherited["rest"] == entrypoint_bindings.of(Issue)["rest"]
     assert isinstance(inherited["mcp"], McpBinding)
     assert inherited["mcp"].title == "Emitir"
 
@@ -173,16 +175,16 @@ def test_a_project_binding_is_recorded_the_same_way():
 
     declare(Handler, CliBinding(command="issue"))
 
-    assert registry.of(Handler) == {"cli": CliBinding(command="issue")}
+    assert entrypoint_bindings.of(Handler) == {"cli": CliBinding(command="issue")}
 
 
-def test_internal_is_still_importable_from_where_it_was():
-    @internal_from_entrypoints
+def test_internal_marks_the_class_in_the_registry():
+    @internal
     class Hidden(Feature):
         pass
 
-    assert internal is internal_from_entrypoints
-    assert is_internal(Hidden)
+    assert entrypoint_bindings.is_internal(Hidden)
+    assert not entrypoint_bindings.is_internal(Feature, None)
 
 
 def test_declaring_exposure_imports_no_transport_library():
@@ -196,7 +198,7 @@ for name in ("starlette", "fastapi", "uvicorn", "grpc", "google.protobuf", "fast
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.entrypoints.entrypoint.decorators import grpc, mcp, queue, rest, rpc
-from sincpro_framework.entrypoints.infrastructure.registry import registry
+from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bindings
 
 class CommandPing(DataTransferObject):
     n: int
@@ -213,7 +215,7 @@ class Ping(Feature):
     def execute(self, dto: CommandPing) -> None:
         return None
 
-assert set(registry.of(Ping)) == {"rest", "rpc", "grpc", "mcp", "queue"}
+assert set(entrypoint_bindings.of(Ping)) == {"rest", "rpc", "grpc", "mcp", "queue"}
 
 from sincpro_framework.entrypoints import Gateway
 

@@ -4,10 +4,10 @@
     secret = keys.issue(ApiKey(subject="apikey:ops-bot", tenant="bo", permissions={...}))
     auth = AccessControl(providers=[ApiKeyProvider(keys)])
 
-Context: a key is kept by its SHA-256, never as issued — a store that leaks leaks no key; the
+Context: a key is stored by its SHA-256, never as issued — a store that leaks leaks no key; the
 secret is shown once, when issued. The key is read from `header` (`x-api-key` by default), from
 `Authorization: ApiKey <key>`, and from the query parameter `query` when one is named — the
-last for a legacy client that can send nothing else. `ApiKeyStore` is the port: a project keeps
+last for a legacy client that can send nothing else. `ApiKeyStore` is the port: a project stores
 its keys in its own table by implementing two methods.
 """
 
@@ -25,7 +25,7 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 def digest_of(key: str) -> str:
-    """The SHA-256 of `key`, in hex — what a store keeps and looks a key up by.
+    """The SHA-256 of `key`, in hex — what a store saves and looks a key up by.
 
     Context: an API key is a long random secret, so a plain hash is enough — no salt, no
     stretching — and it lets the store find the key in one lookup instead of comparing each.
@@ -51,21 +51,21 @@ class ApiKeyStore(ABC):
     """The port where the keys live — `find` and `save` by digest; issuing and revoking come
     with it.
 
-    Context: a project keeps its keys in its own table by implementing the two abstract
-    methods; `issue` and `revoke` are written once here, so no store can keep a secret by
+    Context: a project stores its keys in its own table by implementing the two abstract
+    methods; `issue` and `revoke` are written once here, so no store can save a secret by
     mistake.
     """
 
     @abstractmethod
     def find(self, digest: str) -> ApiKey | None:
-        """The key kept under `digest`, revoked or not; `None` when none is."""
+        """The key stored under `digest`, revoked or not; `None` when none is."""
 
     @abstractmethod
     def save(self, key: ApiKey) -> None:
-        """Keep `key` under its `digest`, replacing what was there."""
+        """Store `key` under its `digest`, replacing what was there."""
 
     def issue(self, key: ApiKey) -> str:
-        """A new secret for `key`, kept by its digest — the only time the secret is seen."""
+        """A new secret for `key`, stored by its digest — the only time the secret is seen."""
         secret = f"sk_{secrets.token_urlsafe(32)}"
         self.save(key.model_copy(update={"digest": digest_of(secret)}))
         return secret
@@ -74,7 +74,7 @@ class ApiKeyStore(ABC):
         """Mark a key revoked — by its secret, or by its digest when the secret is gone.
 
         Context: an operator rarely holds the secret after it was handed on; the digest, which
-        the store shows, is enough. The key is kept, flagged, so a call with it is told
+        the store shows, is enough. The key stays stored, flagged, so a call with it is told
         "revoked api key" instead of "unknown api key".
 
             keys.revoke("sk_3f9…")        # by the secret
@@ -95,7 +95,7 @@ class ApiKeyStore(ABC):
 class InMemoryApiKeys(ApiKeyStore):
     """An `ApiKeyStore` in a dict — for tests, and for a process issuing its keys at start.
 
-    Context: it forgets every key when the process ends; production keeps them in a table.
+    Context: it forgets every key when the process ends; production stores them in a table.
     """
 
     def __init__(self) -> None:
@@ -127,7 +127,7 @@ class ApiKeyProvider(AuthProvider):
         name: str = "api-keys",
     ) -> None:
         """A provider over `store`, reading the key from `header` and, when named, from the
-        query parameter `query` — the header name is lower-cased, as `Credentials` keeps them.
+        query parameter `query` — the header name is lower-cased, as `Credentials` stores them.
         """
         self.store = store
         self.header = header.lower()
@@ -172,15 +172,15 @@ class ApiKeyProvider(AuthProvider):
         key = self._key_in(credentials)
         if key is None:
             return None
-        kept = self.store.find(digest_of(key))
-        if kept is None:
+        stored = self.store.find(digest_of(key))
+        if stored is None:
             raise exceptions.Unauthenticated("unknown api key")
-        if kept.revoked:
+        if stored.revoked:
             raise exceptions.Unauthenticated("revoked api key")
         return Identity(
-            subject=kept.subject,
+            subject=stored.subject,
             kind=IdentityKind.SERVICE,
-            tenant=kept.tenant,
-            permissions=kept.permissions,
+            tenant=stored.tenant,
+            permissions=stored.permissions,
             provider=self.name,
         )

@@ -18,11 +18,7 @@ from collections.abc import Awaitable, Callable, MutableMapping
 from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.entrypoint.transports import (
-    credentials_from_asgi,
-    http_status_of,
-    refusal_body,
-)
+from sincpro_framework.auth.domain.identity import Credentials
 from sincpro_framework.auth.infrastructure.security_context import as_identity
 
 if TYPE_CHECKING:
@@ -52,7 +48,7 @@ class IdentityMiddleware:
         PermissionDenied(...)             ->  403, {"error": {"kind": "permission_denied",
             "reason": "lacks billing.invoice.issue", "requirement": "billing.invoice.issue"}}
         """
-        status = http_status_of(error)
+        status = error.http_status
         headers = [(b"content-type", b"application/json")]
         if status == 401:
             headers += [
@@ -60,7 +56,7 @@ class IdentityMiddleware:
                 for challenge in self.access.challenges()
             ]
         await send({"type": "http.response.start", "status": status, "headers": headers})
-        body = json.dumps({"error": refusal_body(error)}).encode()
+        body = json.dumps({"error": error.refusal_body()}).encode()
         await send({"type": "http.response.body", "body": body})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -86,7 +82,7 @@ class IdentityMiddleware:
             await send(message)
 
         try:
-            credentials = credentials_from_asgi(scope, "http")
+            credentials = Credentials.from_asgi(scope, "http")
             identity = await asyncio.to_thread(self.access.authenticate, credentials)
             with as_identity(identity):
                 await self.app(scope, receive, sending)

@@ -3,7 +3,7 @@
     JsonCodec(ResponseBalance)          a DTO
     JsonCodec(dict[str, int])           anything pydantic can validate
 
-Context: decoding validates — a value kept by an older deploy, in a shape this one no longer
+Context: decoding validates — a value stored by an older deploy, in a shape this one no longer
 reads, fails loudly instead of reaching the caller half-right.
 """
 

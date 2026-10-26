@@ -27,7 +27,14 @@ from sincpro_framework.ddd import (
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import presentation_of
-from sincpro_framework.ddd.criteria import Any_, Operator, expression_from, matches
+from sincpro_framework.ddd.criteria import (
+    Evaluation,
+    Node,
+    Operator,
+)
+from sincpro_framework.ddd.criteria.domain.expression import (
+    Any_,
+)
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
 from sincpro_framework.ddd.repositories import Hook, Hooks
@@ -97,9 +104,9 @@ def holds(published: dict[str, Any] | None, record: Any) -> bool:
     `None` means no condition: the hint is off."""
     if published is None:
         return False
-    read, dropped = describe_class(type(record), "id").accept(expression_from(published))
+    read, dropped = describe_class(type(record), "id").accept(Node.read(published))
     assert not dropped, dropped
-    return matches(record, read)
+    return Evaluation.matches(record, read)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -203,7 +210,7 @@ def test_what_the_client_evaluates_from_json_agrees_with_the_server_on_every_rec
             on_server = getattr(one, hint)
             for record in records:
                 assert holds(published[name][hint], record) == (
-                    on_server is not None and matches(record, on_server)
+                    on_server is not None and Evaluation.matches(record, on_server)
                 ), (name, hint, record.state, record.payment)
 
 
@@ -300,7 +307,7 @@ def test_a_project_that_wants_a_rule_writes_its_hook_and_reads_the_same_conditio
     class PaymentNeedsItsReference(Hook):
         def before_save(self, invoice: Invoice) -> None:
             for name, condition in presentation_of(Invoice).required_when.items():
-                if matches(invoice, condition) and not getattr(invoice, name):
+                if Evaluation.matches(invoice, condition) and not getattr(invoice, name):
                     raise ddd_exceptions.ConstraintViolation(
                         f"{name} is required for this invoice"
                     )

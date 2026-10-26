@@ -11,6 +11,17 @@ binding in the registry and returning the class unchanged, so their order never 
 
 Context: a binding is per protocol, a host is per technology — changing the REST host changes
 no use case. Nothing here imports a transport library.
+
+What no entrypoint publishes is said once too: a use case marked `internal` runs in the process
+— another use case, a cron, a test calls it — and is on no wire, whatever the gateway includes.
+
+    @billing.feature(CommandReconcileLedger)
+    @internal
+    class ReconcileLedger(Feature): ...
+
+Context: decided once on the use case rather than on every gateway's `exclude`, so a gateway
+added later — REST today, another tomorrow — never publishes it by forgetting. The mark is stored
+in the registry, never written onto the class; the handler or its Command may carry it.
 """
 
 from collections.abc import Callable
@@ -28,7 +39,7 @@ from sincpro_framework.entrypoints.domain.bindings import (
     RestConcurrency,
     RpcBinding,
 )
-from sincpro_framework.entrypoints.infrastructure.registry import registry
+from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bindings
 
 type Deprecated = Deprecation | bool | None
 """`True` for a deprecation with no dates; a `Deprecation` to say since, sunset, replacement."""
@@ -37,7 +48,7 @@ type Deprecated = Deprecation | bool | None
 def declare[T: type](cls: T, binding: Binding) -> T:
     """Record `binding` for the handler `cls` — what every exposure decorator does, and what a
     project's own transport's decorator does with its own binding type."""
-    return registry.declare(cls, binding)
+    return entrypoint_bindings.declare(cls, binding)
 
 
 def _deprecation(deprecated: Deprecated) -> Deprecation | None:
@@ -435,3 +446,8 @@ class _Queue:
 queue = _Queue()
 """The queue decorator — `@queue.consumes(channel)` for a Command, `@queue.hears()` for an
 event."""
+
+
+def internal[T: type](cls: T) -> T:
+    """Mark this Feature, ApplicationService or Command as on no entrypoint."""
+    return entrypoint_bindings.mark_internal(cls)

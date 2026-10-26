@@ -166,9 +166,9 @@ def test_a_narrowed_upsert_never_overwrites_a_row_outside_its_scope(ledger, ana)
 
 
 def test_an_upsert_cannot_overwrite_what_the_framework_keeps(ledger, ana):
-    with pytest.raises(exceptions.ProgrammingError, match="the framework keeps"):
+    with pytest.raises(exceptions.ProgrammingError, match="the framework sets"):
         ledger.upsert(Owner(name="ana"), on=("name",), update=("id",))
-    with pytest.raises(exceptions.ProgrammingError, match="the framework keeps"):
+    with pytest.raises(exceptions.ProgrammingError, match="the framework sets"):
         MemoryRepository().upsert(Owner(name="ana"), on=("name",), update=("version",))
 
 

@@ -128,15 +128,8 @@ def test_a_cycle_through_a_half_loaded_package_is_found(write_package):
     assert cycle.modules == (package, f"{package}.domain.codes")
 
 
-def test_the_framework_has_only_its_known_cycle():
-    assert [cycle.modules for cycle in import_cycles("sincpro_framework")] == [
-        (
-            "sincpro_framework.ddd.entity",
-            "sincpro_framework.ddd.entity.mixins.change_tracking",
-            "sincpro_framework.ddd.events",
-            "sincpro_framework.ddd.events.domain_event",
-        )
-    ]
+def test_the_framework_has_no_import_cycle():
+    assert import_cycles("sincpro_framework") == []
 
 
 # ---------------------------------------------------------------------------------------------

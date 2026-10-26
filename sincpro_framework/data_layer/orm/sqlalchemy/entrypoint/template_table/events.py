@@ -1,7 +1,7 @@
 """The table of a bounded context's domain events — one table, every event of the context.
 
     events = event_table("billing_events", metadata)
-    map_events(mapper, BillingDomainEvent, events)      every subclass of it, kept here
+    map_events(mapper, BillingDomainEvent, events)      every subclass of it, stored here
 
 A domain event is an entity: its envelope is columns, what each class adds is `payload`.
 `event_columns()` is the envelope alone, for an event mapped to a table of its own.

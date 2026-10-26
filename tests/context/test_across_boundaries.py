@@ -11,9 +11,9 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.context import Execution, travelling
 from sincpro_framework.context.adapters.propagation import CONTEXT_HEADER, read, written
-from sincpro_framework.context.domain import keys
 from sincpro_framework.context.domain.keys import ContextKey
-from sincpro_framework.context.infrastructure.tree import current_execution
+from sincpro_framework.context.infrastructure import travel
+from sincpro_framework.context.services.executions import current_execution
 from sincpro_framework.ddd import DomainEvent
 
 
@@ -101,7 +101,7 @@ def test_grpc_reads_and_writes_the_identity_as_metadata():
 
 def test_a_remote_context_is_handed_the_callers_context_and_chain(monkeypatch):
     from sincpro_framework.remote_execution.domain.payload import Payload
-    from sincpro_framework.remote_execution.mixins import hosted_context
+    from sincpro_framework.remote_execution.entrypoint import hosted_context
 
     sent: dict[str, Any] = {}
 
@@ -162,10 +162,10 @@ def test_an_event_crosses_a_broker_with_the_publishers_context():
 
 def test_a_command_sent_to_a_broker_carries_the_senders_chain():
     pytest.importorskip("faststream")
-    from sincpro_framework.entrypoints.adapters.queue import cloud_event_headers
+    from sincpro_framework.event_driven import Envelope
 
     headers, sender = _inside_an_execution(
-        lambda: cloud_event_headers(CommandRemote(), source="identity-tests")
+        lambda: Envelope.headers_for(CommandRemote(), source="identity-tests")
     )
 
     assert headers["ce_causationid"] == sender.execution_id
@@ -176,7 +176,7 @@ def test_a_command_sent_to_a_broker_carries_the_senders_chain():
 def test_a_consumer_restores_what_the_message_carried():
     pytest.importorskip("faststream")
     from sincpro_framework.entrypoints.adapters.queue.wire import queue_context
-    from sincpro_framework.event_driven.adapters.envelope import Envelope
+    from sincpro_framework.event_driven import Envelope
 
     header = written(
         {ContextKey.TENANT_ID: "acme", ContextKey.TENANT_IDS: ["acme", "beta"], "plan": "pro"}
@@ -198,7 +198,7 @@ def test_a_consumer_restores_what_the_message_carried():
 
 
 def test_only_what_is_simple_travels():
-    keys._warned.discard("travel:connection")
+    travel._warned.discard("travel:connection")
     found = travelling(
         {
             ContextKey.TENANT_IDS: ("acme", "beta"),

@@ -19,7 +19,7 @@ from sincpro_framework.observability.domain import installed_version as dist_ver
 from sincpro_framework.observability.domain import resolve_identity
 from sincpro_framework.observability.errors.record_error import record_error
 from sincpro_framework.observability.errors.setup import setup_errors
-from sincpro_framework.observability.registry import registry
+from sincpro_framework.observability.registry import observability_registry
 from sincpro_framework.sincpro_conf import settings
 
 
@@ -93,7 +93,7 @@ def _install_fake_sentry(monkeypatch, state: CaptureState) -> None:
         def capture_exception(error: Exception) -> None:
             state.errors.append(error)
 
-    registry.reset()
+    observability_registry.reset()
     monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", "https://key@glitchtip.example/1")
     monkeypatch.setitem(__import__("sys").modules, "sentry_sdk", FakeSentry)
@@ -132,7 +132,7 @@ def test_record_sentry_without_dsn_does_not_capture(monkeypatch):
     from sincpro_framework.observability.errors import setup as sentry_mod
 
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", None)
-    registry.reset()
+    observability_registry.reset()
 
     record_error(
         RuntimeError("from-odoo-init"), "CreateOrderDTO", "feature", identity_of("payments")
@@ -452,7 +452,7 @@ def test_client_failure_does_not_break_the_bus(monkeypatch):
             raise AssertionError("should not capture")
 
     monkeypatch.setattr(sentry_mod, "SDK_AVAILABLE", True)
-    registry.reset()
+    observability_registry.reset()
     monkeypatch.setattr(sentry_mod.settings, "sentry_dsn", "https://key@host/1")
     monkeypatch.setitem(__import__("sys").modules, "sentry_sdk", BoomSentry)
 

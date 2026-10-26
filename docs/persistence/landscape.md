@@ -14,7 +14,7 @@ behind the roadmap at the end; the per-use-case status lives in the matrix.
 
 The model all four start from: everything is an **entity** — an aggregate, an MVC model, a DDD
 entity, a composed value object, a NoSQL document — and a **collection** of entities. The framework
-keeps the two apart on purpose: a `Criteria` is the question, an `EntityCollection` the answer.
+separates the two on purpose: a `Criteria` is the question, an `EntityCollection` the answer.
 
 ---
 
@@ -84,11 +84,11 @@ daemon), both rebuildable; snapshots for long streams; versioned events with upc
 **Where we are.** We have the envelope (`correlation_id`, `causation_id`), `record`/`pull_events`,
 the publisher and queues, FastStream brokers with an inbox, `EntityUpdated`, `after_commit` — and
 the model the mature stores share (PRD_19, [decision 31](decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table)):
-a domain event as an entity in one table per bounded context, kept by the repository in the
+a domain event as an entity in one table per bounded context, stored by the repository in the
 transaction of the change; `DeliverableEventMixin` with the delivery state on the row, delivered
 by an `EventRelay` with `FOR UPDATE SKIP LOCKED` and failures decided by a strategy — the outbox's
 polling publisher, with no checkpoint and so no Postgres visibility gap; and `EventSourcedMixin`,
-rebuilt from the same table, two writers kept apart by a unique `entity_version`. Replay and
+rebuilt from the same table, two writers separated by a unique `entity_version`. Replay and
 fan-out to other systems are the broker's. Snapshots and sagas are not built.
 
 ## 3. Volume: millions of rows and data engineering
@@ -96,7 +96,7 @@ fan-out to other systems are the broker's. Snapshots and sagas are not built.
 **The state of the art.**
 
 - **Hydration is the dominant cost**, not the SQL: a row into an ORM instance into a domain object
-  costs 10–50× a tuple. Mature stacks keep two read paths — aggregates for writes and invariants,
+  costs 10–50× a tuple. Mature stacks maintain two read paths — aggregates for writes and invariants,
   *projections* (tuples, DTOs, Arrow) for everything else.
 - **Bulk loads** above 10⁵ rows use Postgres `COPY` (psycopg 3) or ADBC ingest, at hundreds of
   thousands of rows per second; SQLAlchemy 2's "insertmanyvalues" batches the rest. One UPDATE per
@@ -105,7 +105,7 @@ fan-out to other systems are the broker's. Snapshots and sagas are not built.
   append-only time, partial and covering indexes, GIN for JSONB and full text; TimescaleDB
   continuous aggregates refresh only the buckets that changed. `REFRESH MATERIALIZED VIEW
   CONCURRENTLY` is a full recompute; event-maintained projection tables are the usual alternative.
-- **Read scaling** with replicas behind a read-only bind, and read-your-writes kept on the primary.
+- **Read scaling** with replicas behind a read-only bind, and read-your-writes served by the primary.
 - **Analytics never goes through the ORM**: ADBC reads Postgres binary `COPY` straight into
   Arrow; DuckDB and Polars take Arrow without a copy; Ibis compiles one expression to twenty
   engines; Delta, Iceberg and DuckLake add ACID tables over Parquet.
@@ -134,7 +134,7 @@ the answer** (Django, LINQ's `AsEnumerable` trap) — the source of the expensiv
 |---|---|
 | Optimistic lock, idempotency, soft delete, audit, change history, i18n text | ✅ |
 | Tenant scope | ✅ `narrowed`, applied by hand |
-| A concise query and named scopes | 🟡 `Criteria` is correct and verbose; `combined()` only |
+| A concise query and named scopes | 🟡 `Criteria` is correct and verbose; `Node.combined()` only |
 | Gapless numbering per (company, series, year) — fiscal invoices | ✅ `DatabaseNumbering`, a counter row taken in the unit of work |
 | Rules bound to the request (tenant, company) on every read, checked on every write (`check_company`) | ⬜ |
 | Money (amount and currency, rounding per currency) | 🟡 a rule, no type |
@@ -155,7 +155,7 @@ the answer** (Django, LINQ's `AsEnumerable` trap) — the source of the expensiv
 | Repository per aggregate | Evans, Vernon, Cosmic Python | `Invoices.overdue()`, one class per root | the domain's questions by name | CRUD written again for every root |
 | Capabilities that compose | Spring Data, Jakarta Data, Micronaut | small interfaces combined; each store implements what it honours | several stores, honestly | more types to name |
 | The query as a value | SQLAlchemy `select()`, Ecto `Query`, jOOQ, Drizzle — our `Criteria` | the question is immutable data; the context runs it | composition, `explain` | — |
-| CQRS | Axon, Marten | aggregates for writes, projections for reads | volume, cheap reads | two models to keep |
+| CQRS | Axon, Marten | aggregates for writes, projections for reads | volume, cheap reads | two models to maintain |
 | Ambient transaction | Spring `@Transactional`, Django `atomic` | the transaction travels unseen | little noise | nobody sees what is inside |
 
 Mature stacks converge on a generic context as the first door, the query as a value, declared

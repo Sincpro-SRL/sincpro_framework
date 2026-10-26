@@ -23,19 +23,17 @@ from sincpro_framework.ddd.criteria import (
     FromField,
     Grain,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Now,
     Operator,
     Param,
     Period,
     Periods,
+    Resolution,
     ResolutionContext,
     Span,
     Today,
-    conditions_of,
-    has_dynamic_values,
-    resolve,
 )
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import describe_class
@@ -53,7 +51,7 @@ def due(value, operator=Operator.EQ) -> Condition:
 
 
 def read(value, now: datetime = MONDAY, operator=Operator.EQ, **more) -> Any:
-    resolved = resolve(due(value, operator), on(now, **more))
+    resolved = Resolution.resolve(due(value, operator), on(now, **more))
     assert isinstance(resolved, Condition)
     return resolved.value
 
@@ -191,9 +189,10 @@ def test_one_instant_serves_every_value_of_a_filter():
     now = datetime(2026, 10, 12, 23, 59, 59, tzinfo=UTC)
     both = All(all=[due(Today()), Condition(field="at", value=Now())])
 
-    resolved = resolve(both, on(now))
+    resolved = Resolution.resolve(both, on(now))
 
-    assert [one.value for one in conditions_of(resolved)] == [date(2026, 10, 12), now]
+    assert resolved is not None
+    assert [one.value for one in resolved.conditions()] == [date(2026, 10, 12), now]
 
 
 # ── the context and the parameters ─────────────────────────────────────────────
@@ -242,7 +241,7 @@ def test_a_value_that_is_not_a_date_cannot_be_moved():
 
 
 def between(name: Periods, now: datetime = MONDAY, **more):
-    return resolve(due(Period(name=name), Operator.BETWEEN), on(now, **more))
+    return Resolution.resolve(due(Period(name=name), Operator.BETWEEN), on(now, **more))
 
 
 def test_this_month_is_closed_at_the_start_and_open_at_the_end():
@@ -270,13 +269,17 @@ def test_this_month_is_closed_at_the_start_and_open_at_the_end():
     ],
 )
 def test_the_named_periods(name, start, end):
-    assert [one.value for one in conditions_of(between(name))] == [start, end]
+    resolved = between(name)
+
+    assert resolved is not None
+    assert [one.value for one in resolved.conditions()] == [start, end]
 
 
 def test_last_month_in_january_is_december_of_the_year_before():
     resolved = between(Periods.LAST_MONTH, datetime(2026, 1, 20, tzinfo=UTC))
 
-    assert [one.value for one in conditions_of(resolved)] == [
+    assert resolved is not None
+    assert [one.value for one in resolved.conditions()] == [
         date(2025, 12, 1),
         date(2026, 1, 1),
     ]
@@ -284,7 +287,7 @@ def test_last_month_in_january_is_december_of_the_year_before():
 
 def test_a_period_asked_with_equals_is_refused():
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="takes the operator 'between'"):
-        resolve(due(Period(name=Periods.THIS_MONTH)), on(MONDAY))
+        Resolution.resolve(due(Period(name=Periods.THIS_MONTH)), on(MONDAY))
 
 
 # ── what is not dynamic is left alone ──────────────────────────────────────────
@@ -293,14 +296,14 @@ def test_a_period_asked_with_equals_is_refused():
 def test_a_tree_with_nothing_dynamic_comes_back_as_it_came():
     tree = All(all=[due("2026-01-01"), due("x")])
 
-    assert resolve(tree, on(MONDAY)) is tree
-    assert resolve(None, on(MONDAY)) is None
+    assert Resolution.resolve(tree, on(MONDAY)) is tree
+    assert Resolution.resolve(None, on(MONDAY)) is None
 
 
 def test_a_group_keeps_its_shape_around_what_it_resolves():
     tree = All(all=[due(Today(), Operator.LT), Condition(field="state", value="posted")])
 
-    assert resolve(tree, on(MONDAY)) == All(
+    assert Resolution.resolve(tree, on(MONDAY)) == All(
         all=[due(date(2026, 10, 12), Operator.LT), Condition(field="state", value="posted")]
     )
 
@@ -422,8 +425,9 @@ def test_a_timezone_the_context_names_wrongly_is_refused():
 
 
 def windows(period: Period, now: datetime = MONDAY, **more) -> list[Any]:
-    resolved = resolve(due(period, Operator.BETWEEN), on(now, **more))
-    return [one.value for one in conditions_of(resolved)]
+    resolved = Resolution.resolve(due(period, Operator.BETWEEN), on(now, **more))
+    assert resolved is not None
+    return [one.value for one in resolved.conditions()]
 
 
 @pytest.mark.parametrize(
@@ -556,7 +560,7 @@ def test_a_field_is_not_read_before_the_row():
         field="total", operator=Operator.GT, value=FromField(name="credit_limit")
     )
 
-    assert has_dynamic_values(over) is False
+    assert Resolution.has_dynamic_values(over) is False
 
 
 # ── a date against an instant column, in the context's timezone ───────────────
@@ -600,7 +604,7 @@ def test_a_memory_store_reads_a_group_filter_with_the_servers_context():
         repository.save(Invoice(number=number, owner_id=owner, due=date(2026, 1, 1)))
         repository.save(Credit(code=number, total=total))
     heavy = Grouping(
-        group_by=(Level(field="code"),),
+        group_by=(GroupingLevel(field="code"),),
         measures={"total": Measure(function="sum", field="total")},
         where_measures=Condition(
             field="total", operator=Operator.GT, value=FromContext(key="floor")

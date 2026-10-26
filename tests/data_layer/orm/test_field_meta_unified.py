@@ -15,9 +15,13 @@ from typing import cast
 
 import pytest
 
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
@@ -25,8 +29,8 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Operator,
     Pagination,
+    Sort,
     Specification,
-    parse_order,
 )
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
@@ -57,7 +61,7 @@ META = None
 
 @pytest.fixture
 def meta(library):
-    return describe(Work)
+    return ModelIntrospection.describe(Work)
 
 
 # ── the definition ────────────────────────────────────────────────────────────
@@ -103,7 +107,7 @@ def test_relational_fields_live_in_the_same_map_with_their_own_type(meta):
 
 
 def test_a_one2many_is_inferred_from_the_foreign_key_on_the_other_table(library):
-    works = describe(Author).fields["works"]
+    works = ModelIntrospection.describe(Author).fields["works"]
 
     assert works.type is FieldType.ONE2MANY
     assert works.relation == "Work" and works.identified_by == "author_id"
@@ -111,8 +115,8 @@ def test_a_one2many_is_inferred_from_the_foreign_key_on_the_other_table(library)
 
 def test_foreign_keys_need_no_declaration(library):
     """Nobody wrote `Relation.foreign_key` for `author` or `works`; the tables said it."""
-    assert relations_of(Work)["author"].kind == "foreign_key"
-    assert relations_of(Author)["works"].kind == "foreign_key"
+    assert mapping_registry.relations_of(Work)["author"].kind == "foreign_key"
+    assert mapping_registry.relations_of(Author)["works"].kind == "foreign_key"
 
 
 def test_an_embedded_value_is_a_field_with_a_shape(meta):
@@ -191,7 +195,7 @@ EVERYTHING = Criteria(
             Condition(field="caption", value="the", operator=Operator.LIKE),
         ]
     ),
-    order=parse_order("-price"),
+    order=Sort.parse("-price"),
     pagination=Pagination(limit=2),
     specification=Specification(
         {
@@ -200,10 +204,10 @@ EVERYTHING = Criteria(
             "size": Criteria(specification=Specification({"width": Criteria()})),
             "sizes": Criteria(),
             "author": Criteria(specification=Specification({"name": Criteria()})),
-            "tags": Criteria(order=parse_order("label")),
+            "tags": Criteria(order=Sort.parse("label")),
             "reviews": Criteria(
                 where=Condition(field="stars", value=3, operator=Operator.GTE),
-                order=parse_order("-stars"),
+                order=Sort.parse("-stars"),
                 pagination=Pagination(limit=1),
             ),
             "publisher": Criteria(),

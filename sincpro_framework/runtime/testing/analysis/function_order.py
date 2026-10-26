@@ -5,7 +5,7 @@ a reader meets every name already explained. `in_dependency_order` answers a sou
 order; a source that comes back unchanged is already right.
 
 Only the function that is USED moves, up, to just before the first function that uses it — nothing
-is moved down, so what runs when the module loads keeps its order. It is left where it is when:
+is moved down, so what runs when the module loads preserves its order. It is left where it is when:
 
 - the two call each other, directly or through others: no order satisfies both;
 - its decorator does something when it is defined (registers a route, a handler): moving it
@@ -63,15 +63,6 @@ def _decorator_names(function: Function) -> set[str]:
         node = decorator.func if isinstance(decorator, ast.Call) else decorator
         names.add(node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", "?"))
     return names
-
-
-def _registers_when_defined(function: Function) -> bool:
-    """Whether a decorator may act when the function is defined — any not in
-    ``SAFE_DECORATORS`` nor a property accessor; such a function never moves."""
-    return any(
-        name not in SAFE_DECORATORS and not name.endswith(ACCESSORS)
-        for name in _decorator_names(function)
-    )
 
 
 def _defined_names(statement: ast.stmt) -> set[str]:
@@ -227,7 +218,12 @@ def _reordered_body(
                     continue
                 if not isinstance(used.statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
-                if _registers_when_defined(used.statement):
+                # a decorator not in SAFE_DECORATORS nor a property accessor may act when the
+                # function is defined: such a function never moves
+                if any(
+                    name not in SAFE_DECORATORS and not name.endswith(ACCESSORS)
+                    for name in _decorator_names(used.statement)
+                ):
                     continue
                 between = set()
                 for one in order[index:target]:

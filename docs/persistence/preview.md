@@ -63,14 +63,14 @@ exactly as before: nothing extra is read.
 
 **A save never reads, and never computes over a relation it does not hold whole.** A
 derivation that reads a relation that was not loaded, was cut by a specification (filtered or
-paged), or was assigned without a whole reading behind it is skipped and keeps its stored value;
+paged), or was assigned without a whole reading behind it is skipped and retains its stored value;
 a derivation that reads that value computes from it. An order read without its lines, given a
-discount and saved, keeps its stored subtotal and stores the total as that subtotal less the
+discount and saved, retains its stored subtotal and stores the total as that subtotal less the
 discount — never a subtotal over the lines a client happened to see. The records held are
 computed either way: a line edited in a cut set gets its own amount.
 
 A relation never read cannot have changed, so that skip is silent. One held in part — cut by a
-specification, or assigned with no whole reading behind it (blind) — may have, so the save keeps
+specification, or assigned with no whole reading behind it (blind) — may have, so the save retains
 the stored value **and logs a warning** naming the derived field, the relation and the way out:
 read it whole, inside `context()` or with a specification that does not filter or page it. Not
 a refusal: the record is written, and the developer is told the total may not match its lines.
@@ -79,7 +79,7 @@ compute nothing — they are the writes that skip the aggregate's rules — so a
 leaves its derived fields as they were until the next `save`.
 
 A computed `Decimal` is not rounded to the scale of the column that stores it: the preview can
-answer `18.995` where a `Numeric(12, 2)` keeps `19.00`. A derivation that must match the stored
+answer `18.995` where a `Numeric(12, 2)` stores `19.00`. A derivation that must match the stored
 scale quantizes its own result.
 
 ## `assign`: a form's values on a record
@@ -111,7 +111,7 @@ map_aggregates(books, tables, relations={
     Order: {"lines": Relation.foreign_key(OrderLine, identified_by="order_id", orphans=Orphans.DELETE)},
 })
 
-assign(order, {"lines": [{"id": kept.id, "qty": 5}, {"product": "regla", "qty": 1, "price": "4"}]})
+assign(order, {"lines": [{"id": edited.id, "qty": 5}, {"product": "regla", "qty": 1, "price": "4"}]})
 repository.save(order)          # one line updated, one inserted, the dropped one deleted
 ```
 
@@ -146,7 +146,7 @@ bus(QueryPreviewInvoice(id=invoice_id, values={"discount": "50"}, changed=["disc
 
 1. With `id` (the record's `DEFAULT_GET_ID`), the preview starts from the stored record,
    read as its `DEFAULT_READING` brings it (so a to-many it names comes with it), and copied:
-   the record a store keeps is never touched.
+   the record a store holds is never touched.
    With no `id`, it starts from a new record holding the class defaults.
 2. `assign` puts the form's values on it; `recompute` runs what `changed` reaches — every
    derivation when nothing is named.
@@ -157,9 +157,9 @@ bus(QueryPreviewInvoice(id=invoice_id, values={"discount": "50"}, changed=["disc
 `fields` is the same hint `Meta` publishes, already evaluated for this record — what a client
 with no Criteria evaluator (a native app, an agent) shows.
 
-### Kept: the preview of a form that is not saved yet
+### Drafted: the preview of a form that is not saved yet
 
-`Preview` keeps nothing. The same computation, kept as the caller's draft — and saved or dropped
+`Preview` stores nothing. The same computation, stored as the caller's draft — and saved or dropped
 when the form says so — is `Edit` with `EditAction.SAVE_DRAFT`, answered by `EntityEdits`: the record
 with its derived fields, each field's state, the advice, and the draft version to name next.
 See [edits.md](edits.md).
@@ -208,5 +208,5 @@ compared as values: `0` and `0.00` are one amount, not a change.
 - **An `@onchange` method per field**: derivations and advice answer the same questions without
   an imperative loop.
 - **Line commands** for a to-many field: a changed list comes back whole.
-- **Drafts** kept between requests: [Drafts](../core/drafts.md); the form's whole life over them,
+- **Drafts** stored between requests: [Drafts](../core/drafts.md); the form's whole life over them,
   one command: [Edits](edits.md).

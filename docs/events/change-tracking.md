@@ -31,11 +31,11 @@ never knows this exists.
 | `EntityUpdated` | `ddd/entity/mixins/tracking.py` | The generic event: `changes: {field: (before, after)}`, plus `label` and `field_labels` — the words a person reads |
 | `_tracking` | `orm/sqlalchemy/infrastructure/change_tracking.py` | On SQLAlchemy: the diff the engine is about to write, at `before_flush` |
 | `ChangeTrackingRepositoryMixin` | `ddd/repositories/change_tracking.py` | On a store with no flush: a baseline on the way out, the diff on `save()` |
-| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/template_table/events.py` | The context's one event table, where the event is kept in the transaction of the change |
+| `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/template_table/events.py` | The context's one event table, where the event is persisted in the transaction of the change |
 
 ## Where the diff comes from, and why it is not the same in both stores
 
-**On SQLAlchemy, the engine already knows.** It keeps the loaded value and the pending one for
+**On SQLAlchemy, the engine already knows.** It holds the loaded value and the pending one for
 every column it is about to write, so the diff is read off `get_history` at `before_flush` —
 exact, and for every route that reaches the database.
 
@@ -182,7 +182,7 @@ Two reasons, and the second is the one that matters:
 
 - An event that crossed to another service has no model class there to ask.
 - **An audit says what a person saw at the time.** Rename the label next year and the old
-  entries have to keep the old word, or the record has been rewritten.
+  entries have to preserve the old word, or the record has been rewritten.
 
 ### Saying it in your own words
 
@@ -216,7 +216,7 @@ untouched.
 **Most of the time it is filled in already.** An event recorded, published or saved inside an
 execution joins that execution's chain on its own — `causation_id` the execution, `correlation_id`
 its flow ([context-manager.md](../core/context-manager.md#execution-identity)). `caused_by` is for
-the cause the framework cannot see: an event in hand, from another flow; what it sets is kept.
+the cause the framework cannot see: an event in hand, from another flow; what it sets is preserved.
 
 ## One trace across the process boundary
 
@@ -238,17 +238,17 @@ Nothing is added to `DomainEvent`: a trace is about the call that produced the f
 of the fact, so it rides beside the payload. With no span running, or with OpenTelemetry not
 installed, the carrier is empty and everything behaves as before.
 
-This is the same adoption `entrypoints/rpc/entrypoint.py` does for an incoming `traceparent`
+This is the same adoption `entrypoints/infrastructure/http.py` does for an incoming `traceparent`
 header — the synchronous boundary — applied to the asynchronous one.
 
 **A broker is a different boundary.** Kafka, RabbitMQ and the rest each have an official
 OpenTelemetry instrumentation that propagates context through their own message headers; check
 for it before writing this by hand for a new transport.
 
-## Keeping the events: no `EventRepository` class exists, and none is needed
+## Storing the events: no `EventRepository` class exists, and none is needed
 
 `DomainEvent` inherits `Entity` — it has an `id` and a `created_at` — so the repository that
-already exists keeps and queries it like any other aggregate. The bounded context declares one
+already exists stores and queries it like any other aggregate. The bounded context declares one
 event table and maps its base event class to it; the update event is one of its subclasses,
 named through `change_event`:
 
@@ -270,7 +270,7 @@ self.repository.save(invoice)          # the invoice, and its InvoiceUpdated, in
 
 history = self.repository.search(
     InvoiceUpdated,
-    Criteria(where=Condition(field="entity_id", value=invoice.id), order=parse_order("id")),
+    Criteria(where=Condition(field="entity_id", value=invoice.id), order=Sort.parse("id")),
 )
 ```
 
@@ -294,7 +294,7 @@ class InvoiceUpdated(DeliverableEventMixin, EntityUpdated, SalesDomainEvent):
 EventRelay(repository, SalesDomainEvent, publisher).run_once()
 ```
 
-Where its delivery stands — `delivered_at`, `next_delivery_at`, `delivery` — is kept on its
+Where its delivery stands — `delivered_at`, `next_delivery_at`, `delivery` — is stored on its
 row and never sent. See
 [persistence guide §12](../persistence/guide.md#12-delivering-events).
 

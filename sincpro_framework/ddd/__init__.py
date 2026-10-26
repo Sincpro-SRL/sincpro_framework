@@ -34,8 +34,6 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
     Today,
-    holds,
-    matches,
 )
 from sincpro_framework.ddd.editing.drafts import (
     refuse_stale,
@@ -46,9 +44,7 @@ from sincpro_framework.ddd.editing.preview import Advice, advise, is_previewing,
 from sincpro_framework.ddd.entity import (
     ArchivableMixin,
     AuditedMixin,
-    ChangeTrackingMixin,
     Entity,
-    EntityUpdated,
     EventSourcedMixin,
     Translated,
     new_entity_id,
@@ -74,8 +70,10 @@ from sincpro_framework.ddd.entity.presentation import (
 )
 from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
 from sincpro_framework.ddd.events import (
+    ChangeTrackingMixin,
     DeliverableEventMixin,
     DomainEvent,
+    EntityUpdated,
 )
 from sincpro_framework.ddd.exceptions import (
     AggregateNotFound,
@@ -220,9 +218,7 @@ __all__ = [
     "computed",
     "detail_of",
     "history_of",
-    "holds",
     "is_previewing",
-    "matches",
     "matching",
     "new_entity_id",
     "presentation_of",

@@ -70,7 +70,7 @@ what to do; anything else is its base with a clear message.
 | `ServiceUnavailableError` | `ContextUnavailable`, `TimedOut`, `StoreUnavailable` (a Redis or Memcached store), a broker that does not take an event | unavailable |
 | `OutcomeUnknownError` | `ContextOutcomeUnknown` → `ContextTimeout` | unknown_outcome |
 
-Where Python already has the word, the framework mixes it in so an existing `except` keeps working:
+Where Python already has the word, the framework mixes it in so an existing `except` still works:
 `DependencyNotRegistered` is an `AttributeError`, `BusNotRegistered` a `LookupError`,
 `InvalidAddress` a `ValueError`. A plain `TypeError` or `ValueError` for an argument of the wrong
 type or value stays Python's own — it is what every library raises for it.

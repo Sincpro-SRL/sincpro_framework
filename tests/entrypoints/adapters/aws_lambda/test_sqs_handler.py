@@ -10,12 +10,9 @@ import pytest
 boto3 = pytest.importorskip("boto3")
 moto = pytest.importorskip("moto")
 
-from sincpro_framework.entrypoints.adapters.aws_lambda import sqs_handler  # noqa: E402
-from sincpro_framework.entrypoints.adapters.queue import (  # noqa: E402
-    cloud_event_headers,
-    queue_name,
-)
-from sincpro_framework.event_driven.adapters.aws import HEADERS_ATTRIBUTE  # noqa: E402
+from sincpro_framework.entrypoints import sqs_handler  # noqa: E402
+from sincpro_framework.entrypoints.adapters.queue import queue_name  # noqa: E402
+from sincpro_framework.event_driven import HEADERS_ATTRIBUTE, Envelope  # noqa: E402
 
 from ..queue.test_queue_gateway import (  # noqa: E402
     ISSUE_CHANNEL,
@@ -37,7 +34,7 @@ def aws(monkeypatch) -> Iterator[None]:
 def record(amount: int, queue: str = queue_name(ISSUE_CHANNEL)) -> dict[str, Any]:
     """A record as Lambda hands it: lowercase keys, the attributes as `stringValue`."""
     command = CommandIssueInvoice(customer_id=7, amount=amount)
-    headers = cloud_event_headers(command, source=SALES, id=f"msg-{amount}")
+    headers = Envelope.headers_for(command, source=SALES, id=f"msg-{amount}")
     return {
         "messageId": f"m-{amount}",
         "receiptHandle": f"r-{amount}",

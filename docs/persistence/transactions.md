@@ -260,8 +260,8 @@ first = repository.upsert(
     [Rate(currency="BOB", per_usd=696), Rate(currency="EUR", per_usd=92)], on=("currency",)
 )
 again = repository.upsert(Rate(currency="BOB", per_usd=697), on=("currency",))   # overwritten
-kept = repository.upsert(Rate(currency="EUR", per_usd=1), on=("currency",), update=())
-assert (first.written, again.written, kept.skipped) == (2, 1, 1)
+untouched = repository.upsert(Rate(currency="EUR", per_usd=1), on=("currency",), update=())
+assert (first.written, again.written, untouched.skipped) == (2, 1, 1)
 assert repository.get_by(Rate, currency="BOB").per_usd == 697
 ```
 
@@ -285,7 +285,7 @@ assert repository.remove_all(Movement, small) == 1
 ```
 
 No hook, no cascade, no change tracking — what Django's `update()` and Rails' `update_all` skip
-too. What they keep is what makes them safe: `version` is raised so a stale copy is still
+too. What they still do is what makes them safe: `version` is raised so a stale copy is still
 refused later, `updated_at` is stamped, the scope a repository was narrowed to and the archived
 rows apply as in a read. **They never run wider than they were asked**: a page cannot bound a
 write and is refused, and so is a condition the aggregate cannot answer — in a read it would be
@@ -399,7 +399,7 @@ with repository.context():
 **One statement, so there is no read to race**: `INSERT … ON CONFLICT DO UPDATE SET last = last +
 n RETURNING last` on Postgres and SQLite, an `UPDATE` then an `INSERT` elsewhere. Two
 transactions taking from one series wait for each other — the counter's row is held until the
-first commits — so take the numbers last, keep that transaction short, and give each point of
+first commits — so take the numbers last, make that transaction short, and give each point of
 sale or branch its own `scope`. Taken outside a unit of work a number commits on its own, and the
 log says so: a failure before the invoice is saved leaves a gap. Gapless is the promise inside the
 `context()` that saves what carries the number.
@@ -407,7 +407,7 @@ log says so: a failure before the invoice is saved leaves a gap. Gapless is the 
 
 ## 9. The passthrough
 
-| Need | Door | What it keeps |
+| Need | Door | What it preserves |
 |---|---|---|
 | pool, driver, connect arguments | `Database(url, **engine_options)` | everything |
 | an option on this transaction | `context(engine={…})` | everything |

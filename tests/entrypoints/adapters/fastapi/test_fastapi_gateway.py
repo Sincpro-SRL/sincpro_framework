@@ -17,9 +17,9 @@ from fastapi.testclient import TestClient
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.ddd.query import Query
+from sincpro_framework.entrypoints import FastApiGateway, Profile
 from sincpro_framework.entrypoints.adapters.fastapi import (
     BusCall,
-    FastApiGateway,
     bus_call,
     install_problem_handlers,
     operation_extra,
@@ -173,7 +173,7 @@ def test_the_rpc_profile_is_the_catalog_on_todays_paths() -> None:
         def execute(self, dto: CommandReconcile) -> None:
             return None
 
-    api = FastApiGateway([bus], profile="rpc", unguarded=True)
+    api = FastApiGateway([bus], profile=Profile.RPC, unguarded=True)
     client = TestClient(api.app())
     assert client.post("/billing/command-reconcile").status_code == 204
     issued = client.post("/billing/command-issue-invoice", json={"total": 3})
@@ -189,7 +189,7 @@ def test_the_rpc_profile_is_the_catalog_on_todays_paths() -> None:
 
 
 def test_a_declared_path_wins_over_the_rpc_profiles_derived_one() -> None:
-    api = FastApiGateway([_billing()], profile="rpc", unguarded=True)
+    api = FastApiGateway([_billing()], profile=Profile.RPC, unguarded=True)
     client = TestClient(api.app())
     assert client.post("/billing/invoices", json={"total": 2}).status_code == 201
     assert client.post("/billing/command-reconcile").status_code == 204
@@ -262,7 +262,7 @@ def test_one_name_on_two_contexts_is_qualified_by_its_group() -> None:
         def execute(self, dto: CommandIssueInvoice) -> Issued:
             return Issued(number="S-1")
 
-    api = FastApiGateway([_billing(), sales], profile="rpc", unguarded=True)
+    api = FastApiGateway([_billing(), sales], profile=Profile.RPC, unguarded=True)
     ids = _operation_ids(api.app().openapi())
     assert {"billing_CommandIssueInvoice", "sales_CommandIssueInvoice"} <= set(ids)
     assert len(ids) == len(set(ids))
@@ -496,7 +496,7 @@ def test_anything_that_inherits_query_is_derived_get_and_a_command_post():
 
 def test_the_rpc_profile_reads_an_inherited_query_with_get_and_post():
     """POST too, for a criteria too long for a URL — GET is always there."""
-    api = FastApiGateway([_customers()], profile="rpc", unguarded=True)
+    api = FastApiGateway([_customers()], profile=Profile.RPC, unguarded=True)
 
     assert _methods_of(api.app()) == {
         "/crm/list-customers": {"GET", "POST"},

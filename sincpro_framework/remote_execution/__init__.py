@@ -3,26 +3,26 @@
     billing.hosted_at("grpc://billing:50051")      the caller: this bus sends billing's DTOs there
     serve_contexts([billing])                       the host: billing answers other services
 
-The caller's transports (`adapters/`), the Open Host that answers them (`entrypoint/`), what a
-call travels as and what a failed one raises (`domain/`). gRPC is the `[grpc]` extra and HTTP the
+The caller's transports (`adapters/`), the Open Host that answers them (`entrypoint/`), the
+execution, the wire and the failure codec both sides run (`services/`), where a context is hosted,
+what a call travels as and what a failed one raises (`domain/`). gRPC is the `[grpc]` extra and HTTP the
 `[rpc]` one: `open_host` and `open_host_routes` load them only when asked.
 """
 
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.common.transport.addresses import (
+from sincpro_framework.remote_execution.domain.address import (
     HostedAt,
     HostedContext,
-    Wire,
+    Scheme,
 )
-from sincpro_framework.common.transport.exceptions import InvalidAddress
 from sincpro_framework.remote_execution.domain.exceptions import (
     ContextFailed,
     ContextOutcomeUnknown,
     ContextTimeout,
     ContextUnavailable,
     DTODoesNotFit,
-    is_unreached,
+    InvalidAddress,
 )
 from sincpro_framework.remote_execution.entrypoint.hosts import (
     Attach,
@@ -45,8 +45,7 @@ __all__ = [
     "HostedContext",
     "InvalidAddress",
     "OpenHost",
-    "Wire",
-    "is_unreached",
+    "Scheme",
     "open_host",
     "open_host_routes",
     "serve_contexts",

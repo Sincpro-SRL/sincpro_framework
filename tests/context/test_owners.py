@@ -18,9 +18,9 @@ from sincpro_framework.context import (
     KeyValueContexts,
     use_context,
 )
-from sincpro_framework.context.entrypoint.owner import BY_TENANT, BY_TENANT_AND_USER, owner_of
-from sincpro_framework.pipelines import PipelineRun
-from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.context.domain.owner import Owner
+from sincpro_framework.data_layer.store import InMemoryKeyValue
+from sincpro_framework.pipelines import PipelineRun, PipelineRuns
 
 SHAPES = [
     pytest.param({}, "tenant_id=,tenant_ids=,user_id=", id="no tenant, no user"),
@@ -61,7 +61,7 @@ STORES = [
 
 @pytest.mark.parametrize(("said", "owner"), SHAPES)
 def test_the_owner_has_one_shape_whatever_the_context_says(said, owner):
-    assert owner_of(said, BY_TENANT_AND_USER) == owner
+    assert Owner.of(said, Owner.BY_TENANT_AND_USER) == owner
 
 
 @pytest.mark.parametrize("make", STORES)
@@ -88,7 +88,7 @@ def test_a_pipeline_run_is_kept_and_found_for_every_shape_and_refused_for_none(
 ):
     store = make()
     with use_context().scoped(said) as context:
-        runs = context.pipelines(by=BY_TENANT_AND_USER, store=store)
+        runs = PipelineRuns.of(context, by=Owner.BY_TENANT_AND_USER, store=store)
         runs.save(
             PipelineRun(
                 pipeline="billing.CommandRun", run_id="r-1", started_at=datetime.now(UTC)
@@ -174,11 +174,11 @@ def test_a_value_that_spells_a_separator_never_reads_another_owners_draft(
 def test_what_is_meant_to_be_shared_by_the_tenant_is_owned_by_nobody_but_it(make):
     store = make()
     with use_context().scoped({"tenant_id": "acme", "user_id": "ana"}) as ana:
-        ana.drafts(by=BY_TENANT, store=store).save("settings", {"theme": "dark"}, 0, 0)
+        ana.drafts(by=Owner.BY_TENANT, store=store).save("settings", {"theme": "dark"}, 0, 0)
     with use_context().scoped({"tenant_id": "acme", "user_id": "bob"}) as bob:
-        assert bob.drafts(by=BY_TENANT, store=store).read("settings") is not None
+        assert bob.drafts(by=Owner.BY_TENANT, store=store).read("settings") is not None
     with use_context().scoped({"tenant_id": "globex", "user_id": "bob"}) as other:
-        assert other.drafts(by=BY_TENANT, store=store).read("settings") is None
+        assert other.drafts(by=Owner.BY_TENANT, store=store).read("settings") is None
 
 
 @pytest.mark.parametrize("make", STORES)
@@ -197,18 +197,18 @@ def test_a_record_five_users_edit_together_has_one_draft_owned_by_nobody(make):
         shared = anyone.drafts(by=(), store=store).read("billing.Invoice:F-7")
 
     assert shared is not None and shared.values == {"editor": "eva"}
-    assert owner_of({"tenant_id": "acme", "user_id": "ana"}, ()) == ""
+    assert Owner.of({"tenant_id": "acme", "user_id": "ana"}, ()) == ""
 
 
 def test_the_owner_is_exactly_the_keys_a_project_names():
     assert (
-        owner_of({"tenant_id": "acme", "session_id": "s-1"}, ["session_id"])
+        Owner.of({"tenant_id": "acme", "session_id": "s-1"}, ["session_id"])
         == "session_id=s-1"
     )
     assert (
-        owner_of({"tenant_id": "acme", "session_id": "s-1"}, [*BY_TENANT, "session_id"])
+        Owner.of({"tenant_id": "acme", "session_id": "s-1"}, [*Owner.BY_TENANT, "session_id"])
         == "tenant_id=acme,tenant_ids=,session_id=s-1"
     )
     assert (
-        owner_of({"tenant_id": "acme"}, ["tenant_id", "user_id"]) == "tenant_id=acme,user_id="
+        Owner.of({"tenant_id": "acme"}, ["tenant_id", "user_id"]) == "tenant_id=acme,user_id="
     )

@@ -214,8 +214,8 @@ client's `url` and timeouts into typed properties that fail at startup:
 - `HostedAt(wire, address, timeout)` — `HostedAt.parse(url)` or built in code; checked either way.
 - `HostedContext(context, at)` — one `context_map:` entry; `extra="forbid"`, so a misspelt key is
   an error, not an entry silently ignored.
-- They live in `sincpro_framework.common.transport.addresses`: the settings declare them and remote
-  execution reaches them, so the module imports neither.
+- They live in `sincpro_framework.remote_execution.domain.address`: remote execution reaches them,
+  and the settings declare the context map with them.
 - The conf file is validated when it is loaded, each error at its path (`context_map.0.at`); the
   environment when the first bus is created, naming `SINCPRO_CONTEXT_MAP`. Every `InvalidAddress`
   says what was written and what to write. The timeout stays in the URL (`?timeout=5`), as

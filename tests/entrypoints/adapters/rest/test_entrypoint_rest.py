@@ -19,13 +19,16 @@ from starlette.testclient import TestClient
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
+from sincpro_framework.common.naming import kebab
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.query import Query
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
-from sincpro_framework.entrypoints.adapters.mcp import McpGateway
-from sincpro_framework.entrypoints.adapters.rest import RestGateway, kebab
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
-from sincpro_framework.entrypoints.entrypoint.internal import internal
+from sincpro_framework.entrypoints import (
+    GrpcGateway,
+    McpGateway,
+    RestGateway,
+    RpcGateway,
+    internal,
+)
 
 
 class Perm(Permission):

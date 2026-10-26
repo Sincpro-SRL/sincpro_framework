@@ -1,7 +1,8 @@
-"""Caching as infrastructure: the port a provider implements, the strategies a kept value is
-judged by, and what the framework builds on them.
+"""Caching as infrastructure: the strategies a stored value is judged by, and what the framework
+builds on them — on any `KeyValueStore` of `sincpro_framework.data_layer.store`.
 
-    store = InMemoryKeyValue()            # store — or RedisKeyValue, MemcachedKeyValue, yours
+    store = InMemoryKeyValue()            # sincpro_framework.data_layer.store — or RedisKeyValue,
+                                          # MemcachedKeyValue, DynamoKeyValue, yours
 
     Cache(store).get_or_compute(
         key, compute, CachePolicy(freshness=TimeToLive(...)), JsonCodec(Answer)
@@ -10,20 +11,28 @@ judged by, and what the framework builds on them.
     Idempotency(store).run(key, write, IdempotencyPolicy(expires_after=...), JsonCodec(Answer))
     QueryCaching(store).on(bus, Query, QueryCachePolicy(...))     # a Query of the ORM, by what it read
 
-`domain/` is the vocabulary — the strategies (`Freshness`, `Validation`,
-`FailurePolicy`, `Eviction`), the policies, the refusals; `adapters/` the stores, the codec, the
-evictions and the key encoder; `infrastructure/` the non-functional mechanics (one caller per key,
-bounded waits, the store breaker); `entrypoint/` what a composition uses — `Cache`,
-`Idempotency`, `QueryCaching`. The contract suites a strategy of a project's passes live in
-`sincpro_framework.runtime.testing`. Providers are extras that never load unless imported:
-`[redis]` (Redis and Valkey) and `[memcached]`. Nothing here but `QueryCaching` knows
-about repositories.
+    domain/          the vocabulary — the strategies (`Freshness`, `Validation`, `FailurePolicy`,
+                     `Eviction`), the policies, the refusals
+    adapters/        the records, the codec, the evictions, the observers, the `KeyEncoder`
+    infrastructure/  the non-functional mechanics — one caller per key, bounded waits, the clock
+    services/        the operations — `Cache`, `Idempotency`, `QueryCaching`
+    entrypoint/      the facades a bus hands out (`bus.cache`, `bus.idempotency`, a
+                     `ConfiguredCache`) and the bus mixin; they delegate to the services
+
+A project builds its own cache as a dependency (`Cache(store)`), or takes the bus's (`bus.cache`):
+in memory by default, judged by the default strategies, declared with decorators. Every store
+operation is on `KeyValueStore` alone; the store engines and `StoreBypass`, the breaker of a store
+that does not answer, are the store's (`sincpro_framework.data_layer.store`). The contract
+suites a strategy of a project's passes live in `sincpro_framework.runtime.testing`. Nothing here
+but `QueryCaching` knows about repositories.
 """
 
 from sincpro_framework.data_layer.caching.adapters.eviction import Lru, Unbounded
 from sincpro_framework.data_layer.caching.adapters.json_codec import JsonCodec
-from sincpro_framework.data_layer.caching.adapters.key_value_records import KeyValueRecords
-from sincpro_framework.data_layer.caching.adapters.keys import key_of
+from sincpro_framework.data_layer.caching.adapters.key_value_records import (
+    KeyValueRecords,
+)
+from sincpro_framework.data_layer.caching.adapters.keys import KeyEncoder
 from sincpro_framework.data_layer.caching.adapters.observers import (
     CountingObserver,
     MetricsObserver,
@@ -37,8 +46,13 @@ from sincpro_framework.data_layer.caching.domain.exceptions import (
     AlreadyInProgress,
     KeyReused,
 )
-from sincpro_framework.data_layer.caching.domain.failure import FailSafe, FailurePolicy, Raise
+from sincpro_framework.data_layer.caching.domain.failure import (
+    FailSafe,
+    FailurePolicy,
+    Raise,
+)
 from sincpro_framework.data_layer.caching.domain.freshness import (
+    NEVER,
     Freshness,
     Sliding,
     TimeToLive,
@@ -52,7 +66,6 @@ from sincpro_framework.data_layer.caching.domain.idempotent_command import (
     IDEMPOTENCY_KEY,
     IdempotentCommand,
 )
-from sincpro_framework.data_layer.caching.domain.lifetime import Lifetime
 from sincpro_framework.data_layer.caching.domain.observer import (
     CacheObserver,
     CacheOutcome,
@@ -68,26 +81,21 @@ from sincpro_framework.data_layer.caching.domain.validation import (
     Unconditional,
     Validation,
 )
-from sincpro_framework.data_layer.caching.entrypoint.cache import Cache
 from sincpro_framework.data_layer.caching.entrypoint.facades import (
     CacheFacade,
-    CacheStrategy,
+    ConfiguredCache,
     IdempotencyFacade,
 )
-from sincpro_framework.data_layer.caching.entrypoint.idempotency import (
-    Idempotency,
-    current_idempotency_key,
-    declares_once,
-)
-from sincpro_framework.data_layer.caching.entrypoint.query_caching import QueryCaching
-from sincpro_framework.store.adapters.memcached import MemcachedKeyValue
-from sincpro_framework.store.adapters.redis import RedisKeyValue
+from sincpro_framework.data_layer.caching.services.cache import Cache
+from sincpro_framework.data_layer.caching.services.idempotency import Idempotency
+from sincpro_framework.data_layer.caching.services.query_caching import QueryCaching
 
 __all__ = [
+    "NEVER",
     "AlreadyInProgress",
     "Cache",
     "CacheFacade",
-    "CacheStrategy",
+    "ConfiguredCache",
     "CacheObserver",
     "CacheOutcome",
     "QueryCachePolicy",
@@ -109,24 +117,19 @@ __all__ = [
     "JsonCodec",
     "CachePolicy",
     "KeyReused",
+    "KeyEncoder",
     "KeyValueRecords",
-    "Lifetime",
     "Lru",
-    "MemcachedKeyValue",
     "MetricsObserver",
     "NoObserver",
     "Observers",
     "QueryCaching",
     "Raise",
     "RecordState",
-    "RedisKeyValue",
     "Sliding",
     "SpanObserver",
     "TimeToLive",
     "Unbounded",
     "Unconditional",
     "Validation",
-    "current_idempotency_key",
-    "declares_once",
-    "key_of",
 ]

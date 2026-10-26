@@ -8,7 +8,7 @@ from sincpro_framework.ddd.repositories.repository import refuse_writing_in_prev
 
 
 class MemoryNumbering(INumbering):
-    """Numbers kept in the process: for a test, where there is no rollback to give them back."""
+    """Numbers held in the process: for a test, where there is no rollback to give them back."""
 
     def __init__(self) -> None:
         """No series yet: each starts at 1 the first time it is taken."""

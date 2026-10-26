@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import TypeAdapter
 
 from sincpro_framework.common.ids import new_entity_id
-from sincpro_framework.context.infrastructure.tree import chain_for
+from sincpro_framework.context import context_executions
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     TEXT,
@@ -49,6 +49,12 @@ from sincpro_framework.ddd.criteria import (
     Specification,
 )
 from sincpro_framework.ddd.entity.derivations import Derivations
+from sincpro_framework.ddd.entity.entity_meta import (
+    TEXT_TYPES,
+    Translated,
+    annotations_of,
+    logical_type,
+)
 from sincpro_framework.ddd.entity.presentation import Presentation
 from sincpro_framework.ddd.entity.utils.annotations import is_class_var, own_annotations
 
@@ -68,15 +74,6 @@ def json_serializer(cls: type) -> TypeAdapter:
 def utc_now() -> datetime:
     """Aware, in UTC. A naive timestamp is one somebody later reads in the wrong zone."""
     return datetime.now(UTC)
-
-
-Translated = dict[str, str]
-"""One piece of text in every language the project speaks, `{"default": "Note", "es": "Nota"}`
-— always a `"default"`, plus whatever languages beyond it. The shape `Entity.translations()`
-answers for the aggregate's own name, and the same shape `field(metadata={"label": …, "help":
-…})` uses for one field. A field's label and help are never in `translations()` — they live on
-the field itself, read by `describe_class`/`describe` straight off the dataclass, because they
-are a property of that field, not of the class."""
 
 
 _MEANING = {
@@ -111,7 +108,7 @@ def reserved_fields(declared: type) -> dict[str, str]:
 
     Context: only the framework's own classes in the MRO count — `Entity` and its mixins; a
     project's base entity, or another entity it inherits from, declares fields of its own.
-    The first class to declare a name keeps it; a class variable is no field.
+    The first class to declare a name owns it; a class variable is no field.
     """
     found: dict[str, str] = {}
     for owner in declared.__mro__[1:]:
@@ -127,8 +124,8 @@ def reserved_fields(declared: type) -> dict[str, str]:
 
 @dataclass(kw_only=True)
 class Entity:
-    """The four fields every aggregate carries, as keyword-only defaults so a subclass keeps
-    declaring its own fields positionally and without defaults — and one class method that
+    """The four fields every aggregate carries, as keyword-only defaults so a subclass can
+    still declare its own fields positionally and without defaults — and one class method that
     says how a screen names the aggregate.
 
         @dataclass
@@ -273,13 +270,6 @@ class Entity:
         fills it the same way. Containment on a text display unless overridden; `None` when
         there is nothing to search.
         """
-        # Imported here: entity_meta reads this module to describe a class.
-        from sincpro_framework.ddd.entity.entity_meta import (
-            TEXT_TYPES,
-            annotations_of,
-            logical_type,
-        )
-
         display = cls.DEFAULT_DISPLAY()
         annotation = annotations_of(cls).get(display)
         if annotation is None or logical_type(annotation) not in TEXT_TYPES:
@@ -314,7 +304,7 @@ class Entity:
             event,
             entity_type=event.entity_type or type(self).__name__,
             entity_id=event.entity_id or self.id,
-            **chain_for(event),
+            **context_executions.chain_for(event),
         )
         recorded.append(stamped)
         return stamped

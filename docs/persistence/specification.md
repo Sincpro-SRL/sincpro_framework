@@ -31,7 +31,7 @@ names one (`Meta.display`). That pair is the reference a select lists and a many
 | 5 | The identity always travels, at every level, asked or not. |
 | 6 | What is asked is a union: order does not matter, repeats collapse, a bare node wins over its own children. |
 | 7 | What cannot be answered is dropped and reported, never a 400: `unknown_field`, `not_expandable`. |
-| 8 | An empty specification keeps the identity and, when the entity names one, its display field. |
+| 8 | An empty specification selects the identity and, when the entity names one, its display field. |
 
 ## What the entity answers: its `DEFAULT_*` class methods
 
@@ -123,10 +123,10 @@ containment.
 | `Condition(field="name", operator=Operator.LIKE, value=TEXT)` | `like` | any text holding `1.2.3`, case-insensitive |
 
 A literal is read as itself: `50%` finds `Descuento 50% off`, and `a_b` does not find `axb`.
-A blank literal drops the conditions that hold `TEXT` and keeps the rest of the template: an
+A blank literal drops the conditions that hold `TEXT` and preserves the rest of the template: an
 `active = true` beside the text still applies.
 
-`describe` publishes all of it on `Meta` (`get_id`, `display`, `search`, `default_order`,
+`ModelIntrospection.describe` publishes all of it on `Meta` (`get_id`, `display`, `search`, `default_order`,
 `detail`) — the template as a criteria, so a client fills it the same way — and two functions
 turn it into the criteria a Feature runs:
 
@@ -194,7 +194,7 @@ field's type: an amount travels as the text `"0"`.
 **They are hints.** The framework checks none of them: a confirmed invoice saved with another
 partner, or paid by card with no reference, is saved. A component that says otherwise wins —
 a form may ask for a field the definition does not, or hide one by the user's groups. A rule
-the server keeps is the project's own hook, and it can read the same condition so the rule is
+the server enforces is the project's own hook, and it can read the same condition so the rule is
 written once:
 
 ```python
@@ -202,11 +202,11 @@ written once:
 class PaymentNeedsItsReference(BillingHook):
     def before_save(self, invoice: Invoice) -> None:
         for name, condition in presentation_of(Invoice).required_when.items():
-            if matches(invoice, condition) and not getattr(invoice, name):
+            if Evaluation.matches(invoice, condition) and not getattr(invoice, name):
                 raise ConstraintViolation(f"{name} is required for this invoice")
 ```
 
-Hiding a field in a form does not keep it from the answer: a field that must not reach a
+Hiding a field in a form does not remove it from the answer: a field that must not reach a
 caller is cut on the server, by the specification or by a hook (`after_read`).
 
 Rule 1 said another way: with `dataset_id: str` and `dataset: Dataset` on an aggregate, a read
@@ -227,7 +227,7 @@ framework; the provider that wants a ceiling merges a criteria of its own on the
 
 Today, the mask over scalars, end to end:
 
-- `Meta.accept_specification` keeps what the model has, as a column or as a relation, and
+- `Meta.accept_specification` accepts what the model has, as a column or as a relation, and
   reports the rest in `dropped`. The repository does this beside the filter, so a page carries
   both kinds of dropped in the one list.
 - `Meta.only(specification)` cuts the definition by the same mask, identity included. A client
@@ -243,7 +243,7 @@ SQL partitioning live in `orm/sqlalchemy/services/relation_resolver.py`:
 - **One declaration, in the data mapper, beside the table.** `map_aggregates(..., relations=
   {Dataset: {"runs": Relation.foreign_key(Run, identified_by="dataset_id")}})`. The annotation on the
   aggregate gives the cardinality (`runs: list[Run]` to-many, `dataset: Dataset | None` to-one);
-  the declaration gives the related aggregate, what identifies the relation and how to resolve it. `describe()` publishes all of it
+  the declaration gives the related aggregate, what identifies the relation and how to resolve it. `ModelIntrospection.describe()` publishes all of it
   in `Meta.fields` as a field of type `many2one`, `one2many` or `many2many`, with `relation`,
   `identified_by` and, once expanded, `definition`: one map, the shape of Odoo's `fields_get`,
   and `Meta.relations` is only the view over the relational ones. An embedded value object in a
@@ -269,7 +269,7 @@ SQL partitioning live in `orm/sqlalchemy/services/relation_resolver.py`:
   `dataset.producer.plan.owner` and `entry.lines` on first touch, whole, any depth, all three
   cardinalities, through the same resolvers. Outside a context a relation nobody named raises
   `RelationNotResolved`, because a loop over two hundred rows would be two hundred queries
-  hidden in an attribute access. A record built in memory keeps what its constructor was given.
+  hidden in an attribute access. A record built in memory holds what its constructor was given.
 - **Defaults, not ceilings.** A to-many node without a page brings 40 per parent; a node that
   says a limit gets that limit.
 

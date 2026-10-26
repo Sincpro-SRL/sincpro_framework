@@ -9,7 +9,7 @@ may be exported under a bus's name.
 import pytest
 
 from sincpro_framework.observability import process
-from sincpro_framework.observability.registry import PROCESS, registry
+from sincpro_framework.observability.registry import PROCESS, observability_registry
 from sincpro_framework.sincpro_conf import settings
 
 pytest.importorskip("opentelemetry.sdk.trace")
@@ -19,9 +19,9 @@ ENDPOINT = "http://collector:4317"
 
 @pytest.fixture(autouse=True)
 def clean_registry():
-    registry.reset()
+    observability_registry.reset()
     yield
-    registry.reset()
+    observability_registry.reset()
 
 
 def in_memory_pipeline(monkeypatch):
@@ -73,7 +73,7 @@ def test_the_process_reuses_the_identity_a_bus_announced(monkeypatch):
     from sincpro_framework.observability.domain import ObservabilityIdentity
 
     announced = ObservabilityIdentity(artifact="sincpro-odoo-mcp", version="0.8.0", bus="")
-    registry.register_process_identity(announced)
+    observability_registry.register_process_identity(announced)
     monkeypatch.setattr(settings, "app_release", "otra-cosa:9.9.9")
 
     assert process.identity is announced
@@ -189,7 +189,9 @@ def test_a_request_and_its_dto_are_one_service_and_the_dto_names_its_context(mon
     request_context = spans["POST /mcp"].get_span_context()
     assert quote_context is not None and request_context is not None
     assert quote_context.trace_id == request_context.trace_id
-    assert registry.tracer_provider(PROCESS) is not registry.tracer_provider("sales_mcp")
+    assert observability_registry.tracer_provider(
+        PROCESS
+    ) is not observability_registry.tracer_provider("sales_mcp")
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@
     with billing.context({"lang": "es"}, global_scope=True):          every execution of billing
 
 **Entering a bus is entering its node.** The first time a call reaches a bus, the bus's own node
-(`Level.BUS` — what it publishes for every execution of its own) goes under the node in play, and the
+(`ContextLevel.BUS` — what it publishes for every execution of its own) goes under the node in play, and the
 call's scope under it: an entrypoint when nothing opened the flow, a scope otherwise. A nested call to
 the same bus, or one inside its `bus.context(...)`, joins the scope already open.
 
@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from sincpro_framework.context.domain.level import EntrypointKind
 from sincpro_framework.context.domain.node import ContextNode
-from sincpro_framework.context.infrastructure.said import remember
+from sincpro_framework.context.infrastructure.closed_scopes import CLOSED_SCOPES
 
 if TYPE_CHECKING:
     from sincpro_framework.use_bus import UseFramework
@@ -88,7 +88,7 @@ class FrameworkContext:
         """Close the block's context and let any exception through.
 
         1. `global_scope`: the bus's node says again what it said before the block.
-        2. Otherwise the scope's values are remembered for the execution it was opened in —
+        2. Otherwise the scope's values are recorded for the execution it was opened in —
            its span, metrics and error close after it — and the scope is left.
         Final: `False`, so an exception raised in the block is never swallowed.
         """
@@ -98,6 +98,6 @@ class FrameworkContext:
         elif self._block is not None and self._node is not None:
             # What the scope said still counts for the execution it was opened in: its span,
             # its metrics and its error close after the scope does (PRD_03 §4.10).
-            remember(self._node.own)
+            CLOSED_SCOPES.record(self._node.own)
             self._block.__exit__(exc_type, exc_val, exc_tb)
         return False

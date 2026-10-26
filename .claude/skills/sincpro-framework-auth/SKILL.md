@@ -36,26 +36,26 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `IdentityKind` | `user` · `service` · `system` · `anonymous` | DTO (enum) | same |
 | `AuthProvider` | the one contract: `authenticate` (+ optional `has_permission`, `scope`, …) | port | same |
 | `StaticProvider` | fixed bearer tokens → identities (tests, local) | adapter | same |
-| `ApiKeyProvider` / `ApiKeyStore` / `InMemoryApiKeys` / `ApiKey` | keys kept by SHA-256; store is the port | adapter / port / adapter / DTO | same |
+| `ApiKeyProvider` / `ApiKeyStore` / `InMemoryApiKeys` / `ApiKey` | keys stored by SHA-256; store is the port | adapter / port / adapter / DTO | same |
 | `ServiceTokenProvider` | service-to-service HS256 JWT, stdlib only, header `x-sp-service-token` | adapter | same |
 | `RolePermissions` | roles → permissions, with implied roles | adapter (helper) | same |
-| `AccessControl[P]` | holds providers + declarations, decides, `on(bus)` wires the guard | registry | same |
+| `AccessControl[P]` | holds providers + declarations, decides, `on(bus)` wires the guard; `AccessControl.of(bus)` the one guarding a bus | registry | same |
 | `@auth.requires(...)` / `@auth.authenticated` / `@auth.public` | mark a Feature, ApplicationService or Hook | decorator | methods of `AccessControl` |
 | `auth.any_of(A, B)` → `AnyOf` | one among several | function / DTO | same |
 | `WhenDenied.RAISE` / `.SKIP` | refuse, or answer `None` and log | setting | same |
 | `strict=` / `enabled=` | refuse undeclared use cases entered from outside / check nothing | setting | `AccessControl(...)` |
 | `self.auth.allows` / `check` / `permitted` / `scope_of` | in-handler decisions on a loaded resource | function | injected `auth` |
-| `as_identity` / `as_system` / `current_identity` | who the execution acts as (a `ContextVar`) | function | same |
-| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `DomainError`s | DTO (exception) | same |
+| `security.identity` / `security.as_identity` / `security.as_system` | who the execution acts as (a `ContextVar`) | facade | `security` |
+| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `ClientError`s; `.http_status`, `.refusal_body()` | DTO (exception) | same |
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
-| `credentials_from_asgi` / `credentials_from_headers` / `authenticated_as` | what an entrypoint does | function | same |
+| `Credentials.from_asgi` / `Credentials.from_headers` / `security.authenticated_as` / `security.challenges` / `security.identity_headers` | what an entrypoint does | classmethod / facade | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
 | `granting` / `RecordingProvider` / `AuthProviderContract` | test helpers | function / adapter / port | `sincpro_framework.runtime.testing` |
 
 Look-alikes: `auth.Identity` is **who calls**; `observability.ObservabilityIdentity` is **who the
 service is** (release, version). `PermissionDenied` is not Python's `PermissionError` (an `OSError`).
-`auth.Declaration` is not `observability.metrics.Declaration`. `@auth.public` admits anybody;
-`@auth.authenticated` anybody *known*. `as_system(reason)` passes every check for one block;
+`auth.AccessDeclaration` is what a use case declared about who may call it. `@auth.public` admits anybody;
+`@auth.authenticated` anybody *known*. `security.as_system(reason)` passes every check for one block;
 `enabled=False` turns the whole `AccessControl` off.
 
 ## Architecture
@@ -63,10 +63,10 @@ service is** (release, version). `PermissionDenied` is not Python's `PermissionE
 **Inside the framework** — package `sincpro_framework/auth/`, standard library only:
 
 - `domain/` the vocabulary and the `AuthProvider` port; `adapters/` the shipped providers (all
-  stdlib — `ServiceTokenProvider` signs with `hmac`); `security_context.py` the identity
-  `ContextVar`; `guard.py` the bus interceptor (`BusGuard`, outermost) and the hook gate
-  (`HookGuard`, via `Hooks.gate`); `access_control.py` declarations and decisions;
-  `transports.py` + `asgi.py` what entrypoints call.
+  stdlib — `ServiceTokenProvider` signs with `hmac`); `infrastructure/security_context.py` the
+  identity `ContextVar`; `services/guard.py` the bus interceptor (`BusGuard`, outermost) and the
+  hook gate (`HookGuard`, via `Hooks.gate`); `entrypoint/access_control.py` declarations and
+  decisions; `entrypoint/security.py` (`security`) + `entrypoint/asgi.py` what entrypoints call.
 - No JWT/OIDC library is shipped. A provider for Keycloak/Entra/Google is the project's own adapter,
   and its library (e.g. PyJWT) is the project's dependency.
 
@@ -95,7 +95,7 @@ request ─► entrypoint ─► Credentials ─► AccessControl.authenticate �
                                               │  first non-None wins, stamps Identity.provider
                                               │  none recognizes → Identity.anonymous()
                                               ▼
-                         as_identity(identity) ─► bus(dto) ─► BusGuard (outermost interceptor)
+                         security.as_identity(identity) ─► bus(dto) ─► BusGuard (outermost interceptor)
                                               │  declaration of the handler: public / authenticated / requires
                                               │  requires → identity's provider.has_permission(...)
                                               ▼
@@ -112,7 +112,7 @@ Silent ones first — the runtime says nothing.
   `auth.verify() == []` in a test. (Gateways refuse an undeclared *published* use case, not a
   nested, cron or internal one.)
 - **Putting the identity in `bus.context({...})` or `self.context`.** Ignored — the guard reads only
-  `as_identity`. Open `as_identity(...)` or let the entrypoint do it.
+  `security.as_identity`. Open `security.as_identity(...)` or let the entrypoint do it.
 - **A provider answering `None` for a credential of its own kind that fails.** The caller becomes
   anonymous and every public/undeclared use case runs. `None` means "not my kind"; a bad token of
   your kind raises `Unauthenticated`.
@@ -125,11 +125,11 @@ Silent ones first — the runtime says nothing.
   `self.feature_bus.thread_context().execute`; elsewhere run it under `contextvars.copy_context()`.
 - **`WhenDenied.SKIP` on a use case a client calls directly.** The client gets `None`, not a 403.
   SKIP is for an optional nested step; the caller must handle `None`.
-- **`as_system(...)` on a request path.** Every requirement is met. It is for crons, migrations and
+- **`security.as_system(...)` on a request path.** Every requirement is met. It is for crons, migrations and
   consumers, with a reason that is logged.
 - **A handwritten FastAPI route calling `bus(dto)`.** No credentials reach the bus. Use the gateway,
   or wrap the app in `IdentityMiddleware(app, access=auth)`.
-- **Refusals counted as failures.** An `AuthError` is a `ClientError`: kept out of GlitchTip by
+- **Refusals counted as failures.** An `AuthError` is a `ClientError`: left out of GlitchTip by
   default, but counted as its kind in the metrics unless the bus is told it is traffic:
   `billing.ignore_sentry_exceptions(AuthError)`.
 
@@ -196,17 +196,17 @@ auth.on(billing)                                     # before any gateway
   it — the provider gets it); `self.auth.permitted(permission, resources)` answers a batch.
 - A nested use case that declares something is checked again; one that declares nothing inherits
   the decision of the use case entered from outside. A `replaces=` handler or hook that declares
-  nothing keeps the declaration of the one it replaces.
+  nothing inherits the declaration of the one it replaces.
 
 ## Acting as someone
 
 ```python
-from sincpro_framework.auth import as_identity, as_system
+from sincpro_framework.auth import security
 
-with as_identity(auth.authenticate(credentials)):    # what an entrypoint does
+with security.as_identity(auth.authenticate(credentials)):    # what an entrypoint does
     billing(CommandIssueInvoice(...))
 
-with as_system("cron: close cash registers"):
+with security.as_system("cron: close cash registers"):
     billing(CommandCreditReport(...))
 ```
 
@@ -234,7 +234,7 @@ moment. The gate holds on every copy or combination of the `Hooks`.
 | a use case/hook declares nothing | not checked (strict: refused when entered from outside) |
 | `enabled=False` | nothing is checked; `on(...)` logs a warning |
 | `WhenDenied.SKIP` | a use case answers `None`, a hook's moment is left out — logged |
-| `as_system(reason)` | every requirement is met; the reason is logged |
+| `security.as_system(reason)` | every requirement is met; the reason is logged |
 
 Entrypoints, refusal mapping per wire and testing helpers:
 [references/entrypoints-and-testing.md](references/entrypoints-and-testing.md).

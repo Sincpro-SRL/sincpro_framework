@@ -9,15 +9,7 @@ class, the rest from the field or the attribute it is declared on — so a metri
 rename and two contexts never collide on one name.
 """
 
-import re
-
-_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
-
-
-def snake(name: str) -> str:
-    """`IssueInvoice` → `issue_invoice`, `CreateQREconomico` → `create_qr_economico`,
-    `doors-billing` → `doors_billing`."""
-    return _BOUNDARY.sub("_", name).replace("-", "_").replace(" ", "_").lower()
+from sincpro_framework.common.naming import snake
 
 
 def metric_name(context: str, use_case: type, *rest: str) -> str:

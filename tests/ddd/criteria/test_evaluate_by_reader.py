@@ -1,8 +1,13 @@
-"""`holds`: the in-memory filter over values read however the caller reads them — a column of a
-row, a reference into a workflow's results — with the same answers `matches` gives an object.
+"""`Evaluation.holds`: the in-memory filter over values read however the caller reads them — a column of a
+row, a reference into a workflow's results — with the same answers `Evaluation.matches` gives an object.
 """
 
-from sincpro_framework.ddd import Criteria, holds
+from sincpro_framework.ddd import (
+    Criteria,
+)
+from sincpro_framework.ddd.criteria import (
+    Evaluation,
+)
 
 ROW = {"state": "posted", "total": 12_000, "tags": ["vip"], "partner": None}
 
@@ -14,7 +19,7 @@ def _where(raw: dict) -> Criteria:
 def test_a_condition_reads_its_field_through_the_reader():
     criteria = _where({"field": "total", "operator": ">=", "value": 10_000})
 
-    assert holds(criteria.expression, ROW.get)
+    assert Evaluation.holds(criteria.expression, ROW.get)
 
 
 def test_all_any_and_not_compose_as_they_do_for_matches():
@@ -28,17 +33,17 @@ def test_all_any_and_not_compose_as_they_do_for_matches():
         }
     )
 
-    assert holds(criteria.expression, ROW.get)
+    assert Evaluation.holds(criteria.expression, ROW.get)
 
 
 def test_a_missing_value_fails_every_operator_but_is_null_as_in_sql():
-    assert not holds(
+    assert not Evaluation.holds(
         _where({"field": "partner", "operator": "=", "value": 1}).expression, ROW.get
     )
-    assert holds(
+    assert Evaluation.holds(
         _where({"field": "partner", "operator": "is null", "value": True}).expression, ROW.get
     )
 
 
 def test_no_filter_holds_for_everything():
-    assert holds(None, ROW.get)
+    assert Evaluation.holds(None, ROW.get)

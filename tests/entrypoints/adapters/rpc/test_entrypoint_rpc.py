@@ -9,12 +9,11 @@ from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject, exceptions
-from sincpro_framework.entrypoints import Exposure
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints import Exposure, RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import INVALID_PARAMS, METHOD_NOT_FOUND
 from sincpro_framework.entrypoints.adapters.rpc.jrpc import DISCOVER_METHOD
-from sincpro_framework.entrypoints.entrypoint.gateway import Buses
 from sincpro_framework.entrypoints.infrastructure.http import merge_http_context
+from sincpro_framework.entrypoints.services.gateway import Buses
 
 
 def catalog_gateway(instances: Buses | None = None, **options: Any) -> RpcGateway:
@@ -334,11 +333,9 @@ def test_batch_and_notification():
     )
 
 
-def test_build_rpc_app_requires_extra_or_returns_asgi():
-    from sincpro_framework.entrypoints.adapters.rpc import build_rpc_app
-
+def test_rpc_app_requires_extra_or_returns_asgi():
     try:
-        app = build_rpc_app({"pay": _instance("pay")})
+        app = RpcGateway({"pay": _instance("pay")}).app()
         assert app is not None
     except ImportError as error:
         assert "sincpro-framework[rpc]" in str(error)

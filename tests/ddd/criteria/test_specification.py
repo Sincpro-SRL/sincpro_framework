@@ -11,7 +11,7 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Cursor,
     Grouping,
-    Level,
+    GroupingLevel,
     Operator,
     Pagination,
     Sort,
@@ -125,7 +125,7 @@ def test_a_criteria_with_a_nested_specification_survives_its_own_json():
                 "sources": Criteria(specification=Specification({"row_count": Criteria()})),
             }
         ),
-        grouping=Grouping(group_by=(Level(field="produced_by"),)),
+        grouping=Grouping(group_by=(GroupingLevel(field="produced_by"),)),
     )
 
     assert Criteria.model_validate_json(asked.model_dump_json()) == asked

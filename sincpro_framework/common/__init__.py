@@ -6,6 +6,7 @@ common.naming      what a registered class is known by: an event its `name`, any
                    `context.Class`
 common.failures    how every wire tells its caller what kind of failure an error is (`FailureKind`)
 common.serialization  any value as JSON values and back — every message the framework sends
+common.reads       what a unit of reading touched — the stores note it, a query cache reads it
 store       the storage contracts every component shares (`KeyValueStore`)
-common.transport   the mechanics of each technology: addresses, the gRPC server
+common.transport   the mechanics of each technology: the gRPC server
 """

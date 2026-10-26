@@ -14,7 +14,9 @@ from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import (
     TEXT,
     Any,
@@ -111,7 +113,7 @@ def ledgers() -> Repository:
 
 
 def test_the_mapped_class_publishes_what_the_entity_declared():
-    meta = describe(Ledger)
+    meta = ModelIntrospection.describe(Ledger)
 
     assert (meta.get_id, meta.display) == ("id", "name")
     assert meta.search == Ledger.DEFAULT_LITERAL_SEARCH()
@@ -255,5 +257,5 @@ def test_a_key_other_than_the_identity_must_be_unique_on_disk():
     )
 
     with pytest.raises(exceptions.ProgrammingError, match="loose_code.code is not unique"):
-        describe(Coded)
-    assert describe(Unique).get_id == "code"
+        ModelIntrospection.describe(Coded)
+    assert ModelIntrospection.describe(Unique).get_id == "code"

@@ -19,7 +19,8 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.observability import of, traces
+from sincpro_framework.observability import traces
+from sincpro_framework.observability.metrics import of
 
 pytest.importorskip("opentelemetry.sdk.trace")
 

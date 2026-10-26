@@ -5,7 +5,7 @@ from sincpro_log.logger import LoggerProxy
 from .bus_pipeline.incomes.incomes import Incomes
 from .bus_pipeline.interceptors.interceptor import Interceptor
 from .bus_pipeline.outcomes.outcomes import Outcomes
-from .context.entrypoint.providers import ContextProvider
+from .context.domain.providers import ContextProvider
 from .observability import Observability
 from .sincpro_abstractions import (
     ApplicationService,

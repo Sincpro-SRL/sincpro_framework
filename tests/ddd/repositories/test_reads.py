@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlalchemy import Column, Integer, Text
 from sqlalchemy.orm import registry
 
+from sincpro_framework.common.reads import aggregate_tag, noting_reads
 from sincpro_framework.data_layer.orm import (
     Database,
     Repository,
@@ -19,7 +20,6 @@ from sincpro_framework.data_layer.orm import (
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Criteria, Entity
-from sincpro_framework.ddd.repositories.reads import aggregate_tag, noting_reads
 
 
 @dataclass

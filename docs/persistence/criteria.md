@@ -48,7 +48,7 @@ Operators by type:
 `measures` plus `count`. A name outside them is refused rather than dropped, because a filter
 that vanished there would answer groups the caller ruled out.
 
-`matches(record, expression)` in `ddd/criteria/entrypoint/evaluation.py` is the in-memory evaluator and the
+`Evaluation.matches(record, expression)`, from `sincpro_framework.ddd.criteria`, is the in-memory evaluator and the
 specification of the translator: every operator has to agree with it on every row, and the
 real-world suite checks exactly that over the whole ledger.
 
@@ -106,7 +106,7 @@ Condition(field="closed_at", operator=Operator.GTE,
 
 `Meta.accept` reads them before it checks anything, so the memory store, SQL and the fingerprint
 of a cache see only literals: the key of a cached read is made from the rows asked for, and two
-users asking for «mine» never share one. `resolve(expression, ResolutionContext(now=…))`, from `sincpro_framework.ddd.criteria`, is the same
+users asking for «mine» never share one. `Resolution.resolve(expression, ResolutionContext(now=…))`, from `sincpro_framework.ddd.criteria`, is the same
 step with the clock in hand, which is how a test pins the day.
 
 ## What *reflexive* means
@@ -182,7 +182,7 @@ A criteria lives in URLs and saved readings, and those outlive the schema they w
 ## Writing one
 
 From JSON: `Criteria.model_validate(payload)`. In Python: the nodes directly, `Criteria(where=
-All(all=[Condition(field=…, operator=Operator.GT, value=…)]), order=parse_order("-pages"))`.
+All(all=[Condition(field=…, operator=Operator.GT, value=…)]), order=Sort.parse("-pages"))`.
 The nodes carry the names the JSON uses — `All`, `Any`, `Not` and `Condition`, from
 `sincpro_framework.ddd` — so `{"any": [...]}` is `Any(any=[...])`.
 `Query` is the command base that carries one, `ResponsePaginatedQuery` the answer base that
@@ -195,7 +195,7 @@ its parameters, with the values a parameter may take — so a filter builder off
 month» from what the backend says and a value a project adds appears with no client release.
 
 The language is also published as data: `tests/ddd/criteria/criteria.schema.json` (the JSON Schema of
-a `Criteria`, generated from the models), `criteria-parity.json` (what a filter keeps, per
+a `Criteria`, generated from the models), `criteria-parity.json` (what a filter matches, per
 operator) and `criteria-resolution.json` (what each dynamic value reads to, given the instant, the
 timezone, the context and the parameters; the expectations are written by hand). `make
 criteria-contract` regenerates the three and copies them to the TypeScript package, and a test fails

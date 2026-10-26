@@ -4,7 +4,7 @@ from sqlalchemy import Column, DateTime, LargeBinary, MetaData, Table, Text
 
 
 def idempotency_table(name: str, metadata: MetaData) -> Table:
-    """The records `DatabaseIdempotencyRecords` keeps: one row per idempotency key, its claim
+    """The records `DatabaseIdempotencyRecords` stores: one row per idempotency key, its claim
     while the write runs, then its answer, completed in the write's own transaction.
 
         out     key TEXT PRIMARY KEY · state TEXT · fingerprint TEXT · owner TEXT ·

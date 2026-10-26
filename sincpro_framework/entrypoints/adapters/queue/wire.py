@@ -8,7 +8,7 @@ it registers, and the one path every delivery takes (PRD_15 §1.2, §5).
 Context: the generated subscriber and `QueueGateway.consume` (full control) both call `process`,
 so a hand-written subscriber can neither skip nor re-implement a stage. Nothing here is a broker's:
 a FastStream broker (Kafka, RabbitMQ, Redis, NATS) and one of another kind (Amazon SQS) are both a
-`Broker`, their messages a `Delivery` (`sincpro_framework.event_driven.domain.broker`). Every subscription
+`Broker`, their messages a `Delivery` (`sincpro_framework.event_driven`). Every subscription
 settles manually from the verdict; the bus runs in a worker thread, inside the producer's trace,
 authenticated in that same thread (identity is a `ContextVar`).
 """
@@ -22,13 +22,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from sincpro_framework import exceptions
-from sincpro_framework.auth.domain.identity import Credentials
-from sincpro_framework.auth.entrypoint.transports import authenticated_as
+from sincpro_framework.auth import Credentials, security
 from sincpro_framework.common.failures import failure_reason, refined_failure_kind
-from sincpro_framework.context.adapters.propagation import extract
-from sincpro_framework.context.domain.keys import ContextKey
-from sincpro_framework.context.domain.level import EntrypointKind
+from sincpro_framework.common.naming import registered_name
+from sincpro_framework.context import ContextKey, EntrypointKind, context_propagation
 from sincpro_framework.data_layer.caching import IdempotencyRecords, KeyValueRecords
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.entrypoints.adapters.queue.flavours import (
     BrokerName,
@@ -51,22 +50,11 @@ from sincpro_framework.entrypoints.adapters.queue.verdicts import (
 from sincpro_framework.entrypoints.domain.bindings import QueueBinding
 from sincpro_framework.entrypoints.domain.surface import Group, Operation, Resolved, Wire
 from sincpro_framework.entrypoints.infrastructure import json_schema
-from sincpro_framework.event_driven.adapters.envelope import (
-    ATTEMPTS_HEADER,
-    Envelope,
-    text_headers,
-    type_name,
-)
-from sincpro_framework.event_driven.domain.broker import Broker, Delivery
-from sincpro_framework.observability.metrics.domain.instruments import (
-    Instrument,
-    InstrumentKind,
-)
-from sincpro_framework.observability.metrics.infrastructure.active import active
+from sincpro_framework.event_driven import ATTEMPTS_HEADER, Broker, Delivery, Envelope
+from sincpro_framework.observability.metrics import Instrument, InstrumentKind, metrics
 from sincpro_framework.observability.tracing.propagation import within_trace
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
-from sincpro_framework.store import InMemoryKeyValue
 
 UNGUARDED = "unguarded"
 QUEUE_DELIVERIES = Instrument(
@@ -122,7 +110,7 @@ def queue_context(envelope: Envelope, headers: Mapping[str, str]) -> dict[str, A
     3. Final: the tenant a producer put in its own headers, when the context names none — as
        `tenant_id`, and as `tenant`, what this wire wrote before the key was standard.
     """
-    carried: dict[str, Any] = extract(headers)
+    carried: dict[str, Any] = context_propagation.extract(headers)
     if envelope.correlationid:
         carried[ContextKey.CORRELATION_ID] = envelope.correlationid
     if envelope.causationid:
@@ -151,7 +139,7 @@ class QueueOptions(DataTransferObject):
     """What a dead-letter channel adds to the channel's name — `billing.issue.dlq`."""
     time_limit: timedelta | None = None
     """How long the bus may run one message — MUST stay below `in_progress_for` and the
-    broker's visibility timeout. Past it the delivery is retried; the claim is kept, so a
+    broker's visibility timeout. Past it the delivery is retried; the claim stays held, so a
     redelivery waits for it to expire rather than run beside the one still running."""
     in_progress_for: timedelta = timedelta(minutes=5)
     """How long the inbox's claim holds a delivery that is running — a replica that dies
@@ -290,10 +278,10 @@ class QueueWire(Wire[QueueBinding]):
             QueueWire(RabbitBroker(url), QueueOptions(inbox=None))
             ->  retry_by NACK, dead_letter_by NATIVE, no inbox
 
-        1. The broker kept, and the options given — else the defaults.
+        1. The broker stored, and the options given — else the defaults.
         2. The broker's flavour (`flavour_of`): its name and whether it acknowledges.
         3. `retry_by` and `dead_letter_by`: the options', else the flavour's.
-        4. An `Inbox` over the options' records, claim and keep times — none when
+        4. An `Inbox` over the options' records, claim and retention times — none when
            `inbox=None`.
         Final: not unguarded until the gateway says so; nothing subscribed yet.
         """
@@ -322,7 +310,7 @@ class QueueWire(Wire[QueueBinding]):
         """An event is heard on its wire name; a Command is consumed from the channel it
         declares — never derived, so it is never consumed by default."""
         if isinstance(operation.command, type) and issubclass(operation.command, DomainEvent):
-            return QueueBinding(kind="hears", channel=type_name(operation.command))
+            return QueueBinding(kind="hears", channel=registered_name(operation.command, ""))
         return QueueBinding(kind="consumes")
 
     def name_of(self, resolved: Resolved[QueueBinding]) -> str:
@@ -424,7 +412,7 @@ class QueueWire(Wire[QueueBinding]):
         for one in surface:
             key = (channel_of(one), consumer_group_of(one), one.binding.kind)
             grouped.setdefault(key, {}).setdefault(
-                type_name(one.operation.command, one.operation.bus.name), []
+                registered_name(one.operation.command, one.operation.bus.name), []
             ).append(one)
         return [
             Subscription(
@@ -493,7 +481,7 @@ class QueueWire(Wire[QueueBinding]):
         def call() -> Any:
             """The bus run in the worker thread, authenticated and in the carried context."""
             with (
-                authenticated_as(bus, credentials),
+                security.authenticated_as(bus, credentials),
                 bus.context(carried, kind=EntrypointKind.QUEUE),
             ):
                 return bus(dto)
@@ -522,11 +510,11 @@ class QueueWire(Wire[QueueBinding]):
         1. The inbox claims `inbox:{binding}:{source}:{id}` — per context, so a retry re-runs
            only the context that failed: a completed redelivery is replayed without running;
            one running elsewhere is retried; another body under the same id is dead-lettered.
-        2. The bus runs: success completes the claim; a failure releases it (the time limit
-           keeps it) and is classified.
+        2. The bus runs: success completes the claim; a failure releases it (past the time
+           limit it stays held) and is classified.
         Final: this context's verdict.
         """
-        name = type_name(resolved.operation.command, resolved.operation.bus.name)
+        name = registered_name(resolved.operation.command, resolved.operation.bus.name)
         key = inbox_key(binding_name(resolved), identity, message_id)
         owner: str | None = None
         if self.inbox is not None:
@@ -538,7 +526,7 @@ class QueueWire(Wire[QueueBinding]):
             if claimed == Claimed.KEY_REUSED:
                 return refused(exceptions.FailureKind.KEY_REUSED, "KEY_REUSED")
         try:
-            await self._run(resolved, dto, text_headers(message.headers), envelope)
+            await self._run(resolved, dto, Envelope.text_headers(message.headers), envelope)
         except TimeoutError:
             return refused(exceptions.FailureKind.UNAVAILABLE, "TIME_LIMIT")
         except Exception as error:
@@ -556,7 +544,7 @@ class QueueWire(Wire[QueueBinding]):
         """The headers a republished copy carries: the original's as text, the envelope as
         CloudEvents headers, `sincpro-attempts` set to `attempts` — and RabbitMQ's
         `x-delivery-count` dropped, since it counted the original, not the copy."""
-        headers = text_headers(message.headers)
+        headers = Envelope.text_headers(message.headers)
         headers.pop("x-delivery-count", None)
         headers.update(envelope.as_headers())
         headers[ATTEMPTS_HEADER] = str(attempts)
@@ -592,7 +580,7 @@ class QueueWire(Wire[QueueBinding]):
            `{channel}{suffix}` then ack — nack when the copy fails, so nothing is lost.
         """
         settlement = verdict.settlement
-        active.emit(
+        metrics.emit(
             QUEUE_DELIVERIES,
             1,
             {
@@ -675,7 +663,7 @@ class QueueWire(Wire[QueueBinding]):
             await self._settle(message, verdict, channel, envelope)
             return verdict
         command = handlers[0].operation.command
-        name = type_name(command, handlers[0].operation.bus.name)
+        name = registered_name(command, handlers[0].operation.bus.name)
         attempts = self._attempts(message, envelope)
         max_attempts = min(
             one.binding.max_attempts or self.options.max_attempts for one in handlers
@@ -788,7 +776,7 @@ class QueueWire(Wire[QueueBinding]):
            3.1 the options' `subscription_of`, when the project declares its own;
            3.2 otherwise `broker.subscriber(channel, description=..., ...)` with the
                flavour's options (`subscription_options`).
-        Final: the subscriptions kept, and answered.
+        Final: the subscriptions stored, and answered.
         """
         if self.subscriptions is not None:
             return list(self.subscriptions)
@@ -810,3 +798,34 @@ class QueueWire(Wire[QueueBinding]):
             )(handler)
         self.subscriptions = subscriptions
         return list(subscriptions)
+
+
+class EventsWire(QueueWire):
+    """Every event on the channel its name maps to, all in one consumer group."""
+
+    def __init__(
+        self,
+        broker: Broker,
+        options: QueueOptions | None,
+        channel_of_name: Callable[[str], str],
+        group: str,
+    ) -> None:
+        """The queue wire, plus how an event's name maps to its channel and the one consumer
+        group every event is heard in."""
+        super().__init__(broker, options)
+        self._channel_of_name = channel_of_name
+        self._group = group
+
+    def derive(self, operation: Operation, group: Group) -> QueueBinding:
+        """An event on `channel_of_name(its name)`, in the shared group; anything else as the
+        queue wire derives it.
+
+            derive(InvoiceIssued)  ->  QueueBinding(kind="hears",
+                                                    channel="billing.invoice.v1.issued",
+                                                    group="planning+assurance")
+        """
+        derived = super().derive(operation, group)
+        if derived.kind != "hears":
+            return derived
+        channel = self._channel_of_name(registered_name(operation.command, ""))
+        return derived.model_copy(update={"channel": channel, "group": self._group})

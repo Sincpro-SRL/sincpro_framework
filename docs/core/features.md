@@ -99,7 +99,7 @@ assert shop(CommandCheckout(sku="A-1", quantity=3), ResponseCheckout) == Respons
 
 A bus creates one instance of each handler when it is built, and that instance serves every
 execution, on every thread. A registration after the build makes a new generation of the bus with
-new instances. So a handler keeps nothing of a request on `self`:
+new instances. So a handler stores nothing of a request on `self`:
 
 ```python
 def execute(self, dto):
@@ -132,10 +132,10 @@ assert shop.replaced_for(CommandReserve) == (f"{generic.__module__}.{generic.__q
 - **It must replace the one answering now**: replacing a handler another replacement already took,
   or one never registered, is refused naming who answers. Two modules cannot overwrite each other
   without knowing.
-- **It keeps the contract**: when both declare a response class, the replacement's is that class or
+- **It honours the contract**: when both declare a response class, the replacement's is that class or
   a narrower one.
 - **What it replaced is said**: in the build log, in `bus.replaced_for(Command)`, on the use case's
-  span, and to the access guard — a replacement that declares no permission keeps the one it
+  span, and to the access guard — a replacement that declares no permission inherits the one it
   replaces.
 
 ## Registered after the bus was built

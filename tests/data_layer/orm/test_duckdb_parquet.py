@@ -37,7 +37,7 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     Grain,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Operator,
     Sort,
@@ -151,7 +151,7 @@ def test_a_time_series_by_month_is_answered_by_the_file(store):
         Sales,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="at", grain=Grain.MONTH),),
+                group_by=(GroupingLevel(field="at", grain=Grain.MONTH),),
                 measures={
                     "total": Measure(function="sum", field="amount"),
                     "biggest": Measure(function="max", field="amount"),
@@ -175,7 +175,7 @@ def test_the_measures_a_database_computes_reach_a_file_too(store):
         Sales,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="region"),),
+                group_by=(GroupingLevel(field="region"),),
                 measures={
                     "reps": Measure(function="count_distinct", field="rep"),
                     "middle": Measure(function="percentile", field="amount", argument=0.5),
@@ -196,7 +196,7 @@ def test_a_bucket_of_a_file_opens_like_any_other(store):
     reading = Criteria(
         where=Condition(field="region", operator=Operator.EQ, value="north"),
         grouping=Grouping(
-            group_by=(Level(field="at", grain=Grain.MONTH),),
+            group_by=(GroupingLevel(field="at", grain=Grain.MONTH),),
             measures={"total": Measure(function="sum", field="amount")},
         ),
     )
@@ -216,7 +216,7 @@ def test_the_two_engines_answer_the_same_reading_the_same_way(store, parquet):
     reading = Criteria(
         where=Condition(field="amount", operator=Operator.GT, value=500),
         grouping=Grouping(
-            group_by=(Level(field="region"),),
+            group_by=(GroupingLevel(field="region"),),
             measures={"total": Measure(function="sum", field="amount")},
             order=(Sort(field="total", descending=True),),
         ),

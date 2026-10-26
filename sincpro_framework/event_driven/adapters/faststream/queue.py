@@ -11,7 +11,7 @@ surfaces where it was published. Never started, the queue is for a service that 
 async and connected the broker itself: `aput` publishes on the caller's loop.
 
 What travels is the event as JSON, on the channel named after it, with its envelope
-(`cloud_event_headers`: its id, wire name, chain, the publishing trace and the publishing
+(`Envelope.headers_for`: its id, wire name, chain, the publishing trace and the publishing
 execution's context) as headers — read where the event is published, before it is handed to the
 queue's loop. `source` names this service in the envelope, what a consumer's `producers=` checks.
 Topics, partitions, exchanges, retries and acks are the broker's configuration, not this queue's.
@@ -24,8 +24,8 @@ from typing import Any
 
 from sincpro_framework import exceptions
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.event_driven.adapters.envelope import cloud_event_headers
 from sincpro_framework.event_driven.domain.broker import Broker
+from sincpro_framework.event_driven.domain.envelope import Envelope
 
 type ChannelOf = Callable[[DomainEvent], str]
 type OptionsOf = Callable[[DomainEvent], dict[str, Any]]
@@ -124,7 +124,7 @@ class FastStreamQueue:
     def _headers(self, event: DomainEvent) -> dict[str, str]:
         """Read where the event is published: the queue's loop runs in a thread of its own, where
         neither the trace nor the execution's context is."""
-        return cloud_event_headers(event, source=self.source)
+        return Envelope.headers_for(event, source=self.source)
 
     async def _publish(self, event: DomainEvent, headers: dict[str, str]) -> None:
         """Publish the event's JSON on its channel, with `headers` and the broker's options.

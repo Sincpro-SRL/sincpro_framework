@@ -258,13 +258,13 @@ class PaymentFeature(Feature):
 
 #### Propagating context into a `ThreadPoolExecutor`
 
-- The context overlay lives in a `ContextVar`, which is isolated **per OS thread**. A plain
-  `executor.submit(bus.execute, dto)` runs `execute` in a *new* thread that never saw the
-  overlay's `set()` — every Feature's `self.context` there silently falls back to the (usually
-  empty) shared context.
-- `bus.thread_context()` on a built bus (`framework.bus` or `self.feature_bus`, not
-  `UseFramework` itself) captures the calling thread's current context and returns a
-  `ThreadContextBus` — pass `.execute` (not the raw bus) to the executor instead.
+- The node in play lives in a `ContextVar`, which is isolated **per OS thread**. A plain
+  `executor.submit(bus.execute, dto)` runs `execute` in a *new* thread that never saw it —
+  every Feature's `self.context` there is empty. `ContextExecutor` (from
+  `sincpro_framework.context`) hands each task the submitter's context on its own.
+- For a pool the project owns, `bus.thread_context()` on a built bus (`framework.bus` or
+  `self.feature_bus`, not `UseFramework` itself) answers the bus bound to the calling thread's
+  context (`in_context`) — pass its `.execute` (not the raw bus) to the executor instead.
 - Call `thread_context()` **once per task you submit**, not once for a whole batch: a captured
   `contextvars.Context` can only be entered by one thread at a time, so sharing a single one
   across concurrent workers raises `RuntimeError`.
@@ -295,10 +295,10 @@ parallel calls must not share a mutable context mapping. See the current [audit]
   several DTOs concurrently instead, use `bus.get_async_bus()` (or the shortcut
   `framework.get_async_bus()`).
 - Solves the same context-propagation problem as `thread_context()`, via `asyncio.to_thread`
-  itself (stdlib already propagates `contextvars` into the worker thread — no
-  `ThreadContextBus` involved here). Opposite reuse rule: an `AsyncBus` is stateless, so get
-  it **once** and `await`/`asyncio.gather` many calls on it — each call gets its own fresh
-  context snapshot, unlike `ThreadContextBus`'s single-use-per-snapshot restriction.
+  itself (stdlib already propagates `contextvars` into the worker thread). Opposite reuse
+  rule: an `AsyncBus` is stateless, so get it **once** and `await`/`asyncio.gather` many calls
+  on it — each call gets its own fresh context snapshot, unlike `thread_context()`'s
+  single-use-per-snapshot restriction.
 - Runs each call via `asyncio.to_thread` (stdlib), so `Feature`/`ApplicationService` stay
   100% sync — no "async Feature" variant to maintain.
 
@@ -463,7 +463,7 @@ See [Persistence (ORM)](#persistence-orm) for the full section.
 
 See [docs/entrypoints/](docs/entrypoints/README.md) for the full section.
 
-- One line publishes the bus as MCP tools: `build_mcp_server(instance).run()`.
+- One line publishes the bus as MCP tools: `Entrypoint(instance).run()`.
 - Features and ApplicationServices become typed tools. Docstrings are the LLM context.
 - Domain code stays host-agnostic. This extra is MCP only.
 
@@ -506,7 +506,7 @@ configuration, then `hosted_by`, then serving). The component is `sincpro_framew
 
 - **Tracing** (optional): OpenTelemetry spans on every DTO, export via OTLP (`sincpro-framework[opentelemetry]` + `OTEL_EXPORTER_OTLP_ENDPOINT`).
 - **Errors** (optional): Sentry/GlitchTip capture on bus exceptions (`sincpro-framework[sentry]` + `SENTRY_PYTHON_DSN` in conf). Isolated client — does not call `sentry_sdk.init()`, does not reuse Odoo's client.
-- **Metrics** (optional): every use case timed by bounded context and outcome, with nothing to declare; `@metrics.counts` / `sums` / `measures` on a use case by field reference (`of(Command).field`); Prometheus `/metrics` (`sincpro-framework[prometheus]`) or OTLP (`[opentelemetry]`), picked by `OTEL_METRICS_EXPORTER` (alias `SINCPRO_METRICS_BACKEND`) — [guide](docs/observability/metrics.md).
+- **Metrics** (optional): every use case timed by bounded context and outcome, with nothing to declare; `@metrics.counts` / `sums` / `measures` on a use case by field reference (`of(Command).field`); Prometheus `/metrics` (`sincpro-framework[prometheus]`) or OTLP (`[opentelemetry]`), picked by `OTEL_METRICS_EXPORTER` — [guide](docs/observability/metrics.md).
 - Independent: you can enable traces, errors, both, or neither.
 
 ## ⚙️ Features vs. Application Service
@@ -1687,7 +1687,7 @@ class is any `SincproConfig`. `build_config_obj(Shape, file, path)` builds one f
 the full guide is [docs/core/settings.md](docs/core/settings.md).
 
 ```python
-from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj
+from sincpro_framework.settings import SincproConfig, build_config_obj
 
 
 class PostgresConf(SincproConfig):
@@ -1782,8 +1782,7 @@ where you can define some behavior currently we support the following settings:
 - `app_release`: deployed artifact and version, `artifact:version`. Resolved from `APP_RELEASE` — the standard on every Sincpro service. Feeds both the GlitchTip release and the OTel `service.name`.
 - `otel_service_name`: names the artifact when `APP_RELEASE` carries only a version. Resolved from `OTEL_SERVICE_NAME`.
 - `tenant`: GlitchTip `environment` and the `tenant` tag. Resolved from `TENANT`.
-- `otel_metrics_exporter` / `otel_traces_exporter` / `otel_sdk_disabled`: OpenTelemetry's own switches, from `OTEL_METRICS_EXPORTER` (`otlp`, `prometheus`, `none`), `OTEL_TRACES_EXPORTER` (`none` builds no provider of the framework's) and `OTEL_SDK_DISABLED`.
-- `metrics_backend`: `auto`, `prometheus`, `otel` or `off`. Resolved from `SINCPRO_METRICS_BACKEND` — kept as an alias; set to anything but `auto`, it wins over `OTEL_METRICS_EXPORTER`. Default: `auto` — OpenTelemetry when a meter provider or an OTLP endpoint is configured, otherwise nothing. `prometheus` requires `sincpro-framework[prometheus]` and serves `/metrics` ([docs/observability/metrics.md](docs/observability/metrics.md)).
+- `otel_metrics_exporter` / `otel_traces_exporter` / `otel_sdk_disabled`: OpenTelemetry's own switches, from `OTEL_METRICS_EXPORTER` (`otlp`, `prometheus`, `none`), `OTEL_TRACES_EXPORTER` (`none` builds no provider of the framework's) and `OTEL_SDK_DISABLED`. With no `OTEL_METRICS_EXPORTER`, metrics go to OpenTelemetry when a meter provider or an OTLP endpoint is configured, otherwise nowhere; `prometheus` requires `sincpro-framework[prometheus]` and serves `/metrics` ([docs/observability/metrics.md](docs/observability/metrics.md)).
 - `sentry_dsn`: GlitchTip/Sentry DSN. Resolved from `SENTRY_PYTHON_DSN`. Default: `null` (error reporting disabled). Requires `sentry-sdk` (or `sincpro-framework[sentry]`). The framework uses an isolated client with `release=APP_RELEASE` and never calls `sentry_sdk.init()`. Odoo may capture the same error separately. A `ClientError` or a `DomainError` is not reported; use `UseFramework.ignore_sentry_exceptions(...)` for other expected errors and `report_sentry_exceptions(...)` to bring one back.
 
 Override the config file using another
@@ -1840,11 +1839,11 @@ attempts it.** Everything below was verified hands-on (3.14.7 vs. 3.14.7t), not 
 - **`contextvars` propagation to a bare `ThreadPoolExecutor.submit` differs by build.**
   Verified with a minimal repro outside this framework: on 3.12.11 and 3.14.7 (GIL builds)
   a bare `executor.submit(fn)` loses the caller's `contextvars.Context`, same as always —
-  this is the bug `ThreadContextBus`/`thread_context()` exists to fix. On 3.14.7t
+  this is the bug `ContextExecutor`/`thread_context()` exists to fix. On 3.14.7t
   (free-threaded), it's already propagated with no `thread_context()` involved. This
   doesn't make `thread_context()` wrong or unnecessary — most users run a GIL build, and
   code shouldn't silently depend on a free-threaded-only behavior — but it does mean
-  `tests/context/test_thread_context_bus.py::test_bare_submit_loses_context_in_new_thread` and
+  `tests/context/test_thread_context.py::test_bare_submit_loses_context_in_new_thread` and
   `::test_fan_out_without_thread_context_loses_context_for_every_worker` encode a
   GIL-build-specific assumption and would legitimately fail if that suite is ever run on a
   free-threaded interpreter.

@@ -1,19 +1,15 @@
 """AsyncBus: async facade over a sync `Bus`, for callers that are themselves async.
 
-`Bus.execute` is sync end to end (see `context/infrastructure/thread_context_bus.py`). A caller
-that is already `async def` and wants to fan out several independent DTOs
-concurrently (e.g. `asyncio.gather`) still needs a way to hop off the event loop
-without losing `self.context` (a `ContextVar` overlay, isolated per OS thread) in
-the worker thread `asyncio.to_thread` spawns.
+`Bus.execute` is sync end to end. A caller that is already `async def` and wants to fan out
+several independent DTOs concurrently (e.g. `asyncio.gather`) still needs a way to hop off the
+event loop without losing `self.context` (the node in play lives in a `ContextVar`) in the worker
+thread `asyncio.to_thread` spawns.
 
-Unlike `ThreadContextBus` (built for a manually-managed `ThreadPoolExecutor`,
-which does NOT propagate contextvars on its own), `asyncio.to_thread` already
-captures `contextvars.copy_context()` at the call site and runs the target
-inside it (stdlib `asyncio/threads.py`) — that's the documented behavior, not
-an implementation detail we depend on accidentally. So `AsyncBus` calls
-`self._run` directly: no `ThreadContextBus` involved, no risk of
-tripping its single-use-snapshot `RuntimeError` guard on a business exception
-that happens to subclass `RuntimeError`.
+Unlike `bus.thread_context()` (built for a manually-managed `ThreadPoolExecutor`, which does NOT
+propagate contextvars on its own), `asyncio.to_thread` already captures
+`contextvars.copy_context()` at the call site and runs the target inside it (stdlib
+`asyncio/threads.py`) — that's the documented behavior, not an implementation detail we depend on
+accidentally. So `AsyncBus` calls `self._run` directly, a fresh copy per call.
 """
 
 import asyncio
@@ -21,8 +17,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Type
 
 if TYPE_CHECKING:
-    # Kept out of the runtime import graph on purpose, same reason as
-    # context/infrastructure/thread_context_bus.py: sincpro_abstractions imports *this*
+    # Out of the runtime import graph on purpose: sincpro_abstractions imports *this*
     # module (via the aio package) for `Bus.get_async_bus()`, so a real
     # import back here would be circular.
     from ..sincpro_abstractions import TypeDTO, TypeDTOResponse
@@ -44,7 +39,7 @@ class AsyncBus:
     Cancellation does not stop in-flight work: if the awaiting coroutine is
     cancelled (e.g. `asyncio.wait_for(async_bus(dto), timeout=...)` expiring),
     the `Feature`/`ApplicationService` already running in its worker thread
-    keeps running to completion — Python cannot forcibly kill a thread. Design
+    runs on to completion — Python cannot forcibly kill a thread. Design
     for that (idempotency, no assumption that a timeout actually stopped the
     work) rather than relying on cancellation as an abort mechanism.
 
@@ -65,7 +60,7 @@ class AsyncBus:
     """
 
     def __init__(self, run: Callable[..., Any]) -> None:
-        """Wrap whatever runs a DTO synchronously — nothing else is kept, so one instance
+        """Wrap whatever runs a DTO synchronously — nothing else is stored, so one instance
         serves any number of concurrent awaits."""
         self._run = run
         """What runs a DTO on the worker thread: `bus.execute`, or the `UseFramework` itself —

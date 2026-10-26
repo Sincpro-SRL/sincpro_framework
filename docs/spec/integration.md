@@ -37,7 +37,7 @@ Every use case announces that it began (`ExecutionStarted`) and how it ended (`E
 | Capability | Status | What it is | Held by |
 |---|---|---|---|
 | Execution events | ✅ | started, completed, failed — for every Feature and ApplicationService, pipelines and their steps included; nothing is built when nobody hears | `tests/bus_pipeline/incomes/test_incomes.py`, `tests/bus_pipeline/outcomes/test_outcomes.py` |
-| Listeners of a bus and of the process | ✅ | `on_start` / `on_completion` / `on_failure`, `starts` / `completions` / `failures`; a listener that raises reaches nothing | `tests/bus_pipeline/test_listeners.py` |
+| Listeners of a bus and of the process | ✅ | `on_start` / `on_completion` / `on_failure`, `start_listeners` / `completion_listeners` / `failure_listeners`; a listener that raises reaches nothing | `tests/bus_pipeline/test_listeners.py` |
 | Handed to a queue | ✅ | `publish_starts` / `publish_completions` / `publish_failures(to=Publisher(...))` | `tests/bus_pipeline/outcomes/test_outcomes.py` |
 | **Hearing less** | ✅ | `use_cases=` (Commands or their names) and `when=` (a filter of `ddd.criteria` over the event by path: `context.tenant_id`, `dto.amount`, `kind`), on every way to listen | `tests/bus_pipeline/test_listeners.py` |
 | Delivered durably | ⬜ | an execution event through the outbox and its relay, for an audit trail that cannot lose one | — |
@@ -49,8 +49,8 @@ one vocabulary; a project that needs more writes a function.
 
 | Capability | Status | What it is | Held by |
 |---|---|---|---|
-| The envelope | ✅ | CloudEvents 1.0 in binary mode plus the context and the trace — one place, `cloud_event_headers`, stamped by every sending queue | `tests/entrypoints/adapters/queue/test_queue_settlement.py` |
-| The queue wire on any broker | ✅ | `QueueWire` needs a `Broker` and a `Delivery` (`event_driven.domain.broker`); a broker that is not FastStream's declares its `flavour` | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
+| The envelope | ✅ | CloudEvents 1.0 in binary mode plus the context and the trace — one place, `Envelope.headers_for`, stamped by every sending queue | `tests/entrypoints/adapters/queue/test_queue_settlement.py` |
+| The queue wire on any broker | ✅ | `QueueWire` needs a `Broker` and a `Delivery` (`sincpro_framework.event_driven`); a broker that is not FastStream's declares its `flavour` | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
 | FastStream brokers | ✅ | Kafka, RabbitMQ, Redis, NATS — `[faststream]` | `tests/entrypoints/adapters/queue/test_queue_settlement.py` |
 | Amazon SQS | ✅ | `SqsBroker`: competing consumers, receive count, visibility as retry, redrive as dead letter; SNS and EventBridge wrappers opened | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
 | Amazon SNS, SQS, EventBridge (sending) | ✅ | `SnsQueue`, `SqsQueue`, `EventBridgeQueue`; filter attributes, FIFO grouping | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |

@@ -16,9 +16,9 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.remote_execution import HostedAt, Wire
-from sincpro_framework.remote_execution.adapters.transport import transport_for
+from sincpro_framework.remote_execution import HostedAt, Scheme
 from sincpro_framework.remote_execution.domain import exceptions as remote_exceptions
+from sincpro_framework.remote_execution.services.transports import transport_for
 from tests.remote_execution.hosting import TRANSPORTS, host_over
 
 
@@ -283,6 +283,6 @@ def test_a_context_nobody_mapped_elsewhere_runs_here():
 
 @pytest.mark.parametrize("scheme", TRANSPORTS)
 def test_the_transport_to_one_address_is_shared(scheme):
-    hosted_at = HostedAt(Wire(scheme), "127.0.0.1:9", 1.0)
+    hosted_at = HostedAt(Scheme(scheme), "127.0.0.1:9", 1.0)
 
     assert transport_for(hosted_at) is transport_for(hosted_at)

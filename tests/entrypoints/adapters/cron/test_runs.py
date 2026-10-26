@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 import fakeredis
 import pytest
 
+from sincpro_framework.data_layer.store import InMemoryKeyValue, RedisKeyValue
 from sincpro_framework.entrypoints.adapters.cron import (
     Cron,
     CronGateway,
@@ -21,8 +22,6 @@ from sincpro_framework.entrypoints.adapters.cron import (
     Tick,
 )
 from sincpro_framework.runtime.testing import ManualClock
-from sincpro_framework.store import InMemoryKeyValue
-from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 TICK = datetime(2026, 9, 26, 2, 0, tzinfo=UTC)
 

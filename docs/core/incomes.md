@@ -15,7 +15,7 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 ```python
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.bus_pipeline.incomes.events import ExecutionStarted
-from sincpro_framework.bus_pipeline.incomes.listeners import starts
+from sincpro_framework.bus_pipeline.incomes.listeners import start_listeners
 from sincpro_framework.bus_pipeline.outcomes.events import ExecutionCompleted
 
 
@@ -119,24 +119,24 @@ trail: list[str] = []
 
 
 @ops.feature(ExecutionStarted)                         # another bus, as any event
-class KeepTrail(Feature):
+class RecordTrail(Feature):
     def execute(self, dto: ExecutionStarted) -> None:
         trail.append(dto.use_case)
 
 
 warehouse.publish_starts(to=Publisher(SyncQueue(Subscriber(ops))))
 everything: list[ExecutionStarted] = []
-starts.subscribe(everything.append)                    # every bus of the process
+start_listeners.subscribe(everything.append)                    # every bus of the process
 
 warehouse(CommandReserveStock(order_id="O-8"))
 
 assert trail == ["warehouse-incomes.CommandReserveStock"]   # ops' own run is not announced
 assert len(everything) == 1
-starts.clear()
+start_listeners.clear()
 ```
 
 - `@bus.on_start` — a function, for the starts of one bus.
-- `starts.subscribe(fn)` — every bus of the process.
+- `start_listeners.subscribe(fn)` — every bus of the process.
 - `bus.publish_starts(to=publisher)` — a queue: another bus (`SyncQueue`), the background
   (`BackgroundQueue`), a broker topic (`FastStreamQueue`).
 

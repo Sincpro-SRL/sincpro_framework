@@ -13,15 +13,14 @@ import pytest
 boto3 = pytest.importorskip("boto3")
 moto = pytest.importorskip("moto")
 
-from sincpro_framework.entrypoints.adapters.queue import (  # noqa: E402
-    QueueGateway,
-    SqsBroker,
-    cloud_event_headers,
-    queue_name,
-)
-from sincpro_framework.event_driven import Publisher  # noqa: E402
-from sincpro_framework.event_driven.adapters.aws import (  # noqa: E402
+from sincpro_framework.entrypoints import QueueGateway  # noqa: E402
+from sincpro_framework.entrypoints.adapters.queue import SqsBroker, queue_name  # noqa: E402
+from sincpro_framework.event_driven import (  # noqa: E402
     HEADERS_ATTRIBUTE,
+    Envelope,
+    Publisher,
+)
+from sincpro_framework.event_driven.adapters.aws import (  # noqa: E402
     EventBridgeQueue,
     SnsQueue,
     SqsQueue,
@@ -64,7 +63,7 @@ def polled(broker: SqsBroker, times: int = 1) -> None:
 
 def issue(amount: int, source: str = SALES) -> None:
     command = CommandIssueInvoice(customer_id=7, amount=amount)
-    headers = cloud_event_headers(command, source=source, id=f"msg-{amount}")
+    headers = Envelope.headers_for(command, source=source, id=f"msg-{amount}")
     boto3.client("sqs").send_message(
         QueueUrl=a_queue(queue_name(ISSUE_CHANNEL)),
         MessageBody=command.model_dump_json(),
@@ -212,7 +211,7 @@ def test_a_channel_may_be_read_from_the_queue_the_project_names():
         MessageAttributes={
             HEADERS_ATTRIBUTE: {
                 "DataType": "String",
-                "StringValue": json.dumps(cloud_event_headers(command, source=SALES)),
+                "StringValue": json.dumps(Envelope.headers_for(command, source=SALES)),
             }
         },
     )

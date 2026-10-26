@@ -1,10 +1,11 @@
-"""The clocks: `InProcessClock` looks on a loop of its own, `ManualClock` when a test says so."""
+"""The clock a gateway runs on: `InProcessClock` looks on a loop of its own. The one a test moves by
+hand, `ManualClock`, is in `sincpro_framework.runtime.testing`."""
 
 import random
 from datetime import UTC, datetime, timedelta
 from threading import Event
 
-from sincpro_framework.entrypoints.adapters.cron.domain import OnLook
+from sincpro_framework.entrypoints.adapters.cron.domain.clock import OnLook
 
 
 class InProcessClock:
@@ -46,44 +47,3 @@ class InProcessClock:
     def stop(self) -> None:
         """End `run`'s loop — for good: this clock never looks again."""
         self._stopped.set()
-
-
-class ManualClock:
-    """Time moves when the test says so: `advance(minutes=2)` makes every gateway that runs on
-    it look at that moment."""
-
-    def __init__(self, start: datetime) -> None:
-        """`ManualClock(datetime(2026, 3, 1, 1, 59, tzinfo=UTC))` — refused without a
-        timezone."""
-        if start.tzinfo is None:
-            raise ValueError("ManualClock needs an aware start")
-        self._now = start
-        self._looks: list[OnLook] = []
-
-    def now(self) -> datetime:
-        """The moment the test last moved it to."""
-        return self._now
-
-    def run(self, look: OnLook) -> None:
-        """Remember `look` and return at once — the test drives it with `advance`, so
-        `gateway.run()` does not block a test."""
-        self._looks.append(look)
-
-    def stop(self) -> None:
-        """Forget every `look`: an `advance` after it reaches no gateway."""
-        self._looks.clear()
-
-    def advance(
-        self, days: int = 0, hours: int = 0, minutes: int = 0, seconds: int = 0
-    ) -> None:
-        """Move time forward, then make every gateway running on this clock look at the new
-        now.
-
-            clock.advance(minutes=2)    # 01:59 -> 02:01: a "0 2 * * *" cron starts its run
-
-        Context: the runs start on their own threads, so a test calls `gateway.wait()` before
-        it asserts what they did.
-        """
-        self._now += timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
-        for look in list(self._looks):
-            look(self._now)

@@ -1,10 +1,10 @@
 """What a form does to an entity before it is saved: values assigned and derived fields
 recomputed (`editing`), domain code previewed over a record nobody stores (`preview`), and
-a draft activated onto its record (`drafts` — the drafts themselves the context keeps).
+a draft activated onto its record (`drafts` — the drafts themselves the context stores).
 
     assign(invoice, {"discount": "50.00", "partner_id": "p-7"})   values typed by the fields
     recompute(invoice, ["discount"])                              what depends on them, again
-    with previewing() as advice: ...                              writes refused, advice kept
+    with previewing() as advice: ...                              writes refused, advice held
     refuse_stale(draft, invoice); assign(invoice, draft.values)   a draft activated
 """
 

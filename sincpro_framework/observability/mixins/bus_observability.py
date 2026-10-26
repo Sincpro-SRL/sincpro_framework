@@ -16,7 +16,7 @@ class BusObservabilityMixin:
     def ignore_sentry_exceptions(self, *exc_types: Type[Exception]) -> None:
         """Do not send these exception types to GlitchTip / Sentry.
 
-        A `ClientError` or a `DomainError` is already kept out: it is written for the caller,
+        A `ClientError` or a `DomainError` is already left out: it is written for the caller,
         traffic and not a bug. Use this for other expected errors — a library's own, a service's
         refusal the project treats as normal. Error handlers still run, and anything reported
         is reported even if a handler swallows it.

@@ -68,7 +68,8 @@ def assign(record: Any, values: Mapping[str, Any], adopt: bool = False) -> tuple
            one is a record its store can write.
        3.3 A value the type cannot read is refused, naming the field and why.
     4. A relation nobody read is replaced by a list without identities, exactly as assigning
-       it directly does — blind: a save then keeps what reads it, and says so.
+       it directly does — blind: a save then leaves what reads it at its stored value, and
+       says so.
     Final: the fields whose value changed, in the order the values came.
 
     Each refusal of the values is a `ClientError`: they came from whoever sent the form, and
@@ -113,8 +114,8 @@ def form_values(
     kind: type, values: Mapping[str, Any], nested: bool = False
 ) -> dict[str, Any]:
     """A record's values as a form sends them back to `assign`: what the framework writes left
-    out at every level — a nested record keeping its identity, the way a form names the line it
-    edits.
+    out at every level — a nested record retaining its identity, the way a form names the line
+    it edits.
 
         form_values(Sale, {"id": "s1", "version": 2, "discount": "5",
                            "lines": [{"id": "l1", "version": 1, "qty": 2}]})
@@ -125,14 +126,14 @@ def form_values(
     2. Each value, in order, its field's optional stripped:
        2.1 a field left out is skipped;
        2.2 a list of records — each mapping in it read the same way, nested; anything else
-           in the list kept as it is;
+           in the list left as it is;
        2.3 one record held as a mapping — read the same way, nested;
-       2.4 anything else kept as it is.
+       2.4 anything else left as it is.
     Final: the values a form edits, ready for `assign`.
     """
     annotations = annotations_of(kind)
-    kept = _identity_of(kind) if nested else ""
-    left_out = framework_fields(kind) - {kept}
+    own_identity = _identity_of(kind) if nested else ""
+    left_out = framework_fields(kind) - {own_identity}
     written: dict[str, Any] = {}
     for name, value in values.items():
         if name in left_out:
@@ -238,7 +239,7 @@ def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> A
 def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     """A new nested record built through its own constructor, each value read as its field's
     type. Nothing the framework writes comes with it — its identity included, unless adopting:
-    then the record keeps the identity it names."""
+    then the record takes the identity it names."""
     identity = _identity_of(kind)
     adopted = values.get(identity) if adopt and identity else None
     values = {name: one for name, one in values.items() if not (adopted and name == identity)}
@@ -352,16 +353,16 @@ def _held_in_part(record: Any, name: str) -> str:
     return str(answers(record)) if callable(answers) else ""
 
 
-def _warn_kept(record: Any, derivation: Derivation) -> None:
-    """A derivation a save skipped over a relation held in part keeps its stored value, which
-    may no longer agree with the records it sums: said once, with the way out."""
+def _warn_stale_derivation(record: Any, derivation: Derivation) -> None:
+    """A derivation a save skipped over a relation held in part retains its stored value,
+    which may no longer agree with the records it sums: said once, with the way out."""
     owner = type(record).__name__
     for name in derivation.depends:
         how = _held_in_part(record, name)
         if how:
             logger.warning(
                 f"{owner}.{derivation.field} is not recomputed on save: {owner}.{name} is held "
-                f"{how}, so the stored value is kept and may not match it. Read {name} whole "
+                f"{how}, so the stored value stays and may not match it. Read {name} whole "
                 "— inside context(), or with a specification that does not filter or page it — "
                 "for the save to compute it"
             )
@@ -385,7 +386,8 @@ def _ran(
     record: Any, derivations: tuple[Derivation, ...], reached: set[str], tolerant: bool
 ) -> tuple[str, ...]:
     """Runs the derivations `reached` asks for (all of them when it is empty). Tolerant, one that
-    reads a field the record does not hold whole is skipped, and its field keeps what it holds.
+    reads a field the record does not hold whole is skipped, and its field retains what it
+    holds.
     """
     every = not reached
     moved: list[str] = []
@@ -393,7 +395,7 @@ def _ran(
         if not every and reached.isdisjoint(derivation.depends):
             continue
         if tolerant and not all(_holds_whole(record, one) for one in derivation.depends):
-            _warn_kept(record, derivation)
+            _warn_stale_derivation(record, derivation)
             continue
         try:
             value = _computed(derivation, record)
@@ -477,10 +479,10 @@ def recompute_whole(record: Any) -> tuple[str, ...]:
 
     **A save never reads, and never computes over a relation it does not hold whole.** A
     derivation that reads a relation not loaded, cut by a specification, or assigned without a
-    whole reading behind it is skipped and keeps its stored value; a derivation that reads it
-    computes from that stored value. A relation never read cannot have changed, so that skip is
-    silent; one held in part may have, so a warning names the field, the relation and how to
-    read it whole. The records held are computed either way. An aggregate with no derivations
-    is not looked into at all.
+    whole reading behind it is skipped and retains its stored value; a derivation that reads
+    it computes from that stored value. A relation never read cannot have changed, so that
+    skip is silent; one held in part may have, so a warning names the field, the relation and
+    how to read it whole. The records held are computed either way. An aggregate with no
+    derivations is not looked into at all.
     """
     return _tree(record, set(), True, set())

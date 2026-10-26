@@ -37,17 +37,19 @@ from sqlalchemy import (
 from sqlalchemy.orm import column_property, registry
 
 from sincpro_framework import Feature, UseFramework
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Operator,
     Specification,
@@ -128,7 +130,7 @@ def fiscal_module(reg: registry, invoice: type, invoice_t: Any) -> type:
         {InvoiceFiscal: table},
         relations={
             invoice: {
-                "fiscal": Relation.foreign_key(
+                "fiscal": TableRelation.foreign_key(
                     InvoiceFiscal, parent_field="id", related_field="id"
                 )
             }
@@ -151,7 +153,7 @@ def delivery_module(reg: registry, invoice: type, invoice_t: Any) -> type:
         {InvoiceDelivery: table},
         relations={
             invoice: {
-                "delivery_note": Relation.foreign_key(
+                "delivery_note": TableRelation.foreign_key(
                     InvoiceDelivery, parent_field="id", related_field="id"
                 )
             }
@@ -263,7 +265,7 @@ def test_an_extension_adds_a_table_and_the_core_class_resolves_it(make):
 def test_the_extension_is_part_of_the_definition_the_client_reads(make):
     world = make().install("fiscal").open()
 
-    fiscal = describe(world.invoice).fields["fiscal"]
+    fiscal = ModelIntrospection.describe(world.invoice).fields["fiscal"]
 
     assert (fiscal.type.value, fiscal.relation, fiscal.many) == (
         "many2one",
@@ -322,7 +324,7 @@ def test_a_field_read_out_of_the_json_slot_is_filtered_and_grouped_like_a_column
         world.invoice,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="zone"),),
+                group_by=(GroupingLevel(field="zone"),),
                 measures={"total": Measure(function="sum", field=world.amount)},
             )
         ),
@@ -330,7 +332,7 @@ def test_a_field_read_out_of_the_json_slot_is_filtered_and_grouped_like_a_column
 
     assert sorted(one.number for one in in_north) == ["F-1", "F-2"]
     assert {one.value: one.count for one in by_zone} == {"N": 2, "S": 1}
-    assert describe(world.invoice).fields["zone"].groupable
+    assert ModelIntrospection.describe(world.invoice).fields["zone"].groupable
 
 
 # ── what happens when the core is released again ──────────────────────────────
@@ -364,7 +366,7 @@ def test_a_minor_release_that_adds_a_field_leaves_the_extension_untouched(make):
     [read] = list(new.store.search(new.invoice, Criteria(specification=ASKING)))
 
     assert read.number == "F-1" and read.fiscal.cufd == "CUFD-A"  # type: ignore[attr-defined]
-    assert "currency" in describe(new.invoice).fields
+    assert "currency" in ModelIntrospection.describe(new.invoice).fields
 
 
 def test_a_major_release_that_renames_a_field_does_not_reach_a_table_that_names_only_the_id(
@@ -464,7 +466,7 @@ def test_data_that_lives_in_another_context_is_resolved_by_its_bus_one_call_per_
         {},
         relations={
             world.invoice: {
-                "delivery": Relation.bus(
+                "delivery": TableRelation.bus(
                     Delivery, bus, Command, parent_field="id", related_field="invoice_id"
                 )
             }
@@ -560,7 +562,7 @@ def test_an_extension_reaches_every_attribute_of_the_entity_through_a_back_refer
         {},
         relations={
             world.fiscal: {
-                "invoice": Relation.foreign_key(
+                "invoice": TableRelation.foreign_key(
                     world.invoice, parent_field="id", related_field="id"
                 )
             }

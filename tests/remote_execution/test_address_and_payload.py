@@ -18,13 +18,13 @@ from pydantic import ValidationError
 
 from sincpro_framework import DataTransferObject, sincpro_conf
 from sincpro_framework.common.serialization import pack, unpack
-from sincpro_framework.common.transport import exceptions
-from sincpro_framework.remote_execution import HostedAt, HostedContext, Wire
+from sincpro_framework.remote_execution import HostedAt, HostedContext, Scheme
+from sincpro_framework.remote_execution.domain import exceptions
 from sincpro_framework.remote_execution.infrastructure.configuration import (
     _configured,
     configured_host,
 )
-from sincpro_framework.settings.domain.config import DefaultFrameworkConfig
+from sincpro_framework.settings import FrameworkSettings
 
 
 class Currency(StrEnum):
@@ -76,12 +76,12 @@ def _invoice() -> CommandIssueInvoice:
 
 def test_an_address_is_read_into_its_wire_its_host_and_its_deadline():
     assert HostedAt.parse("grpc://10.0.0.5:50051?timeout=5") == HostedAt(
-        Wire.GRPC, "10.0.0.5:50051", 5.0
+        Scheme.GRPC, "10.0.0.5:50051", 5.0
     )
     assert HostedAt.parse(" https://catalog.example:443 ") == HostedAt(
-        Wire.HTTPS, "catalog.example:443", 30.0
+        Scheme.HTTPS, "catalog.example:443", 30.0
     )
-    assert str(HostedAt(Wire.HTTP, "c:8000", 2)) == "http://c:8000?timeout=2"
+    assert str(HostedAt(Scheme.HTTP, "c:8000", 2)) == "http://c:8000?timeout=2"
 
 
 def test_the_environment_names_each_context_and_its_address():
@@ -90,20 +90,20 @@ def test_the_environment_names_each_context_and_its_address():
     )
 
     assert [(one.context, one.at) for one in entries] == [
-        ("billing", HostedAt(Wire.GRPC, "10.0.0.5:50051", 5.0)),
-        ("catalog", HostedAt(Wire.HTTP, "catalog:8000", 30.0)),
+        ("billing", HostedAt(Scheme.GRPC, "10.0.0.5:50051", 5.0)),
+        ("catalog", HostedAt(Scheme.HTTP, "catalog:8000", 30.0)),
     ]
     assert HostedContext.parse_all(None) == [] and HostedContext.parse_all("  ") == []
 
 
 def test_the_conf_file_is_validated_when_it_is_loaded_each_error_by_its_path():
-    loaded = DefaultFrameworkConfig.model_validate(
+    loaded = FrameworkSettings.model_validate(
         {"context_map": [{"context": "billing", "at": "grpc://billing-service:50051"}]}
     )
-    assert loaded.context_map[0].at.wire is Wire.GRPC
+    assert loaded.context_map[0].at.scheme is Scheme.GRPC
 
     with pytest.raises(ValidationError) as refused:
-        DefaultFrameworkConfig.model_validate(
+        FrameworkSettings.model_validate(
             {
                 "context_map": [
                     {"context": "billing", "at": "grcp://b:1"},
@@ -114,7 +114,7 @@ def test_the_conf_file_is_validated_when_it_is_loaded_each_error_by_its_path():
 
     where = {".".join(str(one) for one in error["loc"]) for error in refused.value.errors()}
     assert where == {"context_map.0.at", "context_map.1.context", "context_map.1.contxt"}
-    assert "'grcp' is not a wire" in str(refused.value)
+    assert "'grcp' is not a scheme" in str(refused.value)
 
 
 def test_the_environment_wins_per_context_over_the_conf_file(monkeypatch):
@@ -132,8 +132,8 @@ def test_the_environment_wins_per_context_over_the_conf_file(monkeypatch):
     )
     _configured.cache_clear()
     try:
-        assert configured_host("billing") == HostedAt(Wire.HTTP, "from-env:3")
-        assert configured_host("catalog") == HostedAt(Wire.GRPC, "from-the-file:2")
+        assert configured_host("billing") == HostedAt(Scheme.HTTP, "from-env:3")
+        assert configured_host("catalog") == HostedAt(Scheme.GRPC, "from-the-file:2")
         assert configured_host("planning") is None
     finally:
         _configured.cache_clear()
@@ -156,15 +156,15 @@ def test_an_unknown_option_is_a_warning_and_the_address_still_serves(caplog):
     with caplog.at_level("WARNING", logger="sincpro_framework"):
         hosted = HostedAt.parse("grpc://b:1?timeout=2&retries=3")
 
-    assert hosted == HostedAt(Wire.GRPC, "b:1", 2.0)
+    assert hosted == HostedAt(Scheme.GRPC, "b:1", 2.0)
     assert "retries is not an option" in caplog.text
 
 
 @pytest.mark.parametrize(
     ("written", "said"),
     [
-        ("billing-svc:50051", "names no wire — write grpc://billing-svc:50051"),
-        ("ftp://b:1", "'ftp' is not a wire a context is reached by"),
+        ("billing-svc:50051", "names no scheme — write grpc://billing-svc:50051"),
+        ("ftp://b:1", "'ftp' is not a scheme a context is reached by"),
         ("grpc://b", "'grpc://b': 'b' is not <host>:<port>"),
         ("grpc://:1", "':1' is not <host>:<port>"),
         ("grpc://b:1/billing", "a path (/billing) is not part of a context's address"),
@@ -187,10 +187,10 @@ def test_an_environment_entry_that_names_no_context_is_refused():
 
 
 def test_an_address_built_in_code_is_checked_as_one_read():
-    with pytest.raises(exceptions.InvalidAddress, match="'smtp' is not a wire"):
+    with pytest.raises(exceptions.InvalidAddress, match="'smtp' is not a scheme"):
         HostedAt("smtp", "b:1")  # type: ignore[arg-type]
     with pytest.raises(exceptions.InvalidAddress, match="is not <host>:<port>"):
-        HostedAt(Wire.GRPC, "no-port")
+        HostedAt(Scheme.GRPC, "no-port")
 
 
 # ---------------------------------------------------------------------------------------------

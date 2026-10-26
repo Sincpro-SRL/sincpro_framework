@@ -43,7 +43,7 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `BackgroundQueue` | A spawned child consumes from a `multiprocessing.Queue`; `start()`/`stop()`. That child is this queue's, not `sincpro_framework.entrypoints.entrypoint.workers.Process` | adapter | `sincpro_framework.event_driven` |
 | `Subscriber` / `AsyncSubscriber` | The buses that hear events; executes every bus whose registry knows `event.name`; `receipts=store` makes a redelivery run only the bus that failed | registry | `sincpro_framework.event_driven` |
 | `@bus.feature(SomeEvent)` | The subscription itself: an ordinary Feature registered for the event class | decorator | (`UseFramework`) |
-| `RecordingQueue` | Test queue that keeps what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.runtime.testing` |
+| `RecordingQueue` | Test queue that records what was published (`.of(Event)`), optionally forwarding | adapter | `sincpro_framework.runtime.testing` |
 | `FastStreamQueue` | A `Queue` that sends to Kafka/RabbitMQ/Redis/NATS — extra `[faststream]` | adapter | `sincpro_framework.event_driven.adapters.faststream` |
 | `SnsQueue` / `SqsQueue` / `EventBridgeQueue` | A `Queue` that sends to Amazon SNS, SQS or EventBridge — the envelope beside the body, filter attributes, FIFO — extra `[aws]` | adapter | `sincpro_framework.event_driven.adapters.aws` |
 | `subscribe(broker, subscriber)` | Consumer side: one subscription per channel of the events the buses registered, acknowledged manually | function | `sincpro_framework.entrypoints.adapters.queue` |
@@ -63,11 +63,12 @@ delivery*). Event log (state + history) ≠ event sourcing (history *is* the sta
 
 **Inside the framework.** `sincpro_framework/ddd/` holds the vocabulary (`DomainEvent`,
 `DeliverableEventMixin`, `EventSourcedMixin`, `Entity.record`, `ChangeTrackingMixin`). `sincpro_framework/event_driven/` holds
-`Publisher`, `Subscriber`, the `Queue` protocol and its two standard-library adapters
-(`SyncQueue`, `BackgroundQueue`). Optional extras, never core dependencies:
+`Publisher`, `Subscriber`, `EventRelay` (facades in `entrypoint/` over `services/`), the `Queue`
+protocol and its standard-library adapters (`SyncQueue`, `BackgroundQueue`), and the `Envelope`
+that travels with a message on a broker (`Envelope.headers_for`, `Envelope.of`). Optional extras, never core dependencies:
 `event_driven/adapters/faststream/` sends; `entrypoints/faststream/` subscribes (`[faststream]`
 plus the broker driver, e.g. `faststream[kafka]`), the event
-tables in `orm/` (`[sqlalchemy]`), and a Redis inbox through `store.adapters.redis` (`[redis]`).
+tables in `orm/` (`[sqlalchemy]`), and a Redis inbox through `data_layer.store.RedisKeyValue` (`[redis]`).
 
 **Inside a consumer service** (one `UseFramework` per bounded context, created in
 `infrastructure/framework.py` before `services/` is imported):
@@ -113,7 +114,7 @@ outbox: one unit of work saves state + mapped facts → EventRelay reads due eve
   the `Subscriber` registered `event.name` — no error, no log. Check with
   `Subscriber(...).listeners(Event.name)` or a test on `RecordingQueue`.
 - **Publishing the instance you built instead of what was recorded.** `record` stores a *stamped
-  copy*; the object you passed keeps `entity_type=""`, `entity_id=""`. Publish what
+  copy*; the object you passed still has `entity_type=""`, `entity_id=""`. Publish what
   `pull_events()` returns.
 - **Pulling before the save.** `ChangeTrackingMixin` records at save time; pulling first misses the
   `EntityUpdated`. Save, then pull, then publish.
@@ -133,7 +134,7 @@ outbox: one unit of work saves state + mapped facts → EventRelay reads due eve
   the id go together (`DomainEvents` and `history_of` do it).
 - **Copying the old event-entry/status model.** Use the context base event, `event_table` and
   `map_events`; delivery is metadata on that event. There is no separate outbox row to maintain.
-- **Direct publication plus a relay for the same fact.** Saving keeps the event without draining
+- **Direct publication plus a relay for the same fact.** Saving persists the event without draining
   it; choose one delivery owner or subscribers receive both sends.
 - **Assuming strict stream ordering across relay replicas.** A waiting retry holds its entity
   (or everything) pass after pass, but two replicas can take two events of one entity at once;
@@ -150,7 +151,7 @@ outbox: one unit of work saves state + mapped facts → EventRelay reads due eve
 ## The rule that shapes everything
 
 **The aggregate records; storage and delivery are separate.** The Feature saves, the repository
-keeps mapped events, and a relay delivers durable facts. Manual publication is an explicit
+persists mapped events, and a relay delivers durable facts. Manual publication is an explicit
 post-commit alternative. The aggregate never publishes: a rollback could undo that fact.
 
 ```python
@@ -210,7 +211,7 @@ class EmailTheCustomer(Feature):
   when the facts themselves are the aggregate's state. Never add a parallel `...EventEntry`.
 - **Reading the log is reading entities.** `EntityReads[<context event>]` answers `Get`,
   `GetMany`, `Search` with a criteria on the envelope (`name in [...]`, `entity_type`,
-  `created_at`, `correlation_id`); `DomainEvents[Issue, R]` answers one record's events, oldest first, `names=[...]` keeping some wire names.
+  `created_at`, `correlation_id`); `DomainEvents[Issue, R]` answers one record's events, oldest first, `names=[...]` selecting some wire names.
   The payload is not filtered. An application event gives itself a subject when it has one (a
   closing day, an import — `ExecutionCompleted` names `"Execution"`); `entity_type=""` is for
   what truly has none.
@@ -243,7 +244,7 @@ __all__ = ["IssueOpened", "IssueClosed", "PUBLISHED"]   # explicit: readable as 
 - **Only an entrypoint imports an entrypoint.** Inside the same service, another context that
   reacts declares its own class under the same `name` (two identities, one travels).
 - **One `domain/events.py` while there is only v1.** Split it into `domain/events/{v1,v2}.py` the
-  day a v2 appears; `entrypoints/events.py` keeps the same shape, so no consumer notices.
+  day a v2 appears; `entrypoints/events.py` preserves the same shape, so no consumer notices.
 - **The aggregate records the current version only.** If a consumer still needs v1 after the
   domain moved to v2, translate in `entrypoints/`, not in the domain.
 - **Stored history still needs its classes.** Import compatible historical event classes while

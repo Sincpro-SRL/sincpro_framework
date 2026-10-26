@@ -1,10 +1,9 @@
-"""`sqs_handler`: an AWS Lambda fed by SQS that runs every message through the queue wire — the
-same path, the same exposure, the same settling as a process polling the queue.
+"""A Lambda fed by SQS, read as the queue wire reads a polled queue: each record of a batch a
+delivery, settled by being answered in `batchItemFailures` or not.
 
-    # billing/lambda_function.py
-    from sincpro_framework.entrypoints.adapters.aws_lambda import sqs_handler
-
-    handler = sqs_handler([billing])           # what the function's configuration names
+    batch_handler(sqs, gateway.queue_wire, gateway.build())
+    ->  handler({"Records": [three messages, the second fails]}, None)
+        == {"batchItemFailures": [{"itemIdentifier": "<id of the second>"}]}
 
 Context: Lambda receives a batch and deletes it when the function returns. Turn on
 `ReportBatchItemFailures` in the event source mapping: a message the wire did not ack is answered
@@ -14,14 +13,13 @@ the queue a channel is read from (`SqsBroker.queue_of`): `billing.invoice.v1.iss
 `billing-invoice-v1-issued`, or what `broker=SqsBroker(queues=...)` says.
 """
 
-from collections.abc import Callable, Sequence
+import asyncio
+from collections.abc import Callable, Iterable
 from typing import Any
 
-from sincpro_framework.entrypoints.adapters.queue.gateway import QueueGateway
 from sincpro_framework.entrypoints.adapters.queue.sqs import SqsBroker, SqsDelivery
-from sincpro_framework.entrypoints.adapters.queue.wire import QueueOptions
+from sincpro_framework.entrypoints.adapters.queue.wire import QueueWire, Subscription
 from sincpro_framework.sincpro_logger import logger
-from sincpro_framework.use_bus import UseFramework
 
 
 class _RecordDelivery(SqsDelivery):
@@ -77,61 +75,43 @@ def _queue_name(record: dict[str, Any]) -> str:
     return record.get("eventSourceARN", "").rsplit(":", 1)[-1]
 
 
-def sqs_handler(
-    buses: Sequence[UseFramework],
-    options: QueueOptions | None = None,
-    broker: SqsBroker | None = None,
+def batch_handler(
+    sqs: SqsBroker, wire: QueueWire, subscriptions: Iterable[Subscription]
 ) -> Callable[[dict[str, Any], Any], dict[str, Any]]:
-    """The function Lambda calls: every record run through the queue wire of a `QueueGateway`
-    over `buses`, the ones it did not ack answered as failures.
+    """The function Lambda calls: every record run through `wire`, matched to one of
+    `subscriptions` by the queue it came from, the ones it did not ack answered as failures.
 
-        in      {"Records": [three messages, the second fails]}
-        out     {"batchItemFailures": [{"itemIdentifier": "<id of the second>"}]}
-
-    `options` is the wire's (`QueueOptions`: the inbox, `max_attempts`, ...); `broker` an
-    `SqsBroker` of the project's, for the client a retry by channel publishes with.
-
-        handler = sqs_handler([billing])
+        handler = batch_handler(sqs, gateway.queue_wire, gateway.build())
         handler({"Records": [<from billing-invoice-v1-issued, acked>]}, None)
         ->  {"batchItemFailures": []}
         handler({"Records": [<from a queue nobody reads, id "m-9">]}, None)
         ->  {"batchItemFailures": [{"itemIdentifier": "m-9"}]}
 
-    1. The broker given, else a new `SqsBroker`.
-    2. A `QueueGateway` over the broker and `buses`, with the wire's `options`.
-    3. Its subscriptions built once, each keyed by the name of the queue its channel is read
-       from — the last part of `queue_of(channel)`.
+    1. Each subscription keyed by the name of the queue its channel is read from — the last
+       part of `queue_of(channel)`.
     Final: `handler`, which runs each batch through the wire in an event loop of its own
     (`handled`) and answers the records it did not ack.
     """
-    import asyncio
-
-    sqs = broker or SqsBroker()
-    gateway = QueueGateway(sqs, list(buses), options=options)
-    subscriptions = {
-        sqs.queue_of(one.channel).rsplit("/", 1)[-1]: one for one in gateway.build()
-    }
+    by_queue = {sqs.queue_of(one.channel).rsplit("/", 1)[-1]: one for one in subscriptions}
 
     async def handled(records: list[dict[str, Any]]) -> list[dict[str, str]]:
         """Run the batch through the wire, one record after the other, and answer the ones
         that failed.
 
         1. Each record becomes a delivery, matched to its subscription by its queue's name.
-        2. A queue no subscription reads is logged and failed — SQS keeps it for its redrive.
+        2. A queue no subscription reads is logged and failed — SQS retains it for its redrive.
         3. Otherwise the wire processes it as it processes a polled message.
         Final: `{"itemIdentifier": <message id>}` for every delivery the wire did not ack.
         """
         failures: list[dict[str, str]] = []
         for record in records:
             delivery = _RecordDelivery(sqs, record)
-            subscription = subscriptions.get(_queue_name(record))
+            subscription = by_queue.get(_queue_name(record))
             if subscription is None:
                 logger.error(f"lambda: no subscription for queue {_queue_name(record)!r}")
                 delivery.failed = True
             else:
-                await gateway.queue_wire.process(
-                    delivery, subscription.by_type, subscription.channel
-                )
+                await wire.process(delivery, subscription.by_type, subscription.channel)
             if delivery.failed:
                 failures.append({"itemIdentifier": str(delivery.message_id)})
         return failures

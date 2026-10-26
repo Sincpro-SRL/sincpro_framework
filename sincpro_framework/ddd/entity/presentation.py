@@ -21,7 +21,7 @@ a stand-in whose attributes are the field names. It never sees a record.
 **These are hints, never rules.** `Meta` publishes them so a screen shows an asterisk, greys
 a field or hides it without being told twice; a component that says otherwise wins. The
 framework checks none of them: a save of a confirmed invoice with another partner goes
-through. A rule the server keeps is the project's own hook (`before_save`), which may read
+through. A rule the server enforces is the project's own hook (`before_save`), which may read
 the same condition from `presentation_of(Invoice)`.
 
 How the entity is read — its key, what a record brings, the order, the display and how a text

@@ -1,6 +1,6 @@
 """How a result set is split and counted: levels, measures, the groups and the pivot they make."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pydantic import Field, field_validator, model_validator
@@ -9,7 +9,7 @@ from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import Expression
 from sincpro_framework.ddd.criteria.domain.pagination import Pagination
 from sincpro_framework.ddd.criteria.domain.sort import Sort
-from sincpro_framework.ddd.criteria.domain.strict import Strict, refused_or_dropped
+from sincpro_framework.ddd.criteria.domain.strict import Strict
 from sincpro_framework.ddd.criteria.domain.values import Grain, Part
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -106,7 +106,7 @@ class Measure(Strict):
         if isinstance(written, Measure):
             return written
         if isinstance(written, dict):
-            return cls(**refused_or_dropped(written, set(cls.model_fields), tolerant))
+            return cls(**cls.known_keys_of(written, tolerant))
         # A tuple as much as a list: a pair written in Python is `("sum", "row_count")` and
         # the same pair read from JSON is a list. They mean the same measure.
         if not isinstance(written, (list, tuple)) or len(written) != 2 or not all(written):
@@ -116,12 +116,20 @@ class Measure(Strict):
             )
         return cls(function=written[0], field=written[1])
 
+    def over_no_rows(self) -> Any:
+        """What this function folds over no rows: a count is 0, anything else has no value.
 
-class Level(Strict):
+        in      Measure(count, id)        →  out  0
+        in      Measure(sum, total)       →  out  None
+        """
+        return 0 if self.function in ("count", "count_distinct") else None
+
+
+class GroupingLevel(Strict):
     """One level of grouping: the field it splits by, and how.
 
-    in      "produced_by"           →  Level(field='produced_by')
-    in      "registered_at:month"   →  Level(field='registered_at', grain=Grain.MONTH)
+    in      "produced_by"           →  GroupingLevel(field='produced_by')
+    in      "registered_at:month"   →  GroupingLevel(field='registered_at', grain=Grain.MONTH)
     in      {"field": "registered_at", "part": "month"}   →  every March, whatever the year
 
     A **grain** cuts a date into ranges of time (`2026-03`); a **part** extracts a number from it
@@ -160,10 +168,10 @@ class Level(Strict):
         return part
 
     @model_validator(mode="after")
-    def _a_grain_or_a_part(self) -> "Level":
+    def _a_grain_or_a_part(self) -> "GroupingLevel":
         """A level cuts a date or extracts a number from it, not both.
 
-        >>> Level(field="made_at", grain="month", part="month")
+        >>> GroupingLevel(field="made_at", grain="month", part="month")
         InvalidCriteria: a level takes a grain (a range of time) or a part (a number), not both
         """
         if self.grain is not None and self.part is not None:
@@ -180,22 +188,22 @@ class Level(Strict):
         return self.part is None
 
     @classmethod
-    def read(cls, written: Any, tolerant: bool = False) -> "Level":
+    def read(cls, written: Any, tolerant: bool = False) -> "GroupingLevel":
         """A level as it comes in JSON: the object — `{"field": "registered_at", "grain": "month"}`.
 
-            Level.read({"field": "registered_at", "grain": "month"})
-                ->  Level(field='registered_at', grain=<Grain.MONTH: 'month'>, part=None,
+            GroupingLevel.read({"field": "registered_at", "grain": "month"})
+                ->  GroupingLevel(field='registered_at', grain=<Grain.MONTH: 'month'>, part=None,
                           fill=False)
-            Level.read("registered_at:month")
+            GroupingLevel.read("registered_at:month")
                 ->  InvalidCriteria: a level is written {'field': …, 'grain': …}; got …
 
         Context: a level already built comes back as it is; an object's unknown keys are
         refused, or dropped when `tolerant`.
         """
-        if isinstance(written, Level):
+        if isinstance(written, GroupingLevel):
             return written
         if isinstance(written, dict):
-            return cls(**refused_or_dropped(written, set(cls.model_fields), tolerant))
+            return cls(**cls.known_keys_of(written, tolerant))
         raise exceptions.InvalidCriteria(
             f"a level is written {{'field': …, 'grain': …}}; got {written!r}"
         )
@@ -213,7 +221,7 @@ class Grouping(Strict):
     has to know how deep the whole tree is.
     """
 
-    group_by: tuple[Level, ...] = ()
+    group_by: tuple[GroupingLevel, ...] = ()
     """The levels the set is split by, one statement each."""
 
     measures: dict[str, Measure] = {}
@@ -244,7 +252,7 @@ class Grouping(Strict):
     def paged(self) -> bool:
         """Whether only some of the groups were asked for.
 
-        >>> Grouping(group_by=(Level(field="a"),)).paged
+        >>> Grouping(group_by=(GroupingLevel(field="a"),)).paged
         False
         """
         return self.pagination is not None
@@ -257,6 +265,52 @@ class Grouping(Strict):
         False
         """
         return bool(self.group_by)
+
+    def check_levels(self, rows_page: Pagination) -> None:
+        """Refuses a grouping its levels cannot answer over rows paged by `rows_page` — the
+        criteria's own pagination, not this grouping's page of groups — naming why.
+
+        - A **part** level cannot give a group its ids or a cursor: «every March» is not a
+          condition on the date, so a page per group would list rows that are not the group's.
+        - A **fill** level lists the groups with no rows, which a `where_measures` filter or a
+          page of groups cannot place: both decide over the groups the rows made.
+
+            GroupingLevel(made_at, part=month), a page of rows asked
+                ->  InvalidCriteria: 'made_at' is grouped by a part of the date (month); …
+            GroupingLevel(status, fill=True), with `where_measures` or a page of groups
+                ->  InvalidCriteria: 'status' is filled, and a filter or a page over the groups …
+            GroupingLevel(made_at, grain=month), anything   ->  None — answered as asked
+
+        The levels are checked in order; the first that cannot be answered is refused.
+        """
+        for level in self.group_by:
+            if level.part is not None and rows_page.asked:
+                raise exceptions.InvalidCriteria(
+                    f"'{level.field}' is grouped by a part of the date ({level.part.value}); a "
+                    "group of a part has no rows to page, because «every "
+                    f"{level.part.value}» is not a condition on the date"
+                )
+            if level.fill and (self.where_measures is not None or self.paged):
+                raise exceptions.InvalidCriteria(
+                    f"'{level.field}' is filled, and a filter or a page over the groups cannot "
+                    "place the groups that have no rows: drop `fill`, or the filter and the page"
+                )
+
+    def check_measures(self, types: Mapping[str, str]) -> None:
+        """Refuses a fold the field's type cannot take: `bool_and` and `bool_or` fold a boolean.
+
+        in      Measure(bool_and, settled), {'settled': 'boolean'}   →  accepted
+        in      Measure(bool_and, total), {'total': 'number'}        →  InvalidCriteria
+        """
+        for measure in self.measures.values():
+            if (
+                measure.function in ("bool_and", "bool_or")
+                and types.get(measure.field) != "boolean"
+            ):
+                raise exceptions.InvalidCriteria(
+                    f"'{measure.function}' folds a boolean field; '{measure.field}' is a "
+                    f"{types.get(measure.field, 'field that does not exist')}"
+                )
 
 
 class PivotCell(DataTransferObject):

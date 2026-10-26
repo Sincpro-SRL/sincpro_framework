@@ -29,8 +29,8 @@ from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.context import requires_context
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.entrypoints.entrypoint.catalog import Catalog
-from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
+from sincpro_framework.entrypoints.services.catalog import Catalog
+from sincpro_framework.event_driven import Subscriber
 from sincpro_framework.introspection.operations import operations_of
 from sincpro_framework.remote_execution.domain import exceptions as remote_exceptions
 from sincpro_framework.sincpro_conf import settings

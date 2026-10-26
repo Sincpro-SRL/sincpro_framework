@@ -28,7 +28,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.data_mapper import (
     parent_table,
     refuse_a_table_that_does_not_extend,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.extensions import identity_of
 
@@ -88,7 +90,11 @@ def refuse_a_field_the_core_lacks(entity: type, names: Collection[str]) -> None:
     the module is mapped. A core release that renamed or removed the field is found where the
     module starts, naming the field, and not by a query that returns nothing at the first request.
     """
-    own = {name for name, field in describe(entity).fields.items() if field.owner is None}
+    own = {
+        name
+        for name, field in ModelIntrospection.describe(entity).fields.items()
+        if field.owner is None
+    }
     missing = sorted(set(names) - own)
     if missing:
         raise exceptions.ProgrammingError(
@@ -319,7 +325,7 @@ def extension_options(
             )
         if root in strict or root in extension_typing.STRICT:
             raise exceptions.ProgrammingError(
-                f"{entity.__name__} keeps its columns in {table.name} and {root.__name__} "
+                f"{entity.__name__} stores its columns in {table.name} and {root.__name__} "
                 "answers only itself: a row would never be read as the extension"
             )
         proof = or_(*[table.c[name].isnot(None) for name in own])

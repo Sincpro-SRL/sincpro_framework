@@ -12,11 +12,11 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Grain,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Operator,
     Pagination,
-    parse_order,
+    Sort,
 )
 
 from .contexts import CommandRebuildBalance, ResponseBalances
@@ -32,7 +32,7 @@ POSTINGS = 100
 
 def test_walk_every_line_in_pages_of_a_thousand(ledger: Repository, census: Census, timed):
     criteria = Criteria(
-        where=POPULATION, order=parse_order("-posted_at"), pagination=Pagination(limit=1000)
+        where=POPULATION, order=Sort.parse("-posted_at"), pagination=Pagination(limit=1000)
     )
 
     with timed("stress: keyset walk, pages of 1000", census.lines):
@@ -80,7 +80,7 @@ def test_a_pivot_of_journals_by_month(ledger: Repository, census: Census, timed)
         matrix = ledger.pivot(
             Line,
             rows=["journal_id"],
-            columns=[Level(field="posted_at", grain=Grain.MONTH)],
+            columns=[GroupingLevel(field="posted_at", grain=Grain.MONTH)],
             criteria=Criteria(where=POPULATION),
             debit=("sum", "debit"),
         )
@@ -94,9 +94,9 @@ def test_the_heaviest_accounts_over_everything(ledger: Repository, census: Censu
     top = Criteria(
         where=POPULATION,
         grouping=Grouping(
-            group_by=(Level(field="account_id"),),
+            group_by=(GroupingLevel(field="account_id"),),
             measures={"debit": Measure(function="sum", field="debit")},
-            order=parse_order("-debit"),
+            order=Sort.parse("-debit"),
             pagination=Pagination(limit=10),
         ),
     )

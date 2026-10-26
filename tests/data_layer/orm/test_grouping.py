@@ -14,26 +14,24 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import 
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
-    Any_,
+    Any,
     Condition,
     CountMode,
     Criteria,
     Grain,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Not,
     Operator,
     Pagination,
     Sort,
-    conditions_of,
-    parse_order,
 )
 from sincpro_framework.ddd.entity.entity_collection import Count
 
 from .models import Things
 
-BY_OWNER = Grouping(group_by=(Level(field="owner"),))
+BY_OWNER = Grouping(group_by=(GroupingLevel(field="owner"),))
 
 
 def test_one_level_counts_every_bucket(store):
@@ -70,7 +68,7 @@ def test_the_outer_filter_still_holds_inside_the_bucket(store):
 def test_folds_are_asked_for_by_name(store):
     with_total = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="owner"),),
+            group_by=(GroupingLevel(field="owner"),),
             measures={"weight": Measure(function="sum", field="size")},
         )
     )
@@ -85,8 +83,8 @@ def test_folds_are_asked_for_by_name(store):
 def test_every_level_named_is_answered_and_nothing_below_the_last(store):
     """Two fields are two levels, always; a screen that wants one level at a time names one
     and opens a bucket with a grouping of its own."""
-    two = Grouping(group_by=(Level(field="owner"), Level(field="size")))
-    one = Grouping(group_by=(Level(field="owner"),))
+    two = Grouping(group_by=(GroupingLevel(field="owner"), GroupingLevel(field="size")))
+    one = Grouping(group_by=(GroupingLevel(field="owner"),))
 
     nested = store.group_by_levels(Things, Criteria(grouping=two))
     flat = store.group_by_levels(Things, Criteria(grouping=one))
@@ -108,14 +106,14 @@ def test_grouping_by_a_field_that_does_not_exist_is_refused(store):
     answer less, it answers something else."""
     with pytest.raises(exceptions.InvalidCriteria):
         store.group_by_levels(
-            Things, Criteria(grouping=Grouping(group_by=(Level(field="nope"),)))
+            Things, Criteria(grouping=Grouping(group_by=(GroupingLevel(field="nope"),)))
         )
 
 
 def test_a_date_is_grouped_at_the_grain_asked_for(store):
     """Without this, grouping a catalogue by date gives one bucket per row: a listing with
     extra steps."""
-    monthly = Grouping(group_by=(Level(field="made_at", grain=Grain.MONTH),))
+    monthly = Grouping(group_by=(GroupingLevel(field="made_at", grain=Grain.MONTH),))
 
     buckets = store.group_by_levels(Things, Criteria(grouping=monthly))
 
@@ -125,11 +123,11 @@ def test_a_date_is_grouped_at_the_grain_asked_for(store):
 
 def test_a_grain_that_does_not_exist_is_refused_naming_the_ones_that_do():
     with pytest.raises(exceptions.InvalidCriteria, match="granularity.*quarter"):
-        Level(field="made_at", grain="fortnight")  # type: ignore[arg-type]
+        GroupingLevel(field="made_at", grain="fortnight")  # type: ignore[arg-type]
 
 
 def test_a_date_is_grouped_by_quarter(store):
-    quarterly = Grouping(group_by=(Level(field="made_at", grain=Grain.QUARTER),))
+    quarterly = Grouping(group_by=(GroupingLevel(field="made_at", grain=Grain.QUARTER),))
 
     buckets = store.group_by_levels(Things, Criteria(grouping=quarterly))
 
@@ -139,11 +137,11 @@ def test_a_date_is_grouped_by_quarter(store):
 
 def test_a_level_and_a_fold_already_built_pass_through():
     """Written this way from Python; reading them from JSON is the other half."""
-    assert Level.read(Level(field="owner")) == Level(field="owner")
+    assert GroupingLevel.read(GroupingLevel(field="owner")) == GroupingLevel(field="owner")
     assert Measure.read(Measure(function="sum", field="size")) == Measure(
         function="sum", field="size"
     )
-    assert Level.read({"field": "made_at", "grain": "month"}).grain == "month"
+    assert GroupingLevel.read({"field": "made_at", "grain": "month"}).grain == "month"
     assert Measure.read({"function": "max", "field": "size"}).function == "max"
 
 
@@ -152,7 +150,7 @@ def test_opening_a_date_bucket_returns_that_bucket(store):
     `strftime` gave — the text "2026" — and the criteria compared it for equality against a
     date column: the model dropped it as an unreadable value, the condition vanished, and
     opening the bucket brought the whole catalogue while the count said otherwise."""
-    monthly = Grouping(group_by=(Level(field="made_at", grain=Grain.MONTH),))
+    monthly = Grouping(group_by=(GroupingLevel(field="made_at", grain=Grain.MONTH),))
 
     for bucket in store.group_by_levels(Things, Criteria(grouping=monthly)):
         page = store.search(Things, bucket.criteria)
@@ -166,10 +164,13 @@ def test_a_date_bucket_opens_with_a_half_open_range(store):
     next month would fall in two buckets and the levels would stop adding up."""
     bucket = store.group_by_levels(
         Things,
-        Criteria(grouping=Grouping(group_by=(Level(field="made_at", grain=Grain.YEAR),))),
+        Criteria(
+            grouping=Grouping(group_by=(GroupingLevel(field="made_at", grain=Grain.YEAR),))
+        ),
     )[0]
 
-    leaves = conditions_of(bucket.criteria.expression)
+    assert bucket.criteria.expression is not None
+    leaves = bucket.criteria.expression.conditions()
 
     assert [one.operator for one in leaves] == [Operator.GTE, Operator.LT]
 
@@ -178,8 +179,8 @@ def test_date_levels_add_up_to_what_the_parent_says(store):
     """If one level's range overlapped the next one's, this would not close."""
     nested = Grouping(
         group_by=(
-            Level(field="made_at", grain=Grain.YEAR),
-            Level(field="made_at", grain=Grain.MONTH),
+            GroupingLevel(field="made_at", grain=Grain.YEAR),
+            GroupingLevel(field="made_at", grain=Grain.MONTH),
         ),
     )
 
@@ -223,7 +224,7 @@ def test_a_range_grain_that_does_not_exist_is_refused_too():
 
 def paged_by_owner(limit: int = 2) -> Criteria:
     return Criteria(
-        order=parse_order("size,thing_id"),
+        order=Sort.parse("size,thing_id"),
         pagination=Pagination(limit=limit),
         grouping=BY_OWNER,
     )
@@ -278,9 +279,9 @@ def test_a_group_with_fewer_rows_than_the_page_has_no_cursor(store):
 
 
 def test_ids_live_on_the_deepest_level_only(store):
-    two = Grouping(group_by=(Level(field="owner"), Level(field="size")))
+    two = Grouping(group_by=(GroupingLevel(field="owner"), GroupingLevel(field="size")))
     asked = Criteria(
-        order=parse_order("thing_id"), pagination=Pagination(limit=1), grouping=two
+        order=Sort.parse("thing_id"), pagination=Pagination(limit=1), grouping=two
     )
 
     for owner in store.group_by_levels(Things, asked):
@@ -320,7 +321,7 @@ def test_having_filters_the_groups_the_rows_made(store, things):
     """`where` filters the rows; `having` filters what those rows added up to."""
     crowded = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="owner"),),
+            group_by=(GroupingLevel(field="owner"),),
             where_measures=Condition(field="count", value=8, operator=Operator.GT),
         )
     )
@@ -338,7 +339,7 @@ def test_having_filters_the_groups_the_rows_made(store, things):
 def test_having_reads_what_the_groups_folded(store, things):
     heavy = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="owner"),),
+            group_by=(GroupingLevel(field="owner"),),
             measures={"weight": Measure(function="sum", field="size")},
             where_measures=Condition(field="weight", value=15, operator=Operator.GT),
         )
@@ -355,7 +356,7 @@ def test_having_over_something_no_group_folded_is_refused(store):
             Things,
             Criteria(
                 grouping=Grouping(
-                    group_by=(Level(field="owner"),),
+                    group_by=(GroupingLevel(field="owner"),),
                     where_measures=Condition(field="size", value=1, operator=Operator.GT),
                 )
             ),
@@ -365,9 +366,9 @@ def test_having_over_something_no_group_folded_is_refused(store):
 def test_groups_come_back_in_the_order_asked(store, things):
     asked = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="owner"),),
+            group_by=(GroupingLevel(field="owner"),),
             measures={"weight": Measure(function="sum", field="size")},
-            order=parse_order("-weight"),
+            order=Sort.parse("-weight"),
         )
     )
 
@@ -383,7 +384,7 @@ def test_groups_can_be_ordered_by_how_many_they_hold(store):
         Things,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="size"),), order=parse_order("-count,size")
+                group_by=(GroupingLevel(field="size"),), order=Sort.parse("-count,size")
             )
         ),
     )
@@ -397,7 +398,9 @@ def test_ordering_groups_by_something_that_is_not_one_is_refused(store):
         store.group_by_levels(
             Things,
             Criteria(
-                grouping=Grouping(group_by=(Level(field="owner"),), order=parse_order("name"))
+                grouping=Grouping(
+                    group_by=(GroupingLevel(field="owner"),), order=Sort.parse("name")
+                )
             ),
         )
 
@@ -405,8 +408,8 @@ def test_ordering_groups_by_something_that_is_not_one_is_refused(store):
 def test_a_page_of_groups_answers_the_first_ones_and_no_more(store, things):
     top = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="size"),),
-            order=parse_order("-count,size"),
+            group_by=(GroupingLevel(field="size"),),
+            order=Sort.parse("-count,size"),
             pagination=Pagination(limit=2),
         )
     )
@@ -416,7 +419,7 @@ def test_a_page_of_groups_answers_the_first_ones_and_no_more(store, things):
         Things,
         Criteria(
             grouping=Grouping(
-                group_by=(Level(field="size"),), order=parse_order("-count,size")
+                group_by=(GroupingLevel(field="size"),), order=Sort.parse("-count,size")
             )
         ),
     )
@@ -430,8 +433,8 @@ def test_a_page_of_groups_carries_the_levels_below_it_and_nothing_else(store, qu
     it was asked to save."""
     top = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="owner"), Level(field="size")),
-            order=parse_order("-count"),
+            group_by=(GroupingLevel(field="owner"), GroupingLevel(field="size")),
+            order=Sort.parse("-count"),
             pagination=Pagination(limit=1),
         )
     )
@@ -459,7 +462,7 @@ def test_one_reading_says_everything_at_once(store):
         where=All(
             all=[
                 Condition(field="size", operator=Operator.BETWEEN, value=[1, 1000]),
-                Any_(
+                Any(
                     any=[
                         Condition(field="tags", operator=Operator.CONTAINS, value="even"),
                         Condition(field="size", operator=Operator.GTE, value=10),
@@ -468,11 +471,14 @@ def test_one_reading_says_everything_at_once(store):
                 Not(negate=Condition(field="owner", operator=Operator.IS_NULL, value=True)),
             ]
         ),
-        order=parse_order("-size,thing_id"),
+        order=Sort.parse("-size,thing_id"),
         pagination=Pagination(limit=3),
         # the groups
         grouping=Grouping(
-            group_by=(Level(field="owner"), Level(field="made_at", grain=Grain.MONTH)),
+            group_by=(
+                GroupingLevel(field="owner"),
+                GroupingLevel(field="made_at", grain=Grain.MONTH),
+            ),
             measures={
                 "total": Measure(function="sum", field="size"),
                 "biggest": Measure(function="max", field="size"),
@@ -526,10 +532,10 @@ def test_the_two_orders_and_the_two_pages_do_not_overrule_each_other(store):
     groups'. Same words, one level down, and neither reaches the other.
     """
     reading = Criteria(
-        order=parse_order("size,thing_id"),
+        order=Sort.parse("size,thing_id"),
         pagination=Pagination(limit=2),
         grouping=Grouping(
-            group_by=(Level(field="owner"),),
+            group_by=(GroupingLevel(field="owner"),),
             measures={"total": Measure(function="sum", field="size")},
             order=(Sort(field="total", descending=True),),
             pagination=Pagination(limit=1),
@@ -552,7 +558,7 @@ class TestTheTwoMeasuresThatAreNotAPlainFunction:
     def test_count_distinct_counts_the_values_once_each(self, store):
         reading = Criteria(
             grouping=Grouping(
-                group_by=(Level(field="owner"),),
+                group_by=(GroupingLevel(field="owner"),),
                 measures={
                     "rows": Measure(function="count", field="thing_id"),
                     "sizes": Measure(function="count_distinct", field="size"),
@@ -570,7 +576,7 @@ class TestTheTwoMeasuresThatAreNotAPlainFunction:
         it through would come back as "no such function" from somewhere else entirely."""
         reading = Criteria(
             grouping=Grouping(
-                group_by=(Level(field="owner"),),
+                group_by=(GroupingLevel(field="owner"),),
                 measures={
                     "middle": Measure(function="percentile", field="size", argument=0.5)
                 },

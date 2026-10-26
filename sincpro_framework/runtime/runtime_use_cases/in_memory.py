@@ -13,13 +13,13 @@ class InMemoryUseCases(UseCaseStore):
 
     def __init__(self) -> None:
         """Start empty: nothing is active until something is saved."""
-        self._kept: dict[str, RuntimeUseCase] = {}
+        self._stored: dict[str, RuntimeUseCase] = {}
 
     def active(self) -> list[RuntimeUseCase]:
-        """The kept use cases not saved inactive, in the order their names were first saved —
-        a dict keeps a key's first place when its value is replaced."""
-        return [use_case for use_case in self._kept.values() if use_case.active]
+        """The stored use cases not saved inactive, in the order their names were first saved
+        — a dict preserves a key's first place when its value is replaced."""
+        return [use_case for use_case in self._stored.values() if use_case.active]
 
     def save(self, use_case: RuntimeUseCase) -> None:
-        """Keep `use_case` under its name, over the version kept before."""
-        self._kept[use_case.name] = use_case
+        """Store `use_case` under its name, over the version stored before."""
+        self._stored[use_case.name] = use_case

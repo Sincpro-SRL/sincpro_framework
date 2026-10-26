@@ -14,12 +14,14 @@ sincpro_framework/
 │   │       ├── audited.py        AuditedMixin: created_by, updated_by
 │   │       ├── archivable.py     ArchivableMixin: archived_at, archive(), restore()
 │   │       └── tracking.py       ChangeTrackingMixin, EntityUpdated: what counts as a change
-│   ├── criteria/                 domain ← services ← entrypoint; the package exposes domain + entrypoint
-│   │   ├── domain/               the language: Criteria, Condition/All/Any/Not, values read when used (Today, FromContext…),
-│   │   │                         Sort, Grouping, Pagination, Specification; combined, mapped, canonical, with_text
-│   │   ├── services/             calendar arithmetic, reading one value, one comparison — never exposed
-│   │   └── entrypoint/           resolve (dynamic values → literals), holds / matches (the in-memory evaluator,
-│   │                             the specification of the translator)
+│   ├── criteria/                 domain ← services ← entrypoint; the package exposes the language + the facades
+│   │   ├── domain/               the language: Criteria, the Node tree (Condition/All/Any/Not), values read when used
+│   │   │                         (Today, FromContext…), Sort, Grouping, Pagination, Specification; what is intrinsic to
+│   │   │                         them is their own: Node.combined, node.conditions(), canonical(), mapped(), with_text(),
+│   │   │                         Sort.parse, Period.range, Grain.snap, Part.of, Measure.over_no_rows
+│   │   ├── services/             evaluating a filter in memory, reading its dynamic values, listing an axis
+│   │   └── entrypoint/           the facades: Evaluation (holds / matches, the specification of the translator),
+│   │                             Resolution (resolve, has_dynamic_values), Aggregation (axis_values)
 │   ├── repositories/
 │   │   ├── repository.py         IRepository and the read/write/analysis/transaction capabilities
 │   │   ├── aggregate_repository.py  AggregateRepository: one aggregate's typed view
@@ -46,7 +48,7 @@ with `sqlalchemy` blocked. Anything under `ddd/` that needed SQLAlchemy would fa
 
 ```
 Criteria
-  │  1. describe(model) → Meta                       cached per class, read off annotations and table
+  │  1. ModelIntrospection.describe(model) → Meta     cached per class, read off annotations and table
   │  2. Meta.accept(where)                            unusable conditions dropped and named
   │     Meta.accept_specification(specification)      unknown names dropped and named
   │  3. sql_translator: WHERE, ORDER BY with tiebreaker, keyset resume
@@ -91,14 +93,14 @@ the checkpoint a batch uses so one failing group does not undo the others.
 | A way to bring a relation from a new place (HTTP, Kafka, a cache) | a callable `(keys, criteria) -> records` and declare it with `Relation.resolved_by` | no |
 | Another bounded context as the other side | `Relation.bus(Related, bus, Command, identified_by=…)`; the other side is an ordinary `search` | no |
 | A date grain for another SQL dialect | `register_grain_translator("mysql", translator)` | no |
-| A column type of the project's own | a SQLAlchemy `TypeDecorator`; `describe()` reads the annotation, not the column type | no |
+| A column type of the project's own | a SQLAlchemy `TypeDecorator`; `ModelIntrospection.describe()` reads the annotation, not the column type | no |
 | A second persistence backend | implement `ddd.IRepository` and only the optional capabilities the backend can honour | — |
 | A tenant, a branch, a permission | `repository.narrowed(criteria)`, handed to the bus instead of the wide one | no |
 | Who wrote a record | `AuditedMixin` on the aggregate, `Database(url, actor=…)` | no |
-| Deleting that keeps the row | `ArchivableMixin` on the aggregate | no |
+| Deleting that leaves the row in place | `ArchivableMixin` on the aggregate | no |
 | A Feature tested without a database | `MemoryRepository(*records)` as the dependency | no |
 
-## The invariants every change must keep
+## The invariants every change must preserve
 
 1. **Nothing under `ddd/` imports a database.** The optional-extra test says so.
 2. **A relation is resolved once per node for a whole page, never per row.** The tests count
@@ -112,7 +114,7 @@ the checkpoint a batch uses so one failing group does not undo the others.
 7. **Nothing that reaches SQL comes from the wire unvalidated.** Field names pass through `Meta`,
    fold functions through a closed list, values through the field's own reader.
 8. **Defaults, never ceilings.** What the client said is what the client gets.
-9. **The aggregate records; the repository keeps mapped events with its explicit save.** Map
+9. **The aggregate records; the repository stores mapped events with its explicit save.** Map
    one context event base with `event_table` / `map_events`. A relay delivers marked events;
    without a mapping, events remain in memory for explicit publication. Event-sourced
    aggregates use `EventSourcedMixin` and have no state row of their own.

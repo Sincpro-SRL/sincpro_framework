@@ -1,4 +1,4 @@
-"""`InMemoryRecorder`: every measurement kept in this process — for tests, and for asserting what
+"""`InMemoryRecorder`: every measurement held in this process — for tests, and for asserting what
 a use case measures.
 
     recorder = InMemoryRecorder()
@@ -27,7 +27,7 @@ def _label_set(labels: Mapping[str, str]) -> LabelSet:
 
 
 class InMemoryRecorder(Recorder):
-    """Every measurement kept in memory, behind one lock — sums per series, observations as
+    """Every measurement held in memory, behind one lock — sums per series, observations as
     lists; read back with `totals`, `observations`, `names` and `instrument`."""
 
     def __init__(self) -> None:
@@ -47,7 +47,7 @@ class InMemoryRecorder(Recorder):
                 ->  {(("channel", "web"), ("currency", "BOB")): 3.0}
 
         The same labels in any order are one series; the first instrument seen under a name
-        is the one kept."""
+        is the one retained."""
         with self._lock:
             self._instruments.setdefault(instrument.name, instrument)
             series = self._totals.setdefault(instrument.name, {})
@@ -55,7 +55,7 @@ class InMemoryRecorder(Recorder):
             series[key] = series.get(key, 0.0) + value
 
     def record(self, instrument: Instrument, value: float, labels: Mapping[str, str]) -> None:
-        """Keeps every observation as it came, in order — no buckets."""
+        """Stores every observation as it came, in order — no buckets."""
         with self._lock:
             self._instruments.setdefault(instrument.name, instrument)
             self._observed.setdefault(instrument.name, {}).setdefault(

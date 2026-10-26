@@ -40,7 +40,7 @@ def override_dependencies(
     """Every Feature and ApplicationService of ``framework`` sees ``doubles`` inside the block.
 
     Context: meant for tests. Each double takes the place of the real one for the executions
-    that start inside the block; one already running keeps what it had.
+    that start inside the block; one already running retains what it had.
 
     1. Refuse a name that was never registered — a typo would otherwise leave the real
        adapter in place and the test would silently talk to it.
@@ -97,7 +97,7 @@ def unregistered_dependencies(framework: UseFramework) -> dict[str, tuple[str, .
     Context: a handler reads its dependencies as attributes, typed on a `DependencyContextType`
     for the IDE, and one that was declared but never registered fails only when the Feature
     runs. Spring and NestJS refuse to start instead; here it is one assertion in the project's
-    suite, so a service that registers some dependencies late keeps starting as it does.
+    suite, so a service that registers some dependencies late still starts as it does.
     """
     registered = set(framework.dynamic_dep_registry)
     missing: dict[str, tuple[str, ...]] = {}

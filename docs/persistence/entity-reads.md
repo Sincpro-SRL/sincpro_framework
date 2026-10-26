@@ -85,8 +85,8 @@ class AccountReads(EntityReads[Account]):
 ```
 
 The base of each DTO names the entity and the response, so the Feature reads both off the DTO
-and nothing is declared twice. The DTOs and the responses keep the names the project gives them:
-nothing requires a prefix, and the records keep their own name (`account`, `accounts`), never
+and nothing is declared twice. The DTOs and the responses have the names the project gives them:
+nothing requires a prefix, and the records have their own name (`account`, `accounts`), never
 `items`.
 
 ## The reads
@@ -113,7 +113,7 @@ filter (the key for a `Get`, the template for a select). This is `Criteria.repla
 | `Criteria(where=active = true)` | the key **and** `active = true`: a `Get` of an inactive record is not found |
 
 "Names" is what pydantic records as set (`model_fields_set`), not what differs from a default:
-`Criteria(order=())` names the order on purpose. A scope merged with `merged_with` keeps only
+`Criteria(order=())` names the order on purpose. A scope merged with `merged_with` carries only
 what either side named, so a list that adds its tenant to the caller's criteria still reads
 the entity's defaults:
 
@@ -175,11 +175,11 @@ project(QueryIssueEvents(id=issue_id, criteria=Criteria(
 - **Where the events live** is the class the response holds: the context's base event, or a
   narrower class (`events: list[IssueClosed]`) to read only those. A response that does not hold
   a `DomainEvent` is refused, naming it.
-- **`names`** keeps the events whose wire name is one of them (`name in names`); a single
+- **`names`** selects the events whose wire name is one of them (`name in names`); a single
   name works as a one-item list. A name no class records answers no rows — it is not checked
   against the classes imported, which may not be yet.
 - **Oldest first** (`id`, a UUIDv7); the caller's criteria lays over it — its `where` adds, its
-  `order` and `pagination` replace (`order=parse_order("-id")` for newest first).
+  `order` and `pagination` replace (`order=Sort.parse("-id")` for newest first).
 - **Several records at once** — an issue with its runs — is `history_of(issue, *runs)`: the
   criteria a `Search` on the context's event class reads them with, each by its type and
   identity.
@@ -234,7 +234,7 @@ One Feature answers any subset of the four. A DTO it does not answer is refused 
   names them, and every interceptor, permission and entrypoint treats them as any other DTO.
 - **Two DTOs for one and for many, not one that changes shape.** An `id: str | list[str]`
   publishes a union response that every client has to branch on, and «not there» means 404 for
-  one record and a `missing` list for many. Two DTOs keep each contract exact, and one
+  one record and a `missing` list for many. Two DTOs make each contract exact, and one
   implementation sits behind both.
 - **Reads only.** A write in DDD carries an intent (`CommandConfirmInvoice`), not a shape to
   overwrite, so writes are not generated.

@@ -12,9 +12,9 @@ leaves a hole a tax authority asks about. A counter row is gapless because it is
 same transaction as what carries the numbers — committed with them, or undone with them.
 
 **What it costs.** Two transactions taking from one series wait for each other: the counter's
-row is held until the first commits. Take the numbers last, keep that transaction short, and give
-each point of sale or branch its own series — `scope` — so two tills never wait on one row.
-Several numbers at once are one write, not several.
+row is held until the first commits. Take the numbers last, make that transaction short, and
+give each point of sale or branch its own series — `scope` — so two tills never wait on one
+row. Several numbers at once are one write, not several.
 """
 
 from abc import ABC, abstractmethod

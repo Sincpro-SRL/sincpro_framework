@@ -10,17 +10,16 @@ Context: a metric labelled `"currency"` drifts from the DTO the first time someb
 field — the dashboard goes silently empty. `of()` hands back a stand-in typed as an instance of
 the class, so the type checker and the editor see an ordinary attribute access; at run time the
 stand-in records the path and checks every step against the class's declared fields. The DTO is
-never touched: no metaclass, no descriptor, nothing on the class.
+never touched: no metaclass, no descriptor, nothing on the class. A path reads whatever it is
+handed — the execution context is handed in by whoever reads it, never fetched from here.
 """
 
 import dataclasses
 import types
 from collections.abc import Mapping
 from decimal import Decimal
-from enum import Enum
 from typing import (
     Any,
-    Literal,
     Union,
     get_args,
     get_origin,
@@ -32,15 +31,6 @@ from typing import (
 from pydantic import BaseModel
 
 from sincpro_framework import exceptions
-
-
-def refused(message: str) -> Exception:
-    """A `ProgrammingError` with `message`, for a path that cannot be declared.
-
-    Context: imported here, not at the top — the bus measures every run through this
-    package, and a service that only runs buses must not load the DDD layer for it."""
-
-    return exceptions.ProgrammingError(message)
 
 
 def is_context_type(cls: Any) -> bool:
@@ -81,10 +71,56 @@ def without_none(annotation: Any) -> Any:
     Only a union that leaves exactly one type is narrowed; anything else comes back as it is.
     """
     if get_origin(annotation) in (Union, types.UnionType):
-        kept = [one for one in get_args(annotation) if one is not type(None)]
-        if len(kept) == 1:
-            return kept[0]
+        members = [one for one in get_args(annotation) if one is not type(None)]
+        if len(members) == 1:
+            return members[0]
     return annotation
+
+
+def _members(annotation: Any) -> tuple[type, ...]:
+    """The classes an annotation admits — every class of a union, the class itself, or none.
+
+    _members(CommandA | CommandB)  ->  (CommandA, CommandB)      _members("x")  ->  ()
+    """
+    if get_origin(annotation) in (Union, types.UnionType):
+        return tuple(one for one in get_args(annotation) if isinstance(one, type))
+    return (annotation,) if isinstance(annotation, type) else ()
+
+
+def _context_types_of(cls: type) -> tuple[type, ...]:
+    """The context types a handler declares — the `ContextT` of `Feature[C, R, ContextT]`,
+    `ApplicationService[C, R, ContextT]` or `Hook[ContextT]`, anywhere in what it inherits.
+
+        class IssueInvoice(Feature[CommandIssueInvoice, ResponseIssueInvoice, BillingContext])
+        _context_types_of(IssueInvoice)   ->  (BillingContext,)
+        _context_types_of(Untyped)        ->  ()                 # a Feature with no ContextT
+
+    Every generic base along the MRO is read; each context type once, in the order found.
+    """
+    found: list[type] = []
+    for one in getattr(cls, "__mro__", ()):
+        for base in getattr(one, "__orig_bases__", ()):
+            for argument in get_args(base):
+                if is_context_type(argument) and argument not in found:
+                    found.append(argument)
+    return tuple(found)
+
+
+def _refuse_foreign_context(cls: type, paths: tuple["FieldPath", ...]) -> None:
+    """A context path starts at the context type the handler declares; unchecked when it
+    declares none."""
+    declared = _context_types_of(cls)
+    if not declared:
+        return
+    for path in paths:
+        if path.reads_context and path.root not in declared:
+            raise exceptions.ProgrammingError(
+                f"{cls.__name__}: {path!r} — {path.root.__name__} is not the context "
+                f"{cls.__name__} declares ({', '.join(one.__name__ for one in declared)})"
+            )
+
+
+NUMBERS = (int, float, Decimal)
 
 
 class FieldPath:
@@ -137,9 +173,11 @@ class FieldPath:
         fields = _declared_fields(current)
         where = ".".join((getattr(self._root, "__name__", "?"), *self._names))
         if fields is None:
-            raise refused(f"{where} is not a DTO: there is no field '{name}' to read")
+            raise exceptions.ProgrammingError(
+                f"{where} is not a DTO: there is no field '{name}' to read"
+            )
         if name not in fields:
-            raise refused(
+            raise exceptions.ProgrammingError(
                 f"{where} has no field '{name}' — it has {', '.join(sorted(fields)) or 'none'}"
             )
         return FieldPath(self._root, (*self._names, name), fields[name])
@@ -148,7 +186,9 @@ class FieldPath:
         """`of(BillingContext)["company"]` — a context type is a TypedDict, read by key; the type
         checker knows its keys, so a key it lacks is flagged where it is written."""
         if not isinstance(name, str):
-            raise refused(f"{self!r}[{name!r}]: a key of the context is some text")
+            raise exceptions.ProgrammingError(
+                f"{self!r}[{name!r}]: a key of the context is some text"
+            )
         return self.__getattr__(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -188,11 +228,88 @@ class FieldPath:
             value = value.get(name) if isinstance(value, Mapping) else getattr(value, name)
         return value
 
-    def read_context(self) -> Any:
-        """The value in the execution in progress's context, as it is now."""
-        from sincpro_framework.observability.correlation import execution_context
+    def numeric(self) -> "FieldPath":
+        """This path, when what it reads is a number — what is summed or measured; refused
+        otherwise.
 
-        return self.read(execution_context())
+            of(ResponseIssueInvoice).total.numeric()      ->  the path      # a Decimal
+            of(CommandIssueInvoice).currency.numeric()
+                ->  ProgrammingError("of(CommandIssueInvoice).currency: currency is not a
+                    number — only a number is summed or measured")
+
+        A `bool` is an `int` to Python, never a number here."""
+        annotation = without_none(self._annotation)
+        if (
+            isinstance(annotation, type)
+            and issubclass(annotation, NUMBERS)
+            and annotation is not bool
+        ):
+            return self
+        raise exceptions.ProgrammingError(
+            f"{self!r}: {self.key} is not a number — only a number is summed or measured"
+        )
+
+    @classmethod
+    def required(cls, reference: Any, role: str) -> "FieldPath":
+        """`reference` as the path it must be — refused when a value was handed instead.
+
+        FieldPath.required(of(CommandIssueInvoice).currency, "a label")   ->  the path
+        FieldPath.required("currency", "a label")
+            ->  ProgrammingError("a label is a field reference — of(Command).field — never
+                a value ('currency' given)")
+        """
+        if not isinstance(reference, cls) or not reference.names:
+            raise exceptions.ProgrammingError(
+                f"{role} is a field reference — of(Command).field — never a value "
+                f"({reference!r} given)"
+            )
+        return reference
+
+    @classmethod
+    def refuse_foreign(cls, handler: type, paths: tuple["FieldPath", ...]) -> None:
+        """A path starts at the use case's Command, its Response, or the context type it
+        declares — read off `execute`'s annotations and its generic parameters; unchecked when
+        it has none. Shared by everything that reads a run off a declaration: the metrics and
+        the span attributes.
+
+            FieldPath.refuse_foreign(IssueInvoice, (of(CommandIssueInvoice).currency,))
+                ->  None
+            FieldPath.refuse_foreign(IssueInvoice, (of(CommandRefund).amount,))
+                ->  ProgrammingError("IssueInvoice: of(CommandRefund).amount — CommandRefund is
+                    neither the Command nor the Response of IssueInvoice (CommandIssueInvoice,
+                    ResponseIssueInvoice)")
+
+        1. A context path must start at a context type the handler declares
+           (`_context_types_of`); unchecked when it declares none.
+        2. The DTO paths are left; none, and there is nothing more to check.
+        3. The classes they may start at, read off `execute`'s annotations:
+           3.1 hints that cannot be read, or no annotated parameter: unchecked;
+           3.2 the first parameter's class (each of a union) and the return's — none:
+               unchecked.
+        4. A path whose root is neither one of those classes nor a base of one is refused.
+        Final: `None` — every path starts where it may.
+        """
+        _refuse_foreign_context(handler, paths)
+        paths = tuple(one for one in paths if not one.reads_context)
+        if not paths:
+            return
+        try:
+            hints = get_type_hints(handler.execute)  # type: ignore[attr-defined]
+        except Exception:
+            return
+        parameters = [name for name in hints if name != "return"]
+        if not parameters:
+            return
+        known = (*_members(hints[parameters[0]]), *_members(hints.get("return")))
+        if not known:
+            return
+        for path in paths:
+            if not any(issubclass(one, path.root) or one is path.root for one in known):
+                raise exceptions.ProgrammingError(
+                    f"{handler.__name__}: {path!r} — {path.root.__name__} is neither the "
+                    f"Command nor the Response of {handler.__name__} "
+                    f"({', '.join(one.__name__ for one in known)})"
+                )
 
 
 type ContextKeys = Mapping[str, Any]
@@ -214,181 +331,8 @@ def of(cls: Any) -> Any:
     lets the type checker and a rename follow `of(Command).field`. A context type is read by
     key, `of(BillingContext)["company"]`, as the context itself is."""
     if _declared_fields(cls) is None:
-        raise refused(
+        raise exceptions.ProgrammingError(
             f"of({getattr(cls, '__name__', cls)!r}): a field reference starts at a "
             "DataTransferObject, a dataclass or a context TypedDict"
         )
     return FieldPath(cls, (), cls)
-
-
-def field_path(reference: Any, role: str) -> FieldPath:
-    """`reference` as the path it must be — refused when a value was handed instead."""
-    if not isinstance(reference, FieldPath) or not reference.names:
-        raise refused(
-            f"{role} is a field reference — of(Command).field — never a value "
-            f"({reference!r} given)"
-        )
-    return reference
-
-
-_unbounded_warned: set[str] = set()
-
-
-def bounded_label(path: FieldPath) -> FieldPath:
-    """A label is anything the project chooses; one that is not an `Enum`, a `Literal` or a
-    `bool` is accepted with one warning.
-
-    Context: every distinct value is one more series in the backend for as long as it lives —
-    worth saying where the label is declared. What a service measures by is its decision
-    (PRD_03 §4.10), so it is never refused.
-
-        bounded_label(of(CommandIssueInvoice).currency)      ->  the path   # a Currency(Enum)
-        bounded_label(of(CommandIssueInvoice).customer_id)
-            ->  the path, and the first time only the warning
-                "metrics: label of(CommandIssueInvoice).customer_id is str, not an Enum, ..."
-
-    1. The declared type of the last step, `X | None` read as `X`.
-    2. A `bool`, a `Literal` or an `Enum` is bounded: the path as it is.
-    3. Anything else, the first time this path (by its `repr`) is seen: one warning naming
-       the path and its type, on the framework's logger — a logger that fails is ignored.
-    Final: the path, always — a label is never refused.
-    """
-    annotation = without_none(path.annotation)
-    if annotation is bool or get_origin(annotation) is Literal:
-        return path
-    if isinstance(annotation, type) and issubclass(annotation, Enum):
-        return path
-    where = repr(path)
-    if where not in _unbounded_warned:
-        _unbounded_warned.add(where)
-        name = getattr(annotation, "__name__", repr(annotation))
-        try:
-            from sincpro_framework.sincpro_logger import logger
-
-            logger.warning(
-                f"metrics: label {where} is {name}, not an Enum, a Literal or a bool — each "
-                "distinct value is one more series in the backend"
-            )
-        except Exception:
-            pass
-    return path
-
-
-def _members(annotation: Any) -> tuple[type, ...]:
-    """The classes an annotation admits — every class of a union, the class itself, or none.
-
-    _members(CommandA | CommandB)  ->  (CommandA, CommandB)      _members("x")  ->  ()
-    """
-    if get_origin(annotation) in (Union, types.UnionType):
-        return tuple(one for one in get_args(annotation) if isinstance(one, type))
-    return (annotation,) if isinstance(annotation, type) else ()
-
-
-def context_types_of(cls: type) -> tuple[type, ...]:
-    """The context types a handler declares — the `ContextT` of `Feature[C, R, ContextT]`,
-    `ApplicationService[C, R, ContextT]` or `Hook[ContextT]`, anywhere in what it inherits.
-
-        class IssueInvoice(Feature[CommandIssueInvoice, ResponseIssueInvoice, BillingContext])
-        context_types_of(IssueInvoice)   ->  (BillingContext,)
-        context_types_of(Untyped)        ->  ()                 # a Feature with no ContextT
-
-    Every generic base along the MRO is read; each context type once, in the order found.
-    """
-    found: list[type] = []
-    for one in getattr(cls, "__mro__", ()):
-        for base in getattr(one, "__orig_bases__", ()):
-            for argument in get_args(base):
-                if is_context_type(argument) and argument not in found:
-                    found.append(argument)
-    return tuple(found)
-
-
-def _refuse_foreign_context(cls: type, paths: tuple[FieldPath, ...]) -> None:
-    """A context path starts at the context type the handler declares; unchecked when it
-    declares none."""
-    declared = context_types_of(cls)
-    if not declared:
-        return
-    for path in paths:
-        if path.reads_context and path.root not in declared:
-            raise refused(
-                f"{cls.__name__}: {path!r} — {path.root.__name__} is not the context "
-                f"{cls.__name__} declares ({', '.join(one.__name__ for one in declared)})"
-            )
-
-
-def refuse_foreign_paths(cls: type, paths: tuple[FieldPath, ...]) -> None:
-    """A path starts at the use case's Command, its Response, or the context type it declares —
-    read off `execute`'s annotations and its generic parameters; unchecked when it has none.
-    Shared by everything that reads a run off a declaration: the metrics and the span
-    attributes.
-
-        refuse_foreign_paths(IssueInvoice, (of(CommandIssueInvoice).currency,))   ->  None
-        refuse_foreign_paths(IssueInvoice, (of(CommandRefund).amount,))
-            ->  ProgrammingError("IssueInvoice: of(CommandRefund).amount — CommandRefund is
-                neither the Command nor the Response of IssueInvoice (CommandIssueInvoice,
-                ResponseIssueInvoice)")
-
-    1. A context path must start at a context type the handler declares
-       (`context_types_of`); unchecked when it declares none.
-    2. The DTO paths are left; none, and there is nothing more to check.
-    3. The classes they may start at, read off `execute`'s annotations:
-       3.1 hints that cannot be read, or no annotated parameter: unchecked;
-       3.2 the first parameter's class (each of a union) and the return's — none: unchecked.
-    4. A path whose root is neither one of those classes nor a base of one is refused.
-    Final: `None` — every path starts where it may.
-    """
-    _refuse_foreign_context(cls, paths)
-    paths = tuple(one for one in paths if not one.reads_context)
-    if not paths:
-        return
-    try:
-        hints = get_type_hints(cls.execute)  # type: ignore[attr-defined]
-    except Exception:
-        return
-    parameters = [name for name in hints if name != "return"]
-    if not parameters:
-        return
-    known = (*_members(hints[parameters[0]]), *_members(hints.get("return")))
-    if not known:
-        return
-    for path in paths:
-        if not any(issubclass(one, path.root) or one is path.root for one in known):
-            raise refused(
-                f"{cls.__name__}: {path!r} — {path.root.__name__} is neither the Command nor "
-                f"the Response of {cls.__name__} ({', '.join(one.__name__ for one in known)})"
-            )
-
-
-NUMBERS = (int, float, Decimal)
-
-
-def numeric_value(path: FieldPath) -> FieldPath:
-    """What is summed or measured is a number."""
-    annotation = without_none(path.annotation)
-    if (
-        isinstance(annotation, type)
-        and issubclass(annotation, NUMBERS)
-        and annotation is not bool
-    ):
-        return path
-    raise refused(
-        f"{path!r}: {path.key} is not a number — only a number is summed or measured"
-    )
-
-
-def label_value(value: Any) -> str:
-    """How a label value travels: an Enum's value, `true`/`false`, `none`, the text.
-
-        label_value(Currency.BOB)  ->  "BOB"        label_value(True)  ->  "true"
-        label_value(None)          ->  "none"       label_value(3)     ->  "3"
-
-    A `bool` is read before the text, so it travels as `true`, never as `True`.
-    """
-    if value is None:
-        return "none"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, Enum):
-        return str(value.value)
-    return str(value)

@@ -19,8 +19,13 @@ from typing import Any
 
 from pydantic import ConfigDict
 
+from sincpro_framework.common.naming import snake
+from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.domain.bindings import Deprecation, McpBinding
+from sincpro_framework.entrypoints.domain.packed import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.domain.surface import Group, Operation, Resolved, Wire
+from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bindings
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 TOOL_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -29,16 +34,14 @@ characters, but the model APIs the clients hand tools to — Anthropic's, OpenAI
 this, so a longer or dotted name would build here and fail in the client."""
 
 KIND_PREFIX = re.compile(r"^(Command|Query)(?=[A-Z0-9])")
-WORD_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
 def tool_name_of(command: type) -> str:
     """The tool name a DTO derives — its name without a leading `Command` / `Query`, snake_case
     (`CommandIssueInvoice` → `issue_invoice`), the same rule JSON-RPC names its operations by
-    (`rpc.wire.operation_name`, PRD_15 §4) — kept here, since no entrypoint imports another.
+    (`rpc.wire.operation_name`, PRD_15 §4) — derived here, since no entrypoint imports another.
     """
-    name = KIND_PREFIX.sub("", command.__name__)
-    return WORD_BOUNDARY.sub("_", name).lower()
+    return snake(KIND_PREFIX.sub("", command.__name__))
 
 
 def hints_of(binding: McpBinding, idempotent: bool) -> dict[str, Any]:
@@ -68,6 +71,28 @@ def hints_of(binding: McpBinding, idempotent: bool) -> dict[str, Any]:
     if binding.title is not None:
         hints["title"] = binding.title
     return hints
+
+
+def catalog_hints(operation: PackedFeatureOrAppService) -> dict[str, Any]:
+    """The hints of a catalog entry: what its facts prove, and — when its handler declares
+    `@mcp` — its declared title, `destructive` and `open_world`; never its name, which stays
+    the DTO's in the catalog.
+
+        catalog_hints(<QueryInvoice>)
+        ->  {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": False,
+             "openWorldHint": False}
+    """
+    handler = operation.handler or operation.dto
+    declared = entrypoint_bindings.of(handler).get(McpBinding.wire)
+    is_query = isinstance(operation.dto, type) and issubclass(operation.dto, Query)
+    fields = (
+        {}
+        if declared is None
+        else {name: getattr(declared, name) for name in declared.model_fields_set}
+    )
+    fields.pop("name", None)
+    binding = McpBinding(**{"read_only": is_query, "destructive": not is_query, **fields})
+    return hints_of(binding, Idempotency.declared_by(handler))
 
 
 def deprecated_description(description: str, deprecation: Deprecation | None) -> str:
@@ -112,7 +137,7 @@ class McpWire(Wire[McpBinding]):
     hands it to `McpGateway(port=...)`.
 
     Context: a prefix needs the whole surface — a name is prefixed only when another context
-    answers it too — so `validate` keeps the names it settled for `name_of`, the manifest's.
+    answers it too — so `validate` stores the names it settled for `name_of`, the manifest's.
     """
 
     binding = McpBinding

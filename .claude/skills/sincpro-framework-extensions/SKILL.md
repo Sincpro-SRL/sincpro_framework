@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-extensions
-description: Add fields to an entity you do not own with sincpro_framework — a module in another repository extends a core entity (a delivery to a move, a fiscal number to an invoice) without editing it, and the core's own Get/Search/Edit keep working. Covers a subclass with a table of its own or in the entity's table, a flat record of sibling extensions (Consolidated), delegated or flat answers, the contract a module declares (CONTRACT, uses, requires), the overlay of presentation, the JSON slot, migrations of a table two chains declare, and the ExtensionContract a module runs in its CI. Use whenever a task extends, customises or installs a module on an existing entity.
+description: Add fields to an entity you do not own with sincpro_framework — a module in another repository extends a core entity (a delivery to a move, a fiscal number to an invoice) without editing it, and the core's own Get/Search/Edit still work. Covers a subclass with a table of its own or in the entity's table, a flat record of sibling extensions (Consolidated), delegated or flat answers, the contract a module declares (CONTRACT, uses, requires), the overlay of presentation, the JSON slot, migrations of a table two chains declare, and the ExtensionContract a module runs in its CI. Use whenever a task extends, customises or installs a module on an existing entity.
 ---
 
 # sincpro-framework-extensions
@@ -30,11 +30,11 @@ names live in the framework repository, not in the package.
 | `uses` / `requires` | What a module reads from the core / the contract it was written against; checked when it is mapped | parameters | `map_aggregates(…, uses={Move: ("total",)}, requires={Move: "2.1"})` |
 | `strict` / `delegated` | A core that answers only itself / whose answers nest each extension under its key | parameters | `map_aggregates(…, strict=[Move])`, `delegated=[Move]` |
 | `overlay` | How a module shows a field of the core: `label`, `help`, `readonly`, `required` | parameter | `map_aggregates(…, overlay={Move: {"total": {"readonly": True}}})` |
-| `Relation.foreign_key(…, many=False)` | A relation an extension installs on a class it does not own, saying its own cardinality | function | `from sincpro_framework.data_layer.orm import Relation` |
+| `TableRelation.foreign_key(…, many=False)` | A relation an extension installs on a class it does not own, saying its own cardinality | function | `from sincpro_framework.data_layer.orm import Relation` |
 | `properties_column` / `slot_field` | The JSON slot a core reserves, and a key of it as a field | functions | `from sincpro_framework.data_layer.orm import template_table` |
 | `Repository.extend` / `reclassify` | Give a stored record the rows of an extension / write the stored type of every row | methods | on the `Repository` (capability `Extends`) |
 | `ExtensionContract` | What a module runs in its CI against the core it will be installed on | test base class | `from sincpro_framework.runtime.testing.contracts.extension import ExtensionContract` |
-| `FieldMeta.owner` | The extension that adds a field (`"MoveDelivery"`); `None` for the entity's own | field | `describe(Move).fields["route"].owner` |
+| `FieldMeta.owner` | The extension that adds a field (`"MoveDelivery"`); `None` for the entity's own | field | `ModelIntrospection.describe(Move).fields["route"].owner` |
 
 ## Architecture
 
@@ -67,7 +67,7 @@ column stores it instead, and the cost stops depending on how many extensions ar
   grouping work through a subquery; a report over millions of rows reads a `Consolidated` (a join).
 - **A consolidated class that is saved but leaves out a `NOT NULL` column** — the insert fails.
   One that is only read may omit columns.
-- **Forgetting the migration of a shared table** — an extension that keeps columns in the core's
+- **Forgetting the migration of a shared table** — an extension that stores columns in the core's
   table has its own chain; `Migrations` tells each Alembic chain who else declares the table, and
   each leaves the other's columns alone. A hand-written step that drops them is the one that does
   not.

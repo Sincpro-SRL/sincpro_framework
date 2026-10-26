@@ -1,6 +1,6 @@
 # Brokers — Kafka, RabbitMQ, Redis, NATS (`[faststream]`)
 
-The domain keeps two verbs: `publish(event)` and registering an event on a bus. Which broker carries
+The domain has two verbs: `publish(event)` and registering an event on a bus. Which broker carries
 it, with which partitions/retries/acknowledgements, is the broker's configuration. Sending lives in
 `sincpro_framework.event_driven.adapters.faststream`; listening is an entrypoint in
 `sincpro_framework.entrypoints.adapters.queue`.
@@ -16,7 +16,7 @@ from faststream.kafka import KafkaBroker              # or RabbitBroker, RedisBr
 
 from sincpro_framework.event_driven import Publisher, Subscriber
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue, keyed_by_entity
-from sincpro_framework.entrypoints.adapters.queue import subscribe
+from sincpro_framework.entrypoints import subscribe
 
 broker = KafkaBroker("kafka:9092")
 
@@ -39,9 +39,9 @@ await AsyncPublisher(FastStreamQueue(broker)).publish(InvoicePaid(amount=80))
 |---|---|
 | `FastStreamQueue(broker, channel_of=by_event_name, options_of=None)` | a `Queue`; `start()`/`stop()` for sync code |
 | `queue.put(event)` / `await queue.aput(event)` | publish and wait until the broker took it |
-| `keyed_by_entity` | Kafka: `entity_id` as the message key — one entity's events keep their order |
+| `keyed_by_entity` | Kafka: `entity_id` as the message key — one entity's events stay in order |
 | `subscribe(broker, subscriber, channel_of_name=by_name, options=None)` | one subscription per channel of the events the buses registered |
-| `EVENT_HEADER` (`sincpro-event`) | the wire name beside the payload |
+| `EVENT_HEADER` (`sincpro-event`, from `sincpro_framework.event_driven`) | the wire name beside the payload |
 
 ## Channels are yours to name — on both sides
 
@@ -58,7 +58,7 @@ FastStreamQueue(broker, channel_of=lambda _event: "billing")
 
 ```python
 from sincpro_framework.data_layer.caching import KeyValueRecords
-from sincpro_framework.store.adapters.redis import RedisKeyValue          # [redis]
+from sincpro_framework.data_layer.store import RedisKeyValue          # [redis]
 from sincpro_framework.entrypoints.adapters.queue import QueueOptions
 
 subscribe(broker, Subscriber(accounting),

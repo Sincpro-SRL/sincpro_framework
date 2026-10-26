@@ -7,7 +7,7 @@ Context: `POST /sincpro/contexts/execute` answers what `http://` addresses in a 
 (`remote_execution.adapters.http`) — on the same address, port, ingress and TLS as
 the service's REST API, so hosting a context needs no second server. The execution runs on a
 worker thread, as the bus is synchronous — the same one the gRPC host runs
-(`entrypoint.execution.execute_hosted`). The body and the answer are each one message
+(`services.hosted_execution.execute_hosted`). The body and the answer are each one message
 (`sincpro_framework.remote_execution.domain.payload`).
 """
 
@@ -16,6 +16,7 @@ import base64
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from sincpro_framework.auth import Credentials
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import TRACE_HEADERS
 from sincpro_framework.remote_execution.adapters.http import (
@@ -25,10 +26,8 @@ from sincpro_framework.remote_execution.adapters.http import (
     ERROR_MODULE_HEADER,
     PATH,
 )
-from sincpro_framework.remote_execution.domain.failures import error_details
-from sincpro_framework.remote_execution.entrypoint.execution import (
-    execute_hosted,
-)
+from sincpro_framework.remote_execution.domain.failure_codec import FailureCodec
+from sincpro_framework.remote_execution.services.hosted_execution import execute_hosted
 from sincpro_framework.sincpro_logger import logger
 
 RPC_MISSING = "Starlette is not installed. Install with: pip install sincpro-framework[rpc]"
@@ -66,8 +65,6 @@ def open_host_routes(contexts: "Sequence[UseFramework]") -> list[Route]:
     async def execute(request: Request) -> Response:
         """One call from a calling service — the steps above; `execute_hosted` runs off the
         event loop, so the route never blocks it."""
-        from sincpro_framework.auth.entrypoint.transports import credentials_from_asgi
-
         name = request.headers.get(CONTEXT_HEADER, "")
         carrier = {
             key: request.headers[key] for key in TRACE_HEADERS if key in request.headers
@@ -80,7 +77,7 @@ def open_host_routes(contexts: "Sequence[UseFramework]") -> list[Route]:
                 name,
                 body,
                 carrier,
-                credentials_from_asgi(request.scope, "service"),
+                Credentials.from_asgi(request.scope, "service"),
             )
         except LookupError as error:
             return Response(str(error), status_code=404, media_type="text/plain")
@@ -94,7 +91,9 @@ def open_host_routes(contexts: "Sequence[UseFramework]") -> list[Route]:
                 headers={
                     ERROR_MODULE_HEADER: type(error).__module__,
                     ERROR_KIND_HEADER: type(error).__qualname__,
-                    ERROR_DETAILS_HEADER: base64.b64encode(error_details(error)).decode(),
+                    ERROR_DETAILS_HEADER: base64.b64encode(
+                        FailureCodec.details(error)
+                    ).decode(),
                 },
             )
         return Response(answer, media_type="application/json")

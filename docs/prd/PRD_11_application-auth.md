@@ -28,8 +28,8 @@ differently in each repository, with permissions written as strings nobody can n
 | Framework / library | Its shape | What this design takes |
 |---|---|---|
 | **Starlette** | `AuthenticationBackend.authenticate(conn) -> (AuthCredentials, BaseUser) \| None` | `AuthProvider.authenticate`, `None` = not my kind of credential |
-| **Django** | `AnonymousUser`: `request.user` is never null | `Identity.anonymous()`: `current_identity()` is never `None` |
-| **Spring Security** | `ProviderManager` walks `AuthenticationProvider`s; `SecurityContextHolder`; `@PreAuthorize` | providers tried in order; `security_context`; method-level declaration — typed, not SpEL strings |
+| **Django** | `AnonymousUser`: `request.user` is never null | `Identity.anonymous()`: `security.identity` is never `None` |
+| **Spring Security** | `ProviderManager` walks `AuthenticationProvider`s; `SecurityContextHolder`; `@PreAuthorize` | providers tried in order; `security`; method-level declaration — typed, not SpEL strings |
 | **ASP.NET Core** | declarative `[Authorize(Policy)]` plus imperative `AuthorizeAsync(user, resource, requirement)` | two doors: the guard before the use case, `check(permission, resource)` on the loaded resource |
 | **NestJS** | guards reading `@Roles(Role.Admin)` metadata | enum permissions; a decorator that only marks; a guard that reads the mark |
 | **Encore** | one auth handler returning typed `AuthData`; `api({auth: true})` | one provider contract; `@auth.authenticated` is one line |
@@ -68,12 +68,14 @@ sincpro_framework/auth/
 ├── adapters/
 │   ├── static_provider.py   StaticProvider — identities by token, for tests and local runs
 │   └── role_permissions.py  RolePermissions — roles to permissions, implied roles
-├── security_context.py      current_identity, as_identity, as_system
+├── infrastructure/security_context.py   the identity ContextVar, behind `security`
 ├── guard.py                 Declaration, Declarations; BusGuard — one per bus and generation;
 │                            HookGuard — the gate of every guarded collection
-└── access_control.py        AccessControl: on · requires · any_of · authenticated · public ·
-                             authenticate · allows · check · permitted · scope_of · challenges ·
-                             credentials_for · requirements_of · verify · describe
+├── access_control.py        AccessControl: on · requires · any_of · authenticated · public ·
+│                            authenticate · allows · check · permitted · scope_of · challenges ·
+│                            credentials_for · requirements_of · verify · describe · of
+└── security.py              security: identity · as_identity · as_system · authenticated_as ·
+                             challenges · identity_headers
 sincpro_framework/runtime/testing/
 └── auth.py                  granting, RecordingProvider, AuthProviderContract
 ```
@@ -120,7 +122,7 @@ class Identity(DataTransferObject):
     reason: str | None                          # why the system acts
 ```
 
-An identity opened by hand — `as_identity(...)`, `granting(...)` — has no provider, and its
+An identity opened by hand — `security.as_identity(...)`, `granting(...)` — has no provider, and its
 `permissions` are the answer.
 
 ## The contract — `AuthProvider`
@@ -256,14 +258,15 @@ answers with its `permissions`.
 | `AccessControl(enabled=False)` | nothing is checked; `on(...)` warns once |
 | `when_denied=WhenDenied.SKIP` | a use case answers `None`, a hook's moment is left out; logged at info |
 | an ApplicationService orchestrating Features | a nested use case that declares nothing inherits the decision; one that declares is checked again |
-| `as_system(reason)` — a cron, a migration | every requirement met; the reason logged |
+| `security.as_system(reason)` — a cron, a migration | every requirement met; the reason logged |
 | one bus that must not be guarded | no `auth.on(bus)` for it |
 | a new generation of the bus — `fresh()`, the runtime registry | guarded as the bus it came from; a stored use case declares anew on every version |
 
 ## The identity cannot be forged
 
-- **Not in the request context.** Who acts is a `ContextVar` of its own (`security_context`); only
-  `as_identity` and `as_system` set it. The context dict stays a dict anyone writes — writing
+- **Not in the request context.** Who acts is a `ContextVar` of its own (behind `security`); only
+  `security.as_identity` and `security.as_system` set it. The context dict stays a dict anyone
+  writes — writing
   `"identity"` into it changes nobody's identity. The variable follows the execution into every
   bus it calls and into `thread_context()`; log lines carry the subject as `identity`.
 - **Across services.** `remote_execution` adopts the request context from a header as it came; the
@@ -288,7 +291,7 @@ answers with its `permissions`.
 
 | I need… | How |
 |---|---|
-| to be someone, no provider, no bus | `with as_identity(Identity.user("user:1", permissions={...})):` |
+| to be someone, no provider, no bus | `with security.as_identity(Identity.user("user:1", permissions={...})):` |
 | only some permissions, one line | `with granting(BillingPermission.ISSUE_INVOICE):` |
 | an entrypoint with fake tokens | `StaticProvider({"token-a": identity_a})` |
 | no access control | `AccessControl(enabled=False)`, or no `auth.on(bus)` |
@@ -296,7 +299,7 @@ answers with its `permissions`.
 | what a provider was asked | `RecordingProvider(real_or_none).asked` |
 | a provider of mine to behave | inherit `AuthProviderContract` |
 | what a use case requires | `auth.requirements_of(CommandX)`; `assert auth.verify() == []` |
-| a cron without an identity | `with as_system("test"):` |
+| a cron without an identity | `with security.as_system("test"):` |
 
 ## How a project plugs its protocol in
 
@@ -343,7 +346,7 @@ stays out of the `Identity`, resolved from the tenant by the adapter that alread
 | `res.groups` (and implied groups) | roles, `RolePermissions(implies=...)`, or a provider asking Odoo |
 | `ir.model.access` — CRUD per model per group | `@auth.requires` on a use case — finer than per model — or on a hook, per aggregate |
 | `ir.rule` — record rules as domains | `AuthProvider.scope(identity, aggregate) -> Criteria` |
-| `sudo()` | `as_system(reason)`, logged |
+| `sudo()` | `security.as_system(reason)`, logged |
 | API keys / session | a provider reading `headers` / `cookies` |
 | `auth_oauth` | `JwtProvider` against the same IdP |
 
@@ -374,7 +377,7 @@ stays out of the `Identity`, resolved from the tenant by the adapter that alread
 ## Decisions to iterate
 
 1. **Queue consumers** — a use case run by a subscriber acts, for now, as whoever the process
-   opened. Proposed: `as_system(reason=<event name>)` by default, and later the publisher's identity
+   opened. Proposed: `security.as_system(reason=<event name>)` by default, and later the publisher's identity
    carried signed in the event's metadata.
 2. **Odoo as the identity provider** — should the Odoo SDKs issue OIDC tokens for Odoo users?
 3. **The JWT library of the `[jwt]` extra** — joserfc or PyJWT (Authlib's stack is joserfc).
@@ -385,7 +388,8 @@ stays out of the `Identity`, resolved from the tenant by the adapter that alread
 
 1. **Built.** `Permission`, `AnyOf`, `WhenDenied`; `Credentials` and `Identity` as DTOs; the two
    errors; `AuthProvider` with its six methods; `StaticProvider`, `RolePermissions`;
-   `current_identity`, `as_identity`, `as_system` on a `ContextVar` of their own; `AccessControl`
+   `security.identity`, `security.as_identity`, `security.as_system` on a `ContextVar` of their
+   own; `AccessControl`
    with `requires` / `any_of` / `authenticated` / `public` / `when_denied`, skip by default,
    `strict`, `enabled`, the outermost guard, nested and `replaces` inheritance, the hook gate,
    `authenticate` over several providers, `allows` / `check` / `permitted` / `scope_of` /
@@ -396,9 +400,10 @@ stays out of the `Identity`, resolved from the tenant by the adapter that alread
    replacements in combined hooks, copies made before the gate, stored use cases declaring anew,
    reads that failed open, batches, checks that built the bus, strict answering nobody with 403,
    a gate run twice — each with its test.
-2. **Built.** `auth/transports.py` — credentials out of an ASGI scope or a transport's headers,
-   `authenticated_as(bus, credentials)`, the refusal each protocol answers, `identity_headers`;
-   `Credentials.query`; `access_control_of(bus)`; the shared executor authenticating every wire;
+2. **Built.** `Credentials.from_asgi` / `Credentials.from_headers` — credentials out of an ASGI
+   scope or a transport's headers; `security.authenticated_as(bus, credentials)`;
+   `AuthError.refusal_body()`, the refusal each protocol answers; `security.identity_headers`;
+   `Credentials.query`; `AccessControl.of(bus)`; the shared executor authenticating every wire;
    JSON-RPC (401, `-32001` / `-32003`), gRPC (`UNAUTHENTICATED` / `PERMISSION_DENIED`, trailing
    metadata), MCP (per tool call, and `token_verifier` for FastMCP's `auth=`), `IdentityMiddleware`
    for an ASGI app of the project's, and `remote_execution` carrying the identity as a

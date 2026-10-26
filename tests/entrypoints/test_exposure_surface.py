@@ -12,11 +12,10 @@ from structlog.testing import capture_logs
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.ddd import Query
-from sincpro_framework.entrypoints import Exposure, Gateway, Group
+from sincpro_framework.entrypoints import Exposure, Gateway, Group, internal
 from sincpro_framework.entrypoints.domain.bindings import Binding, RestBinding, RpcBinding
 from sincpro_framework.entrypoints.domain.surface import Operation, Resolved, Wire
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp, rest
-from sincpro_framework.entrypoints.entrypoint.internal import internal
 
 
 class RestSurface(Gateway):

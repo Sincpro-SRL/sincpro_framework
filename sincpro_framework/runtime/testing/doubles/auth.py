@@ -18,7 +18,7 @@ from sincpro_framework.auth import (
     AuthProvider,
     Credentials,
     Identity,
-    as_identity,
+    security,
 )
 
 
@@ -27,15 +27,15 @@ def granting(
     *permissions: str, subject: str = "user:test", tenant: str | None = None
 ) -> Generator[Identity, None, None]:
     """Act as a user who holds exactly `permissions` — no provider, no bus, no token."""
-    with as_identity(
+    with security.as_identity(
         Identity.user(subject, tenant=tenant, permissions=permissions)
     ) as identity:
         yield identity
 
 
 class RecordingProvider(AuthProvider):
-    """A provider that keeps what it was asked — and answers what `inner` answers, or, with no
-    `inner`, what the identity's permissions say."""
+    """A provider that records what it was asked — and answers what `inner` answers, or, with
+    no `inner`, what the identity's permissions say."""
 
     def __init__(self, inner: AuthProvider | None = None, name: str | None = None) -> None:
         """Wrap `inner`, taking its `name` and `needs_body` so a chain treats the recording as
@@ -46,7 +46,7 @@ class RecordingProvider(AuthProvider):
         self.asked: list[tuple[Any, ...]] = []
 
     def authenticate(self, credentials: Credentials) -> Identity | None:
-        """Keep `("authenticate", transport)` — never the secret — and answer what `inner`
+        """Record `("authenticate", transport)` — never the secret — and answer what `inner`
         answers; with no `inner`, `None`: these credentials are not its kind."""
         self.asked.append(("authenticate", credentials.transport))
         return self.inner.authenticate(credentials) if self.inner is not None else None
@@ -58,7 +58,7 @@ class RecordingProvider(AuthProvider):
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> bool:
-        """Keep `("has_permission", subject, permission)` and answer what `inner` answers;
+        """Record `("has_permission", subject, permission)` and answer what `inner` answers;
         with no `inner`, the port's default — the permissions the identity carries."""
         self.asked.append(("has_permission", identity.subject, permission))
         if self.inner is not None:

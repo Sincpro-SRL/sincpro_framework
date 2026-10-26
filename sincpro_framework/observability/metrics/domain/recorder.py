@@ -8,7 +8,7 @@
 
 Context: two methods, because a backend has two kinds of instrument — a sum (`add`: counters, up
 and down) and a distribution (`record`: histograms). The recorder creates its own object for an
-instrument the first time it sees its name, and keeps it. It never raises into the use case:
+instrument the first time it sees its name, and caches it. It never raises into the use case:
 the framework shields every call, and a recorder only has to be correct.
 """
 

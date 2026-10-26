@@ -27,18 +27,25 @@ from collections.abc import Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Generator, Protocol
-from urllib.parse import unquote
 
-from sincpro_framework.context.domain.keys import PLUMBING, ContextKey
-from sincpro_framework.context.infrastructure.said import keeping_what_scopes_say, said
-from sincpro_framework.context.infrastructure.tree import current_execution
-from sincpro_framework.observability.domain import UNKNOWN, ObservabilityIdentity
+from sincpro_framework.context import (
+    ContextKey,
+    context_executions,
+    context_propagation,
+    context_scopes,
+)
+from sincpro_framework.observability.domain import (
+    TENANT,
+    UNKNOWN,
+    ObservabilityIdentity,
+    deployment_tenant,
+)
+from sincpro_framework.observability.registry import observability_registry
 from sincpro_framework.sincpro_conf import settings
 
 RELEASE = "release"
 SERVICE_NAME = "service.name"
 SERVICE_VERSION = "service.version"
-TENANT = "tenant"
 USER_ID = "user_id"
 
 IDENTITY_KEYS = (SERVICE_NAME, SERVICE_VERSION, RELEASE)
@@ -70,12 +77,12 @@ def running(source: ExecutionSource) -> Generator[None, None, None]:
             running_identity()     ->  observability.identity
         current()                  ->  None — or the source running before it, put back
 
-    What the scopes opened inside the block say is kept (`keeping_what_scopes_say`), so the
+    What the scopes opened inside the block say is collected (`context_scopes.collecting()`), so the
     signals that close the execution still read it.
     """
     token = _running.set(source)
     try:
-        with keeping_what_scopes_say():
+        with context_scopes.collecting():
             yield
     finally:
         try:
@@ -92,47 +99,15 @@ def current() -> ExecutionSource | None:
 # --- where a value comes from ---------------------------------------------------------------------
 
 
-def resource_attributes() -> dict[str, str]:
-    """`OTEL_RESOURCE_ATTRIBUTES` as OpenTelemetry defines it: `key=value` pairs joined by
-    commas, each part percent-decoded and stripped.
-
-        OTEL_RESOURCE_ATTRIBUTES="tenant=acme, region=eu%2Dwest,broken,=x"
-        resource_attributes()   ->  {"tenant": "acme", "region": "eu-west"}
-
-    A part without `=` or with an empty key is skipped; a value may itself hold `=`.
-    """
-    import os
-
-    declared: dict[str, str] = {}
-    for pair in os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "").split(","):
-        if "=" not in pair:
-            continue
-        key, value = pair.split("=", 1)
-        key, value = unquote(key).strip(), unquote(value).strip()
-        if key:
-            declared[key] = value
-    return declared
-
-
-def deployment_tenant() -> str:
-    """The tenant the deployment serves: `TENANT`, else `tenant` in `OTEL_RESOURCE_ATTRIBUTES`
-    (what a host such as Odoo sets); empty when neither says one."""
-    try:
-        declared = (getattr(settings, "tenant", None) or "").strip()
-    except Exception:
-        declared = ""
-    return declared or resource_attributes().get(TENANT, "")
-
-
 def _identity() -> Any:
     """The authenticated caller, when auth is in play — `None` otherwise."""
     # Only when auth is already loaded: a service that never authenticates has no identity to
     # read, and must not load the auth layer (and the DDD one under it) for it.
-    module = sys.modules.get("sincpro_framework.auth.infrastructure.security_context")
+    module = sys.modules.get("sincpro_framework.auth")
     if module is None:
         return None
     try:
-        identity = module.current_identity()
+        identity = module.security.identity
     except Exception:
         return None
     return None if getattr(identity, "is_anonymous", True) else identity
@@ -152,25 +127,21 @@ def execution_context() -> Mapping[str, Any]:
     live context alone when there is neither — an empty one when the tree cannot be read.
     """
     try:
-        from sincpro_framework.context.infrastructure.tree import live_context
-
-        live = live_context()
+        live = context_scopes.live()
     except Exception:
         live = {}
-    scopes = said()
-    running = current_execution()
-    if not scopes and running is None:
+    closed = context_scopes.closed()
+    running = context_executions.current()
+    if not closed and running is None:
         return live
-    return {**live, **scopes, **(running.chain() if running is not None else {})}
+    return {**live, **closed, **(running.chain() if running is not None else {})}
 
 
 def _hidden() -> frozenset[str]:
     """The context keys the project hid from the signals (`hide_in_logs`) — none when the
     context tree cannot be read."""
     try:
-        from sincpro_framework.context.infrastructure.tree import hidden_keys
-
-        return hidden_keys()
+        return context_scopes.hidden_keys()
     except Exception:
         return frozenset()
 
@@ -205,6 +176,37 @@ def user_id(context: Mapping[str, Any] | None = None) -> str:
     )
 
 
+def log_fields(identity: ObservabilityIdentity) -> dict[str, str]:
+    """Who a log line comes from and for whom, on the line itself: the same release, service,
+    version and tenant the spans, the metrics and GlitchTip carry — readable without the
+    collector's labels. The tenant and the user are the execution's (PRD_03 §4.10).
+
+        log_fields(ObservabilityIdentity(artifact="sincpro-odoo:18.5.0"))
+            ->  {"service_name": "sincpro-odoo", "service_version": "18.5.0",
+                 "release": "sincpro-odoo:18.5.0", "tenant": "acme", "user_id": "u7"}
+        log_fields(ObservabilityIdentity(bus="billing"))   ->  {"service_name": "billing"}
+
+    1. `service_name` always — the bus stands in when no artifact resolved.
+    2. `service_version` when a version is known.
+    3. `release` when an artifact resolved.
+    4. `tenant`: the execution's (`tenant`), when there is one.
+    5. `user_id`: who the execution acts for, when known.
+    Final: the fields, never a blank one.
+    """
+    fields = {"service_name": identity.service_name}
+    if identity.service_version:
+        fields["service_version"] = identity.service_version
+    if identity.artifact != UNKNOWN and identity.release:
+        fields["release"] = identity.release
+    who = tenant()
+    if who:
+        fields["tenant"] = who
+    user = user_id()
+    if user:
+        fields["user_id"] = user
+    return fields
+
+
 def identity_keys(identity: ObservabilityIdentity | None) -> dict[str, str]:
     """`service.name`, `service.version` and `release` — what is known of them."""
     if identity is None:
@@ -233,9 +235,7 @@ def running_identity() -> ObservabilityIdentity | None:
         except Exception:
             return None
     try:
-        from sincpro_framework.observability.registry import registry
-
-        return registry.process_identity()
+        return observability_registry.process_identity()
     except Exception:
         return None
 
@@ -268,7 +268,12 @@ def execution_keys() -> dict[str, Any]:
     if user:
         keys[USER_ID] = user
     for key, value in context.items():
-        if not isinstance(key, str) or key in PLUMBING or key in SAID_ABOVE or value is None:
+        if (
+            not isinstance(key, str)
+            or key in context_propagation.trace_keys
+            or key in SAID_ABOVE
+            or value is None
+        ):
             continue
         keys[key] = value
     return {key: value for key, value in keys.items() if key not in hidden}

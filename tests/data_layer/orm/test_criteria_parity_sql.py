@@ -20,7 +20,11 @@ from sqlalchemy.orm import registry
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import JsonText
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.ddd.criteria import Criteria, Pagination, expression_from
+from sincpro_framework.ddd.criteria import (
+    Criteria,
+    Node,
+    Pagination,
+)
 
 from .engines import fresh
 
@@ -71,7 +75,7 @@ def rows(engine_url: str) -> Repository:
 def test_the_database_answers_each_parity_case_as_the_file_says(
     rows: Repository, case: dict[str, Any]
 ):
-    where = None if case["where"] is None else expression_from(case["where"])
+    where = None if case["where"] is None else Node.read(case["where"])
     everything = Pagination(limit=len(PARITY["rows"]) + 1)
 
     found = rows.search(ParityRow, Criteria(where=where, pagination=everything))

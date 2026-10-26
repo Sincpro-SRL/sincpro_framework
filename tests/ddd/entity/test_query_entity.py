@@ -20,7 +20,7 @@ from sincpro_framework.ddd import (
     matching,
 )
 from sincpro_framework.ddd.criteria import (
-    Any_,
+    Any,
     Condition,
     Criteria,
     Operator,
@@ -49,7 +49,7 @@ class Account(Entity):
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
         return Criteria(
-            where=Any_(
+            where=Any(
                 any=[
                     Condition(field="code", value=TEXT),
                     Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
@@ -201,7 +201,7 @@ def test_a_prefix_on_a_number_is_refused_instead_of_widening_the_search():
 def test_matching_fills_the_template_for_a_short_page_of_references():
     criteria = matching(Account, " 1.2.3 ")
 
-    assert criteria.where == Any_(
+    assert criteria.where == Any(
         any=[
             Condition(field="code", value="1.2.3", operator=Operator.EQ),
             Condition(field="code", value="1.2.3", operator=Operator.STARTS_WITH),

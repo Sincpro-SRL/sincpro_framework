@@ -11,12 +11,11 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import DomainEvent, Query
-from sincpro_framework.entrypoints import Gateway
+from sincpro_framework.entrypoints import Gateway, internal
 from sincpro_framework.entrypoints.domain.bindings import Deprecation, RestBinding
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp, queue, rest, rpc
-from sincpro_framework.entrypoints.entrypoint.internal import internal
-from sincpro_framework.store import InMemoryKeyValue
 
 
 class RestSurface(Gateway):

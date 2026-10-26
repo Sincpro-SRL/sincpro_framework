@@ -35,23 +35,18 @@ from sincpro_framework.auth import (
     Permission,
     ServiceTokenProvider,
     StaticProvider,
-    as_identity,
-    as_system,
-    credentials_from_asgi,
-    current_identity,
+    security,
 )
 from sincpro_framework.auth.adapters.service_token_provider import HEADER
 from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.entrypoint.transports import identity_headers
 from sincpro_framework.common.serialization import rebuilt
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import (
     scalar_to_struct,
     struct_to_scalar,
 )
 from sincpro_framework.entrypoints.adapters.mcp import auth as mcp_auth
 from sincpro_framework.entrypoints.adapters.mcp.mcp import fastmcp_callable
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     PERMISSION_DENIED,
     UNAUTHENTICATED,
@@ -59,9 +54,7 @@ from sincpro_framework.entrypoints.adapters.rpc.errors import (
 from sincpro_framework.entrypoints.domain.bindings import GrpcBinding, RpcBinding
 from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.remote_execution.domain.payload import Payload
-from sincpro_framework.remote_execution.entrypoint.execution import (
-    execute_hosted,
-)
+from sincpro_framework.remote_execution.services.hosted_execution import execute_hosted
 from sincpro_framework.runtime.testing import AuthProviderContract
 
 
@@ -101,13 +94,13 @@ def _guarded(name: str = "wired-billing") -> tuple[UseFramework, AccessControl[P
     @auth.requires(Perm.ISSUE)
     class Issue(Feature):
         def execute(self, dto: CommandIssue) -> Issued:
-            return Issued(by=current_identity().subject)
+            return Issued(by=security.identity.subject)
 
     @billing.feature(CommandHealth)
     @auth.public
     class Health(Feature):
         def execute(self, dto: CommandHealth) -> Issued:
-            return Issued(by=current_identity().subject)
+            return Issued(by=security.identity.subject)
 
     auth.on(billing)
     return billing, auth
@@ -175,7 +168,7 @@ def test_a_bus_nobody_guards_answers_as_before() -> None:
     @plain.feature(CommandIssue)
     class Issue(Feature):
         def execute(self, dto: CommandIssue) -> Issued:
-            return Issued(by=current_identity().subject)
+            return Issued(by=security.identity.subject)
 
     gateway = RpcGateway({"billing": plain}, exposure=Exposure.CATALOG, unguarded=True)
     client = TestClient(gateway.app())
@@ -249,7 +242,7 @@ def _as_mcp_http_call(monkeypatch: pytest.MonkeyPatch, headers: Mapping[str, str
 
 
 def _mcp_issue(billing: UseFramework) -> Any:
-    from sincpro_framework.entrypoints.entrypoint.catalog import Catalog
+    from sincpro_framework.entrypoints.services.catalog import Catalog
 
     operation = next(
         one for one in Catalog(billing).get_scalar_use_cases() if one.name == "CommandIssue"
@@ -337,16 +330,16 @@ def test_the_identity_crosses_to_another_service_signed_and_nothing_else_does() 
         answer = execute_hosted({host.name: host}, host.name, body, {}, credentials)
         return rebuilt(Payload.from_json(answer).data, Issued)
 
-    with as_identity(
+    with security.as_identity(
         caller_auth.authenticate(Credentials(transport="http", headers=_bearer("t-issuer")))
     ):
-        sent = identity_headers("hosted-billing")
+        sent = security.identity_headers("hosted-billing")
     assert set(sent) == {HEADER}
     assert hosted(sent).by == "user:1"
     with pytest.raises(exceptions.Unauthenticated):
         hosted({})
-    with as_system("cron"):
-        assert identity_headers("hosted-billing") == {}
+    with security.as_system("cron"):
+        assert security.identity_headers("hosted-billing") == {}
 
 
 # The providers shipped
@@ -414,7 +407,7 @@ def test_a_service_token_carries_who_acts_and_never_the_claims() -> None:
 
 
 def test_credentials_are_read_whole_from_an_asgi_scope() -> None:
-    credentials = credentials_from_asgi(
+    credentials = Credentials.from_asgi(
         {
             "type": "http",
             "method": "POST",

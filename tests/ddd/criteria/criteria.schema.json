@@ -269,7 +269,7 @@
           "default": [],
           "description": "The levels the set is split by, one statement each.",
           "items": {
-            "$ref": "#/$defs/Level"
+            "$ref": "#/$defs/GroupingLevel"
           },
           "title": "Group By",
           "type": "array"
@@ -328,6 +328,48 @@
         }
       },
       "title": "Grouping",
+      "type": "object"
+    },
+    "GroupingLevel": {
+      "additionalProperties": false,
+      "description": "One level of grouping: the field it splits by, and how.\n\nin      \"produced_by\"           →  GroupingLevel(field='produced_by')\nin      \"registered_at:month\"   →  GroupingLevel(field='registered_at', grain=Grain.MONTH)\nin      {\"field\": \"registered_at\", \"part\": \"month\"}   →  every March, whatever the year\n\nA **grain** cuts a date into ranges of time (`2026-03`); a **part** extracts a number from it\n(`3`). One level takes one or the other, never both.\n\n`fill` lists every value the level can take, including the ones with no rows, as groups with\na count of 0: all the choices of an enum, both values of a boolean, every number a part can\nbe, every grain of a date range that `where` bounds. An axis that is complete is what a chart\nneeds, and what a group that happened to be empty would otherwise silently leave out.",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "grain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "part": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Part"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fill": {
+          "default": false,
+          "title": "Fill",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "GroupingLevel",
       "type": "object"
     },
     "Item": {
@@ -390,48 +432,6 @@
       ]
     },
     "JsonValue": {},
-    "Level": {
-      "additionalProperties": false,
-      "description": "One level of grouping: the field it splits by, and how.\n\nin      \"produced_by\"           →  Level(field='produced_by')\nin      \"registered_at:month\"   →  Level(field='registered_at', grain=Grain.MONTH)\nin      {\"field\": \"registered_at\", \"part\": \"month\"}   →  every March, whatever the year\n\nA **grain** cuts a date into ranges of time (`2026-03`); a **part** extracts a number from it\n(`3`). One level takes one or the other, never both.\n\n`fill` lists every value the level can take, including the ones with no rows, as groups with\na count of 0: all the choices of an enum, both values of a boolean, every number a part can\nbe, every grain of a date range that `where` bounds. An axis that is complete is what a chart\nneeds, and what a group that happened to be empty would otherwise silently leave out.",
-      "properties": {
-        "field": {
-          "title": "Field",
-          "type": "string"
-        },
-        "grain": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Grain"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "part": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Part"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "fill": {
-          "default": false,
-          "title": "Fill",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "field"
-      ],
-      "title": "Level",
-      "type": "object"
-    },
     "Measure": {
       "additionalProperties": false,
       "description": "One number a group answers: a function over a field, under a name the caller chose.\n\n    in      {\"function\": \"sum\", \"field\": \"row_count\"}\n    out     Measure(function='sum', field='row_count')       → sum(row_count) AS <name>\n\n**Named parts and not `\"sum:row_count\"`**, so nobody has to split a string in whatever\nlanguage is reading this — the same reason a condition travels as `{field, operator,\nvalue}`. The pair `[\"sum\", \"row_count\"]` is read as well, because writing one by hand in\nPython is a pair; what a caller sends over a wire is the object.\n\nIt is called a measure and not an aggregate on purpose: in this codebase an *aggregate* is\nthe DDD root — what `Meta.aggregate` names — and two meanings for one word in the same\nsentence is how a reader loses an afternoon.",

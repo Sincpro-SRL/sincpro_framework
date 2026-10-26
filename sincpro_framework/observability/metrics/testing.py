@@ -1,6 +1,6 @@
 """`RecorderContract`: what every `Recorder` must do, runnable against a backend of the project's.
 
-    def test_my_recorder_keeps_the_contract():
+    def test_my_recorder_honours_the_contract():
         recorder = StatsdRecorder(...)
         RecorderContract(recorder, total=read_counter, count=read_histogram_count).check()
 
@@ -36,7 +36,7 @@ HISTOGRAM = Instrument(
 
 
 class RecorderContract:
-    """The rules a `Recorder` keeps — methods `check` runs in order; see the module."""
+    """The rules a `Recorder` follows — methods `check` runs in order; see the module."""
 
     def __init__(self, recorder: Recorder, total: Read, count: Read) -> None:
         """The recorder under test and the two readers of its backend: `total` for a counter's
@@ -46,12 +46,12 @@ class RecorderContract:
         self.count = count
 
     def a_counter_adds_up_per_set_of_labels(self) -> None:
-        """Proves a counter sums every `add` per set of labels, and keeps each set apart:
+        """Proves a counter sums every `add` per set of labels, and tracks each set separately:
         2 + 3 under `ok` is 5, the 1 under `domain` is its own series.
 
             RecorderContract(InMemoryRecorder(), total, count)
                 .a_counter_adds_up_per_set_of_labels()             ->  None: the rule holds
-            on a recorder that keeps only the last value
+            on a recorder that stores only the last value
                 ->  AssertionError("a counter adds up per set of labels")
 
         Written to `contract.runs`, so a fresh recorder is expected."""
@@ -69,7 +69,7 @@ class RecorderContract:
         assert self.total(UP_DOWN.name, {}) == 1, "an up-down counter goes down too"
 
     def a_histogram_counts_its_observations_per_set_of_labels(self) -> None:
-        """Proves a histogram keeps every observation — three values, below, between and above
+        """Proves a histogram records every observation — three values, below, between and above
         its buckets, count as three."""
         labels = {"contract.outcome": "ok"}
         for value in (0.05, 0.5, 5.0):
@@ -81,7 +81,7 @@ class RecorderContract:
         total 1600.
 
             RecorderContract(InMemoryRecorder(), total, count)
-                .concurrent_adds_are_all_kept()                   ->  None: 1600 kept
+                .concurrent_adds_are_all_kept()                   ->  None: 1600 recorded
             on a recorder that reads and writes its total without a lock
                 ->  AssertionError("no add is lost under threads") when two adds race
 

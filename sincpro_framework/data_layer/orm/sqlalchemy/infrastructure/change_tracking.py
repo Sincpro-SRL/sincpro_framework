@@ -17,10 +17,10 @@ this `Database` — a use case holding a plain session, a script, a migration. W
 *guarantees* has to live where nothing can step around it, which is the same reason `_stamping`
 is registered there.
 
-**The diff is the engine's, not ours.** SQLAlchemy keeps the loaded value and the pending one
+**The diff is the engine's, not ours.** SQLAlchemy holds the loaded value and the pending one
 for every column it is about to write, so `get_history` answers exactly what changed, for every
 route that reaches the database — including an aggregate loaded inside `context()`, modified,
-and flushed without anybody calling `save()`. A baseline kept on the aggregate could only see
+and flushed without anybody calling `save()`. A baseline stored on the aggregate could only see
 the calls it was told about, and silently missed that one.
 
 `before_flush` and not `after_flush`: both can still read the history, but only the first can
@@ -35,7 +35,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session, attributes
 
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.flushing import goes_out
-from sincpro_framework.ddd.entity import ChangeTrackingMixin
+from sincpro_framework.ddd.events import ChangeTrackingMixin
 
 
 def changed_columns(record: ChangeTrackingMixin) -> dict[str, tuple[Any, Any]]:
@@ -45,7 +45,7 @@ def changed_columns(record: ChangeTrackingMixin) -> dict[str, tuple[Any, Any]]:
     bookkeeping columns, a field marked `tracked=False` and anything pointing at another
     aggregate stay out, exactly as they do everywhere else.
 
-    The value after is a copy: the record keeps the object and may change it inside again, and
+    The value after is a copy: the record still holds the object and may change it inside again, and
     an event is what was written, not what the record holds later.
 
         invoice loaded with total=500, then invoice.total = 900; invoice.version = 4

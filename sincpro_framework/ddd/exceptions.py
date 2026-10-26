@@ -14,7 +14,7 @@ A stale version and a lost transaction are the ones worth running again. A proje
 declares another kind with `failure_kind = FailureKind...` on its class.
 """
 
-from sincpro_framework.context.domain.exceptions import DraftConflict
+from sincpro_framework.context import DraftConflict
 from sincpro_framework.exceptions import (
     ClientError,
     DependencyNotRegistered,
@@ -48,7 +48,7 @@ class StaleAggregate(DomainError):
 
 
 class DuplicateAggregate(DomainError):
-    """A save collided with a value the storage keeps unique — an identity, a fingerprint.
+    """A save collided with a value the storage holds unique — an identity, a fingerprint.
 
     Reported as the vocabulary's own word so a use case can resolve the race it was written
     for, without importing the driver's exception to do it.

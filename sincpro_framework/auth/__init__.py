@@ -11,15 +11,16 @@ decided by providers, applied by a guard.
     @auth.requires(BillingPermission.ISSUE_INVOICE)
     class IssueInvoice(Feature): ...
 
-    with as_identity(auth.authenticate(credentials)):      # what an entrypoint does
+    with security.authenticated_as(billing, Credentials.from_asgi(scope)):   # an entrypoint
         billing(CommandIssueInvoice(...))
 
 `domain/` holds the vocabulary and the `AuthProvider` contract, `adapters/` the providers and
 helpers the framework ships, `infrastructure/` who the execution acts as, `services/` the guard
 that runs around a use case and before a hook, and `entrypoint/` `AccessControl` (the
-declarations and the checks), what every wire hands auth (`transports`) and the middleware for an
-ASGI app of the project's (`asgi`). JSON-RPC, gRPC, MCP and `remote_execution` authenticate by themselves when the bus is
-guarded. See `docs/auth/README.md`.
+declarations and the checks), `security` (who acts, and the door every wire hands auth what a
+caller presented) and the middleware for an ASGI app of the project's (`asgi`). JSON-RPC, gRPC,
+MCP and `remote_execution` authenticate by themselves when the bus is guarded. See
+`docs/auth/README.md`.
 """
 
 from sincpro_framework.auth.adapters.api_key_provider import (
@@ -38,28 +39,15 @@ from sincpro_framework.auth.domain.exceptions import (
 )
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import (
+    AccessDeclaration,
     AnyOf,
-    Declaration,
     Permission,
     WhenDenied,
 )
 from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.entrypoint.access_control import (
-    AccessControl,
-    AccessDescription,
-    access_control_of,
-)
+from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
-from sincpro_framework.auth.entrypoint.transports import (
-    authenticated_as,
-    credentials_from_asgi,
-    credentials_from_headers,
-)
-from sincpro_framework.auth.infrastructure.security_context import (
-    as_identity,
-    as_system,
-    current_identity,
-)
+from sincpro_framework.auth.entrypoint.security import security
 
 __all__ = [
     "AccessControl",
@@ -71,7 +59,7 @@ __all__ = [
     "AuthError",
     "AuthProvider",
     "Credentials",
-    "Declaration",
+    "AccessDeclaration",
     "Identity",
     "IdentityKind",
     "IdentityMiddleware",
@@ -83,11 +71,5 @@ __all__ = [
     "StaticProvider",
     "Unauthenticated",
     "WhenDenied",
-    "access_control_of",
-    "as_identity",
-    "authenticated_as",
-    "as_system",
-    "credentials_from_asgi",
-    "credentials_from_headers",
-    "current_identity",
+    "security",
 ]

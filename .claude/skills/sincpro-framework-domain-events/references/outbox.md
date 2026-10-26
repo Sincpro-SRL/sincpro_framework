@@ -1,7 +1,7 @@
 # The transactional outbox
 
 Use this when a fact must survive a crash between the state change and delivery. The context's
-event table is the outbox: `save(aggregate)` keeps its mapped events in the same transaction.
+event table is the outbox: `save(aggregate)` persists its mapped events in the same transaction.
 `DeliverableEventMixin` marks the events to send, and `EventRelay` polls and updates delivery.
 Do not introduce a second event-entry model or a hand-written claim loop.
 
@@ -101,7 +101,7 @@ The relay has no timer. Register it with `Crons.run_relay(relay)` or build it th
     Consumers need idempotency. A nondurable target queue does not become durable just because
     the relay successfully enqueued into it.
 
-**Ordering across replicas:** Row locks keep two replicas from taking the same event, not an entity's whole stream: two replicas can each take a different event of one entity in the same instant. Where that matters, run one relay per context, or key the broker by entity (`keyed_by_entity`).
+**Ordering across replicas:** Row locks stop two replicas from taking the same event, not an entity's whole stream: two replicas can each take a different event of one entity in the same instant. Where that matters, run one relay per context, or key the broker by entity (`keyed_by_entity`).
 
 ## What a relay needs (and what already answers it)
 

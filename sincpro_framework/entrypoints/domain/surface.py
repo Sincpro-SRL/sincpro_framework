@@ -15,7 +15,7 @@ from typing import Any, ClassVar
 from pydantic import ConfigDict
 
 from sincpro_framework.entrypoints.domain.bindings import Binding
-from sincpro_framework.entrypoints.domain.layers import Layer, RunFn
+from sincpro_framework.entrypoints.domain.layers import CallFn, Layer, RunFn
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.use_bus import UseFramework
 
@@ -27,6 +27,15 @@ class Exposure(StrEnum):
 
     DECLARED = "declared"
     CATALOG = "catalog"
+
+
+class Profile(StrEnum):
+    """How `FastApiGateway` derives its routes: `RESOURCE`, the default, publishes only what
+    a use case declares (`@rest...`, `Exposure.DECLARED`); `RPC` publishes every use case
+    (`Exposure.CATALOG`) at `POST /{group}/{kebab(Dto)}` — RPC over HTTP, never REST."""
+
+    RESOURCE = "resource"
+    RPC = "rpc"
 
 
 class Group(DataTransferObject):
@@ -45,8 +54,8 @@ class Group(DataTransferObject):
 
 class Operation(DataTransferObject):
     """One published use case, as facts a wire derives from: which context, which Command and
-    handler, its kind and schemas, who may call it, and the bound `run` every wire calls — the
-    bus, never `execute`, so no guard or stage is skipped."""
+    handler, its kind and schemas, who may call it, and the bound `run` and `call` every wire
+    goes through — the bus, never `execute`, so no guard or stage is skipped."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -69,6 +78,8 @@ class Operation(DataTransferObject):
     """What it declared — `public`, `authenticated`, the requirements — or `unguarded`; `None`
     when its bus is guarded and it declared nothing."""
     run: RunFn
+    call: CallFn
+    """`run` inside the context, the trace and the identity a wire carried — what a wire calls."""
 
 
 class Resolved[B: Binding](DataTransferObject):
@@ -115,7 +126,7 @@ class Wire[B: Binding](ABC):
     the wire derives its defaults, adds its own clashes and builds what it serves."""
 
     binding: ClassVar[type[Binding]]
-    """Its binding DTO — its `wire` is the name the registry keeps its bindings under."""
+    """Its binding DTO — its `wire` is the name the registry stores its bindings under."""
 
     carries_bytes: ClassVar[bool] = False
     """Whether its payload holds raw bytes (protobuf `bytes`, a binary body). `False`: a use case

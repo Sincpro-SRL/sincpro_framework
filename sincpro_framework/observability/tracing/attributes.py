@@ -37,12 +37,9 @@ from weakref import WeakKeyDictionary
 
 from pydantic import ConfigDict
 
-from sincpro_framework.observability.metrics.domain.paths import (
-    FieldPath,
-    field_path,
-    refuse_foreign_paths,
-    refused,
-)
+from sincpro_framework import exceptions
+from sincpro_framework.observability import correlation
+from sincpro_framework.observability.metrics import FieldPath
 from sincpro_framework.observability.tracing.span_execution import use_case_span
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
@@ -183,7 +180,7 @@ def span_value(value: Any) -> AttributeValue | None:
         span_value(None)               ->  None
         span_value({"a": 1})           ->  TypeError("dict is not a value a span holds")
 
-    A list, tuple, set or frozenset becomes a tuple, its `None`s dropped; a set keeps the
+    A list, tuple, set or frozenset becomes a tuple, its `None`s dropped; a set preserves the
     order it iterates in."""
     if value is None:
         return None
@@ -225,13 +222,13 @@ def _declared(reference: Any, key: str) -> SpanAttribute:
         _declared(of(CommandSendDocument).nit, "siat.nit")
             ->  SpanAttribute(key="siat.nit", path=of(CommandSendDocument).nit)
     """
-    path = field_path(reference, f"span attribute '{key}'")
+    path = FieldPath.required(reference, f"span attribute '{key}'")
     problem = key_problem(key)
     if problem is not None:
-        raise refused(f"span attribute {path!r}: {problem}")
+        raise exceptions.ProgrammingError(f"span attribute {path!r}: {problem}")
     if not holds_on_a_span(path.annotation):
         name = getattr(path.annotation, "__name__", repr(path.annotation))
-        raise refused(
+        raise exceptions.ProgrammingError(
             f"span attribute {path!r}: {path.key} is {name} — a span attribute is a str, bool, "
             "int, float, Decimal, Enum, UUID, date or a sequence of them"
         )
@@ -243,15 +240,17 @@ def _declaring(attributes: tuple[SpanAttribute, ...]):  # type: ignore[no-untype
 
     1. Every path must start at the use case's Command, Response or declared context type.
     2. A key the class — or what it inherits — already declared is refused.
-    Final: the attributes kept for the class, after the ones it had; the class unchanged.
+    Final: the attributes stored for the class, after the ones it had; the class unchanged.
     """
 
     def declared[T: type](cls: T) -> T:
-        refuse_foreign_paths(cls, tuple(one.path for one in attributes))
+        FieldPath.refuse_foreign(cls, tuple(one.path for one in attributes))
         known = {one.key for one in declared_attributes(cls)}
         for one in attributes:
             if one.key in known:
-                raise refused(f"{cls.__name__}: span attribute '{one.key}' declared twice")
+                raise exceptions.ProgrammingError(
+                    f"{cls.__name__}: span attribute '{one.key}' declared twice"
+                )
             known.add(one.key)
         _by_class[cls] = (*_by_class.get(cls, ()), *attributes)
         return cls
@@ -305,7 +304,7 @@ def describe(span: Any, use_case: type, source: Any) -> None:
     try:
         for one in declared_attributes(use_case):
             if one.path.reads_context:
-                _set(span, one.key, one.path.read_context())
+                _set(span, one.key, one.path.read(correlation.execution_context()))
             elif source is not None and isinstance(source, one.path.root):
                 _set(span, one.key, one.path.read(source))
     except Exception as error:
@@ -334,19 +333,22 @@ class Traces:
         Each attribute is checked as it is written (`_declared`); the decorator then checks
         them against the use case it decorates (`_declaring`)."""
         if not isinstance(namespace, str) or not namespace.strip():
-            raise refused(
+            raise exceptions.ProgrammingError(
                 f"span attributes: namespace {namespace!r} — the prefix every key takes: "
                 "'siat', 'payment'"
             )
         declared = [
             _declared(
-                one, f"{namespace}.{'.'.join(field_path(one, 'a span attribute').names)}"
+                one,
+                f"{namespace}.{'.'.join(FieldPath.required(one, 'a span attribute').names)}",
             )
             for one in references
         ]
         declared += [_declared(one, f"{namespace}.{name}") for name, one in named.items()]
         if not declared:
-            raise refused("span attributes: nothing declared — hand at least one of(X).field")
+            raise exceptions.ProgrammingError(
+                "span attributes: nothing declared — hand at least one of(X).field"
+            )
         return _declaring(tuple(declared))
 
     def annotate(self, attributes: Mapping[str, SpanValue]) -> None:
