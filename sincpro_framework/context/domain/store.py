@@ -26,7 +26,7 @@ of its own. A cache is never an entry of the context; it lives where the context
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -74,6 +74,29 @@ class ContextStore(ABC):
     @abstractmethod
     def version(self, key: str) -> int:
         """How many times `key` was saved — what a reader compares to know it changed."""
+
+    def change(
+        self, key: str, changing: Callable[[dict[str, Any]], dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Save what `changing` makes of the values under `key` — `{}` when there are none — and
+        answer them: each change lands on the latest values, so two replicas writing two
+        different names keep both.
+
+            store.change("process:billing", lambda held: {**held, "plan": "pro"})
+                ->  {"lang": "es", "maintenance": True, "plan": "pro"}
+
+        A change that leaves the values as they were writes nothing and keeps the version. What
+        is changed lasts until deleted — the levels that stay: the process, the global.
+
+        Context: here, a read and a save — two replicas changing in the same instant can still
+        lose one. A store that compares before it writes overrides it (`InMemoryContexts`,
+        `KeyValueContexts`), and may run `changing` more than once.
+        """
+        held = self.load(key) or {}
+        changed = changing(dict(held))
+        if changed != held:
+            self.save(key, changed)
+        return changed
 
     def _saves_no_entries(self) -> exceptions.ProgrammingError:
         """The error an entry method of a store without entries raises — naming the store,

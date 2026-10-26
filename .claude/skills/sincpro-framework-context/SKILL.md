@@ -195,7 +195,7 @@ with siat.context({"nit_id": nit.id}):                # the caller says which te
   circuit breakers, caches, idempotency — each owned by exactly the keys it names (`by=`, `owned_by`):
   `()` is nobody's, shared by every caller. `KeyValueContexts` over Redis for replicas;
   `TypedCodec(schema)` to get the types back in the same codebase.
-- **The process across replicas:** `use_context().root.share(store, every=timedelta(seconds=5))` —
+- **The process across replicas:** `use_context().root.share(store, "process:<service>", every=timedelta(seconds=5))` —
   read locally, re-read when the version moved.
 - **Across services:** buses in one process share the tree; `remote_execution` sends the whole
   context; brokers and HTTP/gRPC use `inject`/`extract` (`baggage` + `sincpro-context` + identity);

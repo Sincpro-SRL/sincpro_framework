@@ -343,11 +343,16 @@ lacking a value's class reads the context without that key, with a warning).
 **The process level, shared by every replica**:
 
 ```python
-use_context().root.share(KeyValueContexts(InMemoryKeyValue()), every=timedelta(seconds=5))
+use_context().root.share(KeyValueContexts(InMemoryKeyValue()), "process:billing", every=timedelta(seconds=5))
 use_context().root.set("maintenance", False)            # every replica reads it within 5 s
 ```
 
-Read locally, read again only when the store's version moved — never a network call per read.
+Read locally, read again only when the store's version moved — never a network call per read. A
+write lands on the latest values (`ContextStore.change`, compared before it writes): a replica
+writing `plan` never erases the `maintenance` another wrote. A default the code seeds is added when
+the store lacks it, so one a later release brings reaches every replica, and a value a replica saved
+wins. A value that does not travel — an object, a settings instance — stays in its process and is
+never dropped by a refresh. The same holds for `ContextLevel.GLOBAL`.
 
 ## Across services, brokers and the frontend
 

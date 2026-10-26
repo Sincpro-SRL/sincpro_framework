@@ -57,12 +57,15 @@ A store is **not a cache**: what it persists is written by the flow — a draft,
 ## The process level across replicas
 
 ```python
-use_context().root.share(contexts, key="process", every=timedelta(seconds=5))
+use_context().root.share(contexts, "process:billing", every=timedelta(seconds=5))
 use_context().root.set("maintenance", True)       # stored; every replica reads it within 5 s
 ```
 
 Read locally; at most once per `every` the version is asked and the values re-read only when it
-moved. Values under a non-text key (a store, settings) stay local.
+moved. The key names the service (`process:<service>`, as a sharing bus keys it): two
+services on one key share one level. A write lands on the latest values, a default the code
+seeds is added when the store lacks it, and a value that does not travel (a store, settings)
+stays local.
 
 ## Across a transport
 

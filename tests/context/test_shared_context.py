@@ -15,6 +15,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.context import ContextLevel, InMemoryContexts, use_context
@@ -346,6 +347,25 @@ def test_the_process_level_is_kept_per_service():
 
     kept = store.load(f"process:{bus.observability.identity.service_name}")
     assert kept is not None and kept["flag"] == 1
+
+
+def test_a_bus_sharing_through_another_store_is_told_the_process_level_stays_on_the_first():
+    first, second = InMemoryContexts(), InMemoryContexts()
+    bus = UseFramework("shared-context-first", log_after_execution=False)
+    bus.store_context_in(first)
+
+    with capture_logs() as logs:
+        UseFramework("shared-context-second", log_after_execution=False).store_context_in(
+            second
+        )
+        UseFramework("shared-context-same", log_after_execution=False).store_context_in(first)
+
+    use_context().root.set("flag", 1)
+    told = [log["event"] for log in logs if "already shared through" in log["event"]]
+    assert len(told) == 1
+    service = bus.observability.identity.service_name
+    assert first.load(f"process:{service}") == {"flag": 1}
+    assert second.load(f"process:{service}") is None
 
 
 def test_the_global_level_is_seen_by_every_sharing_bus():

@@ -321,8 +321,8 @@ class Context(dict[Any, Any]):
 
     @property
     def root(self) -> "Context":
-        """The process level — where its defaults and flags live (`root.share(store)` shares
-        it across replicas)."""
+        """The process level — where its defaults and flags live
+        (`root.share(store, "process:billing")` shares it across replicas)."""
         return Context(ROOT, self._owner)
 
     @property
@@ -375,23 +375,26 @@ class Context(dict[Any, Any]):
     def share(
         self,
         store: ContextStore,
-        key: str = "process",
+        key: str,
         every: timedelta = timedelta(seconds=5),
     ) -> None:
-        """The process level shared by every replica through `store` — read locally, read again
-        when its version moved, at most once per `every`; a write is saved for the others. Only the
-        root is shared: a flow travels with its message.
+        """The process level shared by every replica through `store` under `key` — read locally,
+        read again when its version moved, at most once per `every`; a write is saved for the
+        others. Only the root is shared: a flow travels with its message.
 
-            use_context().root.share(KeyValueContexts(redis))
-                ->  ROOT reads and writes through "process" in that store, seeded with what
-                    the process already said
-            use_context().share(store)   ->  TypeError, from any node but the root
+            use_context().root.share(KeyValueContexts(redis), "process:billing")
+                ->  ROOT reads and writes through "process:billing" in that store, seeded with
+                    what the process already said
+            use_context().share(store, "process:billing")   ->  TypeError, from any node but
+                                                                 the root
 
-        The root's values are replaced by `SharedValues` for the life of the process."""
+        Context: `key` names the service, the way a sharing bus keys it (`process:<service>`):
+        two services that share one key on one store read and write one process level. The
+        root's values are replaced by `SharedValues` for the life of the process."""
         if self._node is not ROOT:
             raise TypeError(
                 f"only the process level is shared across replicas, not a {self._node.level} — "
-                "use_context().root.share(store)"
+                "use_context().root.share(store, key)"
             )
         ROOT.values = SharedValues(store, key, every, seed=ROOT.values.current)
         super().clear()

@@ -31,6 +31,7 @@ from sincpro_framework.context.domain.level import ContextLevel
 from sincpro_framework.context.domain.node import ContextNode, ContextSharing, Values
 from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.infrastructure.shared import SharedValues
+from sincpro_framework.sincpro_logger import logger
 
 GLOBAL_KEY = "global"
 CHAIN_LIMIT = 64
@@ -243,7 +244,18 @@ def sharing_of(node: ContextNode | None) -> ContextSharing | None:
 
 def joined(root: ContextNode, sharing: SharedContext, service: str) -> None:
     """The process `root` joins the store: its own values saved for this service's replicas, the
-    global node above it shared by every service that set the store. Once per process."""
+    global node above it shared by every service that set the store. Once per process.
+
+    Context: a process has one process level and one global, so it joins one store — the first
+    that shares it. A bus that later shares through another store goes on reading both from
+    the first, and is told so: its own nodes are saved in its store all the same."""
+    if isinstance(root.values, SharedValues) and root.values.store is not sharing.store:
+        logger.warning(
+            f"the process and global levels of {service} are already shared through "
+            f"{type(root.values.store).__name__}: a bus sharing its context through another "
+            f"{type(sharing.store).__name__} reads them from the first — set the same store "
+            "on every bus of the process to share them through one"
+        )
     if not isinstance(root.values, SharedValues):
         root.values = SharedValues(
             sharing.store, f"process:{service}", sharing.every, seed=root.values.current

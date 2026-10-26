@@ -21,6 +21,7 @@ from typing import Any
 
 from sincpro_framework.context.adapters.codecs import PlainCodec
 from sincpro_framework.context.adapters.entries import InMemoryEntries, KeyValueEntries
+from sincpro_framework.context.domain import exceptions
 from sincpro_framework.context.domain.codec import ContextCodec
 from sincpro_framework.context.domain.store import ContextStore, Entry
 from sincpro_framework.data_layer.store import InMemoryKeyValue, KeyValueStore, Leases
@@ -92,6 +93,21 @@ class InMemoryContexts(ContextStore):
         """The save count held in memory."""
         with self._lock:
             return self._versions.get(key, 0)
+
+    def change(
+        self, key: str, changing: Callable[[dict[str, Any]], dict[str, Any]]
+    ) -> dict[str, Any]:
+        """`changing` applied and saved under the store's lock — no other write between the
+        read and the save. An expired key changes from `{}`; what is changed lasts until
+        deleted."""
+        with self._lock:
+            values, until = self._stored.get(key, ({}, None))
+            held = {} if until is not None and until <= datetime.now(UTC) else values
+            changed = changing(dict(held))
+            if changed != held:
+                self._stored[key] = (dict(changed), None)
+                self._versions[key] = self._versions.get(key, 0) + 1
+            return changed
 
     def save_entry(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
         """Saved by `InMemoryEntries` — the version won under its lock."""
@@ -176,6 +192,44 @@ class KeyValueContexts(ContextStore):
         """The counter beside the key — `0` when it was never saved, or expired with it."""
         counted = self.store.get(self._version_key(key))
         return 0 if counted is None else int(counted)
+
+    def change(
+        self, key: str, changing: Callable[[dict[str, Any]], dict[str, Any]]
+    ) -> dict[str, Any]:
+        """`changing` applied to the latest values and written only when nobody wrote in
+        between — every replica races safely, with no lock of its own.
+
+        1. The bytes under the key, read back by the codec — `{}` when there are none.
+        2. The change, encoded: the same values or the same bytes — a value the codec does not
+           write — is nothing to write.
+        3. Written over exactly the bytes read: the store's atomic `add` for a key not saved
+           yet, its `replace` otherwise; another replica's write in between → back to 1.
+        Final: the version moved, the changed values answered.
+
+            contexts.change("process:billing", lambda held: {**held, "plan": "pro"})
+                ->  another replica saved "maintenance" between the read and the write:
+                    read again, {"lang": "es", "maintenance": True, "plan": "pro"} written
+
+        A `KeyValueStore` of a project's own that cannot compare before it writes (`replace`)
+        has the change saved as `save` does — best effort."""
+        while True:
+            data = self.store.get(self._key(key))
+            held = {} if data is None else self.codec.loads(data)
+            changed = changing(dict(held))
+            encoded = self.codec.dumps(changed)
+            if changed == held or encoded == data:
+                return changed
+            if data is None:
+                written = self.store.add(self._key(key), encoded)
+            else:
+                try:
+                    written = self.store.replace(self._key(key), data, encoded)
+                except exceptions.ProgrammingError:
+                    self.save(key, changed)
+                    return changed
+            if written:
+                self.store.increment(self._version_key(key))
+                return changed
 
     def save_entry(self, key: str, values: Mapping[str, Any], expected: int) -> Entry:
         """Saved by `KeyValueEntries` under `{prefix}:entries` — the version won atomically on
